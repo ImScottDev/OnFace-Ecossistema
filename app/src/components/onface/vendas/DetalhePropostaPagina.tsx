@@ -97,10 +97,16 @@ function EnviarDialog({ proposta, aberto, fechar, completarJuridicos }: {
     const r = await acaoEnviar({
       propostaId: proposta.id, modoFechamento: modo, validadeDias: Number(validade),
       tipoContratual: modo === "CONTRACT" ? "NOVO_CONTRATO" : null,
+      para: proposta.contato?.email ?? null,
     });
     setSalvando(false);
     if (!r.ok) { setErro({ texto: r.erro, juridicos: r.acao?.tipo === "completar_dados_empresa" }); return; }
-    toast.success(`Proposta #${proposta.numero} enviada.`);
+    // Diz o que de fato aconteceu com o e-mail: prometer "avisa o cliente" sem avisar era o defeito.
+    const email = r.dados?.email;
+    if (email === "enviado") toast.success(`Proposta #${proposta.numero} enviada por e-mail para ${proposta.contato?.email}.`);
+    else toast.warning(`Proposta #${proposta.numero} enviada, mas o e-mail não saiu (${
+      email === "sem_destinatario" ? "o contato não tem e-mail" : email === "sem_provedor" ? "provedor de e-mail não configurado" : "falha no envio"
+    }). Copie o link na lateral e mande ao cliente.`);
     fechar();
     router.refresh();
   };
@@ -110,7 +116,7 @@ function EnviarDialog({ proposta, aberto, fechar, completarJuridicos }: {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Enviar proposta #{proposta.numero} · v{proposta.versao}</DialogTitle>
-          <DialogDescription>O envio avisa o cliente por e-mail e leva a oportunidade para Proposta.</DialogDescription>
+          <DialogDescription>O envio manda o link por e-mail ao contato e leva a oportunidade para Proposta.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <label className="grid gap-1 text-sm">

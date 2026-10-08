@@ -111,6 +111,10 @@ export async function POST(request: NextRequest) {
     if (!claimed) return NextResponse.json({ received: true, duplicate: true });
 
     await publicarEvento({ organizacaoId: contract.organizacaoId, eventType: "ContractCompleted", aggregateType: "contrato", aggregateId: contract.id, payload: commonPayload, idempotencyKey: `contract-completed:${contract.id}` });
+    // `ContractSigned` é o evento que a automação "Contrato assinado" e a timeline
+    // projetada escutam; só o aceite simples o publicava, então o caminho real
+    // (Documenso) assinava sem disparar fluxo nenhum. Mesma chave de idempotência.
+    await publicarEvento({ organizacaoId: contract.organizacaoId, eventType: "ContractSigned", aggregateType: "contrato", aggregateId: contract.id, payload: { negocioId: contract.negocioId, grupoComercialId: contract.grupoComercialId, assinaturaSimples: false, provider: "documenso" }, idempotencyKey: `contract-signed:${contract.id}` });
     await publicarEvento({ organizacaoId: contract.organizacaoId, eventType: "FinalDocumentGenerated", aggregateType: "contrato", aggregateId: contract.id, payload: { ...commonPayload, documentoFinalUrl: finalDocumentUrl(contract.id, payload || {}) }, idempotencyKey: `contract-final-document:${contract.id}` });
     // Frente 2C.1 — motor único das consequências da assinatura, o MESMO
     // usado pela assinatura eletrônica simples (lib/crm/pos-assinatura.ts).
@@ -118,11 +122,23 @@ export async function POST(request: NextRequest) {
     // PABX/White Label ficavam presos esperando pagamento pra virar cliente.
     // `contract` é a linha ANTES do update — relê pra passar o estado assinado.
     const [contratoAssinado] = await db.select().from(contratos).where(eq(contratos.id, contract.id)).limit(1);
-    const resultado = await processarContratoAssinado({
-      contrato: contratoAssinado ?? contract,
-      provider: "documenso",
-      metadata: { recipients },
-    });
+    let resultado: Awaited<ReturnType<typeof processarContratoAssinado>>;
+    try {
+      resultado = await processarContratoAssinado({
+        contrato: contratoAssinado ?? contract,
+        provider: "documenso",
+        metadata: { recipients },
+      });
+    } catch (err) {
+      // O claim acima marcou o contrato como assinado; se o motor das
+      // consequências (ganho, entrega, pendência financeira) cai aqui, o retry do
+      // Documenso cairia em "duplicate" e a venda ficaria assinada e NÃO ganha,
+      // sem ninguém saber. Devolve o contrato ao estado anterior e responde 500
+      // para o provedor reentregar; o motor é idempotente por evidência/grupo.
+      console.error(`[DocumensoWebhook] consequências da assinatura falharam no contrato ${contract.id}; revertendo para retentativa:`, err);
+      await db.update(contratos).set({ assinaturaStatus: contract.assinaturaStatus, updatedAt: new Date() }).where(eq(contratos.id, contract.id));
+      return NextResponse.json({ error: "post-signature processing failed" }, { status: 500 });
+    }
     console.log(`[DocumensoWebhook] contrato ${contract.id} assinado — familia=${resultado.familia} ganho=${resultado.ganhoLiberado} entrega=${resultado.entregaLiberada} pendencia=${resultado.pendenciaFinanceiraId ?? "—"}`);
     const base = appUrl();
     await enviarEmailFinalContrato({

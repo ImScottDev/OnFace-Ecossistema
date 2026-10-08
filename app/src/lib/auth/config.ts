@@ -23,6 +23,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             senhaHash: usuarios.senhaHash,
             role: usuarios.role,
             ativo: usuarios.ativo,
+            tipo: usuarios.tipo,
             organizacaoId: usuarios.organizacaoId,
             organizacaoSlug: organizacoes.slug,
           })
@@ -31,7 +32,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           .where(eq(usuarios.email, credentials.email as string))
           .limit(1);
 
-        if (!user || !user.ativo) return null;
+        // Agente de IA é usuário do sistema, mas nunca entra por login.
+        if (!user || !user.ativo || user.tipo === "agente") return null;
 
         const senhaValida = await bcrypt.compare(
           credentials.password as string,

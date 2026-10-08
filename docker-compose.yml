@@ -106,6 +106,8 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
+      # Onde o signatário assina. Sem isso o link de assinatura cai no host interno (http://documenso:3000), que o cliente não alcança.
+      - DOCUMENSO_PUBLIC_URL=${DOCUMENSO_PUBLIC_URL:-https://sign.callface.io}
       - NODE_OPTIONS=--max-old-space-size=448
       - DB_POOL_SIZE=10
     volumes:
@@ -165,6 +167,8 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
+      # Onde o signatário assina. Sem isso o link de assinatura cai no host interno (http://documenso:3000), que o cliente não alcança.
+      - DOCUMENSO_PUBLIC_URL=${DOCUMENSO_PUBLIC_URL:-https://sign.callface.io}
       - API_PORT=3001
       - NODE_OPTIONS=--max-old-space-size=320
     volumes:
@@ -215,6 +219,8 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
+      # Onde o signatário assina. Sem isso o link de assinatura cai no host interno (http://documenso:3000), que o cliente não alcança.
+      - DOCUMENSO_PUBLIC_URL=${DOCUMENSO_PUBLIC_URL:-https://sign.callface.io}
       - NODE_OPTIONS=--max-old-space-size=320
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
       # porta do healthcheck do worker — a mesma que o `test:` abaixo consulta

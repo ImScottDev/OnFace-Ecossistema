@@ -86,7 +86,7 @@ export class DocumensoSignatureProvider implements SignatureProvider {
 
     const signatarios = recipientsFrom(opts?.signatarios || row.signatarios);
     if (signatarios.length === 0) throw new Error("Contrato sem signatários válidos para o Documenso");
-    const html = contratoPdfHtml({ descricao: row.descricao, corpoGerado: row.corpoGerado, clienteNome: row.leadEmpresa || row.leadNome, createdAt: row.createdAt, assinado: false });
+    const html = contratoPdfHtml({ descricao: row.descricao, corpoGerado: row.corpoGerado, clienteNome: row.leadEmpresa || row.leadNome, createdAt: row.createdAt, assinado: false, semSelo: true });
     const pdf = await renderContratoPdf(html);
     const payload = {
       type: "DOCUMENT",

@@ -13,6 +13,8 @@ import { nomeCompleto } from "@/lib/vendas/texto";
 import { getCtx, parseBody } from "../compat.js";
 import { publicarEvento } from "@/lib/events/outbox";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
+import { checarAcessoContato } from "@/lib/whatsapp/acesso";
+import { estadoDaIaNaConversa } from "@/lib/atendimento/ia-conversa";
 
 /**
  * Central de Atendimento (CRM 2.0, Figma node 53:518) — inbox omnicanal.
@@ -294,11 +296,13 @@ async function buscarWhatsapp(opts: {
 }
 
 const acaoConversaSchema = z.object({
-  acao: z.enum(["claim", "transfer", "release", "snooze", "unsnooze", "close", "reopen", "link_lead"]),
+  acao: z.enum(["claim", "transfer", "release", "snooze", "unsnooze", "close", "reopen", "link_lead", "mark_unread"]),
   usuarioId: z.string().uuid().nullable().optional(),
   /** Só para `link_lead`: o lead a que a conversa passa a pertencer. */
   leadId: z.string().uuid().optional(),
   minutos: z.number().int().min(1).max(60 * 24 * 30).optional(),
+  /** Só para `close`: motivo e observação escolhidos no modal de encerramento ("Resolvido — cliente satisfeito"). */
+  motivo: z.string().max(600).nullable().optional(),
 });
 
 // Acoes de operacao do Inbox. Todas alteram o contato/canal canonico e
@@ -314,6 +318,9 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
     eq(contatos.organizacaoId, ctx.organizacaoId),
   )).limit(1);
   if (!contato) return c.json({ error: "Conversa nao encontrada" }, 404);
+  // Fechar, transferir ou vincular a conversa de WhatsApp de outra pessoa pelo id não pode passar:
+  // a tela esconde, mas a rota é pública para quem tem sessão.
+  if (!(await checarAcessoContato(ctx, contatoId)).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
 
   const acao = parsed.data.acao;
 
@@ -352,10 +359,23 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
     return c.json({ contato: vinculado });
   }
 
+  /* Marcar como não lida: devolve a conversa ao "não lido" (a abertura zera). Não é fato de
+     domínio com autor, é estado de leitura de quem atende. */
+  if (acao === "mark_unread") {
+    const [m] = await db.update(contatos).set({ naoLidas: sql`GREATEST(${contatos.naoLidas}, 1)`, updatedAt: new Date() })
+      .where(eq(contatos.id, contatoId)).returning();
+    return c.json({ contato: m });
+  }
+
   const isAdmin = ["admin", "super_admin", "gerente"].includes(ctx.userRole);
   const alvo = parsed.data.usuarioId ?? ctx.userId;
-  if (["claim", "transfer"].includes(acao) && !isAdmin && alvo !== ctx.userId) {
-    return c.json({ error: "Sem permissao para transferir para outro usuario" }, 403);
+  // Assumir é sempre para si (só gestão assume para outro). Transferir a conversa que é sua,
+  // ou que ainda não tem dono, para um colega é o uso normal do botão e vale para todo mundo.
+  if (acao === "claim" && !isAdmin && alvo !== ctx.userId) {
+    return c.json({ error: "Sem permissao para atribuir a conversa a outro usuario" }, 403);
+  }
+  if (acao === "transfer" && !isAdmin && alvo !== ctx.userId && contato.responsavelId !== null && contato.responsavelId !== ctx.userId) {
+    return c.json({ error: "So quem atende a conversa (ou a gestao) pode transferi-la" }, 403);
   }
 
   /* O alvo da transferência precisa ser usuário DESTA org: uuid inexistente estourava
@@ -416,7 +436,7 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
       eventType: eventByAction[acao],
       aggregateType: "contato",
       aggregateId: contatoId,
-      payload: { acao, usuarioId: alvo, actorId: ctx.userId, minutos: parsed.data.minutos ?? null },
+      payload: { acao, usuarioId: alvo, actorId: ctx.userId, minutos: parsed.data.minutos ?? null, ...(acao === "close" && { motivo: parsed.data.motivo ?? null }) },
       // A chave descreve o ESTADO alcançado, não o instante. Reprocessar a
       // mesma transição não publica de novo; uma transição diferente sim.
       idempotencyKey: acao === "snooze"
@@ -427,6 +447,15 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
       //   ConversationClosed era engolido pela dedup. Duplo clique simultâneo lê o
       //   mesmo updatedAt, então continua deduplicando.
     });
+
+    /* Encerrar com motivo: o motivo que o modal pede é dado de relatório (por que as conversas
+       fecham) e histórico do lead. Antes ficava só numa mensagem de sistema que sumia no reload. */
+    if (acao === "close" && parsed.data.motivo && contato.leadId) {
+      await db.insert(atividades).values({
+        organizacaoId: ctx.organizacaoId, leadId: contato.leadId, usuarioId: ctx.userId, tipo: "nota",
+        titulo: "Atendimento de WhatsApp encerrado", descricao: parsed.data.motivo,
+      });
+    }
 
     /* Transferência avisa o novo responsável no sininho (o evento sozinho não
        vira notificação — não há consumidor). Fire-and-forget. */
@@ -446,6 +475,48 @@ app.post("/atendimento/conversas/:id/acao", async (c) => {
   }
 
   return c.json({ contato: updated });
+});
+
+/* Estado da IA nesta conversa: agente que responde, por que, e por que não respondeu. */
+app.get("/atendimento/conversas/:id/ia", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  if (!(await checarAcessoContato(ctx, id)).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
+  const estado = await estadoDaIaNaConversa(ctx.organizacaoId, id);
+  if (!estado) return c.json({ error: "Conversa nao encontrada" }, 404);
+  return c.json(estado);
+});
+
+/* Pausar / retomar a IA nesta conversa. Grava a mesma linha que o handoff do agente e
+   o worker leem (ai_sdr_contato_state) e publica o fato com autor, para medir depois. */
+app.post("/atendimento/conversas/:id/ia", async (c) => {
+  const ctx = await getCtx(c);
+  const id = c.req.param("id");
+  const parsed = z.object({ ativa: z.boolean() }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Informe { ativa: boolean }" }, 400);
+  if (!(await checarAcessoContato(ctx, id)).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
+
+  const [antes] = await db.select({ aiAtivo: aiSdrContatoState.aiAtivo }).from(aiSdrContatoState)
+    .where(eq(aiSdrContatoState.contatoId, id)).limit(1);
+  const ativaAntes = antes?.aiAtivo ?? true;
+  const agora = new Date();
+  const valores = parsed.data.ativa
+    ? { aiAtivo: true, handoffStatus: "ai_handling", handoffAt: null, handoffMotivo: null, handoffUsuarioId: null }
+    : { aiAtivo: false, handoffStatus: "human_assigned", handoffAt: agora, handoffMotivo: "manual_toggle", handoffUsuarioId: ctx.userId };
+  await db.insert(aiSdrContatoState)
+    .values({ contatoId: id, organizacaoId: ctx.organizacaoId, ...valores, updatedAt: agora })
+    .onConflictDoUpdate({ target: aiSdrContatoState.contatoId, set: { ...valores, updatedAt: agora } });
+
+  if (ativaAntes !== parsed.data.ativa) {
+    await publicarEvento({
+      organizacaoId: ctx.organizacaoId,
+      eventType: parsed.data.ativa ? "ConversationAiResumed" : "ConversationAiPaused",
+      aggregateType: "contato", aggregateId: id, atorId: ctx.userId,
+      payload: { de: ativaAntes ? "ativa" : "pausada", para: parsed.data.ativa ? "ativa" : "pausada", actorId: ctx.userId },
+      idempotencyKey: `contato:${id}:ia:${parsed.data.ativa ? "retomada" : "pausada"}:${agora.getTime()}`,
+    });
+  }
+  return c.json(await estadoDaIaNaConversa(ctx.organizacaoId, id));
 });
 
 app.get("/atendimento/conversas/:id/tags", async (c) => {

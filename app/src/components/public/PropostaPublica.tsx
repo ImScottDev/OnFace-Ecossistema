@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Clock, FileSignature, CreditCard, CheckCircle2, AlertTriangle, Download, ShieldCheck, Loader2 } from "lucide-react";
 import "./publico.css";
@@ -275,11 +275,17 @@ export function PropostaPublica({ id }: { id: string }) {
   const [ajusteMsg, setAjusteMsg] = useState("");
   const [ajusteEnviado, setAjusteEnviado] = useState(false);
   const [recusaMotivo, setRecusaMotivo] = useState("");
+  const jaAbriu = useRef(false);
 
   const { data: p, isLoading, error } = useQuery<PropostaPublicaData>({
     queryKey: ["proposta-publica", id],
     queryFn: async () => {
-      const r = await fetch(`/api/propostas/${id}/publica`);
+      // Só a primeira leitura é uma visita. O refetch de 8s e o refresh pós-ação
+      // vão com ?acompanhar=1 e não contam: cada poll gravava um ProposalOpened e
+      // inflava `visualizacoes` enquanto o cliente deixava a aba aberta.
+      const acompanhar = jaAbriu.current;
+      jaAbriu.current = true;
+      const r = await fetch(`/api/propostas/${id}/publica${acompanhar ? "?acompanhar=1" : ""}`);
       if (!r.ok) throw new Error("not-found");
       return r.json();
     },
@@ -358,6 +364,9 @@ export function PropostaPublica({ id }: { id: string }) {
   const vigente = STATUS_VIGENTE.includes(p.status);
   if (p.status === "expirada" || (vigente && validadeVencida)) {
     return <EstadoUnico tom="erro" titulo="Este link de proposta expirou" corpo="O prazo de validade dessa proposta passou. Fale com quem te enviou a proposta na Callface para receber uma versão atualizada." />;
+  }
+  if (p.status === "rascunho") {
+    return <EstadoUnico titulo="Esta proposta ainda não foi enviada" corpo="O time da Callface ainda está preparando este documento. Quando ele for enviado, este mesmo link mostra a proposta completa." />;
   }
   if (p.status === "substituida") {
     return <EstadoUnico titulo="Esta proposta foi atualizada" corpo="Existe uma versão mais nova desta proposta. Peça o link atualizado a quem te enviou na Callface." />;
@@ -483,7 +492,7 @@ export function PropostaPublica({ id }: { id: string }) {
                     <button type="button" className="pp-btn pp-btn-ghost" onClick={() => setPainel("recusa")}>Recusar</button>
                     <button type="button" className="pp-btn pp-btn-primario" onClick={() => aceitar.mutate()} disabled={aceitar.isPending}>
                       {aceitar.isPending ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Check size={15} aria-hidden />}
-                      {aceitar.isPending ? "Registrando…" : "Aceitar proposta"}
+                      {aceitar.isPending ? "Preparando seu contrato…" : "Aceitar proposta"}
                     </button>
                   </div>
                   {aceitar.isError && <div className="pp-decisao-form"><Aviso tom="erro">{(aceitar.error as Error).message}</Aviso></div>}

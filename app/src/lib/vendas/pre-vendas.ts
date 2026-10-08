@@ -23,6 +23,7 @@ import {
   type Ator, type EstagioPreVendas, type EtapaPreVendas,
   type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao,
 } from "./dominio";
+import { resolverPorRegra } from "@/lib/agentes/distribuicao";
 
 /* ── Entrada de Lead (Bloco 01 §3) ─────────────────────────────────────── */
 
@@ -181,7 +182,11 @@ export async function exigirResponsavelDaOrg(
 export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<LeadCriado> {
   const { organizacaoId } = entrada;
 
+  /* Regra de distribuição (Ajustes > Leads) primeiro: "novos leads em Novo -> humano, agente ou
+     rodízio", com dia/horário. Sem regra vigente vale o padrão de antes (responsável de inbound). */
+  const porRegra = entrada.responsavelId ? null : await resolverPorRegra({ organizacaoId, etapa: "novo" });
   const responsavelId = entrada.responsavelId
+    ?? porRegra?.responsavelId
     ?? (eEntradaInbound(entrada.touchpoint.tipoOrigem)
       ? await resolverResponsavelInbound(organizacaoId)
       : null);
@@ -322,7 +327,8 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
       organizacaoId, tipo: "LeadAssigned", ator, leadId: lead.id,
       contexto: {
         responsavelId,
-        origemAtribuicao: entrada.responsavelId ? "manual" : "politica_inbound",
+        origemAtribuicao: entrada.responsavelId ? "manual" : porRegra ? "regra_distribuicao" : "politica_inbound",
+        regraId: porRegra?.regraId ?? null,
       },
     });
   }

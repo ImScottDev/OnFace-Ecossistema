@@ -11,7 +11,7 @@
  * só sinaliza status="ajuste_solicitado" e avisa o responsável.
  */
 import { db } from "@/lib/db";
-import { propostas, atividades, contratos } from "@/lib/db/schema";
+import { propostas, contratos } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
 import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
@@ -74,15 +74,7 @@ export async function recusarPropostaPublica(proposta: PropostaRow, motivo?: str
     status: "recusada", clienteRespondeuEm: new Date(), motivoRecusa: motivo || null, updatedAt: new Date(),
   }).where(eq(propostas.id, proposta.id));
 
-  await db.insert(atividades).values({
-    organizacaoId: proposta.organizacaoId,
-    leadId: proposta.leadId,
-    negocioId: proposta.negocioId,
-    tipo: "proposta_enviada",
-    titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} recusada pelo cliente`,
-    descricao: motivo || "Recusada na página pública, sem motivo informado.",
-    dados: { propostaId: proposta.id, acao: "recusada", motivo },
-  });
+  // A linha na timeline (com o motivo) sai de registrarRespostaDoCliente, abaixo: gravar também aqui duplicava a entrada.
 
   await publicarEvento({
     organizacaoId: proposta.organizacaoId,
@@ -116,15 +108,7 @@ export async function solicitarAjustePropostaPublica(proposta: PropostaRow, mens
 
   await db.update(propostas).set({ status: "ajuste_solicitado", updatedAt: new Date() }).where(eq(propostas.id, proposta.id));
 
-  await db.insert(atividades).values({
-    organizacaoId: proposta.organizacaoId,
-    leadId: proposta.leadId,
-    negocioId: proposta.negocioId,
-    tipo: "proposta_enviada",
-    titulo: `Cliente pediu ajuste na proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`,
-    descricao: mensagem,
-    dados: { propostaId: proposta.id, acao: "ajuste_solicitado", mensagem },
-  });
+  // Timeline: ver registrarRespostaDoCliente (uma entrada só).
 
   await publicarEvento({
     organizacaoId: proposta.organizacaoId, eventType: "ProposalAdjustmentRequested", aggregateType: "proposta", aggregateId: proposta.id,

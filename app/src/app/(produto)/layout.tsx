@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth/config";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { db } from "@/lib/db";
 import { contatos } from "@/lib/db/schema";
-import { condicaoAcessoConversa } from "@/lib/whatsapp/acesso";
+import { condicaoMinhasConversas } from "@/lib/whatsapp/acesso";
 import { Providers } from "@/components/crm/Providers";
 import { Cf2SidebarProvider } from "@/components/crm2/ui/Sidebar";
 import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
@@ -32,7 +32,7 @@ async function resolveSession() {
 
 /** Conversas abertas com mensagem não lida que ESTE usuário pode abrir — o
  * número do atalho "Atendimento" da casca. Uma contagem só, no layout, com a
- * mesma regra de acesso da caixa de entrada (`condicaoAcessoConversa`), para o
+ * mesma regra "Minhas" da tela (`condicaoMinhasConversas`), para o
  * badge nunca prometer conversa que a pessoa não consegue ver.
  *
  * `null` quando não dá para contar: a casca esconde o número em vez de chutar.
@@ -68,7 +68,8 @@ async function conversasNaoLidas(): Promise<number | null> {
         eq(contatos.canal, "whatsapp"),
         eq(contatos.status, "open"),
         gt(contatos.naoLidas, 0),
-        condicaoAcessoConversa(ctx),
+        // O badge é pessoal: sempre "Minhas", mesmo para quem pode alternar para Equipe na tela.
+        condicaoMinhasConversas(ctx.userId),
       ));
     return r?.n ?? 0;
   } catch {

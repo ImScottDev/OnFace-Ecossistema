@@ -319,6 +319,9 @@ app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
     const [publishedAgent] = await tx.update(aiAgents).set({ status: "published", publishedVersionId: version.id, updatedAt: new Date() }).where(eq(aiAgents.id, agent.id)).returning();
     return publishedAgent;
   });
+  // O agente publicado vira (ou continua sendo) um usuário do sistema: responsável de lead, nos seletores.
+  const { sincronizarUsuariosDosAgentes } = await import("@/lib/agentes/usuario-do-agente");
+  await sincronizarUsuariosDosAgentes(ctx.organizacaoId).catch((e) => console.error("[agentes] sincronizar usuário do agente:", e));
   return c.json({ agent: updated, versionId: version.id });
 });
 

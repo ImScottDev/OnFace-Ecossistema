@@ -87,6 +87,8 @@ app.get("/", async (c) => {
       role: usuarios.role,
       avatarUrl: usuarios.avatarUrl,
       ativo: usuarios.ativo,
+      // 'agente' = agente de IA que é usuário do sistema (selo "IA" nas telas).
+      tipo: usuarios.tipo,
     })
     .from(usuarios)
     .where(and(
@@ -113,12 +115,15 @@ app.patch("/:id", async (c) => {
 
   // Só pode alterar usuário da mesma organização.
   const [alvo] = await db
-    .select({ id: usuarios.id, role: usuarios.role })
+    .select({ id: usuarios.id, role: usuarios.role, tipo: usuarios.tipo })
     .from(usuarios)
     .where(and(eq(usuarios.id, id), eq(usuarios.organizacaoId, ctx.organizacaoId)))
     .limit(1);
   if (!alvo) {
     return c.json({ error: "Usuário não encontrado nesta organização" }, 404);
+  }
+  if (alvo.tipo === "agente") {
+    return c.json({ error: "Agente de IA não tem papel de acesso: ele é configurado em Automações, Agentes." }, 400);
   }
 
   // Escalada de privilégio: gerente/diretoria/operações passam no isAdminView

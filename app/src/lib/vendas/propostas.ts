@@ -408,7 +408,7 @@ export async function registrarRespostaDoCliente(params: {
       // Bloco 03 §26: o aceite não fecha a venda. A timeline diz o que falta.
       ? `${gatePendente} — a oportunidade só fecha com a evidência.`
       : params.tipo === "recusada"
-        ? "A oportunidade continua aberta: perder exige decisão e motivo."
+        ? `${params.descricao ? `Motivo do cliente: ${params.descricao}. ` : ""}A oportunidade continua aberta: perder exige decisão e motivo.`
         : params.descricao ?? null,
   };
 

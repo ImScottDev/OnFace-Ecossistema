@@ -174,7 +174,7 @@ for (const eventType of [
   "PaymentPending", "FulfillmentCreated", "ManualValidationRequired",
   "ConversationClaimed", "ConversationTransferred", "ConversationReleased",
   "ConversationSnoozed", "ConversationClosed", "ConversationReopened",
-  "ConversationMessageReceived",
+  "ConversationMessageReceived", "ConversationAiPaused", "ConversationAiResumed",
   "TagAdded", "TagRemoved",
 ]) {
   registrarConsumidorEvento(eventType, registrarNoAuditLog);

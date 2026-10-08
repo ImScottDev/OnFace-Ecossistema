@@ -11,6 +11,7 @@ import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as propostas from "@/lib/vendas/propostas";
 import { atualizarItensDoRascunho, criarPropostaComItens, type ItemEntrada } from "@/lib/crm/proposta-criacao";
 import { lerLinhaDoTempo, registrarEvento, type LinhaDoTempo } from "@/lib/vendas/eventos";
+import { avisarClienteDaPropostaEnviada } from "@/lib/crm/enviar-proposta";
 
 const ROTA = "/propostas";
 
@@ -159,6 +160,11 @@ export interface DetalheProposta {
   itens: Array<{ id: string; nome: string; tipo: string; natureza: string | null; quantidade: number; valorUnitario: number; desconto: number; subtotal: number }>;
   composicao: propostas.ComposicaoFinanceira;
   tracking: { enviadaEm: string | null; primeiraVisualizacao: string | null; aceitaEm: string | null; recusadaEm: string | null; ajusteEm: string | null; ajusteDescricao: string | null };
+  /** Contratos que o aceite gerou (um por grupo comercial que exige). Vazio antes do aceite. */
+  contratos: Array<{
+    id: string; documento: string; assinaturaStatus: string; signatureStatus: string | null;
+    assinadoEm: string | null; signatarios: string[]; pdfFinalDisponivel: boolean;
+  }>;
   timeline: LinhaDoTempo[];
 }
 
@@ -242,6 +248,25 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
         desconto: Number(i.desconto), subtotal: Number(i.subtotal),
       })),
       composicao: await propostas.composicaoDaProposta(propostaId),
+      contratos: (await db.execute<{
+        id: string; descricao: string | null; assinatura_status: string; signature_status: string | null;
+        assinado_em: string | null; signatarios: unknown; assinado: boolean;
+      }>(sql`
+        SELECT c.id::text, c.descricao, c.assinatura_status, c.signature_status, c.assinado_em::text, c.signatarios,
+               (c.assinatura_status = 'assinado' AND c.signature_provider_ref IS NOT NULL) AS assinado
+          FROM contratos c
+          JOIN proposta_grupo_comercial g ON g.contrato_id = c.id
+         WHERE g.proposta_id = ${propostaId}::uuid
+         ORDER BY c.created_at
+      `)).map((c) => ({
+        id: c.id,
+        documento: /aditivo/i.test(c.descricao ?? "") ? "Termo aditivo" : /renova/i.test(c.descricao ?? "") ? "Contrato de renovação" : "Contrato",
+        assinaturaStatus: c.assinatura_status, signatureStatus: c.signature_status, assinadoEm: c.assinado_em,
+        signatarios: (Array.isArray(c.signatarios) ? c.signatarios : [])
+          .map((x) => (x && typeof x === "object" ? String((x as Record<string, unknown>).name ?? (x as Record<string, unknown>).nome ?? "") : ""))
+          .filter(Boolean),
+        pdfFinalDisponivel: c.assinado,
+      })),
       tracking: {
         enviadaEm: p.enviada_em, primeiraVisualizacao: p.primeira_vis,
         aceitaEm: p.aceita_em, recusadaEm: p.recusada_em,
@@ -536,7 +561,9 @@ export async function acaoEnviar(entrada: {
   validadeDias: number;
   tipoContratual?: TipoContratual | null;
   contratoBaseId?: string | null;
-}): Promise<Resultado> {
+  /** E-mail do destinatário escolhido no fluxo de envio; sem ele vale o e-mail do contato. */
+  para?: string | null;
+}): Promise<Resultado<{ link: string; email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou" }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("enviar proposta", async () => {
@@ -549,8 +576,13 @@ export async function acaoEnviar(entrada: {
       contratoBaseId: entrada.contratoBaseId ?? null,
       ator: ctx.ator,
     });
+    // O envio já aconteceu (status, validade, evento). Agora o link chega ao cliente.
+    const aviso = await avisarClienteDaPropostaEnviada({
+      propostaId: entrada.propostaId, organizacaoId: ctx.organizacaoId, userId: ctx.usuarioId, para: entrada.para ?? null,
+    });
     revalidatePath(ROTA);
     revalidatePath("/pipeline");
+    return { link: aviso.link, email: aviso.email };
   });
 }
 

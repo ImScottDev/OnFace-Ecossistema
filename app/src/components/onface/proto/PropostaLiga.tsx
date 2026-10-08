@@ -827,10 +827,12 @@ class Logica extends React.Component<any, any> {
     const telCad = (LD && (LD.tel || LD.telefone)) || "";
     // ANTES: "propostas.callface.ai/p/<codigo>-v<versao>", endereço inexistente (rota real: /p/<id>). Sem id gravado, não há link.
     const linkP = d.id && typeof window !== "undefined" ? window.location.host + "/p/" + d.id : "";
+    // Link que SAI da tela (copiar e WhatsApp) é a URL inteira, com o esquema: sem ele o app de mensagem não vira link clicável e, em localhost, "https://" apontava para um endereço que não existe.
+    const linkAbs = d.id && typeof window !== "undefined" ? window.location.origin + "/p/" + d.id : "";
     const prodN = FAM[d.familia] || "";
     const assuntoPadrao = "Proposta " + d.titulo + " · #" + d.codigo + "-v" + d.versao;
     const introPadrao = "Olá, " + pn + "!\n\nConforme conversamos, preparei a proposta de " + prodN + " para a " + O.empresa + ". Abaixo está um resumo com os valores e as principais condições.\n\nNo link você vê todos os detalhes e pode aceitar a proposta ou pedir algum ajuste, se precisar. Qualquer dúvida, fico à disposição.";
-    const waPadrao = "Oi, " + pn + "! Tudo bem? Aqui é " + ((O.resp || "").split(" ")[0] || "") + ", da Callface.\n\nAcabei de te enviar a proposta de " + prodN + " para a " + O.empresa + ":" + (linkP ? "\nhttps://" + linkP : "") + "\n\nPor lá você vê os valores e as condições, e pode aceitar ou pedir algum ajuste. A proposta vale até " + fmtD(valida) + ".\n\nQualquer dúvida, me chama por aqui!";
+    const waPadrao = "Oi, " + pn + "! Tudo bem? Aqui é " + ((O.resp || "").split(" ")[0] || "") + ", da Callface.\n\nAcabei de te enviar a proposta de " + prodN + " para a " + O.empresa + ":" + (linkAbs ? "\n" + linkAbs : "") + "\n\nPor lá você vê os valores e as condições, e pode aceitar ou pedir algum ajuste. A proposta vale até " + fmtD(valida) + ".\n\nQualquer dúvida, me chama por aqui!";
     const condE = [c.teste ? c.tDias + " dias de teste grátis antes da primeira cobrança" : null, c.unico ? "Setup " + (c.parc > 1 ? "em " + c.parc + "x de " + brl(c.unicoLiq / c.parc) : "à vista") : null, (ehWl ? "Ativações vencem" : "Mensalidade vence") + " todo dia " + d.dia, ehWl ? null : (c.fid ? "Fidelidade de " + c.fid + " meses" : "Sem fidelidade"), d.fechamento === "contrato" ? "Contrato com assinatura digital" : "Pagamento pelo checkout seguro do Stripe"].filter(Boolean);
     const addCc = (v) => { if (!mailOk(v)) return this.setState({ ccErro: true }); this.setState({ ccTxt: "", ccErro: false }); up({ cc: (d.cc || []).filter(x => x !== v).concat(v) }); };
     const msgPadrao = "Olá, " + ((d.contato || "").split(" ")[0] || "") + "! Segue a proposta " + d.titulo + " (#" + d.codigo + "-v" + d.versao + "), válida até " + fmtD(valida) + ". Qualquer dúvida, fico à disposição.\n\n" + O.resp + " · Callface";
@@ -853,7 +855,7 @@ class Logica extends React.Component<any, any> {
         onClick: () => up({ canais: on ? canaisSel.filter(x => x !== v) : canaisSel.concat(v), para: v === "email" && !d.para ? email : d.para }) }; }),
       temEmail: canaisSel.indexOf("email") >= 0, temWa: canaisSel.indexOf("whatsapp") >= 0, soLink: !canaisSel.length,
       link: linkP, linkRot: canaisSel.length ? "Link da proposta · vai junto na mensagem" : "Link da proposta · envie por onde preferir",
-      copiar: () => { if (!linkP) return this.diz("Ainda não há link público para esta proposta", "info"); try { navigator.clipboard.writeText(linkP); } catch (e) {} this.diz("Link copiado", "ok"); },
+      copiar: () => { if (!linkAbs) return this.diz("Ainda não há link público para esta proposta", "info"); try { navigator.clipboard.writeText(linkAbs); } catch (e) {} this.diz("Link copiado", "ok"); },
       para: d.para, setPara: (e) => up({ para: e.target.value }), paraStyle: inp(tentou[4] && !mailOk(d.para)),
       cc: (d.cc || []).map((m, i) => ({ m, remover: () => up({ cc: (d.cc || []).filter((_, k) => k !== i) }) })),
       ccTxt: S.ccTxt || "", setCc: (e) => this.setState({ ccTxt: e.target.value, ccErro: false }),

@@ -372,6 +372,10 @@ export class PecasLigadas extends PecasLiga {
   abrirPeca(peca: string, leadId: string) {
     (super.abrirPeca as any).call(this, peca, leadId);
     if (peca === "detalhe" && leadId) this.carregarDetalhe(leadId);
+    /* O gerado (PecasLiga.abrirPeca) dá `return` no ramo "cadencia" ANTES da linha que carrega a
+       lista (código morto logo abaixo): só o picker interno da gaveta carregava. Aberta de fora
+       (Atendimento, Cliente 360), a peça dizia "Nenhuma cadência publicada" com duas publicadas. */
+    if (peca === "cadencia") (this as any).carregarCadencias();
   }
 
   carregarDetalhe(leadId: string) {

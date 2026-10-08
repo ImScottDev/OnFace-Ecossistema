@@ -53,6 +53,9 @@ export const usuarios = pgTable("usuarios", {
   teamId: uuid("team_id").references((): AnyPgColumn => teams.id),
   avatarUrl: text("avatar_url"),
   ativo: boolean("ativo").default(true).notNull(),
+  /** 'humano' | 'agente'. Agente = usuário sem login, ligado a `ai_agents` (migration 0097). */
+  tipo: text("tipo").default("humano").notNull(),
+  agenteId: uuid("agente_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -4935,3 +4938,50 @@ export const metaCapiEntregas = pgTable(
     index("idx_meta_capi_entregas_pendentes").on(table.organizacaoId, table.criadoEm),
   ],
 );
+
+// ─── Agentes como usuários: distribuição de leads e delegação (migration 0097) ───
+export const regrasDistribuicaoLeads = pgTable("regras_distribuicao_leads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  nome: text("nome").notNull(),
+  etapa: text("etapa").default("novo").notNull(),
+  alvoTipo: text("alvo_tipo").default("usuario").notNull(),
+  alvoUsuarioId: uuid("alvo_usuario_id").references(() => usuarios.id),
+  rodizioUsuarioIds: uuid("rodizio_usuario_ids").array().default([]).notNull(),
+  rodizioUltimoId: uuid("rodizio_ultimo_id"),
+  diasSemana: integer("dias_semana").array(),
+  horaInicio: text("hora_inicio"),
+  horaFim: text("hora_fim"),
+  humanoDevolucaoId: uuid("humano_devolucao_id").references(() => usuarios.id),
+  prioridade: integer("prioridade").default(100).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  createdBy: uuid("created_by").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_regras_distribuicao_org").on(table.organizacaoId, table.ativo, table.prioridade),
+]);
+
+export const delegacoesAgente = pgTable("delegacoes_agente", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  leadId: uuid("lead_id").references(() => leads.id),
+  negocioId: uuid("negocio_id").references(() => negocios.id),
+  agenteUsuarioId: uuid("agente_usuario_id").references(() => usuarios.id).notNull(),
+  humanoUsuarioId: uuid("humano_usuario_id").references(() => usuarios.id),
+  motivo: text("motivo").notNull(),
+  gatilho: text("gatilho").default("manual").notNull(),
+  diasSemResposta: integer("dias_sem_resposta").default(2).notNull(),
+  intervaloDias: integer("intervalo_dias").default(2).notNull(),
+  maxToques: integer("max_toques").default(4).notNull(),
+  toques: integer("toques").default(0).notNull(),
+  status: text("status").default("ativa").notNull(),
+  proximoToqueEm: timestamp("proximo_toque_em", { withTimezone: true }),
+  ultimoToqueEm: timestamp("ultimo_toque_em", { withTimezone: true }),
+  delegadoPor: uuid("delegado_por").references(() => usuarios.id),
+  devolvidaEm: timestamp("devolvida_em", { withTimezone: true }),
+  devolvidaMotivo: text("devolvida_motivo"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_delegacoes_agente_ativas").on(table.organizacaoId, table.status, table.proximoToqueEm),
+]);

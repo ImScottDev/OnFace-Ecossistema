@@ -12,6 +12,7 @@ import { eq, and, gte, lt, sql, inArray, isNotNull, isNull, or, desc } from "dri
 import { getFechadoPeriodo, PIPELINE_ATIVO_STATUSES } from "@/lib/relatorios/comercial";
 import { getFluxoMes, getCalendarioRenovacao } from "@/lib/financeiro/metricas";
 import { medir } from "@/lib/metricas/catalogo";
+import { condicaoMinhasConversas } from "@/lib/whatsapp/acesso";
 
 /**
  * Dias úteis (seg-sex) restantes no mês a partir de `hoje`, incluindo hoje
@@ -495,12 +496,16 @@ export interface AtendimentoResumo {
  * de inventar um threshold, expõe o tempo real de espera da mensagem mais
  * antiga da fila (`esperaMaisAntigaMinutos`), que é 100% dado real.
  */
-export async function getAtendimentoResumo(orgId: string): Promise<AtendimentoResumo> {
+export async function getAtendimentoResumo(orgId: string, usuarioId?: string): Promise<AtendimentoResumo> {
   const [wa] = await db
     .select({ total: sql<number>`count(*)`, minTs: sql<string | null>`min(${contatos.ultimaMsgAt})` })
     .from(contatos)
     .where(and(
       eq(contatos.organizacaoId, orgId),
+      // Com usuário: só as conversas dele (a mesma regra "Minhas" da tela de Atendimento e do badge da
+      // casca). Sem ele, a organização inteira. O bloco do Início aponta para /atendimento, que abre
+      // em "Minhas": o número do bloco tem que ser o que a pessoa encontra lá.
+      usuarioId ? condicaoMinhasConversas(usuarioId) : undefined,
       eq(contatos.canal, "whatsapp"),
       eq(contatos.status, "open"),
       sql`${contatos.naoLidas} > 0`,

@@ -19,6 +19,8 @@ export interface ContratoPdfData {
   assinadoNome?: string | null;
   assinadoEm?: string | Date | null;
   assinadoIp?: string | null;
+  /** PDF que vai para um provedor externo assinar: o selo "Aguardando assinatura" ficaria carimbado no documento final já assinado. */
+  semSelo?: boolean;
 }
 
 function esc(s: unknown): string {
@@ -95,11 +97,11 @@ export function contratoPdfHtml(ct: ContratoPdfData): string {
     ${corpoEhHtml(corpo) ? "" : `<h1>${esc(ct.descricao || "Contrato")}</h1>`}
     <p class="sub">${esc(ct.clienteNome || "")} · criado em ${dataBR(ct.createdAt)}</p>
     <div class="corpo">${corpoHtml}</div>
-    <div class="evidencia">
+    ${ct.semSelo ? "" : `<div class="evidencia">
       <p class="status">${ct.assinado ? "Assinado" : "Aguardando assinatura"}</p>
       ${ct.assinado ? `<p>Aceite eletrônico simples (nome + IP + timestamp) — não é assinatura digital qualificada.</p>
       <p>Assinado por ${esc(ct.assinadoNome)} em ${dataBR(ct.assinadoEm)}${ct.assinadoIp ? ` · IP ${esc(ct.assinadoIp)}` : ""}</p>` : ""}
-    </div>
+    </div>`}
   </div>
 </body></html>`;
 }

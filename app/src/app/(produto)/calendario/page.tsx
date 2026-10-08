@@ -12,13 +12,16 @@ export const metadata = { title: "Calendário" };
 export const dynamic = "force-dynamic";
 
 export default async function CalendarioPage({ searchParams }: {
-  searchParams: Promise<{ visao?: string; dia?: string }>;
+  searchParams: Promise<{ visao?: string; dia?: string; escopo?: string }>;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
   const sp = await searchParams;
-  const reunioes = await reunioesDaAgenda(ctx.organizacaoId, ctx.userId, isAdminView(ctx.userRole));
+  // Padrão: só a minha agenda, para todo mundo (inclusive admin). A equipe inteira é opt-in
+  // (`?escopo=equipe`) e só para quem gere.
+  const verTudo = sp.escopo === "equipe" && isAdminView(ctx.userRole);
+  const reunioes = await reunioesDaAgenda(ctx.organizacaoId, ctx.userId, verTudo);
   const tarefas = await tarefasDaAgenda(ctx.organizacaoId, ctx.userId);
   // Responsáveis reais das reuniões — no lugar do fallback fictício da Liga.
   const equipe = [...new Set(reunioes.map((r) => r.responsavel).filter((n): n is string => !!n))];

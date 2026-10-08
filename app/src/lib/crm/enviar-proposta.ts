@@ -12,7 +12,7 @@
 import { db } from "@/lib/db";
 import { propostas, propostaItens, leads, atividades } from "@/lib/db/schema";
 import { eq, asc, and } from "drizzle-orm";
-import { sendResendEmail } from "@/lib/email/resend";
+import { sendResendEmail, type ResendResult } from "@/lib/email/resend";
 import { buildPropostaEmail } from "@/lib/email/proposta-email";
 import { publicarEvento } from "@/lib/events/outbox";
 import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
@@ -27,6 +27,75 @@ function validadePadraoIso(): string {
   const data = new Date();
   data.setUTCDate(data.getUTCDate() + 10);
   return data.toISOString().slice(0, 10);
+}
+
+/**
+ * O e-mail que leva o link público ao cliente. Uma porta só: o envio legado
+ * (Hono /propostas/:id/enviar) e o envio do módulo Vendas (`acaoEnviar`) usam
+ * esta função. O envio novo só gravava `status = enviada` e a tela dizia "avisa
+ * o cliente por e-mail": ninguém recebia o link.
+ */
+export async function dispararEmailDaProposta(p: {
+  para: string; clienteNome: string; empresa?: string | null;
+  proposta: Pick<PropostaRow, "numero" | "versao" | "moeda">;
+  itens: Array<{ nome: string; tipo: string; subtotal: number }>;
+  totalRecorrente: number; totalAvulso: number; linkPublico: string;
+  validade?: string | null; remetenteNome?: string | null;
+}) {
+  const { subject, html } = buildPropostaEmail({
+    clienteNome: p.clienteNome, empresa: p.empresa, numero: p.proposta.numero, versao: p.proposta.versao,
+    moeda: p.proposta.moeda || "BRL", itens: p.itens, totalRecorrente: p.totalRecorrente, totalAvulso: p.totalAvulso,
+    checkoutUrl: p.linkPublico, validade: p.validade, remetenteNome: p.remetenteNome ?? null,
+  });
+  return sendResendEmail({ to: p.para, subject, html });
+}
+
+/**
+ * Depois de `lib/vendas/propostas.enviarProposta` marcar a proposta como
+ * enviada: manda o e-mail com o link e registra na timeline o que de fato
+ * aconteceu (enviado, sem provedor de e-mail configurado, falhou, sem
+ * destinatário). Nunca lança: o envio da proposta já aconteceu.
+ */
+export async function avisarClienteDaPropostaEnviada(opts: {
+  propostaId: string; organizacaoId: string; userId: string; userName?: string | null; para?: string | null;
+}): Promise<{ link: string; email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou"; erro: string | null }> {
+  const link = `${appUrl()}/p/${opts.propostaId}`;
+  try {
+    const [proposta] = await db.select().from(propostas)
+      .where(and(eq(propostas.id, opts.propostaId), eq(propostas.organizacaoId, opts.organizacaoId))).limit(1);
+    if (!proposta) return { link, email: "falhou", erro: "Proposta não encontrada" };
+    const [lead] = await db.select({ nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email })
+      .from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
+    const destino = (opts.para || lead?.email || "").trim();
+    const itens = await db.select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal })
+      .from(propostaItens).where(eq(propostaItens.propostaId, opts.propostaId)).orderBy(asc(propostaItens.ordem));
+
+    let email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou" = "sem_destinatario";
+    let erro: string | null = null;
+    if (destino) {
+      const r = await dispararEmailDaProposta({
+        para: destino, clienteNome: [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "", empresa: lead?.empresa,
+        proposta, itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
+        totalRecorrente: parseFloat(proposta.totalRecorrente || "0"), totalAvulso: parseFloat(proposta.totalAvulso || "0"),
+        linkPublico: link, validade: proposta.dataValidade, remetenteNome: opts.userName ?? null,
+      });
+      email = r.sent ? "enviado" : r.skipped ? "sem_provedor" : "falhou";
+      erro = r.error ?? null;
+    }
+    await db.insert(atividades).values({
+      organizacaoId: opts.organizacaoId, leadId: proposta.leadId, negocioId: proposta.negocioId, usuarioId: opts.userId,
+      tipo: "proposta_enviada",
+      titulo: `Link da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}: ${
+        email === "enviado" ? `e-mail enviado para ${destino}` : email === "sem_provedor" ? "e-mail não disparado (provedor de e-mail não configurado)"
+        : email === "falhou" ? "falha ao enviar o e-mail" : "sem e-mail do contato, envie o link manualmente"}`,
+      descricao: erro ?? link,
+      dados: { propostaId: proposta.id, linkPublico: link, email, para: destino || null },
+    });
+    return { link, email, erro };
+  } catch (e) {
+    console.error("[enviar-proposta] aviso ao cliente falhou:", e);
+    return { link, email: "falhou", erro: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export type EnviarPropostaResult =
@@ -117,25 +186,13 @@ export async function enviarPropostaComCheckout(opts: {
   const clienteNome = [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "";
   const linkPublico = `${base}/p/${proposta.id}`;
 
-  let emailResult: { sent: boolean; skipped?: boolean; error?: string | null; id?: string | null } = {
-    sent: false, skipped: true, error: null, id: null,
-  };
-  if (!skipEmail && lead?.email) {
-    const { subject, html } = buildPropostaEmail({
-      clienteNome,
-      empresa: lead.empresa,
-      numero: proposta.numero,
-      versao: proposta.versao,
-      moeda: proposta.moeda || "BRL",
-      itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
-      totalRecorrente,
-      totalAvulso,
-      checkoutUrl: linkPublico,
-      validade: dataValidadeEfetiva,
-      remetenteNome: userName ?? null,
-    });
-    emailResult = await sendResendEmail({ to: lead.email, subject, html });
-  }
+  const emailResult: ResendResult = !skipEmail && lead?.email
+    ? await dispararEmailDaProposta({
+        para: lead.email, clienteNome, empresa: lead.empresa, proposta,
+        itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
+        totalRecorrente, totalAvulso, linkPublico, validade: dataValidadeEfetiva, remetenteNome: userName ?? null,
+      })
+    : ({ sent: false, skipped: true } satisfies ResendResult);
 
   const valorTimeline = temRecorrente
     ? `valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}`

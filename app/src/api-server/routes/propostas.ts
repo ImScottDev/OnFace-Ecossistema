@@ -563,7 +563,8 @@ app.get("/propostas/:id/publica", async (c) => {
     .where(eq(propostaItens.propostaId, id))
     .orderBy(asc(propostaItens.ordem));
 
-  await registrarVisualizacao(proposta);
+  // ?acompanhar=1 é o polling da página aberta: lê o estado sem contar nova visita.
+  if (c.req.query("acompanhar") !== "1") await registrarVisualizacao(proposta);
 
   // Commercial Core v2 (ADR-EXEC-021): grupos só existem DEPOIS do aceite —
   // cada grupo tem seu PRÓPRIO próximo passo/estado, independente dos

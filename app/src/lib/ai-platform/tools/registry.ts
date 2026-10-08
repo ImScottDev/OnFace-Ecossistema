@@ -13,6 +13,8 @@ import { publicarEvento } from "@/lib/events/outbox";
 import { adicionarTag, removerTag } from "@/lib/crm/tags";
 import type { Ator } from "@/lib/vendas/dominio";
 import { executarAcaoAvulsa } from "@/lib/cadencia/cadence-engine";
+import { NEXO_TOOLS } from "@/lib/nexo/ferramentas";
+import { devolverAoHumano, resolverHumanoDeDevolucao } from "@/lib/agentes/handover";
 
 export type AgentToolContext = {
   organizacaoId: string;
@@ -20,6 +22,12 @@ export type AgentToolContext = {
   runId: string;
   contatoId?: string | null;
   leadId?: string | null;
+  /** Quem conversa com o agente (NEXO). As ferramentas de leitura do painel filtram por ele. */
+  usuarioId?: string | null;
+  /** Usuário do sistema que representa o agente (assina o que ele faz). */
+  agenteUsuarioId?: string | null;
+  /** A pessoa clicou em Confirmar no chat para esta ação (envia, apaga ou não desfaz). */
+  confirmado?: boolean;
   mode: "test" | "live";
   autonomy: "suggest" | "approval" | "autonomous";
   /**
@@ -59,7 +67,7 @@ const stringProp = (description: string) => ({ type: "string", description });
  * `ref` carrega o id do agente, que é o que responde "qual agente fez isto".
  */
 const atorDoAgente = (ctx: AgentToolContext): Ator => ({
-  tipo: "AI_AGENT", usuarioId: null, ref: ctx.agentId ?? null,
+  tipo: "AI_AGENT", usuarioId: ctx.agenteUsuarioId ?? null, ref: ctx.agentId ?? null,
 });
 
 function preview(ctx: AgentToolContext, operation: string, input: Record<string, unknown>): AgentToolResult | null {
@@ -187,6 +195,11 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       await db.insert(aiSdrContatoState).values({ contatoId: ctx.contatoId, organizacaoId: ctx.organizacaoId, aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(), handoffMotivo: String(input.motivo) })
         .onConflictDoUpdate({ target: aiSdrContatoState.contatoId, set: { aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(), handoffMotivo: String(input.motivo), updatedAt: new Date() } });
       await db.insert(aiAlerts).values({ organizacaoId: ctx.organizacaoId, kind: "handoff", severity: input.prioridade === "urgente" ? "critical" : "warning", title: "Agente solicitou atendimento humano", body: String(input.motivo), refKind: "contato", refId: ctx.contatoId });
+      // Agente que é responsável do lead devolve o responsável a uma pessoa (regra/delegação), com aviso e nota de contexto.
+      if (ctx.agenteUsuarioId) {
+        const h = await devolverAoHumano({ organizacaoId: ctx.organizacaoId, agenteUsuarioId: ctx.agenteUsuarioId, agentId: ctx.agentId, leadId: ctx.leadId, contatoId: ctx.contatoId, motivo: String(input.motivo), resumo: input.mensagem_transicao ? `Mensagem de transição: ${String(input.mensagem_transicao)}` : null, prioridade: input.prioridade ? String(input.prioridade) : null });
+        return { ok: true, data: { status: "human_required", responsavelId: h.humanoId, destino: h.origem }, handoff: true };
+      }
       return { ok: true, data: { status: "human_required" }, handoff: true };
     },
   },
@@ -208,7 +221,8 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
           title: String(input.titulo),
           description: input.descricao ? String(input.descricao) : undefined,
           priority: String(input.prioridade ?? "media"),
-          owner_id: contact?.responsavelId ?? admin?.id ?? undefined,
+          // Se o dono é a própria agente, a tarefa é de uma pessoa (a que receberia o handover).
+          owner_id: (contact?.responsavelId && contact.responsavelId !== ctx.agenteUsuarioId ? contact.responsavelId : ctx.agenteUsuarioId ? (await resolverHumanoDeDevolucao({ organizacaoId: ctx.organizacaoId, agenteUsuarioId: ctx.agenteUsuarioId, leadId }) ).id : null) ?? admin?.id ?? undefined,
           due_minutes: venceMin,
         },
       });
@@ -238,6 +252,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       if (!current) return { ok: false, error: "lead não encontrado" };
       const qual = Object.fromEntries(Object.entries({ dor: input.dor, tomador_decisao: input.tomador, fit: input.fit, proxima_acao: input.proxima_acao }).filter(([, value]) => value != null && String(value).trim()));
       const [lead] = await db.update(leads).set({ ...(input.empresa ? { empresa: String(input.empresa) } : {}), ...(input.cnpj ? { empresaCnpj: String(input.cnpj) } : {}), ...(input.cargo ? { cargo: String(input.cargo) } : {}), ...(input.setor ? { empresaSetor: String(input.setor) } : {}), ...(input.porte ? { empresaPorte: String(input.porte) } : {}), camposCustom: { ...((current.camposCustom as Record<string, unknown>) ?? {}), qualificacao: { ...((((current.camposCustom as Record<string, unknown>)?.qualificacao as Record<string, unknown>) ?? {})), ...qual } }, updatedAt: new Date() }).where(and(eq(leads.id, ctx.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).returning({ id: leads.id });
+      if (lead) await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: "Qualificação registrada pela agente", descricao: Object.entries({ ...qual, empresa: input.empresa, cargo: input.cargo }).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("\n") || null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId, ferramenta: "lead.qualify" } });
       return lead ? { ok: true, data: lead } : { ok: false, error: "lead não encontrado" };
     },
   },
@@ -305,7 +320,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "activity.note", input); if (simulated) return simulated;
       if (!ctx.leadId) return { ok: false, error: "lead ausente" };
-      const [row] = await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, tipo: "nota_agente", titulo: String(input.titulo), descricao: input.descricao ? String(input.descricao) : null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId } }).returning({ id: atividades.id });
+      const [row] = await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: String(input.titulo), descricao: input.descricao ? String(input.descricao) : null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId } }).returning({ id: atividades.id });
       return { ok: true, data: row };
     },
   },
@@ -415,6 +430,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       return { ok: true, data: { budgets, month: usage } };
     },
   },
+  ...NEXO_TOOLS,
 ];
 
 const byId = new Map(AGENT_TOOLS.map((tool) => [tool.id, tool]));

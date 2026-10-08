@@ -80,6 +80,9 @@ export type EventoDominio =
   | "ConversationClosed"
   | "ConversationReopened"
   | "ConversationMessageReceived"
+  // IA pausada/retomada numa conversa (de → para e quem, para medir quanto o agente atende).
+  | "ConversationAiPaused"
+  | "ConversationAiResumed"
   | "TagAdded"
   | "TagRemoved"
   // Nota escrita por automação. É conteúdo que alguém lê na conta, e por isso

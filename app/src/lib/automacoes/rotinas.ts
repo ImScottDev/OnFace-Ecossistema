@@ -38,6 +38,7 @@ export const ROTINAS_AGENDADAS: RotinaAgendada[] = [
   { chave: "ai-sdr-outreach", nome: "1º contato do Agente SDR", frequencia: "a cada 5 min", grupo: "agente_sdr", oQueFaz: "Lead novo em Pré-vendas recebe a primeira mensagem do agente e passa para Em contato." },
   { chave: "ai-sdr-retry", nome: "Retentativa do Agente SDR", frequencia: "a cada 15 min", grupo: "agente_sdr", oQueFaz: "Lead em silêncio recebe nova tentativa (~2h, 24h, 40h)." },
   { chave: "ai-sdr-meeting-confirmation", nome: "Confirmação de reunião", frequencia: "todo dia às 9h", grupo: "agente_sdr", oQueFaz: "Reuniões marcadas para hoje recebem confirmação por WhatsApp." },
+  { chave: "agentes-autonomia", nome: "Autonomia dos agentes de IA", frequencia: "a cada 1 min", grupo: "agente_sdr", oQueFaz: "Agentes que são responsáveis por leads fazem o contato ativo, o follow-up delegado e a sincronização como usuários, dentro dos limites do agente." },
   { chave: "sdr-followup-escalation", nome: "Escalonamento de follow-up", frequencia: "a cada 15 min", grupo: "vendas", oQueFaz: "Lead parado 48h+ em Em contato sobe para Follow up." },
   { chave: "sla-check", nome: "SLA do pipeline", frequencia: "a cada 30 min", grupo: "vendas", oQueFaz: "Negócio parado além do limite da etapa gera alerta." },
   { chave: "follow-up-proposta", nome: "Follow-up de proposta", frequencia: "a cada 1 h", grupo: "vendas", oQueFaz: "Proposta apresentada parada 3+ dias notifica o dono e cria tarefa." },

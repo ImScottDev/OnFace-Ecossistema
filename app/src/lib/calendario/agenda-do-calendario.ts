@@ -28,10 +28,9 @@ const empresaDoLeadDoNegocio = alias(empresas, "empresa_do_lead_do_negocio");
 /**
  * Todas as reuniões da organização (ou só as do usuário, fora da visão gestão).
  *
- * Por que a org inteira para admin: a rota Hono /calendario/eventos escopa por
- * `responsavelId = userId` mesmo para admin, e as 305 reuniões do banco são de
- * quatro closers/SDRs — o calendário de quem gere ficaria vazio sempre. Quem é
- * closer/sdr continua vendo só as próprias.
+ * Padrão é SEMPRE o próprio usuário (responsavelId = userId), admin inclusive: o Scott
+ * abriu o calendário e viu as reuniões de todo mundo. `verTudo` (equipe inteira) é
+ * opt-in de quem gere, pedido pela tela com `?escopo=equipe`.
  *
  * Sem recorte de data porque a Liga navega mês a mês inteiramente no cliente
  * (ant/prox/mini só mexem em `state.ref`; não há refetch).

@@ -121,7 +121,10 @@ export async function POST(req: NextRequest) {
 
   // O dono vem da política da organização; não existe nome de pessoa gravado
   // no webhook. Sem política válida o lead continua visível na fila sem dono.
-  const responsavelInboundId = await resolverResponsavelInbound(org.id);
+  // Regra de distribuição (Ajustes > Leads) antes do padrão: humano, agente ou rodízio, com dia/horário.
+  const { resolverPorRegra } = await import("@/lib/agentes/distribuicao");
+  const responsavelInboundId = (await resolverPorRegra({ organizacaoId: org.id, etapa: "novo" }))?.responsavelId
+    ?? await resolverResponsavelInbound(org.id);
   const ipAddress =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||

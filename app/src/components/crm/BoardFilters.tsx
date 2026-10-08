@@ -16,6 +16,8 @@ export interface OrgUsuario {
   email: string;
   role: string;
   avatarUrl?: string | null;
+  /** 'agente' = agente de IA que é usuário do sistema. */
+  tipo?: string;
 }
 
 /** Lista de usuários ativos da org (id → nome/avatar) + id do usuário logado. */

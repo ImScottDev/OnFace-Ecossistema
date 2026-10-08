@@ -57,7 +57,7 @@ export const NAVEGACAO: AreaNav[] = [
     label: "Atendimento",
     href: "/atendimento",
     icon: Headphones,
-    apoio: "Conversas abertas de todos os canais",
+    apoio: "Conversas de WhatsApp dos seus números",
   },
   {
     label: "Vendas",
@@ -124,7 +124,7 @@ export const NAVEGACAO: AreaNav[] = [
  * conteúdo repetindo o que o menu já diz. */
 export const APOIO_DO_DESTINO: Record<string, string> = {
   "/inicio": "O dia da operação num lugar só",
-  "/atendimento": "Conversas abertas de todos os canais",
+  "/atendimento": "Conversas de WhatsApp dos seus números",
   "/pre-vendas": "Leads, qualificação e saídas",
   "/pipeline": "Oportunidades comerciais, uma família por oportunidade",
   "/propostas": "Propostas enviadas e em negociação",

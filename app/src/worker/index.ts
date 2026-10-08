@@ -854,6 +854,35 @@ async function handleAiSdrResponse(params: {
 }) {
   const { contatoId, contatoNome, leadId, organizacaoId, sessaoId, currentMessage, phone, sourceMessageId } = params;
 
+  /* IA pausada nesta conversa (botão do Atendimento ou handoff do agente): vale para o
+     agente nativo também. Antes só o SDR legado lia `ai_ativo`; o agente publicado seguia
+     respondendo a conversa que uma pessoa tinha assumido. Handoff "leve" não pausa (o
+     legado reativa abaixo), como já era. */
+  {
+    const { aiSdrContatoState: pausaT } = await import("../lib/db/schema");
+    const [pausa] = await db.select({ ativo: pausaT.aiAtivo, motivo: pausaT.handoffMotivo }).from(pausaT)
+      .where(eq(pausaT.contatoId, contatoId)).limit(1);
+    if (pausa && !pausa.ativo && !["criterio_concluido", "pedido_contato"].includes(pausa.motivo ?? "")) {
+      console.log(`[AI] IA pausada na conversa ${contatoId} (${pausa.motivo ?? "sem motivo"}), não responde`);
+      return;
+    }
+  }
+
+  // Agente como RESPONSÁVEL (usuário do sistema): se o responsável do lead/conversa é uma agente,
+  // ela atende por conta própria (com horário, taxa e parada de segurança). Quem não tem agente
+  // como responsável segue o fluxo de antes.
+  try {
+    const { acionarAgenteParaMensagem } = await import("../lib/agentes/autonomia");
+    const tratado = await acionarAgenteParaMensagem({ organizacaoId, contatoId, leadId, mensagem: currentMessage, sourceMessageId: sourceMessageId ?? null });
+    if (tratado.tratado) {
+      console.log(`[Agentes] contato ${contatoId}: ${tratado.resultado}${tratado.motivo ? ` (${tratado.motivo})` : ""}`);
+      return;
+    }
+  } catch (err) {
+    console.error(`[Agentes] falha ao acionar a agente responsável do contato ${contatoId}:`, err);
+    return;
+  }
+
   // Callpilot nativo (port Deskcomm, P0 #1):
   // se a organização tem agente publicado elegível para este evento, o runtime novo assume a
   // conversa e o legado abaixo nem roda. Se o agente nativo existir mas falhar de verdade, NÃO
@@ -1629,6 +1658,8 @@ async function runAiSdrFirstContactSweep(): Promise<{ iniciados: number }> {
         eq(leadsT.sdrStatus, "pending"),
         isNotNull(leadsT.telefone),
         gte(leadsT.createdAt, janelaMaxima),
+        // Lead de responsável-agente (usuário tipo "agente") é da agente, não do SDR legado.
+        rawSql`(${leadsT.responsavelId} IS NULL OR NOT EXISTS (SELECT 1 FROM usuarios ua WHERE ua.id = ${leadsT.responsavelId} AND ua.tipo = 'agente'))`,
       ))
       .limit(20); // teto por rodada — evita rajada se represar muito lead de uma vez
 
@@ -2593,7 +2624,11 @@ const whatsappOutgoingWorker = new Worker(
       // For audio: use converted OGG (not raw browser WebM) so it plays in CRM
       let savedMediaUrl: string | null = null;
       const mediaToSave = tipo === "audio" && convertedAudioData ? convertedAudioData : media;
-      if (mediaToSave && ["image", "audio", "video", "document", "sticker"].includes(tipo)) {
+      /* Envio pelo Atendimento já guardou o binário no acervo (file_objects) e gravou
+         `media_url`; salvar de novo em disco criaria uma segunda cópia fora do acervo. */
+      const [jaNoAcervo] = await db.select({ u: whatsappMensagens.mediaUrl }).from(whatsappMensagens)
+        .where(eq(whatsappMensagens.id, messageId)).limit(1);
+      if (!jaNoAcervo?.u && mediaToSave && ["image", "audio", "video", "document", "sticker"].includes(tipo)) {
         try {
           savedMediaUrl = saveBase64ToDisk(mediaToSave, messageId, tipo, fileName);
           console.log(`[WA-Out] Media saved: ${savedMediaUrl}`);
@@ -2743,6 +2778,24 @@ const slaWorker = new Worker(
         if (res.iniciados > 0) console.log(`[AI-SDR-Outreach] ${res.iniciados} leads: Novo → Em Contato (automático)`);
       } catch (e) {
         console.error("[AI-SDR-Outreach] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
+    if (job.name === "agentes-autonomia") {
+      // Agentes-usuários: sincroniza o usuário de cada agente publicado, delega por tag,
+      // inicia o contato dos leads novos atribuídos a agente e executa os toques de follow-up vencidos.
+      try {
+        const { sincronizarUsuariosDosAgentes } = await import("../lib/agentes/usuario-do-agente");
+        const { delegarPorTag, iniciarLeadsNovosDaAgente, processarDelegacoesVencidas } = await import("../lib/agentes/autonomia");
+        const orgs = await db.execute<{ id: string }>(rawSql`SELECT id::text FROM organizacoes`);
+        for (const o of orgs) await sincronizarUsuariosDosAgentes(o.id);
+        const porTag = await delegarPorTag();
+        const novos = await iniciarLeadsNovosDaAgente();
+        const toques = await processarDelegacoesVencidas();
+        if (porTag || novos.iniciados || toques.toques || toques.devolvidas) console.log(`[Agentes] tag:${porTag} novos:${novos.iniciados} toques:${toques.toques} devolvidas:${toques.devolvidas}`);
+      } catch (e) {
+        console.error("[Agentes] erro no sweep de autonomia:", e instanceof Error ? e.message : e);
       }
       return;
     }
@@ -3958,7 +4011,7 @@ async function removerSchedulersObsoletos(queue: Queue, chavesAtuais: string[]):
 
 /** Chaves dos schedulers da fila `scheduled-jobs` nesta versão — fonte da limpeza acima. */
 const SCHEDULERS_JOBS_AGENDADOS = [
-  "sla-check", "sdr-followup-escalation", "ai-sdr-outreach", "ai-sdr-retry",
+  "sla-check", "sdr-followup-escalation", "ai-sdr-outreach", "agentes-autonomia", "ai-sdr-retry",
   "ai-sdr-meeting-confirmation", "stripe-sync", "reconcile-pagamentos", "expirar-propostas",
   "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep", "calendar-sync-retry",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
@@ -3971,6 +4024,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("sla-check", { every: 30 * 60 * 1000 }, { name: "check-sla" });
   await scheduledQueue.upsertJobScheduler("sdr-followup-escalation", { every: 15 * 60 * 1000 }, { name: "sdr-followup-escalation" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-outreach", { every: 5 * 60 * 1000 }, { name: "ai-sdr-outreach" });
+  await scheduledQueue.upsertJobScheduler("agentes-autonomia", { every: 60 * 1000 }, { name: "agentes-autonomia" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-retry", { every: 15 * 60 * 1000 }, { name: "ai-sdr-retry" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-meeting-confirmation", { pattern: "0 9 * * *", tz: "America/Sao_Paulo" }, { name: "ai-sdr-meeting-confirmation" });
   // Stripe = fonte da verdade de billing AI: sync a cada 30 min (polling; vira webhook quando publicar)

@@ -115,19 +115,26 @@ export async function processarAceiteDaProposta(opts: {
     ip: opts.ip ?? null,
   });
 
-  await publicarEvento({
-    organizacaoId: opts.organizacaoId, eventType: "ProposalAccepted", aggregateType: "proposta", aggregateId: opts.propostaId,
-    payload: { propostaId: opts.propostaId, negocioId: proposta.negocioId, origem: opts.origem },
-  });
-
-  // Módulo Vendas: `aceita_em` e a linha do tempo comercial, com o gate que
-  // ainda falta — Bloco 03 §26, aceite não é ganho.
+  // Módulo Vendas: `aceita_em`, linha do tempo comercial e o ProposalAccepted
+  // canônico (ponte-evento-canonico, com ids de pessoa/oportunidade e entrega à
+  // Meta) saem desta chamada. Publicar o evento também aqui gravava DOIS
+  // ProposalAccepted no outbox: a automação "proposta aceita" disparava duas
+  // vezes e a timeline mostrava "Proposta aceita" em dobro. O evento direto só
+  // existe como reserva, se o registro do módulo falhar. Bloco 03 §26: aceite
+  // não é ganho.
   {
     const { registrarRespostaDoCliente } = await import("@/lib/vendas/propostas");
     await registrarRespostaDoCliente({
       organizacaoId: opts.organizacaoId, propostaId: opts.propostaId,
       tipo: "aceita", metadados: { origem: opts.origem, ip: opts.ip ?? null },
-    }).catch((e) => console.error("[proposta-aceite] falha ao registrar aceite no módulo Vendas:", e));
+    }).catch(async (e) => {
+      console.error("[proposta-aceite] falha ao registrar aceite no módulo Vendas:", e);
+      await publicarEvento({
+        organizacaoId: opts.organizacaoId, eventType: "ProposalAccepted", aggregateType: "proposta", aggregateId: opts.propostaId,
+        payload: { propostaId: opts.propostaId, negocioId: proposta.negocioId, origem: opts.origem },
+        idempotencyKey: `proposal-accepted:${opts.propostaId}`,
+      });
+    });
   }
 
   await syncOportunidadeItensFromProposta(opts.propostaId);
@@ -165,7 +172,13 @@ export async function processarAceiteDaProposta(opts: {
     // Frente 2C.1 — a família é um PISO de exigência: PABX/White Label
     // exigem contrato mesmo quando o item veio do catálogo como
     // PAGAMENTO_DIRETO (que é o estado de 100% do catálogo real hoje).
-    if (await exigeContratoNoGrupoAsync(grupo.id, grupo.commercialModel, familia)) {
+    // Spec Vendas §16: Callface AI também se vende POR CONTRATO. O modo foi
+    // escolhido ANTES do envio (propostas.modo_fechamento) e muda o que vem
+    // depois do aceite; sem esta leitura o modo CONTRACT era gravado e ignorado,
+    // e o cliente caía no checkout em vez da assinatura. PABX/White Label já
+    // exigem contrato pelo piso da família e não passam por aqui.
+    const contratoPeloModo = familia === "CALLFACE_AI" && proposta.modoFechamento === "CONTRACT";
+    if (contratoPeloModo || await exigeContratoNoGrupoAsync(grupo.id, grupo.commercialModel, familia)) {
       try {
         // `formarGruposComerciais` define o status inicial pelo MODELO do item.
         // Quando é a família que exige o contrato (PABX/White Label com item
@@ -191,6 +204,14 @@ export async function processarAceiteDaProposta(opts: {
           organizacaoId: opts.organizacaoId, eventType: "SignatureRequested", aggregateType: "contrato", aggregateId: contratoId,
           payload: { propostaId: opts.propostaId, negocioId: proposta.negocioId, grupoComercialId: grupo.id, commercialModel: grupo.commercialModel },
         });
+        // Linha do tempo do negócio: o vendedor vê que o contrato saiu para assinatura.
+        await import("@/lib/vendas/eventos").then(({ registrarEvento }) => registrarEvento({
+          organizacaoId: opts.organizacaoId, tipo: "ContractCreated",
+          ator: { tipo: "SYSTEM", usuarioId: null, ref: "proposta-aceite" },
+          propostaId: opts.propostaId, negocioId: proposta.negocioId, leadId: proposta.leadId,
+          contexto: { contratoId, grupoComercialId: grupo.id, serviceFamily: familia, comLinkDeAssinatura: Boolean(signingUrl) },
+          timeline: { tipo: "nota", titulo: "Contrato enviado para assinatura", descricao: signingUrl ? "O cliente recebeu o link de assinatura." : "Contrato gerado; o link de assinatura ainda não chegou." },
+        })).catch((e) => console.error("[proposta-aceite] falha ao registrar envio do contrato na timeline:", e));
         resultados.push({
           grupoId: grupo.id,
           commercialModel: grupo.commercialModel,

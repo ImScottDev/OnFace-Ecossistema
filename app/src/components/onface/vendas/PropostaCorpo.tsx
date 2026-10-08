@@ -8,7 +8,9 @@
  * coluna estreita, `Bloco` abre em página.
  */
 
+import * as React from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { FileText, Send } from "lucide-react";
 import {
   ROTULO_FAMILIA, ROTULO_MODO_FECHAMENTO, ROTULO_STATUS_PROPOSTA,
@@ -103,9 +105,13 @@ export function CorpoProposta({ proposta, pendente, bloqueio, variante, acoes }:
         <div className="ov-bloqueio" role="status">
           <FileText aria-hidden />
           <div>
-            Proposta aceita. A oportunidade continua aberta até a evidência de fechamento:{" "}
-            {proposta.modoFechamento === "CONTRACT" ? "contrato assinado" : "pagamento confirmado"}.
-            Aceite não é ganho.
+            {proposta.contratos.some((c) => c.assinaturaStatus === "assinado")
+              ? "Proposta aceita e contrato assinado. A assinatura é a evidência de fechamento desta oportunidade."
+              : <>
+                  Proposta aceita. A oportunidade continua aberta até a evidência de fechamento:{" "}
+                  {proposta.modoFechamento === "CONTRACT" ? "contrato assinado" : "pagamento confirmado"}.
+                  Aceite não é ganho.
+                </>}
           </div>
         </div>
       ) : null}
@@ -224,6 +230,9 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
         </Wrap>
       ) : null}
 
+      <LinkPublico proposta={proposta} Wrap={Wrap} />
+      <ContratoDaProposta proposta={proposta} Wrap={Wrap} />
+
       <Wrap titulo="Tracking">
         <dl style={{ margin: 0 }}>
           <Campo rotulo="Enviada">{dataHora(proposta.tracking.enviadaEm)}</Campo>
@@ -255,5 +264,52 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
         )}
       </Wrap>
     </>
+  );
+}
+
+const ROTULO_ASSINATURA: Record<string, string> = {
+  pendente: "Aguardando assinatura", assinado: "Assinado", recusado: "Recusado pelo signatário",
+  cancelado: "Cancelado", expirado: "Expirado",
+};
+
+/** O link que o cliente abre. Existe desde o envio; antes dele não há o que copiar. */
+function LinkPublico({ proposta, Wrap }: { proposta: DetalheProposta; Wrap: typeof Secao }) {
+  if (proposta.status === "rascunho" || proposta.status === "substituida") return null;
+  const copiar = async () => {
+    const link = `${window.location.origin}/p/${proposta.id}`;
+    try { await navigator.clipboard.writeText(link); toast.success("Link da proposta copiado."); }
+    catch { toast.error("Não consegui copiar. Selecione o link e copie."); }
+  };
+  return (
+    <Wrap titulo="Link para o cliente">
+      <p className="ov-nota">O cliente vê a proposta, aceita, pede ajuste ou recusa por este endereço, sem login.</p>
+      <div className="ov-acoes">
+        <button type="button" className="ov-botao" data-variante="contorno" onClick={copiar}>Copiar link</button>
+        <a className="ov-botao" data-variante="contorno" href={`/p/${proposta.id}`} target="_blank" rel="noreferrer">Abrir como cliente</a>
+      </div>
+    </Wrap>
+  );
+}
+
+/** O que o aceite gerou: estado da assinatura e o documento final assinado. */
+function ContratoDaProposta({ proposta, Wrap }: { proposta: DetalheProposta; Wrap: typeof Secao }) {
+  if (proposta.contratos.length === 0) return null;
+  return (
+    <Wrap titulo="Contrato e assinatura">
+      <dl style={{ margin: 0 }}>
+        {proposta.contratos.map((c) => (
+          <React.Fragment key={c.id}>
+            <Campo rotulo={c.documento}>{ROTULO_ASSINATURA[c.assinaturaStatus] ?? c.assinaturaStatus}</Campo>
+            {c.signatarios.length ? <Campo rotulo="Signatários">{c.signatarios.join(", ")}</Campo> : null}
+            {c.assinadoEm ? <Campo rotulo="Assinado em">{dataHora(c.assinadoEm)}</Campo> : null}
+          </React.Fragment>
+        ))}
+      </dl>
+      {proposta.contratos.filter((c) => c.pdfFinalDisponivel).map((c) => (
+        <a key={c.id} className="ov-botao" data-variante="contorno" href={`/api/contratos/${c.id}/pdf-final`} target="_blank" rel="noreferrer">
+          Baixar {c.documento.toLowerCase()} assinado
+        </a>
+      ))}
+    </Wrap>
   );
 }

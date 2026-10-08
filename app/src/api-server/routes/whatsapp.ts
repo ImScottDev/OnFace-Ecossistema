@@ -19,6 +19,8 @@ import {
 } from "@/lib/whatsapp/client";
 import { randomBytes } from "crypto";
 import { appUrl } from "@/lib/app-url";
+import { guardarNoAcervo } from "@/lib/arquivos/servico";
+import { decodificarAnexo } from "@/lib/atendimento/anexo-whatsapp";
 
 const app = new Hono();
 
@@ -150,6 +152,30 @@ const sendMessageSchema = z.object({
   message: "contatoId ou leadId obrigatorio",
 });
 
+/**
+ * O número precisa estar de pé para a mensagem sair. `whatsapp_sessao.status` só
+ * é atualizado quando alguém abre Ajustes, então ele atrasa: antes de recusar,
+ * pergunta ao wuzapi (mesmo `getStatus` da tela de números) e corrige a linha.
+ * Sem isso a mensagem entrava na fila, o worker falhava em silêncio e o usuário
+ * via um balão "enviado" que nunca saiu.
+ */
+async function numeroConectado(sessaoId: string): Promise<{ ok: true } | { ok: false; erro: string }> {
+  const [s] = await db.select().from(whatsappSessao).where(eq(whatsappSessao.id, sessaoId)).limit(1);
+  if (!s) return { ok: false, erro: "Número de WhatsApp não encontrado." };
+  const nome = (s.label || s.sessionName || "").trim();
+  if (s.status === "connected") return { ok: true };
+  const live = await getStatus(sessionToConfig(s));
+  if (live.connected) {
+    await db.update(whatsappSessao).set({ status: "connected", lastConnectedAt: new Date(), updatedAt: new Date() })
+      .where(eq(whatsappSessao.id, s.id));
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    erro: `O número ${nome ? `"${nome}" ` : ""}está desconectado, então a mensagem não foi enviada. Reconecte em Ajustes > WhatsApp.`,
+  };
+}
+
 app.post("/whatsapp/send", async (c) => {
   const ctx = await getCtx(c);
 
@@ -175,10 +201,11 @@ app.post("/whatsapp/send", async (c) => {
   let leadNome: string | null = null;
   let leadEmpresa: string | null = null;
   let resolvedNegocioAtivoId: string | null = null;
+  let sessaoDaConversa: string | null = null;
 
   if (contatoId) {
     const [contato] = await db
-      .select({ id: contatos.id, telefone: contatos.telefone, leadId: contatos.leadId, organizacaoId: contatos.organizacaoId })
+      .select({ id: contatos.id, telefone: contatos.telefone, leadId: contatos.leadId, organizacaoId: contatos.organizacaoId, sessaoId: contatos.sessaoId })
       .from(contatos)
       .where(and(eq(contatos.id, contatoId), eq(contatos.organizacaoId, ctx.organizacaoId)))
       .limit(1);
@@ -191,6 +218,9 @@ app.post("/whatsapp/send", async (c) => {
 
     resolvedPhone = contato.telefone;
     resolvedLeadId = contato.leadId || resolvedLeadId;
+    // A resposta sai pelo número DA CONVERSA. Antes caía na sessão conectada do usuário, que
+    // pode ser outro número: o cliente recebia a resposta de um número que nunca falou com ele.
+    sessaoDaConversa = contato.sessaoId;
 
     if (resolvedLeadId) {
       const [lead] = await db.select({ nome: leads.nome, empresa: leads.empresa, negocioAtivoId: leads.negocioAtivoId })
@@ -231,7 +261,7 @@ app.post("/whatsapp/send", async (c) => {
     if (linkedContato) resolvedContatoId = linkedContato.id;
   }
 
-  let resolvedSessaoId = sessaoId;
+  let resolvedSessaoId = sessaoId ?? sessaoDaConversa ?? undefined;
 
   /* sessaoId vem do corpo: sem esta conferência qualquer usuário mandava pelo WhatsApp
      de uma sessão de OUTRA organização (só a ausência de sessão era tratada). */
@@ -310,6 +340,31 @@ app.post("/whatsapp/send", async (c) => {
     }, 400);
   }
 
+  const conectado = await numeroConectado(resolvedSessaoId);
+  if (!conectado.ok) return c.json({ error: conectado.erro, codigo: "sessao_desconectada" }, 409);
+
+  /* Anexo: o binário entra no acervo canônico (file_objects/file_links, o mesmo de
+     Cliente 360 e Empresa) ANTES da mensagem existir. Tipo recusado ou arquivo grande
+     demais volta como 400 e nada é gravado nem enviado. */
+  let acervoId: string | null = null;
+  let pessoaDoAnexo: string | null = null;
+  if (mediaData && ["image", "document", "audio", "video", "sticker"].includes(tipo)) {
+    const anexo = decodificarAnexo(mediaData, tipo, fileName);
+    if (!anexo) return c.json({ error: "Arquivo ilegível: não consegui ler o anexo." }, 400);
+    if (resolvedLeadId) {
+      const [p] = await db.select({ id: pessoas.id }).from(pessoas).where(eq(pessoas.leadIdLegado, resolvedLeadId)).limit(1);
+      pessoaDoAnexo = p?.id ?? null;
+    }
+    const guardado = await guardarNoAcervo({
+      organizacaoId: ctx.organizacaoId, nomeOriginal: anexo.nome, mimeType: anexo.mime, conteudo: anexo.bytes,
+      enviadoPorId: ctx.userId,
+      vinculos: pessoaDoAnexo ? [{ tipo: "pessoa", id: pessoaDoAnexo, papel: "whatsapp" }] : [],
+      metadata: { origem: "atendimento_whatsapp", contatoId: resolvedContatoId, sessaoId: resolvedSessaoId },
+    });
+    if (!guardado.ok) return c.json({ error: `Anexo não enviado: ${guardado.erro}.` }, 400);
+    acervoId = guardado.arquivo.id;
+  }
+
   let finalText = conteudo || "";
   let templateNome: string | null = null;
 
@@ -349,7 +404,8 @@ app.post("/whatsapp/send", async (c) => {
       conteudo: tipo === "location" ? `${latitude},${longitude}` : (finalText || null),
       enviadoPorId: ctx.userId,
       status: "pending",
-      mediaUrl: null,
+      // Endereço pelo id do acervo: o balão mostra miniatura/ícone na hora, sem esperar o worker.
+      mediaUrl: acervoId ? `/api/arquivos/${acervoId}` : null,
       mediaFilename: fileName || null,
       templateNome,
       replyToId: replyToId || null,
@@ -404,7 +460,7 @@ app.post("/whatsapp/send", async (c) => {
       const [pessoa] = await db.select({ id: pessoas.id }).from(pessoas).where(eq(pessoas.leadIdLegado, resolvedLeadId)).limit(1);
       pessoaId = pessoa?.id ?? null;
     }
-    await db
+    const [comm] = await db
       .insert(communications)
       .values({
         organizacaoId: ctx.organizacaoId,
@@ -416,9 +472,17 @@ app.post("/whatsapp/send", async (c) => {
         externalId: message.id,
         usuarioId: ctx.userId,
         ocorridoEm: new Date(),
-        raw: { tipo, contatoId: resolvedContatoId },
+        raw: { tipo, contatoId: resolvedContatoId, ...(acervoId && { arquivoId: acervoId }) },
       })
-      .onConflictDoNothing({ target: [communications.canal, communications.externalId] });
+      .onConflictDoNothing({ target: [communications.canal, communications.externalId] })
+      .returning({ id: communications.id });
+    // O arquivo também fica ligado à comunicação (quem enviou, quando, por qual conversa).
+    if (acervoId && comm) {
+      await db.execute(sql`
+        INSERT INTO file_links (organizacao_id, file_object_id, entity_type, entity_id, papel, created_by_id)
+        VALUES (${ctx.organizacaoId}::uuid, ${acervoId}::uuid, 'communication', ${comm.id}::uuid, 'anexo_whatsapp', ${ctx.userId}::uuid)
+        ON CONFLICT DO NOTHING`);
+    }
   } catch (err) {
     console.error("[F2/dual-write] falha ao sincronizar communications do envio manual (best-effort):", err);
   }

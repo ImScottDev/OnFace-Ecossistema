@@ -16,7 +16,7 @@
 import { nomeCompleto } from "@/lib/vendas/texto";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { veTodasAsConversas } from "@/lib/whatsapp/acesso";
+import { condicaoMinhasConversas, veTodasAsConversas } from "@/lib/whatsapp/acesso";
 
 type Ctx = {
   organizacaoId: string;
@@ -24,6 +24,9 @@ type Ctx = {
   userRole?: string | null;
   realRole?: string | null;
 };
+
+/** "minhas" = meus números + atribuídas a mim; "equipe" = todos (só quem pode, ver `veTodasAsConversas`). */
+export type EscopoAtendimento = "minhas" | "equipe";
 
 export type ConversaAtendimento = {
   id: string;
@@ -65,9 +68,15 @@ export type LeadAtendimento = {
 
 export type DadosAtendimento = {
   eu: { id: string; nome: string };
+  /** Escopo efetivo da lista (pedido da URL já limitado pela permissão). */
+  escopo: EscopoAtendimento;
+  /** Pode alternar para "Equipe": decisão de 09/09 mantida, só super_admin. */
+  podeVerEquipe: boolean;
   conversas: ConversaAtendimento[];
   leads: LeadAtendimento[];
   equipe: Array<{ id: string; nome: string }>;
+  /** Conversas abertas de WhatsApp por responsável (nome), na organização inteira: a carga que a transferência mostra. */
+  cargaEquipe: Record<string, number>;
   sessoes: Array<{ id: string; label: string; fone: string | null }>;
   labels: Array<{ id: string; nome: string }>;
   tagsPorContato: Record<string, string[]>;
@@ -84,17 +93,21 @@ function ultimosDigitos(tel: string | null | undefined): string | null {
   return d.length >= 8 ? d.slice(-8) : null;
 }
 
-export async function paginaDeAtendimento(ctx: Ctx): Promise<DadosAtendimento> {
+export async function paginaDeAtendimento(ctx: Ctx, escopoPedido: EscopoAtendimento = "minhas"): Promise<DadosAtendimento> {
   const org = ctx.organizacaoId;
-  /* Conversa de WhatsApp é dado pessoal (decisão Kauã 09/09, lib/whatsapp/acesso):
-     só super_admin vê tudo; o resto vê as suas e as sem dono. A mesma regra
-     vale para TODOS os números da tela — métrica que conta conversa alheia
-     seria vazamento disfarçado de total. */
-  const acesso = veTodasAsConversas(ctx)
+  /* Conversa de WhatsApp é dado pessoal (decisão Kauã 09/09, lib/whatsapp/acesso).
+     O escopo PADRÃO de todo mundo, inclusive super_admin, é "Minhas": os números
+     que são seus e o que está atribuído a você. Só quem `veTodasAsConversas`
+     pode pedir "Equipe". A mesma condição vale para a lista, os números, as
+     abas, a busca e as métricas — total que conta conversa fora do escopo
+     seria o mesmo vazamento disfarçado. */
+  const podeVerEquipe = veTodasAsConversas(ctx);
+  const escopo: EscopoAtendimento = escopoPedido === "equipe" && podeVerEquipe ? "equipe" : "minhas";
+  const acesso = escopo === "equipe"
     ? sql`TRUE`
-    : sql`(c.responsavel_id = ${ctx.userId} OR c.responsavel_id IS NULL)`;
+    : condicaoMinhasConversas(ctx.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
 
-  const [conversas, leadsTel, equipe, sessoes, labels, tags, templates, eu, resp] = await Promise.all([
+  const [conversas, leadsTel, equipe, sessoes, labels, tags, templates, eu, carga, resp] = await Promise.all([
     db.execute<{
       id: string; nome: string; telefone: string | null; email: string | null; nao_lidas: number | null;
       status: string; snoozed_until: string | null; ultima_msg: string | null; ultima_msg_at: string | null;
@@ -107,7 +120,10 @@ export async function paginaDeAtendimento(ctx: Ctx): Promise<DadosAtendimento> {
              -- A última mensagem do HISTÓRICO manda; o resumo em contatos fica de
              -- reserva. 43 contatos têm mensagem 'in' e ultima_msg_at nulo — sem
              -- isto saíam da fila (NA FILA dava 255 em vez de 298).
-             COALESCE(NULLIF(um.conteudo, ''), c.ultima_msg) AS ultima_msg,
+             -- Mídia sem legenda não herda o resumo de contatos ("[image]" do worker): fica
+             -- nulo e a tela escreve o rótulo do tipo ("Imagem", "Documento", "Áudio").
+             CASE WHEN um.tipo IS NOT NULL AND um.tipo <> 'text' AND COALESCE(um.conteudo, '') = '' THEN NULL
+                  ELSE COALESCE(NULLIF(um.conteudo, ''), c.ultima_msg) END AS ultima_msg,
              COALESCE(um.created_at, c.ultima_msg_at)::text AS ultima_msg_at,
              um.direcao AS ultima_direcao, um.tipo AS ultima_tipo,
              c.responsavel_id::text, u.nome AS responsavel_nome,
@@ -155,7 +171,7 @@ export async function paginaDeAtendimento(ctx: Ctx): Promise<DadosAtendimento> {
       SELECT id::text, btrim(label) AS label, NULLIF(split_part(phone_number, ':', 1), '') AS fone
         FROM whatsapp_sessao
        WHERE organizacao_id = ${org}
-         AND ${veTodasAsConversas(ctx) ? sql`TRUE` : sql`(usuario_id = ${ctx.userId} OR usuario_id IS NULL)`}
+         AND ${escopo === "equipe" ? sql`TRUE` : sql`(usuario_id = ${ctx.userId} OR usuario_id IS NULL)`}
        ORDER BY label`),
     db.execute<{ id: string; nome: string }>(sql`
       SELECT id::text, nome FROM labels WHERE organizacao_id = ${org} ORDER BY nome`),
@@ -169,6 +185,11 @@ export async function paginaDeAtendimento(ctx: Ctx): Promise<DadosAtendimento> {
       SELECT id::text, nome, categoria, conteudo FROM whatsapp_templates
        WHERE organizacao_id = ${org} AND ativo ORDER BY categoria, nome`),
     db.execute<{ nome: string }>(sql`SELECT nome FROM usuarios WHERE id = ${ctx.userId}`),
+    /* Carga de cada pessoa, sem escopo de "Minhas": a lista da tela só tem as MINHAS conversas, e
+       contar nela mostrava "0 conversas abertas" para quem tem centenas. Só números, nenhuma conversa. */
+    db.execute<{ nome: string; n: number }>(sql`
+      SELECT u.nome, count(*)::int AS n FROM contatos c JOIN usuarios u ON u.id = c.responsavel_id
+       WHERE c.organizacao_id = ${org} AND c.canal = 'whatsapp' AND c.status = 'open' GROUP BY u.nome`),
     /* "1ª RESP. MÉDIA" — o protótipo escrevia "3m 40s" fixo.
        Turno do cliente = mensagem 'in' cuja anterior NÃO é 'in' (rajada de três
        mensagens seguidas é um pedido só). Resposta = primeiro 'out' depois dela.
@@ -248,9 +269,12 @@ export async function paginaDeAtendimento(ctx: Ctx): Promise<DadosAtendimento> {
 
   return {
     eu: { id: ctx.userId, nome: eu[0]?.nome ?? "" },
+    escopo,
+    podeVerEquipe,
     conversas: lista,
     leads,
     equipe: [...equipe],
+    cargaEquipe: Object.fromEntries(carga.map((r) => [r.nome, r.n])),
     sessoes: [...sessoes],
     labels: [...labels],
     tagsPorContato,

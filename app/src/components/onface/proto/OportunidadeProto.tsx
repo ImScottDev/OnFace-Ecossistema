@@ -13,6 +13,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { DelegarAgenteHost } from "./DelegarAgenteHost";
 
 import type { DetalheOportunidade } from "@/lib/vendas/consultas";
 import { ehFamiliaValida } from "@/lib/vendas/dominio";
@@ -505,6 +506,8 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], 
         derivar={derivar}
         ir={(href: string) => router.push(href)}
       />
+
+      <DelegarAgenteHost />
 
       {famAberto && (
         <div

@@ -8,8 +8,16 @@ http:
         certResolver: cloudflare
       middlewares:
         - security-headers@file
-        - rate-limit@file
+        # O rate-limit@file global (burst 50) devolve 429 nos dezenas de chunks JS da pagina
+        # de assinatura do Documenso e o signatario nao consegue assinar. Limite proprio, so deste host.
+        - documenso-sign-ratelimit
       service: documenso-sign
+  middlewares:
+    documenso-sign-ratelimit:
+      rateLimit:
+        average: 100
+        burst: 400
+        period: 1s
   services:
     documenso-sign:
       loadBalancer:

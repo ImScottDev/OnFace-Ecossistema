@@ -24,9 +24,11 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { analisarConversaDoAtendimento, type AnaliseConversa } from "@/lib/nexo/cliente";
 
 import type { ConversaAtendimento, DadosAtendimento, LeadAtendimento } from "@/lib/atendimento/tela";
 import type { ContextoAtendimento, TarefaDoLead } from "@/lib/atendimento/contexto";
+import type { CadenciaDoLead } from "@/lib/atendimento/cadencias";
 import { ETAPAS_PIPELINE, ROTULO_ETAPA_PIPELINE, ROTULO_FAMILIA, ROTULO_ETAPA_PRE_VENDAS } from "@/lib/vendas/dominio";
 import { nomeExibicao } from "@/components/crm2/atendimento/types";
 import { AtendimentoLiga } from "./AtendimentoLiga";
@@ -221,7 +223,8 @@ function msgDoBanco(m: any, porId: Map<string, any>): MsgDesenho {
   const texto = (m.conteudo || "").trim();
   const base: MsgDesenho = {
     de: out ? "out" : "in",
-    h: hhmm(m.createdAt), dia: diaDe(m.createdAt),
+    // `failed` é o worker dizendo que não saiu pelo WhatsApp: o balão diz isso em vez de mostrar tique.
+    h: hhmm(m.createdAt) + (out && m.status === "failed" ? " · não enviada" : out && m.status === "pending" ? (Date.now() - new Date(m.createdAt).getTime() > 10 * 60_000 ? " · sem confirmação" : " · enviando") : ""), dia: diaDe(m.createdAt),
     // O tique verde é o `status` real que o WhatsApp devolveu, não um timer.
     lido: out ? m.status === "read" : undefined,
     autor: m.enviadoPorNome ?? undefined,
@@ -229,7 +232,9 @@ function msgDoBanco(m: any, porId: Map<string, any>): MsgDesenho {
     mediaUrl: m.mediaUrl ?? null,
     t: texto,
   };
-  if (tipo === "image" && m.mediaUrl) base.img = m.mediaUrl;
+  // `arq` junto da imagem não muda o balão (o desenho só usa `arq` sem `img`); é o que a prévia da
+  // fila lê quando a imagem não tem legenda, senão a linha saía "Você: " em branco.
+  if (tipo === "image" && m.mediaUrl) { base.img = m.mediaUrl; base.arq = m.mediaFilename || ROTULO_TIPO.image; }
   else if (tipo === "document" || tipo === "video") base.arq = m.mediaFilename || ROTULO_TIPO[tipo];
   // `audio` só precisa ser verdadeiro para o desenho desenhar o player; o
   // player é o de verdade (ver `tocar` na subclasse), e a duração sai do arquivo.
@@ -282,6 +287,18 @@ function minutosAte(rotulo: string | undefined): number | null {
  * Nada aqui edita o gerado: cada intervenção é um método sobrescrito ou uma
  * correção na SAÍDA de `renderVals`, que é a fronteira com o markup.
  */
+/** O painel do desenho mostra um título e um parágrafo: a análise estruturada vira os dois. */
+function textoDaAnalise(r: AnaliseConversa): { titulo: string; texto: string } {
+  if (r.tipo === "resumo") {
+    const pedidos = r.pedidos.length ? ` Pedidos: ${r.pedidos.join("; ")}.` : "";
+    const passo = r.proximoPasso ? ` Próximo passo: ${r.proximoPasso}` : "";
+    return { titulo: "RESUMO", texto: `${r.resumo}${pedidos}${passo}` };
+  }
+  if (r.tipo === "sugestao") return { titulo: "SUGESTÃO", texto: r.resposta };
+  const sinais = r.sinais.length ? ` Sinais: ${r.sinais.join("; ")}.` : "";
+  return { titulo: "SENTIMENTO", texto: `${r.tom.charAt(0).toUpperCase()}${r.tom.slice(1)}. ${r.motivo}${sinais}` };
+}
+
 class AtendimentoLigado extends AtendimentoLiga {
   _audio: HTMLAudioElement | null = null;
   _durs: Record<string, number> = {};
@@ -440,14 +457,68 @@ class AtendimentoLigado extends AtendimentoLiga {
           até as 18h", "7 a 15 dias úteis") que o usuário enviaria de verdade. */
     v.digitando = false;
     if (v.sug) {
-      v.sug.visivel = false;
-      v.sug.carregando = false;
-      v.sug.pedir = aviso("Sugestão de resposta ainda não está ligada: nenhum agente de IA atende esta caixa.");
+      /* Sugestão de resposta pelo NEXO (mesmo caminho do resumo): vem do
+         servidor, vai para o campo só quando o atendente clica em "Usar". */
+      const sr = S.sugReal && S.sugReal.id === C.id ? S.sugReal : null;
+      v.sug.carregando = !!sr?.carregando;
+      v.sug.visivel = !!sr?.texto && S.modo === "msg";
+      v.sug.texto = sr?.texto ?? "";
+      v.sug.pedir = () => {
+        const id = C.id as string;
+        if (!id) return toast("Abra uma conversa para o NEXO sugerir.");
+        if (sr) return;
+        self.setState({ sugReal: { id, carregando: true } });
+        analisarConversaDoAtendimento(id, "sugestao").then(
+          (r) => self.setState({ sugReal: r.tipo === "sugestao" ? { id, texto: r.resposta } : null }),
+          (e: Error) => { self.setState({ sugReal: null }); toast.error(e.message); },
+        );
+      };
+      v.sug.usar = () => { self.setState({ texto: sr?.texto ?? "", sugReal: null }); toast("Sugestão no campo. Revise antes de enviar."); };
+      v.sug.dispensar = () => self.setState({ sugReal: null });
     }
-    for (const a of v.nexoAcoes ?? []) a.onClick = aviso("Resumo e leitura de sentimento ainda não estão ligados a um agente de IA.");
+    /* NEXO: resumo e sentimento pelo agente de verdade (lib/nexo/analise, via
+       cliente único). O servidor lê as mensagens do contato aberto; aqui só o
+       estado do painel (`nexo`, que o desenho já renderiza). Falha aparece como
+       falha, com o motivo. */
+    const tiposNexo = ["resumo", "sentimento"];
+    (v.nexoAcoes ?? []).forEach((a: any, i: number) => {
+      const tipo = tiposNexo[i];
+      if (!tipo || !C.id) return a.onClick = aviso("Abra uma conversa para o NEXO ler.");
+      a.onClick = () => {
+        const id = C.id as string;
+        self.setState({ nexo: { tipo, id, carregando: true } });
+        analisarConversaDoAtendimento(id, tipo as "resumo" | "sentimento").then(
+          (r) => self.setState((s: any) => s.nexo?.id === id && s.nexo.tipo === tipo ? { nexo: { tipo, id, ...textoDaAnalise(r) } } : null),
+          (e: Error) => self.setState((s: any) => s.nexo?.id === id && s.nexo.tipo === tipo ? { nexo: { tipo, id, titulo: tipo === "resumo" ? "RESUMO INDISPONÍVEL" : "SENTIMENTO INDISPONÍVEL", texto: e.message } } : null),
+        );
+      };
+    });
+    /* O desenho decide "rótulos nos botões" pela largura da JANELA (>= 1100), mas a conversa
+       divide a janela com a casca (246), a fila (350) e o painel (340): em 1440 o cabeçalho
+       da conversa tem ~500px e empurrava "⋯" e "Ocultar painel" para fora, inalcançáveis.
+       Rótulos só quando cabem; sem eles os botões viram ícone, que cabe. */
+    v.largo = S.w >= 1520;
+
+    /* IA desta conversa: o estado REAL (agente publicado para este número, pausa,
+       por que não respondeu) vem de /api/atendimento/conversas/:id/ia. Antes o botão
+       só dizia "NEXO não está ligado" em toda conversa. */
     if (v.ia) {
-      v.ia.btnClick = aviso("O NEXO ainda não está ligado nesta organização. Nenhuma conversa é respondida por IA.");
-      v.ia.editar = v.ia.btnClick;
+      const est = C.id ? (P.iaEstados ?? {})[C.id] : undefined;
+      const ativaIa = est?.estado === "ativa";
+      v.ia.ativa = ativaIa;
+      v.ia.btnLabel = !est ? "IA" : ativaIa ? "IA ativa" : est.estado === "pausada" ? "IA pausada" : "Sem agente";
+      v.ia.btnTitulo = est ? [est.motivo, est.aviso, est.semResposta].filter(Boolean).join(" ") : "Verificando a IA desta conversa";
+      v.ia.btnStyle = "display:flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 8px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;"
+        + (ativaIa ? "background:var(--of-tinta-forte);color:var(--of-papel)" : "background:var(--of-papel);color:var(--of-tinta);box-shadow:inset 0 0 0 1px var(--of-linha-controle)");
+      v.ia.btnClick = () => {
+        if (!C.id) return;
+        if (!est) return toast("Verificando a IA desta conversa. Tente de novo em instantes.");
+        if (est.estado === "sem_agente") return toast(est.motivo, { description: "Abra Automações > Agentes para ligar um agente a este número." });
+        P.alternarIa?.(C.id, est.estado === "pausada");
+      };
+      v.ia.resumo = est ? [est.agente?.nome, est.aviso ?? est.semResposta].filter(Boolean).join(" · ") || est.motivo : "";
+      v.ia.editar = () => (est?.agente?.id ? P.abrirAgente?.(est.agente.id) : toast("Esta resposta vem da configuração clássica do SDR, em Automações > Agentes."));
+      v.ia.assumir = () => { if (C.id) P.alternarIa?.(C.id, false); };
     }
 
     /* 5. Números (caixas). Os cinco do protótipo — (11) 97700-4410,
@@ -457,11 +528,13 @@ class AtendimentoLigado extends AtendimentoLiga {
     const cxSel = S.caixaReal ?? null;
     const sessaoSel = sessoes.find((s) => s.id === cxSel);
     const nlDe = (lista: any[]) => lista.filter((c) => c.naoLidas > 0).length;
+    // Escopo Minhas / Equipe (regra única em lib/whatsapp/acesso, escolhida na URL).
+    const esc: { atual: string; pode: boolean; mudar?: (e: string) => void } = P.escopo ?? { atual: "minhas", pode: false };
     if (v.caixa) {
       const lista = cxSel ? todas.filter((c) => c.sessaoId === cxSel) : todas;
       const nl = nlDe(lista);
-      v.caixa.nome = sessaoSel ? sessaoSel.label : "Todos os números";
-      v.caixa.num = sessaoSel ? (fmtTel(sessaoSel.fone) ?? "WhatsApp") : `${sessoes.length} números`;
+      v.caixa.nome = sessaoSel ? sessaoSel.label : (esc.atual === "equipe" ? "Equipe · todos os números" : "Meus números");
+      v.caixa.num = sessaoSel ? (fmtTel(sessaoSel.fone) ?? "WhatsApp") : `${sessoes.length} ${sessoes.length === 1 ? "número" : "números"}`;
       v.caixa.ehIa = false;
       v.caixa.temNaoLidas = nl > 0;
       v.caixa.naoLidas = String(nl);
@@ -469,7 +542,7 @@ class AtendimentoLigado extends AtendimentoLiga {
       v.caixa.icoStyle = "flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--of-papel);color:" + (sessaoSel ? "var(--of-canal-whatsapp-tinta)" : "var(--of-tinta-forte)") + ";box-shadow:inset 0 0 0 1px var(--of-linha)";
     }
     if (v.pop?.ehCaixas) {
-      const linhas = [{ id: null as string | null, label: "Todos os números", fone: `${sessoes.length} números conectados` }]
+      const linhas = [{ id: null as string | null, label: esc.atual === "equipe" ? "Todos os números da equipe" : "Todos os meus números", fone: `${sessoes.length} ${sessoes.length === 1 ? "número" : "números"}` }]
         .concat(sessoes.map((s) => ({ id: s.id, label: s.label, fone: fmtTel(s.fone) ?? "Sem número registrado" })));
       v.pop.caixas = linhas.map((x, i) => {
         const doX = x.id ? todas.filter((c) => c.sessaoId === x.id) : todas;
@@ -484,6 +557,26 @@ class AtendimentoLigado extends AtendimentoLiga {
           onClick: () => self.setState({ pop: null, caixaReal: x.id }),
         };
       });
+      /* Seletor de escopo, só para quem pode ver a equipe. As duas linhas no topo SÃO o "todos os
+         números" de cada escopo (a linha genérica sai); os números individuais vêm abaixo. */
+      if (esc.pode) {
+        const molde = v.pop.caixas[0];
+        const linhaEscopo = (chave: string, nome: string, num: string, fim: boolean) => {
+          const on = esc.atual === chave && !cxSel;
+          const nl = esc.atual === chave ? nlDe(todas) : 0;
+          return {
+            ...molde, nome, num, total: esc.atual === chave ? String(todas.length) : "", temNl: nl > 0, nl: String(nl), d: ICO_TODAS,
+            checkStyle: "flex:0 0 auto;width:16px;height:16px;border-radius:9999px;display:grid;place-items:center;" + (on ? "background:var(--of-tinta-forte)" : "background:transparent"),
+            style: "display:flex;align-items:center;gap:10px;width:100%;padding:8px 9px;border-radius:9px;border:0;cursor:pointer;text-align:left;" + (on ? "background:var(--of-papel-tela)" : "background:transparent") + (fim ? ";margin-bottom:4px;box-shadow:0 1px 0 var(--of-fio)" : ""),
+            onClick: () => { self.setState({ pop: null, caixaReal: null }); if (esc.atual !== chave) esc.mudar?.(chave); },
+          };
+        };
+        v.pop.caixas = [
+          linhaEscopo("minhas", "Minhas conversas", "Meus números e o que está comigo", false),
+          linhaEscopo("equipe", "Equipe", "Conversas de todos os números", true),
+          ...v.pop.caixas.slice(1),
+        ];
+      }
     }
 
     /* 6. Tags. O popup lista as cinco do protótipo ("Inbound", "Lead
@@ -514,9 +607,13 @@ class AtendimentoLigado extends AtendimentoLiga {
         v.tr.pessoas = [];
         v.tr.dica = "Nenhum agente do NEXO está ligado nesta organização.";
       } else {
+        const carga: Record<string, number> = P.cargaEquipe ?? {};
         for (const p of v.tr.pessoas ?? []) {
           p.presenca = "display:none";
           if (typeof p.info === "string") p.info = p.info.replace(/^(Online|Ausente[^·]*) · /, "");
+          // A contagem do desenho vinha da lista da tela (só as minhas). A carga é a da organização.
+          const n = carga[String(p.nome).replace(/ \(você\)$/, "")];
+          if (typeof p.info === "string" && /conversas? abertas?$/.test(p.info)) p.info = `${n ?? 0} ${n === 1 ? "conversa aberta" : "conversas abertas"}`;
         }
       }
     }
@@ -532,13 +629,17 @@ class AtendimentoLigado extends AtendimentoLiga {
       }));
     }
 
-    /* 9. Reunião. O confirmar do protótipo cria uma atividade local E envia
-          ao cliente "Te mandei o convite por e-mail" — convite que ninguém
-          mandou. Sem command de reunião aqui, nada sai: avisa e fecha. */
+    /* 9. Reunião. O confirmar do protótipo criava uma atividade local e dizia ao cliente
+          "Te mandei o convite por e-mail" — convite que ninguém mandou. Agora grava a
+          reunião de verdade (/api/reunioes: mesma tabela do Calendário, com evento e
+          timeline) e, só se "Mandar o convite" estiver ligado, manda o aviso pelo WhatsApp
+          da conversa — que pode ser recusado se o número estiver desconectado. */
     if (v.reu) {
+      const X = S.reu;
       v.reu.confirmar = () => {
+        if (!X || !X.data || !X.hora || !(X.titulo || "").trim()) return;
+        P.agendarReuniao?.({ X, contatoId: C.id, leadId: L.leadReal ? L.id : null, email: L.email || null });
         self.setState({ reu: null });
-        toast("Agendar reunião pelo Atendimento ainda não está ligado. Use o Calendário — nenhuma mensagem foi enviada.");
       };
     }
 
@@ -600,6 +701,19 @@ class AtendimentoLigado extends AtendimentoLiga {
               mandavam para /tarefas, e a atividade nunca nascia na conversa. */
     }
 
+    /* 10d. Cadência: "Passo 2 de 5 · próximo toque amanhã" saía de números fixos do desenho.
+            Passo, total e próximo toque são da inscrição real. */
+    if (v.cad?.tem) {
+      const cr = (P.cadReais ?? {})[L.id] as CadenciaDoLead | undefined;
+      if (cr) {
+        const prox = cr.proximoEm ? new Date(cr.proximoEm) : null;
+        const quando = prox
+          ? `${diaDe(prox.toISOString()) === "Hoje" ? "hoje" : diaDe(prox.toISOString()).toLowerCase()}, ${hhmm(prox.toISOString())}`
+          : null;
+        v.cad.passo = `${cr.pausada ? "Pausada · " : ""}Passo ${cr.passo} de ${cr.total}${quando ? ` · próximo toque ${quando}` : ""}`;
+      }
+    }
+
     /* 11. Áudio: duração e posição do arquivo real (ver `tocar`). */
     (v.msgs ?? []).forEach((m: any, i: number) => {
       if (!m.temAudio) return;
@@ -617,14 +731,14 @@ class AtendimentoLigado extends AtendimentoLiga {
 
 const SEM_COMMAND: Record<string, string> = {
   atvs: "A atividade não foi criada: o Atendimento ainda não grava atividade. Use Tarefas.",
-  cadencias: "Cadência por conversa de WhatsApp ainda não está ligada.",
   qual: "Qualificação é feita na ficha do lead, em Pré-vendas.",
-  tagsCriadas: "Criar tag nova é feito em Ajustes; aqui só se aplicam as existentes.",
 };
 
-export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
+export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial = null }: {
   dados: DadosAtendimento;
   contexto: ContextoAtendimento;
+  /** Inscrição viva de cada lead em cadência (lib/atendimento/cadencias). */
+  cadencias?: Record<string, CadenciaDoLead>;
   /** Lead que veio no `?leadId=` — a tela abre direto na conversa dele. */
   leadInicial?: string | null;
 }) {
@@ -790,6 +904,50 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
   const enviar = React.useCallback((body: Record<string, unknown>) =>
     chamar("/api/whatsapp/send", { method: "POST", body: JSON.stringify(body) }, "A mensagem não foi enviada."), [chamar]);
 
+  /* Estado da IA por conversa aberta (agente, pausa, por que não respondeu). */
+  const [iaEstados, setIaEstados] = React.useState<Record<string, any>>({});
+  const carregarIa = React.useCallback(async (id: string) => {
+    try {
+      const j = await chamar(`/api/atendimento/conversas/${id}/ia`, { method: "GET" }, "Não consegui ler o estado da IA.");
+      setIaEstados((e) => ({ ...e, [id]: j }));
+    } catch { /* sem estado: o botão fica em "IA" e diz que está verificando */ }
+  }, [chamar]);
+  const alternarIa = React.useCallback(async (id: string, ativa: boolean) => {
+    try {
+      const j = await chamar(`/api/atendimento/conversas/${id}/ia`, { method: "POST", body: JSON.stringify({ ativa }) }, "Não consegui alterar a IA.");
+      setIaEstados((e) => ({ ...e, [id]: j }));
+      toast.success(ativa ? "IA retomada nesta conversa" : "IA pausada nesta conversa. Você assumiu o atendimento.");
+    } catch (e) { toast.error((e as Error).message); }
+  }, [chamar]);
+
+  /* Reunião marcada pelo painel da conversa. `X` é o formulário do desenho (data ISO, hora,
+     "30 min"/"1 hora", tipo em português, nomes). */
+  const agendarReuniao = React.useCallback(async (a: { X: any; contatoId: string; leadId: string | null; email: string | null }) => {
+    const { X } = a;
+    const quando = new Date(`${X.data}T${X.hora}:00`);
+    if (Number.isNaN(quando.getTime())) return toast.error("Data ou horário inválido.");
+    const duracao = X.dur === "1 hora" ? 60 : parseInt(String(X.dur), 10) || 30;
+    const convidados: string[] = [...(X.convidados ?? []), ...(a.email && !(X.convidados ?? []).includes(a.email) ? [a.email] : [])];
+    try {
+      await chamar("/api/reunioes", {
+        method: "POST",
+        body: JSON.stringify({
+          titulo: String(X.titulo).trim(), data: quando.toISOString(), duracao,
+          tipo: X.tipo === "Ligação" ? "call" : X.tipo === "Presencial" ? "presencial" : "video",
+          leadId: a.leadId, participantes: convidados.length ? convidados : null, notas: X.desc || null,
+          responsavelId: idPorNome.get(X.resp) ?? dados.eu.id,
+        }),
+      }, "A reunião não foi agendada.");
+    } catch (e) { return toast.error((e as Error).message); }
+    const dia = quando.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: TZ });
+    toast.success(`Reunião agendada para ${dia} às ${X.hora}`);
+    if (!X.enviar) return;
+    try {
+      await enviar({ contatoId: a.contatoId, tipo: "text", conteudo: `Combinado: nossa conversa fica para ${dia} às ${X.hora} (${duracao} min, ${String(X.tipo).toLowerCase()}).` });
+      await carregarThread(a.contatoId);
+    } catch (e) { toast.error(`A reunião foi agendada, mas o aviso não foi enviado: ${(e as Error).message}`); }
+  }, [chamar, enviar, carregarThread, idPorNome, dados.eu.id]);
+
   const leadsCriadosRef = React.useRef(new Map<string, Promise<string | null>>());
 
   /**
@@ -863,7 +1021,13 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
             : m.img
             ? { contatoId: antes.id, tipo: "image", mediaData: m.img, fileName: m.arq, conteudo: m.t ?? "" }
             : { contatoId: antes.id, tipo: "text", conteudo: m.t };
-          trabalhos.push(enviar(payload).then(() => recarregar.add(antes.id)));
+          /* Recusa do servidor (número desconectado, anexo inválido): o balão otimista sai e o
+             texto volta para o campo. Antes ficava um balão com tique, como se tivesse ido. */
+          trabalhos.push(enviar(payload).then(() => recarregar.add(antes.id), (e) => {
+            recarregar.add(antes.id);
+            if (payload.tipo === "text") instRef.current?.setState((st: any) => (st.texto ? null : { texto: payload.conteudo }));
+            throw e;
+          }));
         }
         manter.push(m);
       }
@@ -909,7 +1073,11 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
 
       // Status: só três têm command (close, reopen, snooze).
       if (depois.status !== antes.status) {
-        if (depois.status === "resolvida") { trabalhos.push(acao(antes.id, { acao: "close" })); delta.status = "resolvida"; }
+        if (depois.status === "resolvida") {
+          // O modal de encerramento escreve "Atendimento encerrado · <motivo> — <obs>" como mensagem de sistema.
+          const motivo = novas.find((m: any) => m.de === "sis" && /^Atendimento encerrado · /.test(m.t ?? ""))?.t?.replace(/^Atendimento encerrado · /, "") ?? null;
+          trabalhos.push(acao(antes.id, { acao: "close", motivo })); delta.status = "resolvida";
+        }
         else if (antes.status === "resolvida") { trabalhos.push(acao(antes.id, { acao: "reopen" })); delta.status = "atendimento"; }
         else if (depois.status === "retornar") {
           const minutos = minutosAte(depois.retorno);
@@ -923,7 +1091,7 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
       }
 
       if ((depois.naoLidas ?? 0) === 0 && (antes.naoLidas ?? 0) > 0) delta.naoLidas = 0;
-      else if ((depois.naoLidas ?? 0) > (antes.naoLidas ?? 0)) avisos.add("Marcar como não lida ainda não tem command.");
+      else if ((depois.naoLidas ?? 0) > (antes.naoLidas ?? 0)) { trabalhos.push(acao(antes.id, { acao: "mark_unread" })); delta.naoLidas = depois.naoLidas; }
       if (depois.numero !== antes.numero) avisos.add("Trocar o número de envio não tem command: cada número é a sessão de WhatsApp de uma pessoa.");
       if (depois.prioridade !== antes.prioridade) avisos.add("Prioridade não existe no domínio do atendimento; nada foi gravado.");
       if (depois.ia && !antes.ia) avisos.add("O NEXO não está ligado nesta organização.");
@@ -954,12 +1122,26 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
     router.refresh();
   }, [acao, chamar, enviar, carregarThread, idPorNome, dados.eu.id, dados.sessoes, router]);
 
+  /* Tag criada no popup ("Criar nova tag"): vira label real da organização (a mesma lista de Ajustes e
+     de Pré-vendas). A aplicação à conversa, logo em seguida, espera esta promessa. */
+  const labelsCriadasRef = React.useRef(new Map<string, Promise<string>>());
+  const criarTagsNovas = React.useCallback((lista: any[]) => {
+    for (const item of lista) {
+      const nome = String(typeof item === "string" ? item : item?.nome ?? "").trim();
+      if (!nome || labelPorNome.has(nome) || labelsCriadasRef.current.has(nome)) continue;
+      labelsCriadasRef.current.set(nome, chamar("/api/labels", { method: "POST", body: JSON.stringify({ nome, cor: "#6B7280" }) }, `Não consegui criar a tag "${nome}".`).then((l) => l.id as string));
+    }
+  }, [labelPorNome, chamar]);
+
   const gravarTags = React.useCallback(async (novo: Record<string, string[]>) => {
     const trabalhos: Promise<unknown>[] = [];
     for (const [chave, nomes] of Object.entries(novo)) {
       const antes = new Set(tagsLead[chave] ?? []);
       const depois = new Set(nomes ?? []);
       const contatos = renderizadoRef.current.filter((c: any) => c.lead === chave).map((c: any) => c.id);
+      for (const n of depois) if (!antes.has(n) && !labelPorNome.has(n) && labelsCriadasRef.current.has(n)) {
+        for (const id of contatos) trabalhos.push(labelsCriadasRef.current.get(n)!.then((labelId) => chamar(`/api/atendimento/conversas/${id}/tags`, { method: "POST", body: JSON.stringify({ labelId }) }, `Não consegui aplicar a tag "${n}".`)));
+      }
       for (const n of depois) if (!antes.has(n) && labelPorNome.has(n)) {
         for (const id of contatos) trabalhos.push(chamar(`/api/atendimento/conversas/${id}/tags`, { method: "POST", body: JSON.stringify({ labelId: labelPorNome.get(n) }) }, `Não consegui aplicar a tag "${n}".`));
       }
@@ -1019,13 +1201,32 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
     }
   }, [leadsPorId, dados.eu.id, idPorNome]);
 
+  /* Pausar, retomar e remover do painel de cadência: viram a ação da inscrição REAL
+     (mesma rota da tela de Cadências), não um estado local que sumia no reload. */
+  const gravarCadencias = React.useCallback(async (novo: Record<string, any>) => {
+    const trabalhos: Promise<unknown>[] = [];
+    for (const [leadId, v] of Object.entries(novo)) {
+      const atual = cadencias[leadId];
+      if (!atual) continue; // inserir é da peça de cadência, que grava sozinha
+      const acaoDaInscricao = v === null ? "cancel" : (v?.pausada ?? false) !== atual.pausada ? (v.pausada ? "pause" : "resume") : null;
+      if (!acaoDaInscricao) continue;
+      trabalhos.push(chamar(`/api/automacoes/cadencias/enrollments/${atual.enrollmentId}/action`, { method: "POST", body: JSON.stringify({ action: acaoDaInscricao }) }, "A cadência não foi alterada."));
+    }
+    if (!trabalhos.length) return;
+    const res = await Promise.allSettled(trabalhos);
+    res.forEach((r) => { if (r.status === "rejected") toast.error((r.reason as Error)?.message ?? "A cadência não foi alterada."); });
+    router.refresh();
+  }, [cadencias, chamar, router]);
+
   const gravar = React.useCallback((patch: Record<string, any>) => {
+    if (patch.cadencias) void gravarCadencias(patch.cadencias);
+    if (patch.tagsCriadas) criarTagsNovas(patch.tagsCriadas);
     if (patch.leads) criarLeadsNovos(patch.leads);
     if (patch.conversas) void gravarConversas(patch.conversas);
     if (patch.tagsLead) void gravarTags(patch.tagsLead);
     if (patch.templates) void gravarTemplates(patch.templates);
     for (const k of Object.keys(SEM_COMMAND)) if (k in patch) toast(SEM_COMMAND[k]);
-  }, [gravarConversas, gravarTags, gravarTemplates, criarLeadsNovos]);
+  }, [gravarConversas, gravarTags, gravarTemplates, criarLeadsNovos, gravarCadencias, criarTagsNovas]);
 
   /* ── Navegação ── */
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
@@ -1058,6 +1259,14 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
     router.push(rotaDoDesenho(href, params));
   }, [leadsPorId, router]);
 
+  /* Minhas / Equipe vive na URL: o servidor refaz a lista inteira (lista, contadores, abas, métricas). */
+  const mudarEscopo = React.useCallback((e: string) => {
+    const q = new URLSearchParams(window.location.search);
+    if (e === "equipe") q.set("escopo", "equipe"); else q.delete("escopo");
+    q.delete("leadId");
+    router.replace(`/atendimento${q.size ? `?${q}` : ""}`);
+  }, [router]);
+
   const primeiraResposta = dados.primeiraRespostaMediaSeg == null ? "—" : duracao(dados.primeiraRespostaMediaSeg);
 
   if (!montado) {
@@ -1076,12 +1285,20 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
       <div data-workspace="desenho" style={{ background: "var(--of-papel-tela)", display: "grid", placeItems: "center", padding: 24 }}>
         <div style={{ maxWidth: 440, textAlign: "center", background: "var(--of-papel)", borderRadius: 14, boxShadow: "inset 0 0 0 1px var(--of-linha)", padding: "28px 26px" }}>
           <div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 17, fontWeight: 700, color: "var(--of-tinta-forte)" }}>
-            Nenhuma conversa para você agora
+            {dados.escopo === "equipe" ? "Nenhuma conversa na equipe" : "Nenhuma conversa para você agora"}
           </div>
           <p style={{ margin: "8px 0 0", fontSize: 13, lineHeight: 1.55, color: "var(--of-tinta-3)" }}>
-            Conversas de WhatsApp são pessoais: aqui aparecem as atribuídas a você e as que ainda não têm dono.
-            {dados.sessoes.length ? ` Há ${dados.sessoes.length} ${dados.sessoes.length === 1 ? "número conectado" : "números conectados"}.` : ""}
+            {dados.escopo === "equipe"
+              ? "Nenhum número da equipe tem conversa de WhatsApp."
+              : "Conversas de WhatsApp são pessoais: aqui aparecem as dos seus números e as atribuídas a você."}
+            {dados.sessoes.length ? ` Há ${dados.sessoes.length} ${dados.sessoes.length === 1 ? "número" : "números"} nesta visão.` : ""}
           </p>
+          {dados.podeVerEquipe ? (
+            <button type="button" onClick={() => mudarEscopo(dados.escopo === "equipe" ? "minhas" : "equipe")}
+              style={{ marginTop: 12, height: 32, padding: "0 14px", borderRadius: 9, border: 0, cursor: "pointer", background: "var(--of-papel-tela)", color: "var(--of-tinta-forte)", fontSize: 12.5, fontWeight: 600, boxShadow: "inset 0 0 0 1px var(--of-linha)" }}>
+              {dados.escopo === "equipe" ? "Ver minhas conversas" : "Ver a equipe"}
+            </button>
+          ) : null}
           <a href="/contatos" style={{ display: "inline-flex", marginTop: 16, height: 36, alignItems: "center", padding: "0 16px", borderRadius: 9, background: "var(--of-coral-acao)", color: "var(--of-papel)", fontSize: 13, fontWeight: 600, textDecoration: "none" }}>
             Abrir Contatos
           </a>
@@ -1103,15 +1320,24 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
           // Próxima tarefa aberta do lead (lib/atendimento/contexto).
           atvs,
           // Sem fonte por contato de WhatsApp (ver pendências): vazio é honesto.
-          qual: {}, cadencias: {},
+          qual: {},
+          // A cadência é a inscrição real do lead; o painel lê o nome e o resto vem de `cadencias` abaixo.
+          cadencias: Object.fromEntries(Object.entries(cadencias).map(([k, c]) => [k, { nome: c.nome, pausada: c.pausada, passo: c.passo, total: c.total }])),
         }}
         catalogo={catalogo}
         contexto={contexto}
         sessoes={dados.sessoes}
+        escopo={{ atual: dados.escopo, pode: dados.podeVerEquipe, mudar: mudarEscopo }}
         setores={setores}
         primeiraResposta={primeiraResposta}
         registrar={(i: any) => { instRef.current = i; }}
-        aoSelecionar={carregarThread}
+        agendarReuniao={agendarReuniao}
+        cargaEquipe={dados.cargaEquipe}
+        cadReais={cadencias}
+        iaEstados={iaEstados}
+        alternarIa={alternarIa}
+        abrirAgente={(id: string) => router.push(`/automacoes/agentes/${id}`)}
+        aoSelecionar={(id: string) => { void carregarThread(id); void carregarIa(id); }}
         buscarLeads={buscarLeadsRemoto}
         gravar={gravar}
         abrir={abrir}

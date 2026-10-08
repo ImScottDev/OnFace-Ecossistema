@@ -51,6 +51,11 @@ export const PERMISSAO_POR_FERRAMENTA: Record<string, CodigoPermissao> = {
   "followup.cancel": "automation.manage",
   "cadence.pause": "automation.manage",
   "callface.call": "acquisition.manage",
+  // NEXO (chat do ecossistema): leitura também é gateada pelo papel, porque o
+  // painel age COMO o usuário. As escritas checam dentro da ferramenta, porque
+  // a permissão depende do alvo (lead x oportunidade).
+  "nexo.agenda": "sales.read", "nexo.leads": "acquisition.read", "nexo.pipeline": "sales.read",
+  "nexo.propostas": "sales.read", "nexo.clientes": "cs.read", "nexo.conversas": "acquisition.read",
   // Fora daqui, de propósito: `handoff.request`, `case.open` e `alert.create`
   // são o que o agente faz quando NÃO pode agir — pedir ajuda, abrir caso,
   // levantar alerta. Um agente que não consegue pedir socorro é pior que um sem

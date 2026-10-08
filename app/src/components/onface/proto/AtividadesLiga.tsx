@@ -1,5 +1,6 @@
 // @ts-nocheck — lógica portada do protótipo; ver a nota abaixo.
 "use client";
+import { perguntarAoNexo, conversasRecentes, mensagensDaConversa as mensagensDaConversaNexo, novaConversaId } from "@/lib/nexo/cliente";
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Atividades — a lógica do handoff, portada.
@@ -119,7 +120,7 @@ class Logica extends React.Component<any, any> {
     this._esc = (e) => { if (e.key === "Escape") this.setState(s => s.nexoChat ? { nexoChat: null } : s.kpiPop ? { kpiPop: null } : s.pj ? { pj: null } : s.ed ? { ed: null } : s.aberta ? { aberta: null } : { filtroAberto: null, pjMenu: null }); };
     document.addEventListener("mousedown", this._fora); document.addEventListener("keydown", this._esc);
     const pAtv = E && E.parametro && E.parametro("atv"), pNova = E && E.parametro && E.parametro("nova");
-    const pPrj = E && E.parametro && E.parametro("projeto"); if (pPrj) this.setState({ visao: "quadro", projeto: pPrj }); if (pAtv) this.setState({ aberta: pAtv }); else if (pNova) setTimeout(() => { const lid = E.parametro("lead"), L = lid ? ((E.ler("leads", null) || (this.dadosDoProto || {}).LEADS || []).find(l => l.id === lid)) : null, emp = E.parametro("empresa"), pes = E.parametro("pessoa"); this.abrirEditor(null, Object.assign({ fimD: E.parametro("data") || this.fmtIso(this.hoje()) }, L && L.pessoa ? { vincTipo: "pessoa", vinc: L.pessoa } : pes ? { vincTipo: "pessoa", vinc: pes } : (L && L.empresa) || emp ? { vincTipo: "empresa", vinc: (L && L.empresa) || emp } : {})); }, 60);
+    const pPrj = E && E.parametro && E.parametro("projeto"); if (pPrj) this.setState({ visao: "quadro", projeto: pPrj }); if (pAtv) this.setState({ aberta: pAtv }); else if (pNova) setTimeout(() => { const lid = E.parametro("lead"), L = lid ? ((E.ler("leads", null) || (this.dadosDoProto || {}).LEADS || []).find(l => l.id === lid)) : null, emp = E.parametro("empresa"), pes = E.parametro("pessoa"); this.abrirEditor(null, Object.assign({ fimD: E.parametro("data") || this.fmtIso(this.hoje()) }, pNova !== "1" ? { titulo: pNova } : {}, L && L.pessoa ? { vincTipo: "pessoa", vinc: L.pessoa } : pes ? { vincTipo: "pessoa", vinc: pes } : (L && L.empresa) || emp ? { vincTipo: "empresa", vinc: (L && L.empresa) || emp } : {})); }, 60);
   }
   componentWillUnmount() { if (this._off) this._off(); window.removeEventListener("resize", this._rs); document.removeEventListener("mousedown", this._fora); document.removeEventListener("keydown", this._esc); }
 
@@ -990,21 +991,23 @@ class Logica extends React.Component<any, any> {
           else if (k === "verAtrasadas") this.setState({ nexoChat: null, kpiPop: "late" }); else if (k === "verHoje") this.setState({ nexoChat: null, kpiPop: "hoje" });
           else if (k === "pipeline") E && E.irPara("/onface-preview/pipeline", "Pipeline", {});
           else if (k.indexOf("tarefa:") === 0) { this.setState({ nexoChat: null }); this.abrirEditor(null, { titulo: k.slice(7) }); }
+          else if (k.indexOf("tarefaD:") === 0) { const [d0, ...tt] = k.slice(8).split("|"); this.setState({ nexoChat: null }); this.abrirEditor(null, { titulo: tt.join("|"), fimD: d0 }); }
+          else if (k.indexOf("rota:") === 0) { this.setState({ nexoChat: null }); E && E.irPara(k.slice(5)); }
           else if (k.indexOf("p:") === 0) this.enviarNexo(k.slice(2)); };
         /* ANTES: "Conversas recentes" com 5 conversas que nunca aconteceram (Resumo da semana · Hoje, 09:12, Campos Engenharia...). Não há histórico de chat gravado: lista vazia. */
-        const REC = [];
+        const REC = (S.nexoRec || []).map(c => [c.titulo, c.id]);
         const qb = (NC.busca || "").toLowerCase();
         const CARDS = [["Resumir minha semana", "Mostra seus principais avanços e pendências.", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5", "#fff6f4", "#c2330f"], ["Reorganizar minha agenda", "Prioriza o que realmente importa hoje.", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "#eeeff3", "#12171d"], ["Criar uma tarefa", "Transforma o que você pedir em tarefa.", "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", "#e6f4ee", "#1f7256"], ["Analisar oportunidades", "Ajuda a definir a próxima ação.", "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5", "#efecfa", "#4f3fa8"]];
         const msgs = NC.msgs || [];
         return { aberto: true, fechar: () => this.setState({ nexoChat: null }), novo: () => upN({ msgs: [], rasc: "", pensando: false, ativo: null }), busca: NC.busca || "", setBusca: (e) => upN({ busca: e.target.value }),
           intro: "Seu assistente de produtividade na ONFACE. " + (dash.nx.late.length ? "Vi " + dash.nx.late.length + (dash.nx.late.length > 1 ? " atividades atrasadas" : " atividade atrasada") + " — quer começar por elas?" : "Como posso te ajudar hoje?"),
-          recentes: REC.filter(r => !qb || r[0].toLowerCase().indexOf(qb) >= 0).map(([t, q]) => ({ t, q, onClick: () => { upN({ msgs: [], ativo: t }); this.enviarNexo(t); },
+          recentes: REC.filter(r => !qb || r[0].toLowerCase().indexOf(qb) >= 0).map(([t, q]) => ({ t, q, onClick: () => this.abrirConversaNexo(q, t),
             style: "display:block;width:100%;padding:9px 12px;border-radius:10px;border:0;cursor:pointer;text-align:left;" + (NC.ativo === t ? "background:#fff;box-shadow:inset 2px 0 0 #fe4f2b,0 0 0 1px #eef1f1" : "background:transparent;box-shadow:inset 2px 0 0 #f0c3b6") })),
           cards: CARDS.map(([t, s2, d, bg, c]) => ({ t, s: s2, d, ico: "width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:" + bg + ";color:" + c, onClick: () => { upN({ ativo: t }); this.enviarNexo(t === "Criar uma tarefa" ? "Criar uma tarefa" : t); } })),
           vazio: !msgs.length && !NC.pensando, temMsgs: !!msgs.length || !!NC.pensando, pensando: !!NC.pensando, ref: (el) => { this._nxEl = el; },
           msgs: msgs.map(m => { const eu = m.de === "eu"; return { t: m.t, ehNexo: !eu, temAcoes: !eu && !!(m.acoes && m.acoes.length), acoes: (m.acoes || []).map(([k, l]) => ({ l, onClick: () => fazer(k) })),
             linha: "display:flex;align-items:flex-end;gap:10px;" + (eu ? "justify-content:flex-end" : "justify-content:flex-start"),
-            bolha: "display:block;padding:11px 14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;text-wrap:pretty;" + (eu ? "border-radius:14px 14px 4px 14px;background:#12171d;color:#fff" : "border-radius:14px 14px 14px 4px;background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #eef1f1") }; }),
+            bolha: "display:block;padding:11px 14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;text-wrap:pretty;" + (m.erro ? "border-radius:14px 14px 14px 4px;background:var(--of-aviso-fundo);color:var(--of-aviso-tinta);box-shadow:inset 0 0 0 1px var(--of-aviso-tinta)" : eu ? "border-radius:14px 14px 4px 14px;background:#12171d;color:#fff" : "border-radius:14px 14px 14px 4px;background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #eef1f1") }; }),
           rasc: NC.rasc || "", setRasc: (e) => upN({ rasc: e.target.value }), tecla: (e) => { if (e.key === "Enter") { e.preventDefault(); this.enviarNexo(NC.rasc); } },
           enviar: () => this.enviarNexo(NC.rasc),
           enviarStyle: "width:40px;height:40px;border-radius:9999px;border:0;color:#fff;display:grid;place-items:center;cursor:pointer;background:" + ((NC.rasc || "").trim() ? "#fe4f2b" : "#f5a38f") };
@@ -1044,18 +1047,20 @@ class Logica extends React.Component<any, any> {
       put(ch === "empresas" ? { k: "e:" + n, tipo: "empresa", nome: n, sub: txt(x.segmento) || "Empresa", rel, empresa: n } : { k: "c:" + n, tipo: "contato", nome: n, sub: [txt(x.cargo), txt(x.empresa)].filter(Boolean).join(" · "), rel, empresa: txt(x.empresa) || null, pessoa: n }); }); });
     return Object.keys(map).map(k => map[k]).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }
-  nexo(q) { this.setState({ nexoChat: { msgs: [], rasc: "", pensando: false, ativo: null } }); if (q) this.enviarNexo(q); }
+  /* O chat do NEXO é UM só no produto: servidor (agente real, contexto da tela, ferramentas com o escopo do usuário), via lib/nexo/cliente. Sem resposta fabricada aqui: erro do provedor aparece como erro. */
+  nexo(q) { this.setState({ nexoChat: { msgs: [], rasc: "", pensando: false, ativo: null } }); this._nxConv = null; this.carregarRecentesNexo(); if (q) this.enviarNexo(q); }
+  carregarRecentesNexo() { conversasRecentes().then(d => this.setState({ nexoRec: d.conversas || [] })).catch(() => this.setState({ nexoRec: [] })); }
+  abrirConversaNexo(id, titulo) { this._nxConv = id; this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat, { msgs: [], ativo: titulo, pensando: true }) }));
+    mensagensDaConversaNexo(id).then(d => this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { pensando: false, msgs: (d.mensagens || []).map(m => m.de === "eu" ? { de: "eu", t: m.texto } : { de: "nexo", t: m.texto }) }) } : null))
+      .catch(e => this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { pensando: false, msgs: [{ de: "nexo", t: "Não consegui abrir a conversa (" + e.message + ").", erro: true }] }) } : null)); }
   enviarNexo(q) { const t = String(q || "").trim(); if (!t) return;
+    if (!this._nxConv) this._nxConv = novaConversaId();
     this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat || { msgs: [] }, { msgs: ((s.nexoChat || {}).msgs || []).concat([{ de: "eu", t }]), rasc: "", pensando: true }) }));
-    clearTimeout(this._nxT); this._nxT = setTimeout(() => { const r = this.respNexo(t); this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([Object.assign({ de: "nexo" }, r)]), pensando: false }) } : null); }, 900); }
-  respNexo(q) { const t = q.toLowerCase(), N = this._nx || {}, late = N.late || [], hoje = N.hojeAb || [], reu = N.reuH || [];
-    if (/resum|semana/.test(t)) return { t: "Resumo da sua semana: " + (N.fSem || 0) + " atividades concluídas, " + late.length + " atrasadas e " + hoje.length + " com prazo hoje. " + (reu.length ? "Hoje você tem " + reu.length + (reu.length > 1 ? " reuniões" : " reunião") + (N.proxH ? ", a próxima às " + N.proxH + "." : ".") : "Sem reuniões hoje."), acoes: late.length ? [["verAtrasadas", "Ver atrasadas"]] : [["verHoje", "Ver o que vence hoje"]] };
-    if (/reorgan|agenda|priori/.test(t)) return { t: "Ainda não está ligado: o assistente não reorganiza a agenda por conversa.", /* ANTES: prometia redistribuir prazos por prioridade e oferecia "Aplicar reorganização". */ acoes: [] };
-    if (/tarefa|criar|lembr/.test(t)) { const tit = q.replace(/^(criar|crie|cria)\s+(uma\s+)?(tarefa|atividade)\s*(de|para|:)?\s*/i, "").trim(); const ok = tit && tit.toLowerCase() !== t; return { t: ok ? "Montei a tarefa “" + tit + "”. Revise o responsável e o prazo antes de salvar." : "Me diga o que precisa ser feito que eu monto a tarefa, ou abra o formulário direto.", acoes: [["tarefa:" + (ok ? tit : ""), "Abrir tarefa"]] }; }
-    if (/oportun|propost|pipeline|negocia/.test(t)) return { t: "Ainda não está ligado: não consigo analisar suas oportunidades por aqui. Abra o Pipeline para ver o andamento." /* ANTES: citava Orbe Telecom, proposta v2 da Campos Engenharia e Luiza Campos, que não existem nos dados. */, acoes: [["pipeline", "Abrir Pipeline"]] };
-    if (/atras/.test(t)) return { t: late.length ? "Você tem " + late.length + (late.length > 1 ? " atividades atrasadas" : " atividade atrasada") + ". A mais antiga é “" + late[0].titulo + "”." : "Nada atrasado agora.", acoes: late.length ? [["verAtrasadas", "Ver atrasadas"]] : [] };
-    return { t: "Entendi. Hoje você tem " + hoje.length + (hoje.length === 1 ? " atividade" : " atividades") + " com prazo e " + late.length + " atrasadas. Quer que eu resuma a semana, reorganize a agenda ou crie uma tarefa?", acoes: [["p:Resumir minha semana", "Resumir semana"], ["p:Reorganizar minha agenda", "Reorganizar agenda"]] };
-  }
+    const acaoDe = (p) => p.kind === "criar_tarefa" ? [p.venceEm ? "tarefaD:" + String(p.venceEm).slice(0, 10) + "|" + (p.titulo || "") : "tarefa:" + (p.titulo || ""), p.rotulo] : ["rota:" + p.href, p.rotulo];
+    const push = (m) => this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([Object.assign({ de: "nexo" }, m)]), pensando: false }) } : null);
+    perguntarAoNexo({ conversaId: this._nxConv, pergunta: t, rota: "/tarefas", area: "Atividades" })
+      .then(d => { this._nxConv = d.conversaId || this._nxConv; push({ t: d.mensagem.texto, erro: !!d.falhou, acoes: (d.propostas || []).map(acaoDe) }); if (d.configurada && !d.falhou) this.carregarRecentesNexo(); })
+      .catch(e => push({ t: "Não consegui falar com o NEXO (" + e.message + ").", erro: true, acoes: [] })); }
   componentDidUpdate() { if (this._nxEl && this._nxN !== ((this.state.nexoChat || {}).msgs || []).length + (this.state.nexoChat && this.state.nexoChat.pensando ? 1 : 0)) { this._nxN = ((this.state.nexoChat || {}).msgs || []).length + (this.state.nexoChat && this.state.nexoChat.pensando ? 1 : 0); this._nxEl.scrollTop = this._nxEl.scrollHeight; } }
 
   abrirEditor(it, pre) {

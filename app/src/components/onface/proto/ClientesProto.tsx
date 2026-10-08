@@ -219,13 +219,6 @@ class ClientesLigada extends ClientesLiga {
     if (tom === "ok") toast.success(texto); else toast(texto);
   }
 
-  /* O chat do NEXO fica desligado: o histórico de conversas (REC) é fixo e
-     com carimbo de hora falso, as respostas são template, as ações chamam
-     gravar sem command e "Anexar"/"Falar" não têm onClick no gerado. */
-  nexo() {
-    toast("O NEXO ainda não está ligado nesta tela.");
-  }
-
   renderVals() {
     const v = super.renderVals();
     const p = (this as any).props;

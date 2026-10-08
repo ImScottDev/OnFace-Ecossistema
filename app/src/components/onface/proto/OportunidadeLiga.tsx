@@ -532,6 +532,7 @@ class Logica extends React.Component<any, any> {
       etapasItens: ordem.map((k, i) => item(ROT[k], () => mover(k), { atual: i === pos, dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:" + COR[k] }))
         .concat([item("Perdido", () => mover("perdido"), { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#8b949e" })]),
       maisItens: (aberta ? [item("Marcar como perdida", () => mover("perdido"), cor("#c2330f"))] : [item("Reabrir oportunidade", () => { salva({ etapa: "negociacao", dias: 0 }, "Reaberta em Negociação"); this.setState({ menu: null }); })])
+        .concat(aberta ? [item("Delegar follow-up a um agente", () => { this.setState({ menu: null }); window.dispatchEvent(new CustomEvent("onface:delegar-agente", { detail: { negocioId: O.id } })); })] : [])
         .concat([item("Ver no Pipeline", () => ir("/onface-preview/pipeline", "Pipeline", { opp: O.id }))]),
       notaRef: this.notaRef,
       novaAberto: S.menu === "nova", toggleNova: () => this.setState({ menu: S.menu === "nova" ? null : "nova" }),

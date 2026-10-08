@@ -80,7 +80,8 @@ export interface AcoesProposta {
     modoFechamento: "PREPAID" | "CONTRACT";
     validadeDias: number;
     tipoContratual?: "NOVO_CONTRATO" | "ADITIVO" | "UPGRADE" | "DOWNGRADE" | null;
-  }) => Promise<Resultado>;
+    para?: string | null;
+  }) => Promise<Resultado<{ link: string; email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou" }>>;
 }
 
 /* ── Proposta do desenho → entrada do command ──────────────────────────── */
@@ -297,12 +298,18 @@ export function PropostaProto({ oportunidade, catalogo, acoes }: {
         modoFechamento: proposta.modo === "PREPAID" ? "PREPAID" : "CONTRACT",
         validadeDias: Number(proposta.validade) || 14,
         tipoContratual: proposta.modo === "PREPAID" ? null : "NOVO_CONTRATO",
+        /* Só dispara e-mail se o canal "e-mail" ficou marcado no fluxo; "só o link" não manda nada. */
+        para: (proposta.editor?.canais ?? []).includes("email") ? (proposta.editor?.para || null) : null,
       });
       if (!enviada.ok) {
         toast.error(`Proposta criada, mas não enviada: ${enviada.erro}`, {
           action: { label: "Abrir proposta", onClick: () => router.push(`/propostas/${id}`) },
         });
         return;
+      }
+      const querEmail = (proposta?.editor?.canais ?? []).includes("email");
+      if (querEmail && enviada.dados?.email && enviada.dados.email !== "enviado") {
+        toast.warning("Proposta enviada, mas o e-mail não saiu. Copie o link na página da proposta e mande ao cliente.");
       }
     }
 

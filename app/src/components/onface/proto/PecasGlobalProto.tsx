@@ -199,6 +199,10 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
       dados={{ leads, qual }}
       catalogo={catalogo}
       leads={leads}
+      /* Sem `acoes` a peça de cadência não via nada ("Nenhuma cadência publicada" em toda
+         tela que a abre por aqui: `carregarCadencias` lê props.acoes.cadenciasDoSistema),
+         e a qualificação perdia o salvar ao digitar. Mesmo conjunto que Pré-vendas passa. */
+      acoes={ACOES}
       ir={(href: string) => router.push(href)}
       abrir={abrir}
       gravar={gravar}

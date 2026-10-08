@@ -1,5 +1,6 @@
 // @ts-nocheck — lógica portada do protótipo; ver a nota abaixo.
 "use client";
+import { perguntarAoNexo, conversasRecentes, mensagensDaConversa as mensagensDaConversaNexo, novaConversaId, destinoDaProposta } from "@/lib/nexo/cliente";
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Clientes — a lógica do handoff, portada.
@@ -124,33 +125,28 @@ class Logica extends React.Component<any, any> {
   }
   componentWillUnmount() { if (this._off) this._off(); window.removeEventListener("resize", this._rs); document.removeEventListener("mousedown", this._fora); document.removeEventListener("keydown", this._esc); if (this._ro) this._ro.disconnect(); cancelAnimationFrame(this._medF); clearTimeout(this._nxT); }
 
-  nexo(q) { this.setState({ nexoChat: { msgs: [], rasc: "", pensando: false, ativo: null } }); if (q) this.enviarNexo(q); }
+  /* Chat do NEXO único do produto: servidor (agente real + ferramentas com o escopo do usuário) via lib/nexo/cliente. */
+  nexo(q) { this.setState({ nexoChat: { msgs: [], rasc: "", pensando: false, ativo: null } }); this._nxConv = null; this.carregarRecentesNexo(); if (q) this.enviarNexo(q); }
+  carregarRecentesNexo() { conversasRecentes().then(d => this.setState({ nexoRec: d.conversas || [] })).catch(() => this.setState({ nexoRec: [] })); }
+  abrirConversaNexo(id, titulo) { this._nxConv = id; this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat, { msgs: [], ativo: titulo, pensando: true }) }));
+    mensagensDaConversaNexo(id).then(d => this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { pensando: false, msgs: (d.mensagens || []).map(m => m.de === "eu" ? { de: "eu", t: m.texto } : { de: "nexo", t: m.texto }) }) } : null))
+      .catch(e => this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { pensando: false, msgs: [{ de: "nexo", t: "Não consegui abrir a conversa (" + e.message + ").", erro: true }] }) } : null)); }
   enviarNexo(q) { const t = String(q || "").trim(); if (!t) return;
+    if (!this._nxConv) this._nxConv = novaConversaId();
     this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat || { msgs: [] }, { msgs: ((s.nexoChat || {}).msgs || []).concat([{ de: "eu", t }]), rasc: "", pensando: true }) }));
-    clearTimeout(this._nxT); this._nxT = setTimeout(() => { const r = this.respNexo(t); this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { pensando: false, msgs: s.nexoChat.msgs.concat([Object.assign({ de: "nexo" }, r)]) }) } : null); this.rolarNexo(); }, 700);
+    const acaoDe = (p) => ["rota:" + destinoDaProposta(p), p.rotulo];
+    const push = (m) => { this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([Object.assign({ de: "nexo" }, m)]), pensando: false }) } : null); this.rolarNexo(); };
+    perguntarAoNexo({ conversaId: this._nxConv, pergunta: t, rota: "/clientes", area: "Clientes" })
+      .then(d => { this._nxConv = d.conversaId || this._nxConv; push({ t: d.mensagem.texto, erro: !!d.falhou, acoes: (d.propostas || []).map(acaoDe) }); if (d.configurada && !d.falhou) this.carregarRecentesNexo(); })
+      .catch(e => push({ t: "Não consegui falar com o NEXO (" + e.message + ").", erro: true, acoes: [] }));
     this.rolarNexo(); }
   rolarNexo() { requestAnimationFrame(() => { if (this._nxEl) this._nxEl.scrollTop = this._nxEl.scrollHeight; }); }
-  respNexo(q) { const t = q.toLowerCase(), X = this._ctx || {}; if (!X.ativos) return { t: "Ainda estou carregando a carteira. Tenta de novo em um segundo." };
-    const lista = (arr) => arr.slice(0, 4).map(c => "• " + c.nome + " · " + X.brl(c.mrr) + "/mês").join("\n");
-    if (/risco|churn|cancel/.test(t)) return X.risco.length ? { t: X.risco.length + (X.risco.length > 1 ? " clientes" : " cliente") + " com risco de churn, somando " + X.brlK(X.risco.reduce((a, c) => a + c.mrr, 0)) + " de MRR:\n" + lista(X.risco) + "\n\nSugiro uma ligação de retenção com cada um ainda esta semana.", acoes: [["ret", "Criar atividades de retenção"], ["emp:" + X.risco[0].nome, "Abrir " + X.risco[0].nome]] } : { t: "Nenhum cliente com risco de churn agora. A saúde da carteira está boa." };
-    if (/expan|upsell|upgrade|cross/.test(t)) return X.expansao.length ? { t: X.expansao.length + (X.expansao.length > 1 ? " clientes têm" : " cliente tem") + " saúde alta e espaço para crescer:\n" + lista(X.expansao) + "\n\nSão bons candidatos para uma oportunidade de expansão.", acoes: [["exp", "Criar atividades de upsell"], ["emp:" + X.expansao[0].nome, "Abrir " + X.expansao[0].nome]] } : { t: "Não achei clientes com saúde alta o bastante para expansão agora." };
-    if (/renova/.test(t)) return X.renov.length ? { t: X.renov.length + (X.renov.length > 1 ? " contratos completam" : " contrato completa") + " 12 meses nas próximas semanas:\n" + lista(X.renov), acoes: [["emp:" + X.renov[0].nome, "Abrir " + X.renov[0].nome]] } : { t: "Nenhuma renovação nas próximas semanas." };
-    if (/parad|sem contato|inativ|atividade/.test(t)) return X.parados.length ? { t: X.parados.length + (X.parados.length > 1 ? " clientes estão" : " cliente está") + " sem contato há 30 dias ou mais:\n" + lista(X.parados) + "\n\nVale um check-in rápido.", acoes: [["emp:" + X.parados[0].nome, "Abrir " + X.parados[0].nome]] } : { t: "Todos os clientes ativos tiveram contato nos últimos 30 dias." };
-    if (/produto|mix|receita por/.test(t)) { const tot = Math.max(1, X.mrrP.reduce((a, b) => a + b, 0)); return { t: "Receita por produto hoje:\n" + X.PK.map((k, i) => "• " + X.P(k)[0] + ": " + X.brlK(X.mrrP[i]) + " (" + Math.round(X.mrrP[i] / tot * 100) + "%)").join("\n") }; }
-    const cm = X.cntM || [], d = cm.length > 1 ? cm[cm.length - 1] - cm[0] : 0;
-    return { t: "Resumo da carteira: " + X.ativos.length + " clientes ativos, " + X.brlK(X.mrr) + " de MRR e ticket médio de " + X.brl(X.ticket) + ". " + (d > 0 ? "A base cresceu " + d + " clientes no período. " : "") + (X.risco.length ? X.risco.length + " em risco de churn e " : "") + X.expansao.length + " com potencial de expansão.", acoes: [["p:Quais clientes estão em risco?", "Ver riscos"], ["p:Onde tenho oportunidade de expansão?", "Ver expansão"]] };
-  }
   chatVals() { const S = this.state, NC = S.nexoChat, E = this.E; if (!NC) return { aberto: false, msgs: [], cards: [], recentes: [] };
     const upN = (p) => this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat, p) }));
     const X = this._ctx || {};
-    const criar = (arr, tipo, rot) => { if (!E || !arr || !arr.length) return; const base = E.ler("atividadesV2", null) || E.ler("atividades", null) || this.dadosDoProto.AtividadesSeed || [];
-      const novas = arr.map(c => ({ id: "a" + Date.now().toString(36) + c.id, titulo: rot + " · " + c.nome, tipo, area: "CS", situacao: "A fazer", prioridade: tipo === "Ligação" ? "Alta" : "Média", resp: c.resp, assignees: [c.resp], empresa: c.nome, desc: "Criada pelo NEXO no chat de Clientes.", fim: "+2 10:00", sub: [], criadoPor: "NEXO" }));
-      E.gravar({ [E.ler("atividadesV2", null) ? "atividadesV2" : "atividades"]: base.concat(novas) });
-      this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([{ de: "nexo", t: "Pronto. Criei " + novas.length + (novas.length > 1 ? " atividades" : " atividade") + " para os responsáveis. Elas já aparecem em Atividades." }]) }) } : null); this.rolarNexo(); };
-    const fazer = (k) => { if (k === "ret") criar(X.risco, "Ligação", "Retenção"); else if (k === "exp") criar(X.expansao, "Reunião", "Upsell");
-      else if (k.indexOf("emp:") === 0) { const c = (X.ativos || []).find(x => x.nome === k.slice(4)); this.setState({ nexoChat: null }); if (c && X.irEmp) X.irEmp(c); }
-      else if (k.indexOf("p:") === 0) this.enviarNexo(k.slice(2)); };
-    const REC = [["Resumo da carteira", "Hoje, 10:12"], ["Clientes em risco de churn", "Hoje, 09:40"], ["Oportunidades de expansão", "Ontem, 17:05"], ["Renovações do mês", "Ontem, 11:30"]];
+    const fazer = (k) => { if (k.indexOf("rota:") === 0) { this.setState({ nexoChat: null }); E && E.irPara(k.slice(5)); }
+      else if (k.indexOf("emp:") === 0) { const c = (X.ativos || []).find(x => x.nome === k.slice(4)); this.setState({ nexoChat: null }); if (c && X.irEmp) X.irEmp(c); } };
+    const REC = (S.nexoRec || []).map(c => [c.titulo, c.id]);
     const qb = (NC.busca || "").toLowerCase();
     const CARDS = [["Resumir a carteira", "Clientes, MRR, ticket e crescimento.", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5", "#fff6f4", "#c2330f", "Me dá um resumo da carteira"],
       ["Quem está em risco?", "Saúde baixa e pouco contato.", "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z", "#fdeeea", "#c2330f", "Quais clientes estão em risco?"],
@@ -159,13 +155,13 @@ class Logica extends React.Component<any, any> {
     const msgs = NC.msgs || [];
     return { aberto: true, fechar: () => this.setState({ nexoChat: null }), novo: () => upN({ msgs: [], rasc: "", pensando: false, ativo: null }), busca: NC.busca || "", setBusca: (e) => upN({ busca: e.target.value }),
       intro: "Seu copiloto de relacionamento na ONFACE. " + (X.risco && X.risco.length ? "Vi " + X.risco.length + (X.risco.length > 1 ? " clientes" : " cliente") + " com risco de churn. Quer começar por aí?" : "Pergunte qualquer coisa sobre a sua carteira."),
-      recentes: REC.filter(r => !qb || r[0].toLowerCase().indexOf(qb) >= 0).map(([t, q]) => ({ t, q, onClick: () => { upN({ msgs: [], ativo: t }); this.enviarNexo(t); },
+      recentes: REC.filter(r => !qb || r[0].toLowerCase().indexOf(qb) >= 0).map(([t, q]) => ({ t, q, onClick: () => this.abrirConversaNexo(q, t),
         style: "display:block;width:100%;padding:9px 12px;border-radius:10px;border:0;cursor:pointer;text-align:left;" + (NC.ativo === t ? "background:#fff;box-shadow:inset 2px 0 0 #fe4f2b,0 0 0 1px #eef1f1" : "background:transparent") })),
       cards: CARDS.map(([t, s2, d, bg, c, perg]) => ({ t, s: s2, d, ico: "width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:" + bg + ";color:" + c, onClick: () => { upN({ ativo: null }); this.enviarNexo(perg); } })),
       vazio: !msgs.length && !NC.pensando, temMsgs: !!msgs.length || !!NC.pensando, pensando: !!NC.pensando, ref: (el) => { this._nxEl = el; },
       msgs: msgs.map(m => { const eu = m.de === "eu"; return { t: m.t, ehNexo: !eu, temAcoes: !eu && !!(m.acoes && m.acoes.length), acoes: (m.acoes || []).map(([k, l]) => ({ l, onClick: () => fazer(k) })),
         linha: "display:flex;align-items:flex-end;gap:10px;" + (eu ? "justify-content:flex-end" : "justify-content:flex-start"),
-        bolha: "display:block;padding:11px 14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;text-wrap:pretty;" + (eu ? "border-radius:14px 14px 4px 14px;background:#12171d;color:#fff" : "border-radius:14px 14px 14px 4px;background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #eef1f1") }; }),
+        bolha: "display:block;padding:11px 14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;text-wrap:pretty;" + (m.erro ? "border-radius:14px 14px 14px 4px;background:var(--of-aviso-fundo);color:var(--of-aviso-tinta);box-shadow:inset 0 0 0 1px var(--of-aviso-tinta)" : eu ? "border-radius:14px 14px 4px 14px;background:#12171d;color:#fff" : "border-radius:14px 14px 14px 4px;background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #eef1f1") }; }),
       rasc: NC.rasc || "", setRasc: (e) => upN({ rasc: e.target.value }), tecla: (e) => { if (e.key === "Enter") { e.preventDefault(); this.enviarNexo(NC.rasc); } },
       enviar: () => this.enviarNexo(NC.rasc),
       enviarStyle: "width:40px;height:40px;border-radius:9999px;border:0;color:#fff;display:grid;place-items:center;cursor:pointer;background:" + ((NC.rasc || "").trim() ? "#fe4f2b" : "#f5a38f") };

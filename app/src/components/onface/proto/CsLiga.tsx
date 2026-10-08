@@ -1,5 +1,6 @@
 // @ts-nocheck — lógica portada do protótipo; ver a nota abaixo.
 "use client";
+import { perguntarAoNexo, novaConversaId, destinoDaProposta } from "@/lib/nexo/cliente";
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Cs — a lógica do handoff, portada.
@@ -414,20 +415,21 @@ class Logica extends React.Component<any, any> {
       if (/playbook/.test(ql)) return { t: runs.length ? runs.length + " playbooks rodando. O mais recente: " + ((pbDe(runsOrd[0].pb) || {}).nome || "") + "." : "Nenhum playbook rodando. Diga um cliente e eu sugiro.", acoes: [["Abrir Playbooks", () => this.setState({ aba: "play" })]] };
       if (/resum|carteira|geral|panorama|como estamos/.test(ql)) return { t: "Carteira: " + cart.length + " clientes, " + brl(mrrC) + " de MRR.\n" + atencao.length + " contas pedem atenção, " + brl(mrrRisco) + " em risco, " + ren90.length + " renovações em 90 dias, " + exps.length + " expansões abertas.", acoes: [["Ver plano do dia", () => enviar("plano do dia")], ["Abrir carteira", irCar("minha")]] };
       return null; };
-    const ia = (q) => { const ctxT = cart.slice(0, 15).map(c => c.nome + " | " + FAM[c.produto] + " | " + brl(c.mrr) + " | renova em " + dRen(c) + "d | último contato " + c.ultima + " | sinais: " + (sinaisDe(c).map(s => s.tag).join(", ") || "nenhum")).join("\n");
-      const falha = { t: "Não achei isso direto nos dados da carteira. Tente: “resumo da carteira”, “quem está em risco?”, “prepara reunião com " + (cart[0] ? cart[0].nome : "um cliente") + "”.", acoes: [["Plano do dia", () => enviar("plano do dia")]] };
-      if (!(window.claude && window.claude.complete)) return Promise.resolve(falha);
-      return Promise.race([window.claude.complete("Você é o NEXO, IA de Customer Success da ONFACE. Responda em português, direto, no máximo 6 linhas, usando só os dados abaixo. Não invente números.\n\nCARTEIRA:\n" + ctxT + "\n\nPERGUNTA: " + q).then(r => ({ t: String(r).trim(), acoes: [["Plano do dia", () => enviar("plano do dia")]] })), new Promise((res) => setTimeout(() => res(falha), 14000))]).catch(() => falha); };
+    /* Fora das respostas calculadas da carteira, a pergunta vai para o NEXO de verdade (servidor, lib/nexo/cliente); falha aparece como falha. */
+    const ia = (q) => { if (!this._nxConv) this._nxConv = novaConversaId();
+      return perguntarAoNexo({ conversaId: this._nxConv, pergunta: q, rota: "/cs", area: "Customer Success" })
+        .then(d => { this._nxConv = d.conversaId || this._nxConv; return { t: d.mensagem.texto, erro: !!d.falhou, acoes: (d.propostas || []).map(p => [p.rotulo, () => E && E.irPara(destinoDaProposta(p))]) }; })
+        .catch(e => ({ t: "Não consegui falar com o NEXO (" + e.message + ").", erro: true, acoes: [] })); };
     const enviar = (txt) => { const t2 = String(txt || "").trim(); if (!t2) return;
       this.setState(s => ({ nx: Object.assign({}, s.nx, { msgs: s.nx.msgs.concat([{ de: "eu", t: t2 }]), rasc: "", pensando: true }) }));
-      const push = (r) => this.setState(s => ({ nx: Object.assign({}, s.nx, { pensando: false, msgs: s.nx.msgs.concat([{ de: "nexo", t: r.t, acoes: r.acoes || [] }]) }) }));
+      const push = (r) => this.setState(s => ({ nx: Object.assign({}, s.nx, { pensando: false, msgs: s.nx.msgs.concat([{ de: "nexo", t: r.t, acoes: r.acoes || [], erro: !!r.erro }]) }) }));
       setTimeout(() => { const r = local(t2); if (r) return push(r); ia(t2).then(push); }, 650); };
     const nxo = S.nx, briefT = nexo.txt;
     const nx = { status: "ao vivo · " + ativos.length + " contas monitoradas", brief: briefT.slice(0, S.tp), digitando: S.tp < briefT.length,
       plano: planoI, planoVazio: !planoI.length, temPend: pendI.length > 0, tudoTxt: "Executar tudo (" + pendI.length + ")", executarTudo,
       mostraPlano: !(nxo.msgs.length > 0 || nxo.pensando), limpar: () => this.setState(s => ({ nx: Object.assign({}, s.nx, { msgs: [], pensando: false }) })),
       temMsgs: nxo.msgs.length > 0 || nxo.pensando, pensando: nxo.pensando, ref: (el) => { this._nxEl = el; },
-      msgs: nxo.msgs.map(m => { const eu = m.de === "eu"; return { t: m.t, temAcoes: !eu && !!(m.acoes && m.acoes.length), acoes: (m.acoes || []).map(([l, fn]) => ({ l, onClick: fn })), linha: "display:flex;" + (eu ? "justify-content:flex-end" : "justify-content:flex-start"),
+      msgs: nxo.msgs.map(m => { const eu = m.de === "eu"; return { t: m.t, erro: !!m.erro, temAcoes: !eu && !!(m.acoes && m.acoes.length), acoes: (m.acoes || []).map(([l, fn]) => ({ l, onClick: fn })), linha: "display:flex;" + (eu ? "justify-content:flex-end" : "justify-content:flex-start"),
         bolha: "display:block;padding:9px 12px;font-size:12.5px;line-height:1.55;white-space:pre-wrap;text-wrap:pretty;" + (eu ? "border-radius:12px 12px 4px 12px;background:#fe4f2b;color:#fff" : "border-radius:12px 12px 12px 4px;background:rgba(255,255,255,.08);color:#e3e6e8") }; }),
       rasc: nxo.rasc, setRasc: (e) => { const v = e.target.value; this.setState(s => ({ nx: Object.assign({}, s.nx, { rasc: v }) })); }, tecla: (e) => { if (e.key === "Enter") { e.preventDefault(); enviar(nxo.rasc); } }, enviar: () => enviar(nxo.rasc),
       enviarSt: "flex:0 0 auto;width:34px;height:34px;border-radius:9px;border:0;color:#fff;display:grid;place-items:center;cursor:pointer;background:" + ((nxo.rasc || "").trim() ? "#fe4f2b" : "#5a3a33"),

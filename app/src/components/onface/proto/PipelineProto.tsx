@@ -23,6 +23,7 @@ import { PipelineLiga } from "./PipelineLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { persistirEtapa, type CommandsDeEtapa } from "./persistencia";
 import { usePecas } from "./pecas-host";
+import { DelegarAgenteHost } from "./DelegarAgenteHost";
 
 /** Os commands que a tela precisa. A página é quem os passa. */
 export type AcoesPipeline = CommandsDeEtapa & {
@@ -292,6 +293,7 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
         registrarNoShow={registrarNoShow}
         ir={(href: string) => router.push(href)}
       />
+      <DelegarAgenteHost />
     </div>
   );
 }

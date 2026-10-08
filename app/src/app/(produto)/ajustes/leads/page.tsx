@@ -5,6 +5,7 @@ import { usePipelineConfig } from "@/hooks/usePipelineConfig";
 import { EditableList } from "@/components/crm2/ajustes/EditableList";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { Save, RotateCcw } from "lucide-react";
+import { DistribuicaoLeads } from "./DistribuicaoLeads";
 
 export default function LeadsConfigPage() {
   const { config, isLoading, mutate } = usePipelineConfig();
@@ -158,6 +159,8 @@ export default function LeadsConfigPage() {
         onChange={(items) => setField("origens", items)}
       />
 
+      <DistribuicaoLeads />
+
       <section className="rounded-xl border p-4" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-surface)" }}>
         <div className="flex flex-col gap-1 mb-3">
           <h3 className="text-sm font-semibold text-[var(--cf2-text-primary)]">Roteamento de inbound</h3>
@@ -174,7 +177,7 @@ export default function LeadsConfigPage() {
             style={{ background: "var(--cf2-bg-page)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
           >
             <option value="">Sem responsável padrão</option>
-            {usuarios.map((usuario) => <option key={usuario.id} value={usuario.id}>{usuario.nome}</option>)}
+            {usuarios.map((usuario) => <option key={usuario.id} value={usuario.id}>{usuario.nome}{usuario.tipo === "agente" ? " (IA)" : ""}</option>)}
           </select>
           <button
             onClick={salvarRoteamentoInbound}

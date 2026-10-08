@@ -24,6 +24,7 @@ import { PecasHost } from "./pecas-host";
 import { UsuarioDoProtoContexto, iniciaisDe, type UsuarioDoProto } from "./usuario-do-proto";
 import { desenharRadar, tituloDoRadar } from "@/lib/nexo/radar-desenho";
 import type { DadosRadar, MsgNexo } from "@/lib/nexo/painel";
+import { perguntarAoNexo, destinoDaProposta } from "@/lib/nexo/cliente";
 
 /* O menu do desenho navega em `/onface-preview/…`, onde estas telas moraram
    antes de virar rota oficial. A tradução para a rota do produto mora em
@@ -198,14 +199,12 @@ class CascaLigada extends CascaLiga {
       nexoAba: null, nexoConversa: id, nexoRascunho: "", nexoPensando: true,
       nexoMsgs: { ...s.nexoMsgs, [id]: anteriores.concat([{ de: "eu", texto: pergunta }]) },
     }));
-    pedirJson("/api/nexo/perguntar", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ conversaId: id, pergunta, rota: this.props.rota ?? "/", area: this.props.titulo ?? "" }),
-    })
-      .then((d: { configurada: boolean; mensagem: MsgNexo }) => {
-        this.setState((s: any) => ({ nexoMsgs: { ...s.nexoMsgs, [id]: (s.nexoMsgs[id] || []).concat([d.mensagem]) } }));
-        if (d.configurada) pedirJson("/api/nexo/painel").then((p) => this.setState({ nexoConversas: p.conversas })).catch(() => {});
+    perguntarAoNexo({ conversaId: id, pergunta, rota: this.props.rota ?? "/", area: this.props.titulo ?? "" })
+      .then((d) => {
+        // Ação sugerida pelo NEXO = botão que navega; o que muda estado a pessoa confirma na tela de destino.
+        const mensagem: MsgNexo = { ...d.mensagem, acoes: (d.propostas ?? []).map((p) => ({ label: p.rotulo, tom: "primario" as const, href: destinoDaProposta(p) })) };
+        this.setState((s: any) => ({ nexoMsgs: { ...s.nexoMsgs, [id]: (s.nexoMsgs[id] || []).concat([mensagem]) } }));
+        if (d.configurada && !d.falhou) pedirJson("/api/nexo/painel").then((p) => this.setState({ nexoConversas: p.conversas })).catch(() => {});
       })
       .catch((e) => this.setState((s: any) => ({
         nexoMsgs: { ...s.nexoMsgs, [id]: (s.nexoMsgs[id] || []).concat([{ de: "oni", texto: `Não consegui falar com o NEXO (${e.message}).` }]) },

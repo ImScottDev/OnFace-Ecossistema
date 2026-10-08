@@ -11,6 +11,7 @@ import type { TenantContext } from "../auth.js";
 import {
   conversas, mensagensDaConversa, montarSaudacao, perguntar, radar, resumoDoBotao, retrato, type Quem,
 } from "@/lib/nexo/painel";
+import { analisarConversa } from "@/lib/nexo/analise";
 
 const app = new Hono();
 
@@ -48,6 +49,15 @@ app.post("/nexo/perguntar", async (c) => {
   }).safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: "Pergunta inválida" }, 400);
   return c.json(await perguntar(quem(ctx), body.data));
+});
+
+// Resumo / sentimento da conversa aberta no Atendimento (o servidor lê as mensagens).
+app.post("/nexo/conversa/analisar", async (c) => {
+  const ctx = await exigirCtx(c, "ai.use");
+  const body = z.object({ contatoId: z.string().uuid(), tipo: z.enum(["resumo", "sentimento", "sugestao"]) }).safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: "Pedido inválido" }, 400);
+  const r = await analisarConversa(quem(ctx), body.data);
+  return r.ok ? c.json(r) : c.json({ error: r.erro }, r.status as 403 | 404 | 422 | 429 | 502 | 503);
 });
 
 export const nexoRoutes = app;

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { montarAtividades } from "@/lib/analytics/onface-atividades";
-import { isAdminView } from "@/lib/auth/roles";
 import { reunioesDaAgenda } from "@/lib/calendario/agenda-do-calendario";
 /* A tela é o desenho do handoff, convertido por máquina.
    `crm2/tarefas/Workspace` era a versão anterior e sai da rota. */
@@ -31,6 +30,7 @@ export default async function AtividadesPage({ searchParams }: {
   const garantir = atv?.startsWith("p:") ? atv.slice(2) : null;
   const dados = await montarAtividades(ctx.organizacaoId, new Date(), garantir);
   // Reuniões de verdade (`reunioes`), as mesmas do Calendário: alimentam "Reuniões hoje".
-  const reunioes = await reunioesDaAgenda(ctx.organizacaoId, ctx.userId, isAdminView(ctx.userRole));
+  // Só as minhas reuniões (a equipe inteira é opt-in no Calendário, `?escopo=equipe`).
+  const reunioes = await reunioesDaAgenda(ctx.organizacaoId, ctx.userId, false);
   return <AtividadesProto dados={dados} reunioes={reunioes} />;
 }

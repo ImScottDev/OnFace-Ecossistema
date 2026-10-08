@@ -11,6 +11,8 @@ import { decryptCredential } from "../security/credentials";
 import { executeRegisteredTool, modelToolsForIds } from "../tools/registry";
 import { runModelCall, type AgentMessage, type AiProvider } from "./provider-gateway";
 import { ClaudeSubscriptionAdapter } from "./claude-subscription-adapter";
+import { usuarioDoAgente } from "@/lib/agentes/usuario-do-agente";
+import { versaoAtendeSessao } from "@/lib/atendimento/ia-conversa";
 
 export type ExecuteAgentInput = {
   organizacaoId: string;
@@ -33,6 +35,12 @@ export type ExecuteAgentInput = {
    * empresta poder a ninguém, e ninguém empresta poder ao agente.
    */
   usuarioId?: string | null;
+  /**
+   * Ferramentas de LEITURA/proposta somadas às da versão para esta execução
+   * (ex.: o painel do NEXO consulta o CRM com o escopo do usuário). Não
+   * amplia permissão de escrita: o gate delegado continua por ferramenta.
+   */
+  extraToolIds?: string[];
 };
 
 export type ExecuteAgentResult = {
@@ -66,6 +74,14 @@ async function selectAgent(input: ExecuteAgentInput): Promise<SelectedAgent> {
     .where(and(eq(aiAgents.organizacaoId, input.organizacaoId), input.agentId ? eq(aiAgents.id, input.agentId) : undefined))
     .orderBy(desc(aiAgents.prioridade), desc(aiAgents.updatedAt));
 
+  // Número (sessão) da conversa: versão ligada a um número só atende conversa dele.
+  // Sem isto o `channel_session_id` do agente era gravado e nunca lido.
+  let sessaoDoContato: string | null = null;
+  if (input.mode === "live" && !input.agentId && input.contatoId) {
+    const [ct] = await db.select({ sessaoId: contatos.sessaoId }).from(contatos).where(eq(contatos.id, input.contatoId)).limit(1);
+    sessaoDoContato = ct?.sessaoId ?? null;
+  }
+
   const selected = rows.find(({ agent, version }) => {
     if (input.versionId && version.id !== input.versionId) return false;
     if (input.mode === "live") {
@@ -75,6 +91,7 @@ async function selectAgent(input: ExecuteAgentInput): Promise<SelectedAgent> {
       // escolha do chamador e não exige trigger_config — esse gate é só pra roteamento por
       // evento inbound quando múltiplos agentes publicados competem por prioridade.
       if (input.agentId) return true;
+      if (!versaoAtendeSessao(version.channelSessionId, sessaoDoContato)) return false;
       return configuredEvents(version.triggerConfig).includes(input.eventType);
     }
     return input.versionId ? version.id === input.versionId : version.status === "published" || version.status === "draft";
@@ -103,7 +120,8 @@ async function resolveApiKey(version: typeof aiAgentVersions.$inferSelect): Prom
   };
   const apiKey = envByProvider[provider];
   if (!apiKey) throw new Error(`Credencial ${provider} não configurada`);
-  return { apiKey, baseUrl: null };
+  // Só fora de produção: aponta o provider para um servidor local de teste (verificação sem token de IA).
+  return { apiKey, baseUrl: process.env.NODE_ENV !== "production" ? process.env.ONFACE_AI_BASE_URL_TESTE ?? null : null };
 }
 
 function sanitizeResponse(raw: string): string {
@@ -218,8 +236,10 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       concedidas: [...delegacao.permissoes].sort(),
     });
     await assertBudget(run.id, input, selected.agent.id);
+    // A agente é um usuário do sistema: o que ela faz nas ferramentas sai assinado por ele na timeline.
+    const agenteUsuarioId = await usuarioDoAgente(selected.agent.id);
     const toolIds = Array.isArray(selected.version.tools) ? selected.version.tools.filter((value): value is string => typeof value === "string") : [];
-    const tools = modelToolsForIds(toolIds);
+    const tools = modelToolsForIds([...new Set([...toolIds, ...(input.extraToolIds ?? [])])]);
     const allowedNames = new Set(tools.map((tool) => tool.name));
     const messages: AgentMessage[] = [
       // Instruções + escopo + expressões de handoff + regras fixas: a mesma
@@ -245,6 +265,8 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
           runId: run.id,
           contatoId: input.contatoId,
           leadId: input.leadId,
+          usuarioId: input.usuarioId,
+          agenteUsuarioId,
           mode: input.mode,
           autonomy,
           permissoesDelegadas: delegacao.permissoes,
@@ -296,7 +318,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         if (!allowedNames.has(call.name)) result = { ok: false, error: `tool fora da allowlist: ${call.name}` };
         else {
           const startedTool = Date.now();
-          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, mode: input.mode, autonomy, permissoesDelegadas: delegacao.permissoes }, call.input); }
+          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, usuarioId: input.usuarioId, agenteUsuarioId, mode: input.mode, autonomy, permissoesDelegadas: delegacao.permissoes }, call.input); }
           catch (error) { result = { ok: false, error: error instanceof Error ? error.message : String(error) }; }
           await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name, status: result.ok ? "completed" : "failed", input: call.input, output: result, latencyMs: Date.now() - startedTool, errorCode: result.ok ? undefined : "tool_failed", errorMessage: result.error });
         }

@@ -41,4 +41,9 @@ if [[ ! -f "$cert_dir/cert.p12" ]]; then
     -passout "pass:$DOCUMENSO_SIGNING_PASSPHRASE"
 fi
 
+# O container do Documenso roda com outro usuario: com o 600 padrao do openssl ele
+# nao le o .p12 (EACCES) e o selamento do PDF falha em silencio. So o .p12 vai
+# legivel; a chave privada continua restrita.
+chmod 644 "$cert_dir/cert.p12"
+
 echo "Documenso local preparado. Execute: docker compose --env-file infra/documenso/.env -f infra/documenso/compose.yml up -d"

@@ -40,12 +40,32 @@ async function escolherTemplate(
       eq(contratoTemplates.organizacaoId, organizacaoId),
       eq(contratoTemplates.ativo, true)
     ));
+  return escolherTemplateDe(todos, commercialModel, serviceFamily, tipoDocumento);
+}
+
+/**
+ * A escolha em si, sem banco (testável). Família é mais específica que modelo:
+ * PABX e White Label compartilham CONTRATO_OBRIGATORIO, mas têm textos e
+ * implantação diferentes.
+ *
+ * O terceiro degrau é o que faltava. O item do catálogo real nasce
+ * PAGAMENTO_DIRETO (218/218), e o template PABX/Callface AI/White Label é
+ * CONTRATO_OBRIGATORIO: sem o degrau "mesma família, qualquer modelo" nenhum
+ * casava e TODO contrato de PABX saía com o texto genérico de seis linhas, não
+ * com o contrato jurídico da família. Visto no Documenso do cliente.
+ */
+export function escolherTemplateDe<T extends { tipoDocumento: string | null; serviceFamily: string | null; commercialModel: string | null }>(
+  todos: T[],
+  commercialModel: string | null,
+  serviceFamily?: string | null,
+  tipoDocumento: string = "CONTRATO",
+): T | null {
   const rows = todos.filter((r) => (r.tipoDocumento || "CONTRATO") === tipoDocumento);
   if (rows.length === 0) return null;
-  // Família é mais específica que modelo. PABX e White Label compartilham
-  // CONTRATO_OBRIGATORIO, mas possuem textos e implantação diferentes.
-  return rows.find((r) => r.serviceFamily === serviceFamily && r.commercialModel === commercialModel)
-    ?? rows.find((r) => r.serviceFamily === serviceFamily && r.commercialModel === null)
+  const familia = serviceFamily && serviceFamily !== "UNKNOWN" ? serviceFamily : null;
+  return (familia ? rows.find((r) => r.serviceFamily === familia && r.commercialModel === commercialModel) : undefined)
+    ?? (familia ? rows.find((r) => r.serviceFamily === familia && r.commercialModel === null) : undefined)
+    ?? (familia ? rows.find((r) => r.serviceFamily === familia) : undefined)
     ?? rows.find((r) => r.serviceFamily === null && r.commercialModel === commercialModel)
     ?? rows.find((r) => r.serviceFamily === null && r.commercialModel === null)
     ?? null;
@@ -74,6 +94,8 @@ const ROTULO_DOCUMENTO: Record<string, string> = {
   RENOVACAO: "Contrato de renovação",
 };
 
+const ROTULO_FAMILIA_DOC: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+
 function dataIsoUtc(data: Date): string {
   return data.toISOString().slice(0, 10);
 }
@@ -93,8 +115,13 @@ function moeda(valor: number, codigo: string): string {
 }
 
 function enderecoCompleto(empresa: typeof empresas.$inferSelect | undefined, lead: typeof leads.$inferSelect | undefined): string {
+  // O gate de dados jurídicos grava rua/número/bairro em colunas próprias; o
+  // `endereco` livre só existe nas empresas antigas. Lendo só ele, todo
+  // contrato de empresa preenchida pelo gate saía com "não informado".
+  const rua = [empresa?.logradouro, empresa?.numero, empresa?.complemento].filter(Boolean).join(", ") || empresa?.endereco;
   return [
-    empresa?.endereco,
+    rua,
+    empresa?.bairro,
     [empresa?.cidade || lead?.empresaCidade, empresa?.estado || lead?.empresaEstado].filter(Boolean).join(" - "),
     empresa?.cep ? `CEP ${empresa.cep}` : null,
   ].filter(Boolean).join(", ") || "não informado";
@@ -284,7 +311,10 @@ export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contra
     tipo: itensDoGrupo[0]?.nome || "proposta",
     // A descrição vira o título do envelope no Documenso: o cliente precisa
     // ver "Termo aditivo" quando é aditivo, não "Contrato".
-    descricao: `${ROTULO_DOCUMENTO[tipoDocumento]} gerado do grupo comercial (${grupo.commercialModel}) da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} — aguardando assinatura`,
+    // Título limpo: é o que o cliente lê no topo do Documenso e no PDF. Antes
+    // vazava o código interno do modelo comercial e "aguardando assinatura",
+    // que fica falso assim que ele assina.
+    descricao: `${ROTULO_DOCUMENTO[tipoDocumento]}${ROTULO_FAMILIA_DOC[serviceFamily] ? ` ${ROTULO_FAMILIA_DOC[serviceFamily]}` : ""} · proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`,
     moeda: proposta.moeda || "BRL",
     mrr: mrr > 0 ? mrr.toFixed(2) : undefined,
     valorSetup: setup > 0 ? setup.toFixed(2) : undefined,

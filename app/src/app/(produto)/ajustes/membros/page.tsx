@@ -179,11 +179,20 @@ export default function MembrosPage() {
                           {iniciaisEmpresa(m.nome || "?")}
                         </span>
                         <div className="min-w-0">
-                          <p className="text-[13.5px] font-medium truncate" style={{ color: "var(--cf2-text-primary)" }}>
+                          <p className="text-[13.5px] font-medium truncate flex items-center gap-1.5" style={{ color: "var(--cf2-text-primary)" }}>
                             {m.nome}
+                            {m.tipo === "agente" && (
+                              <span
+                                title="Agente de IA: é usuário do sistema, recebe leads e atende pelo WhatsApp, mas não tem login"
+                                className="rounded-full px-1.5 py-px text-[10px] font-bold leading-none"
+                                style={{ background: "var(--of-coral-acao)", color: "var(--of-papel)" }}
+                              >
+                                IA
+                              </span>
+                            )}
                           </p>
                           <p className="text-[11.5px] truncate" style={{ color: "var(--cf2-text-tertiary)" }}>
-                            {m.email}
+                            {m.tipo === "agente" ? "Agente de IA, sem login" : m.email}
                           </p>
                           {/* Abaixo de md a coluna de papel some: o rótulo desce pra cá
                               em vez de sumir da tela. */}
@@ -194,7 +203,7 @@ export default function MembrosPage() {
                       </div>
                     </Cf2TableCell>
                     <Cf2TableCell className="hidden md:table-cell">
-                      {podeGerir ? (
+                      {podeGerir && m.tipo !== "agente" ? (
                         <select
                           aria-label={`Papel de ${m.nome}`}
                           title={ROLES.includes(m.role as Role) ? ROLE_AJUDA[m.role as Role] : undefined}
@@ -220,7 +229,7 @@ export default function MembrosPage() {
                       )}
                     </Cf2TableCell>
                     <Cf2TableCell className="text-right">
-                      {podeGerir ? (
+                      {podeGerir && m.tipo !== "agente" ? (
                         <div className="flex items-center justify-end gap-2">
                           {metasDe(m.id).length > 0 && (
                             <span className="text-[11.5px] text-right leading-tight" style={{ color: "var(--cf2-text-secondary)" }}>

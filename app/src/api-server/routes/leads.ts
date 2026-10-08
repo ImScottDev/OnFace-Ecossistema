@@ -1,3 +1,4 @@
+import { resolverPorRegra } from "@/lib/agentes/distribuicao";
 import { Hono } from "hono";
 import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { cors } from "hono/cors";
@@ -541,6 +542,8 @@ app.post(
       .insert(leads)
       .values({
         ...insertData,
+        // Regra de distribuição (Ajustes > Leads) quando ninguém foi escolhido na criação.
+        ...(insertData.responsavelId ? {} : { responsavelId: (await resolverPorRegra({ organizacaoId: orgId, etapa: "novo" }))?.responsavelId ?? null }),
         empresaId: resolvedEmpresaId,
         organizacaoId: orgId,
         tipo: "lead",

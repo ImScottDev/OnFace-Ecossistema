@@ -102,6 +102,9 @@ export const MIME_PERMITIDOS = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel", "application/msword",
   "application/zip",
+  // Anexos de conversa de WhatsApp (Atendimento): áudio gravado/enviado, vídeo e apresentação.
+  "audio/ogg", "audio/webm", "audio/mpeg", "audio/mp4", "audio/aac", "video/mp4", "video/webm", "video/quicktime",
+  "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ]);
 
 export type ResultadoGuardar =

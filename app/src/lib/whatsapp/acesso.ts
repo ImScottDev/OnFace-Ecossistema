@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { contatos } from "@/lib/db/schema";
-import { eq, and, or, isNull, SQL } from "drizzle-orm";
+import { eq, and, or, isNull, sql, SQL } from "drizzle-orm";
 
 /**
  * Autorização de leitura/escrita de conversa de WhatsApp.
@@ -21,6 +21,31 @@ export function veTodasAsConversas(
   // super_admin apontando o cookie de view-as pra conta certa.
   if (typeof ctxOuRole === "string" || ctxOuRole == null) return ctxOuRole === "super_admin";
   return (ctxOuRole.realRole ?? ctxOuRole.userRole) === "super_admin";
+}
+
+/**
+ * "Minhas conversas": a regra ÚNICA da tela de Atendimento, do badge da casca
+ * e do seletor de escopo (Minhas / Equipe).
+ *
+ * É minha a conversa que (1) chegou por um número (sessão) cujo dono sou eu,
+ * (2) está atribuída a mim, ou (3) está sem dono num número compartilhado
+ * (sessão sem usuário) ou sem número — a fila aberta da organização.
+ * Conversa sem dono num número de OUTRA pessoa não é minha.
+ *
+ * `resp` e `sessao` são as colunas de `contatos`: no Drizzle passe
+ * `contatos.responsavelId`/`contatos.sessaoId`; em SQL cru com alias, `sql`c.responsavel_id``.
+ */
+export function condicaoMinhasConversas(
+  userId: string,
+  resp: SQL | typeof contatos.responsavelId = contatos.responsavelId,
+  sessao: SQL | typeof contatos.sessaoId = contatos.sessaoId,
+): SQL {
+  return sql`(
+    ${resp} = ${userId}
+    OR EXISTS (SELECT 1 FROM whatsapp_sessao ws_m WHERE ws_m.id = ${sessao} AND ws_m.usuario_id = ${userId})
+    OR (${resp} IS NULL AND (${sessao} IS NULL
+        OR EXISTS (SELECT 1 FROM whatsapp_sessao ws_c WHERE ws_c.id = ${sessao} AND ws_c.usuario_id IS NULL)))
+  )`;
 }
 
 /** Condição SQL de acesso, pra listas. Não-atribuído fica visível (fila aberta). */
@@ -49,6 +74,7 @@ export async function checarAcessoContato(
       leadId: contatos.leadId,
       responsavelId: contatos.responsavelId,
       sessaoId: contatos.sessaoId,
+      donoDoNumero: sql<string | null>`(SELECT ws.usuario_id::text FROM whatsapp_sessao ws WHERE ws.id = ${contatos.sessaoId})`,
     })
     .from(contatos)
     .where(and(eq(contatos.id, contatoId), eq(contatos.organizacaoId, ctx.organizacaoId)))
@@ -58,6 +84,8 @@ export async function checarAcessoContato(
   if (veTodasAsConversas(ctx)) return { ok: true, contato };
   if (contato.responsavelId === null) return { ok: true, contato };
   if (contato.responsavelId === ctx.userId) return { ok: true, contato };
+  // Conversa do MEU número continua minha mesmo depois de transferida (mesma regra de "Minhas").
+  if (contato.donoDoNumero === ctx.userId) return { ok: true, contato };
   return { ok: false, motivo: "sem_permissao" };
 }
 

@@ -254,7 +254,7 @@ export async function montarVisaoGeral(
       getNomeOrganizacao(orgId),
       getImplantacaoResumo(orgId),
       getFinanceiroResumo(orgId),
-      getAtendimentoResumo(orgId),
+      getAtendimentoResumo(orgId, usuarioId),
     ]);
   const metaMrr = metaComercial.valorAlvo > 0 ? metaComercial.valorAlvo : null;
 
