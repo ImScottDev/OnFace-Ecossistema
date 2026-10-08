@@ -6,15 +6,24 @@ DO $$
 DECLARE f text := '';
 BEGIN
   f := f || pg_temp.ck('leads', (SELECT count(*) FROM leads), pg_temp.esp('leads'));
-  f := f || pg_temp.ck('empresas (prod menos duplicatas de CNPJ)', (SELECT count(*) FROM empresas),
-             pg_temp.esp('empresas') - pg_temp.esp('cnpj_duplicado_extras'));
+  -- O merge junta por CNPJ e tambem por NOME normalizado (ver 03_identidade.sql).
+  -- `_mz_empresa_merge` e a lista do que foi fundido, pelos DOIS motivos: usar ela
+  -- em vez de so `cnpj_duplicado_extras` e o que mantem o esperado em dia quando a
+  -- regra do merge muda.
+  f := f || pg_temp.ck('empresas (prod menos o que o merge fundiu)', (SELECT count(*) FROM empresas),
+             pg_temp.esp('empresas') - (SELECT count(*) FROM _mz_empresa_merge));
   f := f || pg_temp.ck('CNPJ duplicado',
              (SELECT count(*) FROM (SELECT 1 FROM empresas WHERE length(regexp_replace(coalesce(cnpj, ''), '\D', '', 'g')) IN (11, 14)
                                      GROUP BY regexp_replace(cnpj, '\D', '', 'g') HAVING count(*) > 1) x), 0);
   f := f || pg_temp.ck('empresa descartada no merge ainda existe', (SELECT count(*) FROM empresas e JOIN _mz_empresa_merge m ON m.origem_id = e.id), 0);
   f := f || pg_temp.ck('lead que perdeu a empresa', (SELECT count(*) FROM leads l JOIN legado.leads s ON s.id = l.id
                                                       WHERE s.empresa_id IS NOT NULL AND l.empresa_id IS NULL), 0);
-  f := f || pg_temp.ck('pessoas = leads', (SELECT count(*) FROM pessoas), pg_temp.esp('leads'));
+  -- 1 pessoa por lead CANONICO: lead nao canonico e a mesma pessoa entrando de novo
+  -- (mesmo e-mail ou telefone na mesma empresa) e nao gera segunda pessoa.
+  f := f || pg_temp.ck('pessoas = leads canonicos', (SELECT count(*) FROM pessoas),
+             (SELECT count(*) FROM leads WHERE canonical_lead_id IS NULL));
+  f := f || pg_temp.ck('lead nao canonico com pessoa propria',
+             (SELECT count(*) FROM pessoas p JOIN leads l ON l.id = p.lead_id_legado WHERE l.canonical_lead_id IS NOT NULL), 0);
   f := f || pg_temp.ck('pessoas sem lead', (SELECT count(*) FROM pessoas WHERE lead_id_legado IS NULL), 0);
   f := f || pg_temp.ck('lead sem estagio_pre_vendas', (SELECT count(*) FROM leads WHERE estagio_pre_vendas IS NULL), 0);
   -- B4: 'novo' nunca em massa. tipo=lead em 'novo' so quem e pending de verdade.

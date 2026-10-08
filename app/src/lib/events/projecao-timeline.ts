@@ -17,6 +17,7 @@
  *
  * Por isso a política é explícita e o título é escrito para humano.
  */
+import { rotuloDeEtapa } from "../vendas/rotulos-evento";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { projetarTimeline } from "@onface/platform-events";
@@ -42,7 +43,7 @@ const PROJETAVEIS: Record<string, RegraProjecao> = {
   AcquisitionCreated: { tipo: "aquisicao", titulo: (p) => `Entrou por ${p.origem ?? "origem não informada"}`, icone: "entrada" },
   AcquisitionQualified: { tipo: "qualificacao", titulo: () => "Qualificado", icone: "check" },
   AcquisitionDisqualified: { tipo: "desqualificacao", titulo: (p) => `Desqualificado${p.motivo ? `: ${p.motivo}` : ""}`, icone: "x" },
-  StageChanged: { tipo: "etapa", titulo: (p) => `Etapa mudou para ${p.toStage ?? p.stage ?? "outra"}`, icone: "seta" },
+  StageChanged: { tipo: "etapa", titulo: (p) => (p.para ?? p.toStage ?? p.stage) ? `Etapa: ${p.de ?? p.fromStage ? rotuloDeEtapa(p.de ?? p.fromStage) + " → " : "para "}${rotuloDeEtapa(p.para ?? p.toStage ?? p.stage)}` : "Mudança de etapa", icone: "seta" },
   OpportunityCreated: { tipo: "oportunidade", titulo: () => "Oportunidade criada", icone: "alvo" },
   OpportunityWon: { tipo: "oportunidade_ganha", titulo: () => "Venda ganha", icone: "trofeu" },
   OpportunityLost: { tipo: "oportunidade_perdida", titulo: (p) => `Venda perdida${p.motivo ? `: ${p.motivo}` : ""}`, icone: "x" },
@@ -155,7 +156,9 @@ export async function projetarEventoNaTimeline(evento: EventoParaProjetar): Prom
       empresaId, pessoaId, aquisicaoId, oportunidadeId,
       tipo: regra.tipo,
       titulo: regra.titulo(p),
-      actorType: "SYSTEM",
+      // Quem fez, quando o publicador informou (`atorId`); sem isso, o sistema.
+      actorType: typeof p.atorId === "string" ? "USER" : "SYSTEM",
+      actorId: typeof p.atorId === "string" ? p.atorId : null,
       ocorridoEm: evento.createdAt,
       metadata: { origem: "projecao", evento: evento.eventType },
     });

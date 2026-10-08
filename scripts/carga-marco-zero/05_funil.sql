@@ -104,7 +104,10 @@ SELECT 'status_changes(sinteticos)' AS tabela, pg_temp.mz_carga('status_changes'
 -- Ganho e perda sao exclusivos: ganho_at so no ganho, perdido_at/motivo so no perdido.
 CREATE TEMP TABLE _o AS
 SELECT md5('opp:' || n.id)::uuid AS id, n.organizacao_id,
-       (SELECT p.id FROM pessoas p WHERE p.lead_id_legado = n.lead_id) AS pessoa_id,
+       -- Pessoa do lead CANONICO: lead nao canonico nao tem pessoa propria (03),
+       -- e sem isto 21 oportunidades ficavam sem pessoa.
+       (SELECT p.id FROM pessoas p
+         WHERE p.lead_id_legado = coalesce((SELECT l2.canonical_lead_id FROM leads l2 WHERE l2.id = n.lead_id), n.lead_id)) AS pessoa_id,
        n.empresa_id,
        -- A copia 'ativo' (carteira) fica FORA do funil, como diz a regra la em
        -- cima: entao ela tambem nao carrega pipeline. Levando o pipeline junto,

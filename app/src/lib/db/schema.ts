@@ -1672,6 +1672,23 @@ export const propostaItens = pgTable(
 );
 
 // ─── LABELS (TAGS) ──────────────────────────────────────────
+/** Visões salvas das listas (migration 0096): busca, filtros, aba e visão de cada usuário por tela. */
+export const visoesSalvas = pgTable(
+  "visoes_salvas",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    usuarioId: uuid("usuario_id").references(() => usuarios.id, { onDelete: "cascade" }).notNull(),
+    tela: text("tela").notNull(),
+    nome: text("nome").notNull(),
+    config: jsonb("config").notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_visoes_salvas_usuario_tela").on(table.organizacaoId, table.usuarioId, table.tela),
+  ]
+);
+
 export const labels = pgTable(
   "labels",
   {

@@ -24,6 +24,7 @@ type DbClient = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export type EventoDominio =
   | "LeadCreated"
+  | "ConversationLinkedToLead"
   | "DealCreated"
   | "StageChanged"
   | "DealWon"
@@ -94,6 +95,8 @@ export interface PublicarEventoOpts {
   correlationId?: string;
   /** Evita duplicar o mesmo evento se o call site puder rodar 2x (retry de rota, etc). */
   idempotencyKey?: string;
+  /** Quem fez (usuário). Sem ele o fato nasce como SYSTEM e a timeline não diz quem foi. */
+  atorId?: string | null;
 }
 
 /**
@@ -107,6 +110,7 @@ export async function publicarEvento(opts: PublicarEventoOpts, dbClient: DbClien
   // Fato produzido dentro de um nó de automação sai carimbado (payload._automacao):
   // é como o gatilho de evento dos fluxos enxerga automação disparando automação.
   opts = { ...opts, payload: carimbarPayload(opts.payload) };
+  if (opts.atorId) opts = { ...opts, payload: { ...opts.payload, atorId: opts.atorId } };
   try {
     const [inserted] = await dbClient.insert(eventOutbox).values({
       organizacaoId: opts.organizacaoId,
@@ -162,9 +166,9 @@ async function registrarFatoDeDominio(opts: PublicarEventoOpts, dbClient: DbClie
   try {
     await dbClient.execute(sql`
       INSERT INTO domain_events (organizacao_id, event_type, aggregate_type, aggregate_id,
-                                 actor_type, source, idempotency_key, correlation_id, payload)
+                                 actor_type, actor_id, source, idempotency_key, correlation_id, payload)
       VALUES (${opts.organizacaoId}::uuid, ${opts.eventType}, ${opts.aggregateType},
-              ${opts.aggregateId}::uuid, 'SYSTEM', 'runtime',
+              ${opts.aggregateId}::uuid, ${opts.atorId ? "USER" : "SYSTEM"}, ${opts.atorId ?? null}::uuid, 'runtime',
               ${opts.idempotencyKey ?? null}, ${opts.correlationId ?? null}::uuid,
               ${JSON.stringify(opts.payload)}::jsonb)
       ON CONFLICT DO NOTHING`);

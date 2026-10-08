@@ -56,9 +56,12 @@ export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): Repositori
                      AND regexp_replace(coalesce(cnpj,''), '\\D', '', 'g') = ${cnpj} LIMIT 1`);
     },
     async acharEmpresaPorDominio(organizacaoId, dominio) {
+      // Também a coluna `dominio`, que é a que `resolverEmpresa` do app consulta: com regras diferentes
+      // nas duas pontas, o app achava a empresa e a porta canônica criava outra, sem lead, ao lado.
       return um(sql`SELECT id FROM empresas WHERE organizacao_id = ${organizacaoId}::uuid
-                     AND lower(regexp_replace(coalesce(website,''), '^https?://(www\\.)?', '')) LIKE ${dominio + '%'}
-                     LIMIT 1`);
+                     AND (dominio = ${dominio}
+                          OR lower(regexp_replace(coalesce(website,''), '^https?://(www\\.)?', '')) LIKE ${dominio + '%'})
+                     ORDER BY created_at LIMIT 1`);
     },
 
     async criarPessoa(organizacaoId, dados, empresaId) {
@@ -72,6 +75,21 @@ export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): Repositori
       return r!.id;
     },
     async criarEmpresa(organizacaoId, dados) {
+      /* Regra do Scott (06/10), a mesma de `resolverEmpresa` do app: sem CNPJ e sem domínio,
+         empresa de NOME IGUAL (sem caixa, acento, espaço e pontuação) é a mesma. Sem isto, todo
+         lead criado só com o nome da empresa nascia com uma segunda empresa idêntica aqui. */
+      const nomeNorm = String(dados.nome ?? "").toLowerCase().normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
+      if (!normalizarCnpj(dados.cnpj) && !(dados.website ?? dados.dominio) && nomeNorm.length >= 3) {
+        const igual = await um<{ id: string }>(sql`
+          SELECT id FROM empresas
+           WHERE organizacao_id = ${organizacaoId}::uuid
+             AND regexp_replace(
+                   translate(lower(nome), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'),
+                   '[^a-z0-9]+', '', 'g') = ${nomeNorm}
+           ORDER BY created_at LIMIT 1`);
+        if (igual) return igual.id;
+      }
       const r = await um<{ id: string }>(sql`
         INSERT INTO empresas (organizacao_id, nome, cnpj, website)
         VALUES (${organizacaoId}::uuid, ${dados.nome ?? "Sem nome"},

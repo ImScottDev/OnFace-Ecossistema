@@ -254,7 +254,7 @@ export async function boardDeAquisicoes(
            -- formulario e nunca virou uma linha em empresas; descartar o texto
            -- e perder dado que o sistema antigo mostrava, nao e ausencia.
            COALESCE(NULLIF(trim(lg.empresa), ''), e.nome) AS empresa, a.empresa_id::text,
-           NULLIF(trim(concat_ws(' ', p.nome, p.sobrenome)), '') AS pessoa,
+           NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS pessoa,
            a.pessoa_id::text, p.cargo,
            ${expressaoDeEtapa(sql)} AS etapa,
            a.origem, a.canal, pc.campaign AS campanha,
