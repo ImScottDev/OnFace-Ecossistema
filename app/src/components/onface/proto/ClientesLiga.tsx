@@ -1,6 +1,6 @@
 // @ts-nocheck — lógica portada do protótipo; ver a nota abaixo.
 "use client";
-import { perguntarAoNexo, conversasRecentes, mensagensDaConversa as mensagensDaConversaNexo, novaConversaId, destinoDaProposta } from "@/lib/nexo/cliente";
+import { perguntarAoNexo, conversasRecentes, mensagensDaConversa as mensagensDaConversaNexo, novaConversaId, botoesDaResposta, confirmarAcaoDoNexo } from "@/lib/nexo/cliente";
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Clientes — a lógica do handoff, portada.
@@ -134,17 +134,18 @@ class Logica extends React.Component<any, any> {
   enviarNexo(q) { const t = String(q || "").trim(); if (!t) return;
     if (!this._nxConv) this._nxConv = novaConversaId();
     this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat || { msgs: [] }, { msgs: ((s.nexoChat || {}).msgs || []).concat([{ de: "eu", t }]), rasc: "", pensando: true }) }));
-    const acaoDe = (p) => ["rota:" + destinoDaProposta(p), p.rotulo];
+    const acaoDe = (b) => b.confirmar ? ["conf:" + b.confirmar.runId + ":" + b.confirmar.passo, b.rotulo] : ["rota:" + b.href, b.rotulo];
     const push = (m) => { this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([Object.assign({ de: "nexo" }, m)]), pensando: false }) } : null); this.rolarNexo(); };
     perguntarAoNexo({ conversaId: this._nxConv, pergunta: t, rota: "/clientes", area: "Clientes" })
-      .then(d => { this._nxConv = d.conversaId || this._nxConv; push({ t: d.mensagem.texto, erro: !!d.falhou, acoes: (d.propostas || []).map(acaoDe) }); if (d.configurada && !d.falhou) this.carregarRecentesNexo(); })
+      .then(d => { this._nxConv = d.conversaId || this._nxConv; const rr = botoesDaResposta(d); push({ t: rr.texto, erro: !!d.falhou, acoes: rr.botoes.map(acaoDe) }); if (d.configurada && !d.falhou) this.carregarRecentesNexo(); })
       .catch(e => push({ t: "Não consegui falar com o NEXO (" + e.message + ").", erro: true, acoes: [] }));
     this.rolarNexo(); }
   rolarNexo() { requestAnimationFrame(() => { if (this._nxEl) this._nxEl.scrollTop = this._nxEl.scrollHeight; }); }
   chatVals() { const S = this.state, NC = S.nexoChat, E = this.E; if (!NC) return { aberto: false, msgs: [], cards: [], recentes: [] };
     const upN = (p) => this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat, p) }));
     const X = this._ctx || {};
-    const fazer = (k) => { if (k.indexOf("rota:") === 0) { this.setState({ nexoChat: null }); E && E.irPara(k.slice(5)); }
+    const fazer = (k) => { if (k.indexOf("conf:") === 0) { const [, runId, passo] = k.split(":"); confirmarAcaoDoNexo({ runId, passo: Number(passo) }).then(r => { this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([{ de: "nexo", t: r.texto }]) }) } : null); this.rolarNexo(); }); }
+      else if (k.indexOf("rota:") === 0) { this.setState({ nexoChat: null }); E && E.irPara(k.slice(5)); }
       else if (k.indexOf("emp:") === 0) { const c = (X.ativos || []).find(x => x.nome === k.slice(4)); this.setState({ nexoChat: null }); if (c && X.irEmp) X.irEmp(c); } };
     const REC = (S.nexoRec || []).map(c => [c.titulo, c.id]);
     const qb = (NC.busca || "").toLowerCase();

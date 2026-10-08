@@ -20,7 +20,9 @@ import { getSignatureProvider } from "@/lib/crm/signature";
 import { determinarProdutoProposta } from "@/lib/crm/proposta-fluxo";
 import { calcularFamiliaDoGrupo } from "@/lib/crm/politica-familia";
 import { tipoDocumentoDoContratual } from "@/lib/vendas/dominio";
-import { renderizarCorpo, escaparHtml } from "@/lib/crm/contrato-variaveis";
+import { linhasDeItens, moeda } from "@/lib/crm/contrato-itens";
+import { politicaContratual } from "@/lib/crm/contrato-politica";
+import { renderizarCorpo, variaveisFaltando } from "@/lib/crm/contrato-variaveis";
 
 /**
  * `tipo_documento` separa contrato, aditivo e renovação dentro da MESMA
@@ -91,6 +93,7 @@ async function numeroDoContratoBase(contratoBaseId: string | null | undefined): 
 const ROTULO_DOCUMENTO: Record<string, string> = {
   CONTRATO: "Contrato",
   ADITIVO: "Termo aditivo",
+  DOWNGRADE: "Termo aditivo de downgrade",
   RENOVACAO: "Contrato de renovação",
 };
 
@@ -110,58 +113,73 @@ function vencimentoPorMeses(inicio: Date, meses: number | null | undefined): str
   return dataIsoUtc(vencimento);
 }
 
-function moeda(valor: number, codigo: string): string {
-  return valor.toLocaleString("pt-BR", { style: "currency", currency: codigo || "BRL" });
-}
-
 function enderecoCompleto(empresa: typeof empresas.$inferSelect | undefined, lead: typeof leads.$inferSelect | undefined): string {
   // O gate de dados jurídicos grava rua/número/bairro em colunas próprias; o
-  // `endereco` livre só existe nas empresas antigas. Lendo só ele, todo
-  // contrato de empresa preenchida pelo gate saía com "não informado".
+  // `endereco` livre só existe nas empresas antigas.
   const rua = [empresa?.logradouro, empresa?.numero, empresa?.complemento].filter(Boolean).join(", ") || empresa?.endereco;
   return [
     rua,
     empresa?.bairro,
     [empresa?.cidade || lead?.empresaCidade, empresa?.estado || lead?.empresaEstado].filter(Boolean).join(" - "),
     empresa?.cep ? `CEP ${empresa.cep}` : null,
-  ].filter(Boolean).join(", ") || "não informado";
+  ].filter(Boolean).join(", ");
+}
+
+const dataExtenso = (d: Date) => d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
+const dataCurta = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+
+const FORMA_PAGAMENTO: Record<string, string> = {
+  cartao: "cartão de crédito", boleto: "boleto bancário", boleto_parcelado: "boleto bancário",
+};
+
+/** Erro que carrega o que falta, em palavras do operador. A UI e o evento de falha mostram `message`. */
+export class ContratoIncompletoError extends Error {
+  constructor(public readonly faltando: string[]) {
+    super(`Contrato não pode ser enviado: falta ${faltando.join("; ")}.`);
+    this.name = "ContratoIncompletoError";
+  }
+}
+
+/** Onde corrigir cada pendência: o texto vai direto para quem precisa agir. */
+function dicaDaVariavel(chave: string, rotulo: string): string {
+  if (chave.startsWith("empresa_")) return `${rotulo} da empresa (cadastro da Empresa, dados jurídicos)`;
+  if (chave === "percentual_multa" || chave === "percentual_multa_numero") return "multa rescisória (Ajustes > Contratos > Parâmetros do contrato)";
+  if (chave === "limite_armazenamento_gravacoes") return "limite de armazenamento de gravações (Ajustes > Contratos > Parâmetros do contrato)";
+  if (chave === "meses_restantes_contrato_base" || chave === "valor_multa_downgrade") return "prazo restante do contrato aditado (contrato base vinculado à proposta, com início e prazo)";
+  if (chave === "prazo_meses") return "prazo do contrato em meses (proposta)";
+  if (chave === "dia_vencimento") return "vencimento da cobrança (condições de pagamento da proposta)";
+  if (chave === "forma_pagamento_setup") return "forma de pagamento do setup (condições de pagamento da proposta)";
+  if (chave.startsWith("pessoa_")) return `${rotulo} (signatário da proposta)`;
+  return rotulo;
+}
+
+interface VariaveisDoGrupo {
+  variaveis: Record<string, string>;
+  proposta: typeof propostas.$inferSelect;
+  grupo: typeof propostaGrupoComercial.$inferSelect;
+  serviceFamily: string;
+  tipoDocumento: string;
+  itens: { nome: string; tipo: string; subtotal: string | null; servicoCatalogoId: string | null }[];
+  mrr: number;
+  setup: number;
 }
 
 /**
- * Resolve+renderiza o corpo do contrato — extraído de `gerarContratoDeTemplate`
- * (19/08) pra ser reusável por QUALQUER call site que crie contrato, não só
- * o fluxo de grupo comercial (ex: Won manual em negocios.ts, que não tem
- * grupo/commercialModel formal). Nunca retorna corpo vazio: sem template
- * configurado, cai no mesmo fallback textual honesto de sempre.
+ * Todas as variáveis do contrato a partir do que o sistema sabe AGORA. Vazio é
+ * vazio: nada de "não informado" que acabaria escrito no meio de uma cláusula.
+ * É chamada na geração (rascunho) e de novo no envio, porque os dados jurídicos
+ * da empresa costumam ser completados depois que a proposta saiu.
  */
-export async function resolverCorpoContrato(
-  organizacaoId: string,
-  commercialModel: string | null,
-  variaveis: Record<string, string>,
-  serviceFamily?: string | null,
-  tipoDocumento: string = "CONTRATO",
-): Promise<{ corpoGerado: string; templateId: string | null; templateVersao: number | null }> {
-  const template = await escolherTemplate(organizacaoId, commercialModel, serviceFamily, tipoDocumento);
-  const corpoGerado = template ? renderizarCorpo(template.corpoTemplate, variaveis) : `Contrato — ${variaveis.itens_descricao || "serviço"}. Valor: ${variaveis.valor_total || "—"}.`;
-  return { corpoGerado, templateId: template?.id ?? null, templateVersao: template?.versao ?? null };
-}
-
-/**
- * Gera (cria) o contrato do grupo a partir do template ativo. O padrão é
- * preparar o documento, sem notificar signatários. Isso permite que o
- * contrato exista antes do envio da proposta, como exige o fluxo comercial;
- * a distribuição só acontece depois de ProposalAccepted.
- */
-export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contratoId: string }> {
+async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo> {
   const [grupo] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoId)).limit(1);
   if (!grupo) throw new Error(`Grupo comercial ${grupoId} não encontrado`);
-  if (grupo.contratoId) return { contratoId: grupo.contratoId };
 
   const [proposta] = await db.select().from(propostas).where(eq(propostas.id, grupo.propostaId)).limit(1);
   if (!proposta) throw new Error(`Proposta ${grupo.propostaId} não encontrada`);
 
   const [lead] = await db.select().from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
-  const empresa = lead?.empresaId ? (await db.select().from(empresas).where(eq(empresas.id, lead.empresaId)).limit(1))[0] : undefined;
+  const empresaId = proposta.empresaId ?? lead?.empresaId;
+  const empresa = empresaId ? (await db.select().from(empresas).where(eq(empresas.id, empresaId)).limit(1))[0] : undefined;
 
   const itensDoGrupo = await db
     .select({
@@ -178,126 +196,172 @@ export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contra
     .where(eq(propostaGrupoComercialItens.grupoId, grupoId))
     .orderBy(asc(propostaItens.ordem));
 
+  const serviceFamily = grupo.serviceFamily ?? (await calcularFamiliaDoGrupo(grupoId));
+  const tipoDocumento = tipoDocumentoDoContratual(proposta.tipoContratual);
+  const politica = await politicaContratual(proposta.organizacaoId);
+  const codigoMoeda = proposta.moeda || "BRL";
+
   const valorTotal = itensDoGrupo.reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
   const mrr = itensDoGrupo.filter((i) => i.tipo === "recorrente").reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
   const setup = itensDoGrupo.filter((i) => i.tipo === "setup").reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
-  const itensDescricao = itensDoGrupo.map((i) => `${i.nome} (${i.tipo})`).join(", ") || "—";
-  const descreverItens = (tipos: string[]) => itensDoGrupo
-    .filter((item) => tipos.includes(item.tipo))
+  const itensDescricao = itensDoGrupo.map((i) => `${i.nome} (${i.tipo})`).join(", ");
+  const doTipo = (tipos: string[]) => itensDoGrupo.filter((item) => tipos.includes(item.tipo));
+  const descreverItens = (tipos: string[]) => doTipo(tipos)
     .map((item) => [
       item.nome,
       item.descricao || "—",
       `Qtd. ${Number(item.quantidade || 1).toLocaleString("pt-BR")}`,
-      moeda(parseFloat(item.valorUnitario || "0"), proposta.moeda || "BRL"),
-      moeda(parseFloat(item.subtotal || "0"), proposta.moeda || "BRL"),
+      moeda(parseFloat(item.valorUnitario || "0"), codigoMoeda),
+      moeda(parseFloat(item.subtotal || "0"), codigoMoeda),
     ].join(" | "))
-    .join("\n") || "Nenhum item contratado.";
-  // O contrato em HTML (base do Zoho) espera uma linha de tabela por item
-  // dentro do <tbody>. O mesmo dado em texto continua existindo para os
-  // templates antigos, colados de .docx.
-  const descreverItensHtml = (tipos: string[]) => itensDoGrupo
-    .filter((item) => tipos.includes(item.tipo))
-    .map((item) => `<tr>${[
-      item.nome,
-      item.descricao || "—",
-      Number(item.quantidade || 1).toLocaleString("pt-BR"),
-      moeda(parseFloat(item.valorUnitario || "0"), proposta.moeda || "BRL"),
-      moeda(parseFloat(item.subtotal || "0"), proposta.moeda || "BRL"),
-    ].map((celula) => `<td>${escaparHtml(String(celula))}</td>`).join("")}</tr>`)
-    .join("\n") || `<tr><td colspan="5">Nenhum item contratado.</td></tr>`;
+    .join("\n");
+  const linhas = (tipos: string[], comRecorrencia: boolean) => linhasDeItens(itensDoGrupo, tipos, { comRecorrencia, familia: serviceFamily, moeda: codigoMoeda });
+
   const signatarios = Array.isArray(proposta.signatarios)
     ? proposta.signatarios.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     : [];
-  const signatarioPrincipal = signatarios[0];
-  const inicioContrato = new Date();
-  const dataInicio = dataIsoUtc(inicioContrato);
+  const principal = signatarios[0];
+  const hoje = new Date();
+  const numeroProposta = `P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`;
+  const tipoPag = proposta.condicaoPagamentoTipo ? FORMA_PAGAMENTO[proposta.condicaoPagamentoTipo] : undefined;
+  const parcelas = proposta.parcelas && proposta.parcelas > 1 ? proposta.parcelas : 1;
+  const formaSetup = setup <= 0 ? "Sem setup"
+    : tipoPag ? (parcelas > 1 ? `Em ${parcelas}x, ${tipoPag}` : `À vista, ${tipoPag}`)
+    : (proposta.condicoesPagamento || "").trim();
+  const cidade = empresa?.cidade || lead?.empresaCidade || "";
+  const estado = empresa?.estado || lead?.empresaEstado || "";
+
+  // Downgrade: multa = percentual × valor reduzido × meses que faltam do contrato
+  // principal (cláusula 8.9 do contrato: "valor reduzido considerando-o
+  // mensalmente até o tempo restante do contrato").
+  let mesesRestantes = "";
+  let multaDowngrade = "";
+  if (tipoDocumento === "DOWNGRADE" && proposta.contratoBaseId && politica.multaRescisoriaPct) {
+    const [base] = await db.select({ inicio: contratos.inicio, prazo: contratos.prazoMeses, vencimento: contratos.vencimento }).from(contratos).where(eq(contratos.id, proposta.contratoBaseId)).limit(1);
+    const fim = base?.vencimento ? new Date(base.vencimento) : base?.inicio && base.prazo ? new Date(vencimentoPorMeses(new Date(base.inicio), base.prazo) ?? "") : null;
+    if (fim && !isNaN(fim.getTime())) {
+      const meses = Math.max(0, (fim.getUTCFullYear() - hoje.getUTCFullYear()) * 12 + (fim.getUTCMonth() - hoje.getUTCMonth()) + (fim.getUTCDate() > hoje.getUTCDate() ? 1 : 0));
+      mesesRestantes = String(meses);
+      multaDowngrade = moeda((politica.multaRescisoriaPct / 100) * mrr * meses, codigoMoeda);
+    }
+  }
 
   const variaveis: Record<string, string> = {
-    // O quadro das partes pede razão social. `empresas.nome` costuma ser o
-    // nome fantasia — era ele que ia para o contrato, e o gate de dados
-    // jurídicos gravava a razão social sem ninguém usar.
-    empresa_nome: empresa?.razaoSocial || empresa?.nome || lead?.empresa || lead?.nome || "—",
-    empresa_razao_social: empresa?.razaoSocial || empresa?.nome || lead?.empresa || "—",
-    empresa_nome_fantasia: empresa?.nome || lead?.empresa || "—",
-    empresa_cnpj: empresa?.cnpj || lead?.empresaCnpj || "não informado",
-    pessoa_nome: lead ? [lead.nome, lead.sobrenome].filter(Boolean).join(" ") : "—",
-    pessoa_email: lead?.email || "não informado",
+    // O quadro das partes pede razão social. `empresas.nome` costuma ser o fantasia.
+    empresa_nome: empresa?.razaoSocial || "",
+    empresa_razao_social: empresa?.razaoSocial || "",
+    empresa_nome_fantasia: empresa?.nome || lead?.empresa || "",
+    empresa_cnpj: empresa?.cnpj || lead?.empresaCnpj || "",
+    pessoa_nome: String(principal?.nome || "") || (lead ? [lead.nome, lead.sobrenome].filter(Boolean).join(" ") : ""),
+    pessoa_email: String(principal?.email || "") || lead?.email || "",
     itens_descricao: itensDescricao,
     empresa_endereco: enderecoCompleto(empresa, lead),
-    // O contrato do Zoho cita rua, bairro, cidade, UF e CEP em campos
-    // separados no quadro das partes — o endereço composto não serve lá.
-    empresa_logradouro: empresa?.logradouro || empresa?.endereco || "não informado",
-    empresa_numero: empresa?.numero || "s/n",
+    empresa_logradouro: empresa?.logradouro || empresa?.endereco || "",
+    empresa_numero: empresa?.numero || "",
     empresa_complemento: empresa?.complemento || "",
-    empresa_bairro: empresa?.bairro || "não informado",
-    empresa_cidade: empresa?.cidade || lead?.empresaCidade || "não informado",
-    empresa_estado: empresa?.estado || lead?.empresaEstado || "não informado",
-    empresa_cep: empresa?.cep || "não informado",
-    pessoa_cargo: lead?.cargo || String(signatarioPrincipal?.cargo || "não informado"),
-    pessoa_cpf: String(signatarioPrincipal?.cpf || "não informado"),
-    valor_total: moeda(valorTotal, proposta.moeda || "BRL"),
+    empresa_bairro: empresa?.bairro || "",
+    empresa_cidade: cidade,
+    empresa_estado: estado,
+    empresa_cep: empresa?.cep || "",
+    pessoa_cargo: String(principal?.cargo || "") || lead?.cargo || "",
+    pessoa_cpf: String(principal?.cpf || ""),
+    valor_total: moeda(valorTotal, codigoMoeda),
     itens_recorrentes: descreverItens(["recorrente", "avulso"]),
     itens_setup: descreverItens(["setup"]),
-    itens_recorrentes_html: descreverItensHtml(["recorrente", "avulso"]),
-    itens_setup_html: descreverItensHtml(["setup"]),
-    mrr_total: moeda(mrr, proposta.moeda || "BRL"),
-    setup_total: moeda(setup, proposta.moeda || "BRL"),
-    prazo_meses: proposta.prazoContratoMeses ? String(proposta.prazoContratoMeses) : "não informado",
-    prazo_descricao: proposta.prazoContratoMeses ? `${proposta.prazoContratoMeses} meses` : "conforme condições comerciais acordadas na proposta",
-    condicoes_pagamento: proposta.condicoesPagamento || "conforme proposta",
-    signatarios: signatarios.map((s) => `${String(s.nome || "")} <${String(s.email || "")}>`).join(", ") || "não informado",
-    data_inicio_cobranca: dataInicio,
-    data_inicio_vigencia: dataInicio,
-    data_emissao: dataInicio,
-    // Qualificação da CONTRATADA: estava escrita à mão dentro de cada texto.
-    // Como variável, uma eventual mudança cadastral não exige reeditar os
-    // cinco contratos.
+    itens_recorrentes_html: linhas(["recorrente", "avulso"], false),
+    itens_licencas_html: linhas(["recorrente", "avulso"], true),
+    itens_setup_html: linhas(["setup"], false),
+    mrr_total: moeda(mrr, codigoMoeda),
+    setup_total: moeda(setup, codigoMoeda),
+    forma_pagamento_setup: formaSetup,
+    prazo_meses: proposta.prazoContratoMeses ? String(proposta.prazoContratoMeses) : "",
+    prazo_descricao: proposta.prazoContratoMeses ? `${proposta.prazoContratoMeses} meses` : "",
+    condicoes_pagamento: (proposta.condicoesPagamento || "").trim(),
+    signatarios: signatarios.map((s) => `${String(s.nome || "")} <${String(s.email || "")}>`).join(", "),
+    data_inicio_cobranca: dataCurta(hoje),
+    data_inicio_vigencia: dataCurta(hoje),
+    data_emissao: dataExtenso(hoje),
+    // Qualificação da CONTRATADA, uma vez só: mudança cadastral não exige reeditar os modelos.
     callface_razao_social: "CALLFACE SOFTWARE E SERVIÇOS LTDA.",
     callface_cnpj: "39.764.520/0001-06",
     callface_endereco: "Avenida Pierre Simon de Laplace nº 740, sala 4, Bairro Techno Park, Campinas – SP, CEP: 13.069-320",
-    proposta_numero: `P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`,
+    proposta_numero: numeroProposta,
     contrato_base_numero: await numeroDoContratoBase(proposta.contratoBaseId),
-    // Não existe numeração própria de contrato: o identificador que o
-    // comercial reconhece é o da proposta que o originou.
-    contrato_numero: `P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`,
-    dia_vencimento: proposta.vencimentoDias ? String(proposta.vencimentoDias) : "conforme condição comercial",
-    cidade_uf: [empresa?.cidade || lead?.empresaCidade, empresa?.estado || lead?.empresaEstado].filter(Boolean).join(" - ") || "Campinas - SP",
-    data_assinatura_extenso: "data registrada pela plataforma de assinatura",
-    // A base PABX V2 trouxe estes campos jurídicos/operacionais, mas eles ainda
-    // não possuem configuração canônica no CRM. Mantemos valores explícitos e
-    // conservadores até o texto final e as políticas serem cadastrados pelo time.
-    callface_representante_nome: "não informado",
-    callface_representante_cargo: "não informado",
-    callface_representante_cpf: "não informado",
-    limite_armazenamento_gravacoes: "conforme o plano contratado",
-    sla_critico_resposta: "conforme política de suporte vigente",
-    sla_critico_cobertura: "conforme política de suporte vigente",
-    sla_alto_resposta: "conforme política de suporte vigente",
-    sla_alto_cobertura: "conforme política de suporte vigente",
-    sla_medio_resposta: "conforme política de suporte vigente",
-    sla_medio_cobertura: "conforme política de suporte vigente",
-    sla_baixo_resposta: "conforme política de suporte vigente",
-    sla_baixo_cobertura: "conforme política de suporte vigente",
-    percentual_multa: "conforme condição comercial e legislação aplicável",
-    juros_mora: "conforme condição comercial e legislação aplicável",
-    indice_reajuste: "conforme política comercial vigente",
-    prazo_devolucao_equipamentos: "conforme condição comercial do equipamento",
-    limite_responsabilidade_meses: "conforme versão jurídica final",
-    prazo_confidencialidade_anos: "conforme versão jurídica final",
-    prazo_cura_inadimplemento: "conforme versão jurídica final",
-    regra_multa_rescisoria: "conforme condição comercial e versão jurídica final",
-    testemunha_1_nome: "não aplicável quando não houver testemunha",
-    testemunha_1_cpf: "não informado",
-    testemunha_2_nome: "não aplicável quando não houver testemunha",
-    testemunha_2_cpf: "não informado",
+    // Não existe numeração própria de contrato: o código que o comercial reconhece é o da proposta.
+    contrato_numero: numeroProposta,
+    dia_vencimento: proposta.vencimentoDias ? `${proposta.vencimentoDias} dias após a emissão da cobrança` : "",
+    cidade_uf: [cidade, estado].filter(Boolean).join(" - "),
+    percentual_multa: politica.multaRescisoriaPct ? `${politica.multaRescisoriaPct.toLocaleString("pt-BR")}%` : "",
+    percentual_multa_numero: politica.multaRescisoriaPct ? politica.multaRescisoriaPct.toLocaleString("pt-BR") : "",
+    meses_restantes_contrato_base: mesesRestantes,
+    valor_multa_downgrade: multaDowngrade,
+    limite_armazenamento_gravacoes: politica.limiteGravacoes ?? "",
+    testemunha_1_nome: "", testemunha_1_cpf: "", testemunha_2_nome: "", testemunha_2_cpf: "",
   };
-  const serviceFamily = grupo.serviceFamily ?? (await calcularFamiliaDoGrupo(grupoId));
-  // Proposta marcada como aditivo/upgrade/downgrade gera termo aditivo, e não
-  // um contrato novo; renovação gera o contrato de renovação. O operador já
-  // escolhia o tipo contratual no envio da proposta — era só a geração do
-  // documento que ignorava a escolha e usava sempre o contrato padrão.
-  const tipoDocumento = tipoDocumentoDoContratual(proposta.tipoContratual);
+  return { variaveis, proposta, grupo, serviceFamily, tipoDocumento, itens: itensDoGrupo, mrr, setup };
+}
+
+/**
+ * Modelo + variáveis do grupo, e o que falta para o contrato poder sair.
+ * `faltando` vazio = pode enviar. Mensagens já em palavras de quem vai corrigir.
+ */
+async function conferirGrupo(grupoId: string) {
+  const dados = await montarVariaveisDoGrupo(grupoId);
+  const template = await escolherTemplate(dados.proposta.organizacaoId, dados.grupo.commercialModel, dados.serviceFamily, dados.tipoDocumento);
+  const faltando: string[] = [];
+  // Modelo genérico (sem família) é o texto de seis linhas que o cliente viu no Documenso.
+  // Contrato real nunca sai com ele: sem modelo da família, bloqueia.
+  if (!template || template.serviceFamily === null) {
+    const rotulo = `${ROTULO_DOCUMENTO[dados.tipoDocumento] ?? "Contrato"}${ROTULO_FAMILIA_DOC[dados.serviceFamily] ? ` ${ROTULO_FAMILIA_DOC[dados.serviceFamily]}` : ""}`;
+    faltando.push(`modelo "${rotulo}" cadastrado em Ajustes > Contratos`);
+  } else {
+    for (const f of variaveisFaltando(template.corpoTemplate, dados.variaveis)) faltando.push(dicaDaVariavel(f.chave, f.rotulo));
+  }
+  return { dados, template, faltando: [...new Set(faltando)] };
+}
+
+/** Pré-checagem para o envio da proposta: o contrato pronto não pode depender de dado que ainda não existe. */
+export async function conferirContratoDoGrupo(grupoId: string): Promise<string[]> {
+  return (await conferirGrupo(grupoId)).faltando;
+}
+
+/**
+ * Resolve+renderiza o corpo do contrato. Nunca retorna corpo vazio: sem
+ * template configurado, cai no texto mínimo (só para o Won manual de
+ * negocios.ts, que não passa por assinatura — o envio é bloqueado por `conferirGrupo`).
+ */
+export async function resolverCorpoContrato(
+  organizacaoId: string,
+  commercialModel: string | null,
+  variaveis: Record<string, string>,
+  serviceFamily?: string | null,
+  tipoDocumento: string = "CONTRATO",
+): Promise<{ corpoGerado: string; templateId: string | null; templateVersao: number | null }> {
+  const template = await escolherTemplate(organizacaoId, commercialModel, serviceFamily, tipoDocumento);
+  const corpoGerado = template ? renderizarCorpo(template.corpoTemplate, variaveis) : `Contrato — ${variaveis.itens_descricao || "serviço"}. Valor: ${variaveis.valor_total || "—"}.`;
+  return { corpoGerado, templateId: template?.id ?? null, templateVersao: template?.versao ?? null };
+}
+
+/** Título legível do envelope e do arquivo: "Contrato White Label · Empresa · P-123-v1". */
+export function tituloDoDocumento(tipoDocumento: string, serviceFamily: string | null | undefined, empresa: string, numero: string): string {
+  return [`${ROTULO_DOCUMENTO[tipoDocumento] ?? "Contrato"}${serviceFamily && ROTULO_FAMILIA_DOC[serviceFamily] ? ` ${ROTULO_FAMILIA_DOC[serviceFamily]}` : ""}`, empresa, numero]
+    .filter(Boolean).join(" · ");
+}
+
+/**
+ * Gera (cria) o contrato do grupo a partir do template ativo. O padrão é
+ * preparar o documento, sem notificar signatários. Isso permite que o
+ * contrato exista antes do envio da proposta, como exige o fluxo comercial;
+ * a distribuição só acontece depois de ProposalAccepted.
+ */
+export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contratoId: string }> {
+  const [existente] = await db.select({ contratoId: propostaGrupoComercial.contratoId }).from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoId)).limit(1);
+  if (!existente) throw new Error(`Grupo comercial ${grupoId} não encontrado`);
+  if (existente.contratoId) return { contratoId: existente.contratoId };
+
+  const { variaveis, proposta, grupo, serviceFamily, tipoDocumento, itens, mrr, setup } = await montarVariaveisDoGrupo(grupoId);
   const { corpoGerado, templateId, templateVersao } = await resolverCorpoContrato(proposta.organizacaoId, grupo.commercialModel, variaveis, serviceFamily, tipoDocumento);
+  const inicioContrato = new Date();
   const [contrato] = await db.insert(contratos).values({
     organizacaoId: proposta.organizacaoId,
     leadId: proposta.leadId,
@@ -308,38 +372,58 @@ export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contra
     variaveisPreenchidas: variaveis,
     signatarios: Array.isArray(proposta.signatarios) ? proposta.signatarios : [],
     corpoGerado,
-    tipo: itensDoGrupo[0]?.nome || "proposta",
-    // A descrição vira o título do envelope no Documenso: o cliente precisa
-    // ver "Termo aditivo" quando é aditivo, não "Contrato".
-    // Título limpo: é o que o cliente lê no topo do Documenso e no PDF. Antes
-    // vazava o código interno do modelo comercial e "aguardando assinatura",
-    // que fica falso assim que ele assina.
-    descricao: `${ROTULO_DOCUMENTO[tipoDocumento]}${ROTULO_FAMILIA_DOC[serviceFamily] ? ` ${ROTULO_FAMILIA_DOC[serviceFamily]}` : ""} · proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`,
+    tipo: itens[0]?.nome || "proposta",
+    // A descrição vira o título do envelope no Documenso e o nome do arquivo.
+    descricao: tituloDoDocumento(tipoDocumento, serviceFamily, variaveis.empresa_nome_fantasia || variaveis.empresa_razao_social, variaveis.contrato_numero),
     moeda: proposta.moeda || "BRL",
     mrr: mrr > 0 ? mrr.toFixed(2) : undefined,
     valorSetup: setup > 0 ? setup.toFixed(2) : undefined,
     inicio: dataIsoUtc(inicioContrato),
     vencimento: vencimentoPorMeses(inicioContrato, proposta.prazoContratoMeses),
     prazoMeses: proposta.prazoContratoMeses || undefined,
-    servicos: itensDoGrupo.map((i) => i.nome),
+    servicos: itens.map((i) => i.nome),
     status: "pendente_assinatura",
     assinaturaStatus: "pendente",
     signatureStatus: "contract_created",
-    produto: await determinarProdutoProposta(itensDoGrupo),
-    // Frente 2C.1 — a família comercial do contrato passa a ser gravada na
-    // criação. Antes ficava nula em todo contrato novo, e o gate de evidência
-    // não tinha como saber que aquele contrato era de PABX/White Label.
+    produto: await determinarProdutoProposta(itens),
+    // Frente 2C.1 — a família comercial do contrato é gravada na criação: o
+    // gate de evidência precisa saber que aquele contrato é de PABX/White Label.
     serviceFamily,
   }).returning();
 
   return { contratoId: contrato.id };
 }
 
-/** Distribui o contrato previamente preparado aos signatários após o aceite. */
-export async function enviarContratoParaAssinatura(contratoId: string): Promise<void> {
+/**
+ * Antes de ir ao provedor: refaz variáveis e modelo com o que o sistema sabe
+ * agora, confere o que falta e regrava o corpo. O rascunho foi gerado quando a
+ * proposta saiu; entre isso e o aceite o cliente pode ter completado a empresa,
+ * e o modelo pode ter ganhado versão. Sem esta passada o contrato ia com o
+ * retrato antigo.
+ */
+export async function prepararContratoParaEnvio(contratoId: string): Promise<void> {
   const [contrato] = await db.select().from(contratos).where(eq(contratos.id, contratoId)).limit(1);
   if (!contrato) throw new Error(`Contrato ${contratoId} não encontrado`);
-  if (contrato.signatureStatus === "signed") return;
+  if (!contrato.grupoComercialId) throw new ContratoIncompletoError(["vínculo com o grupo comercial da proposta (contrato criado fora do fluxo de propostas)"]);
+  const { dados, template, faltando } = await conferirGrupo(contrato.grupoComercialId);
+  if (faltando.length > 0 || !template) throw new ContratoIncompletoError(faltando);
+  await db.update(contratos).set({
+    templateId: template.id,
+    templateVersao: template.versao,
+    variaveisPreenchidas: dados.variaveis,
+    corpoGerado: renderizarCorpo(template.corpoTemplate, dados.variaveis),
+    descricao: tituloDoDocumento(dados.tipoDocumento, dados.serviceFamily, dados.variaveis.empresa_nome_fantasia || dados.variaveis.empresa_razao_social, dados.variaveis.contrato_numero),
+    updatedAt: new Date(),
+  }).where(eq(contratos.id, contratoId));
+}
+
+/** Distribui o contrato previamente preparado aos signatários após o aceite. */
+export async function enviarContratoParaAssinatura(contratoId: string): Promise<void> {
+  const [antes] = await db.select().from(contratos).where(eq(contratos.id, contratoId)).limit(1);
+  if (!antes) throw new Error(`Contrato ${contratoId} não encontrado`);
+  if (antes.signatureStatus === "signed") return;
+  await prepararContratoParaEnvio(contratoId);
+  const [contrato] = await db.select().from(contratos).where(eq(contratos.id, contratoId)).limit(1);
   const provider = getSignatureProvider();
   const resultado = await provider.enviarParaAssinatura(contrato.id, {
     signatarios: Array.isArray(contrato.signatarios) ? contrato.signatarios : [],
@@ -348,10 +432,7 @@ export async function enviarContratoParaAssinatura(contratoId: string): Promise<
   // Frente 2C.1 — campos provider-agnósticos preenchidos aqui (contrato_provider
   // e sent_at do pedido). `signature_public_url` fica pro provider que tiver URL
   // externa de verdade: no aceite eletrônico simples o link é a própria página
-  // pública do CRM, não uma URL de terceiro, e inventar uma seria mentir.
-  // Só existe URL pública real quando o provider é externo e devolveu uma
-  // (Documenso grava em signatarios[].signingUrl). Fica null no aceite
-  // eletrônico simples, onde o link é a própria página pública do CRM.
+  // pública do CRM, e inventar uma seria mentir.
   const [aposEnvio] = await db.select({ signatarios: contratos.signatarios }).from(contratos).where(eq(contratos.id, contrato.id)).limit(1);
   const primeiroLink = (Array.isArray(aposEnvio?.signatarios) ? aposEnvio.signatarios : [])
     .map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>).signingUrl : null))

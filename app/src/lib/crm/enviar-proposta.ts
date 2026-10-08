@@ -18,7 +18,7 @@ import { publicarEvento } from "@/lib/events/outbox";
 import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
 import { formarGruposComerciais, vincularContratoPreparadoAoGrupo } from "@/lib/crm/grupo-comercial";
 import { exigeContrato } from "@/lib/crm/commercial-model";
-import { gerarContratoDeTemplate } from "@/lib/crm/contrato-template";
+import { gerarContratoDeTemplate, conferirContratoDoGrupo } from "@/lib/crm/contrato-template";
 import { appUrl } from "@/lib/app-url";
 
 type PropostaRow = typeof propostas.$inferSelect;
@@ -166,6 +166,12 @@ export async function enviarPropostaComCheckout(opts: {
     const grupos = await formarGruposComerciais(propostaId);
     for (const grupo of grupos) {
       if (!exigeContrato(grupo.commercialModel) || grupo.contratoId) continue;
+      // O contrato é a peça que o cliente assina: se faltar dado para preencher
+      // o modelo, a proposta não sai, e a mensagem diz o que completar.
+      const faltando = await conferirContratoDoGrupo(grupo.id);
+      if (faltando.length > 0) {
+        return { ok: false, status: 400, error: `Antes de enviar, complete para gerar o contrato: ${faltando.join("; ")}.` };
+      }
       const { contratoId } = await gerarContratoDeTemplate(grupo.id);
       await vincularContratoPreparadoAoGrupo(grupo.id, contratoId);
       await publicarEvento({ organizacaoId, eventType: "ContractGenerated", aggregateType: "contrato", aggregateId: contratoId, payload: { propostaId, negocioId: proposta.negocioId, grupoComercialId: grupo.id, preparadoAntesDoEnvio: true }, idempotencyKey: `contract-generated:${contratoId}` });

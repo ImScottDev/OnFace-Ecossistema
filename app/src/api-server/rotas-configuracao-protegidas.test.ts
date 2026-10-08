@@ -172,7 +172,7 @@ test("o levantamento de rotas abertas continua visível", () => {
   }
   assert.ok(escritas > 150, "a varredura precisa estar encontrando as rotas");
   assert.ok(
-    semGate <= 183,
+    semGate <= 180,
     `${semGate} rotas de escrita sem autorização (medido em 21/09/2026: 166 depois de fechar ` +
     "automação, agente e plataforma de IA; 171 em 05/10, com PATCH /notificacoes, " +
     "que é dado PESSOAL: o gate dele é a sessão mais o filtro por usuario_id, e " +
@@ -181,7 +181,7 @@ test("o levantamento de rotas abertas continua visível", () => {
     "/empresa/contatos NÃO estão abertas: cada uma barra quem não é admin " +
     "lendo `ctx.userRole`, um estilo que o regex deste levantamento não " +
     "reconhece, e resolve a empresa por `empresaComDominio(ctx.organizacaoId, …)`, " +
-    "então o id vindo do cliente nunca escapa do tenant; 178 em 08/10 com os envios de arquivo de documentos do cliente, arquivos da empresa (POST e DELETE) e do projeto, todos de operação, com sessão e filtro por organizacao_id; 183 em 08/10 com as rotas de distribuição de leads, que barram quem não é gestão lendo `ctx.userRole`, estilo que o regex não reconhece, e as de anexo e IA do Atendimento, todas com sessão e escopo de organização). Se cresceu, uma rota " +
+    "então o id vindo do cliente nunca escapa do tenant; 178 em 08/10 com os envios de arquivo de documentos do cliente, arquivos da empresa (POST e DELETE) e do projeto, todos de operação, com sessão e filtro por organizacao_id; 183 em 08/10 com as rotas de distribuição de leads, que barram quem não é gestão lendo `ctx.userRole`, estilo que o regex não reconhece, e as de anexo e IA do Atendimento, todas com sessão e escopo de organização; 180 em 08/10: as rotas de edição de modelo de contrato e de parâmetros do contrato passaram a exigir gestão (`getGestaoCtx`) e o resto do aumento é de rotas de Atendimento e agentes, com sessão e escopo de organização). Se cresceu, uma rota " +
     "nova entrou aberta.",
   );
 });

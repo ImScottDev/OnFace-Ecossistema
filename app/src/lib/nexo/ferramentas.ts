@@ -21,7 +21,10 @@ import { isAdminView, isPersonalView } from "@/lib/auth/roles";
 import { RegraDeNegocio, ETAPAS_PRE_VENDAS, MOTIVOS_NUTRICAO, MOTIVOS_DESQUALIFICACAO, MOTIVOS_PERDA, ETAPAS_PIPELINE, FAMILIAS, type Ator, type EtapaPreVendas, type EtapaPipelineAberta } from "@/lib/vendas/dominio";
 import * as preVendas from "@/lib/vendas/pre-vendas";
 import * as pipeline from "@/lib/vendas/pipeline";
-import { executarAcaoAvulsa } from "@/lib/cadencia/cadence-engine";
+// Carregado sob demanda: cadence-engine importa o registro de ferramentas, e um import estático
+// aqui fecha o ciclo registry -> ferramentas -> cadence-engine -> registry (NEXO_TOOLS ainda sem valor).
+const motorDeCadencia = () => import("@/lib/cadencia/cadence-engine");
+import { resolverEmpresa, resolverPessoa } from "@/lib/vendas/identidade";
 import { criarTarefa, alterarTarefa, excluirTarefa, TIPOS_TAREFA, PRIORIDADES_TAREFA, STATUS_TAREFA } from "@/lib/tarefas/portas";
 import { CATALOGO, medir } from "@/lib/metricas/catalogo";
 import type { AgentToolContext, AgentToolRegistration } from "@/lib/ai-platform/tools/registry";
@@ -244,7 +247,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
       const dono = await donoDe(ctx, String(i.entidade), String(i.id));
       if (dono === undefined) return { ok: false, error: "registro não encontrado" };
       if (!meuAlvo(u, dono)) return alheio();
-      const r = await executarAcaoAvulsa("crm_add_note", { organizacaoId: ctx.organizacaoId, entityType: String(i.entidade) as never, entityId: String(i.id), vars: {}, ator: ator(ctx, u), chaveExecucao: `nexo:${ctx.runId}:nota`, config: { title: String(i.titulo), description: when(i.texto) ?? undefined } });
+      const r = await (await motorDeCadencia()).executarAcaoAvulsa("crm_add_note", { organizacaoId: ctx.organizacaoId, entityType: String(i.entidade) as never, entityId: String(i.id), vars: {}, ator: ator(ctx, u), chaveExecucao: `nexo:${ctx.runId}:nota`, config: { title: String(i.titulo), description: when(i.texto) ?? undefined } });
       return r.sucesso ? resumo(`Nota registrada: ${i.titulo}`, hrefDe(String(i.entidade), String(i.id))) : { ok: false, error: r.erro };
     })),
   escrita("tag", "APLICA ou REMOVE uma tag (pelo nome, que deve existir) em lead, oportunidade ou empresa.", { acao: { type: "string", enum: ["aplicar", "remover"] }, entidade: { type: "string", enum: ["lead", "negocio", "empresa"] }, id: str("uuid"), tag: str("nome da tag") }, ["acao", "entidade", "id", "tag"],
@@ -254,7 +257,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
       const dono = await donoDe(ctx, String(i.entidade), String(i.id));
       if (dono === undefined) return { ok: false, error: "registro não encontrado" };
       if (!meuAlvo(u, dono)) return alheio();
-      const r = await executarAcaoAvulsa(i.acao === "remover" ? "crm_remove_tag" : "crm_add_tag", { organizacaoId: ctx.organizacaoId, entityType: String(i.entidade) as never, entityId: String(i.id), vars: {}, ator: ator(ctx, u), chaveExecucao: `nexo:${ctx.runId}:tag`, config: { label_id: lb.id } });
+      const r = await (await motorDeCadencia()).executarAcaoAvulsa(i.acao === "remover" ? "crm_remove_tag" : "crm_add_tag", { organizacaoId: ctx.organizacaoId, entityType: String(i.entidade) as never, entityId: String(i.id), vars: {}, ator: ator(ctx, u), chaveExecucao: `nexo:${ctx.runId}:tag`, config: { label_id: lb.id } });
       return r.sucesso ? resumo(`Tag "${i.tag}" ${i.acao === "remover" ? "removida" : "aplicada"}.`, hrefDe(String(i.entidade), String(i.id))) : { ok: false, error: r.erro };
     })),
   escrita("mover_etapa", "MOVE a etapa de um lead (novo, em_contato, qualificacao) ou de uma oportunidade (entrada, diagnostico, proposta, negociacao). Ganho NÃO existe aqui (gate comercial); qualificar/oportunidade têm ferramenta própria.",
@@ -311,6 +314,24 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
       const dono = await donoDe(ctx, "negocio", String(i.id)); if (dono === undefined) return { ok: false, error: "oportunidade não encontrada" }; if (!meuAlvo(u, dono)) return alheio();
       await pipeline.perder({ organizacaoId: ctx.organizacaoId, negocioId: String(i.id), motivo: String(i.motivo) as never, detalhe: when(i.detalhe), ator: ator(ctx, u) });
       return resumo("Oportunidade marcada como perdida.", `/pipeline/${i.id}`);
+    })),
+  escrita("criar_empresa_contato", "CRIA uma empresa e/ou uma pessoa de contato (reaproveita a existente por CNPJ, domínio, nome ou e-mail; nunca duplica).",
+    { empresa: str("nome da empresa"), cnpj: str("CNPJ"), site: str("site"), nome: str("nome da pessoa"), email: str("e-mail"), telefone: str("telefone"), cargo: str("cargo") }, [],
+    async (ctx, u, i) => falta(ctx, "companies.write") ?? agir(ctx, "criar_empresa_contato", i, async () => {
+      if (!i.empresa && !i.nome) return { ok: false, error: "informe a empresa e/ou o nome da pessoa" };
+      const a = ator(ctx, u);
+      const emp = i.empresa ? await resolverEmpresa(ctx.organizacaoId, { nome: String(i.empresa), cnpj: when(i.cnpj), website: when(i.site) }, a) : null;
+      const pes = i.nome ? await resolverPessoa(ctx.organizacaoId, { nome: String(i.nome), email: when(i.email), telefone: when(i.telefone), cargo: when(i.cargo), empresaId: emp?.empresaId ?? null } as never, a) : null;
+      return resumo([emp ? `Empresa ${emp.criada ? "criada" : "já existia"}: ${i.empresa}` : null, pes ? `Contato ${i.nome} registrado` : null].filter(Boolean).join(". ") + ".", emp ? `/empresas/${emp.empresaId}` : "/contatos", { empresaId: emp?.empresaId ?? null });
+    })),
+  escrita("incluir_em_cadencia", "INCLUI um lead num fluxo de follow-up publicado. O fluxo pode enviar mensagens ao cliente: o chat pede confirmação antes.",
+    { lead_id: str("uuid do lead"), fluxo_id: str("uuid do fluxo publicado") }, ["lead_id", "fluxo_id"],
+    async (ctx, u, i) => falta(ctx, "automation.manage") ?? comConfirmacao(ctx, "incluir_em_cadencia", "Incluir o lead na cadência (pode enviar mensagens)", i, async () => {
+      const dono = await donoDe(ctx, "lead", String(i.lead_id)); if (dono === undefined) return { ok: false, error: "lead não encontrado" }; if (!meuAlvo(u, dono)) return alheio();
+      const [d] = await db.execute<{ id: string }>(sql`SELECT id::text FROM cadence_definitions WHERE id = ${String(i.fluxo_id)}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND ativo`);
+      if (!d) return { ok: false, error: "fluxo publicado não encontrado" };
+      const id = await (await motorDeCadencia()).iniciarCadencia({ cadenceDefinitionId: d.id, organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: String(i.lead_id) });
+      return id ? resumo("Lead incluído na cadência.", `/pessoas/${i.lead_id}`, { enrollmentId: id }) : { ok: false, error: "a cadência não iniciou (lead já inscrito ou fluxo sem passos)" };
     })),
   {
     id: "nexo.propor_acao", name: "nexo_propor_acao", description: "Mostra um botão de atalho (abrir_tela com href interno). Para criar/alterar algo use as ferramentas de ação, que executam; use esta só para levar a pessoa a uma tela.", category: "communication", mutates: false,

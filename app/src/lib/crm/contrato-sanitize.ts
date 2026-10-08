@@ -23,11 +23,11 @@ export function sanitizarCorpoContrato(corpo: string): string {
       "img", "a",
     ],
     allowedAttributes: {
-      "*": ["style", "class", "align", "valign", "width", "height", "colspan", "rowspan", "dir", "lang"],
+      "*": ["style", "class", "id", "align", "valign", "width", "height", "colspan", "rowspan", "dir", "lang"],
       table: ["border", "cellpadding", "cellspacing", "style", "class", "align", "width"],
       font: ["face", "size", "color"],
       img: ["src", "alt", "width", "height", "style"],
-      a: ["href", "target", "rel"],
+      a: ["href", "target", "rel", "id"],
       col: ["span", "width", "style"],
     },
     allowedSchemes: ["http", "https", "data", "mailto"],

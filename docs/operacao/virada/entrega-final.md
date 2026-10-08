@@ -62,6 +62,7 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0095 | `propostas.trial_dias` — o período de teste que a tela coletava passa a existir no banco e a chegar ao Stripe |
 | 0096 | `visoes_salvas` — as visões de filtro da lista de Contatos passam a gravar por usuário e tela (tabela nova, aditiva e idempotente) |
 | 0097 | `usuarios.tipo`/`agente_id`, `regras_distribuicao_leads` e `delegacoes_agente` — agentes de IA viram usuários, regra de distribuição de novos leads e delegação de follow-up (aditiva e idempotente) |
+| 0098 | `contrato_templates.tipo_documento` aceita DOWNGRADE — o termo aditivo de downgrade PABX tem texto próprio (só amplia o CHECK; aditiva e idempotente) |
 
 ## 3. AS-IS → TO-BE
 

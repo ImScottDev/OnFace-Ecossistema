@@ -56,11 +56,24 @@ function resultadoContrato(contrato: typeof contratos.$inferSelect) {
   }));
 }
 
+// Parâmetros de organização que o contrato exige (multa, limite de gravações).
+// O ensaio os define só durante a execução e devolve o que havia.
+let settingsOriginal: unknown = undefined;
+let orgDoEnsaio: string | null = null;
+async function garantirParametros(orgId: string) {
+  const [o] = await db.select({ settings: organizacoes.settings }).from(organizacoes).where(eq(organizacoes.id, orgId)).limit(1);
+  settingsOriginal = o?.settings ?? null;
+  orgDoEnsaio = orgId;
+  const atual = (o?.settings ?? {}) as Record<string, unknown>;
+  const c = (atual.contrato ?? {}) as Record<string, unknown>;
+  await db.update(organizacoes).set({ settings: { ...atual, contrato: { multaRescisoriaPct: 30, limiteGravacoes: "90 dias", ...c } } }).where(eq(organizacoes.id, orgId));
+}
+
 async function criar() {
   // O banco de DEV pode ter organizações auxiliares. A jornada precisa usar
   // aquela que efetivamente possui um preço PABX contratável, não a primeira
   // linha retornada pelo banco.
-  const [org] = await db.select({ id: organizacoes.id }).from(organizacoes)
+  let [org] = await db.select({ id: organizacoes.id }).from(organizacoes)
     .innerJoin(servicosCatalogo, eq(servicosCatalogo.organizacaoId, organizacoes.id))
     .innerJoin(catalogoPrecos, eq(catalogoPrecos.servicoCatalogoId, servicosCatalogo.id))
     .where(and(
@@ -70,7 +83,10 @@ async function criar() {
       eq(catalogoPrecos.exigeContrato, true),
     ))
     .limit(1);
-  if (!org) throw new Error("Organização com preço PABX contratável não encontrada");
+  // Sem preço PABX contratável no dev, a fixture abaixo cria um (e desativa no fim).
+  if (!org) [org] = await db.select({ id: organizacoes.id }).from(organizacoes).orderBy(organizacoes.createdAt).limit(1);
+  if (!org) throw new Error("Nenhuma organização encontrada");
+  await garantirParametros(org.id);
   const [user] = await db.select({ id: usuarios.id }).from(usuarios)
     .where(and(eq(usuarios.organizacaoId, org.id), eq(usuarios.ativo, true))).limit(1);
   const [pipeline] = await db.select({ id: pipelines.id }).from(pipelines)
@@ -195,8 +211,12 @@ async function criar() {
   const [empresa] = await db.insert(empresas).values({
     organizacaoId: org.id,
     nome: `${TAG} Empresa Teste ${sufixo}`,
+    // O contrato só sai com os dados jurídicos completos (ver conferirContratoDoGrupo).
+    razaoSocial: `${TAG} Empresa Teste ${sufixo} LTDA`,
     cnpj: "00.000.000/0001-91",
-    endereco: "Avenida Teste, 100",
+    logradouro: "Avenida Teste",
+    numero: "100",
+    bairro: "Centro",
     cidade: "Campinas",
     estado: "SP",
     cep: "13000-000",
@@ -268,6 +288,9 @@ criar()
     process.exitCode = 1;
   })
   .finally(async () => {
+    if (orgDoEnsaio && process.env.DOCUMENSO_E2E_MANTER_PARAMETROS !== "YES") {
+      await db.update(organizacoes).set({ settings: settingsOriginal as never }).where(eq(organizacoes.id, orgDoEnsaio)).catch(() => {});
+    }
     if (fixturePrecoId) {
       await db.update(catalogoPrecos).set({ ativo: false, updatedAt: new Date() })
         .where(eq(catalogoPrecos.id, fixturePrecoId))

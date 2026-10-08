@@ -1,0 +1,83 @@
+<p class="cf-titulo">TERMO ADITIVO DE CONTRATO</p>
+
+<table class="cf-partes" border="1">
+  <tbody>
+    <tr><th colspan="2">CONTRATADA</th></tr>
+    <tr><td>Razão social</td><td>{{callface_razao_social}}</td></tr>
+    <tr><td>CNPJ</td><td>{{callface_cnpj}}</td></tr>
+    <tr><td>Endereço</td><td>{{callface_endereco}}</td></tr>
+  </tbody>
+</table>
+
+<table class="cf-partes" border="1">
+  <tbody>
+    <tr><th colspan="2">CONTRATANTE</th></tr>
+    <tr><td>Razão social</td><td>{{empresa_razao_social}}</td></tr>
+    <tr><td>CNPJ</td><td>{{empresa_cnpj}}</td></tr>
+  </tbody>
+</table>
+
+<p>As partes já qualificadas no <b>“Contrato de Prestação de Serviços”</b>, registrado sob o nº <b>{{contrato_base_numero}}</b>, conjuntamente denominadas como <b>“PARTES”</b>, resolvem em comum acordo e de boa fé:</p>
+
+<h2>1. Objeto</h2>
+
+<p><b>1.1</b> O presente aditivo visa realizar o DOWNGRADE do contrato acima referenciado, reduzindo seu objeto e valores, conforme detalhado em proposta comercial registrada sob o nº <b>{{proposta_numero}}</b>.</p>
+
+<p><b>1.2</b> A assinatura do presente contrato implica na concordância das <b>PARTES</b> com os termos dispostos na proposta comercial referenciada na cláusula 1.1.</p>
+
+<h2>2. Valores</h2>
+
+<p><b>2.1</b> A redução de valores do presente aditivo será realizada na quantia abaixo.</p>
+
+<table class="cf-valores" border="1">
+  <tbody>
+    <tr><td class="cf-rotulo">REDUÇÃO MENSAL</td><td class="cf-valor">{{mrr_total}}</td></tr>
+  </tbody>
+</table>
+
+<p><b>2.2</b> Considerando a cláusula 8.9 do Contrato Principal, o montante devido pela <b>CONTRATANTE</b> a título de multa por redução de escopo (“downgrade”), é de <b>{{valor_multa_downgrade}}</b>, conforme demonstrado no quadro abaixo:</p>
+
+<table class="cf-valores" border="1">
+  <tbody>
+    <tr><td class="cf-rotulo">REDUÇÃO MENSAL</td><td class="cf-valor">{{mrr_total}}</td></tr>
+    <tr><td class="cf-rotulo">MESES RESTANTES DO CONTRATO PRINCIPAL</td><td class="cf-valor">{{meses_restantes_contrato_base}}</td></tr>
+    <tr><td class="cf-rotulo">PERCENTUAL DE MULTA (CLÁUSULA 8.4 DO CONTRATO PRINCIPAL)</td><td class="cf-valor">{{percentual_multa}}</td></tr>
+    <tr><td class="cf-rotulo">MULTA POR REDUÇÃO DE ESCOPO</td><td class="cf-valor">{{valor_multa_downgrade}}</td></tr>
+  </tbody>
+</table>
+
+<p><b>2.3</b> Caso não ocorra a quitação dos valores detalhados acima, poderá a <b>CONTRATADA</b> recorrer às medidas legais e contratuais cabíveis para o pagamento do débito, incluindo protesto, aplicação de juros moratórios, correção monetária e demandas indenizatórias.</p>
+
+<h2>3. Vigência</h2>
+
+<p><b>3.1</b> Os recursos e valores reduzidos terão vigência a partir do envio de e-mail de desativação dos recursos e serviços que são objeto deste termo, momento em que iniciarão os descontos no faturamento mensal da <b>CONTRATANTE</b>.</p>
+
+<p><b>3.2</b> O reajuste monetário previsto na cláusula 3.1 utilizará o mesmo índice de atualização estabelecido no contrato vinculado ao presente aditivo.</p>
+
+<h2>4. Ratificação</h2>
+
+<p><b>4.1</b> As <b>PARTES</b> ratificam todas as disposições e cláusulas do contrato principal e seus respectivos aditivos por este não alterados.</p>
+
+<p>Por estarem justas e contratadas, as partes acima qualificadas assinam o presente instrumento na presença de duas testemunhas abaixo indicadas.</p>
+
+<p class="cf-data">Campinas (SP), {{data_emissao}}</p>
+
+<table class="cf-assinaturas" border="0">
+  <tbody>
+    <tr>
+      <td><a class="cf-ancora" id="cf-sig-contratada" href="#cf-sig-contratada">&nbsp;</a><div class="cf-linha">{{callface_razao_social}}</div><div class="cf-papel">CONTRATADA</div></td>
+      <td><a class="cf-ancora" id="cf-sig-contratante" href="#cf-sig-contratante">&nbsp;</a><div class="cf-linha">{{empresa_razao_social}}</div><div class="cf-papel">CONTRATANTE</div></td>
+    </tr>
+  </tbody>
+</table>
+
+<p><b>Testemunhas:</b></p>
+
+<table class="cf-testemunhas" border="0">
+  <tbody>
+    <tr>
+      <td><a class="cf-ancora" id="cf-sig-testemunha-1" href="#cf-sig-testemunha-1">&nbsp;</a><div class="cf-linha">&nbsp;</div><div class="cf-campo">Nome: {{testemunha_1_nome}}</div><div class="cf-campo">CPF: {{testemunha_1_cpf}}</div></td>
+      <td><a class="cf-ancora" id="cf-sig-testemunha-2" href="#cf-sig-testemunha-2">&nbsp;</a><div class="cf-linha">&nbsp;</div><div class="cf-campo">Nome: {{testemunha_2_nome}}</div><div class="cf-campo">CPF: {{testemunha_2_cpf}}</div></td>
+    </tr>
+  </tbody>
+</table>

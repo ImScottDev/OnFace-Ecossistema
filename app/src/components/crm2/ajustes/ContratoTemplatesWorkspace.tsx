@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Eye, Bold, Italic, Underline, List, ListOrdered, Heading2, Pilcrow, AlignLeft, AlignCenter, AlignJustify, Undo2, Redo2, RemoveFormatting, Braces, Code2 } from "lucide-react";
+import {
+  Plus, Pencil, Trash2, Eye, Bold, Italic, Underline, List, ListOrdered, Heading2, Pilcrow, AlignLeft, AlignCenter, AlignJustify,
+  Undo2, Redo2, Braces, Code2, Table2, Rows3, Columns3, Indent, Hash, FileDown, History, ArrowLeft, Save, RotateCcw,
+} from "lucide-react";
 import { toast } from "sonner";
-import { VARIAVEIS_CONTRATO, VARIAVEIS_EXEMPLO, corpoEhHtml, renderizarCorpo } from "@/lib/crm/contrato-variaveis";
+import { VARIAVEIS_CONTRATO, VARIAVEIS_EXEMPLO, corpoEhHtml, renderizarCorpo, textoDoChip } from "@/lib/crm/contrato-variaveis";
+import { cssContrato, ROXO_CONTRATO } from "@/lib/crm/contrato-estilo";
 
 interface Template {
   id: string;
@@ -15,41 +19,60 @@ interface Template {
   tipoDocumento: string | null;
   corpoTemplate: string;
   ativo: boolean;
+  createdAt?: string;
 }
 
 const MODELOS = [
-  { value: "", label: "Genérico (qualquer modelo)" },
+  { value: "", label: "Qualquer modelo comercial" },
   { value: "PAGAMENTO_DIRETO", label: "Pagamento direto" },
   { value: "CONTRATO_OBRIGATORIO", label: "Contrato obrigatório" },
   { value: "CONTRATO_FIDELIDADE_OPCIONAL", label: "Contrato com fidelidade opcional" },
 ];
-
 const FAMILIAS = [
-  { value: "", label: "Genérico (qualquer família)" },
+  { value: "", label: "Qualquer família" },
   { value: "CALLFACE_AI", label: "Callface AI" },
   { value: "PABX", label: "PABX" },
   { value: "WHITE_LABEL", label: "White Label" },
 ];
-
 const TIPOS = [
   { value: "CONTRATO", label: "Contrato" },
   { value: "ADITIVO", label: "Aditivo" },
+  { value: "DOWNGRADE", label: "Downgrade" },
   { value: "RENOVACAO", label: "Renovação" },
 ];
-
-// O preview usa o MESMO catálogo que a geração real resolve
-// (lib/crm/contrato-variaveis.ts). Antes era uma lista própria de 8 chaves:
-// variável existente e correta, como {{empresa_endereco}}, aparecia crua aqui
-// e passava a impressão de que não existia.
+const rotulo = (lista: { value: string; label: string }[], v: string | null) => lista.find((x) => x.value === (v || ""))?.label ?? "";
 const GRUPOS = [...new Set(VARIAVEIS_CONTRATO.map((v) => v.grupo))];
+import { LOGO_CONTRATO as LOGO } from "@/lib/crm/contrato-logo";
 
-/**
- * Ajustes → Contratos (19/08, P0.2) — gestão real dos Contract Templates.
- * O schema/motor de render já existia (lib/crm/contrato-template.ts), só
- * não tinha CRUD nem UI — só nascia por seed/SQL direto. Não inventa
- * cláusula jurídica: o corpo é o que o time escrever, preview usa dado
- * fictício claramente rotulado como exemplo.
- */
+/* ── Conversão corpo ↔ editor ─────────────────────────────────────────────
+   No banco o corpo guarda {{chave}}. No editor cada variável é um chip
+   (`<span data-var>`) com o nome que o time conhece do Zoho, e o chip volta a
+   ser {{chave}} ao salvar. */
+const chipHtml = (chave: string) =>
+  `<span class="cf-chip" data-var="${chave}" contenteditable="false" title="${chave}">${textoDoChip(chave).replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`;
+const paraEditor = (corpo: string) => corpo.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => chipHtml(k));
+function doEditor(raiz: HTMLElement): string {
+  const c = raiz.cloneNode(true) as HTMLElement;
+  c.querySelectorAll("span[data-var]").forEach((el) => el.replaceWith(`{{${el.getAttribute("data-var")}}}`));
+  return c.innerHTML;
+}
+
+const CSS_FOLHA = `
+${cssContrato(".cf-folha .cf-doc")}
+.cf-folha .cf-doc { outline: none; min-height: 230mm; }
+.cf-folha .cf-doc .cf-chip { background: #efe9f7; color: ${ROXO_CONTRATO}; border: 1px solid #d9cdea; border-radius: 4px; padding: 0 4px; font-size: 8pt; font-weight: 600; white-space: nowrap; user-select: all; }
+.cf-folha .cf-doc table td, .cf-folha .cf-doc table th { min-width: 24px; }
+.cf-folha .cf-doc .cf-ancora { background: #f3f1f6; border: 1px dashed #b7a9cf; }
+`;
+
+async function baixarPdfTeste(corpoTemplate: string, serviceFamily: string | null) {
+  const r = await fetch("/api/contrato-templates/pdf-teste", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ corpoTemplate, serviceFamily }) });
+  if (!r.ok) { toast.error("Não foi possível gerar o PDF de teste"); return; }
+  const url = URL.createObjectURL(await r.blob());
+  window.open(url, "_blank");
+}
+
+/** Ajustes → Contratos: modelos por tipo de documento e família, editados como documento. */
 export function Cf2ContratoTemplatesWorkspace() {
   const qc = useQueryClient();
   const [editando, setEditando] = useState<Template | null>(null);
@@ -58,330 +81,372 @@ export function Cf2ContratoTemplatesWorkspace() {
 
   const { data } = useQuery<{ templates: Template[] }>({
     queryKey: ["cf2-contrato-templates"],
-    queryFn: async () => {
-      const r = await fetch("/api/contrato-templates");
-      if (!r.ok) return { templates: [] };
-      return r.json();
-    },
+    queryFn: async () => { const r = await fetch("/api/contrato-templates"); return r.ok ? r.json() : { templates: [] }; },
   });
   const templates = data?.templates ?? [];
 
   const salvar = useMutation({
     mutationFn: async (t: { id?: string; nome: string; commercialModel: string | null; serviceFamily: string | null; tipoDocumento: string; corpoTemplate: string }) => {
-      const url = t.id ? `/api/contrato-templates/${t.id}` : "/api/contrato-templates";
-      const r = await fetch(url, { method: t.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome: t.nome, commercialModel: t.commercialModel, serviceFamily: t.serviceFamily, tipoDocumento: t.tipoDocumento, corpoTemplate: t.corpoTemplate }) });
+      const r = await fetch(t.id ? `/api/contrato-templates/${t.id}` : "/api/contrato-templates", { method: t.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome: t.nome, commercialModel: t.commercialModel, serviceFamily: t.serviceFamily, tipoDocumento: t.tipoDocumento, corpoTemplate: t.corpoTemplate }) });
       if (!r.ok) throw new Error("falha");
-      return r.json();
+      return r.json() as Promise<Template & { variaveisDesconhecidas?: string[] }>;
     },
-    onSuccess: (salvo: { variaveisDesconhecidas?: string[] }) => {
+    onSuccess: (salvo) => {
       qc.invalidateQueries({ queryKey: ["cf2-contrato-templates"] });
-      setEditando(null);
-      setCriando(false);
-      // Marcador do Zoho sem equivalente continua no texto: avisar aqui é o
-      // que evita descobrir isso no PDF já enviado para assinatura.
+      setEditando(null); setCriando(false);
       const sobraram = salvo?.variaveisDesconhecidas ?? [];
-      if (sobraram.length > 0) {
-        toast.warning(`Template salvo. ${sobraram.length} variável(is) do Zoho sem equivalente continuam no texto: ${sobraram.join(", ")}`, { duration: 12000 });
-      } else {
-        toast.success("Template salvo");
-      }
+      if (sobraram.length > 0) toast.warning(`Salvo. ${sobraram.length} variável(is) do Zoho sem equivalente continuam no texto: ${sobraram.join(", ")}`, { duration: 12000 });
+      else toast.success(`Modelo salvo (versão ${salvo.versao} ativa)`);
     },
-    onError: () => toast.error("Não foi possível salvar o template"),
+    onError: () => toast.error("Não foi possível salvar o modelo"),
   });
-
   const remover = useMutation({
-    mutationFn: async (id: string) => {
-      const r = await fetch(`/api/contrato-templates/${id}`, { method: "DELETE" });
-      if (!r.ok) throw new Error("falha");
-    },
+    mutationFn: async (id: string) => { const r = await fetch(`/api/contrato-templates/${id}`, { method: "DELETE" }); if (!r.ok) throw new Error("falha"); },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["cf2-contrato-templates"] }),
   });
 
+  if (criando || editando) {
+    return <EditorDocumento inicial={editando} salvando={salvar.isPending} onSalvar={(t) => salvar.mutate({ id: editando?.id, ...t })} onVoltar={() => { setCriando(false); setEditando(null); }} />;
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      {!criando && !editando && (
-        <button onClick={() => setCriando(true)} className="w-fit flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
-          <Plus className="w-3.5 h-3.5" /> Novo template
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[13px]" style={{ color: "var(--cf2-text-secondary)" }}>
+          Um modelo por tipo de documento e família. O contrato sai deste texto com os dados da proposta; o Documenso recebe só o PDF pronto.
+        </p>
+        <button onClick={() => setCriando(true)} className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px] font-bold" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
+          <Plus className="w-3.5 h-3.5" /> Novo modelo
         </button>
-      )}
+      </div>
 
-      {(criando || editando) && (
-        <TemplateForm inicial={editando} onSalvar={(t) => salvar.mutate({ id: editando?.id, ...t })} onCancelar={() => { setCriando(false); setEditando(null); }} salvando={salvar.isPending} />
-      )}
+      <ParametrosContrato />
 
-      <div className="flex flex-col gap-2">
-        {templates.length === 0 && !criando && (
-          <p className="text-[13px] text-center py-6" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum template cadastrado ainda.</p>
-        )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {templates.length === 0 && <p className="text-[13px] py-6" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum modelo cadastrado ainda.</p>}
         {templates.map((t) => (
-          <div key={t.id} className="p-4 rounded-2xl flex items-center justify-between" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+          <div key={t.id} className="p-4 rounded-2xl flex flex-col gap-3" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-[14px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>{t.nome}</p>
-                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>v{t.versao}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-tertiary)" }}>v{t.versao} ativa</span>
               </div>
-              <p className="text-[12px] mt-0.5" style={{ color: "var(--cf2-text-secondary)" }}>{TIPOS.find((tp) => tp.value === (t.tipoDocumento || "CONTRATO"))?.label} · {FAMILIAS.find((f) => f.value === (t.serviceFamily || ""))?.label} · {MODELOS.find((m) => m.value === (t.commercialModel || ""))?.label}</p>
+              <p className="text-[12px] mt-1" style={{ color: "var(--cf2-text-secondary)" }}>
+                {rotulo(TIPOS, t.tipoDocumento || "CONTRATO")} · {rotulo(FAMILIAS, t.serviceFamily)} · {rotulo(MODELOS, t.commercialModel)}
+              </p>
+              {!t.serviceFamily && <p className="text-[11px] mt-1" style={{ color: "var(--cf2-warning-text)" }}>Genérico: não é usado para enviar contrato. Só os modelos de uma família saem para assinatura.</p>}
             </div>
-            <div className="flex gap-2 shrink-0">
-              <button type="button" onClick={() => setPreview(t)} aria-label={`Pré-visualizar ${t.nome}`} title="Pré-visualizar" className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1" style={{ background: "var(--cf2-bg-surface-muted)", outlineColor: "var(--cf2-accent)" }}><Eye className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></button>
-              <button type="button" onClick={() => setEditando(t)} aria-label={`Editar ${t.nome}`} title="Editar" className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1" style={{ background: "var(--cf2-bg-surface-muted)", outlineColor: "var(--cf2-accent)" }}><Pencil className="w-3.5 h-3.5" style={{ color: "var(--cf2-text-secondary)" }} /></button>
-              <button type="button" onClick={() => remover.mutate(t.id)} aria-label={`Excluir ${t.nome}`} title="Excluir" className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1" style={{ background: "var(--cf2-bg-surface-muted)", outlineColor: "var(--cf2-accent)" }}><Trash2 className="w-3.5 h-3.5" style={{ color: "var(--cf2-danger-text)" }} /></button>
+            <div className="flex gap-2 mt-auto">
+              <Acao titulo="Pré-visualizar" onClick={() => setPreview(t)} Icone={Eye} />
+              <Acao titulo="Baixar PDF de teste" onClick={() => baixarPdfTeste(t.corpoTemplate, t.serviceFamily)} Icone={FileDown} />
+              <Acao titulo="Editar" onClick={() => setEditando(t)} Icone={Pencil} />
+              <Acao titulo="Desativar" onClick={() => { if (window.confirm(`Desativar "${t.nome}"? Contratos já gerados não mudam.`)) remover.mutate(t.id); }} Icone={Trash2} perigo />
             </div>
           </div>
         ))}
       </div>
 
-      {preview && (
-        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => setPreview(null)}>
-          <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl p-6" style={{ background: "var(--cf2-bg-surface)" }} onClick={(e) => e.stopPropagation()}>
-            <p className="text-[11px] font-bold mb-3 px-2 py-1 rounded w-fit" style={{ background: "var(--cf2-warning-bg)", color: "var(--cf2-warning-text)" }}>PREVIEW — dados fictícios de exemplo</p>
-            {corpoEhHtml(preview.corpoTemplate) ? (
-              // Já saneado na gravação (api-server/routes/contrato-templates.ts).
-              <div className="cf2-contrato-preview text-[13px]" style={{ color: "var(--cf2-text-primary)" }}
-                dangerouslySetInnerHTML={{ __html: renderizarCorpo(preview.corpoTemplate, VARIAVEIS_EXEMPLO) }} />
-            ) : (
-              <p className="text-[13px] whitespace-pre-wrap" style={{ color: "var(--cf2-text-primary)" }}>{renderizarCorpo(preview.corpoTemplate, VARIAVEIS_EXEMPLO)}</p>
-            )}
-          </div>
-        </div>
-      )}
+      {preview && <FolhaPreview titulo={`${preview.nome} · v${preview.versao}`} corpo={preview.corpoTemplate} familia={preview.serviceFamily} onFechar={() => setPreview(null)} />}
     </div>
   );
 }
 
-/**
- * Editor do corpo do contrato.
- *
- * `contenteditable` com uma barra de ferramentas pequena, em vez de uma
- * biblioteca de editor: o documento já é HTML, o que falta é escrever sem ver
- * tag. O `#` abre a lista de variáveis — o mesmo gesto que o time já usava no
- * editor do Zoho.
- *
- * O conteúdo não volta do estado para o DOM a cada tecla: um contenteditable
- * controlado reposiciona o cursor no fim a cada caractere. O DOM é a fonte
- * enquanto se edita; o estado recebe o resultado.
- */
-function EditorRico({ valorInicial, aoMudar }: { valorInicial: string; aoMudar: (html: string) => void }) {
-  const area = useRef<HTMLDivElement>(null);
-  const [variaveisAbertas, setVariaveisAbertas] = useState(false);
-  const [busca, setBusca] = useState("");
-  const [apagarCerquilha, setApagarCerquilha] = useState(false);
-
-  useEffect(() => {
-    if (area.current && area.current.innerHTML !== valorInicial) area.current.innerHTML = valorInicial;
-    // Só na montagem e ao trocar de template: depois disso, quem manda é o DOM.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const sincronizar = () => aoMudar(area.current?.innerHTML ?? "");
-  const comando = (nome: string, arg?: string) => {
-    area.current?.focus();
-    document.execCommand(nome, false, arg);
-    sincronizar();
-  };
-
-  const inserirVariavel = (chave: string) => {
-    area.current?.focus();
-    // Quando o painel abriu pelo "#", o caractere digitado sai junto.
-    if (apagarCerquilha) document.execCommand("delete");
-    document.execCommand("insertText", false, `{{${chave}}}`);
-    setVariaveisAbertas(false);
-    setApagarCerquilha(false);
-    setBusca("");
-    sincronizar();
-  };
-
-  const encontradas = VARIAVEIS_CONTRATO.filter((v) =>
-    !busca.trim() || `${v.chave} ${v.rotulo}`.toLowerCase().includes(busca.trim().toLowerCase()));
-
-  const botao = (titulo: string, Icone: typeof Bold, acao: () => void) => (
-    <button type="button" title={titulo} aria-label={titulo} onClick={acao}
-      className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1"
-      style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)", outlineColor: "var(--cf2-accent)" }}>
-      <Icone className="w-3.5 h-3.5" />
+function Acao({ titulo, onClick, Icone, perigo }: { titulo: string; onClick: () => void; Icone: typeof Eye; perigo?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={titulo} title={titulo}
+      className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1"
+      style={{ background: "var(--cf2-bg-surface-muted)", outlineColor: "var(--cf2-accent)" }}>
+      <Icone className="w-3.5 h-3.5" style={{ color: perigo ? "var(--cf2-danger-text)" : "var(--cf2-text-secondary)" }} />
     </button>
   );
+}
 
+/** Folha A4 sobre fundo cinza com o corpo renderizado com dados de exemplo. */
+function FolhaPreview({ titulo, corpo, familia, onFechar }: { titulo: string; corpo: string; familia: string | null; onFechar: () => void }) {
+  const html = useMemo(() => renderizarCorpo(corpo, VARIAVEIS_EXEMPLO), [corpo]);
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap items-center gap-1 p-1.5 rounded-lg"
-        style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-        {botao("Negrito", Bold, () => comando("bold"))}
-        {botao("Itálico", Italic, () => comando("italic"))}
-        {botao("Sublinhado", Underline, () => comando("underline"))}
-        <span className="w-px h-5 mx-1" style={{ background: "var(--cf2-border-default)" }} />
-        {botao("Título de seção", Heading2, () => comando("formatBlock", "h2"))}
-        {botao("Parágrafo", Pilcrow, () => comando("formatBlock", "p"))}
-        {botao("Lista com marcadores", List, () => comando("insertUnorderedList"))}
-        {botao("Lista numerada", ListOrdered, () => comando("insertOrderedList"))}
-        <span className="w-px h-5 mx-1" style={{ background: "var(--cf2-border-default)" }} />
-        {botao("Alinhar à esquerda", AlignLeft, () => comando("justifyLeft"))}
-        {botao("Centralizar", AlignCenter, () => comando("justifyCenter"))}
-        {botao("Justificar", AlignJustify, () => comando("justifyFull"))}
-        <span className="w-px h-5 mx-1" style={{ background: "var(--cf2-border-default)" }} />
-        {botao("Limpar formatação", RemoveFormatting, () => comando("removeFormat"))}
-        {botao("Desfazer", Undo2, () => comando("undo"))}
-        {botao("Refazer", Redo2, () => comando("redo"))}
-        <span className="w-px h-5 mx-1" style={{ background: "var(--cf2-border-default)" }} />
-        <button type="button" onClick={() => { setApagarCerquilha(false); setVariaveisAbertas((v) => !v); }}
-          className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold"
-          style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}>
-          <Braces className="w-3.5 h-3.5" /> Variável
-          <span style={{ color: "var(--cf2-text-tertiary)" }}>#</span>
-        </button>
-      </div>
-
-      {variaveisAbertas && (
-        <div className="rounded-lg p-2 max-h-56 overflow-y-auto"
-          style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
-          <input autoFocus value={busca} onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar variável (ex.: razão social, CNPJ, mensalidade)" aria-label="Buscar variável"
-            className="w-full px-2 py-1.5 mb-2 rounded text-[12px] outline-none"
-            style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
-          {encontradas.length === 0 && (
-            <p className="text-[11px] px-1 py-2" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma variável com esse nome.</p>
-          )}
-          {encontradas.map((v) => (
-            <button key={v.chave} type="button" onClick={() => inserirVariavel(v.chave)}
-              className="w-full text-left px-2 py-1.5 rounded text-[11px] hover:brightness-95"
-              style={{ color: "var(--cf2-text-secondary)" }}>
-              <span className="font-mono">{`{{${v.chave}}}`}</span>
-              <span className="ml-2" style={{ color: "var(--cf2-text-tertiary)" }}>{v.rotulo}</span>
-            </button>
-          ))}
+    <div role="dialog" aria-modal="true" aria-label={titulo} className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(18,23,29,.55)" }} onClick={onFechar}>
+      <div className="m-auto w-full max-w-[880px] max-h-[94vh] flex flex-col rounded-2xl overflow-hidden" style={{ background: "#e6e8ea" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5" style={{ background: "var(--cf2-bg-surface)", borderBottom: "1px solid var(--cf2-border-default)" }}>
+          <div className="min-w-0">
+            <p className="text-[13px] font-bold truncate" style={{ color: "var(--cf2-text-primary)" }}>{titulo}</p>
+            <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>Dados fictícios de exemplo</p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => baixarPdfTeste(corpo, familia)} className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[12px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}><FileDown className="w-3.5 h-3.5" /> Baixar PDF de teste</button>
+            <button onClick={onFechar} className="px-3 h-8 rounded-lg text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Fechar</button>
+          </div>
         </div>
-      )}
-
-      <div
-        ref={area}
-        contentEditable
-        suppressContentEditableWarning
-        role="textbox"
-        aria-multiline="true"
-        aria-label="Corpo do contrato"
-        onInput={sincronizar}
-        onBlur={sincronizar}
-        onKeyDown={(e) => {
-          if (e.key === "#") {
-            // Deixa o caractere entrar — ele marca o ponto de inserção e some
-            // quando a variável é escolhida.
-            setApagarCerquilha(true);
-            setBusca("");
-            setVariaveisAbertas(true);
-          } else if (e.key === "Escape" && variaveisAbertas) {
-            setVariaveisAbertas(false);
-            setApagarCerquilha(false);
-          }
-        }}
-        className="cf2-contrato-preview px-4 py-3 rounded-lg text-[13px] outline-none overflow-y-auto"
-        style={{
-          background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)",
-          color: "var(--cf2-text-primary)", minHeight: "26rem", maxHeight: "60vh",
-        }}
-      />
+        <div className="overflow-y-auto p-6">
+          <style>{CSS_FOLHA}</style>
+          <Folha>{corpoEhHtml(corpo) ? <div className="cf-doc" dangerouslySetInnerHTML={{ __html: html }} /> : <div className="cf-doc" style={{ whiteSpace: "pre-wrap" }}>{html}</div>}</Folha>
+        </div>
+      </div>
     </div>
   );
 }
 
-function TemplateForm({ inicial, onSalvar, onCancelar, salvando }: { inicial: Template | null; onSalvar: (t: { nome: string; commercialModel: string | null; serviceFamily: string | null; tipoDocumento: string; corpoTemplate: string }) => void; onCancelar: () => void; salvando: boolean }) {
+/** A folha: papel branco A4, cabeçalho do contrato (logo + Nº), margens do PDF. */
+function Folha({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="cf-folha mx-auto" style={{ width: "min(100%, 794px)", background: "#fff", padding: "10mm 17mm 20mm", boxShadow: "0 1px 3px rgba(18,23,29,.18), 0 8px 24px rgba(18,23,29,.08)", borderRadius: 2 }}>
+      <div className="flex items-center justify-between mb-5" aria-hidden>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={LOGO} alt="" style={{ height: "14mm" }} onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }} />
+        <span style={{ fontSize: "8pt", fontWeight: 700, color: ROXO_CONTRATO, fontFamily: "Arial, sans-serif" }}>Nº Contrato: P-000-v1</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ── Parâmetros que valem para toda a organização ─────────────────────── */
+function ParametrosContrato() {
+  const qc = useQueryClient();
+  const { data } = useQuery<{ multaRescisoriaPct: number | null; limiteGravacoes: string | null; representanteNome: string | null; representanteEmail: string | null }>({
+    queryKey: ["cf2-contrato-parametros"],
+    queryFn: async () => (await fetch("/api/contrato-parametros")).json(),
+  });
+  const [f, setF] = useState({ multa: "", limite: "", nome: "", email: "" });
+  useEffect(() => {
+    if (data) setF({ multa: data.multaRescisoriaPct != null ? String(data.multaRescisoriaPct).replace(".", ",") : "", limite: data.limiteGravacoes ?? "", nome: data.representanteNome ?? "", email: data.representanteEmail ?? "" });
+  }, [data]);
+  const salvar = useMutation({
+    mutationFn: async () => {
+      const n = f.multa.trim() ? Number(f.multa.replace(",", ".")) : null;
+      const r = await fetch("/api/contrato-parametros", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ multaRescisoriaPct: n, limiteGravacoes: f.limite.trim() || null, representanteNome: f.nome.trim() || null, representanteEmail: f.email.trim() || null }) });
+      if (!r.ok) throw new Error("falha");
+    },
+    onSuccess: () => { toast.success("Parâmetros salvos"); qc.invalidateQueries({ queryKey: ["cf2-contrato-parametros"] }); },
+    onError: () => toast.error("Não foi possível salvar. Confira o percentual e o e-mail."),
+  });
+  const campo = { background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" };
+  const Rot = ({ t, children }: { t: string; children: React.ReactNode }) => (
+    <label className="flex flex-col gap-1 text-[11px] font-semibold" style={{ color: "var(--cf2-text-tertiary)" }}>{t}{children}</label>
+  );
+  return (
+    <details className="rounded-2xl p-4" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
+      <summary className="text-[13px] font-bold cursor-pointer" style={{ color: "var(--cf2-text-primary)" }}>Parâmetros do contrato</summary>
+      <p className="text-[12px] mt-2 mb-3" style={{ color: "var(--cf2-text-secondary)" }}>
+        Valores que não vêm da proposta. Sem eles, o contrato que usa a multa ou o limite não é enviado e o aviso diz o que falta.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Rot t="Multa rescisória (%)"><input value={f.multa} onChange={(e) => setF({ ...f, multa: e.target.value })} inputMode="decimal" className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
+        <Rot t="Limite de armazenamento de gravações"><input value={f.limite} onChange={(e) => setF({ ...f, limite: e.target.value })} placeholder="Ex.: 90 dias" className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
+        <Rot t="Representante da Callface (assina como CONTRATADA)"><input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
+        <Rot t="E-mail do representante"><input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} type="email" className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
+      </div>
+      <div className="flex justify-end mt-3">
+        <button onClick={() => salvar.mutate()} disabled={salvar.isPending} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Salvar parâmetros</button>
+      </div>
+    </details>
+  );
+}
+
+/* ── Editor ───────────────────────────────────────────────────────────── */
+function EditorDocumento({ inicial, salvando, onSalvar, onVoltar }: {
+  inicial: Template | null; salvando: boolean; onVoltar: () => void;
+  onSalvar: (t: { nome: string; commercialModel: string | null; serviceFamily: string | null; tipoDocumento: string; corpoTemplate: string }) => void;
+}) {
   const [nome, setNome] = useState(inicial?.nome || "");
   const [commercialModel, setCommercialModel] = useState(inicial?.commercialModel || "");
   const [serviceFamily, setServiceFamily] = useState(inicial?.serviceFamily || "");
   const [tipoDocumento, setTipoDocumento] = useState(inicial?.tipoDocumento || "CONTRATO");
-  const [corpoTemplate, setCorpoTemplate] = useState(inicial?.corpoTemplate || "");
+  const [corpo, setCorpo] = useState(inicial?.corpoTemplate || "");
   const [verHtml, setVerHtml] = useState(false);
-  const corpoRef = useRef<HTMLTextAreaElement>(null);
-  const campoSelect = { background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" };
+  const [painel, setPainel] = useState<"" | "variaveis" | "versoes">("");
+  const [busca, setBusca] = useState("");
+  const selecao = useRef<Range | null>(null);
+  const area = useRef<HTMLDivElement>(null);
+  const salvoCom = useRef(inicial?.corpoTemplate || "");
+  const campo = { background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" };
 
-  // Escrever contrato é copiar a variável certa dezenas de vezes. Inserir no
-  // ponto do cursor evita o vaivém entre a lista e o texto.
-  const inserir = (chave: string) => {
-    const campo = corpoRef.current;
-    const marca = `{{${chave}}}`;
-    if (!campo) return setCorpoTemplate((c) => c + marca);
-    const { selectionStart: ini, selectionEnd: fim } = campo;
-    setCorpoTemplate((c) => c.slice(0, ini) + marca + c.slice(fim));
-    requestAnimationFrame(() => {
-      campo.focus();
-      campo.setSelectionRange(ini + marca.length, ini + marca.length);
-    });
+  const montar = (c: string) => { if (area.current) area.current.innerHTML = !c.trim() ? "<p><br></p>" : corpoEhHtml(c) ? paraEditor(c) : paraEditor(c).split(/\r?\n/).filter((l) => l.trim()).map((l) => `<p>${l}</p>`).join(""); };
+  useEffect(() => { if (!verHtml) montar(corpo); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [verHtml]);
+
+  const sincronizar = () => { if (area.current) setCorpo(doEditor(area.current)); };
+  const cmd = (nome: string, arg?: string) => { area.current?.focus(); document.execCommand(nome, false, arg); sincronizar(); };
+  const html = (h: string) => { area.current?.focus(); document.execCommand("insertHTML", false, h); sincronizar(); };
+  // Blocos entram pela API de Range, não por insertHTML: o Chrome desmonta o
+  // parágrafo ao inserir bloco no meio dele e o "1.1" perde o <p>.
+  const posicionarFim = (alvo: Node) => { const sel = window.getSelection(); const r = document.createRange(); r.selectNodeContents(alvo); r.collapse(false); sel?.removeAllRanges(); sel?.addRange(r); };
+  const blocoAtual = (): Element | null => {
+    const n = window.getSelection()?.anchorNode; let el: Node | null = n && n.nodeType === 1 ? n : n?.parentElement ?? null;
+    while (el && el.parentElement !== area.current) el = el.parentElement;
+    return el as Element | null;
+  };
+  const inserirBloco = (h: string, foco = "p") => {
+    area.current?.focus();
+    const tpl = document.createElement("template"); tpl.innerHTML = h;
+    const nodes = [...tpl.content.children];
+    const ref = blocoAtual();
+    if (ref) ref.after(...nodes); else area.current?.append(...nodes);
+    const alvo = nodes[0].matches(foco) ? nodes[0] : nodes[0].querySelector(foco) ?? nodes[0];
+    posicionarFim(alvo); sincronizar();
+  };
+
+  // O painel de busca tira o foco do documento; guardar onde o cursor estava
+  // é o que faz a variável entrar no ponto certo e não no começo da folha.
+  const guardarSelecao = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && area.current?.contains(sel.anchorNode)) selecao.current = sel.getRangeAt(0).cloneRange();
+  };
+  const abrirVariaveis = () => { guardarSelecao(); setBusca(""); setPainel("variaveis"); };
+  const inserirVariavel = (chave: string) => {
+    area.current?.focus();
+    const sel = window.getSelection();
+    if (selecao.current && sel) { sel.removeAllRanges(); sel.addRange(selecao.current); }
+    const r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+    const tpl = document.createElement("template"); tpl.innerHTML = chipHtml(chave);
+    const chip = tpl.content.firstElementChild!;
+    const espaco = document.createTextNode("\u00a0");
+    if (r && area.current?.contains(r.commonAncestorContainer)) { r.deleteContents(); r.insertNode(espaco); r.insertNode(chip); } else area.current?.append(chip, espaco);
+    const novo = document.createRange(); novo.setStartAfter(espaco); novo.collapse(true); sel?.removeAllRanges(); sel?.addRange(novo);
+    setPainel(""); setBusca(""); sincronizar();
+  };
+  // Cláusula numerada: continua a numeração do último "N.N" do documento.
+  const novaClausula = () => {
+    const nums = [...(area.current?.querySelectorAll("p > b:first-child") ?? [])].map((b) => b.textContent?.trim() ?? "").filter((t) => /^\d+(\.\d+)+\.?$/.test(t));
+    const ult = nums[nums.length - 1];
+    let prox = "1.1";
+    if (ult) { const partes = ult.replace(/\.$/, "").split("."); partes[partes.length - 1] = String(Number(partes[partes.length - 1]) + 1); prox = partes.join("."); }
+    inserirBloco(`<p><b>${prox}</b>&nbsp;</p>`);
+  };
+  const tabelaAtual = () => { const sel = window.getSelection(); const n = sel?.anchorNode; const el = n && (n.nodeType === 1 ? (n as HTMLElement) : n.parentElement); return el?.closest("table") ?? null; };
+  const linhaMais = () => { const t = tabelaAtual(); if (!t) return toast.info("Coloque o cursor dentro de uma tabela"); const tr = t.querySelector("tbody tr:last-child") ?? t.querySelector("tr:last-child"); if (!tr) return; const nova = tr.cloneNode(true) as HTMLElement; nova.querySelectorAll("td,th").forEach((c) => (c.textContent = "")); tr.after(nova); sincronizar(); };
+  const colunaMais = () => { const t = tabelaAtual(); if (!t) return toast.info("Coloque o cursor dentro de uma tabela"); t.querySelectorAll("tr").forEach((tr) => { const c = document.createElement(tr.querySelector("th") && !tr.querySelector("td") ? "th" : "td"); tr.appendChild(c); }); sincronizar(); };
+
+  const encontradas = VARIAVEIS_CONTRATO.filter((v) => !busca.trim() || `${v.chave} ${v.rotulo} ${v.zoho ?? ""}`.toLowerCase().includes(busca.trim().toLowerCase()));
+  const Bt = ({ t, Icone, f }: { t: string; Icone: typeof Bold; f: () => void }) => (
+    <button type="button" title={t} aria-label={t} onMouseDown={(e) => e.preventDefault()} onClick={f}
+      className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:brightness-95 focus-visible:outline-2" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)", outlineColor: "var(--cf2-accent)" }}>
+      <Icone className="w-3.5 h-3.5" />
+    </button>
+  );
+  const Sep = () => <span className="w-px h-5 mx-1" style={{ background: "var(--cf2-border-default)" }} />;
+  const sujo = corpo !== salvoCom.current;
+
+  const { data: versoes, refetch: recarregarVersoes } = useQuery<{ versoes: Template[] }>({
+    queryKey: ["cf2-contrato-versoes", inicial?.id],
+    enabled: !!inicial && painel === "versoes",
+    queryFn: async () => (await fetch(`/api/contrato-templates/${inicial!.id}/versoes`)).json(),
+  });
+  const qc = useQueryClient();
+  const restaurar = async (id: string) => {
+    const r = await fetch(`/api/contrato-templates/${id}/restaurar`, { method: "POST" });
+    if (!r.ok) return toast.error("Não foi possível restaurar");
+    toast.success("Versão restaurada como nova versão ativa");
+    qc.invalidateQueries({ queryKey: ["cf2-contrato-templates"] });
+    onVoltar();
   };
 
   return (
-    <div className="p-4 rounded-2xl flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
-      <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do template" aria-label="Nome do template" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={campoSelect} />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <select value={tipoDocumento} onChange={(e) => setTipoDocumento(e.target.value)} aria-label="Tipo de documento" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={campoSelect}>
-          {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-        <select value={serviceFamily} onChange={(e) => setServiceFamily(e.target.value)} aria-label="Família de serviço" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={campoSelect}>
-          {FAMILIAS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-        </select>
-        <select value={commercialModel} onChange={(e) => setCommercialModel(e.target.value)} aria-label="Modelo comercial" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={campoSelect}>
-          {MODELOS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-        </select>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={onVoltar} className="flex items-center gap-1.5 px-2 h-8 rounded-lg text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}><ArrowLeft className="w-3.5 h-3.5" /> Modelos</button>
+        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome do modelo" aria-label="Nome do modelo" className="flex-1 min-w-[200px] px-3 py-2 rounded-lg text-[13px] font-semibold outline-none" style={campo} />
+        <select value={tipoDocumento} onChange={(e) => setTipoDocumento(e.target.value)} aria-label="Tipo de documento" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={campo}>{TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
+        <select value={serviceFamily} onChange={(e) => setServiceFamily(e.target.value)} aria-label="Família" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={campo}>{FAMILIAS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}</select>
+        <select value={commercialModel} onChange={(e) => setCommercialModel(e.target.value)} aria-label="Modelo comercial" className="px-3 py-2 rounded-lg text-[13px] outline-none" style={campo}>{MODELOS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
       </div>
-      <div className="flex items-center justify-end">
-        <button type="button" onClick={() => setVerHtml((v) => !v)}
-          className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-semibold"
-          style={{ color: "var(--cf2-text-secondary)" }}>
-          <Code2 className="w-3.5 h-3.5" /> {verHtml ? "Editor visual" : "Ver HTML"}
-        </button>
-      </div>
-      {verHtml ? (
-        <textarea
-          ref={corpoRef}
-          value={corpoTemplate}
-          onChange={(e) => setCorpoTemplate(e.target.value)}
-          placeholder="Corpo do contrato em HTML. Use as variáveis da lista abaixo."
-          rows={18}
-          aria-label="Corpo do contrato em HTML"
-          className="px-3 py-2 rounded-lg text-[12px] outline-none resize-y font-mono"
-          style={campoSelect}
-        />
-      ) : (
-        <EditorRico key={inicial?.id ?? "novo"} valorInicial={corpoTemplate} aoMudar={setCorpoTemplate} />
-      )}
-      <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>
-        {corpoEhHtml(corpoTemplate)
-          ? "HTML detectado: tabelas e formatação são preservadas no PDF enviado para assinatura."
-          : "Texto puro: cada linha vira um parágrafo no PDF. Cole o HTML do contrato para manter quadros e tabelas."}
-      </p>
 
-      {verHtml && (
-      <details className="rounded-lg p-3" style={{ background: "var(--cf2-bg-surface-muted)" }}>
-        <summary className="text-[12px] font-semibold cursor-pointer" style={{ color: "var(--cf2-text-secondary)" }}>
-          Variáveis disponíveis ({VARIAVEIS_CONTRATO.length}) — clique para inserir
-        </summary>
-        <div className="flex flex-col gap-3 mt-3">
-          {GRUPOS.map((grupo) => (
-            <div key={grupo}>
-              <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--cf2-text-tertiary)" }}>{grupo}</p>
-              <div className="flex flex-wrap gap-1">
-                {VARIAVEIS_CONTRATO.filter((v) => v.grupo === grupo).map((v) => (
-                  <button key={v.chave} type="button" onClick={() => inserir(v.chave)} title={`${v.rotulo} — exemplo: ${v.exemplo}`}
-                    className="px-2 py-1 rounded text-[11px] font-mono focus-visible:outline-2 focus-visible:outline-offset-1"
-                    style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-secondary)", outlineColor: "var(--cf2-accent)" }}>
-                    {`{{${v.chave}}}`}
-                  </button>
-                ))}
+      <div className="flex flex-wrap items-center gap-1 p-1.5 rounded-lg sticky top-0 z-10" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+        <Bt t="Negrito" Icone={Bold} f={() => cmd("bold")} />
+        <Bt t="Itálico" Icone={Italic} f={() => cmd("italic")} />
+        <Bt t="Sublinhado" Icone={Underline} f={() => cmd("underline")} />
+        <Sep />
+        <Bt t="Título de cláusula" Icone={Heading2} f={() => cmd("formatBlock", "h2")} />
+        <Bt t="Parágrafo" Icone={Pilcrow} f={() => cmd("formatBlock", "p")} />
+        <Bt t="Nova cláusula numerada" Icone={Hash} f={novaClausula} />
+        <Bt t="Alínea recuada (a, b, c)" Icone={Indent} f={() => inserirBloco('<blockquote class="cf-alineas"><p><b>a)</b>&nbsp;</p></blockquote>')} />
+        <Bt t="Lista com marcadores" Icone={List} f={() => cmd("insertUnorderedList")} />
+        <Bt t="Lista numerada" Icone={ListOrdered} f={() => cmd("insertOrderedList")} />
+        <Sep />
+        <Bt t="Alinhar à esquerda" Icone={AlignLeft} f={() => cmd("justifyLeft")} />
+        <Bt t="Centralizar" Icone={AlignCenter} f={() => cmd("justifyCenter")} />
+        <Bt t="Justificar" Icone={AlignJustify} f={() => cmd("justifyFull")} />
+        <Sep />
+        <Bt t="Inserir tabela" Icone={Table2} f={() => inserirBloco('<table class="cf-valores" border="1"><thead><tr><th>Coluna 1</th><th>Coluna 2</th><th>Coluna 3</th></tr></thead><tbody><tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr></tbody></table><p><br></p>', "td")} />
+        <Bt t="Adicionar linha à tabela" Icone={Rows3} f={linhaMais} />
+        <Bt t="Adicionar coluna à tabela" Icone={Columns3} f={colunaMais} />
+        <Sep />
+        <Bt t="Desfazer" Icone={Undo2} f={() => cmd("undo")} />
+        <Bt t="Refazer" Icone={Redo2} f={() => cmd("redo")} />
+        <Sep />
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { if (painel === "variaveis") setPainel(""); else abrirVariaveis(); }} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}>
+          <Braces className="w-3.5 h-3.5" /> Variável <span style={{ color: "var(--cf2-text-tertiary)" }}>#</span>
+        </button>
+        <span className="flex-1" />
+        {inicial && <button type="button" onClick={() => setPainel(painel === "versoes" ? "" : "versoes")} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}><History className="w-3.5 h-3.5" /> Versões (v{inicial.versao} ativa)</button>}
+        <button type="button" onClick={() => setVerHtml((v) => !v)} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}><Code2 className="w-3.5 h-3.5" /> {verHtml ? "Folha" : "HTML"}</button>
+        <button type="button" onClick={() => baixarPdfTeste(corpo, serviceFamily || null)} disabled={!corpo.trim()} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold disabled:opacity-50" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}><FileDown className="w-3.5 h-3.5" /> PDF de teste</button>
+      </div>
+
+      {painel === "variaveis" && (
+        <div className="rounded-lg p-2 max-h-64 overflow-y-auto" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+          <input autoFocus value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar variável (razão social, CNPJ, multa, itens)" aria-label="Buscar variável" className="w-full px-2 py-1.5 mb-2 rounded text-[12px] outline-none" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }} />
+          {GRUPOS.map((g) => {
+            const itens = encontradas.filter((v) => v.grupo === g);
+            if (itens.length === 0) return null;
+            return (
+              <div key={g} className="mb-2">
+                <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--cf2-text-tertiary)" }}>{g}</p>
+                <div className="flex flex-wrap gap-1">
+                  {itens.map((v) => (
+                    <button key={v.chave} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => inserirVariavel(v.chave)} title={`${v.rotulo}. Exemplo: ${v.exemplo.slice(0, 60)}`}
+                      className="px-2 py-1 rounded text-[11px] font-semibold" style={{ background: "#efe9f7", color: ROXO_CONTRATO, border: "1px solid #d9cdea" }}>
+                      {textoDoChip(v.chave)}
+                    </button>
+                  ))}
+                </div>
               </div>
+            );
+          })}
+        </div>
+      )}
+
+      {painel === "versoes" && (
+        <div className="rounded-lg p-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+          {!versoes && <p className="text-[12px] p-2" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando versões...</p>}
+          {versoes?.versoes.map((v) => (
+            <div key={v.id} className="flex items-center justify-between gap-2 px-2 py-1.5 text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
+              <span><b>v{v.versao}</b> {v.ativo ? "(ativa)" : ""} · {v.createdAt ? new Date(v.createdAt).toLocaleString("pt-BR") : ""}</span>
+              {!v.ativo && <button onClick={() => restaurar(v.id)} className="flex items-center gap-1 px-2 h-7 rounded font-semibold" style={{ background: "var(--cf2-bg-surface)" }}><RotateCcw className="w-3 h-3" /> Restaurar como nova versão</button>}
             </div>
           ))}
+          <button hidden onClick={() => recarregarVersoes()} />
         </div>
-      </details>
       )}
 
-      <div className="flex gap-2 justify-end">
-        <button onClick={onCancelar} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
-        <button
-          onClick={() => nome.trim() && corpoTemplate.trim() && onSalvar({ nome: nome.trim(), commercialModel: commercialModel || null, serviceFamily: serviceFamily || null, tipoDocumento, corpoTemplate: corpoTemplate.trim() })}
-          disabled={salvando || !nome.trim() || !corpoTemplate.trim()}
-          className="px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
-          style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}
-        >
-          Salvar
-        </button>
+      <div className="rounded-xl p-4 sm:p-6 overflow-auto" style={{ background: "#e6e8ea", maxHeight: "72vh" }}>
+        <style>{CSS_FOLHA}</style>
+        {verHtml ? (
+          <textarea value={corpo} onChange={(e) => setCorpo(e.target.value)} rows={26} aria-label="Corpo do contrato em HTML" className="w-full px-3 py-2 rounded-lg text-[12px] outline-none font-mono" style={campo} />
+        ) : (
+          <Folha>
+            <div ref={area} className="cf-doc" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="Corpo do contrato"
+              onInput={sincronizar} onBlur={sincronizar}
+              onKeyDown={(e) => {
+                // "#" abre a lista de variáveis (o gesto do editor do Zoho); o caractere não entra no texto.
+                if (e.key === "#") { e.preventDefault(); abrirVariaveis(); }
+                else if (e.key === "Escape" && painel === "variaveis") setPainel("");
+              }} />
+          </Folha>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>
+          Salvar cria uma nova versão ativa; contratos já gerados seguem com o texto que receberam. As variáveis em roxo são preenchidas com os dados da proposta; se faltar algum, o envio é bloqueado.
+        </p>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={onVoltar} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
+          <button
+            onClick={() => nome.trim() && corpo.trim() && onSalvar({ nome: nome.trim(), commercialModel: commercialModel || null, serviceFamily: serviceFamily || null, tipoDocumento, corpoTemplate: corpo.trim() })}
+            disabled={salvando || !nome.trim() || !corpo.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
+            <Save className="w-3.5 h-3.5" /> {sujo || !inicial ? "Salvar nova versão" : "Salvar"}
+          </button>
+        </div>
       </div>
     </div>
   );

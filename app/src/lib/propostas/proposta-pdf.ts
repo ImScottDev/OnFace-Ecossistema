@@ -347,7 +347,11 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
 }
 
 let _warned = false;
-export async function renderPropostaPdf(html: string): Promise<Buffer> {
+export async function renderPropostaPdf(
+  html: string,
+  /** Aditivo: o contrato precisa de cabeçalho/rodapé repetidos e margens próprias. A proposta segue sem nada. */
+  opcoes?: { displayHeaderFooter?: boolean; headerTemplate?: string; footerTemplate?: string; margin?: { top: string; bottom: string; left: string; right: string } },
+): Promise<Buffer> {
   const execPath = resolveChromePath();
   if (!execPath && !_warned) {
     _warned = true;
@@ -365,6 +369,7 @@ export async function renderPropostaPdf(html: string): Promise<Buffer> {
       format: "A4",
       printBackground: true,
       margin: { top: "0", bottom: "0", left: "0", right: "0" },
+      ...opcoes,
     });
     return Buffer.from(pdf);
   } finally {

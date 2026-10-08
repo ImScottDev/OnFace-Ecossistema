@@ -9,7 +9,7 @@ import { z } from "zod";
 import { exigirCtx } from "../compat.js";
 import type { TenantContext } from "../auth.js";
 import {
-  conversas, mensagensDaConversa, montarSaudacao, perguntar, radar, resumoDoBotao, retrato, type Quem,
+  confirmarAcao, conversas, mensagensDaConversa, montarSaudacao, perguntar, radar, resumoDoBotao, retrato, type Quem,
 } from "@/lib/nexo/painel";
 import { analisarConversa } from "@/lib/nexo/analise";
 
@@ -58,6 +58,15 @@ app.post("/nexo/conversa/analisar", async (c) => {
   if (!body.success) return c.json({ error: "Pedido inválido" }, 400);
   const r = await analisarConversa(quem(ctx), body.data);
   return r.ok ? c.json(r) : c.json({ error: r.erro }, r.status as 403 | 404 | 422 | 429 | 502 | 503);
+});
+
+// Confirmar no chat uma ação que o NEXO deixou aguardando (envia, apaga ou não desfaz).
+app.post("/nexo/acoes/confirmar", async (c) => {
+  const ctx = await exigirCtx(c, "ai.use");
+  const body = z.object({ runId: z.string().uuid(), passo: z.number().int().min(0) }).safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: "Pedido inválido" }, 400);
+  const r = await confirmarAcao(quem(ctx), body.data);
+  return c.json(r);
 });
 
 export const nexoRoutes = app;

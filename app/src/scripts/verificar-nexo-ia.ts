@@ -59,15 +59,43 @@ async function main() {
 
   if (comIA) {
     console.log("3. IA real (só com CLAUDE_CODE_OAUTH_TOKEN no servidor)");
-    ok(p.mensagem.texto.length > 10, "NEXO respondeu texto");
+    const perguntar = async (headers: Record<string, string>, pergunta: string, conversaId?: string) =>
+      (await fetch(`${BASE}/api/nexo/perguntar`, { method: "POST", headers, body: JSON.stringify({ conversaId, pergunta, rota: "/tarefas", area: "Atividades" }) })).json();
+    const passosDe = (runId: string) => db.execute<{ name: string; output: any }>(sql`SELECT name, output FROM ai_agent_run_steps WHERE run_id=${runId}::uuid AND kind='tool_call' ORDER BY sequence`);
+    ok(p.mensagem.texto.length > 10, "pergunta aberta: NEXO respondeu texto");
     const [run] = await db.execute<{ status: string; steps: number }>(sql`SELECT r.status, (SELECT count(*)::int FROM ai_agent_run_steps s WHERE s.run_id=r.id) steps FROM ai_agent_runs r WHERE r.id=${p.runId}::uuid`);
     ok(run?.status === "completed" && run.steps > 0, `run ${p.runId} registrado com trace (${run?.steps} passos)`);
     ok(aj.ok !== false && (aj.resumo || aj.tom), "resumo da conversa veio do modelo");
-    const outra = await (await fetch(`${BASE}/api/nexo/perguntar`, { method: "POST", headers: h, body: JSON.stringify({ conversaId: p.conversaId, pergunta: "Cria uma tarefa para ligar para a empresa mais esquecida amanhã", rota: "/tarefas", area: "Atividades" }) })).json();
-    console.log("   ação:", JSON.stringify(outra).slice(0, 500));
-    ok(Array.isArray(outra.propostas) && outra.propostas.length > 0, "ação veio como proposta (nada executado sem confirmar)");
+
+    // Criar atividade de verdade (modo live) e limpar depois.
+    const c = await perguntar(h, "Crie uma atividade para amanhã às 10h: [QA nexo] ligar para teste de verificação", p.conversaId);
+    console.log("   criar:", JSON.stringify(c).slice(0, 400));
+    const [t] = await db.execute<{ id: string; origem: string; usuario_id: string }>(sql`SELECT id::text, origem, usuario_id::text FROM tarefas WHERE titulo ILIKE '[QA nexo]%' ORDER BY created_at DESC LIMIT 1`);
+    ok(t && t.origem === "NEXO" && t.usuario_id === adm!.id && c.executadas?.length > 0, "criar atividade: tarefa gravada (origem NEXO, dono = usuário) e devolvida como executada");
+    const [ev] = t ? await db.execute<{ source: string }>(sql`SELECT source FROM domain_events WHERE aggregate_id=${t.id}::uuid AND event_type='TaskCreated'`) : [];
+    ok(ev?.source === "nexo", "evento TaskCreated com source nexo");
+
+    // Cards do pipeline com escopo: o closer só vê as dele.
+    const tokC = await encode({ token: { id: sdr!.id, name: sdr!.nome, email: "verificacao-closer@onface.local", role: sdr!.role, organizacaoId: ORG, organizacaoSlug: "scott-studio" }, secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || "", salt: "authjs.session-token" });
+    const hC = { cookie: `authjs.session-token=${tokC}`, "content-type": "application/json" };
+    const pc = await perguntar(hC, "Liste as minhas oportunidades abertas do pipeline");
+    const ps = await passosDe(pc.runId);
+    const pip = ps.find((x) => x.name === "nexo_pipeline");
+    const ids: string[] = (pip?.output?.data?.oportunidades ?? []).map((o: any) => o.id);
+    const [alheias] = ids.length ? await db.execute<{ n: number }>(sql`SELECT count(*)::int n FROM negocios WHERE id = ANY(${sql.raw(`ARRAY['${ids.join("','")}']::uuid[]`)}) AND responsavel_id IS DISTINCT FROM ${sdr!.id}::uuid`) : [{ n: 0 }];
+    ok(!!pip && alheias!.n === 0, `pipeline como ${sdr!.role}: ${ids.length} cards, nenhum de outra pessoa`);
+
+    // Recusa por permissão: confirmar a ação de outra pessoa.
+    const del = await perguntar(h, "Exclua a atividade [QA nexo] ligar para teste de verificação");
+    ok(del.confirmacoes?.length > 0, "excluir: fica aguardando Confirmar (não apagou)");
+    if (del.confirmacoes?.length) {
+      const r = await (await fetch(`${BASE}/api/nexo/acoes/confirmar`, { method: "POST", headers: hC, body: JSON.stringify({ runId: del.confirmacoes[0].runId, passo: del.confirmacoes[0].passo }) })).json();
+      ok(r.ok === false, "confirmação por outro usuário é recusada");
+    }
     const painel = await (await fetch(`${BASE}/api/nexo/painel`, { headers: h })).json();
-    ok(painel.conversas?.some((c: any) => c.id === p.conversaId), "conversa aparece em Conversas recentes");
+    ok(painel.conversas?.some((x: any) => x.id === p.conversaId), "conversa aparece em Conversas recentes");
+    await db.execute(sql`DELETE FROM domain_events WHERE aggregate_type='tarefa' AND aggregate_id IN (SELECT id FROM tarefas WHERE titulo ILIKE '[QA nexo]%')`);
+    await db.execute(sql`DELETE FROM tarefas WHERE titulo ILIKE '[QA nexo]%'`);
   }
   console.log(falhas ? `\n${falhas} falha(s)` : "\ntudo ok");
   process.exit(falhas ? 1 : 0);

@@ -24,7 +24,7 @@ import { PecasHost } from "./pecas-host";
 import { UsuarioDoProtoContexto, iniciaisDe, type UsuarioDoProto } from "./usuario-do-proto";
 import { desenharRadar, tituloDoRadar } from "@/lib/nexo/radar-desenho";
 import type { DadosRadar, MsgNexo } from "@/lib/nexo/painel";
-import { perguntarAoNexo, destinoDaProposta } from "@/lib/nexo/cliente";
+import { perguntarAoNexo, botoesDaResposta, confirmarAcaoDoNexo } from "@/lib/nexo/cliente";
 
 /* O menu do desenho navega em `/onface-preview/…`, onde estas telas moraram
    antes de virar rota oficial. A tradução para a rota do produto mora em
@@ -202,7 +202,8 @@ class CascaLigada extends CascaLiga {
     perguntarAoNexo({ conversaId: id, pergunta, rota: this.props.rota ?? "/", area: this.props.titulo ?? "" })
       .then((d) => {
         // Ação sugerida pelo NEXO = botão que navega; o que muda estado a pessoa confirma na tela de destino.
-        const mensagem: MsgNexo = { ...d.mensagem, acoes: (d.propostas ?? []).map((p) => ({ label: p.rotulo, tom: "primario" as const, href: destinoDaProposta(p) })) };
+        const rr = botoesDaResposta(d);
+        const mensagem = { ...d.mensagem, texto: rr.texto, acoes: rr.botoes.map((b) => ({ label: b.rotulo, tom: "primario" as const, href: b.href ?? "", confirmar: b.confirmar })) } as MsgNexo;
         this.setState((s: any) => ({ nexoMsgs: { ...s.nexoMsgs, [id]: (s.nexoMsgs[id] || []).concat([mensagem]) } }));
         if (d.configurada && !d.falhou) pedirJson("/api/nexo/painel").then((p) => this.setState({ nexoConversas: p.conversas })).catch(() => {});
       })
@@ -311,6 +312,8 @@ class CascaLigada extends CascaLiga {
         ...m,
         acoes: (m.acoes || []).map((a: any, j: number) => {
           const href = msgs[i]?.acoes?.[j]?.href;
+          const conf = (msgs[i]?.acoes?.[j] as { confirmar?: { runId: string; passo: number } } | undefined)?.confirmar;
+          if (conf) return { ...a, onClick: () => void confirmarAcaoDoNexo(conf).then((r) => { this.diz(r.texto, r.ok ? "ok" : "erro"); if (r.ok && r.href) navegar(r.href); }) };
           return { ...a, onClick: () => (href ? navegar(href) : undefined) };
         }),
       }));
@@ -338,6 +341,12 @@ export function CascaProto({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  /* O NEXO escreveu (criou atividade, moveu etapa...): as telas abertas releem o servidor. */
+  React.useEffect(() => {
+    const reler = () => router.refresh();
+    window.addEventListener("onface:dados-mudaram", reler);
+    return () => window.removeEventListener("onface:dados-mudaram", reler);
+  }, [router]);
   const trilha = trilhaAtual(pathname);
   const usuario = React.useMemo<UsuarioDoProto>(
     () => ({ ...sessao, iniciais: iniciaisDe(sessao.nome) }),

@@ -280,8 +280,10 @@ export const TIPOS_CONTRATUAIS_COM_BASE: TipoContratual[] = ["ADITIVO", "UPGRADE
  * contrato vigente, e alteração se formaliza por termo aditivo — é o que a
  * própria cláusula 9.3 dos contratos exige.
  */
-export function tipoDocumentoDoContratual(tipo: string | null | undefined): "CONTRATO" | "ADITIVO" | "RENOVACAO" {
-  if (tipo === "ADITIVO" || tipo === "UPGRADE" || tipo === "DOWNGRADE") return "ADITIVO";
+export function tipoDocumentoDoContratual(tipo: string | null | undefined): "CONTRATO" | "ADITIVO" | "DOWNGRADE" | "RENOVACAO" {
+  if (tipo === "ADITIVO" || tipo === "UPGRADE") return "ADITIVO";
+  // Downgrade reduz valores e tem multa própria: texto distinto do aditivo de acréscimo.
+  if (tipo === "DOWNGRADE") return "DOWNGRADE";
   if (tipo === "RENOVACAO") return "RENOVACAO";
   return "CONTRATO";
 }

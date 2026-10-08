@@ -1,6 +1,6 @@
 // @ts-nocheck — lógica portada do protótipo; ver a nota abaixo.
 "use client";
-import { perguntarAoNexo, conversasRecentes, mensagensDaConversa as mensagensDaConversaNexo, novaConversaId } from "@/lib/nexo/cliente";
+import { perguntarAoNexo, conversasRecentes, mensagensDaConversa as mensagensDaConversaNexo, novaConversaId, botoesDaResposta, confirmarAcaoDoNexo } from "@/lib/nexo/cliente";
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Atividades — a lógica do handoff, portada.
@@ -993,6 +993,7 @@ class Logica extends React.Component<any, any> {
           else if (k.indexOf("tarefa:") === 0) { this.setState({ nexoChat: null }); this.abrirEditor(null, { titulo: k.slice(7) }); }
           else if (k.indexOf("tarefaD:") === 0) { const [d0, ...tt] = k.slice(8).split("|"); this.setState({ nexoChat: null }); this.abrirEditor(null, { titulo: tt.join("|"), fimD: d0 }); }
           else if (k.indexOf("rota:") === 0) { this.setState({ nexoChat: null }); E && E.irPara(k.slice(5)); }
+          else if (k.indexOf("conf:") === 0) { const [, runId, passo] = k.split(":"); confirmarAcaoDoNexo({ runId, passo: Number(passo) }).then(r => diz(r.texto)); }
           else if (k.indexOf("p:") === 0) this.enviarNexo(k.slice(2)); };
         /* ANTES: "Conversas recentes" com 5 conversas que nunca aconteceram (Resumo da semana · Hoje, 09:12, Campos Engenharia...). Não há histórico de chat gravado: lista vazia. */
         const REC = (S.nexoRec || []).map(c => [c.titulo, c.id]);
@@ -1056,10 +1057,10 @@ class Logica extends React.Component<any, any> {
   enviarNexo(q) { const t = String(q || "").trim(); if (!t) return;
     if (!this._nxConv) this._nxConv = novaConversaId();
     this.setState(s => ({ nexoChat: Object.assign({}, s.nexoChat || { msgs: [] }, { msgs: ((s.nexoChat || {}).msgs || []).concat([{ de: "eu", t }]), rasc: "", pensando: true }) }));
-    const acaoDe = (p) => p.kind === "criar_tarefa" ? [p.venceEm ? "tarefaD:" + String(p.venceEm).slice(0, 10) + "|" + (p.titulo || "") : "tarefa:" + (p.titulo || ""), p.rotulo] : ["rota:" + p.href, p.rotulo];
+    const acaoDe = (b) => b.confirmar ? ["conf:" + b.confirmar.runId + ":" + b.confirmar.passo, b.rotulo] : ["rota:" + b.href, b.rotulo];
     const push = (m) => this.setState(s => s.nexoChat ? { nexoChat: Object.assign({}, s.nexoChat, { msgs: s.nexoChat.msgs.concat([Object.assign({ de: "nexo" }, m)]), pensando: false }) } : null);
     perguntarAoNexo({ conversaId: this._nxConv, pergunta: t, rota: "/tarefas", area: "Atividades" })
-      .then(d => { this._nxConv = d.conversaId || this._nxConv; push({ t: d.mensagem.texto, erro: !!d.falhou, acoes: (d.propostas || []).map(acaoDe) }); if (d.configurada && !d.falhou) this.carregarRecentesNexo(); })
+      .then(d => { this._nxConv = d.conversaId || this._nxConv; const rr = botoesDaResposta(d); push({ t: rr.texto, erro: !!d.falhou, acoes: rr.botoes.map(acaoDe) }); if (d.configurada && !d.falhou) this.carregarRecentesNexo(); })
       .catch(e => push({ t: "Não consegui falar com o NEXO (" + e.message + ").", erro: true, acoes: [] })); }
   componentDidUpdate() { if (this._nxEl && this._nxN !== ((this.state.nexoChat || {}).msgs || []).length + (this.state.nexoChat && this.state.nexoChat.pensando ? 1 : 0)) { this._nxN = ((this.state.nexoChat || {}).msgs || []).length + (this.state.nexoChat && this.state.nexoChat.pensando ? 1 : 0); this._nxEl.scrollTop = this._nxEl.scrollHeight; } }
 

@@ -189,6 +189,7 @@ app.get("/contratos/:id/pdf", async (c) => {
     .select({
       descricao: contratos.descricao,
       corpoGerado: contratos.corpoGerado,
+      variaveis: contratos.variaveisPreenchidas,
       createdAt: contratos.createdAt,
       signatureStatus: contratos.signatureStatus,
       assinaturaStatus: contratos.assinaturaStatus,
@@ -206,19 +207,19 @@ app.get("/contratos/:id/pdf", async (c) => {
   if (!ct) return c.json({ error: "Contrato não encontrado" }, 404);
 
   const assinado = ct.signatureStatus === "signed" || ["aceite_simples", "assinado"].includes(ct.assinaturaStatus);
+  const numero = String((ct.variaveis as Record<string, unknown> | null)?.contrato_numero ?? "") || null;
   const html = contratoPdfHtml({
-    descricao: ct.descricao,
     corpoGerado: ct.corpoGerado,
-    clienteNome: ct.leadEmpresa || ct.leadNome,
-    createdAt: ct.createdAt,
+    numero,
     assinado,
     assinadoNome: ct.assinadoNome,
     assinadoEm: ct.assinadoEm,
     assinadoIp: ct.assinadoIp,
   });
-  const pdf = await renderContratoPdf(html);
+  const pdf = await renderContratoPdf(html, numero);
+  const nomeArquivo = (ct.descricao || `Contrato ${numero ?? id.slice(0, 8)}`).replace(/[^\p{L}\p{N} ._·-]+/gu, "").trim();
   return new Response(new Uint8Array(pdf), {
-    headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="contrato-${id.slice(0, 8)}.pdf"` },
+    headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="contrato.pdf"; filename*=UTF-8''${encodeURIComponent(nomeArquivo)}.pdf` },
   });
 });
 

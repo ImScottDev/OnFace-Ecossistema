@@ -1,6 +1,6 @@
 // @ts-nocheck — lógica portada do protótipo; ver a nota abaixo.
 "use client";
-import { perguntarAoNexo, novaConversaId, destinoDaProposta } from "@/lib/nexo/cliente";
+import { perguntarAoNexo, novaConversaId, botoesDaResposta, confirmarAcaoDoNexo } from "@/lib/nexo/cliente";
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Cs — a lógica do handoff, portada.
@@ -418,12 +418,13 @@ class Logica extends React.Component<any, any> {
     /* Fora das respostas calculadas da carteira, a pergunta vai para o NEXO de verdade (servidor, lib/nexo/cliente); falha aparece como falha. */
     const ia = (q) => { if (!this._nxConv) this._nxConv = novaConversaId();
       return perguntarAoNexo({ conversaId: this._nxConv, pergunta: q, rota: "/cs", area: "Customer Success" })
-        .then(d => { this._nxConv = d.conversaId || this._nxConv; return { t: d.mensagem.texto, erro: !!d.falhou, acoes: (d.propostas || []).map(p => [p.rotulo, () => E && E.irPara(destinoDaProposta(p))]) }; })
+        .then(d => { this._nxConv = d.conversaId || this._nxConv; const rr = botoesDaResposta(d); return { t: rr.texto, erro: !!d.falhou, acoes: rr.botoes.map(b => [b.rotulo, b.confirmar ? () => confirmarAcaoDoNexo(b.confirmar).then(r => this.setState(s => ({ nx: Object.assign({}, s.nx, { msgs: s.nx.msgs.concat([{ de: "nexo", t: r.texto, acoes: [] }]) }) }))) : () => E && E.irPara(b.href)]) }; })
         .catch(e => ({ t: "Não consegui falar com o NEXO (" + e.message + ").", erro: true, acoes: [] })); };
     const enviar = (txt) => { const t2 = String(txt || "").trim(); if (!t2) return;
       this.setState(s => ({ nx: Object.assign({}, s.nx, { msgs: s.nx.msgs.concat([{ de: "eu", t: t2 }]), rasc: "", pensando: true }) }));
       const push = (r) => this.setState(s => ({ nx: Object.assign({}, s.nx, { pensando: false, msgs: s.nx.msgs.concat([{ de: "nexo", t: r.t, acoes: r.acoes || [], erro: !!r.erro }]) }) }));
-      setTimeout(() => { const r = local(t2); if (r) return push(r); ia(t2).then(push); }, 650); };
+      /* Sem atalho por regex: toda pergunta vai ao NEXO (mesmo serviço das outras telas). */
+      ia(t2).then(push); };
     const nxo = S.nx, briefT = nexo.txt;
     const nx = { status: "ao vivo · " + ativos.length + " contas monitoradas", brief: briefT.slice(0, S.tp), digitando: S.tp < briefT.length,
       plano: planoI, planoVazio: !planoI.length, temPend: pendI.length > 0, tudoTxt: "Executar tudo (" + pendI.length + ")", executarTudo,

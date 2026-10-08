@@ -117,7 +117,7 @@ describe("propostas", () => {
     // Alteração de contrato vigente se formaliza por termo aditivo (cláusula 9.3).
     assert.equal(tipoDocumentoDoContratual("ADITIVO"), "ADITIVO");
     assert.equal(tipoDocumentoDoContratual("UPGRADE"), "ADITIVO");
-    assert.equal(tipoDocumentoDoContratual("DOWNGRADE"), "ADITIVO");
+    assert.equal(tipoDocumentoDoContratual("DOWNGRADE"), "DOWNGRADE");
     assert.equal(tipoDocumentoDoContratual("RENOVACAO"), "RENOVACAO");
   });
 });

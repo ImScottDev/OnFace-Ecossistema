@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { contratos, leads } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { contratoPdfHtml, renderContratoPdf } from "@/lib/crm/contrato-pdf";
+import { contratoPdfHtml, renderContratoPdf, localizarAncoras } from "@/lib/crm/contrato-pdf";
+import { politicaContratual } from "@/lib/crm/contrato-politica";
 import type {
   ConfirmarAssinaturaResult,
   EnviarParaAssinaturaOpts,
@@ -77,40 +78,61 @@ export class DocumensoSignatureProvider implements SignatureProvider {
 
   async enviarParaAssinatura(contratoId: string, opts?: EnviarParaAssinaturaOpts): Promise<EnviarParaAssinaturaResult> {
     const [row] = await db
-      .select({ id: contratos.id, descricao: contratos.descricao, corpoGerado: contratos.corpoGerado, createdAt: contratos.createdAt, signatarios: contratos.signatarios, leadNome: leads.nome, leadEmpresa: leads.empresa })
+      .select({ id: contratos.id, organizacaoId: contratos.organizacaoId, descricao: contratos.descricao, corpoGerado: contratos.corpoGerado, variaveis: contratos.variaveisPreenchidas, signatarios: contratos.signatarios })
       .from(contratos)
-      .innerJoin(leads, eq(contratos.leadId, leads.id))
       .where(eq(contratos.id, contratoId))
       .limit(1);
     if (!row) throw new Error("Contrato não encontrado para envio ao Documenso");
 
     const signatarios = recipientsFrom(opts?.signatarios || row.signatarios);
     if (signatarios.length === 0) throw new Error("Contrato sem signatários válidos para o Documenso");
-    const html = contratoPdfHtml({ descricao: row.descricao, corpoGerado: row.corpoGerado, clienteNome: row.leadEmpresa || row.leadNome, createdAt: row.createdAt, assinado: false, semSelo: true });
-    const pdf = await renderContratoPdf(html);
+
+    // O PDF vai pronto: cabeçalho com Nº em toda folha, rodapé paginado, sem selo.
+    const numero = String((row.variaveis as Record<string, unknown> | null)?.contrato_numero ?? "") || null;
+    const pdf = await renderContratoPdf(contratoPdfHtml({ corpoGerado: row.corpoGerado, numero }), numero);
+
+    // Os campos de assinatura caem sobre o bloco de assinaturas do próprio
+    // documento (âncoras `cf-sig-*`), na página em que a quebra o colocou.
+    const ancoras = localizarAncoras(pdf);
+    const alvo = ancoras["cf-sig-contratante"];
+    if (!alvo) throw new Error("O modelo do contrato não tem o bloco de assinatura do CONTRATANTE (âncora cf-sig-contratante); corrija em Ajustes > Contratos");
+    const fatia = alvo.largura / signatarios.length;
+    const recipients: Record<string, unknown>[] = signatarios.map((recipient, index) => ({
+      email: recipient.email,
+      name: recipient.nome,
+      role: "SIGNER",
+      signingOrder: recipient.ordem || index + 1,
+      fields: [{
+        identifier: 0, type: "SIGNATURE", page: alvo.pagina,
+        positionX: alvo.x + index * fatia, positionY: alvo.y, width: Math.max(fatia - 1, 8), height: alvo.altura,
+      }],
+    }));
+    // Representante da Callface (CONTRATADA): só assina por Documenso quando
+    // está cadastrado em Ajustes > Contratos; sem ele a linha segue no documento
+    // com a razão social impressa, e a Callface não vira signatário inventado.
+    const politica = await politicaContratual(row.organizacaoId);
+    const contratada = ancoras["cf-sig-contratada"];
+    if (politica.representanteNome && politica.representanteEmail && contratada) {
+      recipients.push({
+        email: politica.representanteEmail, name: politica.representanteNome, role: "SIGNER", signingOrder: signatarios.length + 1,
+        fields: [{ identifier: 0, type: "SIGNATURE", page: contratada.pagina, positionX: contratada.x, positionY: contratada.y, width: contratada.largura, height: contratada.altura }],
+      });
+    }
+    const titulo = opts?.titulo || row.descricao || `Contrato Callface ${numero ?? contratoId.slice(0, 8)}`;
     const payload = {
       type: "DOCUMENT",
-      title: opts?.titulo || row.descricao || `Contrato Callface ${contratoId.slice(0, 8)}`,
+      title: titulo,
       externalId: `callface-contrato-${contratoId}`,
       visibility: "EVERYONE",
-      recipients: signatarios.map((recipient, index) => ({
-        email: recipient.email,
-        name: recipient.nome,
-        role: "SIGNER",
-        signingOrder: recipient.ordem || index + 1,
-        fields: [
-          { identifier: 0, type: "SIGNATURE", page: 1, positionX: 10, positionY: 78 + (index * 7), width: 30, height: 5 },
-          { identifier: 0, type: "DATE", page: 1, positionX: 52, positionY: 78 + (index * 7), width: 22, height: 4 },
-        ],
-      })),
+      recipients,
       meta: {
-        subject: "Assine seu contrato com a Callface",
+        subject: `Assine: ${titulo}`,
         message: "Revise o documento e assine com segurança. Você receberá uma cópia após a conclusão.",
       },
     };
     const form = new FormData();
     form.append("payload", JSON.stringify(payload));
-    form.append("files", new Blob([new Uint8Array(pdf)], { type: "application/pdf" }), `contrato-${contratoId.slice(0, 8)}.pdf`);
+    form.append("files", new Blob([new Uint8Array(pdf)], { type: "application/pdf" }), `${titulo.replace(/[\\/:*?"<>|]+/g, "").trim()}.pdf`);
     const created = await this.request("/envelope/create", { method: "POST", body: form });
     const providerRef = String(created.envelopeId || created.id || "");
     if (!providerRef) throw new Error("Documenso não devolveu envelopeId");

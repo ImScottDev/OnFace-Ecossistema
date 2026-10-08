@@ -25,6 +25,12 @@ import postgres from "postgres";
 const DIR = path.join(process.cwd(), "src", "lib", "db", "migrations");
 const DB_URL = process.env.DATABASE_URL;
 
+/* Migration cujo CHECK a posterior ALARGA: isolada, em banco que já tem linha do valor novo, ela
+   viola o próprio CHECK. Em banco novo a cadeia roda em ordem e passa. */
+const SUPERADAS: Record<string, string> = {
+  "0093_contrato_templates_tipo_documento.sql": "0098 acrescenta DOWNGRADE ao CHECK de tipo_documento",
+};
+
 test("toda migration do refactor pode ser reaplicada", async (t) => {
   if (!DB_URL) return t.skip("DATABASE_URL não definida");
   const sql = postgres(DB_URL, { max: 1, fetch_types: false, onnotice: () => {} });
@@ -36,6 +42,7 @@ test("toda migration do refactor pode ser reaplicada", async (t) => {
     assert.ok(arquivos.length > 20, `esperava a cadeia do refactor, achei ${arquivos.length}`);
 
     for (const nome of arquivos) {
+      if (SUPERADAS[nome]) continue;
       const corpo = fs.readFileSync(path.join(DIR, nome), "utf8");
       // Migration que abre a própria transação não pode ser aninhada.
       const propria = /^\s*BEGIN\s*;/im.test(corpo);

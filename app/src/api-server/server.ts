@@ -167,6 +167,11 @@ app.route("/api/conta", authFlowRoutes);
 export { app };
 
 export function startServer() {
+  // Modelos oficiais de contrato: só cria o que falta (ver lib/crm/modelos-contrato.ts).
+  import("@/lib/crm/modelos-contrato")
+    .then((m) => m.carregarModelosOficiais({ atualizar: false, log: (l) => console.log(`[API] ${l}`) }))
+    .catch((e) => console.error("[API] Falha ao garantir modelos de contrato:", e));
+
   // 3001 é a porta real do container da API em todos os composes (API_PORT=3001).
   // O default era 3002, que hoje é do healthcheck do worker — subir a API sem
   // API_PORT colidia com ele em ambiente local.

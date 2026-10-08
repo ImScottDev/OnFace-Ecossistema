@@ -16,84 +16,104 @@ export interface VariavelContrato {
   rotulo: string;
   /** Valor fictício usado só na pré-visualização de Ajustes → Contratos. */
   exemplo: string;
-  grupo: "Contratante" | "Signatário" | "Itens e valores" | "Prazos e datas" | "Jurídico e política";
+  grupo: "Contratante" | "Signatário" | "Itens e valores" | "Prazos e datas" | "Contrato e proposta";
+  /** Nome que o time conhece do Zoho (`${Empresas.CNPJ}`): é o que aparece no chip do editor. */
+  zoho?: string;
+  /** Pode ficar em branco sem travar o envio (ex.: complemento do endereço, testemunhas). */
+  opcional?: boolean;
 }
 
 export const VARIAVEIS_CONTRATO: VariavelContrato[] = [
   // Contratante
-  { chave: "empresa_razao_social", rotulo: "Razão social", exemplo: "Empresa Exemplo Comércio e Serviços LTDA", grupo: "Contratante" },
-  { chave: "empresa_nome", rotulo: "Nome no contrato (razão social, ou o nome cadastrado)", exemplo: "Empresa Exemplo Comércio e Serviços LTDA", grupo: "Contratante" },
-  { chave: "empresa_nome_fantasia", rotulo: "Nome fantasia", exemplo: "Empresa Exemplo", grupo: "Contratante" },
-  { chave: "empresa_cnpj", rotulo: "CNPJ", exemplo: "12.345.678/0001-90", grupo: "Contratante" },
+  { chave: "empresa_razao_social", rotulo: "Razão social", exemplo: "[QA] Empresa Exemplo Comércio e Serviços LTDA", grupo: "Contratante", zoho: "Empresas.Razão Social" },
+  { chave: "empresa_nome", rotulo: "Nome no contrato (razão social)", exemplo: "[QA] Empresa Exemplo Comércio e Serviços LTDA", grupo: "Contratante" },
+  { chave: "empresa_nome_fantasia", rotulo: "Nome fantasia", exemplo: "[QA] Empresa Exemplo", grupo: "Contratante", zoho: "Empresas.Nome da Empresa" },
+  { chave: "empresa_cnpj", rotulo: "CNPJ", exemplo: "12.345.678/0001-90", grupo: "Contratante", zoho: "Empresas.CNPJ" },
   { chave: "empresa_endereco", rotulo: "Endereço completo", exemplo: "Rua das Palmeiras, 120, sala 3, Centro, Campinas - SP, CEP 13015-200", grupo: "Contratante" },
-  { chave: "empresa_logradouro", rotulo: "Rua", exemplo: "Rua das Palmeiras", grupo: "Contratante" },
+  { chave: "empresa_logradouro", rotulo: "Rua", exemplo: "Rua das Palmeiras", grupo: "Contratante", zoho: "Empresas.Rua de cobrança" },
   { chave: "empresa_numero", rotulo: "Número", exemplo: "120", grupo: "Contratante" },
-  { chave: "empresa_complemento", rotulo: "Complemento", exemplo: "sala 3", grupo: "Contratante" },
-  { chave: "empresa_bairro", rotulo: "Bairro", exemplo: "Centro", grupo: "Contratante" },
-  { chave: "empresa_cidade", rotulo: "Cidade", exemplo: "Campinas", grupo: "Contratante" },
-  { chave: "empresa_estado", rotulo: "Estado / UF", exemplo: "SP", grupo: "Contratante" },
-  { chave: "empresa_cep", rotulo: "CEP", exemplo: "13015-200", grupo: "Contratante" },
+  { chave: "empresa_complemento", rotulo: "Complemento", exemplo: "sala 3", grupo: "Contratante", opcional: true },
+  { chave: "empresa_bairro", rotulo: "Bairro", exemplo: "Centro", grupo: "Contratante", zoho: "Empresas.Bairro de cobrança" },
+  { chave: "empresa_cidade", rotulo: "Cidade", exemplo: "Campinas", grupo: "Contratante", zoho: "Empresas.Cidade de cobrança" },
+  { chave: "empresa_estado", rotulo: "Estado / UF", exemplo: "SP", grupo: "Contratante", zoho: "Empresas.Estado / UF de Cobrança" },
+  { chave: "empresa_cep", rotulo: "CEP", exemplo: "13015-200", grupo: "Contratante", zoho: "Empresas.CEP de cobrança" },
   { chave: "cidade_uf", rotulo: "Cidade e UF", exemplo: "Campinas - SP", grupo: "Contratante" },
-  { chave: "callface_razao_social", rotulo: "Razão social da Callface", exemplo: "CALLFACE SOFTWARE E SERVIÇOS LTDA.", grupo: "Contratante" },
+  { chave: "callface_razao_social", rotulo: "Razão social da Callface", exemplo: "CALLFACE SOFTWARE E SERVIÇOS LTDA.", grupo: "Contratante", zoho: "Organização.Nome da organização" },
   { chave: "callface_cnpj", rotulo: "CNPJ da Callface", exemplo: "39.764.520/0001-06", grupo: "Contratante" },
   { chave: "callface_endereco", rotulo: "Endereço da Callface", exemplo: "Avenida Pierre Simon de Laplace nº 740, sala 4, Bairro Techno Park, Campinas – SP, CEP: 13.069-320", grupo: "Contratante" },
 
   // Signatário
-  { chave: "pessoa_nome", rotulo: "Nome do signatário", exemplo: "Fulano da Silva", grupo: "Signatário" },
-  { chave: "pessoa_email", rotulo: "E-mail do signatário", exemplo: "fulano@empresaexemplo.com.br", grupo: "Signatário" },
-  { chave: "pessoa_cargo", rotulo: "Cargo do signatário", exemplo: "Diretor Comercial", grupo: "Signatário" },
-  { chave: "pessoa_cpf", rotulo: "CPF do signatário", exemplo: "123.456.789-00", grupo: "Signatário" },
+  { chave: "pessoa_nome", rotulo: "Nome do signatário", exemplo: "[QA] Fulano da Silva", grupo: "Signatário", zoho: "Contatos.Nome Completo" },
+  { chave: "pessoa_email", rotulo: "E-mail do signatário", exemplo: "fulano@empresaexemplo.com.br", grupo: "Signatário", zoho: "Contatos.E-mail" },
+  { chave: "pessoa_cargo", rotulo: "Cargo do signatário", exemplo: "Diretor Comercial", grupo: "Signatário", zoho: "Contatos.Cargo" },
+  { chave: "pessoa_cpf", rotulo: "CPF do signatário", exemplo: "123.456.789-00", grupo: "Signatário", zoho: "Contatos.CPF" },
   { chave: "signatarios", rotulo: "Lista de signatários", exemplo: "Fulano da Silva <fulano@empresaexemplo.com.br>", grupo: "Signatário" },
-  { chave: "callface_representante_nome", rotulo: "Representante da Callface", exemplo: "não informado", grupo: "Signatário" },
-  { chave: "callface_representante_cargo", rotulo: "Cargo do representante da Callface", exemplo: "não informado", grupo: "Signatário" },
-  { chave: "callface_representante_cpf", rotulo: "CPF do representante da Callface", exemplo: "não informado", grupo: "Signatário" },
-  { chave: "testemunha_1_nome", rotulo: "Testemunha 1 — nome", exemplo: "não aplicável quando não houver testemunha", grupo: "Signatário" },
-  { chave: "testemunha_1_cpf", rotulo: "Testemunha 1 — CPF", exemplo: "não informado", grupo: "Signatário" },
-  { chave: "testemunha_2_nome", rotulo: "Testemunha 2 — nome", exemplo: "não aplicável quando não houver testemunha", grupo: "Signatário" },
-  { chave: "testemunha_2_cpf", rotulo: "Testemunha 2 — CPF", exemplo: "não informado", grupo: "Signatário" },
 
   // Itens e valores
   { chave: "itens_descricao", rotulo: "Itens em uma linha", exemplo: "Callface AI - Plano Business (recorrente), Setup de implantação (setup)", grupo: "Itens e valores" },
   { chave: "itens_recorrentes", rotulo: "Itens recorrentes e avulsos (texto)", exemplo: "Callface AI - Plano Business | Licença mensal | Qtd. 10 | R$ 179,90 | R$ 1.799,00", grupo: "Itens e valores" },
-  { chave: "itens_recorrentes_html", rotulo: "Itens recorrentes e avulsos (linhas de tabela)", exemplo: "<tr><td>Callface AI - Plano Business</td><td>Licença mensal</td><td>10</td><td>R$ 179,90</td><td>R$ 1.799,00</td></tr>", grupo: "Itens e valores" },
+  { chave: "itens_recorrentes_html", rotulo: "Itens recorrentes: uma linha de tabela por item", exemplo: "<tr><td>Callface AI - Plano Business</td><td>Licença mensal</td><td>10</td><td>R$ 179,90</td><td>R$ 1.799,00</td></tr>", grupo: "Itens e valores", zoho: "Itens Solicitados.Itens" },
+  { chave: "itens_licencas_html", rotulo: "Itens com recorrência: uma linha de tabela por item (6 colunas)", exemplo: "<tr><td>Licença White Label Callface</td><td>Licença reservada para ativação e revenda</td><td>Mensal, por licença ativa</td><td>10</td><td>R$ 179,90</td><td>R$ 1.799,00</td></tr>", grupo: "Itens e valores" },
   { chave: "itens_setup", rotulo: "Itens de setup (texto)", exemplo: "Setup de implantação | Configuração inicial | Qtd. 1 | R$ 2.500,00 | R$ 2.500,00", grupo: "Itens e valores" },
-  { chave: "itens_setup_html", rotulo: "Itens de setup (linhas de tabela)", exemplo: "<tr><td>Setup de implantação</td><td>Configuração inicial</td><td>1</td><td>R$ 2.500,00</td><td>R$ 2.500,00</td></tr>", grupo: "Itens e valores" },
-  { chave: "valor_total", rotulo: "Valor total", exemplo: "R$ 4.299,00", grupo: "Itens e valores" },
-  { chave: "mrr_total", rotulo: "Total mensal recorrente", exemplo: "R$ 1.799,00", grupo: "Itens e valores" },
-  { chave: "setup_total", rotulo: "Total de setup", exemplo: "R$ 2.500,00", grupo: "Itens e valores" },
-  { chave: "condicoes_pagamento", rotulo: "Condições de pagamento", exemplo: "Boleto mensal, vencimento todo dia 10", grupo: "Itens e valores" },
+  { chave: "itens_setup_html", rotulo: "Itens de setup: uma linha de tabela por item", exemplo: "<tr><td>Setup de implantação</td><td>Configuração inicial</td><td>1</td><td>R$ 2.500,00</td><td>R$ 2.500,00</td></tr>", grupo: "Itens e valores" },
+  { chave: "valor_total", rotulo: "Valor total", exemplo: "R$ 4.299,00", grupo: "Itens e valores", zoho: "Contratos.Total Geral" },
+  { chave: "mrr_total", rotulo: "Total mensal recorrente", exemplo: "R$ 1.799,00", grupo: "Itens e valores", zoho: "Contratos.Total Recorrente" },
+  { chave: "setup_total", rotulo: "Total de setup", exemplo: "R$ 2.500,00", grupo: "Itens e valores", zoho: "Contratos.Total Setup" },
+  { chave: "forma_pagamento_setup", rotulo: "Forma de pagamento do setup", exemplo: "À vista, no cartão de crédito", grupo: "Itens e valores", zoho: "Setup..Forma de pagamento" },
+  { chave: "condicoes_pagamento", rotulo: "Condições de pagamento da proposta", exemplo: "Boleto mensal, vencimento todo dia 10", grupo: "Itens e valores" },
 
   // Prazos e datas
-  { chave: "prazo_meses", rotulo: "Prazo em meses (número)", exemplo: "12", grupo: "Prazos e datas" },
+  { chave: "prazo_meses", rotulo: "Prazo em meses (número)", exemplo: "12", grupo: "Prazos e datas", zoho: "Contratos.Prazo Contrato (em meses)" },
   { chave: "prazo_descricao", rotulo: "Prazo por extenso", exemplo: "12 meses", grupo: "Prazos e datas" },
-  { chave: "data_inicio_vigencia", rotulo: "Início da vigência", exemplo: "2026-10-01", grupo: "Prazos e datas" },
-  { chave: "data_inicio_cobranca", rotulo: "Início da cobrança", exemplo: "2026-10-01", grupo: "Prazos e datas" },
-  { chave: "dia_vencimento", rotulo: "Dia de vencimento", exemplo: "10", grupo: "Prazos e datas" },
-  { chave: "data_assinatura_extenso", rotulo: "Data da assinatura", exemplo: "data registrada pela plataforma de assinatura", grupo: "Prazos e datas" },
-  { chave: "data_emissao", rotulo: "Data de emissão do contrato", exemplo: "2026-10-01", grupo: "Prazos e datas" },
-  { chave: "contrato_numero", rotulo: "Número do contrato", exemplo: "P-007-v1", grupo: "Prazos e datas" },
-  { chave: "proposta_numero", rotulo: "Número da proposta de origem", exemplo: "P-007-v1", grupo: "Prazos e datas" },
-  { chave: "contrato_base_numero", rotulo: "Número do contrato aditado ou renovado", exemplo: "P-003-v2", grupo: "Prazos e datas" },
+  { chave: "data_inicio_vigencia", rotulo: "Início da vigência", exemplo: "01/10/2026", grupo: "Prazos e datas", zoho: "Contratos.Data de Início" },
+  { chave: "data_inicio_cobranca", rotulo: "Início da cobrança", exemplo: "01/10/2026", grupo: "Prazos e datas" },
+  { chave: "dia_vencimento", rotulo: "Vencimento da cobrança", exemplo: "todo dia 10", grupo: "Prazos e datas", zoho: "Contratos.Vencimento" },
+  { chave: "data_emissao", rotulo: "Data do contrato (por extenso)", exemplo: "1 de outubro de 2026", grupo: "Prazos e datas", zoho: "Contratos.Data de Envio do Contrato" },
 
-  // Jurídico e política — valores ainda não configuráveis no CRM
-  { chave: "limite_armazenamento_gravacoes", rotulo: "Limite de armazenamento de gravações", exemplo: "conforme o plano contratado", grupo: "Jurídico e política" },
-  { chave: "sla_critico_resposta", rotulo: "SLA crítico — resposta", exemplo: "conforme política de suporte vigente", grupo: "Jurídico e política" },
-  { chave: "sla_critico_cobertura", rotulo: "SLA crítico — cobertura", exemplo: "conforme política de suporte vigente", grupo: "Jurídico e política" },
-  { chave: "sla_alto_resposta", rotulo: "SLA alto — resposta", exemplo: "conforme política de suporte vigente", grupo: "Jurídico e política" },
-  { chave: "sla_alto_cobertura", rotulo: "SLA alto — cobertura", exemplo: "conforme política de suporte vigente", grupo: "Jurídico e política" },
-  { chave: "sla_medio_resposta", rotulo: "SLA médio — resposta", exemplo: "conforme política de suporte vigente", grupo: "Jurídico e política" },
-  { chave: "sla_medio_cobertura", rotulo: "SLA médio — cobertura", exemplo: "conforme política de suporte vigente", grupo: "Jurídico e política" },
-  { chave: "sla_baixo_resposta", rotulo: "SLA baixo — resposta", exemplo: "conforme política de suporte vigente", grupo: "Jurídico e política" },
-  { chave: "sla_baixo_cobertura", rotulo: "SLA baixo — cobertura", exemplo: "conforme política de suporte vigente", grupo: "Jurídico e política" },
-  { chave: "percentual_multa", rotulo: "Percentual de multa", exemplo: "conforme condição comercial e legislação aplicável", grupo: "Jurídico e política" },
-  { chave: "juros_mora", rotulo: "Juros de mora", exemplo: "conforme condição comercial e legislação aplicável", grupo: "Jurídico e política" },
-  { chave: "indice_reajuste", rotulo: "Índice de reajuste", exemplo: "conforme política comercial vigente", grupo: "Jurídico e política" },
-  { chave: "prazo_devolucao_equipamentos", rotulo: "Prazo de devolução de equipamentos", exemplo: "conforme condição comercial do equipamento", grupo: "Jurídico e política" },
-  { chave: "limite_responsabilidade_meses", rotulo: "Limite de responsabilidade (meses)", exemplo: "conforme versão jurídica final", grupo: "Jurídico e política" },
-  { chave: "prazo_confidencialidade_anos", rotulo: "Prazo de confidencialidade (anos)", exemplo: "conforme versão jurídica final", grupo: "Jurídico e política" },
-  { chave: "prazo_cura_inadimplemento", rotulo: "Prazo de cura do inadimplemento", exemplo: "conforme versão jurídica final", grupo: "Jurídico e política" },
-  { chave: "regra_multa_rescisoria", rotulo: "Regra da multa rescisória", exemplo: "conforme condição comercial e versão jurídica final", grupo: "Jurídico e política" },
+  // Contrato e proposta
+  { chave: "contrato_numero", rotulo: "Número do contrato", exemplo: "P-007-v1", grupo: "Contrato e proposta", zoho: "Contratos.Código do Contrato" },
+  { chave: "proposta_numero", rotulo: "Número da proposta de origem", exemplo: "P-007-v1", grupo: "Contrato e proposta", zoho: "Propostas.Assunto" },
+  { chave: "contrato_base_numero", rotulo: "Número do contrato aditado ou renovado", exemplo: "P-003-v2", grupo: "Contrato e proposta" },
+  { chave: "percentual_multa", rotulo: "Multa rescisória (percentual)", exemplo: "30%", grupo: "Contrato e proposta", zoho: "Contratos.Percentual de Multa" },
+  { chave: "percentual_multa_numero", rotulo: "Multa rescisória (só o número, para \"X porcento\")", exemplo: "30", grupo: "Contrato e proposta", zoho: "Contratos.Percentual Multa" },
+  { chave: "meses_restantes_contrato_base", rotulo: "Meses restantes do contrato aditado (downgrade)", exemplo: "8", grupo: "Contrato e proposta" },
+  { chave: "valor_multa_downgrade", rotulo: "Multa por redução de escopo (downgrade)", exemplo: "R$ 2.400,00", grupo: "Contrato e proposta" },
+  { chave: "limite_armazenamento_gravacoes", rotulo: "Limite de armazenamento de gravações", exemplo: "90 dias", grupo: "Contrato e proposta" },
+  { chave: "testemunha_1_nome", rotulo: "Testemunha 1: nome", exemplo: "", grupo: "Signatário", opcional: true },
+  { chave: "testemunha_1_cpf", rotulo: "Testemunha 1: CPF", exemplo: "", grupo: "Signatário", opcional: true },
+  { chave: "testemunha_2_nome", rotulo: "Testemunha 2: nome", exemplo: "", grupo: "Signatário", opcional: true },
+  { chave: "testemunha_2_cpf", rotulo: "Testemunha 2: CPF", exemplo: "", grupo: "Signatário", opcional: true },
 ];
+
+const POR_CHAVE = new Map(VARIAVEIS_CONTRATO.map((v) => [v.chave, v]));
+
+/** Texto do chip no editor: o nome do Zoho quando existe, o rótulo quando não. */
+export function textoDoChip(chave: string): string {
+  const v = POR_CHAVE.get(chave);
+  return `\${${v?.zoho ?? v?.rotulo ?? chave}}`;
+}
+
+/**
+ * Variáveis do template que não têm valor. É a base do bloqueio de envio:
+ * contrato com "não informado" no meio de uma cláusula é pior que contrato que
+ * não sai. Opcionais (complemento, testemunhas) ficam em branco sem travar.
+ */
+export function variaveisFaltando(corpoTemplate: string, valores: Record<string, string>): { chave: string; rotulo: string }[] {
+  const vistas = new Set<string>();
+  const faltando: { chave: string; rotulo: string }[] = [];
+  for (const [, chave] of corpoTemplate.matchAll(/\{\{(\w+)\}\}/g)) {
+    if (vistas.has(chave)) continue;
+    vistas.add(chave);
+    const v = POR_CHAVE.get(chave);
+    if (!v) { faltando.push({ chave, rotulo: `variável desconhecida "${chave}"` }); continue; }
+    if (v.opcional) continue;
+    const valor = (valores[chave] ?? "").trim();
+    if (!valor || valor === "—" || valor.toLowerCase() === "não informado") {
+      faltando.push({ chave, rotulo: v.rotulo });
+    }
+  }
+  return faltando;
+}
 
 /** Valores fictícios da pré-visualização, derivados do mesmo catálogo. */
 export const VARIAVEIS_EXEMPLO: Record<string, string> = Object.fromEntries(
@@ -159,7 +179,8 @@ const DE_PARA_ZOHO: Record<string, string> = {
   "Contratos.Total Setup": "setup_total",
   "Contratos.Total Recorrente": "mrr_total",
   "Contratos.Sub-total": "mrr_total",
-  "Contratos.Percentual Multa": "percentual_multa",
+  "Propostas.Sub-total": "mrr_total",
+  "Contratos.Percentual Multa": "percentual_multa_numero",
   "Contratos.Empresa Nome": "empresa_razao_social",
   "Propostas.Assunto": "proposta_numero",
   "Propostas.Número do Proposta": "proposta_numero",

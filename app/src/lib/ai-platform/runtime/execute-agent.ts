@@ -41,6 +41,19 @@ export type ExecuteAgentInput = {
    * amplia permissão de escrita: o gate delegado continua por ferramenta.
    */
   extraToolIds?: string[];
+  /** Só as ferramentas de `extraToolIds` (o chat do NEXO não herda as de contato da versão). */
+  somenteFerramentasExtras?: boolean;
+  /**
+   * NEXO age COMO o usuário (decisão do Scott, 08/10): o teto é o RBAC efetivo
+   * dele. Se a versão configurar `guardrail_config.permissoes`, a interseção com
+   * elas continua valendo; sem configuração, o teto é só o usuário.
+   */
+  delegarComoUsuario?: boolean;
+  usuarioPapel?: string | null;
+  /** Autonomia desta execução, acima da configurada na versão (o chat do NEXO executa direto). */
+  autonomia?: "suggest" | "approval" | "autonomous";
+  /** O usuário confirmou no chat a ação que esta execução reexecuta. */
+  confirmado?: boolean;
 };
 
 export type ExecuteAgentResult = {
@@ -216,18 +229,24 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     // gravadas por integrações em inglês. Sem essa normalização o agente
     // sempre caía silenciosamente em suggest.
     const configuredAutonomy = guardrails.autonomia ?? guardrails.autonomy;
-    const autonomy = (["suggest", "approval", "autonomous"] as const).includes(configuredAutonomy as "suggest") ? configuredAutonomy as "suggest" | "approval" | "autonomous" : "suggest";
+    const autonomy = input.autonomia ?? ((["suggest", "approval", "autonomous"] as const).includes(configuredAutonomy as "suggest") ? configuredAutonomy as "suggest" | "approval" | "autonomous" : "suggest");
     trace.push({ type: "autonomy", mode: autonomy });
 
     // Teto de permissão DESTA execução. Sem configuração na versão, o agente
     // fica sem escrita: agente que nasce podendo tudo é porta que ninguém
     // abriu de propósito.
     const { delegacaoDoRun } = await import("../permissao-delegada");
-    const delegacao = await delegacaoDoRun({
+    let delegacao = await delegacaoDoRun({
       organizacaoId: input.organizacaoId,
       agentVersionId: selected.version.id,
       usuarioId: input.usuarioId ?? null,
     });
+    if (input.delegarComoUsuario && input.usuarioId) {
+      const { permissoesEfetivas } = await import("@/lib/auth/permissoes");
+      const doUsuario = await permissoesEfetivas({ usuarioId: input.usuarioId, organizacaoId: input.organizacaoId, role: input.usuarioPapel ?? null });
+      const teto = delegacao.origem === "nenhuma" ? doUsuario : new Set([...doUsuario].filter((c) => delegacao.permissoes.has(c)));
+      delegacao = { permissoes: teto, origem: "versao+usuario" };
+    }
     // O trace guarda o teto, não o pedido: quando o agente disser "não pude",
     // o registro precisa mostrar o que ele podia.
     trace.push({
@@ -239,7 +258,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     // A agente é um usuário do sistema: o que ela faz nas ferramentas sai assinado por ele na timeline.
     const agenteUsuarioId = await usuarioDoAgente(selected.agent.id);
     const toolIds = Array.isArray(selected.version.tools) ? selected.version.tools.filter((value): value is string => typeof value === "string") : [];
-    const tools = modelToolsForIds([...new Set([...toolIds, ...(input.extraToolIds ?? [])])]);
+    const tools = modelToolsForIds([...new Set([...(input.somenteFerramentasExtras ? [] : toolIds), ...(input.extraToolIds ?? [])])]);
     const allowedNames = new Set(tools.map((tool) => tool.name));
     const messages: AgentMessage[] = [
       // Instruções + escopo + expressões de handoff + regras fixas: a mesma
@@ -267,6 +286,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
           leadId: input.leadId,
           usuarioId: input.usuarioId,
           agenteUsuarioId,
+          confirmado: input.confirmado,
           mode: input.mode,
           autonomy,
           permissoesDelegadas: delegacao.permissoes,
@@ -318,7 +338,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         if (!allowedNames.has(call.name)) result = { ok: false, error: `tool fora da allowlist: ${call.name}` };
         else {
           const startedTool = Date.now();
-          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, usuarioId: input.usuarioId, agenteUsuarioId, mode: input.mode, autonomy, permissoesDelegadas: delegacao.permissoes }, call.input); }
+          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, usuarioId: input.usuarioId, agenteUsuarioId, confirmado: input.confirmado, mode: input.mode, autonomy, permissoesDelegadas: delegacao.permissoes }, call.input); }
           catch (error) { result = { ok: false, error: error instanceof Error ? error.message : String(error) }; }
           await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name, status: result.ok ? "completed" : "failed", input: call.input, output: result, latencyMs: Date.now() - startedTool, errorCode: result.ok ? undefined : "tool_failed", errorMessage: result.error });
         }
