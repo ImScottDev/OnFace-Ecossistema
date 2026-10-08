@@ -8,13 +8,14 @@
 import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { contratos } from "@/lib/db/schema";
+import { ehCliente } from "@/lib/crm/proposta-signatarios";
 import type { SignatureProvider, SignatureStatus, EnviarParaAssinaturaResult, ConfirmarAssinaturaOpts, ConfirmarAssinaturaResult, EnviarParaAssinaturaOpts } from "@/lib/crm/signature/provider";
 
 export class SimpleElectronicSignatureProvider implements SignatureProvider {
   readonly nome = "simple_electronic";
 
   async enviarParaAssinatura(contratoId: string, opts?: EnviarParaAssinaturaOpts): Promise<EnviarParaAssinaturaResult> {
-    if ((opts?.signatarios?.length || 0) > 1) {
+    if ((opts?.signatarios?.filter(ehCliente).length || 0) > 1) {
       throw new Error("Múltiplos signatários exigem o Documenso self-hosted configurado (DOCUMENSO_API_URL/DOCUMENSO_API_TOKEN).");
     }
     // Não existe envio real (não há API externa) — o link público JÁ é a

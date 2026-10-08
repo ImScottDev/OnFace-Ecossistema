@@ -1563,6 +1563,8 @@ export const propostas = pgTable(
     // usa contrato. Mantido na proposta para ser copiado ao contrato gerado
     // automaticamente no aceite, sem acoplar o domínio a um provider externo.
     signatarios: jsonb("signatarios"),
+    /** Estado do editor (condições do contrato, dados congelados no envio). Ver 0099. */
+    editor: jsonb("editor"),
     totalRecorrente: decimal("total_recorrente", { precision: 12, scale: 2 }).default("0"),
     totalAvulso: decimal("total_avulso", { precision: 12, scale: 2 }).default("0"),
     totalGeral: decimal("total_geral", { precision: 12, scale: 2 }).default("0"),

@@ -3,6 +3,9 @@ import { contratos, leads } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { contratoPdfHtml, renderContratoPdf, localizarAncoras } from "@/lib/crm/contrato-pdf";
 import { politicaContratual } from "@/lib/crm/contrato-politica";
+import {
+  ANCORA_DO_PAPEL, comPadraoDaPolitica, ehCliente, ehPapelCallface, emailValido, faltaRepresentante, normalizarSignatarios, type Signatario,
+} from "@/lib/crm/proposta-signatarios";
 import type {
   ConfirmarAssinaturaResult,
   EnviarParaAssinaturaOpts,
@@ -58,6 +61,45 @@ function recipientsFrom(value: unknown): SignatureRecipient[] {
     .filter((item) => item.nome && item.email);
 }
 
+type Campo = Record<string, unknown>;
+type Area = { pagina: number; x: number; y: number; largura: number; altura: number };
+
+/**
+ * Destinatários do envelope e o campo de assinatura de cada um, no bloco certo do PDF:
+ * clientes repartem `cf-sig-contratante`; o representante legal assina em `cf-sig-contratada`;
+ * as testemunhas em `cf-sig-testemunha-1` (vendedor) e `-2`. Só assina quem tem e-mail; a
+ * testemunha só com nome continua impressa no documento (variável do modelo).
+ */
+export function montarDestinatarios(todos: Signatario[], ancoras: Record<string, Area>): Record<string, unknown>[] {
+  const clientes = todos.filter(ehCliente);
+  if (clientes.length === 0) throw new Error("Contrato sem signatários válidos para o Documenso");
+  const faltaRep = faltaRepresentante(todos);
+  if (faltaRep) throw new Error(faltaRep);
+  const alvo = ancoras["cf-sig-contratante"];
+  if (!alvo) throw new Error("O modelo do contrato não tem o bloco de assinatura do CONTRATANTE (âncora cf-sig-contratante); corrija em Ajustes > Contratos");
+  const fatia = alvo.largura / clientes.length;
+  const campo = (a: Area, x = a.x, largura = a.largura): Campo => ({
+    identifier: 0, type: "SIGNATURE", page: a.pagina, positionX: x, positionY: a.y, width: largura, height: a.altura,
+  });
+  // Mesmo e-mail em dois papéis (ex.: vendedor que também é o representante) é UM destinatário com dois campos.
+  const porEmail = new Map<string, Record<string, unknown>>();
+  const adiciona = (s: Signatario, ordem: number, f: Campo) => {
+    const chave = s.email.toLowerCase();
+    const ja = porEmail.get(chave);
+    if (ja) { (ja.fields as Campo[]).push(f); return; }
+    porEmail.set(chave, { email: s.email, name: s.nome, role: "SIGNER", signingOrder: ordem, fields: [f] });
+  };
+  todos.filter((s) => emailValido(s.email) && (ehCliente(s) || ehPapelCallface(s.papel))).forEach((s, index) => {
+    const ordem = index + 1;
+    if (ehCliente(s)) { adiciona(s, ordem, campo(alvo, alvo.x + clientes.indexOf(s) * fatia, Math.max(fatia - 1, 8))); return; }
+    const nomeAncora = ANCORA_DO_PAPEL[String(s.papel)];
+    const a = ancoras[nomeAncora];
+    if (!a) throw new Error(`O modelo do contrato não tem o bloco de assinatura de ${s.nome} (âncora ${nomeAncora}); corrija em Ajustes > Contratos`);
+    adiciona(s, ordem, campo(a));
+  });
+  return [...porEmail.values()];
+}
+
 /**
  * Adapter real para Documenso V2. Ele só é selecionado quando as credenciais
  * estão configuradas; sem elas, o CRM continua com o provider simples local.
@@ -84,40 +126,16 @@ export class DocumensoSignatureProvider implements SignatureProvider {
       .limit(1);
     if (!row) throw new Error("Contrato não encontrado para envio ao Documenso");
 
-    const signatarios = recipientsFrom(opts?.signatarios || row.signatarios);
-    if (signatarios.length === 0) throw new Error("Contrato sem signatários válidos para o Documenso");
-
+    // A fonte é o que a PROPOSTA coletou (contratos.signatarios). Os Parâmetros de
+    // Ajustes > Contratos só entram como padrão do representante legal.
+    const politica = await politicaContratual(row.organizacaoId);
+    const todos = comPadraoDaPolitica(normalizarSignatarios(opts?.signatarios || row.signatarios), politica);
     // O PDF vai pronto: cabeçalho com Nº em toda folha, rodapé paginado, sem selo.
     const numero = String((row.variaveis as Record<string, unknown> | null)?.contrato_numero ?? "") || null;
     const pdf = await renderContratoPdf(contratoPdfHtml({ corpoGerado: row.corpoGerado, numero }), numero);
-
     // Os campos de assinatura caem sobre o bloco de assinaturas do próprio
     // documento (âncoras `cf-sig-*`), na página em que a quebra o colocou.
-    const ancoras = localizarAncoras(pdf);
-    const alvo = ancoras["cf-sig-contratante"];
-    if (!alvo) throw new Error("O modelo do contrato não tem o bloco de assinatura do CONTRATANTE (âncora cf-sig-contratante); corrija em Ajustes > Contratos");
-    const fatia = alvo.largura / signatarios.length;
-    const recipients: Record<string, unknown>[] = signatarios.map((recipient, index) => ({
-      email: recipient.email,
-      name: recipient.nome,
-      role: "SIGNER",
-      signingOrder: recipient.ordem || index + 1,
-      fields: [{
-        identifier: 0, type: "SIGNATURE", page: alvo.pagina,
-        positionX: alvo.x + index * fatia, positionY: alvo.y, width: Math.max(fatia - 1, 8), height: alvo.altura,
-      }],
-    }));
-    // Representante da Callface (CONTRATADA): só assina por Documenso quando
-    // está cadastrado em Ajustes > Contratos; sem ele a linha segue no documento
-    // com a razão social impressa, e a Callface não vira signatário inventado.
-    const politica = await politicaContratual(row.organizacaoId);
-    const contratada = ancoras["cf-sig-contratada"];
-    if (politica.representanteNome && politica.representanteEmail && contratada) {
-      recipients.push({
-        email: politica.representanteEmail, name: politica.representanteNome, role: "SIGNER", signingOrder: signatarios.length + 1,
-        fields: [{ identifier: 0, type: "SIGNATURE", page: contratada.pagina, positionX: contratada.x, positionY: contratada.y, width: contratada.largura, height: contratada.altura }],
-      });
-    }
+    const recipients = montarDestinatarios(todos, localizarAncoras(pdf));
     const titulo = opts?.titulo || row.descricao || `Contrato Callface ${numero ?? contratoId.slice(0, 8)}`;
     const payload = {
       type: "DOCUMENT",
@@ -145,9 +163,11 @@ export class DocumensoSignatureProvider implements SignatureProvider {
       body: JSON.stringify({ envelopeId: providerRef, meta: { language: "pt-BR" } }),
     });
     const distributedRecipients = recipientsFrom(distributed.recipients);
-    const recipientsPersistidos = signatarios.map((recipient, index) => ({
+    // O papel e a ordem são nossos (o Documenso devolve papel vazio); o link é dele.
+    const recipientsPersistidos = todos.map((recipient, index) => ({
       ...recipient,
-      ...(distributedRecipients.find((item) => item.email.toLowerCase() === recipient.email.toLowerCase()) || {}),
+      ...(emailValido(recipient.email) ? distributedRecipients.find((item) => item.email.toLowerCase() === recipient.email.toLowerCase()) || {} : {}),
+      papel: recipient.papel ?? null,
       ordem: recipient.ordem || index + 1,
     }));
 

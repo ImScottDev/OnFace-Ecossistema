@@ -18,6 +18,7 @@ import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { processarAceiteDaProposta, type ResultadoGrupoAceite } from "@/lib/crm/proposta-aceite";
 import { getSignatureProvider } from "@/lib/crm/signature";
+import { ehCliente } from "@/lib/crm/proposta-signatarios";
 import { processarContratoAssinado } from "@/lib/crm/pos-assinatura";
 import { registrarRespostaDoCliente } from "@/lib/vendas/propostas";
 
@@ -155,6 +156,7 @@ export async function assinarContratoPublico(contratoId: string, nomeCompleto: s
       const nome = typeof nomeValor === "string" ? nomeValor : "";
       const papel = typeof papelValor === "string" ? papelValor : "";
       if (["cc", "viewer", "observador"].includes(papel.toLocaleLowerCase("pt-BR"))) return false;
+      if (!ehCliente({ papel })) return false; // testemunha e representante da Callface não assinam pelo cliente
       return nome.trim().toLocaleLowerCase("pt-BR").replace(/\s+/g, " ") === nomeNormalizado;
     });
     if (!corresponde) return { ok: false, error: "O nome informado não corresponde a um signatário preparado para este contrato." };

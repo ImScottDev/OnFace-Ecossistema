@@ -22,6 +22,7 @@ import { calcularFamiliaDoGrupo } from "@/lib/crm/politica-familia";
 import { tipoDocumentoDoContratual } from "@/lib/vendas/dominio";
 import { linhasDeItens, moeda } from "@/lib/crm/contrato-itens";
 import { politicaContratual } from "@/lib/crm/contrato-politica";
+import { ehCliente } from "@/lib/crm/proposta-signatarios";
 import { renderizarCorpo, variaveisFaltando } from "@/lib/crm/contrato-variaveis";
 
 /**
@@ -220,7 +221,13 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
   const signatarios = Array.isArray(proposta.signatarios)
     ? proposta.signatarios.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
     : [];
-  const principal = signatarios[0];
+  // Quem assina pelo cliente vem primeiro; a Callface (representante, testemunhas) é lida por papel.
+  const doCliente = signatarios.filter((s) => ehCliente(s));
+  const principal = doCliente[0];
+  const testemunha = (papel: string) => signatarios.find((s) => s.papel === papel);
+  const editor = (proposta.editor ?? {}) as { ct?: Record<string, unknown> };
+  const multaDaProposta = Number(String(editor.ct?.multa ?? "").replace(",", "."));
+  const multa = multaDaProposta > 0 ? multaDaProposta : politica.multaRescisoriaPct;
   const hoje = new Date();
   const numeroProposta = `P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`;
   const tipoPag = proposta.condicaoPagamentoTipo ? FORMA_PAGAMENTO[proposta.condicaoPagamentoTipo] : undefined;
@@ -277,7 +284,7 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
     prazo_meses: proposta.prazoContratoMeses ? String(proposta.prazoContratoMeses) : "",
     prazo_descricao: proposta.prazoContratoMeses ? `${proposta.prazoContratoMeses} meses` : "",
     condicoes_pagamento: (proposta.condicoesPagamento || "").trim(),
-    signatarios: signatarios.map((s) => `${String(s.nome || "")} <${String(s.email || "")}>`).join(", "),
+    signatarios: doCliente.map((s) => `${String(s.nome || "")} <${String(s.email || "")}>`).join(", "),
     data_inicio_cobranca: dataCurta(hoje),
     data_inicio_vigencia: dataCurta(hoje),
     data_emissao: dataExtenso(hoje),
@@ -291,12 +298,14 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
     contrato_numero: numeroProposta,
     dia_vencimento: proposta.vencimentoDias ? `${proposta.vencimentoDias} dias após a emissão da cobrança` : "",
     cidade_uf: [cidade, estado].filter(Boolean).join(" - "),
-    percentual_multa: politica.multaRescisoriaPct ? `${politica.multaRescisoriaPct.toLocaleString("pt-BR")}%` : "",
-    percentual_multa_numero: politica.multaRescisoriaPct ? politica.multaRescisoriaPct.toLocaleString("pt-BR") : "",
+    // A multa digitada na proposta (modal "Dados do contrato") ganha do padrão de Ajustes > Contratos.
+    percentual_multa: multa ? `${multa.toLocaleString("pt-BR")}%` : "",
+    percentual_multa_numero: multa ? multa.toLocaleString("pt-BR") : "",
     meses_restantes_contrato_base: mesesRestantes,
     valor_multa_downgrade: multaDowngrade,
     limite_armazenamento_gravacoes: politica.limiteGravacoes ?? "",
-    testemunha_1_nome: "", testemunha_1_cpf: "", testemunha_2_nome: "", testemunha_2_cpf: "",
+    testemunha_1_nome: String(testemunha("testemunha_vendedor")?.nome || ""), testemunha_1_cpf: String(testemunha("testemunha_vendedor")?.cpf || ""),
+    testemunha_2_nome: String(testemunha("testemunha_2")?.nome || ""), testemunha_2_cpf: String(testemunha("testemunha_2")?.cpf || ""),
   };
   return { variaveis, proposta, grupo, serviceFamily, tipoDocumento, itens: itensDoGrupo, mrr, setup };
 }

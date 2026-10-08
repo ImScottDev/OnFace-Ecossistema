@@ -18,6 +18,9 @@ import { db } from "@/lib/db";
 import { registrarEvento } from "./eventos";
 import { moverEtapa } from "./pipeline";
 import {
+  juntarEndereco, separarEndereco, comPadraoDaPolitica, ehCliente, emailValido, faltaRepresentante, normalizarSignatarios, PAPEL_CLIENTE,
+} from "@/lib/crm/proposta-signatarios";
+import {
   ehFamiliaValida, RegraDeNegocio, ROTULO_FAMILIA, VALIDADES_PROPOSTA, TIPOS_CONTRATUAIS_COM_BASE,
   type Ator, type Familia, type ModoFechamento, type NaturezaReceita,
   type StatusProposta, type TipoContratual,
@@ -151,6 +154,142 @@ export async function salvarDadosJuridicos(params: {
   `);
 }
 
+export interface DadosDaPessoaNoContrato {
+  cargo?: string | null;
+  email?: string | null;
+  telefone?: string | null;
+  cpf?: string | null;
+}
+
+/**
+ * Grava o signatário do cliente na PESSOA (contato), não na proposta: é o que
+ * faz a próxima proposta da mesma empresa já vir preenchida. Acha a pessoa pelo
+ * id ou pelo nome dentro da empresa; se ela não existe e há nome + e-mail
+ * válido, cria pela porta de identidade (que reaproveita quem já tem o e-mail).
+ * Sem nenhum dos dois, não grava e devolve `salvo: false`.
+ */
+export async function salvarDadosDaPessoa(params: {
+  organizacaoId: string; empresaId: string; pessoaId?: string | null; nome: string;
+  dados: DadosDaPessoaNoContrato; ator: Ator;
+}): Promise<{ salvo: boolean; pessoaId: string | null }> {
+  const { organizacaoId, empresaId, dados } = params;
+  const nome = params.nome.trim();
+  let pessoaId: string | null = null;
+  if (params.pessoaId) {
+    const [p] = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM pessoas WHERE id = ${params.pessoaId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
+    pessoaId = p?.id ?? null;
+  }
+  if (!pessoaId && nome) {
+    const [p] = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM pessoas
+       WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
+         AND lower(trim(nome || ' ' || COALESCE(sobrenome, ''))) = lower(${nome})
+       ORDER BY created_at LIMIT 1`);
+    pessoaId = p?.id ?? null;
+  }
+  if (!pessoaId) {
+    if (!nome || !emailValido(dados.email)) return { salvo: false, pessoaId: null };
+    const { resolverPessoa } = await import("./identidade");
+    pessoaId = (await resolverPessoa(organizacaoId, { nome, email: dados.email, telefone: dados.telefone, cargo: dados.cargo, empresaId }, params.ator)).pessoaId;
+  }
+  await db.execute(sql`
+    UPDATE pessoas SET
+      cargo = COALESCE(${dados.cargo ?? null}, cargo),
+      email = COALESCE(${dados.email ?? null}, email),
+      telefone = COALESCE(${dados.telefone ?? null}, telefone),
+      metadata = CASE WHEN ${dados.cpf ?? null}::text IS NULL THEN metadata
+                      ELSE COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('cpf', ${dados.cpf ?? null}::text) END,
+      updated_at = now()
+    WHERE id = ${pessoaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
+  `);
+  return { salvo: true, pessoaId };
+}
+
+/**
+ * A porta do modal "Dados do contrato": empresa e contato numa chamada só. O
+ * endereço é UM campo na tela ("Rua, número e complemento") e se separa nas
+ * colunas da empresa. Só vai o que o usuário mudou; "" limpa, ausente mantém.
+ */
+export async function salvarDadosDoContrato(params: {
+  organizacaoId: string; empresaId: string; ator: Ator;
+  empresa?: { razao?: string; cnpj?: string; rua?: string; bairro?: string; cep?: string; cidade?: string; uf?: string };
+  pessoa?: { pessoaId?: string | null; nome: string; cargo?: string; email?: string; telefone?: string; cpf?: string };
+}): Promise<{ pessoaSalva: boolean; pessoaId: string | null }> {
+  const e = params.empresa;
+  if (e) {
+    const fim = e.rua !== undefined ? separarEndereco(e.rua) : null;
+    await salvarDadosJuridicos({
+      organizacaoId: params.organizacaoId, empresaId: params.empresaId, ator: params.ator,
+      dados: {
+        razaoSocial: e.razao, cnpj: e.cnpj, bairro: e.bairro, cep: e.cep, cidade: e.cidade,
+        estado: e.uf !== undefined ? e.uf.trim().toUpperCase() : undefined,
+        logradouro: fim?.logradouro, numero: fim?.numero, complemento: fim?.complemento,
+      },
+    });
+  }
+  let pessoa: { salvo: boolean; pessoaId: string | null } = { salvo: false, pessoaId: null };
+  if (params.pessoa) {
+    const p = params.pessoa;
+    pessoa = await salvarDadosDaPessoa({
+      organizacaoId: params.organizacaoId, empresaId: params.empresaId, pessoaId: p.pessoaId ?? null, nome: p.nome, ator: params.ator,
+      dados: { cargo: p.cargo, email: p.email, telefone: p.telefone, cpf: p.cpf },
+    });
+  }
+  return { pessoaSalva: pessoa.salvo, pessoaId: pessoa.pessoaId };
+}
+
+/**
+ * O que o modal e o Builder leem ao abrir: os dados da Empresa no formato do
+ * modal e o comitê (com cargo, telefone e CPF). É a MESMA consulta para a
+ * primeira proposta e para qualquer outra da empresa.
+ */
+export async function lerDadosDoContrato(organizacaoId: string, empresaId: string | null): Promise<{
+  empresaDados: Record<string, string> | undefined;
+  contatos: Array<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; cpf: string | null }>;
+}> {
+  if (!empresaId) return { empresaDados: undefined, contatos: [] };
+  const [emp] = await db.execute<Record<string, string | null>>(sql`
+    SELECT razao_social, nome, cnpj, logradouro, numero, complemento, bairro, cep, cidade, estado
+      FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
+  `);
+  const contatos = await db.execute<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; cpf: string | null }>(sql`
+    SELECT id::text, trim(COALESCE(nome, 'Sem nome') || ' ' || COALESCE(sobrenome, '')) AS nome, cargo, email, telefone,
+           metadata->>'cpf' AS cpf
+      FROM pessoas
+     WHERE empresa_id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
+     ORDER BY nome LIMIT 50
+  `);
+  const empresaDados = emp ? {
+    razao: emp.razao_social ?? "", fantasia: emp.nome ?? "", cnpj: emp.cnpj ?? "",
+    rua: juntarEndereco({ logradouro: emp.logradouro, numero: emp.numero, complemento: emp.complemento }),
+    bairro: emp.bairro ?? "", cep: emp.cep ?? "", cidadeCob: emp.cidade ?? "", uf: emp.estado ?? "",
+  } : undefined;
+  return { empresaDados, contatos: [...contatos] };
+}
+
+/** As propostas da oportunidade COM os itens, o editor e os signatários: o que o Builder abre. */
+export async function lerPropostasDoNegocio(organizacaoId: string, negocioId: string) {
+  return db.execute<{
+    id: string; numero: number; versao: number; status: string; modo: string | null; validade_dias: number | null;
+    observacoes: string | null; prazo: number | null; parcelas: number | null; editor: Record<string, unknown> | null; signatarios: unknown;
+    itens: Array<{ id: string; preco: string | null; prod: string | null; nome: string; descricao: string | null; natureza: string | null; tipo: string;
+      quantidade: string; valor_unitario: string; desconto: string; desconto_tipo: string }> | null;
+  }>(sql`
+    SELECT p.id::text, p.numero, p.versao, p.status, p.modo_fechamento AS modo, p.validade_dias,
+           p.observacoes, p.prazo_contrato_meses AS prazo, p.parcelas, p.editor, p.signatarios,
+           (SELECT json_agg(json_build_object(
+                     'id', i.id, 'preco', i.catalogo_preco_id, 'prod', i.servico_catalogo_id, 'nome', i.nome,
+                     'descricao', i.descricao, 'natureza', i.revenue_nature, 'tipo', i.tipo,
+                     'quantidade', i.quantidade, 'valor_unitario', i.valor_unitario,
+                     'desconto', i.desconto, 'desconto_tipo', i.desconto_tipo) ORDER BY i.ordem, i.created_at)
+              FROM proposta_itens i WHERE i.proposta_id = p.id) AS itens
+      FROM propostas p
+     WHERE p.negocio_id = ${negocioId}::uuid AND p.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY p.numero, p.versao
+  `);
+}
+
 /* ── Leitura de apoio ──────────────────────────────────────────────────── */
 
 interface PropostaInterna extends Record<string, unknown> {
@@ -258,28 +397,35 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
         { rotulo: "Completar dados da empresa", tipo: "completar_dados_empresa" },
       );
     }
-    // Contrato precisa de signatário. A tela nova nunca coletou um, e o aceite do
-    // cliente estourava depois ("Contrato sem signatários válidos"), com a proposta
-    // já pública e aceita. Sem signatário gravado, o contato da proposta assina;
-    // sem e-mail dele, bloqueia AGORA, antes de o cliente ver a proposta.
-    const [assina] = await db.execute<{ n: number; nome: string | null; email: string | null }>(sql`
-      SELECT COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(p.signatarios) = 'array' THEN p.signatarios END), 0) AS n,
-             l.nome, l.email
+    // Os signatários vêm do que o vendedor informou na proposta (cliente e Callface).
+    // Sem nenhum do cliente, o contato da proposta assina; sem e-mail dele, bloqueia
+    // AGORA, antes de o cliente ver a proposta. Com o Documenso ligado, a Callface
+    // também assina: o representante legal sai da proposta ou, na falta dela, do
+    // padrão de Ajustes > Contratos, e sem e-mail nenhum dos dois o envio para.
+    const [assina] = await db.execute<{ signatarios: unknown; nome: string | null; email: string | null }>(sql`
+      SELECT p.signatarios, l.nome, l.email
         FROM propostas p LEFT JOIN leads l ON l.id = p.lead_id
        WHERE p.id = ${envio.propostaId}::uuid
     `);
-    if (!assina || Number(assina.n) === 0) {
-      if (!assina?.email?.trim()) {
+    let sigs = normalizarSignatarios(assina?.signatarios);
+    if (!sigs.some(ehCliente)) {
+      if (!emailValido(assina?.email)) {
         throw new RegraDeNegocio(
           "proposta_sem_signatario",
-          "Para uma proposta contratual, o contato precisa ter e-mail: é ele quem assina o contrato.",
+          "Para uma proposta contratual, informe quem assina pelo cliente (com e-mail) em Contrato e pagamento, ou cadastre o e-mail do contato.",
         );
       }
-      await db.execute(sql`
-        UPDATE propostas SET signatarios = ${JSON.stringify([{ nome: assina.nome || assina.email, email: assina.email.trim(), papel: "signer", ordem: 1 }])}::jsonb
-         WHERE id = ${envio.propostaId}::uuid
-      `);
+      sigs = normalizarSignatarios([{ nome: assina!.nome || assina!.email, email: assina!.email!.trim(), papel: PAPEL_CLIENTE }, ...sigs]);
     }
+    const { isDocumensoConfigured } = await import("@/lib/crm/signature/documenso-provider");
+    if (isDocumensoConfigured()) {
+      const { politicaContratual } = await import("@/lib/crm/contrato-politica");
+      sigs = comPadraoDaPolitica(sigs, await politicaContratual(envio.organizacaoId));
+      const falta = faltaRepresentante(sigs);
+      if (falta) throw new RegraDeNegocio("representante_sem_email", falta);
+    }
+    // Congela o resultado na versão que vai ao cliente: o contrato copia daqui.
+    await db.execute(sql`UPDATE propostas SET signatarios = ${JSON.stringify(sigs)}::jsonb WHERE id = ${envio.propostaId}::uuid`);
     if (envio.tipoContratual && TIPOS_CONTRATUAIS_COM_BASE.includes(envio.tipoContratual) && !envio.contratoBaseId) {
       throw new RegraDeNegocio(
         "contrato_base_obrigatorio",
@@ -466,14 +612,14 @@ export async function criarRevisao(params: {
       organizacao_id, lead_id, negocio_id, numero, versao, proposta_original_id,
       moeda, status, data_emissao, observacoes, condicoes_pagamento,
       condicao_pagamento_tipo, parcelas, vencimento_dias, prazo_contrato_meses,
-      signatarios, total_recorrente, total_avulso, total_geral, criado_por_id,
+      signatarios, editor, total_recorrente, total_avulso, total_geral, criado_por_id,
       modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family
     )
     SELECT organizacao_id, lead_id, negocio_id, numero, versao + 1,
            COALESCE(proposta_original_id, id),
            moeda, 'rascunho', CURRENT_DATE, observacoes, condicoes_pagamento,
            condicao_pagamento_tipo, parcelas, vencimento_dias, prazo_contrato_meses,
-           signatarios, total_recorrente, total_avulso, total_geral,
+           signatarios, editor, total_recorrente, total_avulso, total_geral,
            ${params.ator.usuarioId ?? null}::uuid,
            modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family
       FROM propostas WHERE id = ${params.propostaId}::uuid
@@ -671,4 +817,26 @@ export async function excluirRascunho(params: { organizacaoId: string; propostaI
     const { syncNegocioValoresFromPropostas } = await import("@/lib/crm/sync-negocio-valores");
     await syncNegocioValoresFromPropostas(p.negocio_id);
   }
+}
+
+
+/**
+ * Grava o que o editor coletou: os signatários dos dois lados (fonte do
+ * contrato) e o estado do editor, para a proposta reabrir como foi deixada.
+ * Só rascunho: a versão enviada é a versão congelada.
+ */
+export async function salvarEditorDaProposta(params: {
+  organizacaoId: string; propostaId: string; signatarios?: unknown; editor?: unknown;
+}): Promise<void> {
+  const sigs = params.signatarios === undefined ? null : normalizarSignatarios(params.signatarios);
+  const editor = params.editor && typeof params.editor === "object" ? params.editor : null;
+  const [r] = await db.execute<{ status: string }>(sql`
+    UPDATE propostas SET
+      signatarios = COALESCE(${sigs === null ? null : JSON.stringify(sigs)}::jsonb, signatarios),
+      editor = COALESCE(${editor === null ? null : JSON.stringify(editor)}::jsonb, editor),
+      updated_at = now()
+    WHERE id = ${params.propostaId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid AND status = 'rascunho'
+    RETURNING status
+  `);
+  if (!r) throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se edita. Para mudar uma proposta enviada, crie uma revisão.");
 }
