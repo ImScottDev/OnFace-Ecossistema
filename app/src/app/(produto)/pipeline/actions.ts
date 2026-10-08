@@ -48,6 +48,36 @@ export async function acaoDefinirProximaAcao(
   });
 }
 
+/** Troca o responsável pelo NOME (é o que o seletor da tela conhece). */
+export async function acaoAtribuirResponsavel(negocioId: string, nome: string): Promise<Resultado> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("trocar responsável", async () => {
+    const [u] = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM usuarios
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo = true AND nome = ${nome} LIMIT 1`);
+    if (!u) throw new RegraDeNegocio("responsavel_invalido", `Não achei "${nome}" na equipe.`);
+    await pipeline.atribuirResponsavelDaOportunidade({ organizacaoId: ctx.organizacaoId, negocioId, responsavelId: u.id, ator: ctx.ator });
+    revalidatePath(ROTA);
+  });
+}
+
+/** Resumo da oportunidade: objetivo, escopo, contexto, dor e solução. Mora em `campos_custom`. */
+export async function acaoSalvarResumo(negocioId: string, campos: Record<string, string>): Promise<Resultado> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("salvar resumo da oportunidade", async () => {
+    const limpo = Object.fromEntries(
+      ["objetivo", "escopo", "contexto", "dor", "solucao"].map((k) => [k, String(campos[k] ?? "").trim()]).filter(([, v]) => v),
+    );
+    const r = await db.execute<{ id: string }>(sql`
+      UPDATE negocios SET campos_custom = jsonb_set(COALESCE(campos_custom, '{}'::jsonb), '{resumoOportunidade}', ${JSON.stringify(limpo)}::jsonb)
+       WHERE id = ${negocioId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid RETURNING id::text`);
+    if (!r.length) throw new RegraDeNegocio("oportunidade_nao_encontrada", "Oportunidade não encontrada.");
+    revalidatePath(ROTA);
+  });
+}
+
 export async function acaoMarcarEstagnacao(negocioId: string, motivo: MotivoEstagnacao | null): Promise<Resultado> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };

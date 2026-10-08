@@ -5,7 +5,8 @@ import { getTenantContext } from "@/lib/auth/tenant";
 /* A tela é o desenho do handoff, convertido por máquina
    (ver docs/design/COMO-LIGAR-UMA-TELA.md). */
 import { OportunidadeProto } from "@/components/onface/proto/OportunidadeProto";
-import { acaoDetalhe, acaoMoverEtapa, acaoPerder, acaoTentarGanhar, acaoDefinirProximaAcao, acaoCriarOportunidade, acaoAlterarFamilia } from "../actions";
+import { acaoDetalhe, acaoMoverEtapa, acaoPerder, acaoTentarGanhar, acaoDefinirProximaAcao, acaoCriarOportunidade, acaoAlterarFamilia, acaoAtribuirResponsavel, acaoSalvarResumo } from "../actions";
+import { acaoExcluirRascunho, acaoRecusar } from "../../propostas/actions";
 
 export default async function OportunidadePorId({ params, searchParams }: {
   params: Promise<{ id: string }>;
@@ -28,10 +29,21 @@ export default async function OportunidadePorId({ params, searchParams }: {
     notFound();
   }
 
+  /* Equipe real da organização: o menu de @menção e o seletor de responsável
+     listavam só o responsável atual + o usuário logado. Vem do banco agora. */
+  const ctxEquipe = await getTenantContext();
+  const equipe = ctxEquipe
+    ? (await db.execute<{ nome: string }>(sql`
+        SELECT nome FROM usuarios
+         WHERE organizacao_id = ${ctxEquipe.organizacaoId}::uuid AND ativo = true
+         ORDER BY nome`)).map((u) => u.nome)
+    : [];
+
   return (
     <OportunidadeProto
       oportunidade={resultado.dados.oportunidade}
       timeline={resultado.dados.timeline}
+      equipe={equipe}
       abrirDefinirFamilia={definir === "familia"}
       acoes={{
         moverEtapa: acaoMoverEtapa,
@@ -40,6 +52,10 @@ export default async function OportunidadePorId({ params, searchParams }: {
         definirProximaAcao: acaoDefinirProximaAcao,
         criarOportunidade: acaoCriarOportunidade,
         alterarFamilia: acaoAlterarFamilia,
+        atribuirResponsavel: acaoAtribuirResponsavel,
+        salvarResumo: acaoSalvarResumo,
+        recusarProposta: acaoRecusar,
+        excluirRascunho: acaoExcluirRascunho,
       }}
     />
   );

@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { PreVendasDesenho } from "./PreVendasDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -158,11 +159,23 @@ class Logica extends React.Component<any, any> {
     window.addEventListener("resize", this._resize);
   }
 
-  componentDidUpdate(_, anterior) {
+  componentDidUpdate(prevProps, anterior) {
+    /* Incoming: o servidor mandou uma lista nova (router.refresh depois de
+       qualificar/mover/etc). O board vivia só com a cópia do constructor e só
+       atualizava no reload total — por isso o card "só movia quando recarrega".
+       Ressincroniza a partir dos props e marca a origem para não reemitir. */
+    const leadsProps = this.props.dados ? this.props.dados.leads : null;
+    const leadsPrev = prevProps.dados ? prevProps.dados.leads : null;
+    if (leadsProps && leadsProps !== leadsPrev && leadsProps !== this.state.leads) {
+      this._leadsDeProps = leadsProps;
+      this.setState({ leads: leadsProps });
+      return;
+    }
     const E = this.E;
     if (!E) return;
     const patch = {};
-    if (anterior.leads !== this.state.leads) patch.leads = this.state.leads;
+    // Não reemitir ao servidor a lista que acabou de vir dele.
+    if (anterior.leads !== this.state.leads && this.state.leads !== this._leadsDeProps) patch.leads = this.state.leads;
     if (anterior.visao !== this.state.visao) patch.visao = this.state.visao;
     if (Object.keys(patch).length) E.gravar(patch);
   }
@@ -321,6 +334,10 @@ class Logica extends React.Component<any, any> {
       { label: "Tempo até 1º contato", campo: "avg(primeiro_contato_at − created_at)" }
     ];
 
+    /* As origens que EXISTEM nos leads do board ("Mídia Paga", "Site", "ZohoDesk"…).
+       A lista fixa (Meta Ads, Instagram, Orgânica…) não casava com o que o banco
+       grava, então o filtro recortava zero ou nada. */
+    const origensReais = Array.from(new Set((S.leads || []).map(l => l.origem).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
     const filtroDefs = [
       { k: "responsavel", label: "Responsável", titulo: "RESPONSÁVEL",
         icone: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0", opcoes: [
@@ -332,12 +349,7 @@ class Logica extends React.Component<any, any> {
       ] },
       { k: "origem", label: "Origem", titulo: "CANAL DE ENTRADA",
         icone: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9", opcoes: [
-        { v: "meta_ads", label: "Meta Ads", campo: "" },
-        { v: "instagram", label: "Instagram", campo: "" },
-        { v: "site", label: "Site", campo: "" },
-        { v: "formulario", label: "Formulário", campo: "" },
-        { v: "whatsapp", label: "WhatsApp", campo: "" },
-        { v: "organica", label: "Orgânica", campo: "" }
+        ...origensReais.map(o => ({ v: o, label: o, campo: "" }))
       ] },
       { k: "interesse", label: "Interesse", titulo: "SERVIÇO DE INTERESSE",
         icone: "M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 7.5h.01", opcoes: [
@@ -447,8 +459,7 @@ class Logica extends React.Component<any, any> {
         if (!ok) return false;
       }
       if (so.length) {
-        const mapa = { meta_ads: "Meta Ads", instagram: "Instagram", site: "Site", formulario: "Formulário", whatsapp: "WhatsApp", organica: "Orgânica" };
-        if (so.map(k => mapa[k]).indexOf(L.origem) < 0) return false;
+        if (so.indexOf(L.origem) < 0) return false;
       }
       if (si.length) {
         const mapa = { callface_ai: "Callface AI", pabx: "PABX", white_label: "White Label", sem_interesse: null };
@@ -715,7 +726,7 @@ class Logica extends React.Component<any, any> {
         })),
         grupos: [
           { k: "responsavel", titulo: "Responsável", opcoes: [this.eu, ...((this.dadosDoProto.EQUIPE || []).filter(n => n && n !== this.eu)), "Sem responsável"] },
-          { k: "origem", titulo: "Canal de entrada", opcoes: ["Meta Ads", "Instagram", "Site", "Formulário", "WhatsApp", "Orgânica"] },
+          { k: "origem", titulo: "Canal de entrada", opcoes: origensReais },
           { k: "interesse", titulo: "Interesse", opcoes: ["Callface AI", "PABX", "White Label"] },
           { k: "sla", titulo: "SLA", opcoes: ["Sem 1º contato", "Sem próxima ação", "Parado 7 dias+", "Parado 14 dias+"] },
           { k: "campanha", titulo: "Campanha", opcoes: campanhasUnicas },

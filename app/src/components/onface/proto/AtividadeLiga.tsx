@@ -22,10 +22,12 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { AtividadeDesenho } from "./AtividadeDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
+import { SeletorVinculo } from "./SeletorVinculo";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -86,7 +88,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -98,7 +100,7 @@ class Logica extends React.Component<any, any> {
       typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(nome),
   };
 
-  state = { v: 0, modo: null, key: null, f: null, com: "", novaSub: "", tk: 0 };
+  state = { v: 0, modo: null, key: null, f: null, com: "", novaSub: "", tk: 0, confExcluir: false };
 
   constructor(props: any) {
     super(props);
@@ -124,7 +126,7 @@ class Logica extends React.Component<any, any> {
     const E = this.E, D = this.dadosDoProto || {};
     const L = pre.lead ? ((E && E.ler("leads", null)) || D.LEADS || []).find(l => l.id === pre.lead) : null;
     this.setState({ modo: "nova", tk: Date.now(), novaSub: "", f: { titulo: pre.titulo || "", tipo: pre.tipo && pre.tipo !== "Reunião" ? pre.tipo : "Tarefa", prioridade: "Média", resp: this.eu,
-      fimD: pre.data || this.iso(new Date()), fimH: "", empresa: pre.empresa || (L && L.empresa) || "", pessoa: pre.pessoa || (L && L.pessoa) || "", oppId: pre.oppId || "", descHtml: "", desc: "", anexos: [], sub: [], tentou: false, erro: null } });
+      fimD: pre.data || this.iso(new Date()), fimH: "", empresa: pre.empresa || (L && L.empresa) || "", pessoa: pre.pessoa || (L && L.pessoa) || "", oppId: pre.oppId || "", oppRot: pre.oppRot || "", vinc: { leadId: pre.lead || null, empresaId: pre.empresaId || null, negocioId: pre.oppId || null }, descHtml: "", desc: "", anexos: [], sub: [], tentou: false, erro: null } });
   }
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {}, EU = this.eu, A = this.dadosDoProto.Agenda;
@@ -132,7 +134,7 @@ class Logica extends React.Component<any, any> {
     const equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
     const PR = { Alta: "#d93c1a", "Média": "#c9a45c", Baixa: "#8b949e" };
     const prioS = (on, p) => "display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:500;" + (on ? "background:" + PR[p] + ";color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede");
-    const IE = "M3 21h18M5 21V7l7-4 7 4v14M9 21v-4h6v4", IP = "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z";
+    const IE = "M3 21h18M5 21V7l7-4 7 4v14M9 21v-4h6v4", IP = "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z", IO = "M12 2v20M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6";
     const TP = { "Reunião": ["m16 10 5-3v10l-5-3zM4 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z", "#c2330f", "#fff6f4"], "Ligação": ["M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", "#1f7256", "#e6f4ee"], "Mensagem": ["M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", "#1f7256", "#e6f4ee"], "E-mail": ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6", "#2c5f9e", "#e8f0fb"], "Follow up": ["M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5", "#6e5420", "#f7edd8"], "Proposta": ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6", "#4f3fa8", "#efecfa"], "Tarefa": ["M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", "#4a5560", "#eeeff3"] };
     const fechar = () => this.setState({ modo: null });
 
@@ -156,8 +158,12 @@ class Logica extends React.Component<any, any> {
         fimD: F.fimD, fimH: F.fimH, setFimD: (e) => up({ fimD: e.target.value }), setFimH: (e) => up({ fimH: e.target.value }),
         prios: ["Baixa", "Média", "Alta"].map(p => ({ l: p, onClick: () => up({ prioridade: p }), style: prioS(F.prioridade === p, p) })),
         resp: F.resp, respIni: ini(F.resp), equipe, setResp: (e) => up({ resp: e.target.value }),
-        temVinc: !!(F.empresa || F.pessoa), semVinc: !(F.empresa || F.pessoa),
-        vincs: [F.empresa ? [IE, F.empresa, () => up({ empresa: "" })] : null, F.pessoa ? [IP, F.pessoa, () => up({ pessoa: "" })] : null].filter(Boolean).map(([d, l, tirar]) => ({ d, l, tirar })),
+        temVinc: !!(F.empresa || F.pessoa || F.oppId), semVinc: !(F.empresa || F.pessoa || F.oppId),
+        vincs: [F.empresa ? [IE, F.empresa, () => up({ empresa: "", oppId: "", oppRot: "", vinc: Object.assign({}, F.vinc, { empresaId: null, negocioId: null }) })] : null, F.pessoa ? [IP, F.pessoa, () => up({ pessoa: "", vinc: Object.assign({}, F.vinc, { leadId: null }) })] : null, F.oppId ? [IO, F.oppRot || "Oportunidade", () => up({ oppId: "", oppRot: "", vinc: Object.assign({}, F.vinc, { negocioId: null }) })] : null].filter(Boolean).map(([d, l, tirar]) => ({ d, l, tirar })),
+        seletor: this.props.buscarVinculos ? <SeletorVinculo buscar={this.props.buscarVinculos} aoEscolher={(v) => up({
+          pessoa: v.pessoaNome || F.pessoa, empresa: v.empresaNome || F.empresa,
+          oppId: v.negocioId || F.oppId, oppRot: v.tipo === "opp" ? v.rotulo : F.oppRot,
+          vinc: { leadId: v.leadId || F.vinc.leadId, empresaId: v.empresaId || F.vinc.empresaId, negocioId: v.negocioId || F.vinc.negocioId } })} /> : null,
         subsN: F.sub.length ? String(F.sub.length) : "",
         subs: F.sub.map((sb, i) => ({ t: sb.t, resp: sb.resp || EU, fimD: sb.fimD || "", set: (e) => setSub(i, { t: e.target.value }), setResp: (e) => setSub(i, { resp: e.target.value }), setFim: (e) => setSub(i, { fimD: e.target.value }), remover: () => up({ sub: F.sub.filter((_, j) => j !== i) }) })),
         novaSub: S.novaSub || "", setNovaSub: (e) => this.setState({ novaSub: e.target.value }), teclaSub: (e) => { if (e.key === "Enter") { e.preventDefault(); addSub(); } }, addSub,
@@ -170,7 +176,7 @@ class Logica extends React.Component<any, any> {
               E.gravar({ opps }); E.avisar("Atividade criada · " + opps[k].empresa, "ok"); return this.setState({ modo: null }); } }
           const lista = (E && E.ler("atividadesV2", null)) || this.dadosDoProto.AtividadesSeed || [];
           const nova = { id: "a" + Date.now().toString(36), titulo: F.titulo.trim(), desc: (F.desc || "").trim(), descHtml: F.descHtml || "", anexos: F.anexos, tipo: F.tipo, situacao: "A fazer", prioridade: F.prioridade, resp: F.resp, assignees: [F.resp], criadoPor: EU, area: "Comercial",
-            iniD: "", iniH: "", fimD: F.fimD, fimH: F.fimH, inicio: null, fim: null, empresa: F.empresa || null, pessoa: F.pessoa || null, vincTipo: F.pessoa ? "pessoa" : F.empresa ? "empresa" : "nenhum",
+            iniD: "", iniH: "", fimD: F.fimD, fimH: F.fimH, inicio: null, fim: null, empresa: F.empresa || null, pessoa: F.pessoa || null, vincTipo: F.pessoa ? "pessoa" : F.empresa ? "empresa" : "nenhum", vincIds: F.vinc,
             sub: F.sub.filter(x => (x.t || "").trim()), comentarios: [], log: [{ autor: EU, texto: "criou a atividade", quando: this.agoraTxt() }] };
           E && E.gravar({ atividadesV2: lista.concat([nova]) }); E && E.avisar("Atividade criada" + (F.empresa ? " · " + F.empresa : ""), "ok"); this.setState({ modo: null }); } };
     }
@@ -197,6 +203,9 @@ class Logica extends React.Component<any, any> {
         novaSub: S.novaSub || "", setNovaSub: (e) => this.setState({ novaSub: e.target.value }), teclaSub: (e) => { if (e.key === "Enter" && (S.novaSub || "").trim() && so) { sv({ sub: subs.concat([{ t: S.novaSub.trim(), feita: false }]) }); this.setState({ novaSub: "" }); } },
         coms: coms.map(c => ({ autor: c.autor, quando: c.quando || "", t: c.texto || "" })), com: S.com || "", setCom: (e) => this.setState({ com: e.target.value }),
         comentar: () => { const t = (S.com || "").trim(); if (!t || !so) return; sv({ comentarios: coms.concat([{ autor: EU, texto: t, quando: this.agoraTxt() }]) }, "Comentário enviado"); this.setState({ com: "" }); },
+        slotExcluir: this.props.excluir && Y.src === "p" ? (S.confExcluir
+          ? <button onClick={() => this.props.excluir(Y.id)} style={{ height: 40, padding: "0 16px", borderRadius: 10, border: 0, background: "var(--of-coral-acao)", color: "var(--of-papel)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Confirmar exclusão</button>
+          : <button onClick={() => this.setState({ confExcluir: true })} style={{ height: 40, padding: "0 16px", borderRadius: 10, border: 0, background: "transparent", color: "var(--of-coral-texto)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Excluir</button>) : null,
         concluirTxt: feita ? "Reabrir" : "Marcar como feito", concluir: () => sv({ situacao: feita ? "A fazer" : "Feita" }, (feita ? "Reaberta: " : "Feito: ") + Y.titulo),
         concluirStyle: "display:flex;align-items:center;gap:7px;height:40px;padding:0 16px;border-radius:10px;border:0;font-size:13px;font-weight:600;cursor:pointer;" + (feita ? "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede" : "background:#1f7256;color:#fff") };
     }

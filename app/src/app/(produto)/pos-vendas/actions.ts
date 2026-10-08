@@ -102,3 +102,52 @@ export async function acaoConcluirOnboarding(fulfillmentId: string): Promise<Res
     return { ok: false, erro: "Não consegui concluir o onboarding. Tente de novo." };
   }
 }
+
+/** Nota do projeto: vira `atividades` com `dados.fulfillmentId` (é o elo que a timeline do projeto já lê). */
+export async function acaoNotaDoProjeto(fulfillmentId: string, texto: string): Promise<ResultadoOnb> {
+  const ctx = await getTenantContext();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  const t = texto.trim();
+  if (!t) return { ok: false, erro: "Escreva a nota antes de salvar." };
+  try {
+    const [f] = await db.execute<{ lead_id: string | null; empresa_id: string | null }>(sql`
+      SELECT sc.lead_id::text, sc.empresa_id::text
+        FROM fulfillments f JOIN servicos_canonicos sc ON sc.id = f.servico_canonico_id
+       WHERE f.id = ${fulfillmentId}::uuid AND f.organizacao_id = ${ctx.organizacaoId}::uuid`);
+    if (!f) return { ok: false, erro: "Projeto não encontrado." };
+    await db.execute(sql`
+      INSERT INTO atividades (organizacao_id, lead_id, empresa_id, usuario_id, tipo, titulo, descricao, dados)
+      VALUES (${ctx.organizacaoId}::uuid, ${f.lead_id}::uuid, ${f.empresa_id}::uuid, ${ctx.userId}::uuid, 'nota_projeto',
+              ${"Nota: " + (t.length > 90 ? t.slice(0, 90) + "…" : t)}, ${t},
+              ${JSON.stringify({ fulfillmentId })}::jsonb)`);
+    revalidatePath(`/projetos/${fulfillmentId}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[pos-vendas] nota do projeto falhou:", e);
+    return { ok: false, erro: "Não consegui salvar a nota. Tente de novo." };
+  }
+}
+
+/** Libera o bloqueio do projeto: itens BLOCKED voltam a PENDING e o status macro é recalculado. */
+export async function acaoLiberarBloqueio(fulfillmentId: string): Promise<ResultadoOnb> {
+  const ctx = await getTenantContext();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  try {
+    const r = await db.execute<{ id: string }>(sql`
+      UPDATE fulfillment_itens SET status = 'PENDING', blocker_type = NULL, blocker_reason = NULL,
+             blocker_impact = NULL, blocked_at = NULL, updated_at = now()
+       WHERE fulfillment_id = ${fulfillmentId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND status = 'BLOCKED'
+       RETURNING id::text`);
+    if (!r.length) return { ok: false, erro: "Este projeto não tem bloqueio aberto." };
+    await recalcularStatus(fulfillmentId);
+    await db.execute(sql`
+      INSERT INTO atividades (organizacao_id, usuario_id, tipo, titulo, descricao, dados)
+      VALUES (${ctx.organizacaoId}::uuid, ${ctx.userId}::uuid, 'bloqueio_liberado', 'Bloqueio resolvido',
+              ${r.length + (r.length > 1 ? " tarefas desbloqueadas" : " tarefa desbloqueada")}, ${JSON.stringify({ fulfillmentId })}::jsonb)`);
+    revalidatePath(ROTA); revalidatePath(`/projetos/${fulfillmentId}`);
+    return { ok: true };
+  } catch (e) {
+    console.error("[pos-vendas] liberar bloqueio falhou:", e);
+    return { ok: false, erro: "Não consegui liberar o bloqueio." };
+  }
+}

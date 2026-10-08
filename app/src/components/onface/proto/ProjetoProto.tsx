@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { ProjetoReal } from "@/lib/operacao/projeto";
+import { acaoNotaDoProjeto, acaoLiberarBloqueio } from "@/app/(produto)/pos-vendas/actions";
 import { ProjetoLiga } from "./ProjetoLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
@@ -91,9 +92,8 @@ function projetoDoDesenho(p: ProjetoReal) {
     inicio: p.inicio,
     concluido: p.status === "COMPLETED",
     handoffFeito: false,
-    // Não há bloqueio no nível do fulfillment, e blocker_type está nulo em
-    // todos os itens: a faixa de bloqueio não aparece.
-    bloqueio: null,
+    // Derivado dos itens BLOCKED do checklist; sem item bloqueado, a faixa não aparece.
+    bloqueio: p.bloqueio ? { kind: p.bloqueio.kind, t: p.bloqueio.texto, desde: p.bloqueio.desde } : null,
     // Sem coluna de projeto-base: a linha "Expansão" não aparece.
     expansao: null,
     oppId: p.oportunidadeId,
@@ -101,8 +101,10 @@ function projetoDoDesenho(p: ProjetoReal) {
     handoff: null,
     // Não há registro de envio de template por projeto: tudo "Aguardando etapa".
     comms: {},
-    // file_links não tem linha nenhuma para fulfillment: a aba mostra o vazio.
-    arquivos: [],
+    arquivos: p.arquivos.map((a) => ({
+      nome: a.nome, autor: a.autor ?? "—", quando: a.quando, url: a.url,
+      tam: a.tamanhoBytes > 1048576 ? (a.tamanhoBytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.tamanhoBytes / 1024)) + " KB",
+    })),
     notas: [],
     eventos: p.eventos,
   };
@@ -120,6 +122,9 @@ class ProjetoLigada extends ProjetoLiga {
     const aba = props.abaInicial;
     if (aba && ABAS.includes(aba)) (this as any).state = { ...(this as any).state, aba };
   }
+
+  /** O Liga chama `this.diz` em todo aviso e não o define: o primeiro aviso lançava TypeError. */
+  diz(t: string, _tom?: string) { (this as any).props.avisar?.(t); }
 
   renderVals() {
     return this.corrigir(super.renderVals());
@@ -148,6 +153,17 @@ class ProjetoLigada extends ProjetoLiga {
     vals.pessoas = c
       ? vals.pessoas.map((x: any) => ({ ...x, acoes: acoes.map((a: any) => ({ t: a.l, d: a.d, onClick: a.onClick })) }))
       : [];
+
+    /* 1b. "Nova tarefa"/"Agendar reunião": o desenho cai em "Contato principal" quando não há
+          pessoa, e esse texto virava o vínculo da tarefa. Aqui só vai pessoa real, com os ids. */
+    const { abrir } = (this as any).props as { abrir: (peca: string, ctx?: unknown) => void };
+    const ctxPeca = { empresa: p.empresa ?? "", empresaId: p.empresaId ?? "", pessoa: c?.nome ?? "", lead: p.leadId ?? "", leadId: p.leadId ?? "" };
+    vals.ac = {
+      ...vals.ac,
+      nova: () => abrir("novaAtividade", { ...ctxPeca, projetoId: p.id }),
+      reuniao: () => { const d = new Date(Date.now() + 864e5); abrir("novaReuniao", { ...ctxPeca, data: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"), hora: "10:00", titulo: "Reunião · " + (p.empresa ?? "") }); },
+    };
+    if (!c && vals.h?.meta) vals.h.meta = String(vals.h.meta).replace("  ·  Contato principal  ·  ", "  ·  ");
 
     /* 2. Contexto: os links do protótipo apontavam para /onface-preview com
           query string, que `irPara` descarta. Aqui vão para as rotas reais. */
@@ -219,14 +235,11 @@ class ProjetoLigada extends ProjetoLiga {
     const falso = "https://app.onface.com.br/f/" + (p.familia === "WHITE_LABEL" ? "wl" : "pabx") + "/" + p.id;
     vals.play = vals.play.map((x: any) => ({ ...x, texto: String(x.texto).split(falso).join(real ?? "[link indisponível]") }));
 
-    /* 6. Sem command no domínio: avisar, nunca fingir que gravou. O Liga diz
-          "Nota salva na timeline" — aqui não diz. */
-    const salvarNota = () => avisar(
-      "Nota de projeto ainda não tem onde ser gravada. Registre na oportunidade.",
-      p.oportunidadeId ? { label: "Abrir oportunidade", href: `/pipeline/${p.oportunidadeId}` } : undefined,
-    );
-    vals.nota = { ...vals.nota, salvar: () => { if (vals.nota.v?.trim()) salvarNota(); } };
-    vals.arq = { ...vals.arq, enviar: (ev: any) => { ev.target.value = ""; avisar("Arquivos do projeto ainda não têm onde ser gravados."); } };
+    /* 6. Nota e arquivos gravam de verdade; a tela relê o servidor. */
+    const { salvarNota, enviarArquivos, liberar } = (this as any).props.acoes;
+    vals.nota = { ...vals.nota, salvar: () => { const t = String(vals.nota.v ?? "").trim(); if (!t) return; void salvarNota(t).then((ok: boolean) => { if (ok) (this as any).setState({ nota: "" }); }); } };
+    vals.arq = { ...vals.arq, enviar: (ev: any) => { const fs = Array.from(ev.target.files ?? []) as File[]; ev.target.value = ""; if (fs.length) void enviarArquivos(fs); } };
+    if (vals.h) vals.h.liberar = () => { void liberar(); };
 
     return vals;
   }
@@ -346,7 +359,8 @@ export function ProjetoProto({ projeto, abaInicial, origem }: {
       // Sem command: o pós-passe do adaptador já troca nota e arquivos.
       nota: () => null,
       mut: () => null,
-      bloquear: () => avisar("Bloqueio de projeto ainda não tem onde ser gravado."),
+      // Bloquear por projeto não existe no domínio: o bloqueio é do item do checklist.
+      bloquear: () => avisar("Bloqueio é por tarefa: marque a tarefa como bloqueada no checklist."),
       comunicou: () => toast("O envio não fica registrado no projeto — siga pelo Atendimento."),
     };
 
@@ -367,6 +381,28 @@ export function ProjetoProto({ projeto, abaInicial, origem }: {
 
   const abrirExterno = React.useCallback((url: string) => { window.open(url, "_blank", "noopener"); }, []);
 
+  const acoes = React.useMemo(() => ({
+    salvarNota: async (texto: string) => {
+      const r = await acaoNotaDoProjeto(projeto.id, texto);
+      if (!r.ok) { toast.error(r.erro); return false; }
+      toast.success("Nota salva na timeline"); router.refresh(); return true;
+    },
+    enviarArquivos: async (fs: File[]) => {
+      let n = 0;
+      for (const f of fs) {
+        const fd = new FormData(); fd.append("file", f);
+        const r = await fetch(`/api/fulfillments/${projeto.id}/arquivos`, { method: "POST", body: fd }).catch(() => null);
+        if (r?.ok) n++; else toast.error(f.name + ": " + ((await r?.json().catch(() => ({})))?.error ?? "não foi possível enviar"));
+      }
+      if (n) { toast.success(n > 1 ? n + " arquivos adicionados" : "Arquivo adicionado"); router.refresh(); }
+    },
+    liberar: async () => {
+      const r = await acaoLiberarBloqueio(projeto.id);
+      if (!r.ok) toast.error(r.erro); else toast.success("Bloqueio resolvido");
+      router.refresh();
+    },
+  }), [projeto.id, router]);
+
   return (
     <div data-workspace="desenho">
       <ProjetoLigada
@@ -378,6 +414,7 @@ export function ProjetoProto({ projeto, abaInicial, origem }: {
         abrir={abrir}
         abrirExterno={abrirExterno}
         avisar={avisar}
+        acoes={acoes}
         ir={ir}
       />
     </div>

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { corpoDaMudanca, corpoDaNova, prazoDoBanco, prazoParaOBanco } from "./atividade-tarefa";
+import { corpoDaMudanca, corpoDaNova, prazoDoBanco, prazoParaOBanco, tipoDoBanco } from "./atividade-tarefa";
 
 const ids = (n: string) => ({ "Ana": "u-ana" } as Record<string, string>)[n];
 
@@ -27,4 +27,10 @@ test("tipo sem par no domínio é avisado, não gravado", () => {
 
 test("data sem hora do banco fica sem hora", () => {
   assert.deepEqual(prazoDoBanco(null, "2026-10-05"), { fimD: "2026-10-05", fimH: "" });
+});
+
+test("tarefa de agendar/confirmar reunião é Tarefa, não Reunião (reunião de verdade mora em `reunioes`)", () => {
+  assert.equal(tipoDoBanco("onboarding_agendar_reuniao"), "Tarefa");
+  assert.equal(tipoDoBanco("confirmar_reuniao_outlook"), "Tarefa");
+  assert.equal(tipoDoBanco("reuniao"), "Reunião");
 });

@@ -55,6 +55,7 @@ export function valorTexto(campo: CampoConfig, valor: unknown, opcoes?: OpcoesIn
     case "tag": return opcoes?.tags.find((t) => t.id === valor)?.nome ?? String(valor);
     case "cadencia": return opcoes?.cadencias.find((t) => t.id === valor)?.nome ?? String(valor);
     case "template_whatsapp": return opcoes?.templatesWhatsapp.find((t) => t.id === valor)?.nome ?? String(valor);
+    case "sessao_whatsapp": return opcoes?.sessoesWhatsapp.find((t) => t.id === valor)?.nome ?? String(valor);
     case "agente_ia": return opcoes?.agentesIa.find((t) => t.id === valor)?.nome ?? String(valor);
     case "etapa": {
       const todas = [...(opcoes?.etapas.negocio ?? []), ...(opcoes?.etapas.lead ?? [])];

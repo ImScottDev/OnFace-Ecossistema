@@ -17,3 +17,13 @@ test("respostas: todas, na ordem, sem nota técnica", () => {
   const r = respostasDoFormulario({ a_1: "x", motivo: "n8n", b_2: "y", recuperacao: "z", c_3: "w" });
   assert.deepEqual(r.map((p) => p.resposta), ["x", "y", "w"]);
 });
+
+test("respostas: campo custom definido em Ajustes dá rótulo e aparece vazio como 'Não preenchido'", () => {
+  const defs = [{ nome: "periodo_contrato", label: "Período de contrato" }, { nome: "vazio_x", label: "Campo vazio" }];
+  const r = respostasDoFormulario({ periodo_contrato: "12 meses", a_1: "x" }, defs);
+  assert.deepEqual(r, [
+    { pergunta: "Período de contrato", resposta: "12 meses" },
+    { pergunta: "Campo vazio", resposta: "Não preenchido" },
+    { pergunta: "A 1", resposta: "x" },
+  ]);
+});

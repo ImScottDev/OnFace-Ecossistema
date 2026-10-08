@@ -88,6 +88,12 @@ interface SdrEsteiraData {
   qualificadosDetalhe: { viaReuniao: number; direta: number };
   qualificacoesPorResponsavel: QualificacaoResponsavel[];
   sla: { coorte: SlaBase; fluxo: SlaBase };
+  slaFunil?: {
+    leads: number;
+    ate1oContato: SlaBase & { p90Horas: number };
+    ateOportunidade: SlaBase & { p90Horas: number };
+    semContato: { n: number; maisAntigoHoras: number | null };
+  };
   origem: { inbound: OrigemGrupo; outbound: OrigemGrupo };
   baseParada: { total: number; porEstagio: BaseParadaEstagio[]; antigosTrabalhadosPeriodo: number } | null;
 }
@@ -276,18 +282,46 @@ export default function TabSdr({ periodo }: { periodo: string }) {
         )}
       </div>
 
+      {/* SLA do lead em Pré-vendas: entrada → 1º contato → oportunidade (coorte do período) */}
+      <Secao cor="neutro" hint="leads criados no período; mediana, média e p90 em horas">SLA do lead em Pré-vendas</Secao>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        <Stat
+          label="Entrada → 1º contato"
+          value={isLoading ? "…" : (data?.slaFunil?.ate1oContato.n ?? 0) > 0 ? fmtHoras(data!.slaFunil!.ate1oContato.medianaHoras) : "—"}
+          sub={isLoading ? "" : (data?.slaFunil?.ate1oContato.n ?? 0) > 0
+            ? `mediana · média ${fmtHoras(data!.slaFunil!.ate1oContato.mediaHoras)} · p90 ${fmtHoras(data!.slaFunil!.ate1oContato.p90Horas)} · ${data!.slaFunil!.ate1oContato.n} de ${data!.slaFunil!.leads} leads`
+            : "nenhum lead do período teve 1º contato registrado"}
+          icon={Timer}
+        />
+        <Stat
+          label="Entrada → oportunidade"
+          value={isLoading ? "…" : (data?.slaFunil?.ateOportunidade.n ?? 0) > 0 ? fmtHoras(data!.slaFunil!.ateOportunidade.medianaHoras) : "—"}
+          sub={isLoading ? "" : (data?.slaFunil?.ateOportunidade.n ?? 0) > 0
+            ? `mediana · média ${fmtHoras(data!.slaFunil!.ateOportunidade.mediaHoras)} · p90 ${fmtHoras(data!.slaFunil!.ateOportunidade.p90Horas)} · ${data!.slaFunil!.ateOportunidade.n} viraram oportunidade`
+            : "nenhum lead do período virou oportunidade"}
+          icon={Timer}
+        />
+        <Stat
+          label="Sem 1º contato"
+          value={isLoading ? "…" : data?.slaFunil?.semContato.n ?? 0}
+          sub={isLoading ? "" : data?.slaFunil?.semContato.maisAntigoHoras != null ? `o mais antigo espera há ${fmtHoras(data.slaFunil.semContato.maisAntigoHoras)}` : "todos os leads do período foram contatados"}
+          cor={!isLoading && (data?.slaFunil?.semContato.n ?? 0) > 0 ? "atencao" : "neutro"}
+          icon={Timer}
+        />
+      </div>
+
       {/* SLA + Inbound × Outbound */}
       <Secao cor="neutro" hint="tempo entre entrada do lead e qualificação — mediana primeiro, média distorce com outliers">Velocidade e origem</Secao>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat
           label="SLA · leads do período"
-          value={isLoading ? "…" : fmtHoras(data?.sla?.coorte?.medianaHoras ?? 0)}
+          value={isLoading ? "…" : (data?.sla?.coorte?.n ?? 0) > 0 ? fmtHoras(data!.sla.coorte.medianaHoras) : "—"}
           sub={isLoading ? "" : `mediana · média ${fmtHoras(data?.sla?.coorte?.mediaHoras ?? 0)} · ${data?.sla?.coorte?.n ?? 0} qualificados`}
           icon={Timer}
         />
         <Stat
           label="SLA · fluxo do período"
-          value={isLoading ? "…" : fmtHoras(data?.sla?.fluxo?.medianaHoras ?? 0)}
+          value={isLoading ? "…" : (data?.sla?.fluxo?.n ?? 0) > 0 ? fmtHoras(data!.sla.fluxo.medianaHoras) : "—"}
           sub={isLoading ? "" : `inclui leads antigos · média ${fmtHoras(data?.sla?.fluxo?.mediaHoras ?? 0)} · ${data?.sla?.fluxo?.n ?? 0} qualificações`}
           icon={Timer}
         />
@@ -375,7 +409,7 @@ export default function TabSdr({ periodo }: { periodo: string }) {
           <div className="px-4 py-8 text-center text-[var(--cf2-text-tertiary)] text-sm">Carregando...</div>
         ) : isEmpty || (data?.porResponsavel ?? []).length === 0 ? (
           <div className="px-4 py-8 text-center text-[var(--cf2-text-tertiary)] text-sm">
-            Nenhum responsável encontrado no período
+            Nenhuma pessoa com papel SDR no período
           </div>
         ) : (
           <div className="overflow-x-auto">

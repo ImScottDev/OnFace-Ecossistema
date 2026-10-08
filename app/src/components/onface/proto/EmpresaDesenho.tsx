@@ -351,11 +351,12 @@ Editar
 ))}
 </div>
 </section>
-{temFormularios ? (
+{true ? (
 <section style={{ background: "#fff", borderRadius: "12px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "14px 16px 16px" }}>
 {/* Recolhível: cada lead da empresa pode ter um formulário de até dez perguntas. */}
 <details>
-<summary style={{ cursor: "pointer", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "13.5px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d" }}>
+<summary style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", listStyle: "none", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "13.5px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d" }}>
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="of-resp-chev" style={{ flex: "0 0 auto" }}><path d="m9 18 6-6-6-6" /></svg>
 Respostas do formulário
 </summary>
 <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "12px" }}>
@@ -365,6 +366,7 @@ Respostas do formulário
 <span style={{ flex: "1", minWidth: "0" }}>{f.titulo}</span>
 {f.adHref ? (<a href={f.adHref} target="_blank" rel="noreferrer" style={{ color: "#c2330f", textDecoration: "underline" }}>Ver anúncio</a>) : null}
 </div>
+{(f.linhas ?? []).length === 0 ? (<span style={{ fontSize: "12.5px", color: "#67787c" }}>Sem respostas gravadas para este formulário.</span>) : null}
 {(f.linhas ?? []).map((r: any, i: number) => (
 <div key={i} style={{ minWidth: "0" }}>
 <span style={{ display: "block", fontSize: "12px", color: "#67787c", textWrap: "pretty" }}>{r.pergunta}</span>
@@ -373,6 +375,7 @@ Respostas do formulário
 ))}
 </div>
 ))}
+{(formularios ?? []).length === 0 ? (<span style={{ fontSize: "12.5px", color: "#67787c" }}>Nenhum lead desta empresa veio de formulário.</span>) : null}
 </div>
 </details>
 </section>

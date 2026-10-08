@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { AtendimentoDesenho } from "./AtendimentoDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -1417,6 +1418,8 @@ class Logica extends React.Component<any, any> {
         const ESTILO_SEG = (on) => "display:grid;place-items:center;height:30px;padding:0;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;" + (on ? "font-weight:600;background:#fff;color:#12171d;box-shadow:0 1px 2px rgba(0,0,0,.08)" : "font-weight:500;background:transparent;color:#4a5560");
         const leadsArr = (E && E.ler("leads", null)) || D.LEADS || [];
         const buscarLeads = (q) => { const s = slug(q); return leadsArr.filter(l => !s || slug((l.pessoa || "") + " " + (l.empresa || "")).indexOf(s) >= 0).slice(0, 6); };
+        /* Vincular só aceita LEAD de verdade: contato sem cadastro entra na lista do desenho (id da conversa) e vincular a ele não grava nada. */
+        const buscarLeadsReais = (q) => { const s = slug(q); return leadsArr.filter(l => !l.desconhecido && (!s || slug((l.pessoa || "") + " " + (l.empresa || "")).indexOf(s) >= 0)).slice(0, 6); };
         const vincularA = (convId, leadId) => { gravarC(convId, c => ({ lead: leadId, contato: null, msgs: (c.msgs || []).concat(sis("Contato vinculado ao lead por " + EU)) })); };
 
         // Nova conversa
@@ -1504,7 +1507,7 @@ class Logica extends React.Component<any, any> {
           alternar: () => this.setState({ vinc: V ? null : { id: C.id, busca: "" } }),
           btnStyle: "min-width:0;display:flex;align-items:center;justify-content:center;height:34px;padding:0 8px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" + (V ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede"),
           busca: (V && V.busca) || "", setBusca: (e) => this.setState({ vinc: { id: C.id, busca: e.target.value } }),
-          itens: V ? buscarLeads(V.busca).map(l => ({ nome: l.pessoa, sub: [l.empresa, l.cargo].filter(Boolean).join(" · "), ini: ini(l.pessoa), av: av(l.pessoa, 28, 10),
+          itens: V ? buscarLeadsReais(V.busca).map(l => ({ nome: l.pessoa, sub: [l.empresa, l.cargo].filter(Boolean).join(" · "), ini: ini(l.pessoa), av: av(l.pessoa, 28, 10),
             onClick: () => { vincularA(C.id, l.id); this.setState({ vinc: null }); diz("Conversa vinculada a " + l.pessoa, "ok"); } })) : []
         };
 

@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { OportunidadeDesenho } from "./OportunidadeDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -269,14 +270,24 @@ class Logica extends React.Component<any, any> {
     const icoEvento = (t) => /proposta/i.test(t) ? IC.Proposta : /reuni/i.test(t) ? IC.Reunião : /liga/i.test(t) ? IC.Ligação : /e-?mail/i.test(t) ? IC["E-mail"] : /whats|mensagem/i.test(t) ? IC.Mensagem : /movid|reaberta|ganho|perdid/i.test(t) ? IC.Movido : IC.Tarefa;
 
     const abrirModal = (modal, form) => this.setState({ modal, form: form || {}, tentou: false, menu: null });
-    const registrar = () => abrirModal({ k: "atv", i: null }, { tipo: "Ligação", situacao: "A fazer" });
-    const verAtv = (i) => abrirModal({ k: "atvver", i });
+    /* A atividade nasce e se edita na peça ÚNICA de Atividade (tarefas), com o vínculo desta oportunidade. */
+    const registrar = () => { this.setState({ menu: null }); this.E.abrir("novaAtividade", null); };
+    /* Ligação que veio do Callface: o clique abre o Relatório da ligação (áudio,
+       transcrição, análise, próximos passos), não o modal genérico de atividade. */
+    const verAtv = (i) => {
+      const x = (O.atvs || [])[i];
+      const Es3 = this.E;
+      if (x && Es3 && O.leadId && x.tipo === "Ligação" && /^Liga[cç][aã]o/i.test(x.titulo || "")) return Es3.abrir("relatorio", { leadId: O.leadId, audioUrl: x.audioUrl || "" });
+      if (x && x.tarefaId && Es3) return Es3.abrir("verAtividade", "p:" + x.tarefaId);
+      return abrirModal({ k: "atvver", i });
+    };
     const novaProposta = () => ir("/onface-preview/proposta", "Proposta", { opp: O.id, ver: "" });
     const novaPropostaModal = () => abrirModal({ k: "proposta" }, { modo: P ? P.modo : "CONTRACT", validade: String(P && P.validade ? P.validade : 14), itens: (P && P.itens && P.itens.length ? P.itens : [{ nome: "", natureza: "MRR", valor: "", qtd: 1 }]).map(x => Object.assign({}, x, { valor: String(x.valor), qtd: String(x.qtd || 1) })) });
     const mover = (k) => {
       if (k === O.etapa) return;
-      if ((k === "proposta" || k === "negociacao") && !P) { this.diz("Crie a proposta antes de avançar", "aviso"); return abrirModal({ k: "proposta", depois: k }, { modo: "CONTRACT", validade: "14", itens: [{ nome: "", natureza: "MRR", valor: "", qtd: "1" }] }); }
-      if (k === "ganho") return abrirModal({ k: "ganho" });
+      if ((k === "proposta" || k === "negociacao") && !P) { this.diz("Crie a proposta antes de avançar", "aviso"); return novaProposta(); }
+      // Ganho não tem botão: o motor fecha quando a evidência da oferta chega.
+      if (k === "ganho") return this.diz((O.fechamentoFalta && O.fechamentoFalta.length ? "Falta para ganhar: " + O.fechamentoFalta.join("; ") + ". " : "") + "Ganho não tem botão: a oportunidade fecha sozinha quando o contrato é assinado ou o pagamento é confirmado.", "aviso");
       if (k === "perdido") return abrirModal({ k: "perda" });
       salva({ etapa: k, dias: 0 }, "Movido de " + ROT[O.etapa] + " para " + ROT[k]);
       this.setState({ menu: null });
@@ -294,7 +305,8 @@ class Logica extends React.Component<any, any> {
     const criado = O.criadoEm || (tl.length ? tl[tl.length - 1].quando : "—");
     // ANTES: sem LD (lead vem vazio do Proto) 1514 de 1578 oportunidades apareciam "Criada manualmente". Agora decide por leadId / processo de origem reais.
     const procRot = O.origem && O.origem !== "—" ? O.origem : "";
-    const viaPre = !!LD || !!O.leadId || O.origemBruta === "PRE_SALES", manual = O.origemBruta === "MANUAL";
+    /* A origem gravada manda; só sem ela se deduz pelo lead (negócio manual com lead vinculado dizia "Veio do Pré-vendas"). */
+    const viaPre = O.origemBruta ? O.origemBruta === "PRE_SALES" : (!!LD || !!O.leadId), manual = O.origemBruta === "MANUAL";
     const origem = LD ? (LD.origem || "—") : viaPre ? "Pré-vendas" : (procRot || "—");
     const valorTxt = P && (tot.mrr + tot.un) ? (tot.mrr ? brl(tot.mrr) + "/mês" : "") + (tot.mrr && tot.un ? " + " : "") + (tot.un ? brl(tot.un) : "") : "Definido na proposta";
     const metaBtn = (link) => "display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:transparent;font-size:12.5px;white-space:nowrap;cursor:" + (link ? "pointer" : "default");
@@ -339,9 +351,10 @@ class Logica extends React.Component<any, any> {
         m = Object.assign(m, { titulo: A.tipo || "Atividade", sub, d: (IC[A.tipo] || IC.Tarefa)[0], icoStyle: ico("#fff6f4", "#c2330f"), temVer: true,
           ver: { titulo: A.titulo || "Sem título", desc: A.desc || "Sem descrição.", descStyle: "font-size:13.5px;line-height:1.55;text-wrap:pretty;color:" + (A.desc ? "#1f252c" : "#8b949e"),
             meta: [["Quando", A.quando || "Sem data"], ["Responsável", A.autor || O.resp], ["Tipo", A.tipo || "—"]].map(([label, valor]) => ({ label, valor })) },
-          grupos: [{ label: "Situação", obrig: false, temErro: false, opcoes: SITS.map(v => ({ label: v, style: chip(sit === v), onClick: () => setSit(v) })) }],
-          cancelarLabel: "Fechar", salvarLabel: "Editar", salvarStyle: forte("#12171d"),
-          salvar: () => abrirModal({ k: "atv", i: md.i }, { tipo: A.tipo || "Ligação", situacao: sit, titulo: A.titulo || "", desc: A.desc || "", quando: A.quando || "" }) });
+          /* Registro do histórico (ligação, e-mail, nota de sistema): só leitura. O que se faz e se edita é tarefa, na peça de Atividade. */
+          grupos: [],
+          cancelarLabel: "Fechar", salvarLabel: "Fechar", salvarStyle: forte("#12171d"),
+          salvar: fechar });
       } else if (md.k === "atv") {
         const edit = md.i != null, A = edit ? (O.atvs || [])[md.i] || {} : {};
         const fimDv = Fm.fimD != null ? Fm.fimD : (A.fimD || ""), iniDv = Fm.iniD != null ? Fm.iniD : (A.iniD || ""), fimHv = Fm.fimH != null ? Fm.fimH : (A.fimH || "");
@@ -493,7 +506,7 @@ class Logica extends React.Component<any, any> {
       tituloTopo: titulo,
       o: {
         titulo, empresa: O.empresa, pessoa: O.pessoa, cargo: O.cargo || "—", empIni: ini(O.empresa), pesIni: ini((O.pessoa || "").replace(/^Dr\.?\s+/, "")),
-        empSub: (LD && LD.segmento) || ((O.pessoas || []).length + " pessoa" + ((O.pessoas || []).length === 1 ? "" : "s") + " na negociação"),
+        empSub: (LD && LD.segmento) || (((n) => n + " pessoa" + (n === 1 ? "" : "s") + " na negociação")(Math.max((O.pessoas || []).length, O.pessoa && O.pessoa !== "Sem contato" ? 1 : 0))),
         resp: O.resp || equipe[0], respIni: ini(O.resp || equipe[0]),
         etapaLabel: ROT[O.etapa], etapaPonto: "width:7px;height:7px;border-radius:9999px;background:" + COR[O.etapa],
         etapaChip: "display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:9999px;font-size:12px;font-weight:600;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:" + COR[O.etapa],
@@ -517,8 +530,8 @@ class Logica extends React.Component<any, any> {
       etapasAberto: S.menu === "etapas", toggleEtapas: () => this.setState({ menu: S.menu === "etapas" ? null : "etapas" }),
       maisAberto: S.menu === "mais", toggleMais: () => this.setState({ menu: S.menu === "mais" ? null : "mais" }),
       etapasItens: ordem.map((k, i) => item(ROT[k], () => mover(k), { atual: i === pos, dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:" + COR[k] }))
-        .concat([item("Ganho", () => mover("ganho"), { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#1f7256" }), item("Perdido", () => mover("perdido"), { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#8b949e" })]),
-      maisItens: (aberta ? [item("Marcar como ganha", () => mover("ganho"), cor("#1f7256")), item("Marcar como perdida", () => mover("perdido"), cor("#c2330f"))] : [item("Reabrir oportunidade", () => { salva({ etapa: "negociacao", dias: 0 }, "Reaberta em Negociação"); this.setState({ menu: null }); })])
+        .concat([item("Perdido", () => mover("perdido"), { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#8b949e" })]),
+      maisItens: (aberta ? [item("Marcar como perdida", () => mover("perdido"), cor("#c2330f"))] : [item("Reabrir oportunidade", () => { salva({ etapa: "negociacao", dias: 0 }, "Reaberta em Negociação"); this.setState({ menu: null }); })])
         .concat([item("Ver no Pipeline", () => ir("/onface-preview/pipeline", "Pipeline", { opp: O.id }))]),
       notaRef: this.notaRef,
       novaAberto: S.menu === "nova", toggleNova: () => this.setState({ menu: S.menu === "nova" ? null : "nova" }),
@@ -526,8 +539,8 @@ class Logica extends React.Component<any, any> {
         { label: "Atividade", sub: "Ligação, reunião, e-mail, tarefa…", d: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", onClick: registrar },
         { label: "Nota interna", sub: "Registro para o time, com @menção", d: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5", onClick: () => this.setState({ menu: null, aba: "geral", notaAtiva: true }, () => setTimeout(() => { const el = this.notaRef.current; if (el) { el.focus(); const p = el.closest("[data-r=pagina]"); if (p) p.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top - p.getBoundingClientRect().top + p.scrollTop - 120), behavior: "smooth" }); } }, 60)) }
       ],
-      avancarLabel: "Avançar etapa",
-      avancarDica: prox ? "Mover para " + ROT[prox] : "Negociação é a última etapa · avançar abre o fechamento como ganha",
+      avancarLabel: prox ? "Avançar etapa" : "O que falta para ganhar",
+      avancarDica: prox ? "Mover para " + ROT[prox] : "Negociação é a última etapa · fecha sozinha com contrato assinado ou pagamento confirmado",
       avancar: () => mover(prox || "ganho"),
       reabrir: () => { salva({ etapa: "negociacao", dias: 0 }, "Reaberta em Negociação"); this.diz("Oportunidade reaberta", "ok"); },
       registrar, novaProposta, novaPropostaLabel: P ? "Nova versão" : "Criar proposta",
@@ -720,10 +733,10 @@ class Logica extends React.Component<any, any> {
         const btn = (label, onClick, forte) => ({ label, onClick, style: "height:30px;padding:0 11px;border-radius:8px;border:0;font-size:12px;font-weight:600;cursor:pointer;" + (forte ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede") });
         const cod = "#" + p.codigo + "-v" + (p.versao || 1);
         const agora = () => { const d = new Date(); return "Hoje, " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
-        const ver = btn("Ver proposta", () => ir("/onface-preview/proposta", "Proposta", { opp: O.id, ver: String(i) }));
+        const ver = btn("Ver proposta", () => p.id ? Es.abrir("proposta", p.id) : ir("/onface-preview/proposta", "Proposta", { opp: O.id, ver: String(i) }));
         const acoes = [ver];
         if (vig && p.status === "rascunho") {
-          acoes.push(btn("Enviar ao cliente", () => setProp(i, { status: "enviada", enviadaEm: "Hoje", log: [{ k: "enviada", quando: agora(), quem: O.resp }] }, "Proposta " + cod + " enviada"), true));
+          acoes.push(btn("Enviar ao cliente", () => p.id ? ir("/propostas/" + p.id + "?acao=enviar") : this.diz("Salve a proposta antes de enviar", "aviso"), true));
           acoes.push(Object.assign(btn("Excluir rascunho", () => this.setState({ propAcao: { i, k: "excluir" } })), { style: "height:30px;padding:0 11px;border-radius:8px;border:0;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:#c2330f" }));
         } else if (vig && ["enviada", "visualizada", "ajuste_solicitado"].indexOf(p.status) >= 0) {
           acoes.push(btn("Ajustar proposta", () => this.setState({ propAcao: { i, k: "versao" } }), p.status === "ajuste_solicitado"));

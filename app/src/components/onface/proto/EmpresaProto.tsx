@@ -21,7 +21,13 @@ import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { EmpresaLiga } from "./EmpresaLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { registroDoDesenho, linkDoAnuncio } from "./registro-do-desenho";
+import { qualDoDesenho } from "./qual-do-desenho";
 import { usePecas } from "./pecas-host";
+import { acaoAtribuir, acaoRemoverDaCadencia, acaoResponsaveis, acaoSalvarQualificacao, acaoTagDoLead } from "@/app/(produto)/pre-vendas/actions";
+import {
+  acaoAdicionarPessoaNaEmpresa, acaoExcluirEmpresa, acaoPausarCadenciaDoLead, acaoSalvarDadosDaEmpresa,
+} from "@/app/(produto)/contatos/actions";
+import type { ArquivoDaEmpresa, CadenciaDoLead, EnriquecimentoDaEmpresa } from "@/lib/vendas/ficha-extras";
 
 /* Timeline real (LinhaDoTempo) no formato que a EmpresaLiga lê em `X.eventos`:
    {titulo, autor, quando, d, vinc}. Um ícone neutro pra todos — sem inventar
@@ -61,6 +67,38 @@ class EmpresaLigada extends EmpresaLiga {
     levarParametros(this as any);
   }
 
+  renderVals() {
+    const vals = super.renderVals();
+    const P = (this as any).props;
+    /* "Passo 2 de 5" e a barra 2/5 eram do protótipo, para qualquer cadência.
+       O motor não guarda a posição numérica do passo: não afirmar um. */
+    if (vals.temCad) {
+      vals.cadPasso = P.cadPausada ? "Pausada" : "Em andamento";
+      vals.cadPassos = (vals.cadPassos ?? []).map(() => ({ style: "flex:1;height:3px;border-radius:2px;background:#e3e7e8" }));
+    }
+    /* Arquivos: o envio e a remoção do desenho só mexiam na sessão da tela. */
+    vals.enviarArquivo = (e: any) => {
+      const lista: File[] = Array.from(e.target.files ?? []);
+      e.target.value = "";
+      if (lista.length) void P.enviarArquivos?.(lista);
+    };
+    const reais: ArquivoDaEmpresa[] = P.arquivosReais ?? [];
+    vals.arquivos = (vals.arquivos ?? []).map((a: any, i: number) => ({
+      ...a, remover: () => { if (reais[i]) void P.removerArquivo?.(reais[i]); },
+    }));
+    /* Excluir empresa: só avisa e sai depois que o servidor apagar. */
+    if (vals.exc?.aberto) {
+      const S = (this as any).state;
+      const original = vals.exc.confirmar;
+      vals.exc.confirmar = async () => {
+        if (!S.excMotivo || (S.excMotivo === "Outro" && !String(S.excObs ?? "").trim())) return original();
+        const ok = await P.excluirEmpresa?.(S.excAlvo === "tudo", S.excMotivo, String(S.excObs ?? "").trim());
+        if (ok) (this as any).setState({ excluir: false });
+      };
+    }
+    return vals;
+  }
+
   /* `E.avisar` chama `this.diz`, que a Liga gerada não define: todo aviso desta
      ficha (inclusive o erro do Apollo) morria em TypeError e nada aparecia. */
   diz(texto: string, tom?: string) {
@@ -70,8 +108,17 @@ class EmpresaLigada extends EmpresaLiga {
   }
 }
 
-export function EmpresaProto({ empresa, lead, timeline }: {
+export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento, cadencia, labels, tagsDaEmpresa }: {
+  /** Catálogo real de tags da organização e as que já estão nesta empresa. */
+  labels: Array<{ id: string; nome: string }>;
+  tagsDaEmpresa: string[];
   empresa: Empresa360;
+  /** Arquivos enviados para a empresa (acervo canônico). */
+  arquivos: ArquivoDaEmpresa[];
+  /** Funcionários, faturamento, LinkedIn e tecnologias gravados na empresa. */
+  enriquecimento: EnriquecimentoDaEmpresa;
+  /** A cadência viva do lead principal, quando há. */
+  cadencia: CadenciaDoLead | null;
   /** O lead principal da empresa, quando existe: é dele que vem o contato. */
   lead: DetalheLead | null;
   timeline: LinhaDoTempo[];
@@ -118,8 +165,12 @@ export function EmpresaProto({ empresa, lead, timeline }: {
     };
   }, [empresa, lead]);
 
+  /* A equipe REAL: o menu de responsável só oferecia o responsável atual. */
+  const [equipe, setEquipe] = React.useState<Array<{ id: string; nome: string }>>([]);
+  React.useEffect(() => { void acaoResponsaveis().then(setEquipe).catch(() => undefined); }, []);
+
   const catalogo = React.useMemo(() => ({
-    EQUIPE: registro.resp ? [registro.resp] : [],
+    EQUIPE: equipe.length ? equipe.map((e) => e.nome) : (registro.resp ? [registro.resp] : []),
     /* `ETAPAS` é o que dá o chip de etapa no cabeçalho — sem ele a ficha
        mostrava "—" no lugar de "Em contato". */
     ETAPAS: Object.fromEntries(
@@ -151,7 +202,7 @@ export function EmpresaProto({ empresa, lead, timeline }: {
       ],
       perdidas: empresa.oportunidades.filter((o) => o.etapa === "perdido").length,
     }),
-  }), [registro.resp, empresa.oportunidades, router]);
+  }), [registro.resp, empresa.oportunidades, router, equipe]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
@@ -163,27 +214,186 @@ export function EmpresaProto({ empresa, lead, timeline }: {
     abrirPeca(peca, idDaPeca, { tela: "empresa", empresaId: empresa.id, empresa: empresa.nome, leadId: lead?.id ?? null });
   }, [router, abrirPeca, empresa.id, empresa.nome, lead?.id]);
 
-  const gravar = React.useCallback(() => {
-    toast("Editar a empresa ainda não está ligado nesta tela.");
+  const enviarArquivos = React.useCallback(async (lista: File[]) => {
+    let ok = 0;
+    for (const f of lista) {
+      const fd = new FormData();
+      fd.append("file", f);
+      const r = await fetch(`/api/empresas/${empresa.id}/arquivos`, { method: "POST", body: fd }).catch(() => null);
+      if (r?.ok) ok++;
+      else toast.error(`${f.name}: ${(await r?.json().catch(() => null))?.error ?? "não consegui enviar."}`);
+    }
+    if (ok) { toast.success(ok > 1 ? `${ok} arquivos enviados` : "Arquivo enviado"); router.refresh(); }
+  }, [empresa.id, router]);
+
+  const removerArquivo = React.useCallback(async (a: ArquivoDaEmpresa) => {
+    const r = await fetch(`/api/empresas/${empresa.id}/arquivos/${a.id}`, { method: "DELETE" }).catch(() => null);
+    if (!r?.ok) return toast.error("Não consegui remover o arquivo.");
+    toast.success(`${a.nome} removido`);
     router.refresh();
-  }, [router]);
+  }, [empresa.id, router]);
+
+  const excluirEmpresa = React.useCallback(async (comLead: boolean, motivo: string, obs: string) => {
+    const r = await acaoExcluirEmpresa(empresa.id, comLead, motivo, obs);
+    if (!r.ok) { toast.error(r.erro); return false; }
+    toast.success(`${empresa.nome} excluída`);
+    router.push("/contatos");
+    router.refresh();
+    return true;
+  }, [empresa.id, empresa.nome, router]);
+
+  /* Cada edição da ficha vira o command que existe. A ficha guardava num store
+     local e o aviso "não está ligado" aparecia ao salvar: nada ia ao banco. */
+  const persistir = React.useCallback(async (patch: Record<string, any>) => {
+    const falha = (t?: string) => toast.error(t ?? "Não consegui salvar.");
+    const v = (x: unknown) => { const t = String(x ?? "").trim(); return t === "—" ? "" : t; };
+
+    if (patch.empresa) {
+      const p = patch.empresa as Record<string, any>;
+      const campos: Record<string, string> = {};
+      if ("cnpj" in p) campos.cnpj = v(p.cnpj);
+      if ("site" in p) campos.website = v(p.site);
+      if ("segmento" in p) campos.setor = v(p.segmento);
+      if ("telefone" in p) campos.telefone = v(p.telefone);
+      if ("funcionarios" in p) campos.funcionarios = v(p.funcionarios);
+      if ("faturamento" in p) campos.faturamento = v(p.faturamento);
+      if ("linkedin" in p) campos.linkedin = v(p.linkedin);
+      if ("tecnologias" in p) campos.tecnologias = v(p.tecnologias);
+      if ("cidade" in p) {
+        const [cidade, estado] = v(p.cidade).split("/").map((x) => x.trim());
+        campos.cidade = cidade ?? ""; campos.estado = estado ?? "";
+      }
+      if (Object.keys(campos).length) {
+        const r = await acaoSalvarDadosDaEmpresa(empresa.id, campos);
+        if (!r.ok) return falha(r.erro);
+        router.refresh();
+      }
+      if (Array.isArray(p.notas) && p.notas[0]?.texto) {
+        const r = await fetch("/api/notas", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ empresaId: empresa.id, conteudo: p.notas[0].texto }),
+        });
+        if (!r.ok) return falha("Não consegui salvar a nota.");
+        router.refresh();
+      }
+      /* Pessoa nova na aba Pessoas: o desenho entrega a lista inteira, a nova é a que o servidor não tem. */
+      if (Array.isArray(p.pessoas)) {
+        const tem = new Set([registro.pessoa, ...empresa.pessoas.map((x) => x.nome)]);
+        for (const n of (p.pessoas as Array<{ nome: string; cargo?: string; tel?: string; email?: string }>).filter((x) => !tem.has(x.nome))) {
+          const r = await acaoAdicionarPessoaNaEmpresa(empresa.id, { nome: n.nome, cargo: n.cargo, email: n.email, telefone: n.tel === "—" ? "" : n.tel });
+          if (!r.ok) return falha(r.erro);
+        }
+        router.refresh();
+      }
+      /* Anexo de nota: sobe para o acervo da empresa (a nota guarda o texto; o arquivo mora em Arquivos). */
+      if (Array.isArray(p.arquivos)) {
+        const deNota = (p.arquivos as Array<{ nome: string; tipo?: string; src?: string; quando?: string }>)
+          .filter((a) => /nota/.test(a.quando ?? "") && a.src?.startsWith("data:"));
+        if (deNota.length) {
+          const arquivos = await Promise.all(deNota.map(async (a) => new File([await (await fetch(a.src!)).blob()], a.nome, { type: a.tipo })));
+          await enviarArquivos(arquivos);
+        }
+      }
+      if ("pausada" in p) {
+        if (!lead) return falha("Esta empresa não tem contato em cadência.");
+        const r = await acaoPausarCadenciaDoLead(lead.id, !!p.pausada);
+        if (!r.ok) return falha(r.erro);
+        router.refresh();
+      }
+      const sem = ["conjunto", "criativo"].filter((k) => k in p);
+      if (sem.length) toast.warning("Conjunto e criativo vêm do anúncio de origem e não se editam aqui.");
+    }
+
+    if (patch.qual && lead) {
+      const q = patch.qual as Record<string, any>;
+      const n = parseInt(String(q.tamanho ?? "").replace(/\D/g, ""), 10);
+      const r = await acaoSalvarQualificacao(lead.id, {
+        servicosInteresse: typeof q.interesse === "string" && q.interesse ? q.interesse.split("|").filter(Boolean) : undefined,
+        dor: q.dor || undefined,
+        quantidade: Number.isNaN(n) ? undefined : n,
+        observacoes: typeof q.fit === "string" && q.fit ? `Fit ${q.fit}` : undefined,
+      } as never);
+      if (!r.ok) return falha(r.erro);
+      router.refresh();
+    }
+
+    /* Tag da própria empresa (a do lead continua pela peça de tags do lead). */
+    const tagDaEmpresa = async (nome: string, tirar: boolean) => {
+      let lab = labels.find((l) => l.nome === nome);
+      if (!lab && !tirar) {
+        const c = await fetch("/api/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome, cor: "#8b949e" }) });
+        if (!c.ok) return false;
+        lab = await c.json();
+      }
+      if (!lab) return false;
+      const r = await fetch(`/api/labels/${lab.id}/atribuir`, {
+        method: tirar ? "DELETE" : "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityType: "empresa", entityId: empresa.id }),
+      });
+      return r.ok;
+    };
+    if (patch.empresa && Array.isArray(patch.empresa.tags)) {
+      const novas = (patch.empresa.tags as string[]).filter((t) => !tagsDaEmpresa.includes(t) && !((registro.tags as string[] | undefined) ?? []).includes(t));
+      const tiradas = tagsDaEmpresa.filter((t) => !(patch.empresa.tags as string[]).includes(t));
+      const ok = await Promise.all([...novas.map((t) => tagDaEmpresa(t, false)), ...tiradas.map((t) => tagDaEmpresa(t, true))]);
+      if (ok.some((x) => !x)) return falha("Não consegui gravar a tag.");
+      router.refresh();
+    }
+    if (patch.tagRemover) {
+      if (lead && ((registro.tags as string[] | undefined) ?? []).includes(patch.tagRemover)) {
+        const r = await acaoTagDoLead(lead.id, patch.tagRemover, "remover");
+        if (!r.ok) return falha(r.erro);
+      } else if (!(await tagDaEmpresa(patch.tagRemover, true))) return falha("Não consegui remover a tag.");
+      router.refresh();
+    }
+
+    if (patch.lead?.resp && lead) {
+      const id = equipe.find((e) => e.nome === patch.lead.resp)?.id ?? null;
+      if (!id) return falha(`Não encontrei "${patch.lead.resp}" na equipe.`);
+      const r = await acaoAtribuir(lead.id, id);
+      if (!r.ok) return falha(r.erro);
+      router.refresh();
+    }
+    if (patch.lead && ("etapa" in patch.lead || "origem" in patch.lead || "campanha" in patch.lead)) {
+      toast.warning("Etapa e origem mudam em Pré-vendas e Pipeline; esta edição não foi aplicada.");
+    }
+  }, [empresa.id, empresa.pessoas, registro.pessoa, registro.tags, lead, equipe, router, enviarArquivos, labels, tagsDaEmpresa]);
+
+  const gravar = React.useCallback(() => { router.refresh(); }, [router]);
 
   return (
     <div data-workspace="desenho">
       <EmpresaLigada
+        labels={labels.map((l) => l.nome)}
+        temLead={!!lead}
+        nLeads={empresa.leads.length}
         /* `empresas[nome]` é de onde a ficha lê tags, segmento e porte —
            `empresaDados(nome)` no protótipo. Sem esta entrada as tags reais
            do lead não chegavam à tela. */
         dados={{
           leads: [registro],
           eventos: timeline,
+          /* Qualificação real no store `qual`, MESMA fonte do drawer e da ficha
+             de Contato. A ficha lia `qual[leadId]` que nunca era preenchido. */
+          qual: lead ? { [registro.id]: qualDoDesenho(lead.qualificacao) ?? {} } : {},
           empresas: { [empresa.nome]: {
-            tags: registro.tags,
+            tags: Array.from(new Set([...((registro.tags as string[] | undefined) ?? []), ...tagsDaEmpresa])),
             /* Timeline REAL (40 eventos: ligações, reuniões, notas, mudanças de
                etapa) — antes a aba Timeline mostrava só "Cadastrado". */
             eventos: eventosDoDesenho(timeline, "Empresa"),
             segmento: empresa.setor,
             porte: empresa.porte,
+            deApollo: enriquecimento.deApollo,
+            funcionarios: enriquecimento.funcionarios ?? undefined,
+            faturamento: enriquecimento.faturamento ?? undefined,
+            linkedin: enriquecimento.linkedin ?? undefined,
+            tecnologias: enriquecimento.tecnologias ?? undefined,
+            pausada: !!cadencia?.pausada,
+            arquivos: arquivos.map((a) => ({
+              id: a.id, nome: a.nome, tipo: a.mime, src: `/api/arquivos/${a.id}`,
+              tam: a.bytes > 1048576 ? `${(a.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(a.bytes / 1024))} KB`,
+              quando: new Date(a.em).toLocaleDateString("pt-BR"),
+            })),
             cidade: [empresa.cidade, empresa.estado].filter(Boolean).join(" / ") || undefined,
             site: empresa.website,
             /* Antes só o contato do lead aparecia na aba Pessoas; quem o Apollo
@@ -197,6 +407,15 @@ export function EmpresaProto({ empresa, lead, timeline }: {
         catalogo={catalogo}
         abrir={abrir}
         gravar={gravar}
+        persistir={persistir}
+        cadencia={cadencia?.nome ?? null}
+        cadPausada={!!cadencia?.pausada}
+        arquivosReais={arquivos}
+        enviarArquivos={enviarArquivos}
+        removerArquivo={removerArquivo}
+        excluirEmpresa={excluirEmpresa}
+        onRemoverCadencia={() => { if (lead) void acaoRemoverDaCadencia(lead.id).then((r) => { if (!r.ok) toast.error(r.erro); router.refresh(); }); }}
+        onTrocarCadencia={() => { if (lead) abrir("cadencia", lead.id); }}
         ir={(href: string) => router.push(href)}
         /* Depois de importar contatos do Apollo a ficha relê o servidor. */
         recarregar={() => router.refresh()}

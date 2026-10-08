@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { ContatosDesenho } from "./ContatosDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -351,7 +352,7 @@ class Logica extends React.Component<any, any> {
       try { navigator.clipboard.writeText(v).then(ok, () => { const t = document.createElement("textarea"); t.value = v; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); ok(); }); }
       catch (e) { ok(); }
     };
-    const ligar = (r) => { if (Es && Es.abrirExterno) Es.abrirExterno("/calls?call_to=" + String(r.tel).replace(/\D/g, "")); else diz("Ligando para " + r.nome, "ok"); };
+    const ligar = (r) => { if (Es && Es.abrirExterno) Es.abrirExterno("https://app.callface.ai/calls?call_to=" + String(r.tel).replace(/\D/g, "")); else diz("Ligando para " + r.nome, "ok"); };
     const whats = (r) => r.lead && Es ? Es.irPara("/atendimento", "Atendimento", { lead: r.lead.id, canal: "WhatsApp" }) : diz("Sem conversa para " + r.nome, "aviso");
     const email = (r) => r.lead && Es ? Es.irPara("/atendimento", "Atendimento", { lead: r.lead.id, canal: "E-mail" }) : diz("Sem conversa para " + r.nome, "aviso");
     const abrirAtv = (r, ver) => {

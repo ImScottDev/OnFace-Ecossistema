@@ -20,7 +20,11 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 
-import { acaoNovaOportunidadeDoCliente, type TipoDeVenda } from "@/app/(produto)/clientes/[id]/actions";
+import {
+  acaoNovaOportunidadeDoCliente, acaoNotaDoCliente, acaoAtribuirCsm, acaoTornarPrincipal,
+  acaoAdicionarPessoaAoCliente, acaoRemoverDocumentoDoCliente, type TipoDeVenda, type Resultado,
+} from "@/app/(produto)/clientes/[id]/actions";
+import { rotuloDeEvento } from "@/lib/vendas/rotulos-evento";
 import { toast } from "sonner";
 
 import type { ClienteDoDesenho } from "@/lib/clientes/cliente-para-o-desenho";
@@ -216,7 +220,7 @@ class ClienteLigada extends ClienteLiga {
         const ct = s.contratoId ? contratoPorId.get(s.contratoId) : undefined;
         const desde = dt(ct?.inicio);
         if (ct && ct.itens.length) return ct.itens.map((i) => ({ nome: i.nome, qtd: i.quantidade, preco: i.valorUnitario, sub: i.subtotal, tipo: i.natureza ?? "Item", desde }));
-        return [{ nome: s.produto ?? F.l, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : "Serviço", desde }];
+        return [{ nome: s.produto ?? F.l, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : "Serviço", desde }];
       });
       const cancelado = svs.every((s) => s.billingStatus === "CANCELED");
       const st = cancelado ? "Encerrado" : R.fulfillmentAberto ? "Em implantação" : "Ativo";
@@ -237,7 +241,7 @@ class ClienteLigada extends ClienteLiga {
     const abrirAnexo = (a: typeof R.anexos[number] | undefined) => {
       if (!a) return avisa("Este contrato não tem documento anexado.");
       if (!a.disponivel) return avisa("O arquivo de " + a.nome + " não está disponível neste ambiente.");
-      abrirUrl("/api/anexos-legado/" + a.id + "/download");
+      abrirUrl(a.origem === "upload" && a.url ? a.url : "/api/anexos-legado/" + a.id + "/download");
     };
     const ativos = R.contratos.filter((c) => c.status === "ativo");
     const proxRen = ativos.map((c) => ({ c, d: dt(c.vencimento) })).filter((x) => x.d && x.d >= h0).sort((a, b) => a.d!.getTime() - b.d!.getTime())[0] ?? null;
@@ -248,7 +252,7 @@ class ClienteLigada extends ClienteLiga {
       const pct = ini0 && fim && fim > ini0 ? Math.min(100, Math.max(0, (hoje.getTime() - ini0.getTime()) / (fim.getTime() - ini0.getTime()) * 100)) : 0;
       const dias = fim ? diasAte(fim) : null;
       const urg = ativo && dias != null && dias <= 45;
-      const an = R.anexos.find((a) => a.entidadeTipo === "contrato" && a.entidadeId === c.id);
+      const an = R.anexos.find((a) => a.origem === "legado" && a.entidadeTipo === "contrato" && a.entidadeId === c.id);
       const rotulo = c.familia ? fam(c.familia).l : c.produto === "ai" ? "Callface AI" : c.produto ?? (c.itens[0]?.nome ?? "Contrato");
       const st = ativo ? "Ativo" : "Encerrado";
       return {
@@ -275,7 +279,8 @@ class ClienteLigada extends ClienteLiga {
      * afirmação de cadastro. "Último contato" = última atividade visível do
      * lead da pessoa (atividades.lead_id); sem lead ou sem atividade, "—". */
     const pessoasReais = e.pessoas;
-    const principal = pessoasReais.find((p) => p.email) ?? pessoasReais[0] ?? null;
+    const designado = R.principalId ? pessoasReais.find((p) => p.id === R.principalId) ?? null : null;
+    const principal = designado ?? pessoasReais.find((p) => p.email) ?? pessoasReais[0] ?? null;
     const leadDe = (p: typeof pessoasReais[number]) => p.fonte === "lead" ? p.id : R.leadDaPessoa[p.id] ?? null;
     const abrirPessoa = (p: typeof pessoasReais[number]) => {
       const l = leadDe(p);
@@ -297,7 +302,16 @@ class ClienteLigada extends ClienteLiga {
       if (!p.email) return toast.error(p.nome + " não tem e-mail cadastrado");
       window.location.href = "mailto:" + p.email;
     };
-    const naoGrava = (o: string) => () => { avisa(o + " ainda não grava pelo Cliente 360."); P.refresh?.(); };
+    /* Toda escrita da tela passa por aqui: chama o command, avisa com a resposta
+       do servidor e relê a página (a tela mostra o banco, não o que digitou). */
+    const rodar = async (acao: Promise<Resultado>, ok: string): Promise<boolean> => {
+      const r = await acao;
+      if (!r.ok) { toast.error(r.erro); return false; }
+      toast.success(ok);
+      P.refresh?.();
+      return true;
+    };
+    const tornarPrincipal = (p: { id: string; nome: string }) => () => { void rodar(acaoTornarPrincipal(e.id, p.id), p.nome + " agora é o contato principal"); };
     const pesVal = (p: typeof pessoasReais[number], i: number) => {
       const ehP = p === principal, papel = rotuloPapel(p.papel);
       return {
@@ -305,9 +319,9 @@ class ClienteLigada extends ClienteLiga {
         ini: ini(p.nome), email: p.email ?? "—", tel: p.telefone ?? "—", ultimo: (() => { const l = leadDe(p), d = l ? dt(R.ultimoContatoPorLead?.[l]) : null; return d ? dmy(d) : "—"; })(), ehPrincipal: ehP, abrir: () => abrirPessoa(p),
         linha: "display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:11px 0;" + (i === 0 ? "" : "border-top:1px solid var(--of-fio-tenue)"),
         acoes: [{ titulo: "WhatsApp", d: I.wa, onClick: () => whats(p) }, { titulo: "Ligar pelo Callface", d: I.tel, onClick: () => ligar(p) }, { titulo: "E-mail", d: I.mail, onClick: () => mail(p) }],
-        princTxt: ehP ? "Principal" : "Tornar principal", princDica: ehP ? "Primeiro contato com e-mail da conta" : "Tornar contato principal",
+        princTxt: ehP ? "Principal" : "Tornar principal", princDica: ehP ? (designado ? "Contato principal da conta" : "Primeiro contato com e-mail da conta (ninguém designado)") : "Tornar contato principal",
         princStyle: "flex:0 0 auto;height:30px;padding:0 10px;border-radius:7px;border:0;font-size:11.5px;font-weight:600;white-space:nowrap;cursor:" + (ehP ? "default;background:var(--of-coral-fundo);color:var(--of-coral-acao-hover)" : "pointer;background:var(--of-papel);color:var(--of-tinta-2);box-shadow:inset 0 0 0 1px var(--of-linha)"),
-        tornarPrincipal: ehP ? () => {} : naoGrava("Trocar o contato principal"),
+        tornarPrincipal: ehP && designado ? () => {} : tornarPrincipal(p),
       };
     };
     const pessoas = pessoasReais.map(pesVal);
@@ -317,7 +331,7 @@ class ClienteLigada extends ClienteLiga {
      * protótipo GERAVA — contrato com cláusula e assinatura, proposta,
      * kickoff, "Notas fiscais (N)" — saem: eram texto fabricado com CNPJ e
      * signatário inventados. */
-    const catDoc = (a: typeof R.anexos[number]) => a.entidadeTipo === "contrato" ? "Contratos" : a.entidadeTipo === "negocio" ? "Propostas" : "Outros";
+    const catDoc = (a: typeof R.anexos[number]) => a.origem === "upload" ? "Outros" : a.entidadeTipo === "contrato" ? "Contratos" : a.entidadeTipo === "negocio" ? "Propostas" : "Outros";
     const docsTodos = R.anexos.map((a) => {
       const ext = (a.nome.split(".").pop() || "ARQ").slice(0, 4).toUpperCase();
       return { a, cat: catDoc(a), ext };
@@ -337,7 +351,9 @@ class ClienteLigada extends ClienteLiga {
       if (f.st === "Pago") push(f.pagoEm, "Fatura " + f.rot + " paga", brl2(f.v) + (f.ext ? " · " + f.ext : ""), "financeiro", I.check, "ok");
       if (f.st === "Vencida" && f.venc) push(f.venc, "Fatura " + f.rot + " venceu sem pagamento", brl2(f.v) + (f.ext ? " · " + f.ext : ""), "financeiro", I.alert, "erro");
     });
-    R.timeline.forEach((t) => { const c = categoriaDoEvento(String(t.tipo)); push(dt(t.ocorridoEm), t.titulo || String(t.tipo), t.usuarioNome ?? "Sistema", c.cat, c.d, c.tom); });
+    R.timeline.forEach((t) => { const c = categoriaDoEvento(String(t.tipo)); push(dt(t.ocorridoEm), t.titulo || rotuloDeEvento(String(t.tipo)), t.usuarioNome ?? "Sistema", c.cat, c.d, c.tom); });
+    /* Notas escritas na conta (notas.empresa_id): o texto inteiro mora no meta, o autor e a hora na linha. */
+    R.notas.forEach((n) => { const linha = n.texto.split("\n")[0]; push(dt(n.em), "Nota: " + (linha.length > 110 ? linha.slice(0, 110) + "…" : linha), [n.autor ?? "Sem autor", n.texto.length > linha.length || linha.length > 110 ? n.texto : null].filter(Boolean).join(" · "), "nota", I.note, "neutro"); });
     ev.sort((a, b) => b.d.getTime() - a.d.getTime());
     const quando = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); const n = Math.round((h0.getTime() - x.getTime()) / 864e5), hm = pad(d.getHours()) + ":" + pad(d.getMinutes());
       return n === 0 ? "Hoje, " + hm : n === 1 ? "Ontem, " + hm : n > 1 && n < 7 ? "Há " + n + " dias" : dExt(d); };
@@ -572,8 +588,8 @@ class ClienteLigada extends ClienteLiga {
       },
       resp: {
         ...v.resp,
-        equipe: R.equipe.map((n) => ({ nome: n, ini: ini(n), radio: radio(false), onClick: () => { setS({ resp: null }); naoGrava("Atribuir o Customer Success")(); } })),
-        pessoas: pessoasReais.map((p) => ({ nome: p.nome, cargo: p.cargo ?? "", ini: ini(p.nome), radio: radio(p === principal), onClick: () => { setS({ resp: null }); if (p !== principal) naoGrava("Trocar o contato principal")(); } })),
+        equipe: R.equipeIds.map((u) => ({ nome: u.nome, ini: ini(u.nome), radio: radio(u.id === R.csmId), onClick: () => { setS({ resp: null }); if (u.id !== R.csmId) void rodar(acaoAtribuirCsm(e.id, u.id), u.nome + " assumiu o Customer Success"); } })),
+        pessoas: pessoasReais.map((p) => ({ nome: p.nome, cargo: p.cargo ?? "", ini: ini(p.nome), radio: radio(p === principal), onClick: () => { setS({ resp: null }); if (p !== principal || !designado) tornarPrincipal(p)(); } })),
       },
       menu: {
         ...v.menu,
@@ -592,6 +608,14 @@ class ClienteLigada extends ClienteLiga {
       abas: ABAS.map(([k, l, n, alerta]) => ({ l, n: n != null ? String(n) : "", temN: n != null, onClick: irAba(k),
         nStyle: "min-width:20px;height:18px;padding:0 6px;border-radius:9999px;display:grid;place-items:center;font-size:10.5px;font-weight:700;" + (alerta ? "background:var(--of-coral-acao);color:var(--of-papel)" : S.aba === k ? "background:var(--of-coral-marca);color:var(--of-papel)" : "background:var(--of-calha);color:var(--of-tinta-2)"),
         style: "flex:0 0 auto;display:flex;align-items:center;gap:7px;height:46px;padding:0 2px;border:0;background:transparent;cursor:pointer;font-size:13px;white-space:nowrap;" + (S.aba === k ? "color:var(--of-tinta-forte);font-weight:600;box-shadow:inset 0 -2px 0 var(--of-coral-marca)" : "color:var(--of-tinta-3);font-weight:500") })),
+      /* "Nova atividade" e "Agendar reunião" abrem as peças canônicas de Atividades e Reunião
+         com a EMPRESA real e o contato principal real. O gerado montava o contexto com o
+         "principal" do protótipo (nome do pool). */
+      acoes: {
+        ...v.acoes,
+        registrar: () => P.abrir?.("novaAtividade", { empresa: e.nome, empresaId: e.id, pessoa: principal?.nome ?? "", lead: principal ? leadDe(principal) ?? "" : "" }),
+        agendar: () => { const d = new Date(hoje.getTime() + 864e5); P.abrir?.("novaReuniao", { data: d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()), hora: "10:00", titulo: "Alinhamento · " + e.nome, empresa: e.nome, empresaId: e.id, pessoa: principal?.nome ?? "", leadId: principal ? leadDe(principal) ?? "" : "" }); },
+      },
       hero, g,
       prodSub: nItens + (nItens === 1 ? " item" : " itens") + " · " + brl(mrr) + "/mês",
       fams: fams.map((f) => ({
@@ -623,14 +647,29 @@ class ClienteLigada extends ClienteLiga {
       prox, semProx: !prox.length,
       docs: {
         ...v.docs,
-        sub: docsTodos.length + (docsTodos.length === 1 ? " documento" : " documentos") + " · anexos do histórico (Zoho)",
-        enviar: (ev2: any) => { if (ev2?.target) ev2.target.value = ""; naoGrava("Enviar documento")(); },
+        sub: docsTodos.length + (docsTodos.length === 1 ? " documento" : " documentos") + " · enviados aqui e anexos do histórico (Zoho)",
+        enviar: (ev2: any) => {
+          const arqs: File[] = Array.from(ev2?.target?.files ?? []);
+          if (ev2?.target) ev2.target.value = "";
+          if (!arqs.length) return;
+          void (async () => {
+            let enviados = 0;
+            for (const f of arqs) {
+              const fd = new FormData(); fd.append("file", f);
+              const r = await fetch("/api/clientes/" + e.id + "/documentos", { method: "POST", body: fd }).catch(() => null);
+              if (r?.ok) enviados++; else toast.error(f.name + ": " + ((await r?.json().catch(() => ({})))?.error ?? "não foi possível enviar"));
+            }
+            if (enviados) { toast.success(enviados > 1 ? enviados + " documentos enviados" : "Documento enviado"); P.refresh?.(); }
+          })();
+        },
         vazia: !docsF.length,
         lista: docsF.map(({ a, cat, ext }) => ({
           nome: a.nome, meta: [a.criadoEm ? dmy(dt(a.criadoEm)) : null, tamanho(a.tamanhoBytes), a.disponivel ? null : "arquivo indisponível neste ambiente"].filter(Boolean).join(" · "),
           cat, ext, abrir: () => abrirAnexo(a), acao: a.disponivel ? "Abrir" : "Registro",
           icoSt: "flex:0 0 auto;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:9px;font-weight:800;letter-spacing:.02em;" + (ext === "PDF" ? "background:var(--of-coral-fundo);color:var(--of-coral-acao-hover)" : "background:var(--of-calha);color:var(--of-tinta)"),
-          removivel: false, remTxt: "", remStyle: "display:none", remover: () => {},
+          removivel: a.origem === "upload", remTxt: S.rem === a.id ? "Remover?" : "✕",
+          remStyle: "flex:0 0 auto;height:28px;min-width:28px;padding:0 8px;border-radius:7px;border:0;cursor:pointer;font-size:11.5px;font-weight:600;" + (S.rem === a.id ? "background:var(--of-coral-acao);color:var(--of-papel)" : "background:transparent;color:var(--of-tinta-3)"),
+          remover: () => { if (S.rem !== a.id) return setS({ rem: a.id }); setS({ rem: null }); void rodar(acaoRemoverDocumentoDoCliente(e.id, a.id), a.nome + " removido"); },
         })),
       },
       nv: v.nv?.aberto ? {
@@ -655,8 +694,16 @@ class ClienteLigada extends ClienteLiga {
       /* Nota e "adicionar pessoa" davam toast de "salvo" e o Proto descartava
          (gravar do Cliente 360 não tem command): dois toasts contraditórios e o
          dado sumia. Neutraliza o salvar com aviso honesto, igual às outras. */
-      nota: v.nota ? { ...v.nota, salvar: naoGrava("A nota") } : v.nota,
-      mP: v.mP?.aberto ? { ...v.mP, phEmail: e.dominio ? "nome@" + e.dominio : "nome@empresa.com.br", salvar: naoGrava("Adicionar a pessoa") } : v.mP,
+      nota: v.nota ? { ...v.nota, salvar: () => { const t = String(S.nota ?? "").trim(); if (!t) return; void rodar(acaoNotaDoCliente(e.id, t), "Nota salva no histórico").then((ok) => { if (ok) setS({ nota: "", histF: "todos" }); }); } } : v.nota,
+      mP: v.mP?.aberto ? { ...v.mP, phEmail: e.dominio ? "nome@" + e.dominio : "nome@empresa.com.br",
+        salvar: () => {
+          const M = S.modal ?? {};
+          if (!String(M.nome ?? "").trim()) return setS({ modal: { ...M, erro: "Informe o nome." } });
+          void acaoAdicionarPessoaAoCliente(e.id, { nome: M.nome, cargo: M.cargo, email: M.email, telefone: M.tel, papel: M.papel }).then((r) => {
+            if (!r.ok) return setS({ modal: { ...M, erro: r.erro } });
+            setS({ modal: null }); toast.success(String(M.nome).trim() + " agora faz parte da conta"); P.refresh?.();
+          });
+        } } : v.mP,
     };
   }
 }
@@ -732,11 +779,9 @@ export function ClienteProto({ cliente }: { cliente: ClienteDoDesenho }) {
    */
   const gravar = React.useCallback(async (patch: { opps?: { id: string; tipo?: string; familia?: string; resp?: string; itens?: { valor?: number }[]; notas?: { texto?: string }[]; pessoa?: string }[] }) => {
     const nova = patch?.opps?.find((o) => o.id?.startsWith("o") && !idsReais.current.has(o.id));
-    if (!nova) {
-      toast("Isto ainda não grava pelo Cliente 360.");
-      router.refresh();
-      return;
-    }
+    // Sem oportunidade nova no patch: é só o espelho de histórico local do protótipo
+    // (`clientes360`). Todas as escritas reais da tela têm command próprio; não há o que gravar.
+    if (!nova) return;
 
     /* O desenho chama cross-sell de "nova" no campo `tipo`; o que distingue é
        a família ser uma que o cliente ainda não tem. Renovação vem com o

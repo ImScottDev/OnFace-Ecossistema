@@ -139,11 +139,11 @@ Responsável
 <path d="M8 11V7a4 4 0 0 1 8 0v4" />
 </svg>
 <span style={{ fontSize: "12px", color: "#9c3210", lineHeight: "1.45", textWrap: "pretty" }}>
-Sem empresa associada: 
+Sem empresa associada:{" "}
 <strong style={{ fontWeight: "600" }}>
 Criar oportunidade
 </strong>
- fica bloqueado.
+{" "}fica bloqueado.
 </span>
 </div>
 </>) : null}
@@ -200,6 +200,40 @@ Origem
 ))}
 </div>
 </div>
+</div>
+<div style={{ height: "1px", background: "#eef1f1" }} />
+<div style={{ padding: "6px 8px 8px" }}>
+<button onClick={det.sec.resp.alternar} style={estilo(det.sec.resp.cabStyle)} className={[hover("background:#fafafa")].filter(Boolean).join(" ")}>
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={estilo(det.sec.resp.chevron)}>
+<path d="m9 18 6-6-6-6" />
+</svg>
+<span style={{ fontSize: "11px", fontWeight: "600", color: "#4a5560", letterSpacing: ".04em", whiteSpace: "nowrap" }}>
+RESPOSTAS DO FORMULÁRIO
+</span>
+<span style={{ flex: "1", minWidth: "0" }} />
+<span style={{ fontSize: "11.5px", color: "#67787c", whiteSpace: "nowrap" }}>
+{det.respResumo}
+</span>
+</button>
+{(det.sec.resp.aberta) ? (<>
+<div style={{ padding: "2px 8px 6px", display: "flex", flexDirection: "column", gap: "10px" }}>
+{(det.respostas ?? []).map((r: any, i1: number) => (
+<div key={i1} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+<span style={{ fontSize: "11.5px", color: "#67787c", lineHeight: "1.35" }}>
+{r.pergunta}
+</span>
+<span style={{ fontSize: "13px", color: "#0e1415", fontWeight: "500", lineHeight: "1.4", overflowWrap: "anywhere" }}>
+{r.resposta}
+</span>
+</div>
+))}
+{((det.respostas ?? []).length === 0) ? (<>
+<span style={{ fontSize: "12px", color: "#67787c" }}>
+Este lead não veio de um formulário com perguntas.
+</span>
+</>) : null}
+</div>
+</>) : null}
 </div>
 <div style={{ height: "1px", background: "#eef1f1" }} />
 <div style={{ padding: "6px 8px 8px" }}>
@@ -301,9 +335,11 @@ PRÓXIMA AÇÃO
 <span style={estilo(det.acaoTexto)}>
 {det.acao}
 </span>
+{(det.temAcao) ? (<>
 <button onClick={det.verAcao} style={{ flex: "0 0 auto", height: "28px", padding: "0 11px", borderRadius: "7px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
 {det.acaoBotao}
 </button>
+</>) : null}
 <button onClick={det.criarAtv} style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: "5px", height: "28px", padding: "0 10px", borderRadius: "7px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12px", fontWeight: "600", whiteSpace: "nowrap" }} title="Criar outra atividade" className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
 <path d="M12 5v14M5 12h14" />
@@ -1736,7 +1772,7 @@ Cancelar
 Mover para nutrição
 </div>
 <div style={{ fontSize: "12.5px", color: "#4a5560", lineHeight: "1.45", textWrap: "pretty" }}>
-Nutrição não pode ser lixeira elegante: exige motivo, e a maioria exige data de retomada.
+Nutrição não pode ser lixeira elegante: exige motivo. A data de retomada é opcional — com ela, o lead volta para a fila nessa data.
 </div>
 </div>
 <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -1762,11 +1798,9 @@ data
 <span style={{ fontSize: "11.5px", fontWeight: "600", color: "#3d4650" }}>
 Retomar em
 </span>
-{(exigeData) ? (<>
-<span style={{ fontSize: "10px", fontWeight: "600", color: "#9c3210", background: "#fdeae5", borderRadius: "4px", padding: "2px 6px", whiteSpace: "nowrap" }}>
-obrigatório
+<span style={{ fontSize: "10px", fontWeight: "600", color: "#4a5560", background: "#eeeff3", borderRadius: "4px", padding: "2px 6px", whiteSpace: "nowrap" }}>
+opcional
 </span>
-</>) : null}
 </div>
 <input value={dataRetomada} onChange={setData} type="date" style={estilo(dataStyle)} />
 <div style={{ fontSize: "11.5px", color: "#4a5560", marginTop: "6px", lineHeight: "1.45", textWrap: "pretty" }}>

@@ -117,7 +117,7 @@ function textoDoNexo(t: string, porNome: Map<string, ClienteDaTela>): string {
   return out;
 }
 
-function corrigir(vals: any, S: any, p: { clientes: ClienteDaTela[]; equipe: string[]; eu: string; leads: DadosTelaCs["leads"]; faturamento?: FaturamentoMes[] }) {
+function corrigir(vals: any, S: any, p: { clientes: ClienteDaTela[]; equipe: string[]; eu: string; leads: DadosTelaCs["leads"]; faturamento?: FaturamentoMes[]; risco?: DadosTelaCs["risco"] }) {
   const porNome = new Map(p.clientes.map((c) => [c.nome, c] as const));
   const hoje = new Date();
   // As mesmas bases do Liga: `cart` = ativos no escopo, `base` = escopo com inativos.
@@ -135,6 +135,19 @@ function corrigir(vals: any, S: any, p: { clientes: ClienteDaTela[]; equipe: str
     kpis: vals.ren.kpis.map((k: any, i: number) => ({ ...k, v: i === 1 || i === 3 ? "0" : "—", s: i === 0 ? "sem data de renovação cadastrada" : k.s, vStyle: k.vStyle.replace("var(--of-coral-acao-hover)", "var(--of-tinta-forte)") })),
     colunas: vals.ren.colunas.map((c: any) => ({ ...c, cards: [], vazia: true, tot: "—" })),
   };
+
+  /* RISCO: uma fonte só. O desenho contava "em risco" por silêncio (>= 30 dias sem contato,
+     e 216 contas nunca tiveram contato registrado): 211 contas e R$ 381 mil, contra 18 contas
+     críticas ou em risco em /clientes/risco (cs_riscos). Os KPIs de risco leem o mesmo
+     cs_riscos; o resto do desenho (fila "Precisa da sua atenção") continua sendo sinal de atenção. */
+  if (p.risco) {
+    const R = p.risco;
+    vals.kp5[3] = { ...vals.kp5[3], v: String(R.criticoEmRisco), dt: brlK(R.mrrCriticoEmRisco), s: "de MRR em risco crítico ou em risco · " + R.atencao + " em atenção" };
+    vals.kpis = (vals.kpis ?? []).map((k: any) => k.l === "MRR em risco" ? { ...k, v: brlK(R.mrrCriticoEmRisco), s: R.criticoEmRisco + (R.criticoEmRisco === 1 ? " conta crítica ou em risco" : " contas críticas ou em risco") } : k);
+    if (typeof vals.nexo?.txt === "string") {
+      vals.nexo.txt = vals.nexo.txt.replace(/R\$ [\d.,]+ (mil )?de MRR possui algum risco aberto\./, R.criticoEmRisco ? brlK(R.mrrCriticoEmRisco) + " de MRR em " + R.criticoEmRisco + " contas críticas ou em risco." : "Nenhuma conta crítica ou em risco.");
+    }
+  }
 
   vals.car.views = vals.car.views.map((v: any) => v.l === "Renovação próxima" ? { ...v, n: "—" } : v);
   if (S.carV === "renov") vals.car = { ...vals.car, linhas: [], vazio: true, sub: "0 clientes · R$ 0 de MRR" };
@@ -490,8 +503,9 @@ export function CsProto({ dados, eu, euId, abaInicial, viewInicial }: {
           // Só herda o serviço quando é a MESMA família; cross-sell nasce sem.
           servicoOrigemId: o.familia === c.produto ? c.servicoId : null,
           descricao: [o.notas?.[0]?.texto, o.timing ? `Timing: ${o.timing}` : null].filter(Boolean).join("\n"),
+          responsavelId: o.resp === eu ? euId : idDoUsuario(o.resp),
         });
-        toast("O negócio de expansão fica com você: o endpoint ainda não recebe o closer escolhido.");
+        toast.success("Expansão criada no Pipeline" + (o.resp ? " · " + o.resp + " assume" : ""));
       } catch (e: any) { erros.push(e.message); }
     }
 
@@ -507,7 +521,7 @@ export function CsProto({ dados, eu, euId, abaInicial, viewInicial }: {
       <CsLigada
         dados={dadosDoLiga}
         catalogo={catalogo}
-        correcao={{ clientes, equipe, eu, leads: dados.leads, faturamento: dados.faturamento }}
+        correcao={{ clientes, equipe, eu, leads: dados.leads, faturamento: dados.faturamento, risco: dados.risco }}
         abaInicial={abaInicial}
         viewInicial={viewInicial}
         abrir={abrir}

@@ -48,7 +48,7 @@ interface GrowthData {
   };
   pipeline: { total: number; ponderado: number; negociosAbertos: number; etapas: EtapaPipeline[]; esfriando: Esfriando[] };
   retencao: {
-    mrrAtivo: number; contratosAtivos: number; npsMedia: number | null; nps: number | null;
+    mrrAtivo: number; contratosAtivos: number; clientesAtivos: number; npsMedia: number | null; nps: number | null;
     npsDistrib: { promotores: number; neutros: number; detratores: number };
     contratosVencendo: { count: number; mrr: number };
   };
@@ -171,7 +171,7 @@ export default function TabGrowth({ periodo }: { periodo: string }) {
               <p className="font-bold tabular-nums mt-2 pl-2 break-words" style={{ color: "#fff", fontFamily: "var(--cf2-font-heading)", fontSize: "clamp(1.8rem,3vw,2.6rem)", lineHeight: 1.05, letterSpacing: "-0.015em" }}>
                 {brl(ret?.mrrAtivo ?? 0)}
               </p>
-              <p className="text-[11px] text-[var(--cf2-text-tertiary)] mt-2 pl-2">{ret?.contratosAtivos ?? 0} contratos vigentes</p>
+              <p className="text-[11px] text-[var(--cf2-text-tertiary)] mt-2 pl-2">{ret?.clientesAtivos ?? 0} clientes ativos</p>
             </div>
             <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3 content-stretch">
               <Kpi label="MRR novo (período)" value={brl(r?.mrrNovoFechado ?? 0)} sub={`${f?.ganhos ?? 0} negócio(s) ganho(s)`} accent="var(--cf2-success-text)" icon={TrendingUp} />

@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { PessoaDesenho } from "./PessoaDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -111,6 +112,8 @@ class Logica extends React.Component<any, any> {
   }
 
   componentDidMount() {
+    /* A relação vem do navegador (store local): só depois de hidratar, senão o servidor e o cliente discordam. */
+    this.setState({ hidratado: true });
     const assinar = () => {
       const Es = this.E;
       if (!Es || this._off) return !!this._off;
@@ -177,7 +180,7 @@ class Logica extends React.Component<any, any> {
     const base = [
       /* ANTES: `tel: L.tel || "+55 11 91234-5678"` — telefone inventado quando o
          contato não tem número. A ficha mostrava e o botão discava para ele. */
-      Object.assign({ nome: L.pessoa, cargo: L.cargo, tel: L.tel || "", principal: true }, L.email ? { email: L.email } : {})
+      Object.assign({ nome: L.pessoa, cargo: L.cargo, tel: L.tel || "", principal: true, obs: L.obs || "" }, L.email ? { email: L.email } : {}, L.cidadeContato ? { cidade: L.cidadeContato } : {})
     ].concat(L.registro ? [] : [
       { nome: "Ricardo Alves", cargo: "Gerente de TI", tel: "+55 11 99876-5432" },
       { nome: "Juliana Prado", cargo: "Gerente de CX", tel: "+55 11 98765-4321" }
@@ -189,8 +192,8 @@ class Logica extends React.Component<any, any> {
     const O = todasP[pk] || {};
     /* ANTES: e-mail montado do nome (`mailDe`), LinkedIn montado do nome e
        cidade "São Paulo / SP" fixa. Três dados do contato inventados pela ficha. */
-    const P = Object.assign({ email: bruto.email || "", whats: bruto.tel, linkedin: "", cidade: L.cidade || "", obs: "" }, bruto, O);
-    const gravarP = (patch) => { if (!this.E) return; const t = Object.assign({}, Es.ler("pessoas", {})); t[pk] = Object.assign({}, t[pk] || {}, patch); Es.gravar({ pessoas: t }); };
+    const P = Object.assign({ email: bruto.email || "", whats: L.registro ? (L.whatsapp || "") : bruto.tel, linkedin: L.registro ? (L.linkedin || "") : "", cidade: L.cidade || "", obs: "" }, bruto, O);
+    const gravarP = (patch) => { if (this.props.persistir) this.props.persistir(patch); if (!this.E) return; const t = Object.assign({}, Es.ler("pessoas", {})); t[pk] = Object.assign({}, t[pk] || {}, patch); Es.gravar({ pessoas: t }); };
     const evento = (titulo, d) => {
       if (!this.E) return;
       const t = Object.assign({}, Es.ler("empresas", {}));
@@ -287,7 +290,7 @@ class Logica extends React.Component<any, any> {
     };
 
     // tags
-    const tagsAtuais = P.tags || (bruto.principal && !L.registro ? ["Inbound", "Tomador de decisão"] : []);
+    const tagsAtuais = L.registro ? (L.tags || []) : (P.tags || (bruto.principal ? ["Inbound", "Tomador de decisão"] : []));
     const tagsBase = ["Inbound", "Tomador de decisão", "Influenciador", "Técnico", "Financeiro", "Champion", "Não responde"];
     const criadas = ((this.E && Es.ler("tagsCriadas", [])) || []).map(t => typeof t === "string" ? t : t.nome);
     const todasTags = tagsBase.concat(criadas).concat(tagsAtuais).filter((t, i, a) => t && a.indexOf(t) === i);
@@ -343,7 +346,7 @@ class Logica extends React.Component<any, any> {
       }),
       gridStyle: abaVisao ? "display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px;align-items:start" : "display:grid;grid-template-columns:minmax(0,1fr);gap:12px;max-width:980px",
       relAtivas: (() => {
-        const RR = typeof window !== "undefined" && this.dadosDoProto.Relacoes ? this.dadosDoProto.Relacoes({ pessoa: bruto.nome }) : { itens: [], perdidas: 0 };
+        const RR = this.state && this.state.hidratado && this.dadosDoProto.Relacoes ? this.dadosDoProto.Relacoes({ pessoa: bruto.nome }) : { itens: [], perdidas: 0 };
         const ICO = { cliente: "M20 6 9 17l-5-5", opp: "M12 2v20M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6", proposta: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5", aquisicao: "M22 12h-4l-3 9L9 3l-3 9H2" };
         const TOM = { verde: ["#e6f4ee", "#1f7256"], coral: ["#fff6f4", "#c2330f"], azul: ["#e8f0fb", "#2c5f9e"], cinza: ["#eeeff3", "#4a5560"] };
         const n = RR.itens.length;
@@ -442,9 +445,9 @@ class Logica extends React.Component<any, any> {
 
       qualif: [["Interesse", interesse], ["Fit", q.fit], ["Tamanho da operação", q.tamanho ? q.tamanho + " atendentes" : ""], ["Dor principal", q.dor]].map(([label, v]) => ({ label, valor: v || "Não preenchido", style: chip(v) })),
 
-      tags: tagsAtuais.map(t => ({ label: t, remover: () => gravarP({ tags: tagsAtuais.filter(x => x !== t) }) })),
+      tags: tagsAtuais.map(t => ({ label: t, remover: () => (L.registro && this.props.persistir ? this.props.persistir({ tagRemover: t }) : gravarP({ tags: tagsAtuais.filter(x => x !== t) })) })),
       tagAberto: S.tagMenu,
-      abrirTag: (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); this.setState(s => ({ tagMenu: !s.tagMenu, tagRect: { top: r.top, bottom: r.bottom, left: r.left } })); },
+      abrirTag: (e) => { e.stopPropagation(); if (L.registro && this.E) { this.E.abrir("tagslead", L.id); return; } const r = e.currentTarget.getBoundingClientRect(); this.setState(s => ({ tagMenu: !s.tagMenu, tagRect: { top: r.top, bottom: r.bottom, left: r.left } })); },
       tagMenuStyle: "position:fixed;" + this.pos(S.tagRect, 340) + "left:" + Math.max(8, Math.min(S.tagRect ? S.tagRect.left : 120, (typeof window !== "undefined" ? window.innerWidth : 1440) - 280)) + "px;width:268px;z-index:60;display:flex;flex-direction:column;background:#fff;border-radius:10px;padding:4px;box-shadow:0 0 0 1px #e3e7e8,0 12px 32px -8px rgba(18,23,29,.22)",
       tagOpcoes: todasTags.map(t => {
         const on = tagsAtuais.indexOf(t) >= 0;
@@ -609,11 +612,11 @@ class Logica extends React.Component<any, any> {
       interacoes: (abaVisao ? inter.slice(0, 5) : inter).map(t => ({
         titulo: t.titulo, detalhe: t.detalhe, quando: t.quando, d: icoTipo[t.tipo] || icoTipo.Sistema,
         vinc: escRot(t.vinc), vincStyle: escChip(t.vinc), temDet: !!t.detalhe,
-        temRel: /^Ligação (realizada|iniciada|recebida)/.test(t.titulo || ""),
-        dica: /^Ligação (realizada|iniciada|recebida)/.test(t.titulo || "") ? "Abrir relatório da ligação" : "",
-        linha: "display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:start;padding:8px 6px;margin:0 -6px;border-radius:8px;border-top:1px solid #f3f5f5;" + (/^Ligação (realizada|iniciada|recebida)/.test(t.titulo || "") ? "cursor:pointer" : ""),
-        hover: /^Ligação (realizada|iniciada|recebida)/.test(t.titulo || "") ? "background:#fafafa" : "",
-        onClick: /^Ligação (realizada|iniciada|recebida)/.test(t.titulo || "") ? () => { if (this.E) this.E.abrir("relatorio", L.id); } : undefined,
+        temRel: /^Ligação\b/.test(t.titulo || ""),
+        dica: /^Ligação\b/.test(t.titulo || "") ? "Abrir relatório da ligação" : "",
+        linha: "display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:start;padding:8px 6px;margin:0 -6px;border-radius:8px;border-top:1px solid #f3f5f5;" + (/^Ligação\b/.test(t.titulo || "") ? "cursor:pointer" : ""),
+        hover: /^Ligação\b/.test(t.titulo || "") ? "background:#fafafa" : "",
+        onClick: /^Ligação\b/.test(t.titulo || "") ? () => { if (this.E) this.E.abrir("relatorio", L.id); } : undefined,
         marca: "width:28px;height:28px;border-radius:8px;display:grid;place-items:center;" + (t.tipo === "WhatsApp" ? "background:#e6f4ee;color:#1f7256" : t.tipo === "Ligação" ? "background:#fff6f4;color:#c2330f" : "background:#eeeff3;color:#4a5560")
       })),
       semInteracoes: inter.length === 0,
@@ -695,7 +698,11 @@ class Logica extends React.Component<any, any> {
         const V = S.v2;
         const q = V ? (V.busca || "").trim() : "";
         const livres = nomesLead.filter(n => n !== nomeEmp && !extras.some(e => e.nome === n));
-        const lista = livres.filter(n => !q || n.toLowerCase().indexOf(q.toLowerCase()) >= 0).slice(0, 6);
+        /* Busca real (`acaoBuscarEmpresas`): antes só enxergava a empresa do próprio lead, então
+           "Empresa existente" nunca achava nenhuma. `achadas` chega assíncrono do setBusca. */
+        const achadas = (V && V.achadas) || [];
+        const apoioDe = {}; achadas.forEach(x => { apoioDe[x.nome] = x.apoio; });
+        const lista = (q ? achadas.map(x => x.nome).filter((n, i, a) => a.indexOf(n) === i && n !== nomeEmp && !extras.some(e => e.nome === n)) : livres).slice(0, 8);
         const setV = (p) => this.setState(s => ({ v2: Object.assign({}, s.v2, p) }));
         const nova = (V && V.nova) || {};
         const ehNova = !!V && V.modo === "nova";
@@ -732,12 +739,15 @@ class Logica extends React.Component<any, any> {
             btnLabel: ehNova ? "Cadastrar e vincular" : "Vincular",
             fechar: () => this.setState({ v2: null }),
             busca: V ? V.busca : "",
-            setBusca: (e) => setV({ busca: e.target.value, sel: null, novo: false }),
+            setBusca: (e) => { const t = e.target.value; setV({ busca: t, sel: null, novo: false });
+              clearTimeout(this._tBuscaEmp);
+              if (t.trim().length < 2 || !this.props.buscarEmpresas) return setV({ achadas: [] });
+              this._tBuscaEmp = setTimeout(() => { this.props.buscarEmpresas(t.trim()).then(r => { if ((((this.state.v2 || {}).busca) || "").trim() === t.trim()) setV({ achadas: r }); }).catch(() => {}); }, 220); },
             papel: V ? V.papel : "",
             setPapel: (e) => setV({ papel: e.target.value }),
             lista: lista.map(n => ({
               nome: n, iniciais: ini(n), on: !!V && V.sel === n,
-              meta: ((D.SEGMENTOS || {})[n] || "Empresa") + " · " + leads.filter(x => x.empresa === n).length + " lead",
+              meta: apoioDe[n] || ((D.SEGMENTOS || {})[n] || "Empresa") + " · " + leads.filter(x => x.empresa === n).length + " lead",
               style: "display:flex;align-items:center;gap:10px;width:100%;padding:8px 9px;border-radius:9px;border:0;cursor:pointer;background:" + (V && V.sel === n ? "#f6f6f3;box-shadow:inset 0 0 0 1.5px #12171d" : "transparent"),
               onClick: () => setV({ sel: n, novo: false })
             })),
@@ -778,6 +788,7 @@ class Logica extends React.Component<any, any> {
         onClick: () => {
           this.setState({ respMenu: false });
           if (L.resp === n || !Es) return;
+          if (this.props.persistir) this.props.persistir({ resp: n });
           Es.gravar({ leads: (Es.ler("leads", []) || []).map(x => x.id === L.id ? Object.assign({}, x, { resp: n }) : x) });
           diz("Responsável: " + n, "ok");
         }
@@ -802,7 +813,7 @@ class Logica extends React.Component<any, any> {
           diz("Contato atualizado", "ok");
         }
       },
-      editarResumo: () => this.setState({ editando: true, rascunho: { nome: P.nome, cargo: P.cargo, email: P.email, tel: P.tel, whats: P.whats, linkedin: P.linkedin, cidade: P.cidade, obs: P.obs }, maisMenu: false }),
+      editarResumo: () => this.setState({ editando: true, rascunho: Object.fromEntries(Object.entries({ nome: P.nome, cargo: P.cargo, email: P.email, tel: P.tel, whats: P.whats, linkedin: P.linkedin, cidade: P.cidade, obs: P.obs }).map(([k, x]) => [k, x === "—" ? "" : x])), maisMenu: false }),
       parar: (e) => e.stopPropagation(),
 
       maisAberto: S.maisMenu,

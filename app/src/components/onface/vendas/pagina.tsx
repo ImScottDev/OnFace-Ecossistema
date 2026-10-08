@@ -11,6 +11,10 @@
  */
 
 import Link from "next/link";
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { acaoBuscarEmpresas, acaoVincularPessoa } from "@/app/(produto)/contatos/actions";
 import { ArrowLeft, Maximize2, Mail, MessageCircle, Phone } from "lucide-react";
 import type { ReactNode } from "react";
 import type { DetalheOportunidade, Empresa360, LinhaPessoa } from "@/lib/vendas/consultas";
@@ -273,13 +277,55 @@ export function DetalheEmpresaPagina({ empresa, timeline, voltar }: {
   );
 }
 
+/** Vincula a pessoa (sem lead) a uma empresa do cadastro, sem criar Lead. Troca de empresa encerra o vínculo anterior com data. */
+function GerenciarVinculo({ pessoaId, temEmpresa }: { pessoaId: string; temEmpresa: boolean }) {
+  const router = useRouter();
+  const [aberto, setAberto] = React.useState(false);
+  const [q, setQ] = React.useState("");
+  const [achadas, setAchadas] = React.useState<Array<{ id: string; nome: string; apoio: string | null }>>([]);
+  React.useEffect(() => {
+    if (q.trim().length < 2) { setAchadas([]); return; }
+    let vivo = true;
+    const t = setTimeout(() => { acaoBuscarEmpresas(q).then((r) => { if (vivo) setAchadas(r); }); }, 220);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [q]);
+  const vincular = async (empresaId: string, nome: string) => {
+    const r = await acaoVincularPessoa({ pessoaId, empresaId, papel: "outro", principal: true, trocaDeEmpresa: temEmpresa });
+    if (!r.ok) return toast.error(r.erro);
+    toast.success(`Vinculada a ${nome}`);
+    setAberto(false); setQ("");
+    router.refresh();
+  };
+  return (
+    <div style={{ position: "relative" }}>
+      <button type="button" className="ov-botao" onClick={() => setAberto((v) => !v)}>{temEmpresa ? "Trocar empresa" : "Vincular a uma empresa"}</button>
+      {aberto ? (
+        <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 20, width: 320, background: "var(--of-papel)", borderRadius: 12, boxShadow: "inset 0 0 0 1px var(--of-linha)", padding: 8 }}>
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa pelo nome" aria-label="Buscar empresa"
+            style={{ width: "100%", height: 34, padding: "0 10px", borderRadius: 8, border: 0, outline: 0, background: "var(--of-neutro)", fontSize: "var(--of-t-corpo)" }} />
+          <div style={{ maxHeight: 220, overflowY: "auto", marginTop: 6 }}>
+            {q.trim().length >= 2 && achadas.length === 0 ? <p className="ov-nota" style={{ margin: 8 }}>Nenhuma empresa encontrada.</p> : null}
+            {achadas.map((e) => (
+              <button key={e.id} type="button" onClick={() => vincular(e.id, e.nome)}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", border: 0, borderRadius: 8, background: "transparent", cursor: "pointer" }}>
+                <span style={{ fontSize: "var(--of-t-corpo)", fontWeight: 500, color: "var(--of-tinta-forte)" }}>{e.nome}</span>
+                {e.apoio ? <span style={{ display: "block", fontSize: "var(--of-t-meta)", color: "var(--of-tinta-3)" }}>{e.apoio}</span> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function DetalhePessoaPagina({ pessoa, timeline, voltar }: { pessoa: LinhaPessoa; timeline: LinhaDoTempo[]; voltar: string }) {
   return (
     <PaginaEntidade
       voltar={{ href: voltar, rotulo: "Voltar para Pessoas" }}
       titulo={pessoa.nome}
       subtitulo={pessoa.cargo ?? undefined}
-      acoes={<Link className="ov-botao" href={`${voltar}?aba=pessoas&pessoa=${encodeURIComponent(pessoa.id)}`}>Gerenciar vínculo</Link>}
+      acoes={<GerenciarVinculo pessoaId={pessoa.id} temEmpresa={!!pessoa.empresaId} />}
     >
       <PaginaColunas
         principal={<><Bloco titulo="Contato"><dl style={{ margin: 0 }}><Campo rotulo="E-mail">{pessoa.email}</Campo><Campo rotulo="Telefone">{pessoa.telefone}</Campo><Campo rotulo="WhatsApp">{pessoa.whatsapp}</Campo></dl><AcoesContato alvo={{ leadId: pessoa.fonte === "lead" ? pessoa.id : null, telefone: pessoa.telefone ?? pessoa.whatsapp, email: pessoa.email }} /></Bloco><Bloco titulo="Histórico"><Historico timeline={timeline} /></Bloco></>}

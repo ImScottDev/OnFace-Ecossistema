@@ -81,11 +81,15 @@ export default function CamposCustomPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, label: string) => {
+    if (!window.confirm(`Remover o campo "${label}"? Os valores já gravados nos registros continuam guardados.`)) return;
     const res = await fetch(`/api/custom-fields/${id}`, { method: "DELETE" });
     if (res.ok) {
       toast.success("Campo removido");
       queryClient.invalidateQueries({ queryKey: ["custom-fields"] });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || "Não foi possível remover o campo");
     }
   };
 
@@ -94,6 +98,11 @@ export default function CamposCustomPage() {
       <div>
         <h2 className="text-lg font-bold text-[var(--cf2-text-primary)]">Campos Personalizados</h2>
         <p className="text-xs text-[var(--cf2-text-tertiary)] mt-0.5">Crie campos adicionais para leads, empresas e negócios</p>
+        <p className="text-xs text-[var(--cf2-text-tertiary)] mt-0.5">
+          {selectedEntidade === "lead"
+            ? "Campos de Lead aparecem na ficha do lead em Pré-vendas, em Respostas do formulário (\"Não preenchido\" até haver valor)."
+            : "Campos de Empresa e Negócio ficam disponíveis para automações e para a API; ainda não aparecem nas fichas."}
+        </p>
       </div>
 
       {/* Entidade tabs */}
@@ -144,7 +153,7 @@ export default function CamposCustomPage() {
                     {field.opcoes?.join(", ") || "—"}
                   </td>
                   <td className="px-2 py-3">
-                    <button onClick={() => handleDelete(field.id)} className="p-1 text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-danger-text)] transition-colors">
+                    <button onClick={() => handleDelete(field.id, field.label)} className="p-1 text-[var(--cf2-text-tertiary)] hover:text-[var(--cf2-danger-text)] transition-colors">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </td>

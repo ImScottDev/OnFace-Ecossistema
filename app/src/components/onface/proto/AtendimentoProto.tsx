@@ -32,6 +32,7 @@ import { nomeExibicao } from "@/components/crm2/atendimento/types";
 import { AtendimentoLiga } from "./AtendimentoLiga";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
+import { acaoCriarLead } from "@/app/(produto)/pre-vendas/actions";
 
 /* ── Utilidades de tradução ────────────────────────────────────────────── */
 
@@ -42,7 +43,10 @@ const ICO_TODAS = "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 
 /** "5511910861344" → "+55 (11) 91086-1344". Reusa a regra do inbox atual. */
 function fmtTel(t: string | null | undefined): string | null {
   if (!t) return null;
-  const d = t.replace(/\D/g, "");
+  let d = t.replace(/\D/g, "");
+  /* Base de Pré-vendas guarda "11999000000" (sem país); sem o 55 a máscara não casava e
+     saía "1199 9000 000". */
+  if (d.length === 10 || d.length === 11) d = "55" + d;
   return d ? nomeExibicao(d, d) : null;
 }
 
@@ -310,6 +314,17 @@ class AtendimentoLigado extends AtendimentoLiga {
    */
   depois() {}
 
+  /* O aviso do protótipo é o toast do produto. A base não define `diz` (só `E.avisar`
+     chama `this.diz`): sem isto cada confirmação ("Conversa vinculada", "Tag
+     adicionada", "Status: …") lançava `this.diz is not a function` DEPOIS de gravar. */
+  diz(texto: string, tom?: string) {
+    /* Estas o Liga anuncia ANTES do servidor responder; o adaptador avisa depois, com o
+       resultado de verdade (inclusive a recusa 409). */
+    if (/^(Lead .* criado em Pré-vendas|Conversa vinculada a |Nota interna salva)/.test(texto)) return;
+    if (tom === "erro") toast.error(texto);
+    else toast(texto);
+  }
+
   componentDidMount() {
     super.componentDidMount?.();
     this.avisarSelecao();
@@ -318,6 +333,12 @@ class AtendimentoLigado extends AtendimentoLiga {
   componentDidUpdate(pp: any, ps: any) {
     super.componentDidUpdate?.(pp, ps);
     this.avisarSelecao();
+    /* Busca de lead no seletor (Vincular / Nova conversa): vai ao servidor. */
+    const st: any = this.state;
+    for (const k of ["vinc", "nova"]) {
+      const q = st?.[k]?.busca;
+      if (typeof q === "string" && q !== ps?.[k]?.busca) this.props.buscarLeads?.(q);
+    }
   }
 
   componentWillUnmount() {
@@ -573,10 +594,10 @@ class AtendimentoLigado extends AtendimentoLiga {
           });
         }
       }
-      /* 10c. "Próxima ação": `atvs` traz a próxima tarefa aberta do lead; o
-              Liga mostra `atv.hora` como quando. "Ver"/"Criar" vão para Tarefas
-              (o Atendimento não tem peça de atividade). */
-      v.cv.acaoBtn = () => self.props.ir?.("/tarefas");
+      /* 10c. "Próxima ação": `atvs` traz a próxima tarefa aberta do lead; o Liga mostra
+              `atv.hora` como quando. "Ver"/"Criar" abrem a PEÇA de atividade (a mesma de
+              Pré-vendas) por cima da conversa: o `acaoBtn` do Liga chama `E.abrir`. Antes
+              mandavam para /tarefas, e a atividade nunca nascia na conversa. */
     }
 
     /* 11. Áudio: duração e posição do arquivo real (ver `tocar`). */
@@ -595,7 +616,6 @@ class AtendimentoLigado extends AtendimentoLiga {
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
 const SEM_COMMAND: Record<string, string> = {
-  leads: "Criar lead pelo Atendimento ainda não está ligado. Use Pré-vendas.",
   atvs: "A atividade não foi criada: o Atendimento ainda não grava atividade. Use Tarefas.",
   cadencias: "Cadência por conversa de WhatsApp ainda não está ligada.",
   qual: "Qualificação é feita na ficha do lead, em Pré-vendas.",
@@ -629,13 +649,24 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
      na ficha espera a conversa daquela pessoa, não a caixa inteira. Se o lead
      ainda não tem conversa, a lista fica como está — avisar seria ruído: o
      operador acabou de clicar e vê a tela. */
+  const jaAbriu = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!leadInicial) return;
+    /* Só depois de montar: antes disso `instRef` está vazio e a seleção caía no
+       vazio (abria a primeira conversa da lista, não a do lead). Uma vez por lead:
+       cada `router.refresh` traz `dados` novo e não pode devolver o operador para cá. */
+    if (!leadInicial || !montado || jaAbriu.current === leadInicial) return;
     const alvo = renderizadoRef.current.find((c: any) => c.lead === leadInicial || c.id === leadInicial);
-    if (alvo) instRef.current?.setState({ sel: alvo.id });
-  }, [leadInicial, dados]);
+    if (alvo && instRef.current) { jaAbriu.current = leadInicial; instRef.current.setState({ sel: alvo.id }); return; }
+    /* Veio de "WhatsApp"/"E-mail" de uma ficha e o lead não tem conversa — e o
+       servidor também não conseguiu abrir uma (sem número conectado ou sem
+       telefone). Dizer isso: cair na caixa em silêncio parecia botão quebrado. */
+    const temConversa = (dados?.conversas ?? []).some((c: any) => c.leadId === leadInicial);
+    if (!temConversa) toast.warning("Este lead ainda não tem conversa. Conecte um número de WhatsApp (Ajustes) e confirme que o lead tem telefone.", { id: "sem-conversa" });
+  }, [leadInicial, dados, montado]);
 
   const leadsPorId = React.useMemo(() => new Map(dados.leads.map((l) => [l.id, l])), [dados.leads]);
+  const leadsPorIdRef = React.useRef(leadsPorId);
+  leadsPorIdRef.current = leadsPorId;
   const idPorNome = React.useMemo(() => new Map(dados.equipe.map((u) => [u.nome, u.id])), [dados.equipe]);
   const labelPorNome = React.useMemo(() => new Map(dados.labels.map((l) => [l.nome, l.id])), [dados.labels]);
 
@@ -652,7 +683,32 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
   })), [base, threads, local]);
   renderizadoRef.current = conversas;
 
-  const leads = React.useMemo(() => leadsDoDesenho(dados.conversas, leadsPorId), [dados.conversas, leadsPorId]);
+  /* O seletor "Vincular a lead" só enxergava os leads que já têm conversa (universo do
+     desenho). Quem digita no campo dispara a busca em TODOS os leads
+     (/api/atendimento/buscar-leads) e o resultado entra aqui. */
+  const [leadsBuscados, setLeadsBuscados] = React.useState<any[]>([]);
+  const leadsBuscadosRef = React.useRef<any[]>([]);
+  leadsBuscadosRef.current = leadsBuscados;
+  const ultimaBusca = React.useRef("");
+  const buscarLeadsRemoto = React.useCallback(async (q: string) => {
+    const termo = q.trim();
+    if (termo.length < 2 || termo === ultimaBusca.current) return;
+    ultimaBusca.current = termo;
+    try {
+      const r = await fetch(`/api/atendimento/buscar-leads?search=${encodeURIComponent(termo)}`);
+      if (!r.ok) return;
+      const j = await r.json();
+      setLeadsBuscados((j.leads ?? []).map((l: any) => ({
+        id: l.id, pessoa: l.nome, cargo: l.cargo ?? "", empresa: l.empresaNome ?? null,
+        tel: fmtTel(l.telefone), telefone: l.telefone, email: null, leadReal: true,
+      })));
+    } catch { /* sem rede: a lista local continua valendo */ }
+  }, []);
+  const leadsDaConversa = React.useMemo(() => leadsDoDesenho(dados.conversas, leadsPorId), [dados.conversas, leadsPorId]);
+  const leads = React.useMemo(() => {
+    const ids = new Set(leadsDaConversa.map((l: any) => l.id));
+    return leadsDaConversa.concat(leadsBuscados.filter((l) => !ids.has(l.id)));
+  }, [leadsDaConversa, leadsBuscados]);
 
   const tagsLead = React.useMemo(() => {
     const t: Record<string, string[]> = {};
@@ -698,7 +754,20 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
       const j = await r.json();
       const linhas: any[] = (j.messages ?? []).slice().reverse();
       const porId = new Map(linhas.map((m) => [m.id, m]));
-      setThreads((t) => ({ ...t, [id]: linhas.map((m) => msgDoBanco(m, porId)) }));
+      const msgs = linhas.map((m) => ({ ...msgDoBanco(m, porId), ts: m.createdAt as string }));
+      /* Notas internas do lead entram na linha do tempo da conversa (a ficha as mostra também). */
+      const lid = renderizadoRef.current.find((c: any) => c.id === id)?.lead;
+      if (lid && leadsPorIdRef.current.has(lid)) {
+        try {
+          const rn = await fetch(`/api/notas?leadId=${encodeURIComponent(lid)}`);
+          if (rn.ok) {
+            const nn: any[] = await rn.json();
+            for (const n of nn) msgs.push({ de: "nota", t: n.conteudo, h: hhmm(n.createdAt), dia: diaDe(n.createdAt), autor: n.autorNome ?? undefined, ts: n.createdAt } as any);
+            msgs.sort((a: any, b: any) => (a.ts && b.ts ? new Date(a.ts).getTime() - new Date(b.ts).getTime() : 0));
+          }
+        } catch { /* a conversa abre sem as notas */ }
+      }
+      setThreads((t) => ({ ...t, [id]: msgs }));
       // Abrir a conversa zera o não-lido no servidor (a própria rota faz isso).
       // A mensagem otimista sai: a thread do banco já a contém (ou não, se falhou).
       setLocal((l) => { const { msgs: _m, ...resto } = l[id] ?? {}; return { ...l, [id]: { ...resto, naoLidas: 0 } }; });
@@ -720,6 +789,8 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
     chamar(`/api/atendimento/conversas/${id}/acao`, { method: "POST", body: JSON.stringify(body) }, "A ação não foi aceita."), [chamar]);
   const enviar = React.useCallback((body: Record<string, unknown>) =>
     chamar("/api/whatsapp/send", { method: "POST", body: JSON.stringify(body) }, "A mensagem não foi enviada."), [chamar]);
+
+  const leadsCriadosRef = React.useRef(new Map<string, Promise<string | null>>());
 
   /**
    * Toda gravação do desenho passa por aqui — é o `gravarOpp` desta tela.
@@ -771,7 +842,15 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
       for (const m of novas) {
         if (m.de === "in") continue; // resposta fabricada do cliente
         if (m.de === "out" && m.ia) { avisos.add("O NEXO não está ligado: nenhuma mensagem de IA foi enviada."); continue; }
-        if (m.de === "nota") { avisos.add("Nota interna ainda não é gravada no Atendimento. Use as notas do lead."); continue; }
+        if (m.de === "nota") {
+          /* Nota interna = nota do LEAD (tabela `notas`, a mesma da ficha). Conversa sem
+             lead não tem onde guardar: avisar, em vez de mostrar uma nota que some. */
+          const lid = antes.lead;
+          if (!lid || !leadsPorId.has(lid)) { avisos.add("Vincule a conversa a um lead (Criar lead ou Vincular) para guardar a nota interna."); continue; }
+          trabalhos.push(chamar("/api/notas", { method: "POST", body: JSON.stringify({ conteudo: m.t, leadId: lid }) }, "A nota não foi salva.")
+            .then(() => { toast.success("Nota salva no lead"); recarregar.add(antes.id); }));
+          continue;
+        }
         if (m.de === "out") {
           enviou = true;
           /* Áudio gravado e arquivo anexado passaram a trazer o conteúdo
@@ -848,7 +927,20 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
       if (depois.numero !== antes.numero) avisos.add("Trocar o número de envio não tem command: cada número é a sessão de WhatsApp de uma pessoa.");
       if (depois.prioridade !== antes.prioridade) avisos.add("Prioridade não existe no domínio do atendimento; nada foi gravado.");
       if (depois.ia && !antes.ia) avisos.add("O NEXO não está ligado nesta organização.");
-      if (depois.lead !== antes.lead) avisos.add("Vincular conversa a lead ainda não está ligado aqui. Use Pré-vendas.");
+      if (depois.lead !== antes.lead) {
+        /* Vincular grava contatos.lead_id (ação link_lead). Desvincular não tem command. */
+        const criando = depois.lead ? leadsCriadosRef.current.get(depois.lead) : undefined;
+        if (depois.lead && (dados.leads.some((l) => l.id === depois.lead) || leadsBuscadosRef.current.some((l) => l.id === depois.lead))) {
+          trabalhos.push(acao(antes.id, { acao: "link_lead", leadId: depois.lead }).then(() => { toast.success("Conversa vinculada ao lead"); }));
+          delta.lead = depois.lead;
+        } else if (criando) {
+          /* Lead criado agora pelo "Criar lead": vincula quando o id real existir. */
+          trabalhos.push(criando.then((id) => {
+            if (!id) throw new Error("O lead não foi criado; a conversa não foi vinculada.");
+            return acao(antes.id, { acao: "link_lead", leadId: id }).then(() => { toast.success("Conversa vinculada ao lead"); });
+          }));
+        } else if (!depois.lead) avisos.add("Desvincular a conversa de um lead ainda não está ligado.");
+      }
 
       if (Object.keys(delta).length) setLocal((l) => ({ ...l, [antes.id]: { ...(l[antes.id] ?? {}), ...delta } }));
     }
@@ -902,12 +994,38 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
     router.refresh();
   }, [templates, chamar, router]);
 
+  /* "Criar lead" do painel da conversa: o desenho manda o lead novo com id local.
+     Vira acaoCriarLead (a mesma porta de Pré-vendas, com origem WhatsApp); o id real
+     é entregue a quem for vincular a conversa. */
+  const criarLeadsNovos = React.useCallback((lista: any[]) => {
+    for (const l of lista) {
+      if (!l?.id || leadsPorId.has(l.id) || leadsCriadosRef.current.has(l.id)) continue;
+      const eu = dados.eu.id;
+      leadsCriadosRef.current.set(l.id, acaoCriarLead({
+        empresa: String(l.empresa ?? "").trim(), pessoaNome: String(l.pessoa ?? "").trim(),
+        cargo: l.cargo || null, email: l.email || null,
+        /* Só dígitos: o campo traz a máscara "+55 (11) 90000-0088" e o contato da conversa
+           guarda "5511900000088". */
+        telefone: String(l.tel ?? "").replace(/\D/g, "") || null,
+        origem: "WhatsApp", permitirSemEmpresa: true,
+        /* O modal mostra "Responsável" e "Interesse": os dois eram descartados. */
+        responsavelId: (l.resp && idPorNome.get(l.resp)) || eu,
+        servicosInteresse: l.interesse && l.interesse !== "Não identificado" ? [l.interesse] : null,
+      }).then((r) => {
+        if (!r.ok) { toast.error(r.erro ?? "Não consegui criar o lead."); return null; }
+        toast.success("Lead criado em Pré-vendas");
+        return r.dados?.leadId ?? null;
+      }));
+    }
+  }, [leadsPorId, dados.eu.id, idPorNome]);
+
   const gravar = React.useCallback((patch: Record<string, any>) => {
+    if (patch.leads) criarLeadsNovos(patch.leads);
     if (patch.conversas) void gravarConversas(patch.conversas);
     if (patch.tagsLead) void gravarTags(patch.tagsLead);
     if (patch.templates) void gravarTemplates(patch.templates);
     for (const k of Object.keys(SEM_COMMAND)) if (k in patch) toast(SEM_COMMAND[k]);
-  }, [gravarConversas, gravarTags, gravarTemplates]);
+  }, [gravarConversas, gravarTags, gravarTemplates, criarLeadsNovos]);
 
   /* ── Navegação ── */
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
@@ -916,6 +1034,12 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
     if (peca === "detalhe" && id) {
       if (leadsPorId.has(id)) { router.push(`/pessoas/${id}`); return; }
       toast("Este contato ainda não é lead no CRM.");
+      return;
+    }
+    /* Atividade guarda vínculo com um LEAD (é a tabela `tarefas`): conversa de contato sem
+       cadastro não tem a quem prender a tarefa. */
+    if (peca.startsWith("atividade") && !(id && leadsPorId.has(id))) {
+      toast("Vincule a conversa a um lead (Criar lead ou Vincular) para criar a atividade.");
       return;
     }
     abrirPeca(peca, id, { tela: "atendimento", leadId: id && leadsPorId.has(id) ? id : null });
@@ -988,6 +1112,7 @@ export function AtendimentoProto({ dados, contexto, leadInicial = null }: {
         primeiraResposta={primeiraResposta}
         registrar={(i: any) => { instRef.current = i; }}
         aoSelecionar={carregarThread}
+        buscarLeads={buscarLeadsRemoto}
         gravar={gravar}
         abrir={abrir}
         abrirExterno={(url: string) => window.open(url, "_blank", "noopener")}

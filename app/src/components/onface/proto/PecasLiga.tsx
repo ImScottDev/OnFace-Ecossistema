@@ -22,8 +22,11 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
+import { formatPhoneDisplay } from "@/lib/whatsapp/phone-utils";
 import { toast } from "sonner";
 
+import { urlLigarCallface } from "@/lib/callface-ligar";
 import { PecasDesenho } from "./PecasDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
@@ -86,7 +89,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -208,13 +211,13 @@ class Logica extends React.Component<any, any> {
     if (peca === "nutrir") return this.setState(Object.assign({}, base, { nutrir: true, motivo: null, data: "" }));
     if (peca === "desqualificar") return this.setState(Object.assign({}, base, { desqAberto: true, desqMotivo: null, desqObs: "" }));
     if (peca !== "oportunidade") window.__ofContatoOpp = null;
-    if (peca === "qualificar") return this.setState(Object.assign({}, base, { qualContato: null, qualAberto: true, qualDados: {}, qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {}, qualDestino: null }));
+    if (peca === "qualificar") return this.setState(Object.assign({}, base, { qualContato: null, qualAberto: true, qualDados: this.qualDadosIniciais(leadId), qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {}, qualDestino: null }));
     if (peca === "oportunidade") {
       const L = (this.state.leads || []).find(x => x.id === leadId);
       if (!L || !L.empresa) return this.diz("Bloqueado: lead sem empresa associada", "erro");
       const jaQualificado = L.etapa === "qualificado";
       return this.setState(Object.assign({}, base, {
-        qualAberto: true, qualDados: {}, qualMenu: false, qualTentou: false, qualOpp: {},
+        qualAberto: true, qualDados: this.qualDadosIniciais(leadId), qualMenu: false, qualTentou: false, qualOpp: {},
         qualPasso: jaQualificado ? "opp" : "dados", qualDestino: "opp",
         qualOkTitulo: "Oportunidade criada", qualOkNota: "O lead seguiu para o Pipeline.",
         qualContato: window.__ofContatoOpp || null, qualEmpresa: null
@@ -233,6 +236,7 @@ class Logica extends React.Component<any, any> {
       return this.setState(Object.assign({}, base, { atvAberta: true, atvModo: nova ? "editar" : "ver", atvDraft: nova ? this.atvVazia(L) : null }));
     }
     if (peca === "cadencia") { const alvo = window.__ofCadAlvo || null; window.__ofCadAlvo = null; return this.setState(Object.assign({}, base, { cadModal: true, cadEscolha: null, cadAlvo: alvo })); }
+    if (peca === "cadencia") this.carregarCadencias();
   }
 
   /** O aviso do protótipo é o toast do produto. */
@@ -268,6 +272,20 @@ class Logica extends React.Component<any, any> {
     });
   }
 
+  /* Valores iniciais do modal "Qualificar lead"/"Criar oportunidade" a partir
+     do que já existe no drawer (`qual[id]`: interesse/tamanho/dor/fit). Sem
+     isto o modal abria em branco mesmo com a qualificação preenchida. */
+  qualDadosIniciais(leadId) {
+    const q = ((this.state && this.state.qual) || {})[leadId] || {};
+    const d = {};
+    if (typeof q.interesse === "string" && q.interesse) d.interesses = q.interesse.split("|").filter(Boolean);
+    const n = parseInt(String(q.tamanho == null ? "" : q.tamanho).replace(/[^0-9]/g, ""), 10);
+    if (!isNaN(n) && n > 0) d.porte = n;
+    if (typeof q.dor === "string" && q.dor) d.dor = q.dor;
+    if (typeof q.fit === "string" && q.fit) d.fit = q.fit;
+    return d;
+  }
+
   setAtv(id, patch, padrao) {
     this.setState(s => {
       const base = Object.assign({}, padrao || {}, s.atvs[id] || {});
@@ -275,9 +293,19 @@ class Logica extends React.Component<any, any> {
     });
   }
 
+  /* Cadências publicadas, WhatsApp e e-mail do usuário: lidos do sistema ao abrir o modal. */
+  carregarCadencias() {
+    const f = this.props && this.props.acoes && this.props.acoes.cadenciasDoSistema;
+    if (typeof f !== "function") return;
+    this.setState({ cadCarregando: true });
+    Promise.resolve(f()).then(r => {
+      this.setState({ cadReal: r && r.ok ? r.dados : { cadencias: [], whatsapps: [], email: null }, cadCarregando: false });
+    }).catch(() => this.setState({ cadCarregando: false }));
+  }
+
   renderVals() {
     const S = this.state;
-    const iniciaisDe = (n) => n ? n.split(" ").filter(Boolean).slice(0, 2).map(p => [...p][0]).join("").toUpperCase() : "—";
+    const iniciaisDe = (n) => n ? n.split(" ").map(p => p.replace(/^[^\p{L}\p{N}]+/u, "")).filter(Boolean).slice(0, 2).map(p => [...p][0]).join("").toUpperCase() : "—";
     const L0 = S.leads.find(x => x.id === S.detalheId) || S.leads[0];
     const rotuloEtapa = { novo: "Novo", em_contato: "Em contato", qualificacao: "Qualificação", qualificado: "Qualificado", oportunidade: "Oportunidade", nutricao: "Nutrição", desqualificado: "Desqualificado" };
     const corEtapa = { novo: "#4a5560", em_contato: "#4c8fe0", qualificacao: "#9b8bd8", qualificado: "#2f9e7a", oportunidade: "#fe4f2b", nutricao: "#c8a86a", desqualificado: "#4a5560" };
@@ -309,58 +337,41 @@ class Logica extends React.Component<any, any> {
     const mudaAtv = (patch) => ehDraft
       ? this.setState(s => ({ atvDraft: Object.assign({}, s.atvDraft, patch) }))
       : this.setAtv(L0.id, patch, atvPadrao);
+    const DR = L0 && S.detalheReal ? S.detalheReal[L0.id] || null : null;
     const det = L0 ? {
       pessoa: L0.pessoa, cargo: L0.cargo,
       empresa: L0.empresa || "Sem empresa",
       semEmpresa: !L0.empresa,
       iniciais: iniciaisDe(L0.pessoa),
       avatarStyle: "flex:0 0 auto;width:38px;height:38px;border-radius:9999px;display:grid;place-items:center;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;background:#eeeff3;color:#4a5560",
-      telefone: "+55 11 9" + (7000 + (L0.id.charCodeAt(1) * 37) % 2999) + "-" + (1000 + (L0.id.charCodeAt(1) * 53) % 8999),
-      email: slug(L0.pessoa.split(" ")[0]) + "@" + slug(L0.empresa || "semempresa") + ".com.br",
+      /* Contato REAL do lead (detalheLead). O protótipo fabricava telefone e
+         e-mail a partir do id e do nome — a gaveta mostrava número e
+         luiz@eupromovo.com.br que ninguém cadastrou. Sem dado: "—". */
+      telefone: (DR && DR.pessoa && (DR.pessoa.telefone || DR.pessoa.whatsapp) ? formatPhoneDisplay(DR.pessoa.telefone || DR.pessoa.whatsapp) : "—"),
+      email: (DR && DR.pessoa && DR.pessoa.email) || "—",
       toques: [
         { label: "Ligar", d: "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39", onClick: () => {
-          let num = ("+55 11 9" + (7000 + (L0.id.charCodeAt(1) * 37) % 2999) + "-" + (1000 + (L0.id.charCodeAt(1) * 53) % 8999)).replace(/\D/g, "");
-          if (num.length > 11 && num.indexOf("55") === 0) num = num.slice(2);
-          (this.E ? this.E.abrirExterno("https://app.callface.ai/calls?call_to=" + num) : window.open("https://app.callface.ai/calls?call_to=" + num, "_blank"));
+          const url = urlLigarCallface(DR && DR.pessoa && (DR.pessoa.telefone || DR.pessoa.whatsapp));
+          if (!url) return this.diz((L0.pessoa || "Este lead").split(" ")[0] + " não tem telefone cadastrado", "erro");
+          /* WhatsApp e E-mail registram o primeiro contato ao clicar; Ligar não registrava
+             nada, e o SLA de quem foi contatado por telefone ficava sem marco. */
+          const R = this.props && this.props.acoes && this.props.acoes.registrarContato;
+          if (R) void Promise.resolve(R(L0.id, "ligacao")).catch(() => undefined);
+          this.E.abrirExterno(url);
           this.diz("Abrindo o Callface para ligar para " + (L0.pessoa || "").split(" ")[0], "ok");
         } },
-        { label: "WhatsApp", d: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", onClick: () => { const E = this.E; if (E) E.irPara("/atendimento", "Atendimento", { lead: L0.id, canal: "WhatsApp" }); } },
-        { label: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6", onClick: () => { const E = this.E; if (E) E.irPara("/atendimento", "Atendimento", { lead: L0.id, canal: "E-mail" }); } }
+        { label: "WhatsApp", d: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", onClick: () => { const F = this.props && this.props.falar; if (F) return F("whatsapp", L0.id); const E = this.E; if (E) E.irPara("/atendimento", "Atendimento", { lead: L0.id, canal: "WhatsApp" }); } },
+        { label: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6", onClick: () => { const F = this.props && this.props.falar; if (F) return F("email", L0.id); const E = this.E; if (E) E.irPara("/atendimento", "Atendimento", { lead: L0.id, canal: "E-mail" }); } }
       ],
       cad: (() => {
         const ic = {"wa":"M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z","tel":"M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39","mail":"M4 4h16v16H4zM4 7l8 6 8-6","task":"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"};
-        const fluxos = [
-          { k: "Primeiro contato", cor: "#4c8fe0", descricao: "Abertura em três canais nos primeiros cinco dias — para lead inbound recém-chegado.",
-            passos: [
-              ["Dia 0", "WhatsApp de abertura", "Mensagem curta citando a campanha de origem", "wa"],
-              ["Dia 0", "Ligação de conexão", "Tentativa no mesmo dia, até 2 toques", "tel"],
-              ["Dia 2", "E-mail com case", "Case do segmento do lead", "mail"],
-              ["Dia 4", "WhatsApp de retomada", "Pergunta única, sem material", "wa"],
-              ["Dia 5", "Tarefa de decisão", "Seguir, nutrir ou desqualificar", "task"]
-            ] },
-          { k: "Prospecção inbound", cor: "#9b8bd8", descricao: "Cadência longa para lead que baixou material mas não pediu contato.",
-            passos: [
-              ["Dia 0", "E-mail de boas-vindas", "Confirma o material e oferece conversa", "mail"],
-              ["Dia 3", "WhatsApp leve", "Checagem de interesse", "wa"],
-              ["Dia 7", "Ligação", "Janela comercial da manhã", "tel"],
-              ["Dia 10", "Tarefa de decisão", "Encerrar ou mover para nutrição", "task"]
-            ] },
-          { k: "Pós-proposta", cor: "#fe4f2b", descricao: "Acompanhamento após proposta enviada — pressão leve e prazo claro.",
-            passos: [
-              ["Dia 1", "WhatsApp de confirmação", "Confirma o recebimento da proposta", "wa"],
-              ["Dia 3", "Ligação de dúvidas", "Abre espaço para objeção", "tel"],
-              ["Dia 6", "E-mail com prazo", "Reforça validade comercial", "mail"],
-              ["Dia 8", "Tarefa de decisão", "Fechar, renegociar ou perder", "task"]
-            ] },
-          { k: "Reativação", cor: "#c8a86a", descricao: "Retoma lead parado há mais de 30 dias, com toque único por semana.",
-            passos: [
-              ["Dia 0", "E-mail de retomada", "Novidade do produto desde o último contato", "mail"],
-              ["Dia 7", "WhatsApp", "Pergunta sobre o momento atual", "wa"],
-              ["Dia 14", "Tarefa de decisão", "Nutrir ou arquivar", "task"]
-            ] }
-        ];
-        const escolha = S.cadEscolha || "Primeiro contato";
-        const atual = fluxos.find(x => x.k === escolha) || fluxos[0];
+        /* Cadências REAIS do sistema (publicadas em Automações), carregadas ao
+           abrir o modal. O protótipo trazia quatro fluxos fixos que não
+           existiam no banco. Sem nenhuma, o modal diz isso em vez de inventar. */
+        const real = S.cadReal || { cadencias: [], whatsapps: [], email: null };
+        const fluxos = real.cadencias.map(c => ({ k: c.nome, id: c.id, descricao: "", passos: c.passos.map(p => [p.quando, p.titulo, "", p.canal]) }));
+        const escolha = S.cadEscolha || (fluxos[0] && fluxos[0].k) || "";
+        const atual = fluxos.find(x => x.k === escolha) || fluxos[0] || { k: S.cadCarregando ? "Carregando…" : "Nenhuma cadência publicada", id: null, descricao: S.cadCarregando ? "" : "Publique uma cadência em Automações para poder inserir leads nela.", passos: [] };
         const canaisDe = (fx) => {
           const c = {};
           fx.passos.forEach(p => { c[p[3]] = (c[p[3]] || 0) + 1; });
@@ -370,15 +381,16 @@ class Logica extends React.Component<any, any> {
         const cores = { wa: "background:#eeeff3;color:#4a5560", tel: "background:#eeeff3;color:#4a5560", mail: "background:#eeeff3;color:#4a5560", task: "background:#12171d;color:#fff" };
         const usa = canaisDe(atual);
         const numeros = S.cadOrigens || {};
+        /* Só o que é do próprio usuário: os WhatsApp dele e o e-mail dele. Telefone
+           não se escolhe — a ligação sai direto pelo Callface. */
         const bancos = {
-          wa: [["+55 11 4003-2210", "Comercial · SP"], ["+55 11 98877-1200", "Camila Reis"], ["+55 41 3030-8800", "Sul"]],
-          tel: [["+55 11 4003-2200", "Tronco comercial"], ["+55 11 4003-2244", "Discador pré-vendas"]],
-          mail: [["comercial@callface.com.br", "Caixa comercial"], ["camila@callface.com.br", "Camila Reis"]]
+          wa: real.whatsapps.map(w => [w.id, (w.numero || "Número não informado") + (w.rotulo ? " · " + w.rotulo : "")]),
+          mail: real.email ? [[real.email, "Seu e-mail"]] : []
         };
         const inp = "width:100%;height:36px;padding:0 30px 0 11px;border-radius:8px;background:#fff;outline:0;font-size:12.5px;font-family:inherit;border:1px solid #dbdede;appearance:none;cursor:pointer";
         const estiloSel = { width: "100%", height: "36px", padding: "0 30px 0 11px", borderRadius: "8px", background: "#fff", outline: 0, fontSize: "12.5px", fontFamily: "inherit", border: "1px solid #dbdede", appearance: "none", cursor: "pointer", color: "#1f252c" };
         const precisa = Object.keys(bancos).filter(k => usa[k]);
-        const valorDe = (k) => numeros[k] || bancos[k][0][0];
+        const valorDe = (k) => numeros[k] || (bancos[k][0] ? bancos[k][0][0] : "");
         return {
           aberto: !!S.cadModal,
           fechar: () => this.setState({ cadModal: false }),
@@ -416,22 +428,29 @@ class Logica extends React.Component<any, any> {
                 const v = e.target.value;
                 this.setState(s => ({ cadOrigens: Object.assign({}, s.cadOrigens, { [k]: v }) }));
               }
-            }, bancos[k].map(([v, nota]) => React.createElement("option", { key: v, value: v }, v + " · " + nota)))
+            }, bancos[k].length ? bancos[k].map(([v, nota]) => React.createElement("option", { key: v, value: v }, k === "wa" ? nota : v + " · " + nota)) : [React.createElement("option", { key: "x", value: "" }, k === "wa" ? "Você não tem WhatsApp conectado" : "Sem e-mail cadastrado")])
           })),
           rodape: atual.passos.length + " toques · primeiro disparo hoje",
           btnLabel: (cadAtual ? "Trocar para esta cadência" : "Inserir na cadência"),
           btnStyle: "height:34px;padding:0 15px;border-radius:8px;background:#d93c1a;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer",
-          confirmar: () => {
+          confirmar: async () => {
             const alvo = S.cadAlvo;
             const id = alvo ? alvo.chave : L0.id;
+            const emMassa = this.props.acoes && this.props.acoes.emMassa;
+            if (!atual.id) return this.diz("Não há cadência publicada para inserir", "erro");
+            if (typeof emMassa !== "function") return this.diz("Inserir em cadência não está disponível nesta tela", "erro");
+            const r = await emMassa("incluir_em_cadencia", [id], atual.id);
+            const item = r && r.ok && r.dados && r.dados.itens ? r.dados.itens[0] : null;
+            if (!item || item.desfecho === "falhou") return this.diz((item && item.motivo) || (r && r.erro) || "Não consegui inserir na cadência", "erro");
+            if (item.desfecho === "ignorado") return this.diz(item.motivo || "Já está em uma cadência ativa", "aviso");
             this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [id]: escolha }), cadModal: false, cadPausada: false, cadAlvo: null }));
-            this.diz((alvo ? alvo.nome : "Lead") + " inserido em " + escolha + " — primeiro toque sai hoje", "ok");
+            this.diz((alvo ? alvo.nome : "Lead") + " inserido em " + escolha, "ok");
           }
         };
       })(),
 
       sec: (() => {
-        const padrao = { cad: true, acao: true, qualif: false, timeline: false };
+        const padrao = { resp: true, cad: true, acao: true, qualif: false, timeline: false };
         const est = S.secDrawer || {};
         const mk = (k) => {
           const aberta = est.hasOwnProperty(k) ? est[k] : padrao[k];
@@ -442,13 +461,17 @@ class Logica extends React.Component<any, any> {
             alternar: () => this.setState(s => ({ secDrawer: Object.assign({}, padrao, s.secDrawer, { [k]: !aberta }) }))
           };
         };
-        return { cad: mk("cad"), acao: mk("acao"), qualif: mk("qualif"), timeline: mk("timeline") };
+        return { resp: mk("resp"), cad: mk("cad"), acao: mk("acao"), qualif: mk("qualif"), timeline: mk("timeline") };
       })(),
+      /* Respostas do formulário de origem (Meta/RD/site): lista aberta, nasce das
+         chaves gravadas em `campos_custom` — formulário novo aparece sozinho. */
+      respostas: (DR && DR.respostasFormulario) || [],
+      respResumo: (() => { const n = ((DR && DR.respostasFormulario) || []).length; return n === 0 ? "Sem formulário" : n === 1 ? "1 resposta" : n + " respostas"; })(),
       cadResumo: (cadAtual ? cadAtual : "Fora de cadência"),
       acaoResumo: L0.acao ? (L0.venceEm ? L0.acao + " · " + L0.venceEm : L0.acao) : "Sem próxima ação",
       acaoResumoStyle: "font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px;"
         + (L0.acao ? "color:#67787c" : "color:#c2330f;font-weight:600"),
-      timelineConta: "5 eventos",
+      timelineConta: (() => { const n = ((S.timelineReal && S.timelineReal[S.detalheId]) || []).length; return n === 0 ? "Sem eventos ainda" : n === 1 ? "1 evento" : n + " eventos"; })(),
       etapa: rotuloEtapa[L0.etapa],
       etapaPonto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + corEtapa[L0.etapa],
       trocarEtapa: (e) => {
@@ -511,10 +534,14 @@ class Logica extends React.Component<any, any> {
       origemSelo: "display:inline-flex;align-items:center;height:19px;padding:0 8px;border-radius:6px;background:#eeeff3;color:#4a5560;font-size:11px;font-weight:700;white-space:nowrap",
       origemDetalhe: (() => {
         const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-        const base = new Date(2026, 8, 22, 9, 14);
-        const d = new Date(base.getTime() - L0.dias * 864e5 - (L0.id.charCodeAt(1) % 7) * 36e5);
-        const entrada = d.getDate() + " " + meses[d.getMonth()] + " " + d.getFullYear() + " · "
-          + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+        /* Entrada REAL: `criadoEm` do detalhe. Antes era uma data fabricada a partir
+           de `dias` e do id (todo lead "entrava" em 22 set). Sem detalhe carregado
+           ainda, "—". */
+        const real = DR && DR.criadoEm ? new Date(DR.criadoEm) : null;
+        const entrada = real && !Number.isNaN(real.getTime())
+          ? real.getDate() + " " + meses[real.getMonth()] + " " + real.getFullYear() + " · "
+            + String(real.getHours()).padStart(2, "0") + ":" + String(real.getMinutes()).padStart(2, "0")
+          : "—";
         /* ANTES: um dicionário por origem inventava conjunto e criativo ("Formulário
            de contato", "Landing page de PABX"). Não era o anúncio de ninguém. Os
            ids reais da Meta e as UTMs chegam no lead; sem eles, "—". */
@@ -530,9 +557,12 @@ class Logica extends React.Component<any, any> {
         }));
       })(),
       tags: (() => {
-        const base = (L0.tag ? [L0.tag] : []).concat([L0.interesse]);
-        const extras = (S.tagsLead || {})[L0.id] || [];
-        const AUTO = ["Reunião pedida", "Sem orçamento", "Enterprise", "Reativar"];
+        /* Tags REAIS do lead (labels, via detalheLead). Antes a gaveta juntava a
+           origem ("Mídia Paga") e o interesse como se fossem tags, mais um estado
+           local que nunca chegava ao banco — daí a tag aplicada não aparecer. */
+        const base = DR && DR.tags ? DR.tags.map(t => t.nome) : [];
+        const extras = [];
+        const AUTO = [];
         return base.concat(extras.filter(t => base.indexOf(t) < 0)).filter(Boolean).map(t => { const au = AUTO.indexOf(t) >= 0; return { label: t, auto: au,
           style: "display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:9999px;font-size:12px;font-weight:600;white-space:nowrap;flex:0 0 auto;" + (au ? "background:#fff6f4;color:#c2330f;box-shadow:inset 0 0 0 1px #f6d3c9" : "background:#eeeff3;color:#1f252c") }; });
       })(),
@@ -571,6 +601,7 @@ class Logica extends React.Component<any, any> {
       addTagIcone: "transition:transform .14s cubic-bezier(.2,0,.2,1);transform:rotate(" + (S.tagMenu === L0.id ? 45 : 0) + "deg)",
       addTag: (e) => {
         e.stopPropagation();
+        { const E = this.E; if (E) { E.abrir("tagslead", L0.id); return; } }
         const r = e.currentTarget.getBoundingClientRect();
         this.setState(s => ({
           tagMenu: s.tagMenu === L0.id ? null : L0.id,
@@ -642,8 +673,16 @@ class Logica extends React.Component<any, any> {
       })) : [],
       cadBotao: S.cadPausada ? "Retomar" : "Pausar",
       pausarCad: () => { const n = !S.cadPausada; this.setState({ cadPausada: n }); this.diz(n ? "Cadência pausada — nenhum toque automático sai" : "Cadência retomada", n ? "aviso" : "ok"); },
-      abrirPicker: () => this.setState({ cadModal: true, cadEscolha: cadAtual || "Primeiro contato" }),
-      removerCad: () => { this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [L0.id]: null }), cadPicker: false })); this.diz("Lead removido da cadência", "aviso"); },
+      abrirPicker: () => { this.setState({ cadModal: true, cadEscolha: cadAtual || null }); this.carregarCadencias(); },
+      removerCad: async () => {
+        const rem = this.props.acoes && this.props.acoes.removerDaCadencia;
+        if (typeof rem === "function") {
+          const r = await rem(L0.id);
+          if (!r || !r.ok) return this.diz((r && r.erro) || "Não consegui remover da cadência", "erro");
+        }
+        this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [L0.id]: null }), cadPicker: false }));
+        this.diz("Lead removido da cadência", "aviso");
+      },
       cadOpcoes: [
         ["Prospecção inbound", "5 toques"], ["Primeiro contato", "3 toques"],
         ["Reengajamento", "5 toques"], ["Pós-proposta", "4 toques"]
@@ -663,8 +702,8 @@ class Logica extends React.Component<any, any> {
       tipoSelo: "flex:0 0 auto;display:inline-flex;align-items:center;height:19px;padding:0 7px;border-radius:5px;background:#eeeff3;color:#4a5560;font-size:10.5px;font-weight:700;white-space:nowrap",
       acaoTexto: "flex:1;min-width:0;font-size:13px;line-height:1.4;text-wrap:pretty;font-weight:" + (L0.acao ? "500;color:#12171d" : "600;color:#c2330f"),
       acaoBotao: L0.acao ? "Ver" : "Criar",
-      verAcao: () => this.setState({ atvAberta: true, atvModo: L0.acao ? "ver" : "editar", atvDraft: L0.acao ? null : this.atvVazia(L0) }),
-      criarAtv: () => this.setState({ atvAberta: true, atvModo: "editar", atvDraft: this.atvVazia(L0) }),
+      verAcao: () => this.abrirPeca(L0.acao ? "atividade-ver" : "atividade-nova", L0.id),
+      criarAtv: () => this.abrirPeca("atividade-nova", L0.id),
 
       qualProg: qualPreenchidos + " de 4 campos",
       qualProgSelo: "flex:0 0 auto;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:5px;font-size:10.5px;font-weight:700;white-space:nowrap;background:"
@@ -737,20 +776,15 @@ class Logica extends React.Component<any, any> {
         : this.setState({ vincAberto: true, vincModo: "vincular", vincBusca: "", vincSel: null, vincNova: { nome: "", cnpj: "", site: "", segmento: "" }, vincTentou: false }),
       abrirContato: () => { this.setState({ detalhe: false }); const E = this.E; if (E) E.irPara("/onface-preview/pessoa", "Contato", { lead: L0.id, pessoa: slug(L0.pessoa || "") }); },
 
-      temMaisTimeline: true,
+      temMaisTimeline: (((S.timelineReal && S.timelineReal[S.detalheId]) || []).length > 5),
       timelineBotao: S.timelineTudo ? "Ver menos" : "Ver tudo",
       verTimeline: () => this.setState(s => ({ timelineTudo: !s.timelineTudo })),
       timeline: (() => {
-        const base = [
-          { hora: "13:42", titulo: "WhatsApp recebido — pediu proposta", ator: "HUMAN", autor: L0.pessoa.split(" ")[0] },
-          { hora: "13:18", titulo: "Ligação realizada · 4min 12s", ator: "HUMAN", autor: L0.resp || "—" },
-          { hora: "12:55", titulo: 'Tag "' + (L0.tag || L0.interesse) + '" adicionada', ator: "AI_AGENT", autor: "ONI" },
-          { hora: "11:30", titulo: "Cadência " + (L0.etapa === "novo" ? "Prospecção inbound" : "Primeiro contato") + " iniciada", ator: "AUTOMATION", autor: "Fluxo" },
-          { hora: "ontem", titulo: "Lead criado via " + L0.origem, ator: "SYSTEM", autor: "—" },
-          { hora: "ontem", titulo: "E-mail de boas-vindas entregue", ator: "AUTOMATION", autor: "Fluxo" },
-          { hora: "2 dias", titulo: "Formulário preenchido no site", ator: "HUMAN", autor: L0.pessoa.split(" ")[0] },
-          { hora: "2 dias", titulo: "Enriquecimento de dados concluído", ator: "AI_AGENT", autor: "ONI" }
-        ];
+        /* Linha do tempo REAL, injetada por PecasLigadas.abrirPeca via
+           acoes.detalhe. Antes havia 8 eventos chumbados aqui (WhatsApp
+           recebido, ligação de 4min, cadência iniciada), que apareciam iguais
+           em todo lead — dado inventado. Sem timeline real, mostra vazio. */
+        const base = (S.timelineReal && S.timelineReal[S.detalheId]) || [];
         const selo = { HUMAN: ["#eeeff3", "#4a5560"], AI_AGENT: ["#fdeae5", "#9c3210"], AUTOMATION: ["#efecfa", "#4f3fa8"], SYSTEM: ["#eef1f1", "#4a5560"] };
         return (S.timelineTudo ? base : base.slice(0, 5)).map((t, i, arr) => ({
           hora: t.hora, titulo: t.titulo,
@@ -783,12 +817,12 @@ class Logica extends React.Component<any, any> {
           + (s.ok ? (s.perigo ? "color:#9c3210;cursor:pointer" : "color:#1f252c;cursor:pointer") : "color:#a3a8a4;cursor:not-allowed"),
         onClick: () => {
           this.setState({ saidaMenu: false });
-          if (s.k === "qualificar") return this.setState({ qualAberto: true, qualDados: {}, qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {}, qualDestino: null });
+          if (s.k === "qualificar") return this.setState({ qualAberto: true, qualDados: this.qualDadosIniciais(L0.id), qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {}, qualDestino: null });
           if (s.k === "oportunidade") {
             if (!L0.empresa) return this.diz("Bloqueado: lead sem empresa associada", "erro");
             const jaQualificado = L0.etapa === "qualificado";
             return this.setState({
-              qualAberto: true, qualDados: {}, qualMenu: false, qualTentou: false, qualOpp: {},
+              qualAberto: true, qualDados: this.qualDadosIniciais(L0.id), qualMenu: false, qualTentou: false, qualOpp: {},
               qualPasso: jaQualificado ? "opp" : "dados", qualDestino: "opp",
               qualOkTitulo: "Oportunidade criada", qualOkNota: "O lead seguiu para o Pipeline."
             });
@@ -805,10 +839,10 @@ class Logica extends React.Component<any, any> {
       ["contrato_vigente", "Contrato vigente", true], ["decisao_interna", "Aguardando decisão interna", false],
       ["retomar_em_data", "Retomar em outra data", true], ["outro", "Outro", false]
     ];
-    const motivosNutricao = motivos.map(([k, l, exige]) => {
+    const motivosNutricao = motivos.map(([k, l]) => {
       const on = S.motivo === k;
       return {
-        label: l, exige,
+        label: l, exige: false,
         style: "display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:12.5px;width:100%;border:1px solid "
           + (on ? "#fe4f2b;background:#fff6f4;font-weight:600" : "#e3e7e8;background:#fff"),
         radio: "flex:0 0 auto;width:14px;height:14px;border-radius:50%;border:" + (on ? "4.5px solid #d93c1a" : "1.5px solid #c5cac7"),
@@ -816,18 +850,20 @@ class Logica extends React.Component<any, any> {
       };
     });
 
-    const sel = motivos.find(m => m[0] === S.motivo);
-    const exigeData = !!(sel && sel[2]);
-    const faltaData = exigeData && !S.data;
-    const podeNutrir = !!S.motivo && !faltaData;
+    // Data de retomada é opcional em todos os motivos (decisão do Scott, 07/10).
+    // Quando preenchida, o domínio cria a tarefa de retomada; quando não, o
+    // lead só entra em nutrição. Nada bloqueia por falta de data.
+    const exigeData = false;
+    const faltaData = false;
+    const podeNutrir = !!S.motivo;
 
     return {
-      det,
+      det: det || {},
       temDetalhe: S.detalhe,
       cad: det ? det.cad : { aberto: false, lista: [], passos: [], canais: [], origens: [] },
       fecharDetalhe: () => this.setState({ detalhe: false, cadPicker: false, timelineTudo: false, saidaMenu: false }),
       contato: () => this.diz("Primeiro contato registrado uma vez só — move para Em contato", "ok"),
-      qualificar: () => this.setState({ qualAberto: true, qualDados: {}, qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {}, qualDestino: null }),
+      qualificar: () => this.setState({ qualAberto: true, qualDados: this.qualDadosIniciais(L0.id), qualMenu: false, qualTentou: false, qualPasso: "dados", qualOpp: {}, qualDestino: null }),
       oportunidade: () => {
         if (det && det.semEmpresa) return this.diz("Bloqueado: lead sem empresa associada", "erro");
         const id = S.detalheId;
@@ -847,13 +883,13 @@ class Logica extends React.Component<any, any> {
         + (podeNutrir ? "background:#d93c1a;color:#fff" : "background:#e3e7e8;color:#a3a8a4;cursor:not-allowed"),
       confirmarNutrir: () => {
         if (!S.motivo) return this.diz("Escolha um motivo — nutrição sem motivo é limbo", "erro");
-        if (faltaData) return this.diz("Esse motivo exige data: sem ela o lead some da operação", "erro");
         const id = S.detalheId;
+        const comData = !!S.data;
         this.setState(s => ({
-          leads: s.leads.map(x => x.id === id ? Object.assign({}, x, { etapa: "nutricao", acao: "Retomar contato", venceEm: S.data }) : x),
+          leads: s.leads.map(x => x.id === id ? Object.assign({}, x, { etapa: "nutricao", acao: comData ? "Retomar contato" : null, venceEm: S.data || null }) : x),
           nutrir: false, motivo: null, data: ""
         }));
-        this.diz("Nutrição registrada e tarefa de retomada criada", "ok");
+        this.diz(comData ? "Nutrição registrada e tarefa de retomada criada" : "Lead movido para nutrição", "ok");
       },
 
       atvAberta: S.atvAberta && !!L0,
@@ -949,12 +985,14 @@ class Logica extends React.Component<any, any> {
         const alvo = S.qualContato ? Object.assign({}, alvo0, { pessoa: S.qualContato.nome, cargo: S.qualContato.cargo, empresa: empOpp }) : alvo0;
         const d = S.qualDados || {};
         const interesses = d.interesses || (alvo.interesse ? [alvo.interesse] : []);
-        const porte = d.porte === undefined ? 45 : d.porte;
+        /* Sem valor inicial: 45 e "Alto" eram palpites que iam ao banco quando ninguém tocava. */
+        const porte = d.porte === undefined ? "" : d.porte;
         const dor = d.dor === undefined ? "" : d.dor;
-        const fit = d.fit || "Alto";
+        const fit = d.fit || "";
         const nPorte = parseInt(String(porte).replace(/[^0-9]/g, ""), 10);
         const porteOk = !isNaN(nPorte) && nPorte > 0;
-        const completo = interesses.length > 0 && porteOk && !!dor.trim();
+        const faltaTxt = !interesses.length ? "Falta o interesse" : !porteOk ? "Falta o tamanho da operação" : !dor.trim() ? "Falta a dor principal" : !fit ? "Falta o fit" : "";
+        const completo = interesses.length > 0 && porteOk && !!dor.trim() && !!fit;
         const semEmpresa = !alvo.empresa;
         const mudar = (campo, valor) => this.setState(s => ({ qualDados: Object.assign({}, s.qualDados, { interesses, porte, dor, fit }, { [campo]: valor }) }));
         const faixa = !porteOk ? { label: "—", cor: "#eeeff3", tinta: "#67787c" }
@@ -972,7 +1010,7 @@ class Logica extends React.Component<any, any> {
           }));
           this.diz(msg, "ok");
         };
-        const iniciaisDe = (n) => (n || "").split(" ").slice(0, 2).map(p => [...p][0] || "").join("").toUpperCase() || "—";
+        const iniciaisDe = (n) => (n || "").split(" ").map(p => p.replace(/^[^\p{L}\p{N}]+/u, "")).filter(Boolean).slice(0, 2).map(p => [...p][0] || "").join("").toUpperCase() || "—";
         const passo = S.qualPasso || "dados";
         const O = S.qualOpp || {};
         const avanco = O.avanco || null;
@@ -981,15 +1019,20 @@ class Logica extends React.Component<any, any> {
         const oppNome = (interesses[0] || alvo.interesse || "Oportunidade") + " · " + (alvo.empresa || "Sem empresa");
         /* Só quem existe na organização: nome do protótipo faz a gravação falhar com "Não encontrei … na equipe". */
         const equipe = (this.dadosDoProto && this.dadosDoProto.EQUIPE) || [];
+        /* O Closer lista só quem fecha; o Responsável comercial continua a equipe toda. */
+        const closers = (this.dadosDoProto && this.dadosDoProto.CLOSERS) || equipe;
         const slugE = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");
         const mudarO = (k, v) => this.setState(s => ({ qualOpp: Object.assign({}, s.qualOpp, { [k]: v }) }));
-        const vData = O.data || "2026-09-24";
+        /* Data padrão é HOJE, não uma data fixa de setembro: o campo abria com
+           24/09/2026 chumbado e todo agendamento nascia no passado. */
+        const isoHoje = (deslocaDias) => { const d = new Date(); d.setDate(d.getDate() + (deslocaDias || 0)); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+        const vData = O.data || isoHoje(0);
         const vHora = O.hora || "14:00";
         const vTitulo = O.titulo === undefined ? (alvo.empresa || "Lead") + " x Callface" : O.titulo;
         const vTarTitulo = O.tarTitulo === undefined
           ? ({ whatsapp: "Retomar conversa no WhatsApp", ligacao: "Ligar para alinhar proposta", email: "Enviar proposta por e-mail", outro: "Próximo passo" }[avanco] || "")
           : O.tarTitulo;
-        const vTarData = O.tarData || "2026-09-23";
+        const vTarData = O.tarData || isoHoje(1);
         const vTarHora = O.tarHora || "10:00";
         const detalheOk = ehReuniao
           ? !!(vData && vHora && String(vTitulo).trim())
@@ -1041,10 +1084,10 @@ class Logica extends React.Component<any, any> {
             onChange: (e) => mudarO("etapa", e.target.value)
           }, ["Novo", "Descoberta", "Proposta"].map(p => React.createElement("option", { key: p, value: p }, p))),
           campoCloser: React.createElement("select", {
-            value: O.closer || alvo.resp || equipe[0],
+            value: O.closer || (closers.includes(alvo.resp) ? alvo.resp : closers[0]),
             style: { width: "100%", height: "38px", padding: "0 30px 0 12px", borderRadius: "9px", background: "#fff", outline: 0, fontSize: "13px", fontFamily: "inherit", border: "1px solid #dbdede", appearance: "none", cursor: "pointer", color: "#1f252c" },
             onChange: (e) => mudarO("closer", e.target.value)
-          }, equipe.map(p => React.createElement("option", { key: p, value: p }, p))),
+          }, closers.map(p => React.createElement("option", { key: p, value: p }, p))),
           oppNome,
           multiEmpresa: empsOpp.length > 1,
           multiNota: S.qualContato ? S.qualContato.nome.split(" ")[0] + " está em " + empsOpp.length + " empresas" : "",
@@ -1090,7 +1133,8 @@ class Logica extends React.Component<any, any> {
 
           iniciaisPessoa: iniciaisDe(alvo.pessoa),
           contatoNome: alvo.pessoa || "—",
-          contatoEmail: (S.qualContato && S.qualContato.email) || (slugE((alvo.pessoa || "").split(" ")[0]) + "@" + slugE(alvo.empresa || "semempresa") + ".com.br"),
+          /* O e-mail REAL do contato (detalheLead). O desenho fabricava nome@empresa.com.br. */
+          contatoEmail: (S.qualContato && S.qualContato.email) || ((S.detalheReal && S.detalheReal[alvo.id] && S.detalheReal[alvo.id].pessoa && S.detalheReal[alvo.id].pessoa.email) || "Sem e-mail cadastrado"),
           addConvidado: () => this.setState(s => ({ convAberto: !s.convAberto, convTexto: "" })),
           convAberto: !!S.convAberto,
           convTexto: S.convTexto || "",
@@ -1115,11 +1159,11 @@ class Logica extends React.Component<any, any> {
           setReuData: (e) => mudarO("data", e.target.value),
           reuHora: vHora,
           setReuHora: (e) => mudarO("hora", e.target.value),
-          reuCloser: O.closer || alvo.resp || equipe[0],
+          reuCloser: O.closer || (closers.includes(alvo.resp) ? alvo.resp : closers[0]),
           setReuCloser: (e) => mudarO("closer", e.target.value),
           duracoes: ["30 min", "45 min", "1 h"].map(d2 => ({
             label: d2,
-            style: "flex:1;min-width:0;height:38px;border-radius:9px;font-size:12.5px;white-space:nowrap;border:0;cursor:pointer;font-weight:"
+            style: "flex:1;min-width:0;height:38px;padding:0 10px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-size:12.5px;white-space:nowrap;border:0;cursor:pointer;font-weight:"
               + ((O.duracao || "30 min") === d2 ? "600;background:#12171d;color:#fff" : "500;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#1f252c"),
             onClick: () => mudarO("duracao", d2)
           })),
@@ -1146,7 +1190,8 @@ class Logica extends React.Component<any, any> {
           setTarData: (e) => mudarO("tarData", e.target.value),
           tarHora: vTarHora,
           setTarHora: (e) => mudarO("tarHora", e.target.value),
-          quandos: [["Hoje, 16:30", "2026-09-22", "16:30"], ["Amanhã, 10:00", "2026-09-23", "10:00"], ["Seg, 09:00", "2026-09-28", "09:00"]].map(([label, dd, hh]) => ({
+          /* Datas relativas a HOJE: eram "2026-09-22/23/28" chumbadas, e o atalho gravava a próxima ação no passado. */
+          quandos: (() => { const dsm = (1 - new Date().getDay() + 7) % 7 || 7; return [["Hoje, 16:30", isoHoje(0), "16:30"], ["Amanhã, 10:00", isoHoje(1), "10:00"], ["Seg, 09:00", isoHoje(dsm), "09:00"]]; })().map(([label, dd, hh]) => ({
             label,
             style: "height:28px;padding:0 11px;border-radius:7px;font-size:11.5px;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer;font-weight:"
               + ((vTarData === dd && vTarHora === hh) ? "600;background:#eeeff3;color:#12171d" : "500;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:#67787c"),
@@ -1222,7 +1267,7 @@ class Logica extends React.Component<any, any> {
             };
           }),
 
-          status: completo ? "Pronto para qualificar" : (!dor.trim() ? "Falta a dor principal" : "Preencha os campos obrigatórios"),
+          status: completo ? "Pronto para qualificar" : faltaTxt,
           statusStyle: "font-size:11.5px;font-weight:600;white-space:nowrap;color:" + (completo ? "#1f7256" : (S.qualTentou ? "#c2330f" : "#67787c")),
 
           ancora: this.qualRef,
@@ -1247,7 +1292,7 @@ class Logica extends React.Component<any, any> {
           toggleMenu: () => {
             if (!completo) {
               this.setState({ qualTentou: true });
-              return this.diz(!dor.trim() ? "Falta a dor principal para qualificar" : "Preencha os campos obrigatórios para qualificar", "erro");
+              return this.diz(faltaTxt + " para qualificar", "erro");
             }
             if (S.qualDestino === "opp") {
               if (semEmpresa) return this.diz("Bloqueado: lead sem empresa associada", "erro");
@@ -1269,8 +1314,13 @@ class Logica extends React.Component<any, any> {
               this.setState({ qualMenu: false });
               if (o.k === "so") {
                 const id = S.detalheId;
+                /* Espelha o que o modal coletou no estado do drawer (`qual`),
+                   para a seção QUALIFICAÇÃO da gaveta refletir na hora, sem
+                   depender do reload. Mesmos campos, nomes do drawer. */
+                const qDraw = { interesse: interesses.join("|"), tamanho: String(porte), dor, fit };
                 this.setState(s => ({
                   leads: s.leads.map(x => x.id === id ? Object.assign({}, x, { etapa: "qualificado", interesse: interesses[0], tag: "Fit " + fit }) : x),
+                  qual: Object.assign({}, s.qual, { [id]: Object.assign({}, s.qual[id] || {}, qDraw) }),
                   qualPasso: "ok", qualOkTitulo: "Lead qualificado", qualOkNota: "qualificado_em e qualificado_por gravados."
                 }));
                 clearTimeout(this._qk);
@@ -1284,7 +1334,7 @@ class Logica extends React.Component<any, any> {
           confirmar: () => {
             if (!completo) {
               this.setState({ qualTentou: true });
-              return this.diz(!dor.trim() ? "Falta a dor principal para qualificar" : "Preencha os campos obrigatórios para qualificar", "erro");
+              return this.diz(faltaTxt + " para qualificar", "erro");
             }
             if (S.qualDestino === "opp") {
               if (semEmpresa) return this.diz("Bloqueado: lead sem empresa associada", "erro");

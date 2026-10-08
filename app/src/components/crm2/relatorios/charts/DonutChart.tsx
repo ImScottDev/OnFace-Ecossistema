@@ -7,6 +7,8 @@ interface DonutChartProps {
   centerValue?: string;
   centerLabel?: string;
   height?: number;
+  /** Formata o valor da legenda (ex.: moeda); sem ele mostra o número cru. */
+  formatar?: (v: number) => string;
 }
 
 export function DonutChart({
@@ -14,6 +16,7 @@ export function DonutChart({
   centerValue,
   centerLabel,
   height = 220,
+  formatar,
 }: DonutChartProps) {
   return (
     <div className="flex flex-col sm:flex-row items-center" style={{ minHeight: height }}>
@@ -55,7 +58,7 @@ export function DonutChart({
             />
             <div className="flex flex-col min-w-0 flex-1">
               <span className="block text-[11px] text-[var(--cf2-text-secondary)] truncate" title={entry.name}>{entry.name}</span>
-              <span className="text-[11px] text-[var(--cf2-text-tertiary)]">{entry.value}</span>
+              <span className="text-[11px] text-[var(--cf2-text-tertiary)]">{formatar ? formatar(entry.value) : entry.value}</span>
             </div>
           </div>
         ))}

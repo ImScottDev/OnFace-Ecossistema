@@ -1727,8 +1727,8 @@ Adicionar item
 {(m.temData) ? (<>
 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: "8px 10px" }}>
 <label style={{ display: "block" }}>
-<span style={{ display: "block", fontSize: "11.5px", fontWeight: "600", color: "#4a5560", marginBottom: "5px" }}>
-Início 
+<span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11.5px", fontWeight: "600", color: "#4a5560", marginBottom: "5px" }}>
+Início
 <span style={{ fontWeight: "500", color: "#8b949e" }}>
 opcional
 </span>
@@ -1745,8 +1745,8 @@ Prazo
 <input type="date" value={m.fimD} onChange={m.setFimD} style={estilo(m.fimDStyle)} />
 </label>
 <label style={{ display: "block" }}>
-<span style={{ display: "block", fontSize: "11.5px", fontWeight: "600", color: "#4a5560", marginBottom: "5px" }}>
-Hora 
+<span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11.5px", fontWeight: "600", color: "#4a5560", marginBottom: "5px" }}>
+Hora
 <span style={{ fontWeight: "500", color: "#8b949e" }}>
 opcional
 </span>

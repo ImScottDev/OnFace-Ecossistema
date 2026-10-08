@@ -13,16 +13,34 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import type { LinhaProposta } from "@/app/(produto)/propostas/actions";
+import {
+  acaoBaseNovaProposta, acaoCriarRevisao, type BaseNovaProposta, type LinhaProposta,
+} from "@/app/(produto)/propostas/actions";
+import { acaoCriarOportunidade } from "@/app/(produto)/pipeline/actions";
 import { PropostasLiga } from "./PropostasLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
 
 class PropostasLigada extends PropostasLiga {
+  private baseCarregada = false;
+
   constructor(props: any) {
     super(props);
     // Sem isto o `irPara` da Liga perde o id do registro e cai em rota do protótipo (404).
     levarParametros(this as any);
+  }
+
+  /** A base do assistente "Nova proposta" só vem do banco quando ele abre. */
+  componentDidUpdate(anterior: any, antes: any) {
+    const s: any = (this as any).state;
+    /* A Liga lê as oportunidades de um estado semeado na montagem. A base do assistente (abertas sem
+       proposta, carteira de clientes) chega depois, e sem ressemear o assistente nunca a enxergava. */
+    const opps = (this as any).props.dados?.opps;
+    if (opps && opps !== anterior.dados?.opps) (this as any).setState({ opps });
+    if (!antes.nova && s.nova && !this.baseCarregada) {
+      this.baseCarregada = true;
+      (this as any).props.carregarBase?.();
+    }
   }
 }
 
@@ -110,7 +128,9 @@ function agrupar(linhas: LinhaProposta[]) {
         cargo: "",
         familia: p.familia,
         resp: p.responsavel,
-        etapa: "proposta",
+        // A etapa REAL da oportunidade; proposta sem oportunidade não é de oportunidade aberta.
+        etapa: p.etapa ?? "sem_oportunidade",
+        empresaId: p.empresaId,
         propostas: [],
       };
       grupos.set(chave, o);
@@ -123,6 +143,9 @@ function agrupar(linhas: LinhaProposta[]) {
       status: p.status,
       modo: p.modoFechamento,
       enviadaEm: dia(p.enviadaEm),
+      atualizadaEm: dia(p.atualizadaEm),
+      // Data de referência do gráfico: proposta importada sem envio gravado cai na data do seu desfecho, não em "hoje".
+      refEm: dia(p.enviadaEm ?? p.eventosEm.aceita ?? p.eventosEm.recusada ?? p.eventosEm.expirada ?? p.atualizadaEm),
       validade: dia(p.validade),
       validadeDias: p.validadeDias,
       // Eventos reais; o que o banco não registrou não aparece na linha do tempo.
@@ -147,14 +170,84 @@ export function PropostasProto({ linhas, responsaveis }: {
   responsaveis: string[];
 }) {
   const router = useRouter();
+  const [base, setBase] = React.useState<BaseNovaProposta | null>(null);
 
-  const opps = React.useMemo(() => agrupar(linhas), [linhas]);
+  const carregarBase = React.useCallback(() => {
+    acaoBaseNovaProposta().then(setBase).catch(() => toast.error("Não consegui carregar clientes e contatos."));
+  }, []);
+
+  const opps = React.useMemo(() => {
+    const lista = agrupar(linhas);
+    if (!base) return lista;
+    const porNegocio = new Map(lista.filter((o) => o.negocioId).map((o) => [o.negocioId, o]));
+    // Oportunidade aberta sem proposta ainda também recebe proposta: entra sem linha na tabela.
+    for (const a of base.abertas) {
+      if (porNegocio.has(a.negocioId)) continue;
+      lista.push({
+        id: a.negocioId, negocioId: a.negocioId, empresaId: a.empresaId, empresa: a.empresa, pessoa: a.pessoa, cargo: "",
+        familia: a.familia, resp: a.responsavel, etapa: a.etapa, propostas: [],
+      });
+    }
+    // A carteira real: cada cliente vira uma "oportunidade ganha" só para o assistente listar.
+    for (const c of base.clientes) {
+      lista.push({
+        id: `cliente:${c.empresaId}`, negocioId: null, empresaId: c.empresaId, empresa: c.empresa, pessoa: c.pessoa, cargo: "",
+        familia: c.familia, resp: null, etapa: "ganho", evidencia: "Contrato ativo", propostas: [],
+      });
+    }
+    return lista;
+  }, [linhas, base]);
+
+  const leads = React.useMemo(() => (base?.contatos ?? []).map((c) => ({
+    id: c.pessoaId ?? `empresa:${c.empresaId}`, empresaId: c.empresaId, empresa: c.empresa, leadId: c.leadId,
+    pessoa: c.pessoa, cargo: c.cargo, email: c.email,
+  })), [base]);
 
   const catalogo = React.useMemo(() => ({
-    EQUIPE: responsaveis,
+    EQUIPE: base?.equipe.map((u) => u.nome) ?? responsaveis,
     OPORTUNIDADES: [],
     LEADS: [],
-  }), [responsaveis]);
+  }), [responsaveis, base]);
+
+  /**
+   * "Criar" do assistente, de verdade. Devolve a mensagem de erro, ou null
+   * quando já navegou para o editor.
+   */
+  const criarProposta = React.useCallback(async (e: {
+    alvo: any; O: any; P0: any; familia: string; closer: string; tipo: string; contatoNome: string; leadId: string | null;
+  }): Promise<string | null> => {
+    const editor = (negocioId: string, propostaId?: string) =>
+      router.push(`/propostas/nova?${new URLSearchParams({ oportunidade: negocioId, ...(propostaId ? { proposta: propostaId } : {}) })}`);
+
+    if (e.alvo.k === "opp") { editor(e.O.negocioId); return null; }
+
+    if (e.alvo.k === "subst") {
+      const p = e.O.propostas[e.alvo.i];
+      if (!p?.id) return "Não achei a proposta para revisar.";
+      if (p.status === "rascunho") { editor(e.O.negocioId, p.id); return null; }
+      const r = await acaoCriarRevisao(p.id);
+      if (!r.ok) return r.erro;
+      editor(e.O.negocioId, r.dados!.propostaId);
+      return null;
+    }
+
+    // Cliente, empresa ou contato da base: nasce a oportunidade no Pipeline, em Entrada.
+    const empresaId = e.alvo.empresaId;
+    if (!empresaId) return "Escolha uma empresa cadastrada: a oportunidade precisa de empresa.";
+    const closer = base?.equipe.find((u) => u.nome === e.closer);
+    if (!closer) return "Escolha o closer.";
+    const motion = e.alvo.k === "cli" && e.tipo !== "nova"
+      ? (e.tipo === "renovacao" ? "RENEWAL" : "EXPANSION") : "NEW_BUSINESS";
+    const r = await acaoCriarOportunidade({
+      empresaId, familias: [e.familia as any], responsavelId: closer.id, motion, leadId: e.leadId,
+    });
+    if (!r.ok) return r.erro;
+    const novo = r.dados?.ids?.[0];
+    if (!novo) return "A oportunidade não foi criada.";
+    toast.success("Oportunidade criada no Pipeline.");
+    editor(novo);
+    return null;
+  }, [router, base]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
@@ -181,8 +274,10 @@ export function PropostasProto({ linhas, responsaveis }: {
   return (
     <div data-workspace="desenho">
       <PropostasLigada
-        dados={{ opps }}
+        dados={{ opps, leads }}
         catalogo={catalogo}
+        carregarBase={carregarBase}
+        criarProposta={criarProposta}
         abrir={abrir}
         persistir={persistir}
         ir={(href: string) => router.push(href)}

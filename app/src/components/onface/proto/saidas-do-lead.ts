@@ -65,7 +65,7 @@ export type Intencao =
   | { tipo: "qualificar"; leadId: string }
   | { tipo: "nutrir"; leadId: string; retomarEm: string | null }
   | { tipo: "desqualificar"; leadId: string }
-  | { tipo: "criar-oportunidade"; leadId: string; empresa: string | null; interesse: string | null; responsavel: string | null }
+  | { tipo: "criar-oportunidade"; leadId: string; empresa: string | null; interesse: string | null; responsavel: string | null; /** etapa de onde o lead saiu: só quem já estava qualificado dispensa qualificar antes. */ de?: string | null }
   | { tipo: "atribuir"; leadId: string; responsavel: string | null }
   | { tipo: "desconhecida"; leadId: string; descricao: string };
 
@@ -100,7 +100,7 @@ export function intencoesDoPatch(
       } else if (d.etapa === "oportunidade") {
         saida.push({
           tipo: "criar-oportunidade", leadId: d.id,
-          empresa: d.empresa ?? null, interesse: d.interesse ?? null, responsavel: d.resp ?? null,
+          empresa: d.empresa ?? null, interesse: d.interesse ?? null, responsavel: d.resp ?? null, de: a.etapa ?? null,
         });
       } else {
         saida.push({ tipo: "desconhecida", leadId: d.id, descricao: `etapa "${d.etapa}"` });

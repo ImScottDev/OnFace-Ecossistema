@@ -138,6 +138,10 @@ export default function LeadsConfigPage() {
         </div>
       )}
 
+      <p className="aj-aviso" role="status">
+        <strong>Setores e Origens:</strong> alimentam apenas os formulários antigos de negócio e lead. As telas novas (Pré-vendas, Contatos, Empresas) mostram os valores gravados nos próprios registros. O roteamento de inbound, abaixo, vale para todos os leads novos.
+      </p>
+
       {/* Setores */}
       <EditableList
         title="Setores"

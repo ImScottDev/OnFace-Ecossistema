@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { ClienteDesenho } from "./ClienteDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -239,7 +240,7 @@ class Logica extends React.Component<any, any> {
     pes.forEach(p => { if (!p.papel || PAP.indexOf(p.papel) < 0) p.papel = PAP.find(r => r !== "Usuário" && !pes.some(o => o.papel === r)) || "Usuário"; });
     const ULT = ["Hoje", "Há 2 dias", "Há 6 dias", "Há 12 dias", "Há 21 dias", "Há 34 dias"];
     pes.forEach((p, i) => { const hp = hs(p.nome), pr = p.nome.replace(/^Dr\.?\s+/, "").split(" ");
-      p.cargo = p.cargo || "Contato"; p.email = p.email || (slug(pr[0]) + "." + slug(pr[pr.length - 1]) + "@" + dominio);
+      p.cargo = p.cargo || "Contato"; p.email = p.email || "";
       p.tel = p.tel || ("(11) 9" + (6000 + hp % 3999) + "-" + (1000 + (hp >> 3) % 8999)); p.ultimo = ULT[(i + h) % ULT.length]; });
     const principal = pes.find(p => p.nome === X.principal) || pes.find(p => p.papel === "Decisor") || pes[0] || { nome: "—", cargo: "", email: "", tel: "" };
     const finP = pes.find(p => p.papel === "Financeiro") || principal;

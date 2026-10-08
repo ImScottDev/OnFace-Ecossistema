@@ -14,7 +14,8 @@ const TIPO_DO_BANCO: Record<string, string> = {
   ligar: "Ligação", ligacao: "Ligação",
   follow_up: "Follow up",
   enviar_proposta: "Proposta",
-  confirmar_reuniao_outlook: "Reunião", onboarding_agendar_reuniao: "Reunião", reuniao: "Reunião",
+  // "Agendar/confirmar reunião" é tarefa a fazer, não a reunião: reunião de verdade mora em `reunioes` (Calendário).
+  reuniao: "Reunião",
   email: "E-mail", whatsapp: "Mensagem",
 };
 
@@ -142,6 +143,7 @@ export const criarTarefa = (corpo: CorpoTarefa & { leadId?: string | null; negoc
   chamar<{ id: string }>("/api/tarefas", { method: "POST", body: JSON.stringify(corpo) });
 export const alterarTarefa = (id: string, corpo: CorpoTarefa) =>
   chamar<{ id: string }>(`/api/tarefas/${id}`, { method: "PATCH", body: JSON.stringify(corpo) });
+export const excluirTarefa = (id: string) => chamar<{ success: boolean }>(`/api/tarefas/${id}`, { method: "DELETE" });
 /** A próxima ação do lead é a primeira tarefa aberta dele. */
 export async function proximaDoLead(leadId: string) {
   const r = await chamar<{ tarefas: Array<{ id: string }> }>(`/api/tarefas?leadId=${leadId}&escopo=org&concluida=false`);

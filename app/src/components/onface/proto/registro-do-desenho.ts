@@ -8,6 +8,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import type { DetalheLead } from "@/lib/vendas/consultas";
+import { qualDoDesenho } from "./qual-do-desenho";
 
 /** O lead na forma que as fichas leem. */
 export interface RegistroDoDesenho {
@@ -32,11 +33,14 @@ export interface RegistroDoDesenho {
   origem: string | null;
   campanha: string | null;
   interesse: string | null;
+  qualificacao: Record<string, unknown>;
   acao: string | null;
   venceEm: string | null;
   dias: number;
   /** Toda resposta do formulário, na ordem em que veio. Vazio = não há. */
   respostas: Array<{ pergunta: string; resposta: string }>;
+  obs?: string | null;
+  cidadeContato?: string | null;
   /** Origem e rastreamento: só as linhas que têm dado. `href` só existe com id real. */
   rastreio: Array<{ rotulo: string; valor: string; href?: string }>;
   /** Campos que a produção mostrava (E12): score do lead e telefone/observações da empresa. */
@@ -118,6 +122,8 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
        valor real — ou `null` — é o que faz a tela mostrar "—" em vez de um
        endereço plausível e errado. Só 65 dos 4.066 leads têm o campo. */
     linkedin: l.pessoa.linkedin,
+    obs: l.pessoa.observacao,
+    cidadeContato: l.pessoa.cidade,
     /* As tags REAIS do lead (tabela `labels`). O desenho só monta tags de
        exemplo quando não há registro; com registro, a lista vem daqui — e
        vinha vazia porque eu não a passava. */
@@ -133,6 +139,10 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     origem: l.atribuicao.origem,
     campanha: l.atribuicao.campanha,
     interesse: l.servicos?.[0] ?? null,
+    /* Qualificação real (interesse/tamanho/dor/fit), da MESMA fonte do drawer.
+       Antes a ficha de Empresa lia `P.qualificacao` que nunca era preenchido,
+       e caía em valores de exemplo ("Alto custo com telefonia"). */
+    qualificacao: qualDoDesenho(l.qualificacao) ?? {},
     acao: l.proximaAcao?.titulo ?? null,
     venceEm: l.proximaAcao?.venceEm ?? null,
     dias: diasDesde(l.criadoEm),

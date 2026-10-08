@@ -41,7 +41,11 @@ export interface OportunidadeDaProposta {
   leadId: string | null;
   origem: string | null;
   pessoas: Array<{ id: string; nome: string; papel: string; email: string | null; telefone: string | null }>;
-  propostas: Array<{ codigo: string; versao: number; status: string }>;
+  /** As propostas da oportunidade, com as linhas: o builder abre o rascunho com elas. */
+  propostas: Array<{
+    id: string; codigo: string; versao: number; status: string; modo?: string | null; validade?: number;
+    editor?: Record<string, unknown>; itens?: any[];
+  }>;
 }
 
 export interface ItemParaCriar {
@@ -61,6 +65,16 @@ export interface AcoesProposta {
     prazoContratoMeses?: number | null;
     parcelasSetup?: number | null;
   }) => Promise<Resultado<{ propostaId: string }>>;
+  /** Edita as linhas de um rascunho que já existe. */
+  atualizar: (e: {
+    propostaId: string;
+    itens: Array<Omit<ItemParaCriar, "catalogoPrecoId"> & { catalogoPrecoId?: string | null; itemExistenteId?: string | null }>;
+    observacoes?: string | null;
+    prazoContratoMeses?: number | null;
+    parcelasSetup?: number | null;
+  }) => Promise<Resultado<{ propostaId: string }>>;
+  /** Nova versão de uma proposta já enviada: copia as linhas e devolve o rascunho. */
+  revisar: (propostaId: string) => Promise<Resultado<{ propostaId: string; versao: number }>>;
   enviar: (e: {
     propostaId: string;
     modoFechamento: "PREPAID" | "CONTRACT";
@@ -92,14 +106,20 @@ function tipoDoItem(natureza: string): ItemParaCriar["tipo"] {
  * é o que amarra a linha da proposta ao preço praticado, e sem ele a proposta
  * nasce sem origem de valor.
  */
-export function itensParaCriar(itens: any[]): { itens: ItemParaCriar[]; semPreco: string[] } {
-  const bons: ItemParaCriar[] = [];
+export function itensParaCriar(itens: any[]): {
+  itens: Array<Omit<ItemParaCriar, "catalogoPrecoId"> & { catalogoPrecoId: string; itemExistenteId?: string | null }>;
+  semPreco: string[];
+} {
+  const bons: Array<Omit<ItemParaCriar, "catalogoPrecoId"> & { catalogoPrecoId: string; itemExistenteId?: string | null }> = [];
   const semPreco: string[] = [];
 
   for (const it of itens ?? []) {
     if (!it?.preco) { semPreco.push(it?.nome ?? "item sem nome"); continue; }
+    // "item:<id>" é linha de proposta legada, que não tem preço no catálogo: a ação a mantém.
+    const legado = String(it.preco).startsWith("item:");
     bons.push({
-      catalogoPrecoId: String(it.preco),
+      catalogoPrecoId: legado ? "" : String(it.preco),
+      itemExistenteId: legado ? String(it.preco).slice(5) : null,
       nome: String(it.nome ?? "").trim(),
       tipo: tipoDoItem(String(it.natureza ?? "")),
       quantidade: Number(it.qtd) || 1,
@@ -165,10 +185,32 @@ class PropostaLigada extends PropostaLiga {
     return (this as any).props.catalogoReal ?? {};
   }
 
+  /* NÃO chamar super.diz: a Liga faz `diz -> E.avisar -> this.diz`, e como `this.diz` é este override,
+     super.diz recursava (Maximum call stack) e "Salvar rascunho" morria sem gravar nada.
+     O toast de sucesso de quem grava é o `persistir` (depois do servidor responder): o "Proposta
+     enviada" que a Liga dispara na mesma hora seria mentira se o servidor recusar, então fica calado. */
+  private calar = false;
+  diz(t: string, tom?: string) {
+    if (this.calar && tom !== "erro") { if (/^Salva como rascunho/.test(t)) toast.warning(t); return; }
+    if (tom === "erro") toast.error(t);
+    else if (tom === "aviso") toast.warning(t);
+    else toast.success(t);
+  }
+
   /** O ponto único de saída: rascunho e envio passam por aqui. */
   gravar(propPatch: any, oppPatch: any, evento: string | null) {
+    this.calar = true;
+    setTimeout(() => { this.calar = false; }, 0);
+    /* Antes de `super.gravar`, que mexe no índice: qual proposta REAL este
+       salvamento edita. Rascunho existente = atualiza; versão nova de uma
+       proposta enviada = revisão; sem nenhuma = cria. */
+    const O = (this as any).opp?.();
+    const st = (this as any).state;
+    const props: any[] = O?.propostas ?? [];
+    const alvo = st.modo === "editar" && st.idx != null ? props[st.idx] : null;
+    const base = st.modo === "versao" && st.baseIdx != null ? props[st.baseIdx] : null;
     const r = super.gravar(propPatch, oppPatch, evento);
-    (this as any).props.persistir?.(propPatch, evento);
+    (this as any).props.persistir?.(propPatch, evento, { alvoId: alvo?.id ?? null, baseId: base?.id ?? null });
     return r;
   }
 }
@@ -205,7 +247,7 @@ export function PropostaProto({ oportunidade, catalogo, acoes }: {
    * o e-mail. São dois passos porque são dois fatos: criar um rascunho não
    * avisa ninguém, enviar avisa o cliente.
    */
-  const persistir = React.useCallback(async (proposta: any, evento: string | null) => {
+  const persistir = React.useCallback(async (proposta: any, evento: string | null, alvo?: { alvoId: string | null; baseId: string | null }) => {
     const { itens, semPreco } = itensParaCriar(proposta?.itens);
 
     if (semPreco.length) {
@@ -219,13 +261,27 @@ export function PropostaProto({ oportunidade, catalogo, acoes }: {
       return;
     }
 
-    const criada = await acoes.criar({
-      negocioId: oportunidade.id,
-      itens,
-      observacoes: proposta?.editor?.observacoes ?? null,
+    const condicoes = {
+      observacoes: proposta?.editor?.obs ?? null,
       prazoContratoMeses: Number(proposta?.editor?.prazo) || null,
       parcelasSetup: Number(proposta?.editor?.parcelas) || null,
-    });
+    };
+
+    let criada: Resultado<{ propostaId: string }>;
+    if (alvo?.alvoId) {
+      criada = await acoes.atualizar({ propostaId: alvo.alvoId, itens, ...condicoes });
+    } else if (alvo?.baseId) {
+      // Versão nova de proposta já enviada: a revisão copia as linhas, e o que mudou entra por cima.
+      const rev = await acoes.revisar(alvo.baseId);
+      if (!rev.ok) { toast.error(rev.erro); return; }
+      criada = await acoes.atualizar({ propostaId: rev.dados!.propostaId, itens, ...condicoes });
+    } else {
+      criada = await acoes.criar({
+        negocioId: oportunidade.id,
+        itens: itens.map((i) => ({ ...i, catalogoPrecoId: i.catalogoPrecoId })),
+        ...condicoes,
+      });
+    }
 
     if (!criada.ok) { toast.error(criada.erro); return; }
     const id = criada.dados?.propostaId;
@@ -250,7 +306,8 @@ export function PropostaProto({ oportunidade, catalogo, acoes }: {
       }
     }
 
-    toast.success(evento ?? "Proposta gravada.", id ? {
+    /* "#nova-v1" é o código provisório do desenho; o número real nasce no banco. */
+    toast.success(evento?.replace(/ #nova-v\d+/g, "") ?? "Proposta gravada.", id ? {
       action: { label: "Abrir proposta", onClick: () => router.push(`/propostas/${id}`) },
     } : undefined);
     if (id) router.push(`/propostas/${id}`);

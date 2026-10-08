@@ -89,15 +89,15 @@ class Component extends DCLogic {
       const mesAt = hojeD.getMonth(), anoAt = hojeD.getFullYear();
       const mesAnt = new Date(anoAt, mesAt - 1, 1);
       const diaNo = (d, m, a) => d.getMonth() === m && d.getFullYear() === a ? d.getDate() - 1 : -1;
-      const semanaDe = (x) => { const d = diaNo(dataDe(x.p.enviadaEm), mesAt, anoAt); return d; };
+      const semanaDe = (x) => { const d = diaNo(dataDe(x.p.refEm || x.p.enviadaEm), mesAt, anoAt); return d; };
       const ABERTOS = ["enviada", "visualizada", "ajuste_solicitado"];
-      const vence = (x) => dataDe(x.p.enviadaEm).getTime() + (+x.p.validade || 30) * 864e5;
+      const vence = (x) => dataDe(x.p.refEm || x.p.enviadaEm).getTime() + (+x.p.validade || 30) * 864e5;
       const acumMes = (fn, m, a, carrega) => { const ini0 = new Date(a, m, 1).getTime(); const add = Array(N).fill(0);
-        vivos.forEach(x => { const dt = dataDe(x.p.enviadaEm), d = diaNo(dt, m, a);
+        vivos.forEach(x => { const dt = dataDe(x.p.refEm || x.p.enviadaEm), d = diaNo(dt, m, a);
           if (d >= 0 && d < N) add[d] += fn(x);
           else if (carrega && dt.getTime() < ini0 && ABERTOS.indexOf(x.p.status) >= 0 && vence(x) >= ini0) add[0] += fn(x); });
         const ac = []; add.reduce((s2, v, i) => (ac[i] = s2 + v), 0); return ac; };
-      const herdado = vivos.filter(x => dataDe(x.p.enviadaEm).getTime() < new Date(anoAt, mesAt, 1).getTime() && ABERTOS.indexOf(x.p.status) >= 0 && vence(x) >= new Date(anoAt, mesAt, 1).getTime());
+      const herdado = vivos.filter(x => dataDe(x.p.refEm || x.p.enviadaEm).getTime() < new Date(anoAt, mesAt, 1).getTime() && ABERTOS.indexOf(x.p.status) >= 0 && vence(x) >= new Date(anoAt, mesAt, 1).getTime());
       const fF = x => (PESO[x.p.status] || 0) * mr(x), fG = x => x.p.status === "aceita" ? mr(x) : 0;
       const serie = acumMes(fF, mesAt, anoAt, true), ganho = acumMes(fG, mesAt, anoAt, false), ant = acumMes(fF, mesAnt.getMonth(), mesAnt.getFullYear(), true);
       const alvo = serie[N - 1];
@@ -168,7 +168,7 @@ class Component extends DCLogic {
           onClick: () => this.setState(s => ({ pag: 0, sel: Object.assign({}, s.sel, { status: aba === "todas" ? [] : [aba] }) })),
           chip: "display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;border-radius:7px;border:0;cursor:pointer;font-size:11.5px;color:#a3aab0;" + ((aba === "todas" ? !stSel.length : stSel.length === 1 && stSel[0] === aba) ? "background:rgba(255,255,255,.1)" : "background:transparent"),
           style: "flex:" + Math.max(0.0001, n / tot) + " 0 0;min-width:" + (n ? "6px" : "0") + ";border:0;padding:0;cursor:pointer;transition:flex-grow .7s cubic-bezier(.16,1,.3,1);background:" + c })),
-        kpis: [["Aceite", taxa + "%", "#fff", null], ["Enviadas no mês", String(vivos.filter(x => x.p.status !== "rascunho" && semanaDe(x) >= 0).length), "#fff", null], ["Rascunhos", String(vivos.filter(x => x.p.status === "rascunho").length), vivos.some(x => x.p.status === "rascunho") ? "#ff8a70" : "#fff", "rascunho"], ["Em jogo", k(emJogo), "#fff", "todas"]]
+        kpis: [["Aceite", taxa + "%", "#fff", null], ["Enviadas no mês", String(vivos.filter(x => x.p.status !== "rascunho" && x.p.enviadaEm && semanaDe(x) >= 0).length), "#fff", null], ["Rascunhos", String(vivos.filter(x => x.p.status === "rascunho").length), vivos.some(x => x.p.status === "rascunho") ? "#ff8a70" : "#fff", "rascunho"], ["Em jogo", k(emJogo), "#fff", "todas"]]
           .map(([l, v, c, aba]) => ({ l, v, onClick: () => aba && this.setState(s => ({ pag: 0, sel: Object.assign({}, s.sel, { status: aba === "todas" ? [] : [aba] }) })), vStyle: "display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:" + c }))
       };
     })();
@@ -182,7 +182,7 @@ class Component extends DCLogic {
       const mr = (x) => soma(x.p).mrr + soma(x.p).un; const un = () => 0;
       const k = (n) => !n ? "R$ 0" : n >= 1000 ? "R$ " + (n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k" : brl(n);
       const base2 = filtradas.filter(x => x.p.status !== "substituida" && x.p.status !== "rascunho").map(x => {
-        const env = dataDe(x.p.enviadaEm), val = +x.p.validade || 30, resta = Math.ceil((env.getTime() + val * 864e5 - hojeD.getTime()) / 864e5);
+        const env = dataDe(x.p.refEm || x.p.enviadaEm), val = +x.p.validade || 30, resta = Math.ceil((env.getTime() + val * 864e5 - hojeD.getTime()) / 864e5);
         const exp = x.p.status === "expirada" || (["enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0 && resta < 0);
         return Object.assign({}, x, { resta, val, exp, mr: mr(x), un: un(x), peso: exp ? 0 : (PESO[x.p.status] || 0) });
       });
@@ -220,7 +220,7 @@ class Component extends DCLogic {
           icoStyle: "flex:0 0 auto;color:" + c2, nStyle: "flex:0 0 auto;min-width:22px;height:20px;padding:0 6px;border-radius:9999px;display:grid;place-items:center;font-size:11px;font-weight:700;" + (on ? "background:#12171d;color:#fff" : "background:#eeeff3;color:#4a5560") }; }),
         abaT: AB[1], abaS: AB[2], vazia: !lista.length,
         itens: lista.map(x => { const prog = Math.max(0, Math.min(1, 1 - x.resta / x.val)); const urg = !x.exp && x.resta <= 3 && ["enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0;
-          return { empresa: x.o.empresa, meta: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + (FAM[x.o.familia] || "") + " · " + x.o.resp,
+          return { empresa: x.o.empresa, meta: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + (FAM[x.o.familia] ? FAM[x.o.familia] + " · " : "") + x.o.resp,
             prazo: x.p.status === "aceita" ? "Aceita" : x.p.status === "recusada" ? "Recusada" : x.exp ? "Expirou há " + Math.abs(x.resta) + (Math.abs(x.resta) === 1 ? " dia" : " dias") : "Vence em " + x.resta + (x.resta === 1 ? " dia" : " dias"),
             prazoStyle: "font-size:12px;font-weight:600;white-space:nowrap;color:" + (urg ? "#c2330f" : x.exp ? "#8b949e" : "#4a5560"),
             barra: "display:block;height:100%;border-radius:9999px;width:" + Math.round((x.p.status === "aceita" || x.p.status === "recusada" || x.exp ? 1 : prog) * 100) + "%;background:" + (urg ? "#fe4f2b" : x.exp ? "#c4c9ca" : x.p.status === "aceita" ? "#1f7256" : "#8b949e"),
@@ -261,7 +261,7 @@ class Component extends DCLogic {
       const FL = contrato
         ? [["Cliente aceita a proposta", "Na página pública"], ["Contrato gerado", "Com os dados desta versão"], ["Assinatura", "Cliente assina pelo link"], ["Oportunidade ganha", "Cobrança criada no Stripe"]]
         : [["Cliente aceita a proposta", "Na página pública"], ["Checkout do Stripe", "Cartão ou boleto"], ["Pagamento confirmado", "Webhook do Stripe"], ["Oportunidade ganha", "Cliente ativado"]];
-      p = { titulo: "Proposta " + (FAM[o.familia] || "") + " · " + o.empresa, codigo: cod, status: sx[0], stD: sx[3], stStyle: selo(P.status),
+      p = { titulo: "Proposta " + (FAM[o.familia] ? FAM[o.familia] + " · " : "") + o.empresa, codigo: cod, status: sx[0], stD: sx[3], stStyle: selo(P.status),
         empresa: o.empresa, pessoa: o.pessoa + (o.cargo ? " · " + o.cargo : ""), empIni: ini(o.empresa),
         irEmpresa: () => ir("/onface-preview/empresa", o.empresa, o.leadId ? { lead: o.leadId } : {}),
         kpis: [["Valor mensal", s.mrr ? brl(s.mrr) : "—", null], ["Setup / único", s.un ? brl(s.un) : "—", null], ["Produto", FAM[o.familia] || "—", null],
@@ -324,15 +324,15 @@ class Component extends DCLogic {
       if (passo === 1) {
         if (cam === "opp") { buscaPh = "Buscar oportunidade por empresa ou contato";
           itens = abertas.filter(o => bate(o.empresa + " " + o.pessoa)).map(o => { const props = o.propostas || (o.proposta ? [o.proposta] : []); const vig = props.slice().reverse().find(x => ["recusada", "expirada", "substituida"].indexOf(x.status) < 0);
-            return { t: (FAM[o.familia] || "") + " · " + o.empresa, s: o.pessoa + " · " + o.resp + " · " + (ROT[o.etapa] || ""), ini: ini(o.empresa), ico: ico("#fff6f4", "#c2330f"),
+            return { t: (FAM[o.familia] ? FAM[o.familia] + " · " : "") + o.empresa, s: o.pessoa + " · " + o.resp + " · " + (ROT[o.etapa] || ""), ini: ini(o.empresa), ico: ico("#fff6f4", "#c2330f"),
               temSelo: true, selo: !vig ? "Sem proposta" : vig.status === "rascunho" ? "Tem rascunho" : "Proposta " + ((ST[vig.status] || [""])[0]).toLowerCase(), seloStyle: seloS(!vig ? "#e6f4ee" : "#eeeff3", !vig ? "#1f7256" : "#4a5560"),
               style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "opp", id: o.id } }) }; }); }
         if (cam === "subst") { buscaPh = "Buscar proposta ativa";
           itens = vivas.filter(x => bate(x.o.empresa + " " + x.o.pessoa + " " + x.p.codigo)).map(x => { const sx = ST[x.p.status]; const s2 = soma(x.p);
-            return { t: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + x.o.empresa, s: (FAM[x.o.familia] || "") + " · " + brl(s2.mrr || s2.un) + (s2.mrr ? "/mês" : "") + " · " + x.o.resp, ini: ini(x.o.empresa), ico: ico("#eeeff3", "#4a5560"),
+            return { t: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + x.o.empresa, s: (FAM[x.o.familia] ? FAM[x.o.familia] + " · " : "") + brl(s2.mrr || s2.un) + (s2.mrr ? "/mês" : "") + " · " + x.o.resp, ini: ini(x.o.empresa), ico: ico("#eeeff3", "#4a5560"),
               temSelo: true, selo: sx[0], seloStyle: seloS(sx[1], sx[2]), style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "subst", id: x.o.id, i: x.i } }) }; }); }
         if (cam === "cli") { buscaPh = "Buscar cliente";
-          itens = clientes.filter(c => bate(c.empresa + " " + c.pessoa)).map(c => ({ t: c.empresa, s: (FAM[c.familia] || "") + " · " + c.contrato + " · " + c.pessoa, ini: ini(c.empresa), ico: ico("#e6f4ee", "#1f7256"),
+          itens = clientes.filter(c => bate(c.empresa + " " + c.pessoa)).map(c => ({ t: c.empresa, s: (FAM[c.familia] ? FAM[c.familia] + " · " : "") + c.contrato + " · " + c.pessoa, ini: ini(c.empresa), ico: ico("#e6f4ee", "#1f7256"),
             temSelo: true, selo: "Cliente", seloStyle: seloS("#e6f4ee", "#1f7256"), style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "cli", empresa: c.empresa, familiaAtual: c.familia, contrato: c.contrato }, contato: c.pessoa, familia: N.tipo === "crosssell" ? Object.keys(FAM).find(k => k !== c.familia) : c.familia }) })); }
         if (cam === "base") { buscaPh = "Buscar empresa ou pessoa";
           const fb = N.fb || "tudo";
@@ -354,12 +354,12 @@ class Component extends DCLogic {
         const contatoNome = N.nc ? (N.ncNome || "").trim() : N.contato;
         const criaOpp = A.k === "cli" || A.k === "emp" || A.k === "pes";
         const fam = N.familia || (O && O.familia) || "CALLFACE_AI";
-        const closer = N.closer || (O && O.resp) || equipe[0];
+        const closer = N.closer || (O && O.resp) || (equipe.indexOf(this.eu) >= 0 ? this.eu : equipe[0]);
         const erro = A.k === "pes" && !A.empresa && !(N.empNova || "").trim() ? "Informe a empresa do contato." : criaOpp && !contatoNome ? "Informe o contato que recebe a proposta." : N.nc && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(N.ncEmail || "") ? "Informe um e-mail válido para o novo contato." : A.k === "cli" && N.tipo === "crosssell" && fam === A.familiaAtual ? "Cross-sell é outro produto: escolha um diferente do que o cliente já tem." : "";
         const P0 = A.k === "subst" && O ? (O.propostas || [])[A.i] : null;
         conf = {
-          alvoIni: ini(empresa || contatoNome || "?"), alvoT: A.k === "opp" || A.k === "subst" ? (FAM[O.familia] || "") + " · " + O.empresa : empresa || A.pessoa,
-          alvoS: A.k === "opp" ? "Oportunidade em " + (ROT[O.etapa] || "") + " · " + O.resp : A.k === "subst" ? "Substituir #" + P0.codigo + "-v" + (P0.versao || 1) : A.k === "cli" ? "Cliente · " + (FAM[A.familiaAtual] || "") + " · " + A.contrato : A.k === "emp" ? "Empresa da base" : (A.empresa ? "Contato de " + A.empresa : "Contato sem empresa"),
+          alvoIni: ini(empresa || contatoNome || "?"), alvoT: A.k === "opp" || A.k === "subst" ? (FAM[O.familia] ? FAM[O.familia] + " · " : "") + O.empresa : empresa || A.pessoa,
+          alvoS: A.k === "opp" ? "Oportunidade em " + (ROT[O.etapa] || "") + " · " + O.resp : A.k === "subst" ? "Substituir #" + P0.codigo + "-v" + (P0.versao || 1) : A.k === "cli" ? "Cliente · " + (FAM[A.familiaAtual] ? FAM[A.familiaAtual] + " · " : "") + A.contrato : A.k === "emp" ? "Empresa da base" : (A.empresa ? "Contato de " + A.empresa : "Contato sem empresa"),
           pedeEmpresa: A.k === "pes" && !A.empresa, empNova: N.empNova || "", setEmpNova: (e) => up({ empNova: e.target.value }),
           pedeContato: criaOpp && A.k !== "pes",
           contatos: pessoasEmp.map(p => { const on = !N.nc && N.contato === p.nome; return { nome: p.nome, cargo: p.cargo || p.email || "", onClick: () => up({ contato: p.nome, nc: false }),
@@ -370,7 +370,7 @@ class Component extends DCLogic {
           pedeProduto: criaOpp, familias: Object.keys(FAM).filter(k => !(A.k === "cli" && N.tipo !== "crosssell") || k === A.familiaAtual).map(k => ({ l: FAM[k], style: chipS(fam === k), onClick: () => up({ familia: k }) })),
           pedeCloser: criaOpp, closer, setCloser: (e) => up({ closer: e.target.value }), equipe: equipe.map(n => ({ v: n, l: n })),
           temSubst: A.k === "subst", substT: P0 ? "A #" + P0.codigo + "-v" + (P0.versao || 1) + " será substituída" : "", substS: P0 ? "A nova versão começa com tudo da atual. Quando você enviar, a #" + P0.codigo + "-v" + (P0.versao || 1) + " passa a Substituída e o link antigo para de aceitar respostas." : "",
-          efeitos: (A.k === "opp" ? [["Proposta ligada à oportunidade", (FAM[O.familia] || "") + " · " + O.empresa + ", já com empresa, contato e closer", "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"], ["Abre o editor", "Você monta itens, condições e fechamento", "M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"]]
+          efeitos: (A.k === "opp" ? [["Proposta ligada à oportunidade", (FAM[O.familia] ? FAM[O.familia] + " · " : "") + O.empresa + ", já com empresa, contato e closer", "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"], ["Abre o editor", "Você monta itens, condições e fechamento", "M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"]]
             : A.k === "subst" ? [["Nova versão v" + ((P0.versao || 1) + 1), "Copia itens e condições da versão atual", "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"], ["Histórico preservado", "A versão anterior continua visível na oportunidade", "M12 8v4l3 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"]]
             : [["Cria uma oportunidade no Pipeline", (A.k === "cli" ? TIPO[N.tipo] : "Nova venda") + " de " + FAM[fam] + " para " + (empresa || "a empresa") + ", em Entrada, com " + closer, "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z"],
                A.k === "cli" ? ["Nasce como aditivo", "Ligado ao " + A.contrato + ". Altera o contrato e a assinatura atuais, sem criar outra", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"] : ["Relacionamento passa a Lead", "Até a oportunidade ser ganha", "M20 6 9 17l-5-5"],
@@ -429,7 +429,7 @@ class Component extends DCLogic {
       vazio: !pagina.length,
       linhas: pagina.map((x, ix) => { const { o, p: P } = x, s = soma(P), sx = ST[P.status] || ST.rascunho, on = S.aberta === chave(x), fc = FAMC[o.familia] || FAMC.CALLFACE_AI;
         const RC = { "Camila Reis": ["#fff6f4", "#c2330f"], "Diego Nunes": ["#e8f0fb", "#2c5f9e"], "Ana Vitória": ["#efecfa", "#4f3fa8"], "Scott Ferraz": ["#12171d", "#fff"] }[o.resp] || ["#eeeff3", "#4a5560"];
-        const hoje = P.enviadaEm === "Hoje";
+        const hoje = (P.atualizadaEm || P.enviadaEm) === "hoje" || P.enviadaEm === "Hoje";
         return { titulo: "Proposta " + (FAM[o.familia] || ""), codigo: "#" + P.codigo + "-v" + (P.versao || 1), empresa: o.empresa, pessoa: o.pessoa, familia: FAM[o.familia] || "—",
           famStyle: "justify-self:start;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;white-space:nowrap;color:#1f252c",
           famDot: "flex:0 0 auto;color:" + fc[1],
@@ -443,7 +443,7 @@ class Component extends DCLogic {
           stDot: "flex:0 0 auto;color:" + sx[2],
           resp: o.resp, respIni: ini(o.resp),
           respAv: "flex:0 0 auto;width:24px;height:24px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;background:#eeeff3;color:#4a5560",
-          atualizado: P.status === "rascunho" ? "Rascunho" : (P.enviadaEm || "—"),
+          atualizado: P.atualizadaEm || P.enviadaEm || "—",
           atStyle: "font-size:12px;white-space:nowrap;font-weight:" + (hoje ? "700;color:#c2330f" : "500;color:#67787c"),
           abrir: () => this.setState({ aberta: on ? null : chave(x) }),
           style: "position:relative;display:grid;grid-template-columns:minmax(210px,1.5fr) minmax(170px,1.2fr) 130px 150px 160px 160px 150px 96px;gap:14px;align-items:center;width:100%;min-height:58px;padding:11px 20px;border:0;cursor:pointer;text-align:left;transition:background-color .18s ease;box-shadow:inset 0 -1px 0 #f1f3f3;background:" + (on ? "#fff6f4" : "#fff"),

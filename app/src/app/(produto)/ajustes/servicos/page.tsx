@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Package, Plus, Trash2, Edit3, X, Save } from "lucide-react";
+import { toast } from "sonner";
 
 interface Servico {
   id: string;
@@ -11,6 +12,8 @@ interface Servico {
   tipo: "recorrente" | "avulso" | "setup";
   valorSugerido: string | null;
   unidade: "mensal" | "hora" | "unidade" | "projeto";
+  serviceFamily?: string;
+  precosOficiais?: number;
   ativo: boolean;
   ordem: number;
   createdAt: string;
@@ -48,12 +51,14 @@ export default function ServicosCatalogoPage() {
     tipo: "recorrente" as string,
     valorSugerido: "",
     unidade: "mensal" as string,
+    serviceFamily: "UNKNOWN" as string,
   });
 
   const { data: servicos = [] } = useQuery<Servico[]>({
     queryKey: ["servicos-catalogo"],
     queryFn: async () => {
-      const res = await fetch("/api/servicos-catalogo");
+      // incluirNaoClassificados: o que se cria aqui nasce sem família e sumiria desta própria lista.
+      const res = await fetch("/api/servicos-catalogo?incluirNaoClassificados=true");
       if (!res.ok) return [];
       return res.json();
     },
@@ -69,18 +74,22 @@ export default function ServicosCatalogoPage() {
         tipo: form.tipo,
         valorSugerido: form.valorSugerido || undefined,
         unidade: form.unidade,
+        serviceFamily: form.serviceFamily,
       }),
     });
     if (res.ok) {
+      toast.success("Serviço criado");
       setCreating(false);
-      setForm({ nome: "", descricao: "", tipo: "recorrente", valorSugerido: "", unidade: "mensal" });
+      setForm({ nome: "", descricao: "", tipo: "recorrente", valorSugerido: "", unidade: "mensal", serviceFamily: "UNKNOWN" });
       queryClient.invalidateQueries({ queryKey: ["servicos-catalogo"] });
+    } else {
+      toast.error("Não foi possível criar o serviço");
     }
   };
 
   const handleUpdate = async () => {
     if (!editing) return;
-    await fetch(`/api/servicos-catalogo/${editing.id}`, {
+    const res = await fetch(`/api/servicos-catalogo/${editing.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -89,16 +98,21 @@ export default function ServicosCatalogoPage() {
         tipo: form.tipo,
         valorSugerido: form.valorSugerido || null,
         unidade: form.unidade,
+        serviceFamily: form.serviceFamily,
       }),
     });
+    if (!res.ok) { toast.error("Não foi possível salvar o serviço"); return; }
+    toast.success("Serviço salvo");
     setEditing(null);
-    setForm({ nome: "", descricao: "", tipo: "recorrente", valorSugerido: "", unidade: "mensal" });
+    setForm({ nome: "", descricao: "", tipo: "recorrente", valorSugerido: "", unidade: "mensal", serviceFamily: "UNKNOWN" });
     queryClient.invalidateQueries({ queryKey: ["servicos-catalogo"] });
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir este serviço?")) return;
-    await fetch(`/api/servicos-catalogo/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/servicos-catalogo/${id}`, { method: "DELETE" });
+    if (!res.ok) { toast.error("Não foi possível excluir o serviço"); return; }
+    toast.success("Serviço excluído");
     queryClient.invalidateQueries({ queryKey: ["servicos-catalogo"] });
   };
 
@@ -111,13 +125,14 @@ export default function ServicosCatalogoPage() {
       tipo: s.tipo,
       valorSugerido: s.valorSugerido || "",
       unidade: s.unidade,
+      serviceFamily: s.serviceFamily || "UNKNOWN",
     });
   };
 
   const startCreate = () => {
     setCreating(true);
     setEditing(null);
-    setForm({ nome: "", descricao: "", tipo: "recorrente", valorSugerido: "", unidade: "mensal" });
+    setForm({ nome: "", descricao: "", tipo: "recorrente", valorSugerido: "", unidade: "mensal", serviceFamily: "UNKNOWN" });
   };
 
   const isEditing = editing || creating;
@@ -217,6 +232,21 @@ export default function ServicosCatalogoPage() {
                 </select>
               </div>
             </div>
+            <div className="max-w-xs">
+              <label className="text-[11px] text-[var(--cf2-text-tertiary)] block mb-1">Família</label>
+              <select
+                value={form.serviceFamily}
+                onChange={(e) => setForm({ ...form, serviceFamily: e.target.value })}
+                className="w-full px-3 py-1.5 rounded text-[12px] text-[var(--cf2-text-primary)] outline-none"
+                style={{ background: "var(--cf2-bg-surface-muted)" }}
+              >
+                <option value="UNKNOWN">Sem família</option>
+                <option value="PABX">PABX</option>
+                <option value="CALLFACE_AI">Callface AI</option>
+                <option value="WHITE_LABEL">White Label</option>
+              </select>
+              <p className="text-[10px] text-[var(--cf2-text-tertiary)] mt-0.5">A proposta só lista serviços da família da oportunidade, e só os que têm preço no catálogo oficial.</p>
+            </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={creating ? handleCreate : handleUpdate}
@@ -236,7 +266,7 @@ export default function ServicosCatalogoPage() {
         <div className="text-center py-12 text-[var(--cf2-text-tertiary)] text-[13px]">
           <Package className="w-10 h-10 mx-auto mb-2 opacity-30" />
           <p>Nenhum serviço cadastrado</p>
-          <p className="text-[10px] text-[var(--cf2-text-tertiary)] mt-1">Serviços cadastrados aqui ficam disponíveis ao criar propostas e contratos.</p>
+          <p className="text-[10px] text-[var(--cf2-text-tertiary)] mt-1">O seletor da proposta lê o catálogo oficial: serviço com família e preço cadastrado.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -252,6 +282,15 @@ export default function ServicosCatalogoPage() {
                   <span className={`text-[10px] px-1.5 py-0 rounded ${tipoBadge[s.tipo]}`}>
                     {s.tipo}
                   </span>
+                  {s.serviceFamily && s.serviceFamily !== "UNKNOWN" ? (
+                    <span className="text-[10px] px-1.5 py-0 rounded text-[var(--cf2-text-tertiary)]" style={{ background: "var(--cf2-bg-surface-muted)" }}>{s.serviceFamily.replace("_", " ")}</span>
+                  ) : (
+                    <span className="text-[10px] px-1.5 py-0 rounded text-[var(--cf2-warning-text)]" style={{ background: "var(--cf2-bg-surface-muted)" }}>sem família</span>
+                  )}
+                  {s.serviceFamily && s.serviceFamily !== "UNKNOWN" && s.precosOficiais === 0 && (
+                    <span className="text-[10px] px-1.5 py-0 rounded text-[var(--cf2-warning-text)]" style={{ background: "var(--cf2-bg-surface-muted)" }} title="A proposta só lista serviços com preço no catálogo oficial (Ajustes > Catálogo).">fora das propostas: sem preço oficial</span>
+                  )}
+                  {!s.ativo && <span className="text-[10px] text-[var(--cf2-text-tertiary)]">inativo</span>}
                 </div>
                 {s.descricao && (
                   <p className="text-[11px] text-[var(--cf2-text-secondary)] mt-0.5">{s.descricao}</p>

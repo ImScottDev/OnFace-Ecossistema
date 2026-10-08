@@ -13,6 +13,7 @@ import {
 import { corAvatarEmpresa, iniciaisEmpresa, TEXTO_SOBRE_AVATAR } from "@/components/crm2/shared/avatar";
 import { ROLES, isAdminView, type Role } from "@/lib/auth/roles";
 import { ROLE_AJUDA, ROLE_LABEL } from "./roles";
+import { META_LABELS, META_TIPOS_MOEDA, type MetaTipo } from "@/lib/metas-shared";
 import type { Membro } from "./tipos";
 import { MetaDialog } from "./MetaDialog";
 import { ConviteDialog } from "./ConviteDialog";
@@ -37,6 +38,23 @@ export default function MembrosPage() {
   const [convidando, setConvidando] = useState(false);
 
   const podeGerir = isAdminView((session?.user as { role?: string } | undefined)?.role);
+
+  // Metas já definidas no mês corrente: a lista mostra o valor, não só "Definir".
+  const mesAtual = new Date().toISOString().slice(0, 7);
+  const { data: metasDoMes } = useQuery<{ usuarioId: string; tipo: MetaTipo; valorAlvo: string | number }[]>({
+    enabled: podeGerir,
+    queryKey: ["metas-equipe", mesAtual],
+    queryFn: async () => {
+      const res = await fetch(`/api/metas?periodo=${mesAtual}`);
+      if (!res.ok) return [];
+      return (await res.json()).metas ?? [];
+    },
+  });
+  const metasDe = (id: string) => (metasDoMes ?? []).filter((m) => m.usuarioId === id);
+  const fmtMeta = (m: { tipo: MetaTipo; valorAlvo: string | number }) => {
+    const v = Number(m.valorAlvo);
+    return `${META_LABELS[m.tipo]}: ${META_TIPOS_MOEDA.includes(m.tipo) ? v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) : v.toLocaleString("pt-BR")}`;
+  };
 
   const { data, isLoading, isError, refetch } = useQuery<Membro[]>({
     queryKey: ["ajustes-membros"],
@@ -203,9 +221,16 @@ export default function MembrosPage() {
                     </Cf2TableCell>
                     <Cf2TableCell className="text-right">
                       {podeGerir ? (
-                        <Cf2Button variant="secondary" size="sm" onClick={() => setMetaDe(m)}>
-                          <Target className="size-3.5" /> Definir
-                        </Cf2Button>
+                        <div className="flex items-center justify-end gap-2">
+                          {metasDe(m.id).length > 0 && (
+                            <span className="text-[11.5px] text-right leading-tight" style={{ color: "var(--cf2-text-secondary)" }}>
+                              {metasDe(m.id).map((x) => <span key={x.tipo} className="block">{fmtMeta(x)}</span>)}
+                            </span>
+                          )}
+                          <Cf2Button variant="secondary" size="sm" onClick={() => setMetaDe(m)}>
+                            <Target className="size-3.5" /> {metasDe(m.id).length > 0 ? "Editar" : "Definir"}
+                          </Cf2Button>
+                        </div>
                       ) : (
                         <span className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>—</span>
                       )}

@@ -5,7 +5,7 @@ import { painelOnboarding } from "@/lib/pos-venda/painel-onboarding";
    Substitui o ModuloPendente: Pós-vendas abre no painel de Onboarding e
    Implantação, que é o que a árvore de 16/09 pôs debaixo deste destino. */
 import { OnboardingProto } from "@/components/onface/proto/OnboardingProto";
-import { acaoConcluirItem, acaoConcluirOnboarding, acaoHandoff } from "./actions";
+import { acaoConcluirItem, acaoConcluirOnboarding, acaoHandoff, acaoLiberarBloqueio } from "./actions";
 
 export const metadata = { title: "Pós-vendas" };
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export default async function PosVendasPage({ searchParams }: {
       // e Onboarding (/clientes/implantacao/*) trazem ao redirecionar para cá.
       abaInicial={params.aba ?? null}
       familiaInicial={FAMILIAS.has(params.familia ?? "") ? params.familia! : null}
-      acoes={{ concluirItem: acaoConcluirItem, handoff: acaoHandoff, concluirOnboarding: acaoConcluirOnboarding }}
+      acoes={{ concluirItem: acaoConcluirItem, handoff: acaoHandoff, concluirOnboarding: acaoConcluirOnboarding, liberarBloqueio: acaoLiberarBloqueio }}
     />
   );
 }

@@ -17,11 +17,12 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { acaoDetalhe, acaoResponsaveis } from "@/app/(produto)/pre-vendas/actions";
+import { acaoBuscarVinculos } from "@/app/(produto)/contatos/actions";
 import { AtividadeLiga } from "./AtividadeLiga";
 import { usePecas, type PecaProps } from "./pecas-host";
 import {
   TIPO_DO_DESENHO, alterarTarefa, corpoDaMudanca, corpoDaNova, criarTarefa, lerTarefa,
-  prazoDoBanco, prioridadeDoBanco, proximaDoLead, situacaoDoBanco, tipoDoBanco, type CorpoTarefa,
+  excluirTarefa, prazoDoBanco, prioridadeDoBanco, proximaDoLead, situacaoDoBanco, tipoDoBanco, type CorpoTarefa,
 } from "./atividade-tarefa";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -147,6 +148,15 @@ export default function AtividadePecaProto({ peca, id, contexto, fechar, gravou 
         if (!tarefaId) return sair(doLead ? "Este lead não tem próxima ação aberta." : "Esta atividade não é uma tarefa do CRM.");
         const r = await lerTarefa(tarefaId);
         if (!r.ok) return sair(r.erro);
+        /* Ligação que veio do Callface: a tarefa é só o rastro (resumo em texto
+           cru, responsável "Sistema"). O que importa é o Relatório da ligação —
+           áudio, transcrição, análise e próximos passos —, que já existe. */
+        const t: Record<string, any> = r.dados ?? {};
+        const lead = uuid(t.lead_id) ?? uuid(t.leadId);
+        if (lead && /^liga/i.test(String(t.tipo ?? "")) && /^liga[cç][aã]o/i.test(String(t.titulo ?? ""))) {
+          if (vivo) { fechar(); abrir("relatorio", lead); }
+          return;
+        }
         if (vivo) setCarga({ equipe, modo: "ver", item: itemDaTarefa(r.dados, doLead) });
         return;
       }
@@ -161,7 +171,7 @@ export default function AtividadePecaProto({ peca, id, contexto, fechar, gravou 
       const pre: Record<string, any> = {
         titulo: texto(contexto.titulo), tipo: texto(contexto.tipo), data: texto(contexto.data),
         empresa: texto(contexto.empresa), pessoa: texto(contexto.pessoa), oppId: ids.negocioId ?? "",
-        lead: leadId ?? "",
+        lead: leadId ?? "", empresaId: ids.empresaId ?? "",
       };
       let leads: Carga["leads"] = [];
       if (leadId && !pre.pessoa) {
@@ -230,15 +240,13 @@ export default function AtividadePecaProto({ peca, id, contexto, fechar, gravou 
   const gravar = React.useCallback(async (patch: { atividadesV2?: any[] }): Promise<string | null> => {
     const nova = patch?.atividadesV2?.at(-1);
     if (!nova || !carga?.ids) return "Nada para gravar.";
-    const pre = carga.pre ?? {};
-    const lead = carga.leads?.[0];
-    const comPessoa = !!nova.pessoa || !(pre.pessoa || lead?.pessoa);
-    const comEmpresa = !!nova.empresa || !(pre.empresa || lead?.empresa);
+    /* O formulário carrega os ids do vínculo (da tela ou escolhidos no seletor); tirar o chip os zera. */
+    const v = nova.vincIds ?? {};
     const r = await criarTarefa({
       ...corpoDaNova(nova, idDoResponsavel),
-      leadId: comPessoa ? carga.ids.leadId : null,
-      empresaId: comEmpresa ? carga.ids.empresaId : null,
-      negocioId: comEmpresa ? carga.ids.negocioId : null,
+      leadId: v.leadId ?? null,
+      empresaId: v.empresaId ?? null,
+      negocioId: v.negocioId ?? null,
     });
     const msg = aviso.current;
     aviso.current = null;
@@ -247,6 +255,16 @@ export default function AtividadePecaProto({ peca, id, contexto, fechar, gravou 
     gravou();
     return null;
   }, [carga, idDoResponsavel, gravou]);
+
+  const excluir = React.useCallback(async (tarefaId: string) => {
+    const r = await excluirTarefa(tarefaId);
+    if (!r.ok) { toast.error(r.erro); return; }
+    pendente.current = {};
+    if (relogio.current) { clearTimeout(relogio.current); relogio.current = null; }
+    toast.success("Atividade excluída");
+    gravou();
+    fechar();
+  }, [gravou, fechar]);
 
   const catalogo = React.useMemo(() => ({
     EQUIPE: carga?.equipe.map((r) => r.nome) ?? [],
@@ -275,6 +293,8 @@ export default function AtividadePecaProto({ peca, id, contexto, fechar, gravou 
       pedido={pedido}
       abrir={abrir}
       gravar={gravar}
+      buscarVinculos={acaoBuscarVinculos}
+      excluir={excluir}
       avisou={avisou}
       fechar={fechar}
       ir={() => {}}

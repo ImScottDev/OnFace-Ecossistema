@@ -22,6 +22,24 @@ function formatarAmostra(amostra: unknown): string {
  * `getTenantContext`), não ferramenta cross-org de super admin — o lugar dela
  * é Ajustes.
  */
+/** Nomes de interface em português; a chave original continua sendo a do check no banco. */
+const NOME_VERIFICACAO: Record<string, string> = {
+  "Duplicate": "Duplicidade",
+  "Missing Owner": "Lead sem responsável",
+  "Missing Source": "Lead sem origem",
+  "Invalid Contact": "Contato inválido",
+  "Invalid Company": "Empresa inválida",
+  "Inconsistent Stage": "Etapa inconsistente",
+  "Invalid Amount": "Valor inválido",
+  "Orphan Deal": "Negócio órfão",
+  "Missing Product": "Contrato sem produto",
+  "Financial mismatch": "Divergência financeira",
+  "Financial Mismatch": "Divergência financeira",
+  "Domain Model Sync (Leads)": "Sincronia do modelo (leads)",
+  "Domain Model Sync (Negócios)": "Sincronia do modelo (negócios)",
+};
+const nomeDaVerificacao = (c: string) => NOME_VERIFICACAO[c] ?? c;
+
 export default async function QualidadeDadosPage() {
   const ctx = await getTenantContext();
   if (!ctx || !isAdminView(ctx.userRole)) {
@@ -57,7 +75,7 @@ export default async function QualidadeDadosPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {resultados.map((r) => (
           <StatDiag
-            key={r.check} label={r.check} valor={r.problemas.toLocaleString("pt-BR")}
+            key={r.check} label={nomeDaVerificacao(r.check)} valor={r.problemas.toLocaleString("pt-BR")}
             tom={r.problemas === 0 ? "ok" : "atencao"} sub={r.descricao}
           />
         ))}
@@ -71,7 +89,7 @@ export default async function QualidadeDadosPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {comProblema.map((r) => (
-            <CartaoDiag key={r.check} titulo={`${r.check} (${r.problemas})`}>
+            <CartaoDiag key={r.check} titulo={`${nomeDaVerificacao(r.check)} (${r.problemas})`}>
               {r.amostras.map((a, i) => (
                 <p key={i} className="text-[11.5px] truncate font-mono" style={{ color: "var(--cf2-text-tertiary)" }}>
                   {formatarAmostra(a)}

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { paginaDeAtendimento } from "@/lib/atendimento/tela";
 import { contextoDosLeads } from "@/lib/atendimento/contexto";
+import { garantirConversaDoLead } from "@/lib/atendimento/garantir-conversa";
 /* A tela é o desenho do handoff, convertido por máquina
    (ver docs/design/COMO-LIGAR-UMA-TELA.md). */
 import { AtendimentoProto } from "@/components/onface/proto/AtendimentoProto";
@@ -32,6 +33,7 @@ export default async function AtendimentoPage({ searchParams }: {
      parâmetro: caía sempre na caixa inteira. */
   const { leadId } = await searchParams;
 
+  if (leadId) await garantirConversaDoLead(ctx.organizacaoId, leadId, ctx.userId ?? null);
   const dados = await paginaDeAtendimento(ctx);
   const contexto = await contextoDosLeads(ctx.organizacaoId, dados.leads.map((l) => l.id));
   return <AtendimentoProto dados={dados} contexto={contexto} leadInicial={leadId ?? null} />;

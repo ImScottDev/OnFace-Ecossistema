@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { CsDesenho } from "./CsDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -134,7 +135,9 @@ class Logica extends React.Component<any, any> {
     const pad = (n) => String(n).padStart(2, "0"), dmy = (d) => pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear(), dm = (d) => pad(d.getDate()) + "/" + pad(d.getMonth() + 1);
     const isoD = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
     const brl = (n) => "R$ " + Math.round(n).toLocaleString("pt-BR"), brlK = (n) => n >= 10000 ? "R$ " + (n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " mil" : brl(n);
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" }, PK = Object.keys(FAM);
+    const FAM_BASE = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" }, PK = Object.keys(FAM_BASE),
+      /* conta sem família (ex.: só faturou) não vira o texto "undefined" nos rótulos */
+      FAM = new Proxy(FAM_BASE, { get: (t, k) => (k in t ? t[k] : typeof k === "string" ? "Sem produto" : undefined) });
     const hsh = (s) => { let x = 7; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) >>> 0; return x; };
     const TOM = { erro: ["#fdeeea", "#c2330f", "#d93c1a"], coral: ["#fff6f4", "#c2330f", "#fe4f2b"], ok: ["#e6f4ee", "#1f7256", "#1f7256"], neutro: ["#eeeff3", "#4a5560", "#8b949e"] };
     const pill = (tom) => "flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap;background:" + TOM[tom][0] + ";color:" + TOM[tom][1];

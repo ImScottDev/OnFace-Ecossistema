@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { TagsOportunidadeDesenho } from "./TagsOportunidadeDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -119,7 +120,7 @@ class Logica extends React.Component<any, any> {
       if (!O) return;
       this.setState({ oppId: id, tipo: peca === "tagslead" ? "lead" : "opp", sel: (O.tags || []).slice(), comEmp: !!O.empresa, comPes: peca !== "tagslead", pessoa: O.pessoa, busca: "", novaAuto: false });
     });
-    this._esc = (e) => { if (e.key === "Escape" && this.state.oppId) this.setState({ oppId: null }); };
+    this._esc = (e) => { if (e.key === "Escape" && this.state.oppId) this.setState({ oppId: null, dropAberto: false }); };
     document.addEventListener("keydown", this._esc);
   }
   componentWillUnmount() { if (this._off) this._off(); document.removeEventListener("keydown", this._esc); }
@@ -151,7 +152,8 @@ class Logica extends React.Component<any, any> {
       { nome: "Inbound", auto: false }, { nome: "Sem CNPJ", auto: false }, { nome: "Concorrente", auto: false },
       { nome: "Callface AI", auto: false }, { nome: "PABX", auto: false }, { nome: "White Label", auto: false }, { nome: "No-show", auto: false }
     ];
-    const CATB = ehLead ? CAT_LEAD : (this.dadosDoProto.TagsOpp || []);
+    /* Catálogo REAL (labels) para lead e oportunidade; o fixo do protótipo (CAT_LEAD) não existe mais. */
+    const CATB = this.dadosDoProto.TagsOpp || [];
     const cat = CATB.concat(criadas.filter(c => !CATB.some(x => x.nome === c.nome)))
       .concat(S.sel.filter(n => !CATB.some(x => x.nome === n) && !criadas.some(c => c.nome === n)).map(n => ({ nome: n, auto: false })));
     const q = S.busca.trim().toLowerCase();
@@ -162,9 +164,10 @@ class Logica extends React.Component<any, any> {
     const pessoa = S.pessoa || O.pessoa;
     const autoSel = S.sel.filter(n => (cat.find(t => t.nome === n) || {}).auto && (O.tags || []).indexOf(n) < 0);
     const alvo = [ehLead ? "o lead" : "a oportunidade"].concat(S.comEmp ? [O.empresa] : []).concat(S.comPes && pessoa ? [pessoa] : []);
+    const listaEm = (a) => a.map((x, i) => i === 0 ? x.replace(/^o /, "no ").replace(/^a /, "na ") : "em " + x).join(" e ");
     const lista = (a) => a.length > 1 ? a.slice(0, -1).join(", ") + " e " + a[a.length - 1] : a[0];
     const box = (on) => "display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;border:0;cursor:pointer;background:" + (on ? "#fff" : "#fafafa") + ";box-shadow:inset 0 0 0 " + (on ? "1.5px #12171d" : "1px #e3e7e8");
-    const fechar = () => this.setState({ oppId: null });
+    const fechar = () => this.setState({ oppId: null, dropAberto: false });
     const limpa = S.busca.trim();
     const existe = cat.some(t => t.nome.toLowerCase() === limpa.toLowerCase());
     const criar = () => {
@@ -180,7 +183,7 @@ class Logica extends React.Component<any, any> {
         const patch = { tagsLead: tl };
         if (S.comEmp && O.empresa && add.length) { const emps = Object.assign({}, E.ler("empresas", {})); const X = emps[O.empresa] || {}; const base = X.tags || O.base.slice(); emps[O.empresa] = Object.assign({}, X, { tags: base.concat(add.filter(n => base.indexOf(n) < 0)) }); patch.empresas = emps; }
         if (O.pessoa && add.length) { const ps = Object.assign({}, E.ler("pessoas", {})); const k2 = this.slug(O.pessoa) + "@" + this.slug(O.empresa); const P = ps[k2] || {}; const base = P.tags || ["Inbound", "Tomador de decisão"]; ps[k2] = Object.assign({}, P, { tags: base.concat(add.filter(n => base.indexOf(n) < 0)) }); patch.pessoas = ps; }
-        E.gravar(patch); this.setState({ oppId: null });
+        E.gravar(patch); this.setState({ oppId: null, dropAberto: false });
         const autos = add.filter(n => (cat.find(x => x.nome === n) || {}).auto);
         E.avisar(autos.length ? (cat.find(x => x.nome === autos[0]).agente) + " disparada · tags aplicadas" : add.length || novas.length !== antes.length ? "Tags do lead atualizadas" : "Nenhuma mudança nas tags", "ok");
         return;
@@ -200,9 +203,9 @@ class Logica extends React.Component<any, any> {
       if (S.comPes && pessoa && add.length) { const ps = Object.assign({}, E.ler("pessoas", {})); const k = this.slug(pessoa) + "@" + this.slug(O.empresa); const P = ps[k] || {};
         const base = P.tags || (pessoa === O.pessoa ? ["Inbound", "Tomador de decisão"] : []); ps[k] = Object.assign({}, P, { tags: base.concat(add.filter(n => base.indexOf(n) < 0)) }); patch.pessoas = ps; }
       E.gravar(patch);
-      this.setState({ oppId: null });
+      this.setState({ oppId: null, dropAberto: false });
       const autos = add.filter(n => (cat.find(t => t.nome === n) || {}).auto);
-      E.avisar(!add.length && !rem.length ? "Nenhuma mudança nas tags" : autos.length ? (autos.length > 1 ? autos.length + " automações acionadas" : (cat.find(t => t.nome === autos[0]).agente) + " acionado") + " · tags aplicadas em " + lista(alvo) : "Tags atualizadas em " + lista(alvo), "ok");
+      E.avisar(!add.length && !rem.length ? "Nenhuma mudança nas tags" : autos.length ? (autos.length > 1 ? autos.length + " automações acionadas" : (cat.find(t => t.nome === autos[0]).agente) + " acionado") + " · tags aplicadas " + listaEm(alvo) : "Tags atualizadas " + listaEm(alvo), "ok");
     };
     return {
       aberto: true, fechar, parar: (e) => e.stopPropagation(),
@@ -221,6 +224,13 @@ class Logica extends React.Component<any, any> {
         linha: "display:flex;align-items:flex-start;gap:12px;width:100%;padding:12px 14px;border:0;cursor:pointer;background:" + (on ? "#fff8f6" : "#fff") + ";" + (k ? "box-shadow:inset 0 1px 0 #f1f3f3" : "") }; }),
       org: vis.filter(t => !t.auto).map(t => { const on = S.sel.indexOf(t.nome) >= 0; return { nome: t.nome, on, onClick: () => tog(t.nome),
         chip: "display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;" + (on ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede") }; }),
+      /* Combobox: selecionadas como chips removíveis; a lista de tags (as que
+         disparam automação primeiro) abre ao focar a busca e aceita várias. */
+      chipsSel: S.sel.map(n => { const t = cat.find(x => x.nome === n) || {}; return { nome: n, auto: !!t.auto, remover: () => tog(n),
+        style: "display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 6px 0 12px;border-radius:9999px;font-size:12.5px;font-weight:600;white-space:nowrap;" + (t.auto ? "background:#fff6f4;color:#9c3210;box-shadow:inset 0 0 0 1px #f6c9bd" : "background:#12171d;color:#fff") }; }),
+      opcoes: vis.slice().sort((a, b) => (b.auto ? 1 : 0) - (a.auto ? 1 : 0) || a.nome.localeCompare(b.nome, "pt-BR")).map(t => { const on = S.sel.indexOf(t.nome) >= 0; return { nome: t.nome, auto: !!t.auto, agente: t.agente || "Automação", on, onClick: () => tog(t.nome), caixa: caixa(on),
+        linha: "display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:8px;cursor:pointer;background:" + (on ? "#f6f7f7" : "transparent") }; }),
+      dropAberto: !!S.dropAberto, abrirDrop: () => { if (!S.dropAberto) this.setState({ dropAberto: true }); }, fecharDrop: () => this.setState({ dropAberto: false }),
       temAuto: vis.some(t => t.auto), temOrg: vis.some(t => !t.auto), nada: !vis.length && !limpa,
       resumo: S.sel.length + (S.sel.length === 1 ? " tag" : " tags") + (ehLead ? " no lead" : " na oportunidade") + (autoSel.length ? " · " + autoSel.length + (autoSel.length > 1 ? " automações vão rodar" : " automação vai rodar") : ""),
       aplicar

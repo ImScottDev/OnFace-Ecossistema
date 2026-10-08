@@ -203,6 +203,7 @@ Vínculo
 Sem vínculo
 </span>
 </>) : null}
+{nv.seletor}
 </div>
 </div>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "20px" }}>
@@ -439,6 +440,7 @@ Comentar
 </div>
 <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: "8px", padding: "12px 18px", borderTop: "1px solid #eef1f1", background: "#fafafa" }}>
 <span style={{ flex: "1" }} />
+{vr.slotExcluir}
 <button onClick={vr.concluir} style={estilo(vr.concluirStyle)}>
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
 <path d="M20 6 9 17l-5-5" />

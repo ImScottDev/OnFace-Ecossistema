@@ -24,6 +24,7 @@ export interface AcoesOnboarding {
   concluirItem: (itemId: string) => Promise<Resultado>;
   handoff: (fulfillmentId: string, implantadorId: string | null) => Promise<Resultado>;
   concluirOnboarding: (fulfillmentId: string) => Promise<Resultado>;
+  liberarBloqueio: (fulfillmentId: string) => Promise<Resultado>;
 }
 
 const SEM_COMMAND_BLOQUEIO =
@@ -53,6 +54,9 @@ class OnboardingLigado extends OnboardingLiga {
   componentDidUpdate() {
     (this as any).props.lembrarDrawer?.((this as any).state.drawer);
   }
+
+  /** O Liga chama `this.diz` em todo aviso e não o define: o primeiro aviso lançava TypeError. */
+  diz(t: string, tom?: string) { if (tom === "erro") toast.error(t); else toast(t); }
 
   renderVals() {
     const vals: any = super.renderVals();
@@ -109,7 +113,8 @@ class OnboardingLigado extends OnboardingLiga {
         a.abrir = () => props.ir(`/projetos/${p.id}`);
       });
 
-      dr.liberar = () => props.avisar(SEM_COMMAND_BLOQUEIO, `/projetos/${p.id}`, "Abrir projeto");
+      // Libera de verdade (itens BLOCKED voltam a PENDING); só diz "resolvido" depois do command.
+      dr.liberar = () => props.executar(() => props.liberarBloqueio(p.id), "Bloqueio resolvido");
       dr.aguardar = () => props.avisar(SEM_COMMAND_BLOQUEIO, `/projetos/${p.id}`, "Abrir projeto");
 
       /* Contato. O Liga discava o NOME ("call_to=Victor"). Ligar usa o
@@ -250,6 +255,7 @@ export function OnboardingProto({ dados, acoes, projetoInicial, abaInicial, fami
         concluirItem={concluirItem}
         handoff={acoes.handoff}
         concluirOnboarding={acoes.concluirOnboarding}
+        liberarBloqueio={acoes.liberarBloqueio}
         executar={executar}
         avisar={avisar}
         abrir={() => router.push("/calendario")}

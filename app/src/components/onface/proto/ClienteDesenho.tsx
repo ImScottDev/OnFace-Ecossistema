@@ -1179,8 +1179,8 @@ Principal
 </span>
 </span>
 </button>
-<span style={{ flex: "0 0 96px" }}>
-<span style={{ display: "inline-flex", alignItems: "center", height: "22px", padding: "0 8px", borderRadius: "6px", background: "#eeeff3", color: "#1f252c", fontSize: "11.5px", fontWeight: "600" }}>
+<span style={{ flex: "0 0 128px" }}>
+<span style={{ display: "inline-flex", alignItems: "center", height: "22px", padding: "0 8px", borderRadius: "6px", background: "#eeeff3", color: "#1f252c", fontSize: "11.5px", fontWeight: "600", whiteSpace: "nowrap" }}>
 {p.papel}
 </span>
 </span>

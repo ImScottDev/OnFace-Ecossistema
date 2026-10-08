@@ -88,7 +88,7 @@ export interface AcoesPreVendas {
   reativar: (leadId: string) => Promise<Resultado>;
   registrarContato: (leadId: string, canal: "whatsapp" | "email" | "ligacao") => Promise<Resultado>;
   atribuir: (leadId: string, responsavelId: string | null) => Promise<Resultado>;
-  criarOportunidade: (e: { leadId: string; familias: Familia[]; responsavelId: string; reuniao?: { data: string } | null }) => Promise<Resultado<{ ids: string[] }>>;
+  criarOportunidade: (e: { leadId: string; familias: Familia[]; responsavelId: string; reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; closerId?: string } | null }) => Promise<Resultado<{ ids: string[] }>>;
   criarLead: (e: EntradaNovoLead) => Promise<Resultado<{ leadId: string }>>;
   associarEmpresa: (leadId: string, nome: string, cnpj: string | null) => Promise<Resultado>;
   detalhe: (leadId: string) => Promise<Resultado<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] }>>;
@@ -98,6 +98,15 @@ export interface AcoesPreVendas {
   tag: (leadId: string, label: string, operacao: "adicionar" | "remover") => Promise<Resultado<{ mudou: boolean }>>;
   /** As tags que a organização tem, para o menu do "+". */
   tagsDaOrg: () => Promise<Resultado<{ tags: Array<{ id: string; nome: string }>; cadencias: Array<{ id: string; nome: string }> }>>;
+  /** Cadências publicadas (com passos) + de onde o usuário dispara: WhatsApp e e-mail dele. */
+  cadenciasDoSistema: () => Promise<Resultado<{
+    cadencias: Array<{ id: string; nome: string; passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
+    whatsapps: Array<{ id: string; numero: string; rotulo: string; padrao: boolean }>;
+    email: string | null;
+  }>>;
+  removerDaCadencia: (leadId: string) => Promise<Resultado<{ canceladas: number }>>;
+  /** Ação em massa (aqui usada com 1 lead: "incluir_em_cadencia"). */
+  emMassa: (acao: import("@/lib/vendas/acoes-em-massa").AcaoEmMassa, leadIds: string[], valor: string | null) => Promise<Resultado<import("@/lib/vendas/acoes-em-massa").ResultadoEmMassa>>;
 }
 
 /** O que o formulário de próxima ação devolve. */

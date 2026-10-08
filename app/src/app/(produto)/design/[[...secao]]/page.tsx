@@ -1,8 +1,19 @@
+import { readdirSync } from "node:fs";
+import path from "node:path";
 import { notFound } from "next/navigation";
 import { OnfacePage, OnfacePageBand, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
 import { LabShell } from "@/components/onface/ds/LabShell";
 import { FundoGrafico } from "@/components/onface/ds/marca";
 import { SLUGS_VALIDOS } from "@/components/onface/ds/navegacao";
+
+/** Primitivas shadcn = arquivos de `components/ui`, contados na hora: número fixo envelhece a cada `shadcn add`. */
+function contarPrimitivas(): number | null {
+  try {
+    return readdirSync(path.join(process.cwd(), "src/components/ui")).filter((f) => f.endsWith(".tsx")).length;
+  } catch {
+    return null;
+  }
+}
 
 export const metadata = { title: "ONFACE Design System" };
 
@@ -43,10 +54,9 @@ export default async function DesignOnfacePage({
             </p>
           </div>
           <div className="ds-lab-hero-numeros">
-            {/* Sai da mesma contagem da navegação: quatro em Base, quatro em
-                Componentes e seis em Produto. */}
-            <span className="ds-lab-hero-numero"><b>14</b><span>seções</span></span>
-            <span className="ds-lab-hero-numero"><b>39</b><span>primitivas shadcn</span></span>
+            {/* Seções e primitivas são contadas na hora (navegação e components/ui). */}
+            <span className="ds-lab-hero-numero"><b>{SLUGS_VALIDOS.length}</b><span>seções</span></span>
+            <span className="ds-lab-hero-numero"><b>{contarPrimitivas() ?? "—"}</b><span>primitivas shadcn</span></span>
             <span className="ds-lab-hero-numero"><b>3</b><span>camadas de token</span></span>
           </div>
         </div>

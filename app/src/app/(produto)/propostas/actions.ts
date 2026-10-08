@@ -9,7 +9,7 @@ import {
 } from "@/lib/vendas/dominio";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as propostas from "@/lib/vendas/propostas";
-import { criarPropostaComItens, type ItemEntrada } from "@/lib/crm/proposta-criacao";
+import { atualizarItensDoRascunho, criarPropostaComItens, type ItemEntrada } from "@/lib/crm/proposta-criacao";
 import { lerLinhaDoTempo, registrarEvento, type LinhaDoTempo } from "@/lib/vendas/eventos";
 
 const ROTA = "/propostas";
@@ -30,11 +30,16 @@ export interface LinhaProposta {
   empresa: string | null;
   oportunidade: string | null;
   negocioId: string | null;
+  empresaId: string | null;
+  /** Etapa REAL da oportunidade: a lista não pode tratar toda proposta como de oportunidade aberta. */
+  etapa: string | null;
   familia: string | null;
   modoFechamento: string | null;
   total: number | null;
   totalRecorrente: number | null;
   enviadaEm: string | null;
+  /** Última atualização real (propostas.updated_at): coluna Atualização da lista. */
+  atualizadaEm: string | null;
   validade: string | null;
   /** Prazo real em dias (data_validade - envio); null quando a proposta não tem validade gravada. */
   validadeDias: number | null;
@@ -58,13 +63,13 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
     id: string; numero: number; versao: number; status: string;
     empresa: string | null; oportunidade: string | null; negocio_id: string | null;
     familia: string | null; modo: string | null; total: string | null;
-    total_recorrente: string | null; enviada_em: string | null;
+    total_recorrente: string | null; enviada_em: string | null; atualizada_em: string | null;
     validade: string | null; ajuste: string | null;
     validade_dias: number | null;
     vis_em: string | null; ajuste_em: string | null; aceita_em: string | null; recusada_em: string | null; expirada_em: string | null;
-    responsavel: string | null; pessoa: string | null;
+    responsavel: string | null; pessoa: string | null; empresa_id: string | null; etapa: string | null;
   }>(sql`
-    SELECT p.id::text, p.numero, p.versao, p.status,
+    SELECT p.id::text, p.numero, p.versao, p.status, n.empresa_id::text AS empresa_id, n.etapa,
            COALESCE(e.nome, l.empresa) AS empresa, n.titulo AS oportunidade, p.negocio_id::text,
            -- Cadeia de familia: proposta, negocio, oportunidade canonica.
            --
@@ -77,8 +82,10 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
            -- deducao entra so quando ninguem decidiu.
            COALESCE(p.service_family, n.service_family, o.service_family) AS familia,
            p.modo_fechamento AS modo,
-           p.total_geral::text AS total, p.total_recorrente::text,
-           p.enviada_em::text, p.data_validade::text AS validade,
+           -- O valor vem das LINHAS, a mesma conta do detalhe e do 360; o total gravado na proposta
+           -- só vale quando ela não tem linha (7 aceitas importadas tinham os dois diferentes).
+           COALESCE(it.total, p.total_geral)::text AS total, COALESCE(it.recorrente, p.total_recorrente)::text AS total_recorrente,
+           p.enviada_em::text, p.updated_at::text AS atualizada_em, p.data_validade::text AS validade,
            p.ajuste_solicitado_descricao AS ajuste,
            (p.data_validade - p.enviada_em::date)::int AS validade_dias,
            p.primeira_visualizacao_em::text AS vis_em, p.ajuste_solicitado_em::text AS ajuste_em,
@@ -97,6 +104,10 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
       LEFT JOIN usuarios u ON u.id = n.responsavel_id
       LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
       LEFT JOIN usuarios uo ON uo.id = o.responsavel_id
+      LEFT JOIN LATERAL (
+        SELECT sum(i.subtotal) AS total, COALESCE(sum(i.subtotal) FILTER (WHERE i.tipo = 'recorrente'), 0) AS recorrente
+          FROM proposta_itens i WHERE i.proposta_id = p.id HAVING count(*) > 0
+      ) it ON TRUE
      WHERE p.organizacao_id = ${ctx.organizacaoId}::uuid
        AND (${filtros.status ?? null}::text IS NULL OR p.status = ${filtros.status ?? null})
        AND (${busca}::text IS NULL OR lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca}
@@ -113,10 +124,11 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
   return linhas.map((l) => ({
     id: l.id, numero: l.numero, versao: l.versao, status: l.status,
     empresa: l.empresa, oportunidade: l.oportunidade, negocioId: l.negocio_id,
+    empresaId: l.empresa_id, etapa: l.etapa,
     familia: l.familia, modoFechamento: l.modo,
     total: l.total === null ? null : Number(l.total),
     totalRecorrente: l.total_recorrente === null ? null : Number(l.total_recorrente),
-    enviadaEm: l.enviada_em, validade: l.validade, ajusteSolicitado: l.ajuste,
+    enviadaEm: l.enviada_em, atualizadaEm: l.atualizada_em, validade: l.validade, ajusteSolicitado: l.ajuste,
     validadeDias: l.validade_dias,
     eventosEm: { visualizada: l.vis_em, ajuste: l.ajuste_em, aceita: l.aceita_em, recusada: l.recusada_em, expirada: l.expirada_em },
     responsavel: l.responsavel, pessoa: l.pessoa,
@@ -172,7 +184,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       SELECT p.id::text, p.numero AS proposta_numero, p.versao, p.status,
              n.empresa_id::text, e.nome AS empresa, p.negocio_id::text,
              p.lead_id::text,
-             NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS contato_nome,
+             NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS contato_nome,
              COALESCE(l.whatsapp, l.telefone) AS contato_telefone, l.email AS contato_email,
              e.razao_social, e.cnpj, e.logradouro, e.numero AS endereco_numero, e.complemento,
              e.bairro, e.cidade, e.estado, e.cep,
@@ -266,6 +278,93 @@ export async function acaoOportunidadesAbertas(termo: string): Promise<Array<{
      ORDER BY n.etapa_desde DESC NULLS LAST LIMIT 20
   `);
   return linhas.map((l) => ({ id: l.id, titulo: l.titulo, familia: l.familia, empresa: l.empresa }));
+}
+
+/**
+ * O que o assistente "Nova proposta" oferece, vindo do banco.
+ *
+ * Carrega sob demanda (quando o assistente abre): são oportunidades abertas,
+ * a carteira de clientes e a base de empresas e contatos. O assistente antigo
+ * lia isto de um store local e mostrava "0 clientes".
+ */
+export interface BaseNovaProposta {
+  equipe: Array<{ id: string; nome: string }>;
+  /** Oportunidades abertas, com as propostas vivas dentro. */
+  abertas: Array<{
+    negocioId: string; empresaId: string | null; empresa: string; pessoa: string; familia: string | null;
+    etapa: string; responsavel: string | null;
+    propostas: Array<{ id: string; numero: number; versao: number; status: string }>;
+  }>;
+  /** A carteira: empresas que já são clientes (tabela `clientes`). */
+  clientes: Array<{ empresaId: string; empresa: string; pessoa: string; familia: string | null }>;
+  /** Contatos da base, uma linha por pessoa; empresa sem contato vem com pessoa null. */
+  contatos: Array<{ empresaId: string; empresa: string; pessoaId: string | null; leadId: string | null; pessoa: string | null; cargo: string | null; email: string | null }>;
+}
+
+export async function acaoBaseNovaProposta(): Promise<BaseNovaProposta> {
+  const ctx = await getTenantContext();
+  const vazio: BaseNovaProposta = { equipe: [], abertas: [], clientes: [], contatos: [] };
+  if (!ctx) return vazio;
+  const org = ctx.organizacaoId;
+
+  const [equipe, abertas, vivas, clientes, contatos] = await Promise.all([
+    db.execute<{ id: string; nome: string }>(sql`
+      SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${org}::uuid AND ativo = true ORDER BY nome`),
+    db.execute<{ id: string; empresa_id: string | null; empresa: string | null; pessoa: string | null; familia: string | null; etapa: string; resp: string | null }>(sql`
+      SELECT n.id::text, n.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa,
+             NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS pessoa,
+             COALESCE(n.service_family, o.service_family) AS familia, n.etapa, u.nome AS resp
+        FROM negocios n
+        LEFT JOIN empresas e ON e.id = n.empresa_id
+        LEFT JOIN leads l ON l.id = n.lead_id
+        LEFT JOIN usuarios u ON u.id = n.responsavel_id
+        LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
+       WHERE n.organizacao_id = ${org}::uuid AND n.etapa IN ('entrada','diagnostico','proposta','negociacao')
+       ORDER BY n.etapa_desde DESC NULLS LAST LIMIT 1000`),
+    db.execute<{ id: string; negocio_id: string; numero: number; versao: number; status: string }>(sql`
+      SELECT p.id::text, p.negocio_id::text, p.numero, p.versao, p.status FROM propostas p
+        JOIN negocios n ON n.id = p.negocio_id
+       WHERE p.organizacao_id = ${org}::uuid AND n.etapa IN ('entrada','diagnostico','proposta','negociacao')
+         AND p.status IN ('rascunho','enviada','visualizada','ajuste_solicitado')`),
+    db.execute<{ empresa_id: string; empresa: string; pessoa: string | null; familia: string | null }>(sql`
+      SELECT c.empresa_id::text, e.nome AS empresa,
+             NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS pessoa,
+             (SELECT COALESCE(n.service_family, o.service_family) FROM negocios n
+                LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
+               WHERE n.empresa_id = c.empresa_id AND n.etapa = 'ganho'
+               ORDER BY n.updated_at DESC LIMIT 1) AS familia
+        FROM clientes c
+        JOIN empresas e ON e.id = c.empresa_id
+        LEFT JOIN pessoas p ON p.id = c.pessoa_principal_id
+       WHERE c.organizacao_id = ${org}::uuid ORDER BY e.nome`),
+    db.execute<{ empresa_id: string; empresa: string; pessoa_id: string | null; lead_id: string | null; pessoa: string | null; cargo: string | null; email: string | null }>(sql`
+      SELECT e.id::text AS empresa_id, e.nome AS empresa, p.id::text AS pessoa_id, p.lead_id_legado::text AS lead_id,
+             NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS pessoa, p.cargo, p.email
+        FROM empresas e LEFT JOIN pessoas p ON p.empresa_id = e.id
+       WHERE e.organizacao_id = ${org}::uuid AND e.nome IS NOT NULL AND trim(e.nome) <> ''
+       ORDER BY e.nome, p.nome`),
+  ]);
+
+  const propsPorNegocio = new Map<string, BaseNovaProposta["abertas"][number]["propostas"]>();
+  for (const v of vivas) {
+    const l = propsPorNegocio.get(v.negocio_id) ?? [];
+    l.push({ id: v.id, numero: v.numero, versao: v.versao, status: v.status });
+    propsPorNegocio.set(v.negocio_id, l);
+  }
+
+  return {
+    equipe,
+    abertas: abertas.map((o) => ({
+      negocioId: o.id, empresaId: o.empresa_id, empresa: o.empresa?.trim() || "Empresa não informada",
+      pessoa: o.pessoa ?? "", familia: o.familia, etapa: o.etapa, responsavel: o.resp,
+      propostas: (propsPorNegocio.get(o.id) ?? []).sort((a, b) => a.versao - b.versao),
+    })),
+    clientes: clientes.map((c) => ({ empresaId: c.empresa_id, empresa: c.empresa, pessoa: c.pessoa ?? "", familia: c.familia })),
+    contatos: contatos.map((c) => ({
+      empresaId: c.empresa_id, empresa: c.empresa, pessoaId: c.pessoa_id, leadId: c.lead_id,
+      pessoa: c.pessoa, cargo: c.cargo, email: c.email,
+    })),
+  };
 }
 
 /* ── Escrita ───────────────────────────────────────────────────────────── */
@@ -363,6 +462,74 @@ export async function acaoCriar(entrada: {
   });
 }
 
+/**
+ * Edita o rascunho: os itens, as observações e as condições.
+ *
+ * O builder abre o rascunho com as linhas dele (antes abria vazio e "salvar"
+ * criava OUTRA proposta). Linha de proposta legada, sem preço no catálogo,
+ * volta com `itemExistenteId` e é mantida; linha nova exige preço do catálogo.
+ */
+export async function acaoAtualizarRascunho(entrada: {
+  propostaId: string;
+  itens: Array<{
+    catalogoPrecoId?: string | null; itemExistenteId?: string | null; nome: string;
+    tipo: "recorrente" | "avulso" | "setup"; quantidade: number; valorUnitario: number; desconto: number;
+  }>;
+  observacoes?: string | null;
+  prazoContratoMeses?: number | null;
+  parcelasSetup?: number | null;
+}): Promise<Resultado<{ propostaId: string }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  if (entrada.itens.length === 0) return { ok: false, erro: "A proposta precisa de pelo menos um item." };
+
+  return executar("editar rascunho da proposta", async () => {
+    const [p] = await db.execute<{ negocio_id: string | null; lead_id: string; familia: string | null }>(sql`
+      SELECT p.negocio_id::text, p.lead_id::text,
+             COALESCE(n.service_family, o.service_family) AS familia
+        FROM propostas p
+        LEFT JOIN negocios n ON n.id = p.negocio_id
+        LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
+       WHERE p.id = ${entrada.propostaId}::uuid AND p.organizacao_id = ${ctx.organizacaoId}::uuid`);
+    if (!p) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");
+
+    if (ehFamiliaValida(p.familia)) {
+      const permitidos = new Set((await propostas.catalogoDaFamilia(ctx.organizacaoId, p.familia)).map((c) => c.catalogoPrecoId));
+      if (entrada.itens.some((i) => i.catalogoPrecoId && !permitidos.has(i.catalogoPrecoId))) {
+        throw new RegraDeNegocio("item_de_outra_familia", "Há item de outra família. Use só o catálogo da família desta oportunidade.");
+      }
+    }
+    if (entrada.itens.some((i) => !i.catalogoPrecoId && !i.itemExistenteId)) {
+      throw new RegraDeNegocio("item_sem_catalogo", "Há item que não veio do catálogo. Escolha o preço no catálogo.");
+    }
+
+    await atualizarItensDoRascunho({
+      organizacaoId: ctx.organizacaoId,
+      propostaId: entrada.propostaId,
+      itens: entrada.itens.map((i, ordem) => ({
+        catalogoPrecoId: i.catalogoPrecoId ?? null, itemExistenteId: i.itemExistenteId ?? null,
+        nome: i.nome, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario,
+        // Em REAIS (total do item), como em `acaoCriar`.
+        desconto: i.desconto, descontoTipo: "valor", ordem,
+      })),
+      observacoes: entrada.observacoes ?? null,
+      prazoContratoMeses: entrada.prazoContratoMeses ?? null,
+      parcelas: entrada.parcelasSetup ?? null,
+    });
+
+    await registrarEvento({
+      organizacaoId: ctx.organizacaoId, tipo: "ProposalEdited", ator: ctx.ator,
+      propostaId: entrada.propostaId, negocioId: p.negocio_id, leadId: p.lead_id,
+      contexto: { itens: entrada.itens.length },
+      timeline: { tipo: "nota", titulo: "Rascunho da proposta editado" },
+    });
+
+    revalidatePath(ROTA);
+    revalidatePath("/pipeline");
+    return { propostaId: entrada.propostaId };
+  });
+}
+
 export async function acaoEnviar(entrada: {
   propostaId: string;
   modoFechamento: ModoFechamento;
@@ -384,6 +551,24 @@ export async function acaoEnviar(entrada: {
     });
     revalidatePath(ROTA);
     revalidatePath("/pipeline");
+  });
+}
+
+export async function acaoRecusar(propostaId: string, motivo: string): Promise<Resultado> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("registrar recusa da proposta", async () => {
+    await propostas.registrarRecusaInterna({ organizacaoId: ctx.organizacaoId, propostaId, motivo, ator: ctx.ator });
+    revalidatePath(ROTA); revalidatePath("/pipeline");
+  });
+}
+
+export async function acaoExcluirRascunho(propostaId: string): Promise<Resultado> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("excluir rascunho da proposta", async () => {
+    await propostas.excluirRascunho({ organizacaoId: ctx.organizacaoId, propostaId, ator: ctx.ator });
+    revalidatePath(ROTA); revalidatePath("/pipeline");
   });
 }
 

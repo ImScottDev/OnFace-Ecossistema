@@ -129,8 +129,8 @@ export function Execucoes({
                     {e.detalhe ? <span className="exe-detalhe">{e.detalhe}</span> : null}
                   </span>
                   <span className="exe-entidade">
-                    {e.entidadeTipo}
-                    <code>{e.entidadeId.slice(0, 8)}</code>
+                    {e.entidadeNome ?? e.entidadeTipo}
+                    {e.entidadeNome ? null : <code>{e.entidadeId.slice(0, 8)}</code>}
                   </span>
                   <span><span className="exe-selo" data-tom={STATUS_TOM[e.status]}>{STATUS_ROTULO[e.status]}</span></span>
                   <time dateTime={e.quando} className="exe-quando">{dataHora.format(new Date(e.quando))}</time>
@@ -138,7 +138,7 @@ export function Execucoes({
                 <div className="exe-painel">
                   <dl>
                     <div><dt>ID</dt><dd><code>{e.id}</code></dd></div>
-                    <div><dt>Entidade</dt><dd>{e.entidadeTipo} <code>{e.entidadeId}</code></dd></div>
+                    <div><dt>Entidade</dt><dd>{e.entidadeNome ? `${e.entidadeNome} · ` : ""}{e.entidadeTipo} <code>{e.entidadeId}</code></dd></div>
                     <div><dt>Tentativas</dt><dd>{e.tentativas ?? "—"}</dd></div>
                     <div><dt>Criado</dt><dd>{dataHora.format(new Date(e.quando))}</dd></div>
                     <div><dt>Concluído</dt><dd>{e.concluidoEm ? dataHora.format(new Date(e.concluidoEm)) : "—"}</dd></div>

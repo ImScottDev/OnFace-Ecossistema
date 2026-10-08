@@ -1141,7 +1141,7 @@ Origem do contato
 ))}
 </div>
 </section>
-{temRespostasForm ? (
+{true ? (
 <section style={{ background: "#fff", borderRadius: "12px", boxShadow: "inset 0 0 0 1px #e3e7e8", padding: "14px 16px 16px" }}>
 {/* Recolhível: são até dez perguntas por formulário, e a ficha não pode virar a lista delas. */}
 <details>
@@ -1167,6 +1167,7 @@ Respostas do formulário
 </div>
 </Fragment>
 ))}
+{(respostasForm ?? []).length === 0 ? (<span style={{ fontSize: "12.5px", color: "#67787c" }}>Este contato não trouxe respostas de formulário.</span>) : null}
 </div>
 </details>
 </section>

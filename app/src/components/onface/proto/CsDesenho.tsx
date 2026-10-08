@@ -281,7 +281,7 @@ Distribuição de receita por produto
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fe4f2b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
 <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
 </svg>
-Saúde da carteira
+Saúde da carteira · pelo score
 </span>
 <div style={{ position: "relative", flex: "1 1 200px", minWidth: "140px", display: "flex", gap: "3px", height: "8px", borderRadius: "9999px", overflow: "hidden", background: "#1f252c" }}>
 {(sau.segs ?? []).map((sg: any, i1: number) => (

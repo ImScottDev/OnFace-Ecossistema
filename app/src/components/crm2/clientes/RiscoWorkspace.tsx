@@ -219,7 +219,7 @@ export function Cf2RiscoWorkspace() {
                     <span className="min-w-0">
                       <span className="block truncate text-corpo font-semibold" style={{ color: "var(--text-strong)" }}>{c.empresaNome}</span>
                       <span className="block truncate text-apoio" style={{ color: "var(--text-muted)" }}>
-                        {c.riscos.map((r) => r.rotulo + (r.desdeDias && r.desdeDias > 0 ? ` há ${r.desdeDias}d` : "")).join(" · ")}
+                        {c.riscos.map((r) => r.rotulo + (r.desdeDias && r.desdeDias > 0 ? ` (aberto há ${r.desdeDias}d)` : "")).join(" · ")}
                       </span>
                     </span>
                     <span className="justify-self-start rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: sev.bg, color: sev.fg }}>

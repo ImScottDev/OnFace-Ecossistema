@@ -12,6 +12,9 @@
  */
 
 import { Fragment } from "react";
+import { Check, ChevronsUpDown, Plus, X, Zap } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { estilo, foco, hover } from "./proto-runtime";
 
 
@@ -38,6 +41,11 @@ export interface ValoresDeTagsOportunidadeDesenho {
   empresa: any;
   fechar: any;
   nada: any;
+  chipsSel: any;
+  opcoes: any;
+  dropAberto: any;
+  abrirDrop: any;
+  fecharDrop: any;
   org: any;
   parar: any;
   pesBox: any;
@@ -62,7 +70,7 @@ export interface ValoresDeTagsOportunidadeDesenho {
 }
 
 export function TagsOportunidadeDesenho(vals: ValoresDeTagsOportunidadeDesenho) {
-  const { aberto, alcance, aplicar, auto, busca, buscaLimpa, comEmp, comPes, criar, empCaixa, empStyle, empresa, fechar, nada, org, parar, pesBox, pesCaixa, pesRotulo, pessoa, pessoas, podeCriar, resumo, setBusca, setPessoa, sub, tecla, temAuto, temEmp, temOrg, temPes, tiposNova, titulo, togEmp, togPes } = vals;
+  const { abrirDrop, chipsSel, dropAberto, fecharDrop, opcoes, aberto, alcance, aplicar, auto, busca, buscaLimpa, comEmp, comPes, criar, empCaixa, empStyle, empresa, fechar, nada, org, parar, pesBox, pesCaixa, pesRotulo, pessoa, pessoas, podeCriar, resumo, setBusca, setPessoa, sub, tecla, temAuto, temEmp, temOrg, temPes, tiposNova, titulo, togEmp, togPes } = vals;
   return (
     <>
 {(aberto) ? (<>
@@ -153,115 +161,61 @@ Empresa
 {alcance}
 </span>
 </div>
-<div style={{ position: "relative" }}>
-<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: "12px", top: "13px" }}>
-<path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3" />
-</svg>
-<input value={busca} onChange={setBusca} onKeyDown={tecla} placeholder="Buscar ou criar tag" style={{ width: "100%", height: "42px", padding: "0 12px 0 36px", borderRadius: "10px", border: "0", outline: "0", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "14px", color: "#12171d" }} />
-</div>
-{(podeCriar) ? (<>
-<div style={{ padding: "12px 14px", borderRadius: "12px", background: "#fafafa", boxShadow: "inset 0 0 0 1px #eef1f1", display: "flex", flexDirection: "column", gap: "10px" }}>
-<span style={{ fontSize: "13px", color: "#1f252c" }}>
-Criar a tag 
-<strong style={{ fontWeight: "700" }}>
-“{buscaLimpa}”
-</strong>
-</span>
-<div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-{(tiposNova ?? []).map((tn: any, i1: number) => (
-<Fragment key={tn?.id ?? tn?.chave ?? i1}>
-<button onClick={tn.onClick} style={estilo(tn.style)}>
-<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-<path d={tn.d} />
-</svg>
-<span style={{ textAlign: "left" }}>
-<span style={{ display: "block", fontSize: "12.5px", fontWeight: "700" }}>
-{tn.l}
-</span>
-<span style={{ display: "block", marginTop: "1px", fontSize: "11px", fontWeight: "500", opacity: ".8" }}>
-{tn.s}
-</span>
-</span>
+<Popover open={!!dropAberto} onOpenChange={(v: boolean) => (v ? abrirDrop() : fecharDrop())}>
+<PopoverTrigger asChild>
+<div role="combobox" aria-expanded={!!dropAberto} aria-label="Escolher tags" tabIndex={0} className="flex min-h-11 w-full cursor-pointer flex-wrap items-center gap-1.5 rounded-xl bg-background px-2.5 py-2 text-left shadow-[inset_0_0_0_1px_var(--border)] outline-none transition-shadow hover:shadow-[inset_0_0_0_1px_var(--ring)] focus-visible:shadow-[inset_0_0_0_2px_var(--ring)]">
+{(chipsSel ?? []).map((c: any, i1: number) => (
+<span key={c?.nome ?? i1} className={"inline-flex h-7 items-center gap-1.5 rounded-full pl-2.5 pr-1 text-[12.5px] font-semibold " + (c.auto ? "bg-primary/10 text-primary" : "bg-secondary text-secondary-foreground")}>
+{c.auto ? <Zap className="size-3" /> : null}
+{c.nome}
+<button type="button" aria-label={"Tirar " + c.nome} onClick={(e) => { e.stopPropagation(); c.remover(); }} className="grid size-5 place-items-center rounded-full opacity-70 hover:bg-foreground/10 hover:opacity-100">
+<X className="size-3" />
 </button>
-</Fragment>
+</span>
 ))}
+{((chipsSel ?? []).length === 0) ? <span className="px-1 text-[13px] text-muted-foreground">Escolher tags…</span> : null}
+<ChevronsUpDown className="ml-auto size-4 shrink-0 text-muted-foreground" />
 </div>
-<button onClick={criar} style={{ alignSelf: "flex-start", height: "34px", padding: "0 14px", borderRadius: "9px", border: "0", background: "#12171d", color: "#fff", fontSize: "12.5px", fontWeight: "700", cursor: "pointer" }}>
-Criar e aplicar
-</button>
-</div>
-</>) : null}
-{(temAuto) ? (<>
-<div>
-<div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
-<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#c2330f" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-<path d="M13 2 3 14h9l-1 8 10-12h-9z" />
-</svg>
-<span style={{ fontSize: "11.5px", fontWeight: "700", letterSpacing: ".06em", textTransform: "uppercase", color: "#4a5560", whiteSpace: "nowrap" }}>
-Disparam automação
-</span>
-</div>
-<div style={{ borderRadius: "12px", boxShadow: "inset 0 0 0 1px #eef1f1", overflow: "hidden" }}>
-{(auto ?? []).map((t: any, i1: number) => (
-<Fragment key={t?.id ?? t?.chave ?? i1}>
-<button onClick={t.onClick} style={estilo(t.linha)} className={[hover("background:#fafafa")].filter(Boolean).join(" ")}>
-<span style={estilo(t.caixa)}>
-{(t.on) ? (<>
-<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round">
-<path d="M20 6 9 17l-5-5" />
-</svg>
-</>) : null}
-</span>
-<span style={{ flex: "1", minWidth: "0", textAlign: "left" }}>
-<span style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-<span style={{ fontSize: "13.5px", fontWeight: "600", color: "#12171d", whiteSpace: "nowrap" }}>
-{t.nome}
-</span>
-<span style={{ display: "inline-flex", alignItems: "center", gap: "4px", height: "20px", padding: "0 7px", borderRadius: "9999px", background: "#fff6f4", color: "#c2330f", fontSize: "11px", fontWeight: "600", whiteSpace: "nowrap" }}>
-<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-<path d="M13 2 3 14h9l-1 8 10-12h-9z" />
-</svg>
-{t.agente}
-</span>
-</span>
-<span style={{ display: "block", marginTop: "3px", fontSize: "12px", color: "#67787c", lineHeight: "1.45", textWrap: "pretty" }}>
-{t.efeito}
-</span>
-</span>
-</button>
-</Fragment>
+</PopoverTrigger>
+<PopoverContent align="start" sideOffset={6} collisionPadding={16} className="w-(--radix-popover-trigger-width) min-w-72 overflow-hidden p-0">
+<Command shouldFilter={false}>
+<CommandInput value={busca} onValueChange={(v: string) => setBusca({ target: { value: v } })} placeholder="Buscar ou criar tag" style={{ outline: "none", boxShadow: "none" }} />
+<CommandList className="max-h-64">
+{(opcoes ?? []).some((o: any) => o.auto) ? (
+<CommandGroup heading="Disparam automação">
+{(opcoes ?? []).filter((o: any) => o.auto).map((o: any) => (
+<CommandItem key={o.nome} value={o.nome} onSelect={o.onClick} className="gap-2.5 py-2">
+<span className={"grid size-4 shrink-0 place-items-center rounded-[5px] " + (o.on ? "bg-foreground text-background" : "bg-background shadow-[inset_0_0_0_1.5px_var(--border)]")}>{o.on ? <Check className="size-3" strokeWidth={3.4} /> : null}</span>
+<span className="flex-1 truncate font-semibold">{o.nome}</span>
+<span className="inline-flex max-w-[55%] items-center gap-1 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary"><Zap className="size-3 shrink-0" />{o.agente}</span>
+</CommandItem>
 ))}
-</div>
-</div>
-</>) : null}
-{(temOrg) ? (<>
-<div>
-<span style={{ display: "block", marginBottom: "8px", fontSize: "11.5px", fontWeight: "700", letterSpacing: ".06em", textTransform: "uppercase", color: "#4a5560" }}>
-Organização
-</span>
-<div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-{(org ?? []).map((t: any, i1: number) => (
-<Fragment key={t?.id ?? t?.chave ?? i1}>
-<button onClick={t.onClick} style={estilo(t.chip)}>
-{(t.on) ? (<>
-<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-<path d="M20 6 9 17l-5-5" />
-</svg>
-</>) : null}
-<span>
-{t.nome}
-</span>
-</button>
-</Fragment>
+</CommandGroup>
+) : null}
+{(opcoes ?? []).some((o: any) => !o.auto) ? (
+<CommandGroup heading="Organização">
+{(opcoes ?? []).filter((o: any) => !o.auto).map((o: any) => (
+<CommandItem key={o.nome} value={o.nome} onSelect={o.onClick} className="gap-2.5 py-2">
+<span className={"grid size-4 shrink-0 place-items-center rounded-[5px] " + (o.on ? "bg-foreground text-background" : "bg-background shadow-[inset_0_0_0_1.5px_var(--border)]")}>{o.on ? <Check className="size-3" strokeWidth={3.4} /> : null}</span>
+<span className="flex-1 truncate font-semibold">{o.nome}</span>
+</CommandItem>
 ))}
-</div>
-</div>
-</>) : null}
-{(nada) ? (<>
-<span style={{ fontSize: "12.5px", color: "#8b949e" }}>
-Nenhuma tag encontrada.
-</span>
-</>) : null}
+</CommandGroup>
+) : null}
+{((opcoes ?? []).length === 0 && !podeCriar) ? <CommandEmpty>Nenhuma tag encontrada.</CommandEmpty> : null}
+{podeCriar ? (
+<CommandGroup>
+<CommandItem value={"criar-" + buscaLimpa} onSelect={criar} className="gap-2.5 py-2">
+<Plus className="size-4 shrink-0" />
+<span className="flex-1 truncate">Criar tag <strong>“{buscaLimpa}”</strong></span>
+</CommandItem>
+</CommandGroup>
+) : null}
+</CommandList>
+</Command>
+</PopoverContent>
+</Popover>
+
 </div>
 <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "14px 22px", borderTop: "1px solid #eef1f1", background: "#fafafa" }}>
 <span style={{ flex: "1 1 200px", minWidth: "0", fontSize: "12.5px", color: "#4a5560", lineHeight: "1.45", textWrap: "pretty" }}>

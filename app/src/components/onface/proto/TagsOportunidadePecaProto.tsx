@@ -52,7 +52,7 @@ class TagsLigada extends TagsOportunidadeLiga {
   }
 
   get dadosDoProto(): any {
-    return { TagsOpp: this.x.catalogo.map((t) => ({ nome: t.nome, auto: false })) };
+    return { TagsOpp: this.x.catalogo.map((t) => ({ nome: t.nome, auto: !!t.automacao, agente: t.automacao ?? undefined, efeito: t.automacao ? "Dispara a automação ao aplicar a tag" : undefined })) };
   }
 
   componentDidMount() {

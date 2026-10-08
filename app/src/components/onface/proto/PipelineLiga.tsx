@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { PipelineDesenho } from "./PipelineDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -122,6 +123,9 @@ class Logica extends React.Component<any, any> {
   }
 
   abrirReuniao(O, i) {
+    /* Reunião nova: a peça ÚNICA de Reunião (`/api/reunioes`, evento e agenda). O modal local
+       daqui só mexia no estado e o servidor nunca soube da reunião. */
+    if (i == null && this.E) return this.E.abrir("novaReuniao", { oppId: O.id, leadId: O.leadId || null, empresaId: O.empresaId || null, empresa: O.empresa, pessoa: O.pessoa });
     const A = i != null ? (O.atvs || [])[i] : null, RE = A && A.reuniao;
     if (A) {
       const iso = RE && RE.data ? RE.data : (() => { const m = String(A.quando || "").match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? m[3] + "-" + m[2] + "-" + m[1] : ""; })();
@@ -203,7 +207,8 @@ class Logica extends React.Component<any, any> {
     if (!o || destino === o.etapa) return;
     if ((destino === "proposta" || destino === "negociacao") && !o.proposta)
       return this.setState({ modal: { k: "propgate", id: o.id, depois: destino }, form: {}, tentou: false });
-    if (destino === "ganho") return this.setState({ modal: { k: "ganho", id: o.id }, form: {}, tentou: false });
+    // Ganho não tem botão: o motor fecha quando a evidência da oferta chega (contrato assinado ou pagamento).
+    if (destino === "ganho") return this.diz("Ganho não tem botão: a oportunidade fecha sozinha quando o contrato é assinado ou o pagamento é confirmado.", "aviso");
     if (destino === "perdido") return this.setState({ modal: { k: "perda", id: o.id }, form: {}, tentou: false });
     this.gravarOpp(Object.assign({}, o, { etapa: destino, dias: 0 }), "Movido de " + ROT[o.etapa] + " para " + ROT[destino]);
     this.diz(o.empresa + " → " + ROT[destino], "ok");
@@ -522,15 +527,13 @@ class Logica extends React.Component<any, any> {
             etapasAberto: menu === "etapas", toggleEtapas: () => setUi({ menu: menu === "etapas" ? null : "etapas" }),
             passoAberto: menu === "passo", togglePasso: () => setUi({ menu: menu === "passo" ? null : "passo" }),
             maisItens: [item("Abrir oportunidade", () => { setUi({ menu: null }); d.abrirOpp(); })]
-              .concat(aberta ? [item("Marcar como ganha", () => { setUi({ menu: null }); this.mover(O, "ganho"); }, { style: "display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;border-radius:7px;border:0;background:transparent;cursor:pointer;text-align:left;font-size:13px;font-weight:500;color:#1f7256" }),
-                item("Marcar como perdida", () => { setUi({ menu: null }); this.mover(O, "perdido"); }, { style: "display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;border-radius:7px;border:0;background:transparent;cursor:pointer;text-align:left;font-size:13px;font-weight:500;color:#c2330f" })] : [])
+              .concat(aberta ? [item("Marcar como perdida", () => { setUi({ menu: null }); this.mover(O, "perdido"); }, { style: "display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;border-radius:7px;border:0;background:transparent;cursor:pointer;text-align:left;font-size:13px;font-weight:500;color:#c2330f" })] : [])
               .concat(O.etapa === "entrada" || O.etapa === "diagnostico" ? [item("Registrar no-show", () => { setUi({ menu: null }); this.setState({ modal: { k: "noshow", id: O.id }, form: {}, tentou: false }); })] : [])
               .concat(!aberta ? [item("Reabrir oportunidade", () => { setUi({ menu: null }); d.reabrir(); })] : []),
             etapasItens: ordem.map((k, i) => item(ROT[k], () => { setUi({ menu: null }); if (i !== pos) this.mover(O, k); }, { atual: i === pos, dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:" + COR[k] }))
-              .concat([item("Ganho", () => { setUi({ menu: null }); this.mover(O, "ganho"); }, { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#1f7256" }),
-                item("Perdido", () => { setUi({ menu: null }); this.mover(O, "perdido"); }, { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#8b949e" })]),
-            avancarLabel: prox ? "Avançar etapa" : "Marcar como ganha",
-            avancarDica: prox ? "Mover para " + ROT[prox] : "Última etapa · marcar como ganha",
+              .concat([item("Perdido", () => { setUi({ menu: null }); this.mover(O, "perdido"); }, { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#8b949e" })]),
+            avancarLabel: prox ? "Avançar etapa" : "Aguardando fechamento",
+            avancarDica: prox ? "Mover para " + ROT[prox] : "Última etapa · fecha sozinha com contrato assinado ou pagamento",
             avancar: () => this.mover(O, prox || "ganho"),
             registrar: () => abrirNa(null),
         tags: (O.tags || []).map(n => { const t = (this.dadosDoProto.TagsOpp || []).find(x => x.nome === n) || (((this.E && this.E.ler("tagsCriadas", [])) || []).find(x => x && x.nome === n)) || {};
@@ -684,8 +687,9 @@ class Logica extends React.Component<any, any> {
       const fechar = () => this.setState({ reuVer: null, modal: null });
       const LD = RO.leadId ? ((Es && Es.ler("leads", null)) || D.LEADS || []).find(l => l.id === RO.leadId) : null;
       const sem = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      const emailC = (LD && LD.email) || (sem((RO.pessoa || "").split(" ")[0]) + "@" + sem(RO.empresa).replace(/[^a-z]/g, "") + ".com.br");
-      const parts = RE.participantes && RE.participantes.length ? RE.participantes : [emailC];
+      /* Sem e-mail cadastrado, NÃO se fabrica um (nome@empresa.com.br): o convite iria para o endereço errado. */
+      const emailC = (LD && LD.email) || "";
+      const parts = RE.participantes && RE.participantes.length ? RE.participantes : (emailC ? [emailC] : []);
       const rsvp = RE.rsvp || parts.reduce((a, p, k) => (a[p] = k === 0 ? "aceitou" : "aguardando", a), {});
       const formato = RE.formato || "Vídeo", closer = RE.closer || A.autor || RO.resp;
       const seed = (RO.id + (A.quando || "")).split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
@@ -884,7 +888,7 @@ class Logica extends React.Component<any, any> {
         const up = (p) => this.setState(s => ({ reu: Object.assign({}, s.reu, p) }));
         const LD = RO.leadId ? ((Es && Es.ler("leads", null)) || D.LEADS || []).find(l => l.id === RO.leadId) : null;
         const sem = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const email = (LD && LD.email) || (sem((RO.pessoa || "").split(" ")[0]) + "@" + sem(RO.empresa).replace(/[^a-z]/g, "") + ".com.br");
+        const email = (LD && LD.email) || "";
         const mailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || "").trim());
         const falta = { data: !RU.data, hora: !RU.hora, titulo: !(RU.titulo || "").trim(), conv: RU.novoConv != null && RU.novoConv.trim() !== "" && !mailOk(RU.novoConv) };
         const ok = !falta.data && !falta.hora && !falta.titulo && !falta.conv;

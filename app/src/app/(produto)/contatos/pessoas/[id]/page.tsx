@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { pessoaPorId } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo } from "@/lib/vendas/eventos";
-import { OnfacePage, OnfacePageSurface } from "@/components/onface/shell/OnfacePage";
+import { Pagina } from "@/components/onface/shell/Pagina";
 import { DetalhePessoaPagina } from "@/components/onface/vendas/pagina";
 
 export default async function PessoaPorId({ params }: { params: Promise<{ id: string }> }) {
@@ -24,5 +24,6 @@ export default async function PessoaPorId({ params }: { params: Promise<{ id: st
      WHERE id = ${pessoa.id}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
   if (origem?.lead) redirect(`/pessoas/${origem.lead}`);
   const timeline = await lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, pessoaId: pessoa.id, limite: 40 });
-  return <OnfacePage><OnfacePageSurface><DetalhePessoaPagina pessoa={pessoa} timeline={timeline} voltar="/contatos" /></OnfacePageSurface></OnfacePage>;
+  // `Pagina` é a moldura atual; o par OnfacePage/Surface (faixa grafite) desenhava uma laje escura em volta da ficha.
+  return <Pagina><DetalhePessoaPagina pessoa={pessoa} timeline={timeline} voltar="/contatos" /></Pagina>;
 }

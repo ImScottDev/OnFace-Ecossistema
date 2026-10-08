@@ -25,7 +25,7 @@ import {
   acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
   acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
   acaoRegistrarContato, acaoResponsaveis, acaoSalvarQualificacao,
-  acaoTagDoLead, acaoOpcoesEmMassa,
+  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa, acaoRemoverDaCadencia,
 } from "@/app/(produto)/pre-vendas/actions";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
 import type { CanalAtendimento } from "../vendas/atendimento";
@@ -42,6 +42,7 @@ const ACOES: AcoesPreVendas = {
   criarOportunidade: acaoCriarOportunidade, criarLead: acaoCriarLead,
   associarEmpresa: acaoAssociarEmpresa, detalhe: acaoDetalhe, criarTarefa: acaoCriarTarefa,
   atribuirEmMassa: acaoAtribuirEmMassa, tag: acaoTagDoLead, tagsDaOrg: acaoOpcoesEmMassa,
+  cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa, removerDaCadencia: acaoRemoverDaCadencia,
 };
 
 const ETAPAS = Object.fromEntries(

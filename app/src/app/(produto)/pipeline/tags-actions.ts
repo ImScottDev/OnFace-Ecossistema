@@ -29,9 +29,16 @@ export interface AlvoDeTag {
   tags: string[];
 }
 
-export type TagDoCatalogo = { id: string; nome: string; cor: string };
+/** `automacao`: nome da automação ativa que escuta esta tag (null = tag só de organização).
+ *  Derivado das automações existentes, sem campo para manter: criou o fluxo, a tag passa a "disparar". */
+export type TagDoCatalogo = { id: string; nome: string; cor: string; automacao: string | null };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function atorDaSessao(): Promise<string | null> {
+  const ctx = await getTenantContext();
+  return ctx?.userId ?? null;
+}
 
 async function organizacao(): Promise<string | null> {
   const ctx = await getTenantContext();
@@ -46,7 +53,7 @@ async function lerAlvo(organizacaoId: string, tipo: TipoAlvoDeTag, id: string): 
       lead_id: string | null; familia: string | null; tags: string[] | null;
     }>(sql`
       SELECT n.id::text, COALESCE(e.nome, l.empresa) AS empresa, n.empresa_id::text,
-             NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS pessoa,
+             NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS pessoa,
              n.lead_id::text, COALESCE(n.service_family, o.service_family) AS familia,
              to_json(ARRAY(SELECT lb.nome FROM labels lb
                     WHERE lb.organizacao_id = n.organizacao_id
@@ -66,7 +73,7 @@ async function lerAlvo(organizacaoId: string, tipo: TipoAlvoDeTag, id: string): 
     id: string; empresa: string | null; empresa_id: string | null; pessoa: string | null; tags: string[] | null;
   }>(sql`
     SELECT l.id::text, COALESCE(e.nome, l.empresa) AS empresa, l.empresa_id::text,
-           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS pessoa,
+           NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS pessoa,
            to_json(ARRAY(SELECT lb.nome FROM labels lb
                   WHERE lb.organizacao_id = l.organizacao_id
                     AND lb.id IN (SELECT label_id FROM entity_labels
@@ -82,8 +89,15 @@ async function lerAlvo(organizacaoId: string, tipo: TipoAlvoDeTag, id: string): 
 
 async function lerCatalogo(organizacaoId: string): Promise<TagDoCatalogo[]> {
   const linhas = await db.execute<TagDoCatalogo>(sql`
-    SELECT id::text, nome, cor FROM labels
-     WHERE organizacao_id = ${organizacaoId}::uuid ORDER BY nome`);
+    SELECT l.id::text, l.nome, l.cor,
+           (SELECT a.nome FROM automacoes a
+             WHERE a.organizacao_id = l.organizacao_id AND a.ativo
+               AND (a.gatilho ILIKE '%tag%' OR a.rascunho::text LIKE '%tag.adicionada%')
+               AND (strpos(lower(coalesce(a.condicao::text, '')), lower(l.nome)) > 0
+                    OR strpos(lower(coalesce(a.rascunho::text, '')), lower(l.nome)) > 0)
+             ORDER BY a.nome LIMIT 1) AS automacao
+      FROM labels l
+     WHERE l.organizacao_id = ${organizacaoId}::uuid ORDER BY l.nome`);
   return [...linhas];
 }
 
@@ -139,6 +153,7 @@ export async function acaoAplicarTags(entrada: {
 }): Promise<Resultado<{ mudou: number }>> {
   const org = await organizacao();
   if (!org) return { ok: false, erro: "Sessão expirada." };
+  const atorId = await atorDaSessao();
   return executar("aplicar tags", async () => {
     const alvo = await lerAlvo(org, entrada.tipo, entrada.id);
     if (!alvo) throw new RegraDeNegocio("ALVO_INEXISTENTE", "Este registro não existe nesta organização.");
@@ -147,18 +162,18 @@ export async function acaoAplicarTags(entrada: {
     const remover = (entrada.remover ?? []).filter((x) => UUID.test(x));
     let mudou = 0;
     for (const label of adicionar) {
-      const r = await adicionarTag({ organizacaoId: org, entityType: entidade, entityId: alvo.id, label });
+      const r = await adicionarTag({ organizacaoId: org, entityType: entidade, entityId: alvo.id, label, atorId });
       if (!r.ok) throw new RegraDeNegocio("TAG_INEXISTENTE", "Uma das tags não existe mais. Recarregue e tente de novo.");
       if (r.mudou) mudou++;
       if (entrada.naEmpresa && alvo.empresaId) {
-        await adicionarTag({ organizacaoId: org, entityType: "empresa", entityId: alvo.empresaId, label });
+        await adicionarTag({ organizacaoId: org, entityType: "empresa", entityId: alvo.empresaId, label, atorId });
       }
       if (entrada.naPessoa && entrada.tipo === "opp" && alvo.leadId) {
-        await adicionarTag({ organizacaoId: org, entityType: "lead", entityId: alvo.leadId, label });
+        await adicionarTag({ organizacaoId: org, entityType: "lead", entityId: alvo.leadId, label, atorId });
       }
     }
     for (const label of remover) {
-      const r = await removerTag({ organizacaoId: org, entityType: entidade, entityId: alvo.id, label });
+      const r = await removerTag({ organizacaoId: org, entityType: entidade, entityId: alvo.id, label, atorId });
       if (r.mudou) mudou++;
     }
     revalidatePath("/pipeline");

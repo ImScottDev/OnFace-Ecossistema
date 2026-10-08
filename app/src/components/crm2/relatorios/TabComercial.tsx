@@ -408,6 +408,7 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
             data={mixDonut}
             centerValue={formatCurrency(fechado?.receita ?? 0)}
             centerLabel="receita fechada"
+            formatar={formatCurrency}
           />
         </ChartCard>
       </div>

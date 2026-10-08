@@ -270,6 +270,10 @@ export function Campo({ campo, valor, aoMudar, ctx, idBase, pendencia }: {
         const lista = ctx.opcoes?.templatesWhatsapp ?? [];
         return <Selecao id={id} valor={valor} aoMudar={aoMudar} ctx={ctx} vazio={lista.length ? "Escolha o modelo" : "Nenhum modelo aprovado"} opcoes={lista.map((t) => ({ valor: t.id, rotulo: t.nome }))} />;
       }
+      case "sessao_whatsapp": {
+        const lista = ctx.opcoes?.sessoesWhatsapp ?? [];
+        return <Selecao id={id} valor={valor} aoMudar={aoMudar} ctx={ctx} vazio="Automático" opcoes={lista.map((x) => ({ valor: x.id, rotulo: x.conectada ? x.nome : `${x.nome} (desconectado)` }))} />;
+      }
       case "agente_ia": {
         const lista = ctx.opcoes?.agentesIa ?? [];
         return <Selecao id={id} valor={valor} aoMudar={aoMudar} ctx={ctx} vazio={campo.obrigatorio ? "Escolha o agente" : "Agente padrão da organização"} opcoes={lista.map((t) => ({ valor: t.id, rotulo: t.nome }))} />;

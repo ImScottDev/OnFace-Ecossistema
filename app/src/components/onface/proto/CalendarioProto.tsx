@@ -17,10 +17,11 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import type { ReuniaoDaAgenda } from "@/lib/calendario/agenda-do-calendario";
+import type { ReuniaoDaAgenda, TarefaDaAgenda } from "@/lib/calendario/agenda-do-calendario";
 import { CalendarioLiga } from "./CalendarioLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
+import { alterarTarefa, prazoDoBanco, prioridadeDoBanco, situacaoDoBanco, tipoDoBanco } from "./atividade-tarefa";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -84,6 +85,29 @@ function paraItem(r: ReuniaoDaAgenda) {
 }
 
 /**
+ * Uma atividade (`tarefas`) no formato de item. É a MESMA tabela da tela de
+ * Atividades: `src: "t"` impede que a Liga a trate como reunião, e o clique abre
+ * a peça canônica de atividade (ver `setState` em `CalendarioLigada`).
+ */
+function paraItemDeTarefa(t: TarefaDaAgenda) {
+  const { fimD, fimH } = prazoDoBanco(t.venceEm, t.dataVencimento);
+  const [a, m, d] = fimD.split("-").map(Number);
+  const quando: any = new Date(a, m - 1, d);
+  if (fimH) { const [h, mi] = fimH.split(":").map(Number); quando.setHours(h, mi); quando._h = true; } else quando.setHours(23, 59);
+  const tipo = tipoDoBanco(t.tipo);
+  return {
+    key: "t:" + t.id, src: "t", id: t.id,
+    // "Reunião" aqui é tarefa de agendar/confirmar reunião, não a reunião em si.
+    tipo: tipo === "Reunião" ? "Tarefa" : tipo,
+    titulo: t.titulo, quando, temHora: !!fimH,
+    situacao: situacaoDoBanco(t.status), statusReal: t.status,
+    resp: t.responsavel, assignees: t.responsavel ? [t.responsavel] : [],
+    empresa: t.empresa ?? "", pessoa: t.pessoa ?? "", oppId: null, oppRot: "",
+    desc: t.descricao ?? "", sub: [], comentarios: [], prioridade: prioridadeDoBanco(t.prioridade), area: null,
+  };
+}
+
+/**
  * A Liga com três ajustes, todos por subclasse — o arquivo gerado não se edita.
  */
 class CalendarioLigada extends CalendarioLiga {
@@ -108,6 +132,18 @@ class CalendarioLigada extends CalendarioLiga {
   componentDidMount() {
     super.componentDidMount();
     (this as any).setState({ larg: window.innerWidth });
+  }
+
+  /* A gaveta própria de atividade desta Liga é um segundo formulário: toda
+     atividade (`t:`) abre a peça canônica, a mesma de Atividades e das fichas. */
+  setState(p: any, cb?: any) {
+    const chave = p && typeof p === "object" ? p.atv : null;
+    if (typeof chave === "string" && chave.startsWith("t:")) {
+      (this as any).props.abrir?.("verAtividade", chave.slice(2));
+      const { atv: _, ...resto } = p;
+      return (super.setState as any)({ ...resto, atv: null }, cb);
+    }
+    return (super.setState as any)(p, cb);
   }
 
   renderVals() {
@@ -144,14 +180,22 @@ class CalendarioLigada extends CalendarioLiga {
         };
       }
     }
+    /* "Nova atividade" do dia: o modal canônico, com a data do dia aberto. Antes
+       navegava para /tarefas e o parâmetro `data` se perdia pelo caminho. */
+    vals.novaAtv = () => {
+      const d: string = S.dia || iso(new Date());
+      (this as any).props.abrir?.("novaAtividade", { data: d });
+    };
     return vals;
   }
 }
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function CalendarioProto({ reunioes, equipe, visaoInicial, diaInicial }: {
+export function CalendarioProto({ reunioes, tarefas = [], equipe, visaoInicial, diaInicial }: {
   reunioes: ReuniaoDaAgenda[];
+  /** Atividades do usuário com prazo: a mesma tabela da tela de Atividades. */
+  tarefas?: TarefaDaAgenda[];
   /** Nomes reais dos responsáveis — substitui o fallback fictício da Liga. */
   equipe: string[];
   visaoInicial?: "mes" | "semana";
@@ -170,6 +214,12 @@ export function CalendarioProto({ reunioes, equipe, visaoInicial, diaInicial }: 
    * criar outra.
    */
   const situacao = React.useCallback(async (x: any, sit: string) => {
+    if (x.src === "t") {
+      const r = await alterarTarefa(x.id, { status: sit === "Feita" ? "concluida" : "a_fazer" });
+      if (!r.ok) toast.error(r.erro);
+      router.refresh();
+      return;
+    }
     if (x.statusReal === "cancelada") {
       toast.error("Reunião cancelada não reabre aqui — o convite já foi cancelado. Crie uma nova.");
       router.refresh();
@@ -190,7 +240,7 @@ export function CalendarioProto({ reunioes, equipe, visaoInicial, diaInicial }: 
   }, [router]);
 
   const catalogo = React.useMemo(() => {
-    const itens = reunioes.map(paraItem);
+    const itens = [...reunioes.map(paraItem), ...tarefas.map(paraItemDeTarefa)];
     return {
       Agenda: {
         itens: () => itens,
@@ -206,7 +256,7 @@ export function CalendarioProto({ reunioes, equipe, visaoInicial, diaInicial }: 
       },
       EQUIPE: equipe,
     };
-  }, [reunioes, equipe, situacao, router]);
+  }, [reunioes, tarefas, equipe, situacao, router]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();

@@ -23,6 +23,9 @@ import { toast } from "sonner";
 import type { Familia } from "@/lib/vendas/dominio";
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
+import { rotuloDeEvento } from "@/lib/vendas/rotulos-evento";
+import { origemCanonica } from "@/lib/vendas/origem-canonica";
+import { qualDoDesenho } from "./qual-do-desenho";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
 import { PreVendasLiga } from "./PreVendasLiga";
 import { PecasLiga } from "./PecasLiga";
@@ -66,9 +69,9 @@ function paraODesenho(c: CardPreVendas, cadencia: string | null = null): LeadDoD
     pessoa: c.pessoa ?? "Sem contato",
     cargo: c.cargo ?? "",
     resp: c.responsavel,
-    // `dias` no desenho é tempo parado, que aqui é horas sem interação.
-    dias: c.horasSemInteracao == null ? 0 : Math.floor(c.horasSemInteracao / 24),
-    origem: c.origem,
+    // `dias` no cartão: há quantos dias o lead está NESTA etapa. Zera ao mover.
+    dias: c.horasNaEtapa == null ? 0 : Math.floor(c.horasNaEtapa / 24),
+    origem: origemCanonica(c.origem),
     campanha: c.campanha,
     interesse: c.servicos?.[0] ?? null,
     /* O SEGUNDO chip do cartão.
@@ -82,7 +85,7 @@ function paraODesenho(c: CardPreVendas, cadencia: string | null = null): LeadDoD
      * primeiro. Serviço de interesse vem antes quando existe — mas só 3 leads
      * da base têm o campo, então na prática quem aparece é a origem. */
     tag: (c.servicos && c.servicos.length > 1 ? c.servicos[1] : null)
-      ?? (c.campanha ? c.origem : null),
+      ?? (c.campanha ? origemCanonica(c.origem) : null),
     telefone: c.temTelefone ? "sim" : null,
     whatsapp: c.temWhatsapp ? "sim" : null,
     email: c.temEmail ? "sim" : null,
@@ -90,36 +93,14 @@ function paraODesenho(c: CardPreVendas, cadencia: string | null = null): LeadDoD
     acao: c.proximaAcao?.titulo ?? null,
     venceEm: c.proximaAcao?.venceEm ? quando(c.proximaAcao.venceEm) : null,
     etapa: c.etapa,
-    cadencia,
+    // No-show ocupa o chip de destaque: é quem o time precisa remarcar.
+    cadencia: c.noShow ? (cadencia ? `No-show · ${cadencia}` : "No-show") : cadencia,
   };
 }
 
-/**
- * `leads.qualificacao` → os campos da peça de qualificação.
- *
- * O caminho de volta do que `salvarQualificacao` grava. Sem ele a gaveta abria
- * sempre em branco: a qualificação ia para o banco e ninguém a lia, então
- * mover o card pedia preencher tudo outra vez. Os nomes diferem dos dois lados
- * (o desenho chama `cenario` e `interesse`), e é esta função que traduz.
- */
-export function qualDoDesenho(q: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
-  if (!q || typeof q !== "object") return null;
-  const texto = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
-  const campos: Record<string, unknown> = {};
-  for (const [desenho, dominio] of [
-    ["icp", "icp"], ["dor", "dor"], ["necessidade", "necessidade"],
-    ["cenario", "cenarioAtual"], ["urgencia", "urgencia"], ["budget", "budget"],
-    ["decisor", "decisor"], ["timing", "timing"],
-  ] as const) {
-    const v = texto(q[dominio]);
-    if (v !== undefined) campos[desenho] = v;
-  }
-  const servicos = q.servicosInteresse;
-  if (Array.isArray(servicos) && servicos.length) {
-    campos.interesse = servicos.filter((s): s is string => typeof s === "string").join("|");
-  }
-  return Object.keys(campos).length ? campos : null;
-}
+/* O mapeador da qualificação é fonte única em `qual-do-desenho.ts`. Reexporta
+   para não quebrar quem já importava daqui. */
+export { qualDoDesenho };
 
 /** "hoje", "amanhã", "3d" — o vocabulário curto que o cartão usa. */
 export function quando(iso: string): string | null {
@@ -140,6 +121,30 @@ function iniciais(nome: string | null) {
 
 /* ── Intenção → command ────────────────────────────────────────────────── */
 
+/** Qualifica com o que a peça coletou (modal "Qualificar lead" ou gaveta). */
+async function qualificarComOContexto(leadId: string, ctx: ContextoDaSaida, acoes: AcoesPreVendas) {
+  // A peça guarda o formulário por lead em `qual`.
+  const q = (ctx.qualificacoes?.[leadId] ?? {}) as Record<string, unknown>;
+  const interesse = String(q.interesse ?? "");
+  const qtd = typeof q.quantidade === "number" ? q.quantidade : undefined;
+  const fit = typeof q.fit === "string" && q.fit ? `Fit ${q.fit}` : undefined;
+  return acoes.qualificar(leadId, {
+    icp: q.icp as string | undefined,
+    dor: q.dor as string | undefined,
+    necessidade: q.necessidade as string | undefined,
+    // O protótipo junta os serviços com "|" num campo só.
+    servicosInteresse: interesse ? interesse.split("|").filter(Boolean) : undefined,
+    cenarioAtual: q.cenario as string | undefined,
+    urgencia: q.urgencia as string | undefined,
+    budget: q.budget as string | undefined,
+    decisor: q.decisor as string | undefined,
+    timing: q.timing as string | undefined,
+    // O modal de qualificação traz tamanho da operação e fit.
+    quantidade: qtd,
+    observacoes: fit,
+  });
+}
+
 /**
  * Executa uma intenção. Devolve a mensagem de erro, ou `null` se deu certo.
  *
@@ -159,23 +164,8 @@ export async function executarIntencao(
     case "mover":
       return falhou(await acoes.moverEtapa(i.leadId, i.para));
 
-    case "qualificar": {
-      // A peça guarda o formulário por lead em `qual`.
-      const q = (ctx.qualificacoes?.[i.leadId] ?? {}) as Record<string, unknown>;
-      const interesse = String(q.interesse ?? "");
-      return falhou(await acoes.qualificar(i.leadId, {
-        icp: q.icp as string | undefined,
-        dor: q.dor as string | undefined,
-        necessidade: q.necessidade as string | undefined,
-        // O protótipo junta os serviços com "|" num campo só.
-        servicosInteresse: interesse ? interesse.split("|").filter(Boolean) : undefined,
-        cenarioAtual: q.cenario as string | undefined,
-        urgencia: q.urgencia as string | undefined,
-        budget: q.budget as string | undefined,
-        decisor: q.decisor as string | undefined,
-        timing: q.timing as string | undefined,
-      }));
-    }
+    case "qualificar":
+      return falhou(await qualificarComOContexto(i.leadId, ctx, acoes));
 
     case "nutrir": {
       const motivo = motivoDeNutricao(ctx.motivoNutricao);
@@ -198,6 +188,15 @@ export async function executarIntencao(
          identificado" vai sem família — o domínio cria "Família a definir" e a
          recusa de mover para Proposta cobra a escolha depois. */
       const o = ctx.oportunidade ?? {};
+      /* O modal abre em "Qualificar lead" e só depois pergunta como a oportunidade
+         avança. Quem sai de uma etapa que não é "qualificado" e não passava por
+         `qualificar` criava a oportunidade com o lead ainda "não qualificado":
+         sem LeadQualified, sem qualificação gravada, e o funil de Pré-vendas
+         contava conversão de quem nunca foi qualificado. */
+      if (i.de !== "qualificado" && ctx.qualificacoes?.[i.leadId]) {
+        const rq = await qualificarComOContexto(i.leadId, ctx, acoes);
+        if (!rq.ok) return rq.erro ?? "Não foi possível qualificar o lead antes de criar a oportunidade.";
+      }
       if (o.empresa && i.empresa && o.empresa !== i.empresa) {
         return `Esta oportunidade é de "${o.empresa}", mas o lead pertence a "${i.empresa}". Crie pela ficha da outra empresa.`;
       }
@@ -206,15 +205,44 @@ export async function executarIntencao(
       if (!responsavelId) return nome ? `Não encontrei "${nome}" na equipe.` : "Escolha o responsável comercial.";
       const familia = i.interesse ? FAMILIA_DO_INTERESSE[i.interesse] : undefined;
 
-      const reuniao = o.avanco === "reuniao" && o.data
-        ? { data: new Date(`${o.data}T${o.hora ?? "14:00"}`).toISOString() } : null;
+      /* O modal MOSTRA data, hora, duração, título e closer padrão, mas esses
+         valores moravam só na tela: o estado ia vazio ao servidor e a reunião
+         nunca era gravada ("faltou a data"). Os padrões são os mesmos do modal. */
+      const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const hoje = new Date();
+      const amanha = new Date(hoje.getTime() + 86_400_000);
+      const ehReuniao = o.avanco === "reuniao";
+      const data = o.data || iso(hoje);
+      const hora = o.hora || "14:00";
+      const duracao = ({ "30 min": 30, "45 min": 45, "1 h": 60 } as Record<string, number>)[o.duracao ?? "30 min"] ?? 30;
+      const tipo = ({ "Vídeo": "video", "Ligação": "call", "Presencial": "presencial" } as Record<string, "video" | "call" | "presencial">)[o.tipo ?? "Vídeo"] ?? "video";
+      const closerId = o.closer ? idDoResponsavel.get(o.closer) : undefined;
+      const reuniao = ehReuniao
+        ? {
+            data: new Date(`${data}T${hora}`).toISOString(), duracao, tipo,
+            titulo: (o.titulo ?? `${i.empresa ?? "Lead"} x Callface`).trim() || undefined,
+            closerId,
+          }
+        : null;
       const r = await acoes.criarOportunidade({
         leadId: i.leadId, familias: familia ? [familia] : [], responsavelId, reuniao,
       });
       if (!r.ok) return r.erro ?? "Não foi possível criar a oportunidade.";
-      return o.avanco === "reuniao" && !o.data
-        ? "Oportunidade criada no Pipeline, mas a reunião não foi agendada: faltou a data."
-        : null;
+      /* WhatsApp, Ligação, E-mail e Outro viram a PRÓXIMA AÇÃO: uma tarefa com
+         prazo. Antes o desenho coletava título/data/hora e nada era gravado. */
+      if (!ehReuniao && o.avanco) {
+        const titulos: Record<string, string> = { whatsapp: "Retomar conversa no WhatsApp", ligacao: "Ligar para alinhar proposta", email: "Enviar proposta por e-mail", outro: "Próximo passo" };
+        const titulo = (o.tarTitulo ?? titulos[o.avanco] ?? "").trim();
+        if (titulo) {
+          const t = await acoes.criarTarefa({
+            leadId: i.leadId, titulo, responsavelId,
+            venceEm: new Date(`${o.tarData || iso(amanha)}T${o.tarHora || "10:00"}`).toISOString(),
+            prioridade: "media", descricao: null,
+          });
+          if (!t.ok) return `Oportunidade criada, mas a próxima ação não foi gravada: ${t.erro ?? "erro ao criar a tarefa"}`;
+        }
+      }
+      return null;
     }
 
     case "atribuir": {
@@ -241,7 +269,11 @@ const FAMILIA_DO_INTERESSE: Record<string, Familia> = {
 /** O que a peça sabia no instante em que gravou. */
 export interface ContextoDaSaida {
   /** O que o modal "Criar oportunidade" coletou (vive em `qualOpp`/`qualEmpresa`). */
-  oportunidade?: { resp?: string | null; avanco?: string | null; data?: string | null; hora?: string | null; empresa?: string | null };
+  oportunidade?: {
+    resp?: string | null; avanco?: string | null; data?: string | null; hora?: string | null; empresa?: string | null;
+    duracao?: string | null; tipo?: string | null; titulo?: string | null; closer?: string | null;
+    tarTitulo?: string | null; tarData?: string | null; tarHora?: string | null;
+  };
   motivoNutricao?: string | null;
   motivoDesqualificacao?: string | null;
   observacao?: string | null;
@@ -285,6 +317,11 @@ export class PecasLigadas extends PecasLiga {
       const salvar = (this as any).props?.acoes?.salvarQualificacao;
       if (!salvar) return;
       const interesse = String(q.interesse ?? "");
+      // Tamanho da operação e Fit também: editados inline no drawer, eram
+      // descartados aqui (só dor/interesse/etc iam ao banco), por isso Fit e
+      // Tamanho voltavam "Não preenchido". Mesma conversão do modal.
+      const nTam = parseInt(String(q.tamanho == null ? "" : q.tamanho).replace(/[^0-9]/g, ""), 10);
+      const fit = typeof q.fit === "string" && q.fit ? `Fit ${q.fit}` : undefined;
       void salvar(leadId, {
         icp: q.icp as string | undefined,
         dor: q.dor as string | undefined,
@@ -295,6 +332,8 @@ export class PecasLigadas extends PecasLiga {
         budget: q.budget as string | undefined,
         decisor: q.decisor as string | undefined,
         timing: q.timing as string | undefined,
+        quantidade: Number.isNaN(nTam) ? undefined : nTam,
+        observacoes: fit,
       }).catch(() => undefined);
     }, 900);
   }
@@ -312,16 +351,90 @@ export class PecasLigadas extends PecasLiga {
     if (pai) pai.call(this);
   }
 
+  /* Timeline real do lead, por id. O protótipo trazia 8 eventos chumbados no
+     código (WhatsApp recebido, ligação de 4min, cadência iniciada…) — tudo
+     inventado. Ao abrir o detalhe, busca a linha do tempo de verdade e injeta
+     no state; a peça lê daqui em vez do mock. */
+  /* Tag aplicada, etapa movida, qualificação: a tela de baixo relê (`router.refresh`)
+     e entrega `leads` novos. A gaveta aberta relê o detalhe junto — senão
+     mostrava a tag/contato de antes até fechar e abrir de novo. */
+  componentDidUpdate(prevProps?: any, prevState?: any) {
+    const pai = (PecasLiga.prototype as any).componentDidUpdate;
+    if (pai) pai.call(this, prevProps, prevState);
+    const id = (this as any).state?.detalheId;
+    if (prevProps && prevProps.leads !== (this as any).props?.leads) {
+      // O board atualizou: a cadência da gaveta acompanha a inscrição real.
+      (this as any).setState({ cadencias: (this as any).props?.dados?.cadencias ?? {} });
+      if (id) this.carregarDetalhe(id);
+    }
+  }
+
+  abrirPeca(peca: string, leadId: string) {
+    (super.abrirPeca as any).call(this, peca, leadId);
+    if (peca === "detalhe" && leadId) this.carregarDetalhe(leadId);
+  }
+
+  carregarDetalhe(leadId: string) {
+    {
+      const carregar = (this as any).props?.acoes?.detalhe;
+      if (typeof carregar === "function") {
+        void Promise.resolve(carregar(leadId)).then((r: any) => {
+          const tl: any[] = (r?.ok && r?.dados?.timeline) ? r.dados.timeline : [];
+          /* Sempre data + hora: "18:01" sozinho não diz de que dia é. */
+          const hhmm = (iso: string) => {
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return "—";
+            const dd = String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0");
+            return dd + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+          };
+          const eventos = tl.map((e) => ({
+            hora: hhmm(e.ocorridoEm),
+            titulo: e.titulo || rotuloDeEvento(e.tipo),
+            ator: e.atorTipo || "SYSTEM",
+            autor: e.usuarioNome || (e.atorTipo === "AI_AGENT" ? "ONI" : e.atorTipo === "AUTOMATION" ? "Automação" : "Sistema"),
+          }));
+          /* Contato, respostas do formulário e tags REAIS do lead: a gaveta lê
+             daqui. Antes telefone/e-mail eram fabricados a partir do id. */
+          const lead = r?.ok ? r.dados?.lead ?? null : null;
+          (this as any).setState((st: any) => ({
+            timelineReal: { ...(st.timelineReal ?? {}), [leadId]: eventos },
+            detalheReal: { ...(st.detalheReal ?? {}), [leadId]: lead },
+          }));
+        }).catch(() => undefined);
+      }
+    }
+  }
+
   setState(atualizacao: any, callback?: () => void) {
     const s: any = (this as any).state ?? {};
+    /* O modal "Qualificar lead" coleta em `qualDados` (interesses/porte/dor/fit),
+       não em `qual` (a gaveta de detalhe). Sem esta ponte a qualificação ia ao
+       servidor vazia: gravava `{}` e o lead voltava sem nada preenchido. Mapeia
+       os campos do modal para a forma que `executarIntencao` lê. */
+    const qd = s.qualDados ?? {};
+    const temModal = (Array.isArray(qd.interesses) && qd.interesses.length) || (qd.dor && String(qd.dor).trim());
+    const qualificacoes = { ...(s.qual ?? {}) };
+    if (temModal && s.detalheId) {
+      const nPorte = parseInt(String(qd.porte ?? "").replace(/[^0-9]/g, ""), 10);
+      qualificacoes[s.detalheId] = {
+        ...(qualificacoes[s.detalheId] ?? {}),
+        interesse: Array.isArray(qd.interesses) ? qd.interesses.join("|") : undefined,
+        dor: qd.dor || undefined,
+        quantidade: Number.isNaN(nPorte) ? undefined : nPorte,
+        fit: qd.fit || undefined,
+      };
+    }
     this._contexto = {
       motivoNutricao: s.motivo ?? null,
       motivoDesqualificacao: s.desqMotivo ?? null,
       observacao: (s.desqObs || s.obs) ?? null,
-      qualificacoes: s.qual ?? {},
+      qualificacoes,
       oportunidade: {
         resp: s.qualOpp?.resp ?? null, avanco: s.qualOpp?.avanco ?? null,
         data: s.qualOpp?.data ?? null, hora: s.qualOpp?.hora ?? null,
+        duracao: s.qualOpp?.duracao ?? null, tipo: s.qualOpp?.tipo ?? null,
+        titulo: s.qualOpp?.titulo ?? null, closer: s.qualOpp?.closer ?? null,
+        tarTitulo: s.qualOpp?.tarTitulo ?? null, tarData: s.qualOpp?.tarData ?? null, tarHora: s.qualOpp?.tarHora ?? null,
         empresa: s.qualEmpresa ?? null,
       },
     };
@@ -348,6 +461,14 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {} }: {
   const leads = React.useMemo(
     () => todos.map((c) => paraODesenho(c, cadenciaPorLead[c.leadId] ?? null)),
     [todos, cadenciaPorLead],
+  );
+
+  /* A cadência REAL de cada lead (inscrição viva). A gaveta lê daqui: antes ela
+     guardava um estado próprio e dizia "Fora de cadência" com o cartão mostrando
+     a cadência. */
+  const cadenciasVivas = React.useMemo(
+    () => Object.fromEntries(Object.entries(cadenciaPorLead).map(([k, v]) => [k, String(v).replace(/^Cadência /, "")])),
+    [cadenciaPorLead],
   );
 
   /* O que já foi qualificado, por lead. Só entra quem tem algo gravado: mapa
@@ -397,10 +518,18 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {} }: {
     [dados.filtros.responsaveis],
   );
 
-  const catalogo = React.useMemo(() => ({
-    EQUIPE: dados.filtros.responsaveis.map((r) => r.nome),
-    ETAPAS: Object.fromEntries(dados.colunas.map((c) => [c.chave, { label: c.rotulo }])),
-  }), [dados.filtros.responsaveis, dados.colunas]);
+  const catalogo = React.useMemo(() => {
+    /* O campo "Closer" (reunião/oportunidade) só lista quem fecha, não o time
+       todo: o modal mostrava Aline Aragão e demais admins/gerentes. Filtra por
+       papel `closer`; se o cadastro ainda não tem nenhum, cai na equipe toda
+       para não travar o agendamento. */
+    const closers = dados.filtros.responsaveis.filter((r) => r.papel === "closer").map((r) => r.nome);
+    return {
+      EQUIPE: dados.filtros.responsaveis.map((r) => r.nome),
+      CLOSERS: closers.length ? closers : dados.filtros.responsaveis.map((r) => r.nome),
+      ETAPAS: Object.fromEntries(dados.colunas.map((c) => [c.chave, { label: c.rotulo }])),
+    };
+  }, [dados.filtros.responsaveis, dados.colunas]);
 
   const abrir = React.useCallback((peca: PecaDoDesenho, id: string) => {
     pecas.current?.abrirPeca(peca, id);
@@ -515,7 +644,7 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {} }: {
 
       <PecasLigadas
         ref={pecas}
-        dados={{ leads, qual }}
+        dados={{ leads, qual, cadencias: cadenciasVivas }}
         catalogo={catalogo}
         leads={leads}
         /* Sem `acoes`, o save-ao-digitar da qualificação (agendarSalvarQualificacao,

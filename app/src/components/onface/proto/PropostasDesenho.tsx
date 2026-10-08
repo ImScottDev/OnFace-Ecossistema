@@ -49,11 +49,11 @@ export interface ValoresDePropostasDesenho {
 }
 
 export function PropostasDesenho(vals: ValoresDePropostasDesenho) {
-  const { busca, fc, fd, fecharPainel, filtros, fp, linhas, novaAbrir, nv, p, pagAnt, pagAntStyle, pagProx, pagProxStyle, paginas, painelSobre, painelStyle, parar, rodape, setBusca, temPainel, vazio } = vals;
+  const { busca, fc, fd, fecharPainel, filtros, fp, linhas, novaAbrir, nv, p, painelSobre, painelStyle, parar, rodape, setBusca, temPainel, vazio } = vals;
   return (
     <>
 <div style={{ flex: "1", minHeight: "0", background: "#f6f6f3", display: "flex", overflow: "hidden" }}>
-<div style={{ flex: "1 1 auto", minWidth: "0", minHeight: "0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+<div style={{ flex: "1 1 auto", minWidth: "0", minHeight: "0", display: "flex", flexDirection: "column", overflow: "auto" }}>
 <div data-in="rise" style={{ flex: "0 0 auto", padding: "14px 14px 0" }}>
 <div style={estilo(`position:relative;overflow:hidden;display:grid;grid-template-columns:${fc.cols ?? ""};gap:${fc.gap ?? ""};padding:${fc.pad ?? ""};border-radius:18px;background:#12171d;color:#fff;box-shadow:0 1px 2px rgba(12,16,21,.12)`)}>
 <span style={{ position: "absolute", left: "30%", top: "-120px", width: "420px", height: "260px", borderRadius: "9999px", background: "#fe4f2b", opacity: ".1", filter: "blur(70px)", pointerEvents: "none" }} />
@@ -311,11 +311,11 @@ Nova proposta
 </span>
 </button>
 </div>
-<div style={{ flex: "1", minHeight: "0", padding: "12px 14px 14px", display: "flex", flexDirection: "column" }}>
-<div style={{ flex: "0 1 auto", maxHeight: "100%", minHeight: "0", display: "flex", flexDirection: "column", background: "#fff", borderRadius: "16px", boxShadow: "0 0 0 1px #e6e9e9,0 1px 2px rgba(18,23,29,.04),0 12px 32px -24px rgba(18,23,29,.25)", overflow: "hidden" }}>
-<div style={{ flex: "1", minHeight: "0", overflow: "auto" }}>
+<div style={{ flex: "0 0 auto", padding: "12px 14px 14px", display: "flex", flexDirection: "column" }}>
+<div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", background: "#fff", borderRadius: "16px", boxShadow: "0 0 0 1px #e6e9e9,0 1px 2px rgba(18,23,29,.04),0 12px 32px -24px rgba(18,23,29,.25)", overflow: "clip" }}>
+<div style={{ flex: "0 0 auto" }}>
 <div style={{ minWidth: "1100px" }}>
-<div style={{ position: "sticky", top: "0", zIndex: "2", display: "grid", gridTemplateColumns: "minmax(210px,1.5fr) minmax(170px,1.2fr) 130px 150px 160px 160px 150px 96px", gap: "14px", padding: "12px 20px", background: "rgba(250,250,248,.92)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", borderBottom: "1px solid #eef1f1", fontSize: "11px", fontWeight: "700", letterSpacing: ".06em", textTransform: "uppercase", color: "#8b949e" }}>
+<div style={{ position: "sticky", top: "0", zIndex: "2", display: "grid", gridTemplateColumns: "minmax(170px,1.5fr) minmax(140px,1.2fr) 110px 124px 118px 140px 120px 96px", gap: "10px", padding: "12px 20px", background: "rgba(250,250,248,.92)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", borderBottom: "1px solid #eef1f1", fontSize: "11px", fontWeight: "700", letterSpacing: ".06em", textTransform: "uppercase", color: "#8b949e" }}>
 <span>
 Proposta
 </span>
@@ -441,27 +441,6 @@ Ajuste os filtros ou crie uma proposta a partir de uma oportunidade.
 <span style={{ flex: "1", minWidth: "0", fontSize: "12px", color: "#67787c" }}>
 {rodape}
 </span>
-<div style={{ display: "flex", alignItems: "center", gap: "6px", flex: "0 0 auto" }}>
-<button onClick={pagAnt} style={estilo(pagAntStyle)}>
-<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "4px" }}>
-<path d="m15 18-6-6 6-6" />
-</svg>
-Anterior
-</button>
-{(paginas ?? []).map((pg: any, i1: number) => (
-<Fragment key={pg?.id ?? pg?.chave ?? i1}>
-<button onClick={pg.onClick} style={estilo(pg.style)}>
-{pg.n}
-</button>
-</Fragment>
-))}
-<button onClick={pagProx} style={estilo(pagProxStyle)}>
-Próxima
-<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: "4px" }}>
-<path d="m9 18 6-6-6-6" />
-</svg>
-</button>
-</div>
 </div>
 </div>
 </div>

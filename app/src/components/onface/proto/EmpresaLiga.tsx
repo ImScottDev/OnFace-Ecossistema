@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { EmpresaDesenho } from "./EmpresaDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -148,6 +149,8 @@ class Logica extends React.Component<any, any> {
   }
 
   componentDidMount() {
+    /* A relação vem do navegador (store local): só depois de hidratar, senão o servidor e o cliente discordam. */
+    this.setState({ hidratado: true });
     this.carregarSalvos();
     const E = this.E;
     const assinar = () => {
@@ -223,6 +226,7 @@ posFlutuante(r, alto) {
   }
 
   gravarEmpresa(nome, patch) {
+    if (this.props.persistir) this.props.persistir({ empresa: patch });
     const E = this.E;
     if (!E) return;
     const todas = Object.assign({}, E.ler("empresas", {}));
@@ -238,12 +242,14 @@ posFlutuante(r, alto) {
   }
 
   gravarLead(id, patch) {
+    if (this.props.persistir) this.props.persistir({ lead: patch });
     const E = this.E;
     if (!E) return;
     E.gravar({ leads: (E.ler("leads", []) || []).map(x => x.id === id ? Object.assign({}, x, patch) : x) });
   }
 
   gravarQual(id, patch) {
+    if (this.props.persistir) this.props.persistir({ qual: patch });
     const E = this.E;
     if (!E) return;
     const q = Object.assign({}, E.ler("qual", {}));
@@ -300,11 +306,13 @@ posFlutuante(r, alto) {
     /* Campos que o Apollo já gravou na empresa (GET /apollo/empresa/:id/salvos) entram por cima. */
     const X = Object.assign({}, this.empresaDados(nomeEmp), S.apolloSalvo || {});
     const dominio = slug(E.empresa || "empresa") + ".com.br";
-    const seg = X.segmento || E.segmento || segmentos[E.empresa] || (E.registro ? "—" : "Serviços");
-    const porte = P.porte || (E.registro ? "" : "45");
-    const site = X.site || E.site || (E.registro ? "—" : "https://" + dominio);
-    const cnpj = X.cnpj || E.cnpj || (E.registro ? "—" : "34.567.890/0001-12");
-    const cidade = X.cidade || E.cidade || (E.registro ? "—" : "São Paulo / SP");
+    /* Sem valores de exemplo: dado real ou "—". Antes, empresa sem registro
+       recebia CNPJ, cidade, site, porte e segmento inventados. */
+    const seg = X.segmento || E.segmento || segmentos[E.empresa] || "—";
+    const porte = P.porte || "";
+    const site = X.site || E.site || "—";
+    const cnpj = X.cnpj || E.cnpj || "—";
+    const cidade = X.cidade || E.cidade || "—";
     const cadE = P.cadencia === undefined ? (E.registro ? null : (D.cadenciaPadrao ? D.cadenciaPadrao(E) : null)) : P.cadencia;
     const qual = P.qualificacao || {};
     const chip = "display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;background:#eeeff3;color:#4a5560;font-size:11.5px;font-weight:600;white-space:nowrap;flex:0 0 auto";
@@ -408,7 +416,8 @@ posFlutuante(r, alto) {
         campoTexto("tel", "Telefone", "+55 11 90000-0000"), campoTexto("email", "E-mail", "nome@" + dominio, true)
       ] }
     };
-    const abrirEd = (k, inicial) => this.setState({ editando: k, rascunho: inicial, maisMenu: false });
+    // "—" é o que a ficha mostra para campo vazio: no formulário viraria valor digitado.
+      const abrirEd = (k, inicial) => this.setState({ editando: k, rascunho: Object.fromEntries(Object.entries(inicial).map(([c, x]) => [c, x === "—" ? "" : x])), maisMenu: false });
     const salvar = () => {
       const k = S.editando;
       if (k === "resumo") {
@@ -473,7 +482,7 @@ posFlutuante(r, alto) {
 
       meta: [
         { label: "Responsável:", valor: E.resp || "Sem responsável", d: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0" },
-        { label: "Origem:", valor: E.origem, d: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9" },
+        { label: "Origem:", valor: E.origem || "—", d: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9" },
         { label: "Campanha:", valor: E.campanha || "—", destaque: !!E.campanha, d: "M3 11l18-5v12L3 14v-3zM11.6 16.8a3 3 0 1 1-5.8-1.6" },
         { label: "Segmento:", valor: seg, d: "M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5" },
         { label: "Porte:", valor: (porte ? porte + " atendentes" : "—"), d: "M3 21V7l9-4 9 4v14M9 21v-6h6v6" },
@@ -498,7 +507,7 @@ posFlutuante(r, alto) {
         { label: "CNPJ", valor: cnpj, tipo: "texto" },
         { label: "Porte", valor: (porte ? porte + " atendentes" : "—"), tipo: "texto" },
         { label: "Site", valor: site, tipo: "link" },
-        { label: "Fonte", valor: E.origem, tipo: "texto" },
+        { label: "Fonte", valor: E.origem || "—", tipo: "texto" },
         { label: "Cidade / UF", valor: cidade, tipo: "texto" },
         { label: "Interesse", tipo: "chips", chips: qualIni },
         { label: "Segmento", valor: seg, tipo: "texto" },
@@ -506,11 +515,11 @@ posFlutuante(r, alto) {
         E.empresaTel ? { label: "Telefone", valor: E.empresaTel, tipo: "texto" } : null,
         E.leadScore > 0 ? { label: "Lead score", valor: String(E.leadScore), tipo: "texto" } : null,
         E.empresaObs ? { label: "Observações", valor: E.empresaObs, tipo: "texto" } : null,
-        X.funcionarios ? { label: "Funcionários", valor: X.funcionarios, tipo: "texto", apollo: true } : null,
-        X.faturamento ? { label: "Faturamento", valor: X.faturamento, tipo: "texto", apollo: true } : null,
-        X.telefone ? { label: "Telefone geral", valor: X.telefone, tipo: "texto", apollo: true } : null,
-        X.linkedin ? { label: "LinkedIn", valor: X.linkedin, tipo: "link", apollo: true } : null,
-        X.tecnologias ? { label: "Tecnologias", tipo: "chips", chips: String(X.tecnologias).split(" · "), apollo: true } : null
+        X.funcionarios ? { label: "Funcionários", valor: X.funcionarios, tipo: "texto", apollo: !!X.deApollo } : null,
+        X.faturamento ? { label: "Faturamento", valor: X.faturamento, tipo: "texto", apollo: !!X.deApollo } : null,
+        X.telefone ? { label: "Telefone geral", valor: X.telefone, tipo: "texto", apollo: !!X.deApollo } : null,
+        X.linkedin ? { label: "LinkedIn", valor: X.linkedin, tipo: "link", apollo: !!X.deApollo } : null,
+        X.tecnologias ? { label: "Tecnologias", tipo: "chips", chips: String(X.tecnologias).split(" · "), apollo: !!X.deApollo } : null
       ].filter(Boolean).map(r => ({
         label: r.label, valor: r.valor || "", apollo: !!r.apollo,
         href: r.tipo === "link" ? (/^https?:/.test(r.valor) ? r.valor : "https://" + r.valor) : "#",
@@ -520,12 +529,13 @@ posFlutuante(r, alto) {
 
       formularios: (E.formularios || []).map(f => ({ id: f.id, titulo: f.titulo, adHref: f.adHref || "", linhas: f.linhas })),
       temFormularios: (E.formularios || []).length > 0,
+      /* Mesmos 4 campos e mesma fonte da ficha de Contato (PessoaLiga) e do
+         drawer de Pré-vendas. Sem valor de exemplo: real ou "Não preenchido". */
       qualif: [
-        ["Interesse principal", qualIni.join(", ") || "—"],
-        ["Dor principal", qual.dor || (E.registro ? "—" : "Alto custo com telefonia")],
-        ["Canal preferido", qual.canal || (E.registro ? "—" : (E.origem === "WhatsApp" ? "WhatsApp" : "Telefone"))],
-        ["Urgência", qual.urgencia || (E.registro ? "—" : "Média")],
-        ["Fit", qual.fit || (E.registro ? "—" : "Alto")]
+        ["Interesse", qualIni.join(", ") || "Não preenchido"],
+        ["Fit", qual.fit || "Não preenchido"],
+        ["Tamanho da operação", qual.tamanho ? qual.tamanho + " atendentes" : "Não preenchido"],
+        ["Dor principal", qual.dor || "Não preenchido"]
       ].map(([label, valor]) => ({
         label, valor,
         style: "display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:7px;background:#eeeff3;color:#1f252c;font-size:12px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
@@ -557,7 +567,7 @@ posFlutuante(r, alto) {
         ["Lead criado via " + E.origem, "Sistema", "20 set", "M12 5v14M5 12h14", false, "Empresa"],
         ["Campanha " + (E.campanha || E.origem), E.origem, "20 set", "M3 11l18-5v12L3 14v-3z", false, "Empresa"]
       ])).filter(ev => vincOk(ev[5])).filter((_, i) => S.tlTudo || i < 5).map(([titulo, autor, quando, d, coral, vinc], i, arr) => {
-        const rel = /^Ligação (realizada|iniciada|recebida)/.test(titulo);
+        const rel = /^Ligação\b/.test(titulo);
         return {
         titulo, autor, quando, d, temLinha: i < arr.length - 1,
         vinc: vincRotulo(vinc), vincStyle: vincChip(vinc), temAutor: !!autor,
@@ -586,7 +596,7 @@ posFlutuante(r, alto) {
       tags: tagsAtuais.map(t => ({ label: t })),
 
       origem: [
-        ["Origem", E.origem], ["Campanha", E.campanha || "—"],
+        ["Origem", E.origem || "—"], ["Campanha", E.campanha || "—"],
         ["Conjunto", conjunto || "—"],
         ["Criativo", criativo || "—"]
       ].map(([label, valor]) => ({
@@ -615,7 +625,7 @@ posFlutuante(r, alto) {
       removerCad: () => P.onRemoverCadencia && P.onRemoverCadencia(E.id),
 
       relAtivas: (() => {
-        const RR = typeof window !== "undefined" && this.dadosDoProto.Relacoes ? this.dadosDoProto.Relacoes({ empresa: nomeEmp }) : { itens: [], perdidas: 0 };
+        const RR = this.state && this.state.hidratado && this.dadosDoProto.Relacoes ? this.dadosDoProto.Relacoes({ empresa: nomeEmp }) : { itens: [], perdidas: 0 };
         const ICO = { cliente: "M20 6 9 17l-5-5", opp: "M12 2v20M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6", proposta: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5", aquisicao: "M22 12h-4l-3 9L9 3l-3 9H2" };
         const TOM = { verde: ["#e6f4ee", "#1f7256"], coral: ["#fff6f4", "#c2330f"], azul: ["#e8f0fb", "#2c5f9e"], cinza: ["#eeeff3", "#4a5560"] };
         const n = RR.itens.length;
@@ -857,9 +867,11 @@ posFlutuante(r, alto) {
       })(),
       ...(() => {
         const Es = this.E;
-        const fluxos = { "Inbound": "Primeiro contato", "Enterprise": "Prospecção inbound", "Reativar": "Reativação", "Proposta enviada": "Pós-proposta" };
-        const criadas = (Es && Es.ler("tagsCriadas", [])) || [];
-        const base = ["Inbound", "Enterprise", "Fit Alto", "Reativar", "Proposta enviada", "Callface AI", "PABX", "White Label"];
+        /* Catálogo REAL (`labels`) quando a ficha o recebe; o do protótipo (tags e fluxos inventados) só sem ele. */
+        const real = Array.isArray(this.props.labels);
+        const fluxos = real ? {} : { "Inbound": "Primeiro contato", "Enterprise": "Prospecção inbound", "Reativar": "Reativação", "Proposta enviada": "Pós-proposta" };
+        const criadas = real ? [] : (Es && Es.ler("tagsCriadas", [])) || [];
+        const base = real ? this.props.labels : ["Inbound", "Enterprise", "Fit Alto", "Reativar", "Proposta enviada", "Callface AI", "PABX", "White Label"];
         const todas = base.concat(criadas.map(t => typeof t === "string" ? t : t.nome)).concat(tagsAtuais).filter((t, i, a) => t && a.indexOf(t) === i);
         const gravar = (lista) => this.gravarEmpresa(nomeEmp, { tags: lista });
         const nova = (S.tagNova || "").trim();
@@ -871,9 +883,10 @@ posFlutuante(r, alto) {
           diz("Tag “" + nova + "” criada e aplicada", "ok");
         };
         return {
-          tagsTopo: tagsAtuais.map(t => ({ label: t, remover: () => gravar(tagsAtuais.filter(x => x !== t)) })),
+          tagsTopo: tagsAtuais.map(t => ({ label: t, remover: () => (E.registro && this.props.persistir ? this.props.persistir({ tagRemover: t }) : gravar(tagsAtuais.filter(x => x !== t))) })),
           tagAberto: S.tagMenu,
           abrirTag: (e) => {
+            if (E.registro && this.props.temLead !== false && this.E) { e.stopPropagation(); this.E.abrir("tagslead", E.id); return; }
             e.stopPropagation();
             const r = e.currentTarget.getBoundingClientRect();
             this.setState(s => ({ tagMenu: !s.tagMenu, tagRect: { top: r.top, bottom: r.bottom, left: r.left } }));
@@ -1359,9 +1372,11 @@ posFlutuante(r, alto) {
         return {
           aberto: !!S.excluir, fechar,
           alvos: [
-            { k: "empresa", label: "Só a empresa", nota: "O lead " + (E.pessoa || "") + " continua em Pré-vendas, sem empresa vinculada." },
-            { k: "tudo", label: "Empresa e lead", nota: "Remove " + nomeEmp + ", o lead " + (E.pessoa || "") + ", pessoas, notas e arquivos." }
-          ].map(o => {
+            { k: "empresa", label: "Só a empresa", nota: (this.props.nLeads > 0 ? (this.props.nLeads === 1 ? "O contato" : "Os " + this.props.nLeads + " contatos") + " continua" + (this.props.nLeads === 1 ? "" : "m") + " em Pré-vendas" : "As pessoas continuam na base") + ", sem empresa vinculada." }
+          ].concat(this.props.nLeads > 0 ? [
+            { k: "tudo", label: "Empresa e contatos", nota: "Remove " + nomeEmp + " e " + (this.props.nLeads === 1 ? "o contato dela" : "os " + this.props.nLeads + " contatos dela") + ", com notas e arquivos. Contato com histórico comercial não é apagado." }
+          ] : [])
+          .map(o => {
             const on = S.excAlvo === o.k;
             return {
               label: o.label, nota: o.nota,

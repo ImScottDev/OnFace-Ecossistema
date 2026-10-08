@@ -16,6 +16,7 @@ import { isAdminView } from "@/lib/auth/roles";
 import { GO_LIVE, GO_LIVE_ISO, parsePeriodo } from "@/lib/relatorios/periodo";
 import { moeda } from "@/components/onface/vendas/formato";
 import { TabFechamento } from "./TabFechamento";
+import { BlocoGestao } from "./BlocoGestao";
 import { preencherSemanas, type Semana } from "./semanas";
 import "./insights.css";
 
@@ -148,7 +149,12 @@ export function InsightsOnface({ abaInicial, periodoInicial }: { abaInicial: str
           <div className="ins-corpo" role="tabpanel">
             {gestao ? (
               <>
-                {abaAtiva === "comercial" && <TabComercial periodo={periodo} ocultarHero />}
+                {abaAtiva === "comercial" && (
+                  <>
+                    <TabComercial periodo={periodo} ocultarHero />
+                    <div className="mt-6"><BlocoGestao periodo={periodo} /></div>
+                  </>
+                )}
                 {abaAtiva === "sdr" && <TabSdr periodo={periodo} />}
                 {/* Pós-venda e Atividade do time são retrato de agora / últimos
                     14 dias: as rotas Hono não aceitam período. O seletor fica
@@ -235,7 +241,7 @@ function HeroComercial({ periodo, gestao }: { periodo: string; gestao: boolean }
       <div className="ins-hero-kpis">
         <Kpi l="Win rate" v={v(win?.taxa != null ? `${win.taxa}%` : "—")} s={win ? (win.amostraPequena ? `base pequena · n=${win.n}` : `${win.n} decididos`) : ""} />
         <Kpi l="Ticket médio" v={v(data?.ticketMedio != null ? moeda(data.ticketMedio) : "—")} s="por negócio ganho" />
-        <Kpi l="Ciclo médio" v={v(data?.cicloMedio != null ? `${data.cicloMedio}d` : "—")} s="entrada → ganho" />
+        <Kpi l="Ciclo médio" v={v(data?.cicloMedio != null ? `${data.cicloMedio}d` : "—")} s="lead no CRM → ganho" />
         <Kpi l="Pipeline aberto" v={v(moeda(data?.pipeline.total ?? 0))} s={data ? `${data.pipeline.negociosAbertos} negócios · agora` : ""} />
         <Kpi l="Forecast ponderado" v={v(moeda(data?.pipeline.ponderado ?? 0))} s="valor × probabilidade da etapa" />
         <Kpi l="Leads qualificados" v={v(String(data?.leadsQualificados ?? 0))} s="no período" />

@@ -120,7 +120,7 @@ export async function acaoCriarOportunidade(entrada: {
   leadId: string;
   familias: Familia[];
   responsavelId: string;
-  reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video" } | null;
+  reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; closerId?: string } | null;
 }): Promise<Resultado<{ ids: string[] }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
@@ -154,18 +154,20 @@ export async function acaoCriarLead(entrada: {
   responsavelId?: string | null;
   /** Rótulos de serviço ("Callface AI", "PABX"…), como `servicos_interesse` guarda. */
   servicosInteresse?: string[] | null;
+  /** "Criar lead" do Atendimento: a conversa chega sem empresa e o painel diz "associar depois". */
+  permitirSemEmpresa?: boolean;
 }): Promise<Resultado<{ leadId: string }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
-  if (!entrada.empresa?.trim()) return { ok: false, erro: "O lead precisa de uma empresa." };
+  if (!entrada.empresa?.trim() && !entrada.permitirSemEmpresa) return { ok: false, erro: "O lead precisa de uma empresa." };
   if (!entrada.pessoaNome?.trim()) return { ok: false, erro: "Informe o nome do contato." };
 
   return executar("criar lead", async () => {
     const [primeiro, ...resto] = entrada.pessoaNome.trim().split(/\s+/);
-    let empresa: { nome: string; cnpj: string | null; website: string | null; email?: string | null } = {
+    let empresa: { nome: string; cnpj: string | null; website: string | null; email?: string | null } | null = entrada.empresa?.trim() ? {
       nome: entrada.empresa.trim(), cnpj: entrada.cnpj ?? null,
       website: entrada.website ?? null, email: entrada.email ?? null,
-    };
+    } : null;
     if (entrada.empresaId) {
       const [e] = await db.execute<{ nome: string; cnpj: string | null; website: string | null }>(sql`
         SELECT nome, cnpj, website FROM empresas
@@ -414,11 +416,150 @@ export async function acaoTagDoLead(
       entityType: "lead",
       entityId: leadId,
       label,
+      atorId: ctx.ator.usuarioId,
     });
     // `adicionarTag` devolve ok:false (tag inexistente) sem lançar. Sem esta
     // checagem a gaveta recebia "ok" e mostrava a tag aplicada que nunca gravou.
     if (!r.ok) throw new RegraDeNegocio("tag_invalida", r.erro ?? "Tag não encontrada.");
     revalidatePath(ROTA);
     return { mudou: r.mudou };
+  });
+}
+
+/** Cadências do sistema (as publicadas, com os passos reais), mais de onde o
+ *  usuário pode disparar: os WhatsApp DELE e o e-mail dele. Telefone não entra:
+ *  a ligação sai pelo Callface. O modal "Inserir na cadência" lia um catálogo
+ *  chumbado de cadências e números que não existiam. */
+export async function acaoCadenciasDoSistema(): Promise<Resultado<{
+  cadencias: Array<{ id: string; nome: string; passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
+  whatsapps: Array<{ id: string; numero: string; rotulo: string; padrao: boolean }>;
+  email: string | null;
+}>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("cadências do sistema", async () => {
+    const defs = await db.execute<{ id: string; nome: string; steps: unknown }>(sql`
+      SELECT id::text, nome, steps FROM cadence_definitions
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false AND status = 'published'
+       ORDER BY nome LIMIT 40`);
+    const rotuloDia = (min: number) => `Dia ${Math.round(min / 1440)}`;
+    const cadencias = [...defs].map((d) => {
+      const passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> = [];
+      let acum = 0;
+      for (const st of (Array.isArray(d.steps) ? d.steps : []) as Array<Record<string, any>>) {
+        if (st.tipo === "wait") { acum += Number(st.esperaMinutos) || Math.round((Number(st.config?.duration_ms) || 0) / 60000); continue; }
+        if (st.tipo !== "action") continue;
+        const quando = rotuloDia(acum);
+        if (st.adapter === "ai_agent_message" || st.adapter === "whatsapp_message" || st.adapter === "whatsapp_template") passos.push({ quando, titulo: "WhatsApp", canal: "wa" });
+        else if (st.adapter === "email") passos.push({ quando, titulo: `E-mail${st.config?.assunto ? ": " + st.config.assunto : ""}`, canal: "mail" });
+        else if (st.adapter === "crm_callface_call") passos.push({ quando, titulo: "Ligação pelo Callface", canal: "tel" });
+        else if (st.adapter === "crm_create_task") passos.push({ quando, titulo: `Tarefa${st.config?.titulo ? ": " + st.config.titulo : ""}`, canal: "task" });
+      }
+      return { id: d.id, nome: d.nome, passos };
+    });
+    const zap = await db.execute<{ id: string; numero: string | null; label: string | null; is_default: boolean }>(sql`
+      SELECT id::text, phone_number AS numero, label, is_default FROM whatsapp_sessao
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND usuario_id = ${ctx.ator.usuarioId}::uuid
+       ORDER BY is_default DESC, label NULLS LAST`);
+    const [u] = await db.execute<{ email: string | null }>(sql`
+      SELECT email FROM usuarios WHERE id = ${ctx.ator.usuarioId}::uuid LIMIT 1`);
+    return {
+      cadencias,
+      whatsapps: [...zap].map((z) => ({ id: z.id, numero: z.numero ?? "", rotulo: z.label ?? "", padrao: z.is_default })),
+      email: u?.email ?? null,
+    };
+  });
+}
+
+/** Tira o lead da cadência: cancela a inscrição viva. Antes o "Remover" só
+ *  mexia no estado da tela, e o chip "Cadência X" voltava no cartão. */
+export async function acaoRemoverDaCadencia(leadId: string): Promise<Resultado<{ canceladas: number }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("remover da cadência", async () => {
+    const vivas = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM cadence_enrollments
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND entity_type = 'lead'
+         AND entity_id = ${leadId}::uuid AND status IN ('active', 'waiting')`);
+    const { cancelarCadencia } = await import("@/lib/cadencia/cadence-engine");
+    for (const v of vivas) await cancelarCadencia(v.id, "removido_manualmente");
+    revalidatePath(ROTA);
+    return { canceladas: vivas.length };
+  });
+}
+
+/**
+ * Edita os dados de contato do lead (a ficha da Pessoa).
+ *
+ * A ficha guardava tudo num store local da tela: nome, cargo, e-mail, telefone,
+ * WhatsApp, LinkedIn, cidade e observação sumiam ao recarregar. Grava no lead e
+ * espelha na pessoa canônica, para as duas leituras concordarem.
+ */
+export async function acaoSalvarContato(leadId: string, c: {
+  nome?: string; cargo?: string; email?: string; telefone?: string; whatsapp?: string;
+  linkedin?: string; cidade?: string; observacao?: string;
+}): Promise<Resultado<null>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("salvar contato", async () => {
+    const limpo = (v: unknown) => (typeof v === "string" ? v.trim() : undefined);
+    const nomeCompleto = limpo(c.nome);
+    if (nomeCompleto !== undefined && !nomeCompleto) throw new RegraDeNegocio("nome_vazio", "O nome não pode ficar vazio.");
+    const email = limpo(c.email);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new RegraDeNegocio("email_invalido", "E-mail inválido.");
+    const [atual] = await db.execute<{ nome: string; sobrenome: string | null; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; linkedin: string | null }>(sql`
+      SELECT nome, sobrenome, cargo, email, telefone, whatsapp, linkedin FROM leads
+       WHERE id = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+    if (!atual) throw new RegraDeNegocio("lead_inexistente", "Lead não encontrado.");
+    const partes = nomeCompleto ? nomeCompleto.split(/\s+/) : null;
+    const nome = partes ? partes[0] : atual.nome;
+    const sobrenome = partes ? (partes.slice(1).join(" ") || null) : atual.sobrenome;
+    const cargo = limpo(c.cargo) ?? atual.cargo;
+    const mail = email === undefined ? atual.email : (email || null);
+    const tel = c.telefone === undefined ? atual.telefone : (limpo(c.telefone) || null);
+    const whats = c.whatsapp === undefined ? atual.whatsapp : (limpo(c.whatsapp) || null);
+    const linkedin = c.linkedin === undefined ? atual.linkedin : (limpo(c.linkedin) || null);
+    const extras: Record<string, string> = {};
+    if (c.observacao !== undefined) extras.observacaoContato = limpo(c.observacao) ?? "";
+    if (c.cidade !== undefined) extras.cidadeContato = limpo(c.cidade) ?? "";
+    await db.execute(sql`
+      UPDATE leads SET nome = ${nome}, sobrenome = ${sobrenome}, cargo = ${cargo}, email = ${mail},
+             telefone = ${tel}, whatsapp = ${whats}, linkedin = ${linkedin},
+             campos_custom = COALESCE(campos_custom, '{}'::jsonb) || ${JSON.stringify(extras)}::jsonb,
+             updated_at = now()
+       WHERE id = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+    await db.execute(sql`
+      UPDATE pessoas SET nome = ${nome}, sobrenome = ${sobrenome}, cargo = ${cargo}, email = ${mail},
+             telefone = ${tel}, whatsapp = ${whats}, updated_at = now()
+       WHERE lead_id_legado = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+    revalidatePath(ROTA);
+    revalidatePath(`/pessoas/${leadId}`);
+    return null;
+  });
+}
+
+/** Edita os dados cadastrais da empresa (a ficha da Empresa). Antes ficavam num
+ *  store local e sumiam ao recarregar. */
+export async function acaoSalvarEmpresa(empresaId: string, c: {
+  cnpj?: string; website?: string; setor?: string; telefone?: string; cidade?: string; estado?: string; observacoes?: string;
+}): Promise<Resultado<null>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("salvar empresa", async () => {
+    const limpo = (v: unknown) => (typeof v === "string" ? v.trim() : undefined);
+    const [atual] = await db.execute<{ cnpj: string | null; website: string | null; setor: string | null; telefone: string | null; cidade: string | null; estado: string | null; observacoes: string | null }>(sql`
+      SELECT cnpj, website, setor, telefone, cidade, estado, observacoes FROM empresas
+       WHERE id = ${empresaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+    if (!atual) throw new RegraDeNegocio("empresa_inexistente", "Empresa não encontrada.");
+    const escolhe = (novo: string | undefined, antigo: string | null) => (novo === undefined ? antigo : (novo || null));
+    await db.execute(sql`
+      UPDATE empresas SET cnpj = ${escolhe(limpo(c.cnpj), atual.cnpj)}, website = ${escolhe(limpo(c.website), atual.website)},
+             setor = ${escolhe(limpo(c.setor), atual.setor)}, telefone = ${escolhe(limpo(c.telefone), atual.telefone)},
+             cidade = ${escolhe(limpo(c.cidade), atual.cidade)}, estado = ${escolhe(limpo(c.estado), atual.estado)},
+             observacoes = ${escolhe(limpo(c.observacoes), atual.observacoes)}, updated_at = now()
+       WHERE id = ${empresaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+    revalidatePath(`/empresas/${empresaId}`);
+    revalidatePath(ROTA);
+    return null;
   });
 }

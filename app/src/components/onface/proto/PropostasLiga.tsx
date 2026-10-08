@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { PropostasDesenho } from "./PropostasDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -151,8 +152,8 @@ class Logica extends React.Component<any, any> {
     const naAba = (x, k) => k === "todas" ? x.p.status !== "substituida" : x.p.status === k;
     const stSel = F.status || [];
     const vis = filtradas.filter(x => stSel.length ? stSel.indexOf(x.p.status) >= 0 : x.p.status !== "substituida").sort((a, b) => (a.p.status === "rascunho" ? 0 : 1) - (b.p.status === "rascunho" ? 0 : 1));
-    const POR = 20, nPag = Math.max(1, Math.ceil(vis.length / POR)), pag = Math.min(S.pag, nPag - 1);
-    const pagina = vis.slice(pag * POR, pag * POR + POR);
+    /* Uma tela só: todas as propostas numa lista contínua, sem páginas. */
+    const pagina = vis;
     const chave = (x) => x.o.id + ":" + x.i;
 
     const defs = [
@@ -197,15 +198,15 @@ class Logica extends React.Component<any, any> {
       const mesAt = hojeD.getMonth(), anoAt = hojeD.getFullYear();
       const mesAnt = new Date(anoAt, mesAt - 1, 1);
       const diaNo = (d, m, a) => d.getMonth() === m && d.getFullYear() === a ? d.getDate() - 1 : -1;
-      const semanaDe = (x) => { const d = diaNo(dataDe(x.p.enviadaEm), mesAt, anoAt); return d; };
+      const semanaDe = (x) => { const d = diaNo(dataDe(x.p.refEm || x.p.enviadaEm), mesAt, anoAt); return d; };
       const ABERTOS = ["enviada", "visualizada", "ajuste_solicitado"];
-      const vence = (x) => dataDe(x.p.enviadaEm).getTime() + (+x.p.validadeDias || 0) * 864e5;
+      const vence = (x) => dataDe(x.p.refEm || x.p.enviadaEm).getTime() + (+x.p.validadeDias || 0) * 864e5;
       const acumMes = (fn, m, a, carrega) => { const ini0 = new Date(a, m, 1).getTime(); const add = Array(N).fill(0);
-        vivos.forEach(x => { const dt = dataDe(x.p.enviadaEm), d = diaNo(dt, m, a);
+        vivos.forEach(x => { const dt = dataDe(x.p.refEm || x.p.enviadaEm), d = diaNo(dt, m, a);
           if (d >= 0 && d < N) add[d] += fn(x);
           else if (carrega && dt.getTime() < ini0 && ABERTOS.indexOf(x.p.status) >= 0 && vence(x) >= ini0) add[0] += fn(x); });
         const ac = []; add.reduce((s2, v, i) => (ac[i] = s2 + v), 0); return ac; };
-      const herdado = vivos.filter(x => dataDe(x.p.enviadaEm).getTime() < new Date(anoAt, mesAt, 1).getTime() && ABERTOS.indexOf(x.p.status) >= 0 && vence(x) >= new Date(anoAt, mesAt, 1).getTime());
+      const herdado = vivos.filter(x => dataDe(x.p.refEm || x.p.enviadaEm).getTime() < new Date(anoAt, mesAt, 1).getTime() && ABERTOS.indexOf(x.p.status) >= 0 && vence(x) >= new Date(anoAt, mesAt, 1).getTime());
       const fF = x => (PESO[x.p.status] || 0) * mr(x), fG = x => x.p.status === "aceita" ? mr(x) : 0;
       const serie = acumMes(fF, mesAt, anoAt, true), ganho = acumMes(fG, mesAt, anoAt, false), ant = acumMes(fF, mesAnt.getMonth(), mesAnt.getFullYear(), true);
       const alvo = serie[N - 1];
@@ -276,7 +277,7 @@ class Logica extends React.Component<any, any> {
           onClick: () => this.setState(s => ({ pag: 0, sel: Object.assign({}, s.sel, { status: aba === "todas" ? [] : [aba] }) })),
           chip: "display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;border-radius:7px;border:0;cursor:pointer;font-size:11.5px;color:#a3aab0;" + ((aba === "todas" ? !stSel.length : stSel.length === 1 && stSel[0] === aba) ? "background:rgba(255,255,255,.1)" : "background:transparent"),
           style: "flex:" + Math.max(0.0001, n / tot) + " 0 0;min-width:" + (n ? "6px" : "0") + ";border:0;padding:0;cursor:pointer;transition:flex-grow .7s cubic-bezier(.16,1,.3,1);background:" + c })),
-        kpis: [["Aceite", taxa + "%", "#fff", null], ["Enviadas no mês", String(vivos.filter(x => x.p.status !== "rascunho" && semanaDe(x) >= 0).length), "#fff", null], ["Rascunhos", String(vivos.filter(x => x.p.status === "rascunho").length), vivos.some(x => x.p.status === "rascunho") ? "#ff8a70" : "#fff", "rascunho"], ["Em jogo", k(emJogo), "#fff", "todas"]]
+        kpis: [["Aceite", taxa + "%", "#fff", null], ["Enviadas no mês", String(vivos.filter(x => x.p.status !== "rascunho" && x.p.enviadaEm && semanaDe(x) >= 0).length), "#fff", null], ["Rascunhos", String(vivos.filter(x => x.p.status === "rascunho").length), vivos.some(x => x.p.status === "rascunho") ? "#ff8a70" : "#fff", "rascunho"], ["Em jogo", k(emJogo), "#fff", "todas"]]
           .map(([l, v, c, aba]) => ({ l, v, onClick: () => aba && this.setState(s => ({ pag: 0, sel: Object.assign({}, s.sel, { status: aba === "todas" ? [] : [aba] }) })), vStyle: "display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:" + c }))
       };
     })();
@@ -290,7 +291,7 @@ class Logica extends React.Component<any, any> {
       const mr = (x) => soma(x.p).mrr + soma(x.p).un; const un = () => 0;
       const k = (n) => !n ? "R$ 0" : n >= 1000 ? "R$ " + (n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k" : brl(n);
       const base2 = filtradas.filter(x => x.p.status !== "substituida" && x.p.status !== "rascunho").map(x => {
-        const env = dataDe(x.p.enviadaEm), val = +x.p.validadeDias || 0, resta = val ? Math.ceil((env.getTime() + val * 864e5 - hojeD.getTime()) / 864e5) : 9999;
+        const env = dataDe(x.p.refEm || x.p.enviadaEm), val = +x.p.validadeDias || 0, resta = val ? Math.ceil((env.getTime() + val * 864e5 - hojeD.getTime()) / 864e5) : 9999;
         const exp = x.p.status === "expirada" || (["enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0 && resta < 0);
         return Object.assign({}, x, { resta, val, exp, mr: mr(x), un: un(x), peso: exp ? 0 : (PESO[x.p.status] || 0) });
       });
@@ -328,7 +329,7 @@ class Logica extends React.Component<any, any> {
           icoStyle: "flex:0 0 auto;color:" + c2, nStyle: "flex:0 0 auto;min-width:22px;height:20px;padding:0 6px;border-radius:9999px;display:grid;place-items:center;font-size:11px;font-weight:700;" + (on ? "background:#12171d;color:#fff" : "background:#eeeff3;color:#4a5560") }; }),
         abaT: AB[1], abaS: AB[2], vazia: !lista.length,
         itens: lista.map(x => { const prog = (x.val ? Math.max(0, Math.min(1, 1 - x.resta / x.val)) : 0); const urg = !x.exp && x.val && x.resta <= 3 && ["enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0;
-          return { empresa: x.o.empresa, meta: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + (FAM[x.o.familia] || "") + " · " + x.o.resp,
+          return { empresa: x.o.empresa, meta: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + (FAM[x.o.familia] ? FAM[x.o.familia] + " · " : "") + x.o.resp,
             prazo: x.p.status === "aceita" ? "Aceita" : x.p.status === "recusada" ? "Recusada" : x.exp ? "Expirou há " + Math.abs(x.resta) + (Math.abs(x.resta) === 1 ? " dia" : " dias") : !x.val ? "Sem validade" : "Vence em " + x.resta + (x.resta === 1 ? " dia" : " dias"),
             prazoStyle: "font-size:12px;font-weight:600;white-space:nowrap;color:" + (urg ? "#c2330f" : x.exp ? "#8b949e" : "#4a5560"),
             barra: "display:block;height:100%;border-radius:9999px;width:" + Math.round((x.p.status === "aceita" || x.p.status === "recusada" || x.exp ? 1 : prog) * 100) + "%;background:" + (urg ? "#fe4f2b" : x.exp ? "#c4c9ca" : x.p.status === "aceita" ? "#1f7256" : "#8b949e"),
@@ -364,7 +365,7 @@ class Logica extends React.Component<any, any> {
       const FL = contrato
         ? [["Cliente aceita a proposta", "Na página pública"], ["Contrato gerado", "Com os dados desta versão"], ["Assinatura", "Cliente assina pelo link"], ["Oportunidade ganha", "Cobrança criada no Stripe"]]
         : [["Cliente aceita a proposta", "Na página pública"], ["Checkout do Stripe", "Cartão ou boleto"], ["Pagamento confirmado", "Webhook do Stripe"], ["Oportunidade ganha", "Cliente ativado"]];
-      p = { titulo: "Proposta " + (FAM[o.familia] || "") + " · " + o.empresa, codigo: cod, status: sx[0], stD: sx[3], stStyle: selo(P.status),
+      p = { titulo: "Proposta " + (FAM[o.familia] ? FAM[o.familia] + " · " : "") + o.empresa, codigo: cod, status: sx[0], stD: sx[3], stStyle: selo(P.status),
         empresa: o.empresa, pessoa: o.pessoa + (o.cargo ? " · " + o.cargo : ""), empIni: ini(o.empresa),
         irEmpresa: () => ir("/onface-preview/empresa", o.empresa, o.leadId ? { lead: o.leadId } : {}),
         kpis: [["Valor mensal", s.mrr ? brl(s.mrr) : "—", null], ["Setup / único", s.un ? brl(s.un) : "—", null], ["Produto", FAM[o.familia] || "—", null],
@@ -410,15 +411,17 @@ class Logica extends React.Component<any, any> {
       const seloS = (bg, c) => "flex:0 0 auto;display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap;background:" + bg + ";color:" + c;
       // base de empresas e pessoas
       const emps = {};
-      const addP = (emp, nome, cargo, email) => { if (!nome) return; const k = emp || "—"; emps[k] = emps[k] || { nome: emp, pessoas: [] }; if (!emps[k].pessoas.some(p => p.nome === nome)) emps[k].pessoas.push({ nome, cargo: cargo || "", email: email || "" }); };
-      leads.forEach(l => { if (l.empresa) { emps[l.empresa] = emps[l.empresa] || { nome: l.empresa, pessoas: [] }; } addP(l.empresa, l.pessoa, l.cargo, l.email); });
-      base.forEach(o => { emps[o.empresa] = emps[o.empresa] || { nome: o.empresa, pessoas: [] }; addP(o.empresa, o.pessoa, o.cargo); (o.pessoas || []).forEach(p => addP(o.empresa, p.nome, p.papel)); });
+      const addP = (emp, nome, cargo, email, leadId) => { if (!nome) return; const k = emp || "—"; emps[k] = emps[k] || { nome: emp, pessoas: [] }; if (!emps[k].pessoas.some(p => p.nome === nome)) emps[k].pessoas.push({ nome, cargo: cargo || "", email: email || "", leadId: leadId || null }); };
+      // A base vem do banco (dados.leads, uma linha por pessoa) e `empresaId` é o que a criação usa: nome de empresa não é chave.
+      leads.forEach(l => { if (l.empresa) { emps[l.empresa] = emps[l.empresa] || { nome: l.empresa, pessoas: [], id: l.empresaId }; } addP(l.empresa, l.pessoa, l.cargo, l.email, l.leadId); });
+      base.forEach(o => { emps[o.empresa] = emps[o.empresa] || { nome: o.empresa, pessoas: [], id: o.empresaId }; addP(o.empresa, o.pessoa, o.cargo); (o.pessoas || []).forEach(p => addP(o.empresa, p.nome, p.papel)); });
       extras.forEach(x => { if (x.tipo === "empresa" && x.nome) emps[x.nome] = emps[x.nome] || { nome: x.nome, pessoas: [] }; if (x.tipo === "pessoa") addP(x.emp || null, x.nome, x.cargo, x.email); });
       const listaEmp = Object.keys(emps).filter(k => k !== "—").map(k => emps[k]);
       const semEmp = (emps["—"] || { pessoas: [] }).pessoas;
-      const clientes = base.filter(o => o.etapa === "ganho").reduce((acc, o) => { if (!acc.some(c => c.empresa === o.empresa)) acc.push({ empresa: o.empresa, pessoa: o.pessoa, familia: o.familia, contrato: (o.evidencia || "").replace(/^Contrato assinado · /, "") || "Contrato ativo" }); return acc; }, []);
-      const vivas = todas.filter(x => ["rascunho", "enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0);
-      const abertas = base.filter(o => o.etapa !== "ganho" && o.etapa !== "perdido");
+      const clientes = base.filter(o => o.etapa === "ganho").reduce((acc, o) => { if (!acc.some(c => c.empresa === o.empresa)) acc.push({ empresa: o.empresa, empresaId: o.empresaId, pessoa: o.pessoa, familia: o.familia, contrato: (o.evidencia || "").replace(/^Contrato assinado · /, "") || "Contrato ativo" }); return acc; }, []);
+      const ABERTA = ["entrada", "diagnostico", "proposta", "negociacao"];
+      const vivas = todas.filter(x => ["rascunho", "enviada", "visualizada", "ajuste_solicitado"].indexOf(x.p.status) >= 0 && ABERTA.indexOf(x.o.etapa) >= 0);
+      const abertas = base.filter(o => ABERTA.indexOf(o.etapa) >= 0 && o.negocioId);
       const qq = (N.q || "").trim().toLowerCase(), bate = (s) => !qq || String(s || "").toLowerCase().indexOf(qq) >= 0;
       const cam = N.cam, passo = N.passo || 0;
       const ROT = { entrada: "Entrada", diagnostico: "Diagnóstico", proposta: "Proposta", negociacao: "Negociação" };
@@ -427,24 +430,24 @@ class Logica extends React.Component<any, any> {
       if (passo === 1) {
         if (cam === "opp") { buscaPh = "Buscar oportunidade por empresa ou contato";
           itens = abertas.filter(o => bate(o.empresa + " " + o.pessoa)).map(o => { const props = o.propostas || (o.proposta ? [o.proposta] : []); const vig = props.slice().reverse().find(x => ["recusada", "expirada", "substituida"].indexOf(x.status) < 0);
-            return { t: (FAM[o.familia] || "") + " · " + o.empresa, s: o.pessoa + " · " + o.resp + " · " + (ROT[o.etapa] || ""), ini: ini(o.empresa), ico: ico("#fff6f4", "#c2330f"),
+            return { t: (FAM[o.familia] ? FAM[o.familia] + " · " : "") + o.empresa, s: o.pessoa + " · " + o.resp + " · " + (ROT[o.etapa] || ""), ini: ini(o.empresa), ico: ico("#fff6f4", "#c2330f"),
               temSelo: true, selo: !vig ? "Sem proposta" : vig.status === "rascunho" ? "Tem rascunho" : "Proposta " + ((ST[vig.status] || [""])[0]).toLowerCase(), seloStyle: seloS(!vig ? "#e6f4ee" : "#eeeff3", !vig ? "#1f7256" : "#4a5560"),
               style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "opp", id: o.id } }) }; }); }
         if (cam === "subst") { buscaPh = "Buscar proposta ativa";
           itens = vivas.filter(x => bate(x.o.empresa + " " + x.o.pessoa + " " + x.p.codigo)).map(x => { const sx = ST[x.p.status]; const s2 = soma(x.p);
-            return { t: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + x.o.empresa, s: (FAM[x.o.familia] || "") + " · " + brl(s2.mrr || s2.un) + (s2.mrr ? "/mês" : "") + " · " + x.o.resp, ini: ini(x.o.empresa), ico: ico("#eeeff3", "#4a5560"),
+            return { t: "#" + x.p.codigo + "-v" + (x.p.versao || 1) + " · " + x.o.empresa, s: (FAM[x.o.familia] ? FAM[x.o.familia] + " · " : "") + brl(s2.mrr || s2.un) + (s2.mrr ? "/mês" : "") + " · " + x.o.resp, ini: ini(x.o.empresa), ico: ico("#eeeff3", "#4a5560"),
               temSelo: true, selo: sx[0], seloStyle: seloS(sx[1], sx[2]), style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "subst", id: x.o.id, i: x.i } }) }; }); }
         if (cam === "cli") { buscaPh = "Buscar cliente";
-          itens = clientes.filter(c => bate(c.empresa + " " + c.pessoa)).map(c => ({ t: c.empresa, s: (FAM[c.familia] || "") + " · " + c.contrato + " · " + c.pessoa, ini: ini(c.empresa), ico: ico("#e6f4ee", "#1f7256"),
-            temSelo: true, selo: "Cliente", seloStyle: seloS("#e6f4ee", "#1f7256"), style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "cli", empresa: c.empresa, familiaAtual: c.familia, contrato: c.contrato }, contato: c.pessoa, familia: N.tipo === "crosssell" ? Object.keys(FAM).find(k => k !== c.familia) : c.familia }) })); }
+          itens = clientes.filter(c => bate(c.empresa + " " + c.pessoa)).map(c => ({ t: c.empresa, s: (FAM[c.familia] ? FAM[c.familia] + " · " : "") + c.contrato + " · " + c.pessoa, ini: ini(c.empresa), ico: ico("#e6f4ee", "#1f7256"),
+            temSelo: true, selo: "Cliente", seloStyle: seloS("#e6f4ee", "#1f7256"), style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "cli", empresa: c.empresa, empresaId: c.empresaId, familiaAtual: c.familia, contrato: c.contrato }, contato: c.pessoa, familia: N.tipo === "crosssell" ? Object.keys(FAM).find(k => k !== c.familia) : c.familia }) })); }
         if (cam === "base") { buscaPh = "Buscar empresa ou pessoa";
           const fb = N.fb || "tudo";
           const E1 = fb === "pessoas" ? [] : listaEmp.filter(e => bate(e.nome + " " + e.pessoas.map(p => p.nome).join(" "))).map(e => ({ t: e.nome, s: e.pessoas.length ? e.pessoas.length + (e.pessoas.length > 1 ? " contatos · " : " contato · ") + e.pessoas[0].nome : "Sem contato cadastrado", ini: ini(e.nome), ico: ico("#12171d", "#fff"),
-            temSelo: true, selo: "Empresa", seloStyle: seloS("#eeeff3", "#4a5560"), style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "emp", empresa: e.nome }, contato: e.pessoas[0] ? e.pessoas[0].nome : "", nc: !e.pessoas.length }) }));
+            temSelo: true, selo: "Empresa", seloStyle: seloS("#eeeff3", "#4a5560"), style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)", onClick: () => up({ passo: 2, alvo: { k: "emp", empresa: e.nome, empresaId: e.id }, contato: e.pessoas[0] ? e.pessoas[0].nome : "", nc: !e.pessoas.length }) }));
           const todasP = fb === "empresas" ? [] : listaEmp.reduce((a2, e) => a2.concat(e.pessoas.map(p => Object.assign({ emp: e.nome }, p))), []).concat(semEmp.map(p => Object.assign({ emp: null }, p)));
           const P1 = todasP.filter(p => bate(p.nome + " " + (p.emp || ""))).map(p => ({ t: p.nome, s: (p.emp || "Sem empresa") + (p.cargo ? " · " + p.cargo : ""), ini: ini(p.nome), ico: ico("#eeeff3", "#4a5560"),
             temSelo: true, selo: p.emp ? "Pessoa" : "Sem empresa", seloStyle: p.emp ? seloS("#eeeff3", "#4a5560") : seloS("#fff6f4", "#c2330f"), style: card(false), hover: "transform:translateY(-2px);box-shadow:0 0 0 1.5px #12171d,0 14px 28px -16px rgba(18,23,29,.35)",
-            onClick: () => up({ passo: 2, alvo: { k: "pes", empresa: p.emp, pessoa: p.nome }, contato: p.nome }) }));
+            onClick: () => up({ passo: 2, alvo: { k: "pes", empresa: p.emp, empresaId: (emps[p.emp] || {}).id, pessoa: p.nome, leadId: p.leadId }, contato: p.nome }) }));
           itens = E1.concat(P1).slice(0, 40); }
       }
       // confirmação
@@ -457,23 +460,23 @@ class Logica extends React.Component<any, any> {
         const contatoNome = N.nc ? (N.ncNome || "").trim() : N.contato;
         const criaOpp = A.k === "cli" || A.k === "emp" || A.k === "pes";
         const fam = N.familia || (O && O.familia) || "CALLFACE_AI";
-        const closer = N.closer || (O && O.resp) || equipe[0];
+        const closer = N.closer || (O && O.resp) || (equipe.indexOf(this.eu) >= 0 ? this.eu : equipe[0]);
         const erro = A.k === "pes" && !A.empresa && !(N.empNova || "").trim() ? "Informe a empresa do contato." : criaOpp && !contatoNome ? "Informe o contato que recebe a proposta." : N.nc && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(N.ncEmail || "") ? "Informe um e-mail válido para o novo contato." : A.k === "cli" && N.tipo === "crosssell" && fam === A.familiaAtual ? "Cross-sell é outro produto: escolha um diferente do que o cliente já tem." : "";
         const P0 = A.k === "subst" && O ? (O.propostas || [])[A.i] : null;
         conf = {
-          alvoIni: ini(empresa || contatoNome || "?"), alvoT: A.k === "opp" || A.k === "subst" ? (FAM[O.familia] || "") + " · " + O.empresa : empresa || A.pessoa,
-          alvoS: A.k === "opp" ? "Oportunidade em " + (ROT[O.etapa] || "") + " · " + O.resp : A.k === "subst" ? "Substituir #" + P0.codigo + "-v" + (P0.versao || 1) : A.k === "cli" ? "Cliente · " + (FAM[A.familiaAtual] || "") + " · " + A.contrato : A.k === "emp" ? "Empresa da base" : (A.empresa ? "Contato de " + A.empresa : "Contato sem empresa"),
+          alvoIni: ini(empresa || contatoNome || "?"), alvoT: A.k === "opp" || A.k === "subst" ? (FAM[O.familia] ? FAM[O.familia] + " · " : "") + O.empresa : empresa || A.pessoa,
+          alvoS: A.k === "opp" ? "Oportunidade em " + (ROT[O.etapa] || "") + " · " + O.resp : A.k === "subst" ? "Substituir #" + P0.codigo + "-v" + (P0.versao || 1) : A.k === "cli" ? "Cliente · " + (FAM[A.familiaAtual] ? FAM[A.familiaAtual] + " · " : "") + A.contrato : A.k === "emp" ? "Empresa da base" : (A.empresa ? "Contato de " + A.empresa : "Contato sem empresa"),
           pedeEmpresa: A.k === "pes" && !A.empresa, empNova: N.empNova || "", setEmpNova: (e) => up({ empNova: e.target.value }),
           pedeContato: criaOpp && A.k !== "pes",
           contatos: pessoasEmp.map(p => { const on = !N.nc && N.contato === p.nome; return { nome: p.nome, cargo: p.cargo || p.email || "", onClick: () => up({ contato: p.nome, nc: false }),
             style: "display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:11px;border:0;cursor:pointer;background:#fff;box-shadow:inset 0 0 0 " + (on ? "1.5px #12171d" : "1px #e3e7e8"),
             radio: "flex:0 0 auto;width:16px;height:16px;border-radius:9999px;box-shadow:inset 0 0 0 " + (on ? "5px #12171d" : "1.5px #a9b1b4") }; }),
-          semContato: !pessoasEmp.length, novoContatoAberto: !!N.nc, podeNovoContato: !N.nc, abrirNovoContato: () => up({ nc: true }),
+          semContato: !pessoasEmp.length, novoContatoAberto: !!N.nc, podeNovoContato: false, abrirNovoContato: () => up({ nc: true }),
           ncNome: N.ncNome || "", setNcNome: (e) => up({ ncNome: e.target.value }), ncEmail: N.ncEmail || "", setNcEmail: (e) => up({ ncEmail: e.target.value }),
           pedeProduto: criaOpp, familias: Object.keys(FAM).filter(k => !(A.k === "cli" && N.tipo !== "crosssell") || k === A.familiaAtual).map(k => ({ l: FAM[k], style: chipS(fam === k), onClick: () => up({ familia: k }) })),
           pedeCloser: criaOpp, closer, setCloser: (e) => up({ closer: e.target.value }), equipe: equipe.map(n => ({ v: n, l: n })),
           temSubst: A.k === "subst", substT: P0 ? "A #" + P0.codigo + "-v" + (P0.versao || 1) + " será substituída" : "", substS: P0 ? "A nova versão começa com tudo da atual. Quando você enviar, a #" + P0.codigo + "-v" + (P0.versao || 1) + " passa a Substituída e o link antigo para de aceitar respostas." : "",
-          efeitos: (A.k === "opp" ? [["Proposta ligada à oportunidade", (FAM[O.familia] || "") + " · " + O.empresa + ", já com empresa, contato e closer", "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"], ["Abre o editor", "Você monta itens, condições e fechamento", "M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"]]
+          efeitos: (A.k === "opp" ? [["Proposta ligada à oportunidade", (FAM[O.familia] ? FAM[O.familia] + " · " : "") + O.empresa + ", já com empresa, contato e closer", "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"], ["Abre o editor", "Você monta itens, condições e fechamento", "M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"]]
             : A.k === "subst" ? [["Nova versão v" + ((P0.versao || 1) + 1), "Copia itens e condições da versão atual", "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"], ["Histórico preservado", "A versão anterior continua visível na oportunidade", "M12 8v4l3 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"]]
             : [["Cria uma oportunidade no Pipeline", (A.k === "cli" ? TIPO[N.tipo] : "Nova venda") + " de " + FAM[fam] + " para " + (empresa || "a empresa") + ", em Entrada, com " + closer, "M4 4h4v16H4zM10 4h4v10h-4zM16 4h4v6h-4z"],
                A.k === "cli" ? ["Nasce como aditivo", "Ligado ao " + A.contrato + ". Altera o contrato e a assinatura atuais, sem criar outra", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"] : ["Relacionamento passa a Lead", "Até a oportunidade ser ganha", "M20 6 9 17l-5-5"],
@@ -482,17 +485,11 @@ class Logica extends React.Component<any, any> {
           erroAtual: erro,
           criar: () => {
             if (erro) return this.setState(s => ({ nova: Object.assign({}, s.nova, { erro }) }));
-            if (A.k === "opp" || A.k === "subst") return ir("/onface-preview/proposta", "Proposta", { opp: O.id, ver: "" });
-            const id = "o" + Date.now().toString(36), tipo = A.k === "cli" ? N.tipo : "nova";
-            const nova = { id, empresa: empresa, pessoa: contatoNome, cargo: "", familia: fam, etapa: "entrada", resp: closer, dias: 0, tipo: tipo === "crosssell" ? "nova" : tipo, origem: A.k === "cli" ? "Cliente ativo" : "Base de contatos",
-              contratoOrigem: A.k === "cli" && tipo !== "crosssell" ? { id: A.contrato, titulo: "Contrato " + FAM[A.familiaAtual] + " · " + A.contrato } : undefined,
-              itens: [], propostas: [], pessoas: [{ nome: contatoNome, papel: "Contato principal" }], atvs: [],
-              eventos: [{ t: (A.k === "cli" ? TIPO[tipo] : "Nova venda") + " criada a partir de Propostas", quando: "Hoje", autor: this.eu }] };
-            const patch = { opps: base.concat([nova]) };
-            if (N.nc && Es) patch.contatosExtra = ((Es.ler("contatosExtra", [])) || []).concat([{ tipo: "pessoa", nome: contatoNome, email: N.ncEmail, emp: empresa }]);
-            if (A.k === "pes" && !A.empresa && Es) patch.contatosExtra = (patch.contatosExtra || ((Es.ler("contatosExtra", [])) || [])).concat([{ tipo: "empresa", nome: empresa }]);
-            if (Es) { Es.gravar(patch); Es.avisar("Oportunidade criada no Pipeline · abrindo a proposta", "ok"); }
-            ir("/onface-preview/proposta", "Proposta", { opp: id, ver: "" });
+            /* Quem cria é o adaptador (command real). Antes aqui nascia uma oportunidade
+               "o<timestamp>" no store local e o editor abria numa rota que não existe. */
+            const contato = (pessoasEmp.find(p => p.nome === contatoNome) || {});
+            const feito = this.props.criarProposta && this.props.criarProposta({ alvo: A, O, P0, familia: fam, closer, tipo: A.k === "cli" ? N.tipo : "nova", contatoNome, leadId: contato.leadId || A.leadId || null });
+            if (feito && feito.then) feito.then(m => { if (m) this.setState(s => ({ nova: Object.assign({}, s.nova, { erro: m }) })); });
           },
           criarTxt: A.k === "subst" ? "Criar nova versão" : A.k === "opp" ? "Abrir editor da proposta" : "Criar oportunidade e proposta"
         };
@@ -532,30 +529,26 @@ class Logica extends React.Component<any, any> {
       vazio: !pagina.length,
       linhas: pagina.map((x, ix) => { const { o, p: P } = x, s = soma(P), sx = ST[P.status] || ST.rascunho, on = S.aberta === chave(x), fc = FAMC[o.familia] || FAMC.CALLFACE_AI;
         const RC = { "Camila Reis": ["#fff6f4", "#c2330f"], "Diego Nunes": ["#e8f0fb", "#2c5f9e"], "Ana Vitória": ["#efecfa", "#4f3fa8"], [this.eu]: ["#12171d", "#fff"] }[o.resp] || ["#eeeff3", "#4a5560"];
-        const hoje = P.enviadaEm === "Hoje";
+        const hoje = (P.atualizadaEm || P.enviadaEm) === "hoje" || P.enviadaEm === "Hoje";
         return { titulo: "Proposta " + (FAM[o.familia] || ""), codigo: "#" + P.codigo + "-v" + (P.versao || 1), empresa: o.empresa, pessoa: o.pessoa, familia: FAM[o.familia] || "—",
           famStyle: "justify-self:start;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;white-space:nowrap;color:#1f252c",
           famDot: "flex:0 0 auto;color:" + fc[1],
           famD: { CALLFACE_AI: "M12 8V4H8M4 12h16a0 0 0 0 1 0 0v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6zM2 14h2M20 14h2M15 13v2M9 13v2M6 8h12a2 2 0 0 1 2 2v2H4v-2a2 2 0 0 1 2-2z", PABX: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", WHITE_LABEL: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" }[o.familia] || "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z",
           famIco: "flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:" + fc[0] + ";color:" + fc[1],
           empIni: ini(o.empresa),
-          valor: s.mrr ? brl(s.mrr) : brl(s.un), valorSuf: s.mrr ? "/mês" : "", valorSub: s.mrr ? (s.un ? "+ setup " + brl(s.un) : "recorrente") : "pagamento único",
+          valor: (s.mrr || s.un) ? (s.mrr ? brl(s.mrr) : brl(s.un)) : "—", valorSuf: s.mrr ? "/mês" : "", valorSub: s.mrr ? (s.un ? "+ setup " + brl(s.un) : "recorrente") : (s.un ? "pagamento único" : "sem itens"),
           fech: P.modo === "PREPAID" ? "Checkout" : "Contrato", fechSub: P.modo === "PREPAID" ? "Stripe direto" : "Assinatura + Stripe",
           fechD: P.modo === "PREPAID" ? "M2 5h20v14H2zM2 10h20" : "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4",
           status: sx[0], stD: sx[3], stStyle: "display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px 0 8px;border-radius:9999px;font-size:12px;font-weight:500;white-space:nowrap;color:#1f252c;background:#fff;box-shadow:inset 0 0 0 1px #e6e9e9",
           stDot: "flex:0 0 auto;color:" + sx[2],
           resp: o.resp, respIni: ini(o.resp),
           respAv: "flex:0 0 auto;width:24px;height:24px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;background:#eeeff3;color:#4a5560",
-          atualizado: P.status === "rascunho" ? "Rascunho" : (P.enviadaEm || "—"),
+          atualizado: P.atualizadaEm || P.enviadaEm || "—",
           atStyle: "font-size:12px;white-space:nowrap;font-weight:" + (hoje ? "700;color:#c2330f" : "500;color:#67787c"),
           abrir: () => this.setState({ aberta: on ? null : chave(x) }),
-          style: "position:relative;display:grid;grid-template-columns:minmax(210px,1.5fr) minmax(170px,1.2fr) 130px 150px 160px 160px 150px 96px;gap:14px;align-items:center;width:100%;min-height:58px;padding:11px 20px;border:0;cursor:pointer;text-align:left;transition:background-color .18s ease;box-shadow:inset 0 -1px 0 #f1f3f3;background:" + (on ? "#fff6f4" : "#fff"),
+          style: "position:relative;display:grid;grid-template-columns:minmax(170px,1.5fr) minmax(140px,1.2fr) 110px 124px 118px 140px 120px 96px;gap:10px;align-items:center;width:100%;min-height:58px;padding:11px 20px;border:0;cursor:pointer;text-align:left;transition:background-color .18s ease;box-shadow:inset 0 -1px 0 #f1f3f3;background:" + (on ? "#fff6f4" : "#fff"),
           hover: on ? "" : "background:#fafaf8" }; }),
-      rodape: vis.length ? (pag * POR + 1) + "–" + Math.min(vis.length, pag * POR + POR) + " de " + vis.length + (vis.length === 1 ? " proposta" : " propostas") : "0 propostas",
-      paginas: Array.from({ length: nPag }, (_, k) => ({ n: String(k + 1), onClick: () => this.setState({ pag: k }), style: "display:inline-flex;align-items:center;justify-content:center;height:32px;border-radius:9px;border:0;font-size:12.5px;font-weight:600;line-height:1;white-space:nowrap;flex:0 0 auto;min-width:32px;padding:0 10px;cursor:pointer;font-variant-numeric:tabular-nums;" + (k === pag ? "background:#fe4f2b;color:#fff;box-shadow:0 6px 14px -8px rgba(254,79,43,.9)" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #e3e7e8") })),
-      pagAnt: () => this.setState({ pag: Math.max(0, pag - 1) }), pagProx: () => this.setState({ pag: Math.min(nPag - 1, pag + 1) }),
-      pagAntStyle: "display:inline-flex;align-items:center;justify-content:center;height:32px;border-radius:9px;border:0;font-size:12.5px;font-weight:600;line-height:1;white-space:nowrap;flex:0 0 auto;padding:0 12px;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;cursor:" + (pag > 0 ? "pointer;color:#1f252c" : "default;color:#b8bdbe;opacity:.7"),
-      pagProxStyle: "display:inline-flex;align-items:center;justify-content:center;height:32px;border-radius:9px;border:0;font-size:12.5px;font-weight:600;line-height:1;white-space:nowrap;flex:0 0 auto;padding:0 12px;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;cursor:" + (pag < nPag - 1 ? "pointer;color:#1f252c" : "default;color:#b8bdbe;opacity:.7"),
+      rodape: vis.length + (vis.length === 1 ? " proposta" : " propostas"),
       temPainel: !!aberta, p, painelSobre: !!aberta,
       painelStyle: true
         ? "position:fixed;top:10px;right:10px;bottom:10px;z-index:40;width:min(440px,calc(100vw - 20px));display:flex;flex-direction:column;background:#fff;border-radius:14px;box-shadow:0 24px 60px -12px rgba(18,23,29,.35),0 0 0 1px #e3e7e8;overflow:hidden"

@@ -9,6 +9,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { isAdminView } from "@/lib/auth/roles";
+import { nomeCompleto } from "@/lib/vendas/texto";
 
 export type ReuniaoDaPeca = {
   id: string;
@@ -73,6 +74,12 @@ export async function acaoReuniaoDaPeca(id: string): Promise<ReuniaoDaPeca | nul
  * do contexto. Oportunidades seguem o RBAC do pipeline: gestão vê todas,
  * os demais só as próprias — mais a do contexto, se for da organização.
  */
+/* `leads.nome` é só o primeiro nome (sobrenome em coluna própria): a peça casa o contato pelo
+   nome inteiro que a tela mostra, então devolve o nome inteiro. */
+function comNomeCompleto<T extends { pessoa: string; sobrenome?: string | null }>({ sobrenome, ...r }: T) {
+  return { ...r, pessoa: nomeCompleto(r.pessoa, sobrenome) };
+}
+
 export async function acaoBaseDaPeca(entrada: { negocioId?: string | null; leadId?: string | null; empresaId?: string | null }): Promise<{
   equipe: MembroDaPeca[]; opps: OppDaPeca[]; leads: LeadDaPeca[];
 } | null> {
@@ -95,7 +102,7 @@ export async function acaoBaseDaPeca(entrada: { negocioId?: string | null; leadI
     db.execute<OppDaPeca>(sql`
       SELECT n.id::text, n.titulo,
              coalesce(e.nome, el.nome, nullif(l.empresa, ''), n.titulo) AS empresa,
-             coalesce(l.nome, '') AS pessoa, coalesce(l.cargo, '') AS cargo,
+             coalesce(l.nome, '') AS pessoa, coalesce(l.sobrenome, '') AS sobrenome, coalesce(l.cargo, '') AS cargo,
              l.id::text AS "leadId", l.email, u.nome AS resp
         FROM negocios n
         LEFT JOIN leads l ON l.id = n.lead_id
@@ -111,14 +118,15 @@ export async function acaoBaseDaPeca(entrada: { negocioId?: string | null; leadI
        LIMIT 400
     `),
     db.execute<LeadDaPeca>(sql`
-      SELECT l.id::text, l.nome AS pessoa, coalesce(e.nome, l.empresa, '') AS empresa, l.email, coalesce(l.cargo, '') AS cargo
+      SELECT l.id::text, l.nome AS pessoa, l.sobrenome, coalesce(e.nome, l.empresa, '') AS empresa, l.email, coalesce(l.cargo, '') AS cargo
         FROM leads l LEFT JOIN empresas e ON e.id = l.empresa_id
        WHERE l.organizacao_id = ${org}::uuid
          AND (l.id = ${leadId}::uuid OR l.empresa_id = ${empresaId}::uuid)
+       ORDER BY (l.id = ${leadId}::uuid) DESC NULLS LAST
        LIMIT 30
     `),
   ]);
-  return { equipe: [...equipe], opps: [...opps], leads: [...leads] };
+  return { equipe: [...equipe], opps: opps.map(comNomeCompleto), leads: leads.map(comNomeCompleto) };
 }
 
 /** Busca de contato para o autocompletar de empresa/pessoa. */
@@ -128,12 +136,12 @@ export async function acaoBuscarContatosDaPeca(q: string): Promise<LeadDaPeca[]>
   if (!ctx || termo.length < 2) return [];
   const like = "%" + termo.replace(/[%_\\]/g, (c) => "\\" + c) + "%";
   const linhas = await db.execute<LeadDaPeca>(sql`
-    SELECT l.id::text, l.nome AS pessoa, coalesce(e.nome, l.empresa, '') AS empresa, l.email, coalesce(l.cargo, '') AS cargo
+    SELECT l.id::text, l.nome AS pessoa, l.sobrenome, coalesce(e.nome, l.empresa, '') AS empresa, l.email, coalesce(l.cargo, '') AS cargo
       FROM leads l LEFT JOIN empresas e ON e.id = l.empresa_id
      WHERE l.organizacao_id = ${ctx.organizacaoId}::uuid
        AND (l.nome ILIKE ${like} OR l.empresa ILIKE ${like} OR e.nome ILIKE ${like} OR l.email ILIKE ${like})
      ORDER BY l.updated_at DESC
      LIMIT 12
   `);
-  return [...linhas];
+  return linhas.map(comNomeCompleto);
 }

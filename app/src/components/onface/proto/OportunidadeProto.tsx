@@ -18,11 +18,14 @@ import type { DetalheOportunidade } from "@/lib/vendas/consultas";
 import { ehFamiliaValida } from "@/lib/vendas/dominio";
 import type { Resultado } from "@/lib/vendas/resultado";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
+import { rotuloDeEvento, tituloLegivel } from "@/lib/vendas/rotulos-evento";
 import { OportunidadeLiga } from "./OportunidadeLiga";
 import { rotuloProcesso } from "../vendas/Pipeline";
 import { levarParametros } from "./rota-do-desenho";
 import { persistirEtapa, type CommandsDeEtapa } from "./persistencia";
 import { usePecas } from "./pecas-host";
+import { qualDoDesenho } from "./qual-do-desenho";
+import { prazoDoBanco, situacaoDoBanco, tipoDoBanco } from "./atividade-tarefa";
 
 /* ── Contratos ─────────────────────────────────────────────────────────── */
 
@@ -37,6 +40,10 @@ export interface AcoesOportunidade extends CommandsDeEtapa {
    *  negócios LEGADOS que vieram do dump sem família — sem ela o card não
    *  avança para Proposta/Negociação nem fecha em Ganho. */
   alterarFamilia?: (negocioId: string, familia: "CALLFACE_AI" | "PABX" | "WHITE_LABEL", motivo: string | null) => Promise<Resultado<{ propostasIncompativeis: number }>>;
+  atribuirResponsavel?: (negocioId: string, nome: string) => Promise<Resultado>;
+  salvarResumo?: (negocioId: string, campos: Record<string, string>) => Promise<Resultado>;
+  recusarProposta?: (propostaId: string, motivo: string) => Promise<Resultado>;
+  excluirRascunho?: (propostaId: string) => Promise<Resultado>;
 }
 
 const FAMILIAS_ESCOLHA: Array<{ v: "CALLFACE_AI" | "PABX" | "WHITE_LABEL"; rotulo: string; desc: string }> = [
@@ -78,7 +85,7 @@ const TIPO_DA_ATIVIDADE: Record<string, string> = {
 };
 
 function rotuloDoTipo(tipo: string): string {
-  return TIPO_DA_ATIVIDADE[tipo?.toLowerCase()] ?? tipo ?? "Atividade";
+  return TIPO_DA_ATIVIDADE[tipo?.toLowerCase()] ?? rotuloDeEvento(tipo);
 }
 
 function iniciais(nome: string | null | undefined): string {
@@ -107,6 +114,7 @@ function paraODesenho(o: DetalheOportunidade, timeline: LinhaDoTempo[]) {
     iniciais: iniciais(o.responsavel.nome),
     valor: o.valor,
     titulo: o.titulo,
+    criadoEm: quando(o.criadoEm),
     leadId: o.leadId,
     // Rótulo legível (antes ia o código cru); o código vai em origemBruta para a tela decidir pré-vendas x manual.
     origem: rotuloProcesso(o.sourceProcess),
@@ -120,18 +128,41 @@ function paraODesenho(o: DetalheOportunidade, timeline: LinhaDoTempo[]) {
       email: c.email, telefone: c.telefone,
       principal: c.id === o.contato?.id,
     })),
-    atvs: o.atividades.map((a) => ({
+    /* A Atividade é a TAREFA (a mesma de /tarefas e da peça de Atividade): abre e edita pela peça.
+       O histórico de integração (ligação, e-mail, nota de sistema) vem depois, só para leitura. */
+    atvs: (o.tarefas.map((t) => {
+      const { fimD } = prazoDoBanco(t.venceEm, null);
+      const feita = t.status === "concluida" || t.status === "declinada";
+      return {
+        id: t.id, tarefaId: t.id,
+        tipo: tipoDoBanco(t.tipo),
+        titulo: t.titulo,
+        desc: t.descricao ?? "",
+        autor: t.responsavel ?? "Sem responsável",
+        quando: t.venceEm ? quando(t.venceEm) : "Sem prazo",
+        fimD,
+        situacao: situacaoDoBanco(t.status),
+        feita,
+      };
+    }) as Array<Record<string, unknown>>).concat(o.reunioes.map((r) => ({
+      /* A reunião é atividade (a peça tem a aba Reunião); a situação vem do status real dela. */
+      id: r.id, historico: true, tipo: "Reunião", titulo: r.titulo, desc: "", autor: o.responsavel.nome ?? "Sem responsável",
+      quando: quando(r.data), situacao: r.status === "realizada" ? "Feita" : r.status === "agendada" ? "A fazer" : "Declinada",
+      feita: r.status !== "agendada",
+    }))).concat(o.atividades.map((a) => ({
       id: a.id,
+      historico: true,
       tipo: rotuloDoTipo(a.tipo),
-      titulo: a.titulo ?? rotuloDoTipo(a.tipo),
+      titulo: tituloLegivel(a.titulo) ?? rotuloDoTipo(a.tipo),
       desc: a.descricao ?? "",
+      audioUrl: a.audioUrl ?? null,
       autor: a.autor ?? "Sistema",
       quando: quando(a.em),
       // O que já aconteceu é registro, não fila: atividade do histórico nasce
       // feita. A fila do vendedor vive em `tarefas`, que é outra coisa.
       situacao: "Feita",
       feita: true,
-    })),
+    }))),
     notas: o.notas.map((n) => ({
       id: n.id,
       texto: n.texto,
@@ -165,10 +196,16 @@ function paraODesenho(o: DetalheOportunidade, timeline: LinhaDoTempo[]) {
       log: [],
     })),
     eventos: timeline.map((e) => ({
-      t: e.titulo || e.tipo,
+      t: e.titulo || rotuloDeEvento(e.tipo),
       quando: quando(e.ocorridoEm),
       autor: e.usuarioNome ?? "Sistema",
     })),
+    /* O resumo é da OPORTUNIDADE (`negocios.campos_custom.resumoOportunidade`); o que ninguém
+       escreveu ainda cai na qualificação de Pré-vendas, que é a fonte única dessas respostas. */
+    resumoCampos: (() => {
+      const q = (qualDoDesenho(o.qualificacaoHerdada) ?? {}) as Record<string, string>;
+      return { objetivo: q.necessidade, contexto: q.cenario, dor: q.dor, ...(o.resumo ?? {}) };
+    })(),
     // Tags reais (entity_labels ∪ negocio_labels); a peça tagsopp grava.
     tags: o.tags ?? [],
     // Sem fonte no domínio hoje. Vazio é honesto; inventar seria o mock
@@ -176,6 +213,8 @@ function paraODesenho(o: DetalheOportunidade, timeline: LinhaDoTempo[]) {
     arquivos: [],
     itens: [],
     proposta: null,
+    // O que o domínio diz que falta para fechar: a tela explica, não decide.
+    fechamentoFalta: o.fechamento?.falta ?? [],
   };
 }
 
@@ -252,10 +291,12 @@ class OportunidadeLigada extends OportunidadeLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function OportunidadeProto({ oportunidade, timeline, acoes, abrirDefinirFamilia = false }: {
+export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], abrirDefinirFamilia = false }: {
   oportunidade: DetalheOportunidade;
   timeline: LinhaDoTempo[];
   acoes: AcoesOportunidade;
+  /** Equipe real da organização (nomes), para @menção e seletor de responsável. */
+  equipe?: string[];
   /** Vem do board quando o gate "defina a família antes de avançar" dispara:
    *  abre o seletor de família já na entrada. */
   abrirDefinirFamilia?: boolean;
@@ -301,13 +342,19 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, abrirDefinirF
     [oportunidade, timeline],
   );
 
-  const catalogo = React.useMemo(() => ({
-    // A equipe real desta oportunidade. O quadro traz a lista inteira; aqui
-    // só o responsável é conhecido, e inventar colegas seria voltar ao mock.
-    EQUIPE: oportunidade.responsavel.nome ? [oportunidade.responsavel.nome] : [],
-    OPORTUNIDADES: [],
-    LEADS: [],
-  }), [oportunidade.responsavel.nome]);
+  const catalogo = React.useMemo(() => {
+    // Equipe real da organização, vinda do banco. Garante que o responsável
+    // atual esteja na lista mesmo se, por algum motivo, não vier na query.
+    const nomes = equipe.length ? equipe.slice() : [];
+    if (oportunidade.responsavel.nome && !nomes.includes(oportunidade.responsavel.nome)) {
+      nomes.unshift(oportunidade.responsavel.nome);
+    }
+    return {
+      EQUIPE: nomes,
+      OPORTUNIDADES: [],
+      LEADS: [],
+    };
+  }, [equipe, oportunidade.responsavel.nome]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
@@ -343,16 +390,97 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, abrirDefinirF
     if (novo) router.push(`/pipeline/${novo}`); else router.refresh();
   }, [acoes, oportunidade, router]);
 
+  /**
+   * O que a tela edita sem ser etapa: nota, responsável, resumo, proposta.
+   *
+   * Compara o antes e o depois que o desenho entrega e leva cada diferença ao
+   * lugar certo. Devolve a lista do que gravou, ou o erro. Atividade NÃO passa
+   * por aqui: nasce e se edita na peça de Atividade (tarefas), que já grava.
+   */
+  const persistirOutras = React.useCallback(async (antes: any, depois: any): Promise<{ gravou: string[]; naoGravou: string[]; erro?: string }> => {
+    const gravou: string[] = [];
+    const naoGravou: string[] = [];
+    const falhou = (erro: string) => ({ gravou, naoGravou, erro });
+
+    // Notas: nova (sem id), removida (id que sumiu). Fixar não tem coluna.
+    const notasAntes: any[] = antes?.notas ?? [], notasDepois: any[] = depois?.notas ?? [];
+    for (const n of notasDepois.filter((x) => !x.id && !x.sistema && !x.virtual && String(x.texto ?? "").trim())) {
+      const r = await fetch("/api/notas", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conteudo: String(n.texto).trim(), negocioId: depois.id }),
+      });
+      if (!r.ok) return falhou("Não consegui gravar a nota.");
+      gravou.push("Nota adicionada");
+    }
+    const idsDepois = new Set(notasDepois.map((x) => x.id).filter(Boolean));
+    for (const n of notasAntes.filter((x) => x.id && !x.sistema && !idsDepois.has(x.id))) {
+      const r = await fetch(`/api/notas/${n.id}`, { method: "DELETE", credentials: "same-origin" });
+      if (!r.ok) return falhou("Não consegui excluir a nota.");
+      gravou.push("Nota excluída");
+    }
+    if (notasDepois.some((x) => x.id && x.fixada && !notasAntes.find((y) => y.id === x.id)?.fixada)) naoGravou.push("fixar nota");
+
+    // Responsável.
+    if (antes?.resp && depois?.resp && antes.resp !== depois.resp) {
+      const r = await acoes.atribuirResponsavel?.(depois.id, depois.resp);
+      if (!r) naoGravou.push("trocar responsável");
+      else if (!r.ok) return falhou(r.erro);
+      else gravou.push(`Responsável: ${depois.resp}`);
+    }
+
+    // Resumo da oportunidade.
+    if (JSON.stringify(antes?.resumoCampos ?? {}) !== JSON.stringify(depois?.resumoCampos ?? {})) {
+      const r = await acoes.salvarResumo?.(depois.id, depois.resumoCampos ?? {});
+      if (!r) naoGravou.push("resumo");
+      else if (!r.ok) return falhou(r.erro);
+      else gravou.push("Resumo salvo");
+    }
+
+    // Propostas: rascunho excluído e recusa registrada pelo vendedor.
+    const propsAntes: any[] = antes?.propostas ?? [], propsDepois: any[] = depois?.propostas ?? [];
+    for (const p of propsAntes.filter((x) => x.id && !propsDepois.some((y) => y.id === x.id))) {
+      const r = await acoes.excluirRascunho?.(p.id);
+      if (!r) naoGravou.push("excluir rascunho");
+      else if (!r.ok) return falhou(r.erro);
+      else gravou.push("Rascunho excluído");
+    }
+    for (const p of propsDepois) {
+      const antesP = propsAntes.find((x) => x.id === p.id);
+      if (antesP && antesP.status !== "recusada" && p.status === "recusada") {
+        const r = await acoes.recusarProposta?.(p.id, String(p.resposta ?? "").trim());
+        if (!r) naoGravou.push("registrar recusa");
+        else if (!r.ok) return falhou(r.erro);
+        else gravou.push("Recusa registrada");
+      }
+    }
+
+    // O que o desenho ainda deixa mudar sem ter onde gravar.
+    const mudou = (k: string) => JSON.stringify(antes?.[k] ?? null) !== JSON.stringify(depois?.[k] ?? null);
+    if (mudou("pessoas")) naoGravou.push("contatos da oportunidade");
+    if (mudou("arquivos")) naoGravou.push("arquivos");
+    return { gravou, naoGravou };
+  }, [acoes]);
+
   const persistir = React.useCallback(async (antes: any, depois: any, evento: string) => {
     const d = await persistirEtapa(antes, depois, evento, acoes);
     if (d.tipo === "gravou") { router.refresh(); return; }
 
-    /* Recusa e "sem command" desfazem igual — a tela relê do servidor. O que
-       muda é a mensagem, e o CTA quando o domínio manda um. Aqui ele não
-       navega: já estamos na página onde a família e a proposta se resolvem. */
+    if (d.tipo === "sem-command") {
+      const o = await persistirOutras(antes, depois);
+      if (o.erro) toast.error(o.erro);
+      else if (o.gravou.length) toast.success(o.gravou.join(" · "));
+      if (o.naoGravou.length) toast.warning(`Ainda não é gravado nesta tela: ${o.naoGravou.join(", ")}.`);
+      if (!o.erro && !o.gravou.length && !o.naoGravou.length) toast.warning(d.motivo);
+      router.refresh();
+      return;
+    }
+
+    /* Recusa desfaz igual — a tela relê do servidor. O que muda é a mensagem,
+       e o CTA quando o domínio manda um. Aqui ele não navega: já estamos na
+       página onde a família e a proposta se resolvem. */
     toast.error(d.motivo);
     router.refresh();
-  }, [acoes, router]);
+  }, [acoes, router, persistirOutras]);
 
   return (
     <div data-workspace="desenho">

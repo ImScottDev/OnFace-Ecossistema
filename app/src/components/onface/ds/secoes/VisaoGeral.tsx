@@ -96,7 +96,7 @@ const INVENTARIO: ItemInventario[] = [
   // Inventário que esquece o que já está no ar mente igual ao que promete o
   // que não existe.
   { onda: "atual", titulo: "Linguagem visual da marca", nota: "Fundo gráfico, momento expressivo, campo do NEXO e as assinaturas do ONFACE.", icone: Shapes },
-  { onda: "atual", titulo: "Primitivas shadcn reapontadas", nota: "Ponte cf2 → ONFACE: 39 componentes do CLI falando a marca sem fork.", icone: Boxes },
+  { onda: "atual", titulo: "Primitivas shadcn reapontadas", nota: "Ponte cf2 → ONFACE: os componentes do CLI falando a marca sem fork.", icone: Boxes },
   { onda: "atual", titulo: "Tabela de dados", nota: "Ordenação, filtro, seleção em massa, densidade e linha expandida.", icone: Database },
   { onda: "atual", titulo: "Gráficos de funil, receita e origem", nota: "Recharts com as séries da marca e coral só na série principal.", icone: ChartArea },
   { onda: "atual", titulo: "Quadro kanban com arraste", nota: "dnd-kit, coluna vazia e cartão urgente marcado por borda.", icone: Kanban },

@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { PropostaDesenho } from "./PropostaDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -189,7 +190,9 @@ class Logica extends React.Component<any, any> {
     const vi = vig ? props.indexOf(vig) : -1;
     const D = this.dadosDoProto || {};
     const LD = O.leadId ? (this.state.leads || D.LEADS || []).find(l => l.id === O.leadId) : null;
-    const email = (LD && LD.email) || (O.pessoa ? (O.pessoa.split(" ")[0] || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") + "@" + (O.empresa || "empresa").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "") + ".com.br" : "");
+    /* E-mail REAL do contato (lead, ou a pessoa da oportunidade); nunca montado a partir do nome. */
+    const PP = (O.pessoas || []).find(x => x.principal) || (O.pessoas || []).find(x => x.nome === O.pessoa) || null;
+    const email = (LD && LD.email) || (PP && PP.email) || "";
     const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const cat = this.catalogo()[O.familia || "CALLFACE_AI"] || [];
     const base = {
@@ -198,7 +201,7 @@ class Logica extends React.Component<any, any> {
       desc: { tipo: "pct", valor: "", alvo: "mrr", meses: "sempre", justif: "" },
       prazo: "0", parcelas: "1", dia: "10", inicio: "assinatura", dataInicio: "", fidelidade: "12", reajuste: "IPCA", obs: "",
       fechamento: O.familia === "PABX" || O.familia === "WHITE_LABEL" ? "contrato" : "checkout", minuta: O.familia === "WHITE_LABEL" ? "revenda" : O.familia === "PABX" ? "locacao" : "saas", sigs: [{ nome: O.pessoa || "", email }], testemunhas: false,
-      forma: "cliente", auto: true, canais: ["email"].concat(LD && (LD.tel || LD.telefone) ? ["whatsapp"] : []), cc: [], assunto: "", intro: "", msgWa: "", wa: (LD && (LD.tel || LD.telefone)) || "", repCf: this.eu, vendAssina: true, prazoData: "", destinatarios: [O.pessoa].filter(Boolean), extras: [], teste: false, testeDias: "7", setupForma: "vista", canal: "email", para: email, msg: ""
+      forma: "cliente", auto: true, canais: ["email"].concat((LD && (LD.tel || LD.telefone)) || (PP && PP.telefone) ? ["whatsapp"] : []), cc: [], assunto: "", intro: "", msgWa: "", wa: (LD && (LD.tel || LD.telefone)) || (PP && PP.telefone) || "", repCf: this.eu, vendAssina: true, prazoData: "", destinatarios: [O.pessoa].filter(Boolean), extras: [], teste: false, testeDias: "7", setupForma: "vista", canal: "email", para: email, msg: ""
     };
     const deProp = (p) => Object.assign({}, base, p.editor || {}, {
       titulo: (p.editor && p.editor.titulo) || base.titulo, validade: p.validade || 30, fechamento: p.modo === "PREPAID" ? "checkout" : ((p.editor && p.editor.fechamento) || "contrato"),

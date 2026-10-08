@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { AtividadesDesenho } from "./AtividadesDesenho";
@@ -86,7 +87,7 @@ class Logica extends React.Component<any, any> {
     assinarAviso: () => null,
     avisar: (texto: string, tom?: string) => this.diz(texto, tom),
     abrir: (peca: string, id?: string | null) => this.props.abrir?.(peca, id),
-    abrirExterno: (url: string) => this.props.abrirExterno?.(url),
+    abrirExterno: (url: string) => abrirUrlExterna(url, this.props.abrirExterno),
     /* A PROP, e nao o metodo ir() da classe.
      *
      * As telas do handoff definem ir(href, label) chamando E.irPara(...).
@@ -523,7 +524,7 @@ class Logica extends React.Component<any, any> {
     const FILAS = [["Suporte", "M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z", "#2c5f9e", "#e8f0fb"], ["Onboarding", "M12 2l3 7h7l-5.5 4 2 7-6.5-4.5L5.5 20l2-7L2 9h7z", "#1f7256", "#e6f4ee"], ["Implantação", "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z", "#6e5420", "#f7edd8"], ["CS", "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21.2l8.8-8.8a5.5 5.5 0 0 0 0-7.8z", "#c2330f", "#fff6f4"], ["SDR", "M22 12h-4l-3 9L9 3l-3 9H2", "#4f3fa8", "#efecfa"], ["Comercial", "M12 2v20M17 6H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6", "#4a5560", "#eeeff3"]];
     const ov = {
       c7: "grid-column:" + (S.larg >= 1180 ? "span 7" : "1 / -1"), c5: "grid-column:" + (S.larg >= 1180 ? "span 5" : "1 / -1"),
-      saud: (agora.getHours() < 12 ? "Bom dia" : agora.getHours() < 18 ? "Boa tarde" : "Boa noite") + ", Scott",
+      saud: (agora.getHours() < 12 ? "Bom dia" : agora.getHours() < 18 ? "Boa tarde" : "Boa noite") + ", " + (this.eu || "").split(" ")[0],
       frase: atrasM.length ? atrasM.length + (atrasM.length > 1 ? " atividades atrasadas" : " atividade atrasada") + " e " + prios.filter(x => x.fim && x.fim >= H0 && x.fim < H1).length + " para hoje." : prios.filter(x => x.fim && x.fim < H1).length ? prios.filter(x => x.fim && x.fim < H1).length + (prios.filter(x => x.fim && x.fim < H1).length > 1 ? " atividades" : " atividade") + " para hoje. Nada atrasado." : "Dia limpo. Nada vencendo hoje.",
       pct: pctMes + "%", anel: pctMes + " 100",
       kpis: [[String(abertosM.length), "em aberto", "#fff", () => this.setState({ visao: "lista", escopo: "minhas", rapido: null })], [String(feitosM.length), "feitas no mês", "#3ecf8e", () => this.setState({ visao: "quadro", escopo: "minhas" })], [String(atrasM.length), "atrasadas", atrasM.length ? "#ff8a70" : "#fff", () => this.setState({ visao: "lista", escopo: "minhas", rapido: "atrasadas" })], [String(marcos.length), "marcos", "#fff", () => this.setState({ visao: "lista", escopo: "minhas" })]]
@@ -561,7 +562,7 @@ class Logica extends React.Component<any, any> {
           temPegar: !!prox, pegar: () => { this.salvarItem(prox, { assignees: [EU], resp: EU, situacao: "Em andamento" }, "Você pegou “" + prox.titulo + "” da fila de " + l); this.setState({ aberta: prox.key }); } }; }),
       temAgenda: S.larg >= 1180,
       ...(() => { const dias = [0, 1, 2, 3, 4, 5, 6].map(i => new Date(H0.getTime() + i * 864e5)); const dSel = S.diaSel ? this.deIso(S.diaSel) : new Date(H0), ds = Math.round((new Date(dSel.getFullYear(), dSel.getMonth(), dSel.getDate()) - H0) / 864e5);
-        const reu = todas.filter(x => x.tipo === "Reunião" && (x.ini || x.fim));
+        const reu = todas.concat(D.REUNIOES || []).filter(x => x.tipo === "Reunião" && (x.ini || x.fim));
         const doDia = (d) => reu.filter(x => (x.ini || x.fim).toDateString() === d.toDateString()).sort((a, b) => (a.ini || a.fim) - (b.ini || b.fim));
         const SEM = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
         const lst = doDia(dSel);
@@ -618,7 +619,7 @@ class Logica extends React.Component<any, any> {
       const mv = S.mesCal || 0, m0 = new Date(H0.getFullYear(), H0.getMonth() + mv, 1), off = m0.getDay(), nd = new Date(m0.getFullYear(), m0.getMonth() + 1, 0).getDate();
       const dSel = S.diaSel ? this.deIso(S.diaSel) : H0;
       const cel = Array.from({ length: Math.ceil((off + nd) / 7) * 7 }, (_, i) => { const d = new Date(m0.getFullYear(), m0.getMonth(), i - off + 1); const fora = d.getMonth() !== m0.getMonth(), hj = mesma(d, H0), sel = mesma(d, dSel);
-        const tem = meus.some(x => mesma(x.fim, d) && aberta2(x)), reu = todas.some(x => x.tipo === "Reunião" && mesma(x.ini || x.fim, d));
+        const tem = meus.some(x => mesma(x.fim, d) && aberta2(x)), reu = todas.concat(D.REUNIOES || []).some(x => x.tipo === "Reunião" && mesma(x.ini || x.fim, d));
         return { n: String(d.getDate()), onClick: () => this.setState({ diaSel: this.fmtIso(d) }),
           style: "justify-self:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:38px;height:38px;border-radius:9999px;border:0;cursor:pointer;font-size:13px;font-variant-numeric:tabular-nums;font-weight:" + (hj || sel ? "700" : "500") + ";" + (hj ? "background:#fe4f2b;color:#fff" : sel ? "background:#12171d;color:#fff" : "background:transparent;color:" + (fora ? "#c4c9ca" : "#1f252c")),
           dot: "width:4px;height:4px;border-radius:9999px;background:" + (reu ? (hj || sel ? "#fff" : "#fe4f2b") : tem ? (hj || sel ? "rgba(255,255,255,.7)" : "#a3a8a4") : "transparent") }; });
@@ -938,7 +939,7 @@ class Logica extends React.Component<any, any> {
       const porDia = [0, 1, 2, 3, 4, 5, 6].map(i => { const a = new Date(semI.getTime() + i * 864e5); return { n: feitaEntre(a, new Date(a.getTime() + 864e5)), fut: a > H0, hj: a.getTime() === H0.getTime() }; });
       const mxD = Math.max(1, Math.max.apply(null, porDia.map(p => p.n)));
       const iniR = (x) => x.ini || x.fim;
-      const reuH = todas.filter(x => x.tipo === "Reunião" && x.situacao !== "Declinada" && iniR(x) && iniR(x).toDateString() === H0.toDateString()).sort((a, b) => iniR(a) - iniR(b));
+      const reuH = todas.concat(D.REUNIOES || []).filter(x => x.tipo === "Reunião" && x.situacao !== "Declinada" && iniR(x) && iniR(x).toDateString() === H0.toDateString()).sort((a, b) => iniR(a) - iniR(b));
       const proxR = reuH.find(x => iniR(x) >= agora);
       const slots = Array.from({ length: 36 }, (_, i) => { const s0 = new Date(H0); s0.setHours(8, 0); const a = new Date(s0.getTime() + i * 12e5), b = new Date(a.getTime() + 12e5);
         const oc = reuH.some(x => { const ri = iniR(x), rf = x.ini && x.fim && x.fim > x.ini ? x.fim : new Date(ri.getTime() + 18e5); return ri < b && rf > a; }), now = agora >= a && agora < b;
@@ -969,7 +970,7 @@ class Logica extends React.Component<any, any> {
           abrir: () => { fechaPop(); if (refReu(x)) E && E.abrir("reuniao", refReu(x)); else this.setState({ aberta: x.key, subAberta: null }); } }; }),
         lista: () => this.setState({ kpiPop: null, visao: "lista", rapido: KP[3] }), novaReu: () => { fechaPop(); E && E.abrir("novaReuniao", { data: this.fmtIso(H0) }); } };
       const totDia = totHoje + late.length, pct = totDia ? Math.round(hojeFe.length / totDia * 100) : 100, hh = agora.getHours();
-      return { dataTxt: cap(agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })), saud: (hh < 12 ? "Bom dia" : hh < 18 ? "Boa tarde" : "Boa noite") + ", Scott",
+      return { dataTxt: cap(agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })), saud: (hh < 12 ? "Bom dia" : hh < 18 ? "Boa tarde" : "Boa noite") + ", " + (this.eu || "").split(" ")[0],
         frase: late.length ? "Você tem " + late.length + (late.length > 1 ? " atividades atrasadas" : " atividade atrasada") + " e " + hojeAb.length + " para hoje. Vale começar pelas atrasadas." : hojeAb.length ? hojeAb.length + (hojeAb.length > 1 ? " atividades" : " atividade") + " para hoje e nada atrasado." : "Nada vencendo hoje. Bom momento para adiantar a semana.",
         pctDia: pct + "%", anel: pct + " 100", diaSeg: [["Feitas", hojeFe.length, "#1f7256"], ["Em aberto", hojeAb.length, "#12171d"], ["Atrasadas", late.length, "#fe4f2b"]].map(([l, n, c]) => ({ l, n: String(n), cor: l === "Atrasadas" && n ? "#c2330f" : "#12171d", s: "flex:" + n + " 0 0;background:" + c + (n ? "" : ";display:none"), dot: "width:8px;height:8px;border-radius:3px;background:" + c })),
         nx: { late, hojeAb, reuH, fSem, proxH: proxR ? this.fmtH(iniR(proxR)) : "" }, grupos: gruposF, focoResumo: (late.length + hojeAb.length + prox.length + semDataL.length) + " em aberto", kpis, pop, abas, foco, focoVazio: !gruposF.length, focoVazioTxt: false ? "" : aba === "hoje" ? "Nada vencendo hoje." : "Semana livre por enquanto.",

@@ -80,8 +80,9 @@ export function TabVisaoGeral() {
         sub={<>ARR {fmtK(m.arr)} · início do mês {fmtK(m.inicioPeriodo)}<br />{porProduto}</>}
         rodape={
           <>
-            Fonte canônica única de MRR: a carteira de serviços ativos — a mesma base do Início e do
-            módulo de CS. Os componentes abaixo reconstroem o movimento a partir de mrr_movimentos.
+            Fonte única de MRR: o recorrente faturado no último fechamento (mais assinaturas ativas de
+            quem fechou depois) — a mesma base do Início, da Carteira e do CS. Os componentes abaixo
+            reconstroem o movimento a partir de mrr_movimentos.
           </>
         }
       >

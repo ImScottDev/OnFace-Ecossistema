@@ -18,7 +18,8 @@ import type { DetalheProposta } from "@/app/(produto)/propostas/actions";
 import { AvisoBloqueio, Campo, Secao, Tag, dataCurta, dataHora, moedaExata, type Bloqueio } from "./ui";
 import { Bloco } from "./pagina";
 import { AcoesContato } from "./pagina";
-import { rotuloAtor, rotuloEvento } from "./PreVendas";
+import { rotuloAtor } from "./PreVendas";
+import { rotuloDeEvento } from "@/lib/vendas/rotulos-evento";
 
 export function rotuloStatus(status: string): string {
   return ROTULO_STATUS_PROPOSTA[status as keyof typeof ROTULO_STATUS_PROPOSTA] ?? status;
@@ -242,7 +243,7 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
               <div className="ov-timeline-item" key={e.id}>
                 <span className="ov-timeline-marca" aria-hidden />
                 <div>
-                  <strong>{rotuloEvento(e.tipo)}</strong>
+                  <strong>{e.titulo || rotuloDeEvento(e.tipo)}</strong>
                   <span>
                     {dataHora(e.ocorridoEm)}
                     {e.usuarioNome ? ` · ${e.usuarioNome}` : e.atorTipo !== "HUMAN" ? ` · ${rotuloAtor(e.atorTipo)}` : ""}

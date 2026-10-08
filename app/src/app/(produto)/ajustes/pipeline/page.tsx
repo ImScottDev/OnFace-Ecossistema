@@ -219,6 +219,13 @@ export default function PipelineConfigPage() {
         </div>
       </div>
 
+      {/* O quadro de Pipeline e os relatórios seguem as etapas fixas do módulo de Vendas
+          (Entrada, Diagnóstico, Proposta, Negociação, definidas na especificação).
+          Esta configuração só alimenta formulários antigos de negócio. */}
+      <p className="aj-aviso" role="status">
+        <strong>Não altera o quadro de Pipeline:</strong> o Pipeline e os relatórios usam as etapas fixas Entrada, Diagnóstico, Proposta e Negociação. O que se salva aqui vale apenas para os formulários antigos de negócio.
+      </p>
+
       {message && (
         <div className={`text-sm px-4 py-2.5 rounded-lg ${message.type === "ok" ? "bg-emerald-500/10 text-[var(--cf2-success-text)] border border-emerald-500/20" : "bg-red-500/10 text-[var(--cf2-danger-text)] border border-red-500/20"}`}>
           {message.text}

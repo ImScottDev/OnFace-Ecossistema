@@ -22,12 +22,14 @@
  * Todos saem aqui, por subclasse e por pós-processamento da saída.
  * ───────────────────────────────────────────────────────────────────────── */
 
+import { urlLigarCallface } from "@/lib/callface-ligar";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { LinhaContato, TotaisContatos, PorRelacionamento } from "@/lib/contatos/tela-contatos";
 import type { Resultado } from "@/lib/vendas/resultado";
+import type { VisaoSalva } from "@/app/(produto)/contatos/actions";
 import { urlAtendimento } from "@/components/onface/vendas/atendimento";
 import { ContatosLiga } from "./ContatosLiga";
 import { rotaDoDesenho } from "./rota-do-desenho";
@@ -40,6 +42,8 @@ export interface AcoesContatos {
   criarPessoa: (p: { nome: string; sobrenome?: string | null; cargo?: string | null; email?: string | null; telefone?: string | null; empresaId?: string | null }) => Promise<Resultado<{ pessoaId: string; jaExistia: boolean }>>;
   criarLead: (l: { empresa: string; pessoaNome: string; cargo?: string | null; email?: string | null; telefone?: string | null; origem?: string | null; responsavelId?: string | null }) => Promise<Resultado<{ leadId: string }>>;
   atribuirEmMassa: (leadIds: string[], responsavelId: string | null) => Promise<Resultado<{ total: number }>>;
+  salvarVisao: (v: { nome: string; q: string; f: unknown; aba: string; visao: string }) => Promise<Resultado<VisaoSalva>>;
+  excluirVisao: (id: string) => Promise<Resultado<null>>;
 }
 
 /* ── Domínio → desenho ─────────────────────────────────────────────────── */
@@ -165,6 +169,8 @@ class ContatosLigada extends ContatosLiga {
   }
 
   diz(texto: string, tom?: string) {
+    // "X salvo na base" é dito pela Liga ANTES do servidor responder; quem confirma (ou diz "já existia") é `gravar`.
+    if (/^(Contato|Empresa) .* salvo na base$/.test(texto)) return;
     if (tom === "erro") toast.error(texto);
     else if (tom === "aviso") toast.warning(texto);
     else toast.success(texto);
@@ -224,13 +230,17 @@ class ContatosLigada extends ContatosLiga {
     return linhas;
   }
 
-  /** Visão salva vive só na sessão: não há tabela para ela. O toast diz isso. */
+  /** Visão salva no banco (`visoes_salvas`, por usuário): grava, e só então entra na lista. */
   salvarVisao() {
     const S = (this as any).state, nome = (S.nomeVisao || "").trim();
     if (!nome) return;
-    const v = { id: "v" + Date.now(), nome, q: S.q, f: S.f, aba: S.aba, visao: S.visao };
-    (this as any).setState({ salvas: (S.salvas || []).concat(v), salva: v.id, salvando: false, nomeVisao: "" });
-    toast(`Visão "${nome}" aplicada. Ainda não fica gravada: some ao recarregar a página.`);
+    (this as any).setState({ salvando: false, nomeVisao: "" });
+    void (this as any).props.salvarVisaoNoServidor({ nome, q: S.q, f: S.f, aba: S.aba, visao: S.visao }).then((r: any) => {
+      if (!r.ok) return toast.error(r.erro);
+      (this as any).setState((s: any) => ({ salvas: (s.salvas || []).concat(r.dados), salva: r.dados.id }));
+      toast.success(`Visão "${nome}" salva`);
+      (this as any).props.atualizar?.(); // o servidor passa a conhecer o id: apagar depois chega ao banco
+    });
   }
 
   renderVals() {
@@ -303,7 +313,9 @@ class ContatosLigada extends ContatosLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis, busca, agora, acoes }: {
+export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis, busca, agora, acoes, visoes }: {
+  /** Visões salvas deste usuário (`visoes_salvas`). */
+  visoes: VisaoSalva[];
   linhas: LinhaContato[];
   totais: TotaisContatos;
   porRelacionamento: PorRelacionamento;
@@ -369,15 +381,13 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
     router.push(rotaDoDesenho(href, params));
   }, [porId, router]);
 
-  /** "Ligar" chega como `/calls?call_to=<dígitos>`. O canal real de ligação é
-   *  o Atendimento; com o telefone "—" os dígitos vêm vazios e o certo é avisar. */
+  /** "Ligar" chega como `/calls?call_to=<dígitos>`: abre o Callface, que é o
+   *  canal real da chamada. Sem telefone ("—" vira dígitos vazios), avisa. */
   const abrirExterno = React.useCallback((url: string) => {
-    const digitos = (url.split("call_to=")[1] || "").replace(/\D/g, "");
-    if (!digitos) { toast.warning("Sem telefone cadastrado para este registro."); return; }
-    const c = linhas.find((x) => (x.telefone || x.whatsapp || "").replace(/\D/g, "") === digitos);
-    const destino = urlAtendimento("ligacao", { leadId: c?.leadId ?? null, telefone: digitos });
-    if (destino) router.push(destino);
-  }, [linhas, router]);
+    const alvo = urlLigarCallface(url.split("call_to=")[1] || "");
+    if (!alvo) { toast.warning("Sem telefone cadastrado para este registro."); return; }
+    window.open(alvo, "_blank", "noopener");
+  }, []);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
@@ -427,6 +437,19 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
   const enviados = React.useRef(new Set<string>());
   const avisouTags = React.useRef(false);
 
+  /** Aplica tags (por nome) a um lead recém-criado, pela porta única de tags. */
+  const aplicarTagsNoLead = async (leadId: string, nomes: string[]) => {
+    try {
+      const catalogo: Array<{ id: string; nome: string }> = await fetch("/api/labels").then((r) => (r.ok ? r.json() : []));
+      const resultados = await Promise.all(nomes.map((n) => {
+        const lab = catalogo.find((l) => l.nome === n);
+        if (!lab) return false;
+        return fetch(`/api/labels/${lab.id}/atribuir`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entityType: "lead", entityId: leadId }) }).then((r) => r.ok);
+      }));
+      return resultados.every(Boolean);
+    } catch { return false; }
+  };
+
   const gravar = React.useCallback(async (patch: Record<string, any>) => {
     let refrescar = false;
 
@@ -437,13 +460,14 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
         refrescar = true;
         const empresaPorNome = new Map<string, string>();
         const falhas: string[] = [];
-        let ok = 0;
+        let ok = 0, jaExistiam = 0;
         const resolverEmpresa = async (nome: string, extra: any = {}) => {
           const k = nome.trim().toLowerCase();
           if (empresaPorNome.has(k)) return empresaPorNome.get(k)!;
           const r = await acoes.criarEmpresa({ nome: nome.trim(), cnpj: extra.cnpj || null, website: extra.site || null, setor: extra.segmento || null, cidade: extra.cidade || null });
           if (!r.ok) { falhas.push(r.erro); return null; }
           empresaPorNome.set(k, r.dados!.empresaId);
+          if (r.dados!.jaExistia && extra.tipo === "empresa") jaExistiam += 1; // só a empresa pedida; a da pessoa não conta
           return r.dados!.empresaId;
         };
         // Empresas primeiro: as pessoas do mesmo lote penduram nelas.
@@ -457,9 +481,10 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
             nome, sobrenome: resto.join(" ") || null, cargo: x.cargo || null,
             email: x.email || null, telefone: x.tel || null, empresaId,
           });
-          if (r.ok) ok += 1; else falhas.push(r.erro);
+          if (r.ok) { ok += 1; if (r.dados?.jaExistia) jaExistiam += 1; } else falhas.push(r.erro);
         }
         if (falhas.length) toast.error(`${falhas.length} registro(s) não foram gravados: ${falhas[0]}`);
+        else if (jaExistiam) toast.success(jaExistiam === ok ? (ok === 1 ? "Este registro já existia na base; nada foi duplicado." : `Os ${ok} registros já existiam na base; nada foi duplicado.`) : `${ok} registro(s) na base, ${jaExistiam} já existia(m); nada foi duplicado.`);
         else toast.success(`${ok} registro(s) gravados na base.`);
         /* Cadência de prospecção e responsável de contato sem lead não têm
            command aqui. O contato fica na base; dizer o que NÃO aconteceu. */
@@ -480,27 +505,42 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
             email: l.email || null, telefone: l.tel || null, origem: l.origem || null,
             responsavelId: idDoResponsavel(l.resp),
           });
-          if (r.ok) ok += 1; else falhas.push(r.erro);
+          if (r.ok) {
+            ok += 1;
+            // Tag escolhida na importação: grava no catálogo real (`labels`/`entity_labels`), não no store local.
+            const nomes: string[] = patch.tagsLead?.[l.id] ?? [];
+            if (nomes.length && r.dados?.leadId && !(await aplicarTagsNoLead(r.dados.leadId, nomes))) falhas.push("a tag escolhida não foi aplicada");
+          } else falhas.push(r.erro);
         }
-        if (falhas.length) toast.error(`${falhas.length} lead(s) não foram criados: ${falhas[0]}`);
+        if (falhas.length) toast.error(`${falhas.length} lead(s) com problema: ${falhas[0]}`);
         else toast.success(`${ok} lead(s) criados no Pré-vendas.`, { action: { label: "Abrir Pré-vendas", onClick: () => router.push("/pre-vendas") } });
         if (patch.cadencias) toast.warning("A cadência escolhida não foi vinculada: ainda não há command de cadência nesta tela.");
       }
     }
 
-    if ((patch.tagsLead || patch.tagsCriadas) && !avisouTags.current) {
+    // Contato sem lead (importado para a base ou Prospecção) não tem alvo de tag: dizer, em vez de fingir.
+    if (patch.tagsLead && Object.keys(patch.tagsLead).some((k) => k.startsWith("x:")) && !avisouTags.current) {
       avisouTags.current = true;
-      toast.warning("Tags ainda não são gravadas no banco: valem só nesta sessão.");
+      toast.warning("Tag não gravada: contato sem lead ainda não recebe tag. Marque depois de enviar ao Pré-vendas.");
     }
-    // `visoesContatos`: sem tabela; `salvarVisao` da subclasse já avisa.
+    /* Visão apagada na lista: some do banco. (Salvar é feito pela subclasse, que já tem o id do servidor.) */
+    if (Array.isArray(patch.visoesContatos)) {
+      const ficam = new Set((patch.visoesContatos as Array<{ id: string }>).map((v) => v.id));
+      for (const v of visoes.filter((x) => !ficam.has(x.id))) {
+        const r = await acoes.excluirVisao(v.id);
+        if (!r.ok) toast.error(r.erro);
+      }
+    }
 
     if (refrescar) router.refresh();
-  }, [acoes, idDoResponsavel, porId, router]);
+  }, [acoes, idDoResponsavel, porId, router, visoes]);
 
   return (
     <div data-workspace="desenho">
       <ContatosLigada
-        dados={{}}
+        dados={{ visoesContatos: visoes }}
+        salvarVisaoNoServidor={acoes.salvarVisao}
+        atualizar={() => router.refresh()}
         catalogo={catalogo}
         totais={totais}
         porRelacionamento={porRelacionamento}

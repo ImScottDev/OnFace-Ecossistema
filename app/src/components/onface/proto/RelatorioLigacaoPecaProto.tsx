@@ -462,6 +462,8 @@ export default function RelatorioLigacaoPecaProto({ id, contexto, fechar, gravou
   /* A tela que sabe o lead manda `leadId` (null = não é lead); o id cru só vale sem essa chave. */
   const leadId = "leadId" in contexto ? texto(contexto.leadId) : id ?? texto(contexto.lead);
   const ligacaoId = texto(contexto.ligacaoId);
+  /* A ligação CLICADA: a atividade guarda a gravação; é por ela que se acha a certa. */
+  const audioUrl = texto(contexto.audioUrl);
   const [carga, setCarga] = React.useState<{ lista: Ligacao[]; lig: Ligacao; lead: DetalheLead | null; notas: Nota[] } | null>(null);
 
   const lerNotas = React.useCallback(async (lead: string): Promise<Nota[]> => {
@@ -477,13 +479,14 @@ export default function RelatorioLigacaoPecaProto({ id, contexto, fechar, gravou
       const r = await fetch(`/api/ligacoes?leadId=${encodeURIComponent(leadId)}`);
       if (!r.ok) throw new Error();
       const lista: Ligacao[] = await r.json();
-      const lig = (ligacaoId && lista.find((l) => l.id === ligacaoId)) || lista[0];
+      const lig = (ligacaoId && lista.find((l) => l.id === ligacaoId))
+        || (audioUrl && lista.find((l) => l.audioUrl === audioUrl)) || lista[0];
       if (!lig) { if (vivo) { toast("Nenhuma ligação da Callface registrada para este contato.", { id: "relatorio" }); fechar(); } return; }
       const [d, notas] = await Promise.all([acaoDetalhe(leadId), lerNotas(leadId)]);
       if (vivo) setCarga({ lista, lig, lead: d.ok ? d.dados?.lead ?? null : null, notas });
     })().catch(() => { if (vivo) { toast.error("Não consegui abrir o relatório da ligação."); fechar(); } });
     return () => { vivo = false; };
-  }, [leadId, ligacaoId, fechar, lerNotas]);
+  }, [leadId, ligacaoId, audioUrl, fechar, lerNotas]);
 
   const recarregarNotas = React.useCallback(async () => {
     if (!leadId) return;

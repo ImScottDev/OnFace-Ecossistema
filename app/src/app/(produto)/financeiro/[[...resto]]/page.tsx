@@ -58,7 +58,7 @@ export default async function FinanceiroPage({ params, searchParams }: {
           {
             rotulo: "MRR ativo",
             valor: brl(r.mrrAtivo),
-            detalhe: `${r.servicosAtivos} serviços · fonte: carteira canônica (a mesma do Início e do CS)`,
+            detalhe: `${r.servicosAtivos} serviços na carteira · fonte: MRR faturado no último fechamento (o mesmo do Início, da Carteira e do CS)`,
             destaque: true,
           },
           {

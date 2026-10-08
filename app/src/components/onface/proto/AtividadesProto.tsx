@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import type { Atividade, DadosAtividades } from "@/components/onface/atividades/types";
+import type { ReuniaoDaAgenda } from "@/lib/calendario/agenda-do-calendario";
 import { acaoResponsaveis } from "@/app/(produto)/pre-vendas/actions";
 import { AtividadesLiga } from "./AtividadesLiga";
 import { levarParametros } from "./rota-do-desenho";
@@ -34,7 +35,44 @@ class AtividadesLigada extends AtividadesLiga {
 
   /** O aviso da Liga só sai depois que o servidor confirmar (ver `gravar`). */
   diz(texto: string) { (this as any).props.avisou?.(texto); }
+
+  /**
+   * UM modal de atividade no produto: a peça canônica (`AtividadePecaProto`).
+   * O editor próprio desta tela (Para mim/outra pessoa, Vínculo, fila) gravava
+   * pelo mesmo `tarefas`, mas era um segundo formulário, com campos que o resto
+   * do sistema não tem. Toda criação e edição daqui abre a peça.
+   */
+  abrirEditor(it: any, pre: any) {
+    const abrir = (this as any).props.abrir;
+    if (it) {
+      if (UUID.test(String(it.id ?? ""))) return abrir("verAtividade", it.id);
+      return (super.abrirEditor as any)(it, pre);
+    }
+    const p = pre ?? {};
+    const empresa = p.vincTipo === "empresa" ? String(p.vinc ?? "") : "";
+    const empresaId = (this as any).props.idDaEmpresa?.get?.(empresa) ?? null;
+    return abrir("novaAtividade", {
+      titulo: p.titulo ?? "", data: p.fimD ?? "", tipo: p.tipo ?? "",
+      empresa: empresaId ? empresa : "", empresaId,
+    });
+  }
+
+  /** Abrir uma atividade da lista, do quadro ou do calendário lateral = a peça. */
+  setState(p: any, cb?: any) {
+    const chave = p && typeof p === "object" ? p.aberta : null;
+    if (typeof chave === "string") {
+      const id = chave.replace(/^p:/, "");
+      if (UUID.test(id)) {
+        (this as any).props.abrir?.("verAtividade", id);
+        const { aberta: _, ...resto } = p;
+        return (super.setState as any)({ ...resto, aberta: null }, cb);
+      }
+    }
+    return (super.setState as any)(p, cb);
+  }
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* ── Domínio → desenho ─────────────────────────────────────────────────── */
 
@@ -75,7 +113,7 @@ function paraODesenho(a: Atividade) {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function AtividadesProto({ dados }: { dados: DadosAtividades }) {
+export function AtividadesProto({ dados, reunioes = [] }: { dados: DadosAtividades; reunioes?: ReuniaoDaAgenda[] }) {
   const router = useRouter();
 
   const atividades = React.useMemo(
@@ -98,12 +136,23 @@ export function AtividadesProto({ dados }: { dados: DadosAtividades }) {
       : dados.filtrosResponsavel.filter((f) => f.valor !== "todos" && f.valor !== "sem-dono").map((f) => f.label),
     // As outras duas fontes do desenho ficam vazias: no produto as três são a
     // mesma tabela, e agregar de novo contaria a tarefa duas vezes.
+    /* Reunião real (`reunioes`), a mesma do Calendário; a Liga só a soma a "Reuniões hoje". */
+    REUNIOES: reunioes.map((r) => {
+      // `_h` é a marca da Liga para "este instante tem hora" (sem ela mostra só "Dia").
+      const ini: Date & { _h?: boolean } = new Date(r.data); ini._h = true;
+      const fim: Date & { _h?: boolean } = new Date(ini.getTime() + (r.duracao ?? 30) * 60000); fim._h = true;
+      return {
+        key: "p:" + r.id, src: "p", id: r.id, tipo: "Reunião", titulo: r.titulo,
+        situacao: r.status === "realizada" ? "Feita" : r.status === "agendada" || !r.status ? "A fazer" : "Declinada",
+        ini, fim, empresa: r.empresa, pessoa: r.pessoa,
+      };
+    }),
     OPORTUNIDADES: [],
     LEADS: [],
     AtividadesSeed: [],
     ProjetosSeed: [],
     Projetos: [],
-  }), [dados.filtrosResponsavel, equipe]);
+  }), [dados.filtrosResponsavel, equipe, reunioes]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
@@ -170,6 +219,7 @@ export function AtividadesProto({ dados }: { dados: DadosAtividades }) {
         dados={{ atividadesV2: atividades, opps: [], leads: [] }}
         catalogo={catalogo}
         abrir={abrir}
+        idDaEmpresa={idDaEmpresa}
         gravar={gravar}
         avisou={avisou}
         ir={(href: string) => router.push(href)}
