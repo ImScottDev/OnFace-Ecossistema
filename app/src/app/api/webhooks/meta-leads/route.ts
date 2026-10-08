@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
-import { sql } from "drizzle-orm";
+import { sql, and, eq } from "drizzle-orm";
+import { leads, statusChanges } from "@/lib/db/schema";
+import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
+import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
+import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 import {
   normalizarLeadAds, chaveDeIdempotencia, buscarLeadNaGraph, combinar,
   credenciaisLeadAds, type LeadAdsBruto,
@@ -84,6 +88,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "organização não encontrada" }, { status: 500 });
   }
 
+  // Mesmo dono que a rota do RD resolve: regra de distribuição, senão a política da org.
+  const { resolverPorRegra } = await import("@/lib/agentes/distribuicao");
+  const responsavelInboundId = (await resolverPorRegra({ organizacaoId: org.id, etapa: "novo" }))?.responsavelId
+    ?? await resolverResponsavelInbound(org.id);
+
   const resultados: Array<{ metaLeadId: string | null; ok: boolean; motivo?: string }> = [];
 
   for (const entry of payload.entry ?? []) {
@@ -128,6 +137,88 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      /* O LEGADO PRIMEIRO, como a ponte exige (ver ponte-canonica.ts).
+       *
+       * As telas (board de pré-vendas, listas) ainda leem `leads`. Sem gravar
+       * aqui, o lead da Meta nascia só como pessoa + aquisição e não aparecia
+       * em tela nenhuma. Espelha a rota do RD (rd-lead/route.ts): dedup por
+       * e-mail e depois telefone, first-touch preservado, lead novo no board
+       * de pré-vendas sem negócio. Mudou lá, confira aqui.
+       *
+       * Falha aqui não derruba a captação: sem `leadId` a ponte ainda garante
+       * o canônico, e o backfill reconcilia o vínculo. */
+      let leadId: string | null = null;
+      try {
+        const [primeiro, ...resto] = (n.nome ?? "").trim().split(/\s+/).filter(Boolean);
+        const nome = primeiro || n.email?.split("@")[0] || "Lead Meta";
+        const sobrenome = resto.join(" ") || null;
+        const respostas = n.respostas ?? {};
+        const a = n.atribuicao;
+
+        let existing: { id: string; tipo: string; camposCustom: unknown; responsavelId: string | null; empresaId: string | null } | undefined;
+        const cols = { id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom, responsavelId: leads.responsavelId, empresaId: leads.empresaId };
+        for (const [coluna, valor] of [[leads.email, n.email], [leads.telefone, n.telefone]] as const) {
+          if (existing || !valor) continue;
+          [existing] = await db.select(cols).from(leads)
+            .where(and(eq(leads.organizacaoId, org.id), eq(coluna, valor)))
+            .orderBy(sql`case when ${leads.tipo} = 'cliente' then 1 else 0 end`)
+            .limit(1);
+        }
+
+        const empresaIdResolvida = await resolverEmpresaId({
+          organizacaoId: org.id, nome: n.empresa, website: dominioCorporativo(n.email),
+        });
+
+        if (existing && existing.tipo !== "cliente") {
+          // Atualiza sem sobrescrever first-touch/UTM (mesmo COALESCE do RD).
+          const keep = (col: unknown, v: string | null | undefined) => sql`COALESCE(NULLIF(${col}, ''), ${v ?? null})`;
+          await db.update(leads).set({
+            ...(n.empresa ? { empresa: n.empresa } : {}),
+            ...(empresaIdResolvida ? { empresaId: sql`COALESCE(${leads.empresaId}, ${empresaIdResolvida}::uuid)` } : {}),
+            ...(n.cargo ? { cargo: n.cargo } : {}),
+            origem: keep(leads.origem, "Mídia Paga"),
+            utmSource: keep(leads.utmSource, a.utmSource),
+            utmMedium: keep(leads.utmMedium, a.utmMedium),
+            utmCampaign: keep(leads.utmCampaign, a.utmCampaign),
+            utmTerm: keep(leads.utmTerm, a.utmTerm),
+            utmContent: keep(leads.utmContent, a.utmContent),
+            ...(a.adId ? { metaAdId: keep(leads.metaAdId, a.adId) } : {}),
+            ...(a.adsetId ? { metaAdsetId: keep(leads.metaAdsetId, a.adsetId) } : {}),
+            ...(a.campaignId ? { metaCampaignId: keep(leads.metaCampaignId, a.campaignId) } : {}),
+            // Respostas novas entram por cima; o que já estava preenchido e não veio, fica.
+            camposCustom: { ...((existing.camposCustom as Record<string, unknown>) || {}), ...respostas },
+            updatedAt: new Date(),
+          }).where(eq(leads.id, existing.id));
+          leadId = existing.id;
+          await garantirAtividadePrimeiroContato({
+            organizacaoId: org.id, leadId, empresaId: existing.empresaId,
+            responsavelId: existing.responsavelId ?? responsavelInboundId,
+          });
+        } else {
+          // Não existe (ou é cliente, que não se toca): lead novo no board.
+          const [novo] = await db.insert(leads).values({
+            organizacaoId: org.id, nome, sobrenome,
+            email: n.email, telefone: n.telefone,
+            empresa: n.empresa, empresaId: empresaIdResolvida, cargo: n.cargo,
+            origem: "Mídia Paga",
+            utmSource: a.utmSource, utmMedium: a.utmMedium, utmCampaign: a.utmCampaign,
+            utmTerm: a.utmTerm, utmContent: a.utmContent,
+            metaAdId: a.adId, metaAdsetId: a.adsetId, metaCampaignId: a.campaignId,
+            camposCustom: respostas,
+            tipo: "lead", status: "novo", sdrStatus: "pending",
+            responsavelId: responsavelInboundId,
+          }).returning({ id: leads.id });
+          leadId = novo.id;
+          await db.insert(statusChanges).values({ leadId, negocioId: null, deStatus: null, paraStatus: "novo" });
+          await garantirAtividadePrimeiroContato({
+            organizacaoId: org.id, leadId, empresaId: null, responsavelId: responsavelInboundId,
+          });
+        }
+        await syncPessoaFromLead(leadId); // dual-write, best-effort
+      } catch (e) {
+        console.error(`[MetaLeads] lead legado não gravado (${n.metaLeadId}); canônico segue sem vínculo:`, e);
+      }
+
       const r = await garantirEntradaCanonica({
         organizacaoId: org.id,
         tipo: "INBOUND",
@@ -146,37 +237,19 @@ export async function POST(req: NextRequest) {
           adsetId: n.atribuicao.adsetId,
           campaignId: n.atribuicao.campaignId,
         },
+        responsavelId: responsavelInboundId ?? null,
         idempotencyKey: chaveDeIdempotencia(n),
         ocorridoEm: n.ocorridoEm,
-      });
+      }, leadId);
 
-      /* As respostas do formulário que não têm coluna própria.
-       *
-       * `normalizarLeadAds` já separa tudo que o formulário trouxe além de
-       * nome/e-mail/telefone/atribuição — e esse conteúdo estava sendo
-       * CALCULADO E JOGADO FORA. Um formulário novo com "qual seu
-       * faturamento?" chegava, a resposta era lida e sumia, e a SDR ligava
-       * sem ela.
-       *
-       * Vai para `leads.campos_custom`, que é onde o caminho do RD Station já
-       * guarda o mesmo tipo de dado — a ficha do lead lê de lá. O merge
-       * preserva o que já existe: reentrega da Meta não pode apagar o que
-       * alguém preencheu à mão.
-       *
-       * O lead é alcançado pelo vínculo da aquisição (`lead_legado_id`), que
-       * é o que a ponte canônica acabou de preencher — `leads` não tem coluna
-       * de id da Meta.
-       *
-       * Fora da transação de propósito: o lead já entrou. Perder a resposta
-       * extra é ruim, perder o lead inteiro por causa dela é pior. */
-      if (r.ok && n.respostas && Object.keys(n.respostas).length > 0) {
+      // A ponte só grava o vínculo quando CRIA a aquisição. Reentrega ou
+      // aquisição já aberta devolve a existente sem lead_legado_id; vincula aqui
+      // sem tomar um vínculo já feito.
+      if (r.ok && leadId) {
         await db.execute(sql`
-          UPDATE leads
-             SET campos_custom = COALESCE(campos_custom, '{}'::jsonb) || ${JSON.stringify(n.respostas)}::jsonb,
-                 updated_at = now()
-           WHERE organizacao_id = ${org.id}::uuid
-             AND id = (SELECT lead_legado_id FROM aquisicoes WHERE id = ${r.aquisicaoId}::uuid)
-        `).catch((e) => console.error(`[MetaLeads] respostas do formulário não gravadas (${n.metaLeadId}):`, e));
+          UPDATE aquisicoes SET lead_legado_id = ${leadId}::uuid
+           WHERE id = ${r.aquisicaoId}::uuid AND organizacao_id = ${org.id}::uuid AND lead_legado_id IS NULL
+        `).catch((e) => console.error(`[MetaLeads] vínculo lead↔aquisição não gravado (${n.metaLeadId}):`, e));
       }
 
       resultados.push({ metaLeadId: n.metaLeadId, ok: r.ok, motivo: r.erro });
