@@ -119,6 +119,7 @@ export function normalizarLeadAds(bruto: LeadAdsBruto): LeadAdsNormalizado {
     ...Object.values(SINONIMOS).flat(), "first_name", "last_name",
     "leadgen_id", "created_time", "ad_id", "adset_id", "campaign_id",
     "ad_name", "adset_name", "campaign_name", "form_id", "page_id", "platform",
+    "id", "is_organic", "partner_name",
   ]);
 
   const respostas: Record<string, string> = {};
@@ -164,4 +165,43 @@ export function chaveDeIdempotencia(n: LeadAdsNormalizado): string | null {
   const identidade = n.email ?? n.telefone;
   if (!identidade) return null;
   return `meta:sem-id:${identidade.toLowerCase()}:${n.atribuicao.adId ?? "sem-anuncio"}`;
+}
+
+
+/**
+ * Tudo que a Meta informa sobre COMO o lead chegou (anúncio, conjunto, campanha,
+ * formulário, plataforma, id do lead e data), em chaves `meta_*` próprias para
+ * ficarem separadas das RESPOSTAS do formulário em `leads.campos_custom`.
+ * Uma só função para o webhook (lead novo) e para a importação histórica, para
+ * o lead de ontem e o de hoje ficarem com o mesmo rastreio.
+ */
+export function camposRastreioMeta(
+  bruto: LeadAdsBruto,
+  extra?: { formNome?: string | null },
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const set = (k: string, v: unknown) => {
+    if (v === undefined || v === null) return;
+    const t = String(v).trim();
+    if (t) out[k] = t;
+  };
+  set("meta_leadgen_id", bruto.leadgen_id ?? (bruto as Record<string, unknown>).id);
+  set("meta_ad_id", bruto.ad_id);
+  set("meta_ad_nome", bruto.ad_name);
+  set("meta_conjunto_id", bruto.adset_id);
+  set("meta_conjunto_nome", bruto.adset_name);
+  set("meta_campanha_id", bruto.campaign_id);
+  set("meta_campanha_nome", bruto.campaign_name);
+  set("meta_formulario_id", bruto.form_id);
+  set("meta_formulario_nome", extra?.formNome);
+  set("meta_plataforma", bruto.platform);
+  set("meta_pagina_id", bruto.page_id);
+  const org = (bruto as Record<string, unknown>).is_organic;
+  if (typeof org === "boolean") out.meta_organico = org ? "sim" : "nao";
+  const t = bruto.created_time;
+  if (t) {
+    const d = new Date(typeof t === "number" ? t * 1000 : t);
+    if (!Number.isNaN(d.getTime())) out.meta_criado_em = d.toISOString();
+  }
+  return out;
 }

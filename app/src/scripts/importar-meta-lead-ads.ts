@@ -31,7 +31,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import {
-  credenciaisLeadAds, metaGraphUrl, normalizarLeadAds, chaveDeIdempotencia,
+  credenciaisLeadAds, metaGraphUrl, normalizarLeadAds, chaveDeIdempotencia, camposRastreioMeta,
   type LeadAdsBruto,
 } from "@onface/integrations-meta";
 import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
@@ -64,7 +64,7 @@ async function graph<T>(caminho: string, token: string): Promise<{ ok: true; dad
  * trocar por `filtering` com `time_created` é a otimização óbvia.
  */
 async function leadsDoFormulario(formId: string, token: string, desde: Date): Promise<LeadAdsBruto[]> {
-  const campos = "id,created_time,ad_id,adset_id,campaign_id,ad_name,adset_name,campaign_name,form_id,platform,field_data";
+  const campos = "id,created_time,ad_id,adset_id,campaign_id,ad_name,adset_name,campaign_name,form_id,platform,is_organic,field_data";
   let caminho: string | null = `${formId}/leads?fields=${campos}&limit=100`;
   const todos: LeadAdsBruto[] = [];
 
@@ -109,6 +109,8 @@ async function leadsDoFormulario(formId: string, token: string, desde: Date): Pr
 async function garantirLeadLegado(
   organizacaoId: string,
   n: ReturnType<typeof normalizarLeadAds>,
+  bruto: LeadAdsBruto,
+  formNome: string | null,
 ): Promise<string | null> {
   const email = n.email?.trim().toLowerCase() || null;
   const telefone = n.telefone?.replace(/\D/g, "") || null;
@@ -119,8 +121,7 @@ async function garantirLeadLegado(
      `normalizarLeadAds` já as separa em `respostas`; aqui elas finalmente são
      persistidas em `campos_custom`, junto do id do anúncio para o link do
      criativo. Antes nada disso era gravado e a ficha nascia muda. */
-  const extra: Record<string, unknown> = { ...(n.respostas ?? {}) };
-  if (n.atribuicao.adId) extra.meta_ad_id = n.atribuicao.adId;
+  const extra: Record<string, unknown> = { ...(n.respostas ?? {}), ...camposRastreioMeta(bruto, { formNome }) };
   const camposJson = Object.keys(extra).length ? JSON.stringify(extra) : null;
 
   const [ja] = await db.execute<{ id: string }>(sql`
@@ -133,8 +134,18 @@ async function garantirLeadLegado(
     /* Enriquecimento NÃO toca `updated_at`: o board ordena por ele e um backfill
        em massa faria todos os leads parecerem "tocados agora". Mescla por `||`
        para não apagar respostas já gravadas em rodadas anteriores. */
-    if (camposJson) await db.execute(sql`
-      UPDATE leads SET campos_custom = coalesce(campos_custom, '{}'::jsonb) || ${camposJson}::jsonb
+    const a = n.atribuicao;
+    await db.execute(sql`
+      UPDATE leads SET
+        campos_custom = coalesce(campos_custom, '{}'::jsonb) || coalesce(${camposJson}::jsonb, '{}'::jsonb),
+        utm_source    = COALESCE(NULLIF(utm_source, ''),    ${a.utmSource ?? null}),
+        utm_medium    = COALESCE(NULLIF(utm_medium, ''),    ${a.utmMedium ?? null}),
+        utm_campaign  = COALESCE(NULLIF(utm_campaign, ''),  ${a.utmCampaign ?? null}),
+        utm_content   = COALESCE(NULLIF(utm_content, ''),   ${a.utmContent ?? null}),
+        utm_term      = COALESCE(NULLIF(utm_term, ''),      ${a.utmTerm ?? null}),
+        meta_ad_id       = COALESCE(NULLIF(meta_ad_id, ''),       ${a.adId ?? null}),
+        meta_adset_id    = COALESCE(NULLIF(meta_adset_id, ''),    ${a.adsetId ?? null}),
+        meta_campaign_id = COALESCE(NULLIF(meta_campaign_id, ''), ${a.campaignId ?? null})
        WHERE id = ${ja.id}::uuid`);
     return ja.id;
   }
@@ -152,7 +163,7 @@ async function garantirLeadLegado(
             ${n.atribuicao.utmTerm}, ${n.atribuicao.utmContent},
             ${n.atribuicao.adId}, ${n.atribuicao.adsetId}, ${n.atribuicao.campaignId},
             coalesce(${camposJson}::jsonb, '{}'::jsonb),
-            ${n.ocorridoEm ?? new Date()}, ${n.ocorridoEm ?? new Date()})
+            ${(n.ocorridoEm ?? new Date()).toISOString()}::timestamptz, ${(n.ocorridoEm ?? new Date()).toISOString()}::timestamptz)
     RETURNING id::text`);
   return novo?.id ?? null;
 }
@@ -196,7 +207,7 @@ async function main() {
       if (!n.email && !n.telefone) { semIdentidade++; continue; }
       if (!APLICAR) { criados++; continue; }
 
-      const leadLegadoId = APLICAR ? await garantirLeadLegado(org.id, n) : null;
+      const leadLegadoId = APLICAR ? await garantirLeadLegado(org.id, n, bruto, form.name ?? null) : null;
       const r = await garantirEntradaCanonica({
         organizacaoId: org.id,
         tipo: "INBOUND",

@@ -8,6 +8,7 @@
 export {
   normalizarLeadAds,
   chaveDeIdempotencia,
+  camposRastreioMeta,
   type LeadAdsBruto,
   type LeadAdsNormalizado,
   type CampoFormularioMeta,

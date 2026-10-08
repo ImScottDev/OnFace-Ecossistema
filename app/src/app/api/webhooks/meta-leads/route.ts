@@ -7,7 +7,7 @@ import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 import {
-  normalizarLeadAds, chaveDeIdempotencia, buscarLeadNaGraph, combinar,
+  normalizarLeadAds, chaveDeIdempotencia, buscarLeadNaGraph, combinar, camposRastreioMeta,
   credenciaisLeadAds, type LeadAdsBruto,
 } from "@onface/integrations-meta";
 import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
@@ -152,7 +152,7 @@ export async function POST(req: NextRequest) {
         const [primeiro, ...resto] = (n.nome ?? "").trim().split(/\s+/).filter(Boolean);
         const nome = primeiro || n.email?.split("@")[0] || "Lead Meta";
         const sobrenome = resto.join(" ") || null;
-        const respostas = n.respostas ?? {};
+        const respostas = { ...(n.respostas ?? {}), ...camposRastreioMeta(bruto) };
         const a = n.atribuicao;
 
         let existing: { id: string; tipo: string; camposCustom: unknown; responsavelId: string | null; empresaId: string | null } | undefined;
