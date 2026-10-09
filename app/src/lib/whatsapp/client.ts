@@ -412,6 +412,50 @@ export async function downloadMedia(
 }
 
 /**
+ * Baixa a mídia pelo ID da mensagem (o wuzapi guarda o que recebeu). É o plano B
+ * que o sistema antigo usa quando os dados de criptografia não resolvem, e com o
+ * wuzapi de produção foi o que funcionou.
+ */
+export async function downloadMediaByMessageId(
+  tipo: string,
+  messageId: string,
+  config?: WuzapiSessionConfig,
+): Promise<{ base64: string; mimetype: string } | null> {
+  const endpoint = getDownloadEndpoint(tipo);
+  try {
+    const res = await wuzapiFetch(endpoint, {
+      method: "POST",
+      body: JSON.stringify({ MessageId: messageId }),
+    }, config || DEFAULT_CONFIG);
+    const data = await res.json();
+    if (!res.ok) {
+      console.error(`[downloadMediaByMessageId] wuzapi error:`, data.message || data.error);
+      return null;
+    }
+    const b64 = data.data?.Data || data.data?.data || "";
+    if (!b64) return null;
+    const mimetype = data.data?.Mimetype || data.data?.mimetype || `application/octet-stream`;
+    return { base64: b64, mimetype };
+  } catch (err) {
+    console.error(`[downloadMediaByMessageId] Failed for ${tipo} ${messageId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * O arquivo baixado é mídia de verdade? Em 09/10/2026 o download com os dados de
+ * criptografia devolveu 14 bytes de lixo, que foram gravados como se fossem o
+ * áudio: a tela mostrava "recebido" e não tocava. Mídia real tem centenas de
+ * bytes no mínimo; abaixo disso é erro, e o chamador tenta o próximo caminho.
+ */
+export function midiaBaixadaValida(tipo: string, base64: string): boolean {
+  const limpo = base64.replace(/^data:[^;]+;(?:codecs=[^;]+;)?base64,/, "");
+  const bytes = Math.floor(limpo.length * 0.75);
+  if (tipo === "document") return bytes > 0;
+  return bytes >= 256;
+}
+
+/**
  * Save base64 data to disk in uploads folder.
  * Returns the public URL path (e.g., /uploads/abc123.jpg).
  */

@@ -861,12 +861,18 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
   }), [dados.eu.nome, dados.equipe]);
 
   /* ── Thread da conversa aberta ── */
-  const carregarThread = React.useCallback(async (id: string) => {
+  /* Última "impressão digital" da thread por conversa: a consulta de fundo (a cada 3 s) só
+     mexe na tela quando chegou mensagem, mudou o status (✓✓) ou a mídia ficou pronta. */
+  const assinaturaThreadRef = React.useRef<Record<string, string>>({});
+  const carregarThread = React.useCallback(async (id: string, opts?: { silencioso?: boolean }) => {
     try {
       const r = await fetch(`/api/whatsapp/messages/${id}?limit=100`);
       if (!r.ok) throw new Error(String(r.status));
       const j = await r.json();
       const linhas: any[] = (j.messages ?? []).slice().reverse();
+      const assinatura = JSON.stringify(linhas.map((m) => [m.id, m.status, m.mediaUrl]));
+      if (opts?.silencioso && assinaturaThreadRef.current[id] === assinatura) return;
+      assinaturaThreadRef.current[id] = assinatura;
       const porId = new Map(linhas.map((m) => [m.id, m]));
       const msgs = linhas.map((m) => ({ ...msgDoBanco(m, porId), ts: m.createdAt as string }));
       /* Notas internas do lead entram na linha do tempo da conversa (a ficha as mostra também). */
@@ -886,9 +892,27 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
       // A mensagem otimista sai: a thread do banco já a contém (ou não, se falhou).
       setLocal((l) => { const { msgs: _m, ...resto } = l[id] ?? {}; return { ...l, [id]: { ...resto, naoLidas: 0 } }; });
     } catch {
-      toast.error("Não consegui carregar as mensagens desta conversa.");
+      if (!opts?.silencioso) toast.error("Não consegui carregar as mensagens desta conversa.");
     }
   }, []);
+
+  /* ── Atualização ao vivo (mesma lógica da produção: a conversa aberta consulta a cada 3 s,
+        a lista a cada 15 s). Só com a aba visível; silenciosa em caso de erro de rede. ── */
+  const selecionadaRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      const id = selecionadaRef.current;
+      if (id) void carregarThread(id, { silencioso: true });
+    }, 3000);
+    return () => clearInterval(t);
+  }, [carregarThread]);
+  React.useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 15000);
+    return () => clearInterval(t);
+  }, [router]);
 
   /* ── Commands ── */
   const chamar = React.useCallback(async (url: string, init: RequestInit, falha: string) => {
@@ -1337,7 +1361,7 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
         iaEstados={iaEstados}
         alternarIa={alternarIa}
         abrirAgente={(id: string) => router.push(`/automacoes/agentes/${id}`)}
-        aoSelecionar={(id: string) => { void carregarThread(id); void carregarIa(id); }}
+        aoSelecionar={(id: string) => { selecionadaRef.current = id; void carregarThread(id); void carregarIa(id); }}
         buscarLeads={buscarLeadsRemoto}
         gravar={gravar}
         abrir={abrir}

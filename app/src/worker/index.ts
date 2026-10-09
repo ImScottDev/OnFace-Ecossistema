@@ -452,7 +452,7 @@ async function handlePhoneOutgoing(data: {
   const { phone, organizacaoId, sessaoId, message, timestamp } = data;
   const { normalizePhone, phoneLastDigits } = await import("../lib/whatsapp/phone-utils");
   const { contatos, whatsappMensagens, whatsappSessao } = await import("../lib/db/schema");
-  const { downloadMedia, saveBase64ToDisk, sessionToConfig } = await import("../lib/whatsapp/client");
+  const { downloadMedia, downloadMediaByMessageId, midiaBaixadaValida, saveBase64ToDisk, sessionToConfig } = await import("../lib/whatsapp/client");
 
   const normalized = normalizePhone(phone);
   const last8 = phoneLastDigits(phone);
@@ -496,12 +496,27 @@ async function handlePhoneOutgoing(data: {
       try {
         const dlInfo = message.mediaDownloadInfo as { url: string; mediaKey: string; mimetype: string; fileSHA256: string; fileEncSHA256?: string; fileLength: number | string; directPath: string };
         const downloaded = await downloadMedia(msgType, dlInfo, config);
-        if (downloaded.base64) {
+        if (downloaded.base64 && midiaBaixadaValida(msgType, downloaded.base64)) {
+          localMediaUrl = saveBase64ToDisk(downloaded.base64, fileId, msgType, message.mediaFilename || undefined, downloaded.mimetype);
+          saved = true;
+        } else if (downloaded.base64) {
+          console.error(`[WA-PhoneOut] Download via mediaDownloadInfo devolveu arquivo invalido (${msgType}, ${Math.floor(downloaded.base64.length * 0.75)} bytes); tentando pelo id da mensagem`);
+        }
+      } catch (dlErr) {
+        console.error(`[WA-PhoneOut] Failed to download media via mediaDownloadInfo:`, dlErr);
+      }
+    }
+
+    // Plano B (igual ao sistema antigo): baixar pelo id da mensagem no wuzapi.
+    if (!saved && (message.wuzapiMessageId || message.id)) {
+      try {
+        const downloaded = await downloadMediaByMessageId(msgType, String(message.wuzapiMessageId || message.id), config);
+        if (downloaded && midiaBaixadaValida(msgType, downloaded.base64)) {
           localMediaUrl = saveBase64ToDisk(downloaded.base64, fileId, msgType, message.mediaFilename || undefined, downloaded.mimetype);
           saved = true;
         }
       } catch (dlErr) {
-        console.error(`[WA-PhoneOut] Failed to download media via mediaDownloadInfo:`, dlErr);
+        console.error(`[WA-PhoneOut] Failed to download media via wuzapi messageId:`, dlErr);
       }
     }
 
@@ -2271,7 +2286,7 @@ const whatsappIncomingWorker = new Worker(
 
     const { normalizePhone, phoneLastDigits } = await import("../lib/whatsapp/phone-utils");
     const { contatos, leads, whatsappMensagens, atividades, notificacoes, usuarios, whatsappSessao: waSessao, pessoas: pessoasT, communications: commsT } = await import("../lib/db/schema");
-    const { downloadMedia: dlMedia, saveBase64ToDisk: saveToDisk, sessionToConfig: toConfig } = await import("../lib/whatsapp/client");
+    const { downloadMedia: dlMedia, downloadMediaByMessageId: dlByMsgId, midiaBaixadaValida: midiaOk, saveBase64ToDisk: saveToDisk, sessionToConfig: toConfig } = await import("../lib/whatsapp/client");
 
     const normalized = normalizePhone(phone);
     const last8 = phoneLastDigits(phone);
@@ -2328,12 +2343,27 @@ const whatsappIncomingWorker = new Worker(
         try {
           const dlInfo = message.mediaDownloadInfo as { url: string; mediaKey: string; mimetype: string; fileSHA256: string; fileEncSHA256?: string; fileLength: number | string; directPath: string };
           const downloaded = await dlMedia(msgType, dlInfo, inConfig);
-          if (downloaded.base64) {
+          if (downloaded.base64 && midiaOk(msgType, downloaded.base64)) {
+            localMediaUrl = saveToDisk(downloaded.base64, fileId, msgType, message.mediaFilename || undefined, downloaded.mimetype);
+            saved = true;
+          } else if (downloaded.base64) {
+            console.error(`[WA-In] Download via mediaDownloadInfo devolveu arquivo invalido (${msgType}, ${Math.floor(downloaded.base64.length * 0.75)} bytes); tentando pelo id da mensagem`);
+          }
+        } catch (dlErr) {
+          console.error(`[WA-In] Failed to download media via mediaDownloadInfo:`, dlErr);
+        }
+      }
+
+      // Plano B (igual ao sistema antigo): baixar pelo id da mensagem no wuzapi.
+      if (!saved && (message.wuzapiMessageId || message.id)) {
+        try {
+          const downloaded = await dlByMsgId(msgType, String(message.wuzapiMessageId || message.id), inConfig);
+          if (downloaded && midiaOk(msgType, downloaded.base64)) {
             localMediaUrl = saveToDisk(downloaded.base64, fileId, msgType, message.mediaFilename || undefined, downloaded.mimetype);
             saved = true;
           }
         } catch (dlErr) {
-          console.error(`[WA-In] Failed to download media via mediaDownloadInfo:`, dlErr);
+          console.error(`[WA-In] Failed to download media via wuzapi messageId:`, dlErr);
         }
       }
 
