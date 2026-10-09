@@ -75,6 +75,18 @@ export function dataPorExtenso(agora: Date): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+/** YYYY-MM-DD do dia em São Paulo. */
+export function chaveDoDia(d: Date): string {
+  return d.toLocaleDateString("sv-SE", { timeZone: FUSO });
+}
+
+/** As `n` chaves de dia terminando hoje, da mais antiga para hoje. */
+export function ultimosDias(agora: Date, n: number): string[] {
+  const hoje = chaveDoDia(agora);
+  const base = new Date(`${hoje}T12:00:00Z`).getTime();
+  return Array.from({ length: n }, (_, i) => new Date(base - (n - 1 - i) * 86_400_000).toISOString().slice(0, 10));
+}
+
 /** Dias úteis (seg-sex) de hoje até o fim do mês, hoje incluso. Sem feriados:
  *  não existe fonte de feriados no produto, e a tela diz "dias úteis" sem
  *  prometer calendário. */
@@ -103,6 +115,10 @@ export function duracaoCurta(minutos: number): string {
 
 export const brl = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+/** "R$ 51.862": o valor que decide, sem centavo. */
+export const brlInteiro = (v: number) =>
+  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 /** "R$ 842", "R$ 12,4 mil", "R$ 1,2 mi". Dinheiro grande não precisa de centavo. */
 export function moedaCompacta(v: number): string {

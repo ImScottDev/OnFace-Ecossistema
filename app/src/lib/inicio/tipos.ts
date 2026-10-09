@@ -34,6 +34,8 @@ export interface Kpi {
   /** Série real do período, uma posição por dia. Ausente quando não existe. */
   serie: number[] | null;
   serieRotulo: string | null;
+  /** YYYY-MM-DD do último ponto da série (hoje, em São Paulo): dá data ao hover. */
+  serieFim: string | null;
   href: string | null;
 }
 
@@ -148,7 +150,6 @@ export interface Funil {
   etapas: EtapaFunil[];
   abertas: number;
   valorAberto: number;
-  semProximaAcao: number;
   ganhosMes: number;
   /** Pré-vendas só para quem enxerga a organização inteira. */
   preVendas: {
@@ -172,8 +173,12 @@ export interface ItemAgenda {
 }
 
 export interface Agenda {
+  /** O que acontece hoje, por hora. Tarefa já vencida não entra: é atenção, não agenda. */
   itens: ItemAgenda[];
-  total: number;
+  reunioes: number;
+  /** Tarefas com vencimento hoje (contagem real, não o tamanho de `itens`). */
+  tarefasHoje: number;
+  /** Tarefas abertas de ontem para trás. */
   atrasadas: number;
 }
 
