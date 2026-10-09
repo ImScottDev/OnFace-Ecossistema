@@ -27,6 +27,7 @@ import { toast } from "sonner";
 
 import { PropostaDesenho } from "./PropostaDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
+import { nomeAposTrocarVariante, nomeDaLinha, precoDaNovaLinha } from "./linhas-da-proposta";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -180,7 +181,7 @@ class Logica extends React.Component<any, any> {
   natDe(p, pr) { return pr.int === "mes" ? "MRR" : pr.int === "ano" ? "ARR" : p.tipo === "setup" ? "SETUP" : p.tipo === "hardware" ? "HARDWARE" : "ONE_TIME"; }
   prodDe(id) { const C = this.catalogo(); for (const k in C) { const p = C[k].find(x => x.id === id); if (p) return p; } return null; }
   faixaPara(p, q) { const fx = p.precos.filter(x => x.min != null); if (!fx.length) return null; return fx.find(x => q >= x.min && (x.max == null || q <= x.max)) || fx[0]; }
-  novoItem(p, pr, qtd) { return { prod: p.id, preco: pr.id, nome: p.nome, desc: p.desc, natureza: this.natDe(p, pr), valor: String(pr.v).replace(".", ","), qtd: String(qtd || p.qtd || 1), descTipo: "pct", descVal: "" }; }
+  novoItem(p, pr, qtd) { return { prod: p.id, preco: pr.id, nome: nomeDaLinha(p, pr), desc: p.desc, natureza: this.natDe(p, pr), valor: String(pr.v).replace(".", ","), qtd: String(qtd || p.qtd || 1), descTipo: "pct", descVal: "" }; }
   descItem(it, b) { const v = this.num(it.descVal); if (!v) return 0; return it.descTipo === "valor" ? Math.min(b, v) : b * Math.min(100, v) / 100; }
 
   iniciar(O) {
@@ -462,7 +463,7 @@ class Logica extends React.Component<any, any> {
           natLabel: P ? (tier ? PR.d.split(" · ")[0] + " · " + IL[PR.int].toLowerCase() : PR.d) : (NAT[it.natureza] || it.natureza),
           selVal: P ? PR.id : it.natureza,
           opcoes: P ? P.precos.map(pr => ({ v: pr.id, l: pr.d + " — " + brlP(P, pr) + (pr.padrao ? " · padrão" : "") })) : Object.keys(NAT).map(k => ({ v: k, l: NAT[k] })),
-          setSel: (e) => { const v = e.target.value; if (!P) return upIt(i, { natureza: v }); const pr = P.precos.find(x => x.id === v); if (pr) upIt(i, { preco: pr.id, valor: String(pr.v).replace(".", ","), natureza: this.natDe(P, pr) }); },
+          setSel: (e) => { const v = e.target.value; if (!P) return upIt(i, { natureza: v }); const pr = P.precos.find(x => x.id === v); if (pr) upIt(i, { preco: pr.id, valor: String(pr.v).replace(".", ","), natureza: this.natDe(P, pr), nome: nomeAposTrocarVariante(P, it.nome, P.precos.find(x => x.id === it.preco), pr) }); },
           temDica: !!dica, dica,
           dicaStyle: "display:flex;align-items:center;gap:5px;padding-left:38px;margin-top:2px;font-size:11.5px;color:" + (fora ? "#9c7a2e" : "#67787c"),
           unidade: P ? P.unidade : "un.",
@@ -489,25 +490,25 @@ class Logica extends React.Component<any, any> {
       catalogo: (CAT[catFam] || []).map((p, i) => {
         const tier = p.precos.some(x => x.min != null);
         const pad = (tier ? this.faixaPara(p, p.qtd) : null) || p.precos.find(x => x.padrao) || p.precos[0];
-        const j = d.itens.findIndex(x => x.prod === p.id);
-        const addPr = (pr, q) => {
-          const k = d.itens.findIndex(x => x.prod === p.id && (x.preco === pr.id || tier));
-          if (k >= 0) { const st = p.tipo === "minutos" ? 100 : 1; setQ(k, String((n(d.itens[k].qtd) || 0) + st)); return this.diz(p.nome + ": quantidade aumentada", "ok"); }
-          this.setState(s => ({ d: Object.assign({}, s.d, { itens: s.d.itens.concat(this.novoItem(p, pr, q)) }), sujo: true }));
-        };
-        const ja = j >= 0;
+        /* Cada clique é uma linha nova: o mesmo produto entra quantas vezes for preciso, uma por
+           variante, com quantidade, valor e desconto próprios. A conta do preço sai do estado mais
+           novo (não do render), para dois cliques seguidos não nascerem na mesma variante. O catálogo fica
+           aberto depois de adicionar: quem lança várias linhas do mesmo produto não reabre a lista a cada uma. */
+        const nLinhas = d.itens.filter(x => x.prod === p.id).length;
+        const addPr = (pr, q) => this.setState(s => ({ d: Object.assign({}, s.d, { itens: s.d.itens.concat(this.novoItem(p, pr || precoDaNovaLinha(p, s.d.itens, pad), q)) }), sujo: true, catAberto: true }));
+        const ja = nLinhas > 0;
         const menor = p.precos.reduce((a, x) => (x.v < a.v ? x : a), p.precos[0]);
         const varios = p.precos.length > 1;
         const ints = p.precos.map(x => IL[x.int]).filter((x, k, a) => a.indexOf(x) === k);
         return { nome: p.nome, desc: p.desc, nPrecos: p.precos.length + (varios ? " preços" : " preço"),
           preco: (varios ? "a partir de " : "") + brlP(p, menor),
-          precoSub: ja ? "Adicionado" : tier ? p.precos.length + " faixas por quantidade" : varios ? ints.join(" ou ") : ints[0],
-          dica: ja ? "Já está na proposta. Troque o preço no item acima." : "Adicionar à proposta",
-          addD: ja ? "M20 6 9 17l-5-5" : "M12 5v14M5 12h14",
-          add: () => { if (ja) return this.diz(p.nome + " já está na proposta", "ok"); addPr(pad); this.diz(p.nome + " adicionado", "ok"); },
+          precoSub: ja ? nLinhas + (nLinhas > 1 ? " linhas" : " linha") + " na proposta" : tier ? p.precos.length + " faixas por quantidade" : varios ? ints.join(" ou ") : ints[0],
+          dica: ja ? "Adicionar mais uma linha deste produto (outra variante, quantidade ou valor)" : "Adicionar à proposta",
+          addD: "M12 5v14M5 12h14",
+          add: () => { addPr(null); this.diz(p.nome + (ja ? ": mais uma linha adicionada" : " adicionado"), "ok"); },
           addStyle: "flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;" + (ja ? "background:#e6f4ee;color:#1f7256" : "background:#12171d;color:#fff"),
-          linha: "display:flex;align-items:center;gap:14px;width:100%;min-height:60px;padding:10px 16px;border:0;text-align:left;cursor:" + (ja ? "default" : "pointer") + ";background:" + (ja ? "#fafafa" : "#fff") + ";" + (i ? "border-top:1px solid #f1f3f3" : ""),
-          hover: ja ? "" : "background:#f6f6f3",
+          linha: "display:flex;align-items:center;gap:14px;width:100%;min-height:60px;padding:10px 16px;border:0;text-align:left;cursor:pointer;background:" + (ja ? "#fafafa" : "#fff") + ";" + (i ? "border-top:1px solid #f1f3f3" : ""),
+          hover: "background:#f6f6f3",
           precos: p.precos.map(pr => { const on = d.itens.some(x => x.prod === p.id && x.preco === pr.id); let dd = pr.d; const il = IL[pr.int]; if (dd.indexOf(il) === 0) dd = dd.slice(il.length).replace(/^\s*·\s*/, "").trim();
             if (tier) dd = dd.replace(/^Faixa \d+ · /, "");
             return { int: il, valor: brlP(p, pr), d: dd, temD: !!dd, padrao: pr.padrao && p.precos.length > 1 && !tier,

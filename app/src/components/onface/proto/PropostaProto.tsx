@@ -99,56 +99,9 @@ export interface AcoesProposta {
   }) => Promise<Resultado<{ link: string; email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou" }>>;
 }
 
-/* ── Proposta do desenho → entrada do command ──────────────────────────── */
-
-/**
- * O tipo do item, no vocabulário de `acaoCriar`.
- *
- * O desenho carrega a natureza que ele mesmo derivou do intervalo; o command
- * quer três valores. Mensal e anual são os dois recorrentes.
- */
-function tipoDoItem(natureza: string): ItemParaCriar["tipo"] {
-  // O desenho deriva ARR do intervalo anual; o domínio não tem essa natureza —
-  // anual é MRR com periodicidade diferente, e os dois são recorrentes.
-  if (natureza === "MRR" || natureza === "ARR") return "recorrente";
-  if (natureza === "SETUP") return "setup";
-  return "avulso";
-}
-
-/**
- * Os itens da proposta montada, prontos para o command.
- *
- * Item sem `preco` é recusado em vez de enviado com id vazio: `catalogoPrecoId`
- * é o que amarra a linha da proposta ao preço praticado, e sem ele a proposta
- * nasce sem origem de valor.
- */
-export function itensParaCriar(itens: any[]): {
-  itens: Array<Omit<ItemParaCriar, "catalogoPrecoId"> & { catalogoPrecoId: string; itemExistenteId?: string | null }>;
-  semPreco: string[];
-} {
-  const bons: Array<Omit<ItemParaCriar, "catalogoPrecoId"> & { catalogoPrecoId: string; itemExistenteId?: string | null }> = [];
-  const semPreco: string[] = [];
-
-  for (const it of itens ?? []) {
-    if (!it?.preco) { semPreco.push(it?.nome ?? "item sem nome"); continue; }
-    // "item:<id>" é linha de proposta legada, que não tem preço no catálogo: a ação a mantém.
-    const legado = String(it.preco).startsWith("item:");
-    bons.push({
-      catalogoPrecoId: legado ? "" : String(it.preco),
-      itemExistenteId: legado ? String(it.preco).slice(5) : null,
-      nome: String(it.nome ?? "").trim(),
-      tipo: tipoDoItem(String(it.natureza ?? "")),
-      quantidade: Number(it.qtd) || 1,
-      valorUnitario: Number(it.valor) || 0,
-      // O desenho guarda desconto em % ou em R$; o command quer o valor.
-      desconto: it.descTipo === "pct"
-        ? ((Number(it.valor) || 0) * (Number(it.qtd) || 1) * (Number(String(it.descVal).replace(",", ".")) || 0)) / 100
-        : Number(String(it.descVal).replace(",", ".")) || 0,
-    });
-  }
-
-  return { itens: bons, semPreco };
-}
+/* A conversão das linhas do desenho para o command (`itensParaCriar`) mora em linhas-da-proposta.ts: é conta pura e tem teste. */
+import { itensParaCriar } from "./linhas-da-proposta";
+export { itensParaCriar };
 
 /* ── O Builder, ligado ─────────────────────────────────────────────────── */
 
