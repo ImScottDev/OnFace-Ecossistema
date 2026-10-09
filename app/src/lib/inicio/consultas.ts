@@ -667,7 +667,7 @@ export function atencaoDaOrganizacao(s: SinaisDaOrganizacao): Atencao {
   }
   // Desempate dentro da severidade: mais itens primeiro.
   for (const i of itens) if (i.ordem === 0) i.ordem = Number(i.titulo.match(/^[\d.]+/)?.[0]?.replace(/\./g, "") ?? 0);
-  return fecharAtencao(itens, itens.length, "organizacao");
+  return fecharAtencao(itens, itens.length, "organizacao", 6);
 }
 
 const ACAO_DO_SINAL: Record<string, string> = {

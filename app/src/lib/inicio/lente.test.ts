@@ -103,6 +103,12 @@ test("a série vira coordenadas dentro da caixa, e série degenerada não quebra
   const reta = caminhoDeSerie([7, 7, 7], 100, 40)!;
   assert.ok(reta.pontos.every((p) => p.y === 20), "série constante vai para o meio, sem dividir por zero");
 
+  const base = caminhoDeSerie([10, 12], 100, 40, 4, { baseZero: true })!;
+  assert.equal(base.pontos[0].y, 9.33, "com base zero, 10 fica a 10/12 da altura útil, e não no chão como num eixo cortado em 10");
+  assert.equal(base.pontos[1].y, 4);
+  const zeros = caminhoDeSerie([0, 0, 0], 100, 40, 4, { baseZero: true })!;
+  assert.ok(zeros.pontos.every((p) => p.y === 36), "tudo zero fica rente à base, não flutuando no meio");
+
   const um = caminhoDeSerie([3], 100, 40)!;
   assert.equal(um.linha, "", "um ponto não é tendência");
   assert.equal(caminhoDeSerie([], 100, 40), null);

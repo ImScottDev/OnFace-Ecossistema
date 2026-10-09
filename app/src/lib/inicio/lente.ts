@@ -233,19 +233,24 @@ export interface CaminhoDeSerie {
  * Converte uma série em coordenadas de SVG dentro de `largura × altura`, com
  * `folga` em cima e embaixo para a linha não encostar na borda.
  *
- * Série constante vira reta no meio (não divide por zero). Série com um ponto
- * só devolve um ponto e nenhuma linha: um ponto não é tendência.
+ * Série constante vira reta no meio (não divide por zero), ou rente à base com
+ * `baseZero` quando o valor é zero. Série com um ponto só devolve um ponto e
+ * nenhuma linha: um ponto não é tendência.
  */
-export function caminhoDeSerie(valores: number[], largura: number, altura: number, folga = 3): CaminhoDeSerie | null {
+export function caminhoDeSerie(
+  valores: number[], largura: number, altura: number, folga = 3, opts: { baseZero?: boolean } = {},
+): CaminhoDeSerie | null {
   if (valores.length === 0) return null;
   const max = Math.max(...valores);
-  const min = Math.min(...valores);
+  // Contagem e dinheiro por dia têm zero como chão: uma série de 10 a 12 não
+  // pode parecer um despenhadeiro só porque o eixo foi cortado em 10.
+  const min = opts.baseZero ? Math.min(0, ...valores) : Math.min(...valores);
   const faixa = max - min;
   const util = Math.max(1, altura - folga * 2);
   const passo = valores.length > 1 ? largura / (valores.length - 1) : 0;
   const pontos = valores.map((valor, i) => ({
     x: Number((i * passo).toFixed(2)),
-    y: Number((faixa === 0 ? altura / 2 : folga + util - ((valor - min) / faixa) * util).toFixed(2)),
+    y: Number((faixa === 0 ? (opts.baseZero && max === 0 ? altura - folga : altura / 2) : folga + util - ((valor - min) / faixa) * util).toFixed(2)),
     valor,
   }));
   if (pontos.length === 1) return { linha: "", area: "", pontos, max, min };

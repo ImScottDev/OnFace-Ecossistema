@@ -82,6 +82,11 @@ const ATALHOS: Record<Lente, Atalho[]> = {
   leitor: [{ rotulo: "Relatórios", href: "/relatorios", contagem: null }],
 };
 
+/** Esquece a leitura guardada desta pessoa (botão "Atualizar"). */
+export function limparCacheDoInicio(orgId: string, userId: string) {
+  for (const k of cache.keys()) if (k.startsWith(`${orgId}:${userId}:`)) cache.delete(k);
+}
+
 export async function montarInicio(entrada: EntradaDoPainel): Promise<PainelInicio> {
   const agora = entrada.agora ?? new Date();
   const lente = lenteDoPapel(entrada.role);
