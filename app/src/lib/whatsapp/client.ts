@@ -360,11 +360,27 @@ function mimeToExt(mimeType: string): string {
   return map[base] || map[mimeType.toLowerCase()] || "bin";
 }
 
+/**
+ * Separa um data URI em tipo e base64. O wuzapi 1.0.8 devolve
+ * `data:audio/ogg; codecs=opus;base64,...` (com ESPAÇO depois do `;`); a regra
+ * antiga só aceitava `;codecs=` colado e não cortava o cabeçalho, então o
+ * cabeçalho era decodificado junto e o áudio virava 14 bytes de lixo. Aqui vale
+ * tudo até a primeira vírgula, desde que declare base64.
+ */
+export function separarDataUri(valor: string): { mime: string | null; base64: string } {
+  if (!valor.startsWith("data:")) return { mime: null, base64: valor };
+  const virgula = valor.indexOf(",");
+  if (virgula < 0) return { mime: null, base64: valor };
+  const cabecalho = valor.slice(5, virgula);
+  if (!/;\s*base64\s*$/i.test(cabecalho) && cabecalho.toLowerCase() !== "base64") return { mime: null, base64: valor };
+  const mime = cabecalho.split(";")[0].trim().toLowerCase() || null;
+  return { mime, base64: valor.slice(virgula + 1).trim() };
+}
+
 /** Get extension from data URI */
 function dataUriToExt(dataUri: string): string {
-  const match = dataUri.match(/^data:([^;]+);/);
-  if (!match) return "bin";
-  return mimeToExt(match[1]);
+  const { mime } = separarDataUri(dataUri);
+  return mime ? mimeToExt(mime) : "bin";
 }
 
 export interface MediaDownloadInfo {
@@ -412,44 +428,13 @@ export async function downloadMedia(
 }
 
 /**
- * Baixa a mídia pelo ID da mensagem (o wuzapi guarda o que recebeu). É o plano B
- * que o sistema antigo usa quando os dados de criptografia não resolvem, e com o
- * wuzapi de produção foi o que funcionou.
- */
-export async function downloadMediaByMessageId(
-  tipo: string,
-  messageId: string,
-  config?: WuzapiSessionConfig,
-): Promise<{ base64: string; mimetype: string } | null> {
-  const endpoint = getDownloadEndpoint(tipo);
-  try {
-    const res = await wuzapiFetch(endpoint, {
-      method: "POST",
-      body: JSON.stringify({ MessageId: messageId }),
-    }, config || DEFAULT_CONFIG);
-    const data = await res.json();
-    if (!res.ok) {
-      console.error(`[downloadMediaByMessageId] wuzapi error:`, data.message || data.error);
-      return null;
-    }
-    const b64 = data.data?.Data || data.data?.data || "";
-    if (!b64) return null;
-    const mimetype = data.data?.Mimetype || data.data?.mimetype || `application/octet-stream`;
-    return { base64: b64, mimetype };
-  } catch (err) {
-    console.error(`[downloadMediaByMessageId] Failed for ${tipo} ${messageId}:`, err);
-    return null;
-  }
-}
-
-/**
  * O arquivo baixado é mídia de verdade? Em 09/10/2026 o download com os dados de
  * criptografia devolveu 14 bytes de lixo, que foram gravados como se fossem o
  * áudio: a tela mostrava "recebido" e não tocava. Mídia real tem centenas de
  * bytes no mínimo; abaixo disso é erro, e o chamador tenta o próximo caminho.
  */
 export function midiaBaixadaValida(tipo: string, base64: string): boolean {
-  const limpo = base64.replace(/^data:[^;]+;(?:codecs=[^;]+;)?base64,/, "");
+  const limpo = separarDataUri(base64).base64;
   const bytes = Math.floor(limpo.length * 0.75);
   if (tipo === "document") return bytes > 0;
   return bytes >= 256;
@@ -479,7 +464,7 @@ export function saveBase64ToDisk(
 
   if (base64Data.startsWith("data:")) {
     ext = dataUriToExt(base64Data);
-    rawBase64 = base64Data.replace(/^data:[^;]+;(?:codecs=[^;]+;)?base64,/, "");
+    rawBase64 = separarDataUri(base64Data).base64;
   } else {
     // Pure base64, determine ext from type/mime
     if (mimeType) {

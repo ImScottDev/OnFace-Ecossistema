@@ -1,23 +1,44 @@
-import { test } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { midiaBaixadaValida } from "./client";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-const b64 = (n: number) => Buffer.alloc(n, 1).toString("base64");
+/* UPLOADS_DIR é lido quando o módulo carrega: define antes de importar. */
+const pasta = fs.mkdtempSync(path.join(os.tmpdir(), "onface-midia-"));
+process.env.UPLOADS_DIR = pasta;
+let client: typeof import("./client");
+before(async () => { client = await import("./client"); });
 
-test("14 bytes de lixo (o áudio de 09/10) NÃO é mídia válida", () => {
-  assert.equal(midiaBaixadaValida("audio", Buffer.from("u\xabZj\xe7b\xa3\xfa\x81\xca\x1dy\xcb", "latin1").toString("base64")), false);
+const bytesReais = Buffer.from(Array.from({ length: 4096 }, (_, i) => (i * 31 + 7) % 256));
+const b64 = bytesReais.toString("base64");
+
+test("cabeçalho EXATO do wuzapi 1.0.8 (com espaço depois do ;) é separado certo", () => {
+  const r = client.separarDataUri(`data:audio/ogg; codecs=opus;base64,${b64}`);
+  assert.equal(r.mime, "audio/ogg");
+  assert.equal(r.base64, b64);
 });
 
-test("áudio, imagem e vídeo pequenos demais são recusados; do tamanho de mídia real passam", () => {
-  for (const tipo of ["audio", "image", "video", "sticker"]) {
-    assert.equal(midiaBaixadaValida(tipo, b64(100)), false, `${tipo} 100 bytes`);
-    assert.equal(midiaBaixadaValida(tipo, b64(5000)), true, `${tipo} 5000 bytes`);
-  }
+test("outras formas de cabeçalho e base64 puro", () => {
+  assert.equal(client.separarDataUri(`data:audio/ogg;base64,${b64}`).base64, b64);
+  assert.equal(client.separarDataUri(`data:audio/webm;codecs=opus;base64,${b64}`).mime, "audio/webm");
+  assert.equal(client.separarDataUri(b64).mime, null);
+  assert.equal(client.separarDataUri(b64).base64, b64);
 });
 
-test("aceita data URI, e documento curto continua valendo", () => {
-  assert.equal(midiaBaixadaValida("audio", "data:audio/ogg;base64," + b64(5000)), true);
-  assert.equal(midiaBaixadaValida("audio", "data:audio/ogg; codecs=opus;base64," + b64(5000)) === true || true, true);
-  assert.equal(midiaBaixadaValida("document", b64(10)), true);
-  assert.equal(midiaBaixadaValida("document", ""), false);
+test("REGRESSÃO 09/10: o áudio recebido é gravado com os bytes certos, não com 14 bytes de lixo", () => {
+  const url = client.saveBase64ToDisk(`data:audio/ogg; codecs=opus;base64,${b64}`, "audio-teste", "audio");
+  const arquivo = path.join(pasta, path.basename(url));
+  const gravado = fs.readFileSync(arquivo);
+  assert.equal(gravado.length, bytesReais.length);
+  assert.ok(gravado.equals(bytesReais));
+  assert.ok(arquivo.endsWith(".ogg"));
+});
+
+test("a trava recusa arquivo pequeno demais (inclusive com cabeçalho) e aceita mídia de verdade", () => {
+  assert.equal(client.midiaBaixadaValida("audio", `data:audio/ogg; codecs=opus;base64,${Buffer.alloc(14, 1).toString("base64")}`), false);
+  assert.equal(client.midiaBaixadaValida("audio", `data:audio/ogg; codecs=opus;base64,${b64}`), true);
+  assert.equal(client.midiaBaixadaValida("image", Buffer.alloc(100, 1).toString("base64")), false);
+  assert.equal(client.midiaBaixadaValida("document", Buffer.alloc(10, 1).toString("base64")), true);
+  assert.equal(client.midiaBaixadaValida("document", ""), false);
 });
