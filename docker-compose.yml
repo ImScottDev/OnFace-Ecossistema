@@ -167,12 +167,14 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
+      # Onde o codigo grava midia (client.ts usa UPLOADS_DIR); e a pasta que o Dockerfile prepara e o volume compartilha com o app.
+      - UPLOADS_DIR=/repo/app/public/uploads
       # Onde o signatário assina. Sem isso o link de assinatura cai no host interno (http://documenso:3000), que o cliente não alcança.
       - DOCUMENSO_PUBLIC_URL=${DOCUMENSO_PUBLIC_URL:-https://sign.callface.io}
       - API_PORT=3001
       - NODE_OPTIONS=--max-old-space-size=320
     volumes:
-      - ./uploads:/app/public/uploads
+      - ./uploads:/repo/app/public/uploads
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.crm2dev-api.rule=Host(`${CRM_DOMAIN:-dev.crm.callface.io}`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/webhooks`) && !PathPrefix(`/api/financeiro`) && !PathPrefix(`/api/onboarding`) && !PathPrefix(`/api/campanhas`) && !PathPrefix(`/api/contratos-publicos`)"
@@ -219,6 +221,8 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
+      # Onde o codigo grava midia (client.ts usa UPLOADS_DIR); e a pasta que o Dockerfile prepara e o volume compartilha com o app.
+      - UPLOADS_DIR=/repo/app/public/uploads
       # Onde o signatário assina. Sem isso o link de assinatura cai no host interno (http://documenso:3000), que o cliente não alcança.
       - DOCUMENSO_PUBLIC_URL=${DOCUMENSO_PUBLIC_URL:-https://sign.callface.io}
       - NODE_OPTIONS=--max-old-space-size=320
@@ -226,7 +230,7 @@ services:
       # porta do healthcheck do worker — a mesma que o `test:` abaixo consulta
       - WORKER_HEALTH_PORT=3002
     volumes:
-      - ./uploads:/app/public/uploads
+      - ./uploads:/repo/app/public/uploads
     networks:
       - crm2dev-network
     depends_on:
