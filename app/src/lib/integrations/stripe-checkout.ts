@@ -251,10 +251,22 @@ async function createOneTimeCoupon(amount: number, currency: string, metadata: R
   return coupon.id;
 }
 
-function appendOfficialLineItem(form: URLSearchParams, index: number, item: CheckoutItem): void {
-  if (!item.stripePriceId) throw new Error(`Item '${item.nome}' não tem stripe_price_id oficial.`);
-  form.append(`line_items[${index}][price]`, item.stripePriceId);
-  form.append(`line_items[${index}][quantity]`, String(Math.max(1, Math.round(item.quantidade || 1))));
+/**
+ * As linhas que vão para o Stripe: uma por Price, com as quantidades somadas.
+ *
+ * A proposta pode ter o mesmo Price em várias linhas (o mesmo produto lançado
+ * três vezes, cada uma com sua quantidade e seu desconto). O Price já carrega o
+ * valor unitário, então juntar as quantidades cobra o mesmo total, e o
+ * desconto negociado não se perde: ele sai do cupom, calculado linha a linha
+ * ANTES de juntar. A ordem é a da primeira aparição de cada Price.
+ */
+export function linhasDoCheckout(itens: CheckoutItem[]): Array<{ stripePriceId: string; quantidade: number }> {
+  const porPrice = new Map<string, number>();
+  for (const item of itens) {
+    if (!item.stripePriceId) throw new Error(`Item '${item.nome}' não tem stripe_price_id oficial.`);
+    porPrice.set(item.stripePriceId, (porPrice.get(item.stripePriceId) ?? 0) + Math.max(1, Math.round(item.quantidade || 1)));
+  }
+  return [...porPrice].map(([stripePriceId, quantidade]) => ({ stripePriceId, quantidade }));
 }
 
 export async function createGroupCheckout(params: CreateGroupCheckoutParams): Promise<{ sessionId: string; url: string; mocked: boolean }> {
@@ -310,9 +322,12 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
    * instável, timeout). O campo também não é parâmetro documentado de Checkout
    * Session. Quem identifica a origem é a metadata `crm_*`, que já vai acima. */
 
-  let index = 0;
-  for (const item of recorrentes) appendOfficialLineItem(form, index++, item);
-  for (const item of avulsos) appendOfficialLineItem(form, index++, item);
+  /* Recorrente e avulso nunca dividem Price (o Price é de um tipo só), então juntar por Price em cada
+     lista dá o mesmo resultado que juntar tudo; a ordem (recorrentes primeiro) fica como era. */
+  [...linhasDoCheckout(recorrentes), ...linhasDoCheckout(avulsos)].forEach((linha, index) => {
+    form.append(`line_items[${index}][price]`, linha.stripePriceId);
+    form.append(`line_items[${index}][quantity]`, String(linha.quantidade));
+  });
 
   const couponId = await createOneTimeCoupon(discount, params.moeda, metadata, params.attemptKey || "initial");
   if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
