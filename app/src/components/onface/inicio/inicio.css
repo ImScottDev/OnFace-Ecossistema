@@ -86,6 +86,9 @@
 .ini-cab-acoes svg[data-girando="true"] { animation: ini-gira 0.9s linear infinite; }
 @keyframes ini-gira { to { transform: rotate(360deg); } }
 
+/* Preenchimento que carrega rótulo usa o coral profundo (branco em cima: 4,55:1); o coral de marca daria 3,3:1. */
+.ini .ini-cta { background: var(--onface-coral-deep); color: var(--onface-white); }
+
 /* ── Grade ────────────────────────────────────────────────────────────── */
 
 .ini-grade {

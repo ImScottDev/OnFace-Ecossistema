@@ -95,7 +95,7 @@ export function Inicio({ painel, tomInicial }: { painel: PainelInicio; tomInicia
             <ToggleGroupItem value="escuro" className="px-3">Escuro</ToggleGroupItem>
           </ToggleGroup>
           {painel.podeAgir ? (
-            <Button asChild size="sm">
+            <Button asChild size="sm" className="ini-cta">
               <Link href="/tarefas?nova=1"><Plus aria-hidden="true" />Nova atividade</Link>
             </Button>
           ) : null}
