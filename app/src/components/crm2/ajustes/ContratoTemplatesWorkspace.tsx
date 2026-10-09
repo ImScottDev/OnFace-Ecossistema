@@ -200,6 +200,12 @@ function Folha({ children }: { children: React.ReactNode }) {
   );
 }
 
+/* Fora de ParametrosContrato de propósito: declarado dentro, o componente ganha
+   identidade nova a cada render, o React remonta o <input> e o foco some a cada tecla. */
+function Rot({ t, children }: { t: string; children: React.ReactNode }) {
+  return <label className="flex flex-col gap-1 text-[11px] font-semibold" style={{ color: "var(--cf2-text-tertiary)" }}>{t}{children}</label>;
+}
+
 /* ── Parâmetros que valem para toda a organização ─────────────────────── */
 function ParametrosContrato() {
   const qc = useQueryClient();
@@ -221,9 +227,6 @@ function ParametrosContrato() {
     onError: () => toast.error("Não foi possível salvar. Confira o percentual e o e-mail."),
   });
   const campo = { background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" };
-  const Rot = ({ t, children }: { t: string; children: React.ReactNode }) => (
-    <label className="flex flex-col gap-1 text-[11px] font-semibold" style={{ color: "var(--cf2-text-tertiary)" }}>{t}{children}</label>
-  );
   return (
     <details className="rounded-2xl p-4" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
       <summary className="text-[13px] font-bold cursor-pointer" style={{ color: "var(--cf2-text-primary)" }}>Parâmetros do contrato</summary>
