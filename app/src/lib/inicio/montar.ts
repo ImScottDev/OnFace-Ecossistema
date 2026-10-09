@@ -116,7 +116,7 @@ async function montar(entrada: EntradaDoPainel, lente: Lente, agora: Date): Prom
     if (lente === "closer") return C.atencaoDoCloser(ctx);
     if (lente === "sdr") return C.atencaoDoSdr(ctx);
     const [atencaoSinais, implantacao, cs, atendimento] = await Promise.all([
-      getPrecisaAtencao(entrada.orgId, agora), getImplantacaoResumo(entrada.orgId),
+      getPrecisaAtencao(entrada.orgId, agora, { semFinanceiro: !perm.financeiro }), getImplantacaoResumo(entrada.orgId),
       getCsResumo(entrada.orgId), getAtendimentoResumo(entrada.orgId),
     ]);
     return C.atencaoDaOrganizacao({ atencao: atencaoSinais, implantacao, cs, atendimento });
@@ -141,7 +141,7 @@ async function montar(entrada: EntradaDoPainel, lente: Lente, agora: Date): Prom
 
   const saude = veOrganizacao ? bloco("saude", () => C.saude(ctx)) : null;
   const entrega = veOrganizacao ? bloco("entrega", () => C.entrega(ctx)) : null;
-  const financeiro = veOrganizacao ? bloco("financeiro", () => C.financeiro(ctx)) : null;
+  const financeiro = perm.financeiro ? bloco("financeiro", () => C.financeiro(ctx)) : null;
 
   const [h, k, a, f, ag, s, e, fi, nomeOrg] = await Promise.all([
     hero, kpis, atencao, funil, agenda, saude, entrega, financeiro,

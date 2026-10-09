@@ -30,6 +30,15 @@ test("só gestão e operação veem financeiro e integrações; leitor não vê 
   assert.equal(permissoesDaLente("sdr").organizacao, false);
 });
 
+test("Financeiro é só da gestão: operação, closer, SDR e leitor não o veem", () => {
+  for (const papel of ["admin", "gerente", "director", "coordinator", "super_admin"]) {
+    assert.equal(permissoesDaLente(lenteDoPapel(papel)).financeiro, true, papel);
+  }
+  for (const papel of ["operations", "closer", "vendedor", "sdr", "leitor", "qualquer"]) {
+    assert.equal(permissoesDaLente(lenteDoPapel(papel)).financeiro, false, papel);
+  }
+});
+
 test("o tom do delta sai do número e de 'mais é melhor', nunca é fixo", () => {
   assert.deepEqual(deltaDe(110, 100), { pct: 10, tom: "ok", texto: "+10%" });
   assert.deepEqual(deltaDe(42, 100), { pct: -58, tom: "risco", texto: "−58%" });

@@ -38,6 +38,8 @@ export interface PermissoesDaLente {
   organizacao: boolean;
   /** Financeiro, integrações e entrega: telas que o middleware reserva à gestão. */
   gestao: boolean;
+  /** Financeiro (bloco, atalho e sinal de cobrança): só a gestão, como o middleware. */
+  financeiro: boolean;
   /** Lista de registros individuais (lead, proposta, conversa) com nome. */
   registros: boolean;
   /** Botões e links que levam a tela de escrita. */
@@ -47,14 +49,14 @@ export interface PermissoesDaLente {
 export function permissoesDaLente(lente: Lente): PermissoesDaLente {
   switch (lente) {
     case "gestao":
-      return { organizacao: true, gestao: true, registros: true, acoes: true };
+      return { organizacao: true, gestao: true, financeiro: true, registros: true, acoes: true };
     case "operacao":
-      return { organizacao: true, gestao: true, registros: true, acoes: true };
+      return { organizacao: true, gestao: true, financeiro: false, registros: true, acoes: true };
     case "leitor":
       // Leitor é relatório curado: agregado da organização, sem nome de ninguém.
-      return { organizacao: true, gestao: false, registros: false, acoes: false };
+      return { organizacao: true, gestao: false, financeiro: false, registros: false, acoes: false };
     default:
-      return { organizacao: false, gestao: false, registros: true, acoes: true };
+      return { organizacao: false, gestao: false, financeiro: false, registros: true, acoes: true };
   }
 }
 

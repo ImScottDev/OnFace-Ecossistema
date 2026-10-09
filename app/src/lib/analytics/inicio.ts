@@ -320,14 +320,19 @@ const brlCompacto = (v: number) =>
  * card encolhe), em vez de aparecer zerado ou com número inventado. A ordem
  * é por severidade: crítico → aviso → info, que é a ordem de trabalho do time.
  */
-export async function getPrecisaAtencao(orgId: string, hoje = new Date()): Promise<AtencaoItem[]> {
+export async function getPrecisaAtencao(
+  orgId: string, hoje = new Date(), opts: { semFinanceiro?: boolean } = {},
+): Promise<AtencaoItem[]> {
   const h24 = new Date(hoje.getTime() - 24 * 3_600_000);
   const d5 = new Date(hoje.getTime() - 5 * 86_400_000);
   const d3 = new Date(hoje.getTime() - 3 * 86_400_000);
 
   const [pagamentos, implantacaoBloqueada, leadsSemResposta, negociosParados, propostasParadas, onboardingSemContato] =
     await Promise.all([
-      db.execute<{ n: number; valor: string }>(sql`
+      // Faturas são dado de gestão: quem não vê o Financeiro nem as consulta.
+      opts.semFinanceiro
+        ? Promise.resolve([] as Array<{ n: number; valor: string }>)
+        : db.execute<{ n: number; valor: string }>(sql`
         SELECT COUNT(*)::int AS n, COALESCE(SUM(valor), 0) AS valor FROM faturas
          WHERE organizacao_id = ${orgId} AND status = 'aberta'
            AND COALESCE(vencimento, emitida_em) < ${d3.toISOString()}
