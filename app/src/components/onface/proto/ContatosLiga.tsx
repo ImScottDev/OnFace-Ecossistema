@@ -24,6 +24,7 @@
 import * as React from "react";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
+import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
 
 import { ContatosDesenho } from "./ContatosDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
@@ -341,6 +342,9 @@ class Logica extends React.Component<any, any> {
     };
     const irEmpresa = (nome, L) => {
       if (!Es) return;
+      // Empresa sem pessoas: não há lead para resolver, a ficha é chaveada pela própria empresa.
+      const semP = !L && todos.find(x => x.tipo === "empresa" && x.nome === nome && x.empresaIdReal);
+      if (semP) return Es.irPara("/onface-preview/empresa", nome, { empresa: semP.empresaIdReal });
       const l = L || (todos.find(x => x.tipo === "pessoa" && x.emp === nome && x.lead) || {}).lead;
       const ext = !l && (todos.find(x => x.extra && x.tipo === "empresa" && x.nome === nome) || todos.find(x => x.extra && x.tipo === "pessoa" && x.emp === nome));
       if (ext) return Es.irPara("/onface-preview/empresa", nome, { registro: ext.id });
@@ -546,19 +550,20 @@ class Logica extends React.Component<any, any> {
     if (md) {
       const Fm = S.form;
       const inp = (erro) => "width:100%;height:36px;padding:0 11px;border-radius:9px;background:#fff;outline:0;font-size:13px;color:#12171d;border:0;box-shadow:inset 0 0 0 1px " + (erro ? "#d93c1a" : "#dbdede");
-      const set = (k) => (e) => { const v = e.target.value; this.setState(s => ({ form: Object.assign({}, s.form, { [k]: v }) })); };
+      const set = (k, masc) => (e) => { const v = masc ? mascararTelefone(e.target.value) : e.target.value; this.setState(s => ({ form: Object.assign({}, s.form, { [k]: v }) })); };
       const campo = (k, label, o) => {
         o = o || {};
         const erro = S.tentou && o.obrig && !(Fm[k] || "").trim() ? "Obrigatório" : (S.tentou && o.valida ? o.valida(Fm[k] || "") : "");
-        return { label, obrig: !!o.obrig, ehTexto: !o.opcoes, ehEscolha: !!o.opcoes, valor: Fm[k] || "", set: set(k), dica: o.dica || "", lista: o.lista || "",
+        return { label, obrig: !!o.obrig, ehTexto: !o.opcoes, ehEscolha: !!o.opcoes, valor: Fm[k] || "", set: set(k, o.tel), dica: o.dica || "", lista: o.lista || "",
           opcoes: (o.opcoes || []).map(v => Array.isArray(v) ? { v: v[0], l: v[1] } : { v, l: v }),
           inputStyle: inp(erro) + (o.opcoes ? ";cursor:pointer" : ""), temErro: !!erro, erro, wrap: "display:block;min-width:0" + (o.largo ? ";grid-column:1/-1" : "") };
       };
       const vEmail = (v) => v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? "E-mail inválido" : "";
+      const vTel = (v) => v && !normalizarE164(v) ? "Telefone inválido" : "";
       const respOps = [["", "Sem responsável"]].concat(equipe);
       const passo = S.passo || 1, ehP = md === "pessoa";
       const pz = Fm.pessoas || [];
-      const dest = S.destino || "base";
+      const dest = S.destino === "prevendas" ? "prevendas" : "base";
       const INBOUND = ["Meta Ads", "Instagram", "Site", "Formulário", "WhatsApp", "Orgânica"];
       const CAD_OUT = ["Outbound · Primeiro toque", "Outbound · Decisores", "Outbound · Reativação"];
       const selo = (t) => relSelo(t);
@@ -566,7 +571,7 @@ class Logica extends React.Component<any, any> {
         m = ehP
           ? { d: ico.userPlus, titulo: "Novo contato", sub: "Passo 1 de 2 · Dados da pessoa", salvarLabel: "Continuar", ehImportar: false,
               campos: [campo("nome", "Nome", { obrig: true, largo: true, dica: "Nome completo" }), campo("cargo", "Cargo", { dica: "Ex: Gerente de CX" }), campo("emp", "Empresa", { dica: "Buscar ou digitar", lista: "ct-empresas" }),
-                campo("email", "E-mail", { dica: "nome@empresa.com.br", valida: vEmail }), campo("tel", "Telefone", { dica: "+55 11 90000-0000" })] }
+                campo("email", "E-mail", { dica: "nome@empresa.com.br", valida: vEmail }), campo("tel", "Telefone", { dica: "(11) 90000-0000 ou +1 415 555 0100", tel: true, valida: vTel })] }
           : { d: ico.predio, titulo: "Nova empresa", sub: "Passo 1 de 2 · Dados da empresa", salvarLabel: "Continuar", ehImportar: false,
               campos: [campo("nome", "Nome da empresa", { obrig: true, largo: true, dica: "Razão social ou nome fantasia" }), campo("cnpj", "CNPJ", { dica: "00.000.000/0000-00" }), campo("segmento", "Segmento", { dica: "Ex: Saúde" }),
                 campo("site", "Site", { dica: "empresa.com.br", largo: true })],
@@ -574,26 +579,32 @@ class Logica extends React.Component<any, any> {
               addPessoa: () => this.setState(s => ({ form: Object.assign({}, s.form, { pessoas: (s.form.pessoas || []).concat({ nome: "", cargo: "", email: "", tel: "" }) }) })),
               pessoas: pz.map((p, k) => {
                 const setK = (campoP) => (e) => { const v = e.target.value; this.setState(s => { const a = (s.form.pessoas || []).slice(); a[k] = Object.assign({}, a[k], { [campoP]: v }); return { form: Object.assign({}, s.form, { pessoas: a }) }; }); };
-                return { nome: p.nome, cargo: p.cargo, email: p.email, tel: p.tel, setNome: setK("nome"), setCargo: setK("cargo"), setEmail: setK("email"), setTel: setK("tel"),
+                return { nome: p.nome, cargo: p.cargo, email: p.email, tel: p.tel, setNome: setK("nome"), setCargo: setK("cargo"), setEmail: setK("email"), setTel: (e) => setK("tel")({ target: { value: mascararTelefone(e.target.value) } }),
                   nomeStyle: "width:100%;height:34px;padding:0 10px;border-radius:8px;border:0;outline:0;background:#fff;font-size:12.5px;color:#12171d;box-shadow:inset 0 0 0 1px " + (S.tentou && !p.nome.trim() ? "#d93c1a" : "#dbdede"),
                   remover: () => this.setState(s => ({ form: Object.assign({}, s.form, { pessoas: (s.form.pessoas || []).filter((_, x) => x !== k) }) })) };
               }) };
       } else if (md === "pessoa" || md === "empresa") {
         const DEST = [
           ["base", "Só salvar na base", "Fica disponível para consultar e trabalhar depois. Sem processo aberto.", "Contato", "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8"],
-          ["prospeccao", "Enviar para Prospecção", "Outbound: entra numa cadência de prospecção para gerar interesse.", "Prospect", "M22 12h-4l-3 9L9 3l-3 9H2"],
           ["prevendas", "Enviar para Pré-vendas", "Inbound: vira lead no quadro do Pré-vendas para qualificação.", "Lead", "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"]
         ];
+        /* Contato avulso: sem responsável (o dono mora no lead, e avulso não tem lead). A origem vira ponto de contato. */
+        const nec = (k) => S.tentou && !(Fm[k] || "").trim() ? "Obrigatório" : "";
         const cfg = dest === "base"
-          ? [campo("origem", "Origem", { opcoes: ["Cadastro manual", "Indicação", "Evento", "Parceiro"] }), campo("resp", "Responsável", { opcoes: respOps })]
-          : dest === "prospeccao"
-            ? [campo("cadOut", "Cadência outbound", { obrig: true, opcoes: [["", "Escolha a cadência"]].concat(CAD_OUT) }), campo("resp", "Responsável", { obrig: true, opcoes: [["", "Escolha"]].concat(equipe) })]
-            : (ehP || pz.length ? [] : [campo("cNome", "Contato principal", { obrig: true, dica: "Quem será trabalhado" }), campo("cCargo", "Cargo", { dica: "Ex: Diretor de CX" })]).concat([
+          ? [campo("origem", "Origem", { opcoes: ["Cadastro manual", "Indicação", "Evento", "Parceiro"] })]
+          : (ehP
+            ? [campo("emp", "Empresa", { obrig: true, dica: "Pré-vendas trabalha empresa", lista: "ct-empresas", largo: true }),
+               campo("email", "E-mail", { dica: "nome@empresa.com.br", valida: (v) => vEmail(v) || (S.tentou && !(v || "").trim() && !(Fm.tel || "").trim() ? "E-mail ou telefone" : "") }),
+               campo("tel", "Telefone", { dica: "(11) 90000-0000", tel: true, valida: (v) => vTel(v) || (S.tentou && !(v || "").trim() && !(Fm.email || "").trim() ? "E-mail ou telefone" : "") })]
+            : (pz.length ? [] : [campo("cNome", "Contato principal", { obrig: true, dica: "Quem será trabalhado" }), campo("cCargo", "Cargo", { dica: "Ex: Diretor de CX" }),
+               campo("cEmail", "E-mail do contato", { dica: "nome@empresa.com.br", valida: (v) => vEmail(v) || (S.tentou && !(v || "").trim() && !(Fm.cTel || "").trim() ? "E-mail ou telefone" : "") }),
+               campo("cTel", "Telefone do contato", { dica: "(11) 90000-0000", tel: true, valida: (v) => vTel(v) || (S.tentou && !(v || "").trim() && !(Fm.cEmail || "").trim() ? "E-mail ou telefone" : "") })])
+            ).concat([
                 campo("origemIn", "Origem inbound", { obrig: true, opcoes: [["", "De onde veio?"]].concat(INBOUND) }), campo("etapaIni", "Etapa inicial", { opcoes: [["novo", "Novo"], ["em_contato", "Em contato"]] }),
                 campo("cadIn", "Cadência", { opcoes: [["", "Sem cadência"]].concat(D.CADENCIAS || []) }), campo("resp", "Responsável", { obrig: true, opcoes: [["", "Escolha"]].concat(equipe) })]);
         m = { d: ehP ? ico.userPlus : ico.predio, titulo: ehP ? "Novo contato" : "Nova empresa", sub: "Passo 2 de 2 · Destino de " + ((Fm.nome || "").trim() || "—") + (!ehP && pz.length ? " + " + pz.length + (pz.length === 1 ? " pessoa" : " pessoas") : ""), ehImportar: false, passo2: true,
-          salvarLabel: dest === "base" ? (ehP ? "Salvar contato" : "Salvar empresa") : dest === "prospeccao" ? "Salvar e enviar para Prospecção" : "Salvar e enviar para Pré-vendas",
-          temConfig: true, configTitulo: dest === "base" ? "Detalhes" : dest === "prospeccao" ? "Configurar prospecção" : "Configurar pré-vendas",
+          salvarLabel: S.salvandoModal ? "Salvando…" : dest === "base" ? (ehP ? "Salvar contato" : "Salvar empresa") : "Salvar e enviar para Pré-vendas",
+          temConfig: true, configTitulo: dest === "base" ? "Detalhes" : "Configurar pré-vendas",
           destinos: DEST.map(([k, label, desc, rel, d]) => {
             const on = dest === k;
             return { label, desc, rel, d, on, relStyle: selo(rel),
@@ -760,40 +771,34 @@ class Logica extends React.Component<any, any> {
         }
         const nome = (Fm.nome || "").trim();
         if ((S.passo || 1) === 1) {
-          if (!nome || (md === "pessoa" && vEmail(Fm.email || "")) || (md === "empresa" && pz.some(p => !p.nome.trim()))) return this.setState({ tentou: true });
+          const ruim = md === "pessoa" ? (vEmail(Fm.email || "") || vTel(Fm.tel || "")) : pz.map(p => vEmail(p.email || "") ? "E-mail inválido em " + (p.nome || "pessoa") : vTel(p.tel || "") ? "Telefone inválido em " + (p.nome || "pessoa") : "").find(Boolean);
+          if (!nome || ruim || (md === "empresa" && pz.some(p => !p.nome.trim()))) { if (ruim && md === "empresa") diz(ruim, "erro"); return this.setState({ tentou: true }); }
           return this.setState({ passo: 2, tentou: false, destino: S.destino || "base" });
         }
         const falta = (k) => !(Fm[k] || "").trim();
-        if (dest === "prospeccao" && (falta("cadOut") || falta("resp"))) return this.setState({ tentou: true });
-        if (dest === "prevendas" && (falta("origemIn") || falta("resp") || (md === "empresa" && !pz.length && falta("cNome")))) return this.setState({ tentou: true });
-        const Est = this.E;
-        const empN = md === "pessoa" ? ((Fm.emp || "").trim() || null) : nome;
-        if (dest === "prevendas") {
-          const lid = "l" + Date.now();
-          const p0 = pz[0];
-          const pessoa = md === "pessoa" ? nome : (p0 ? p0.nome.trim() : Fm.cNome.trim());
-          const lead = { id: lid, etapa: Fm.etapaIni || "novo", empresa: empN || "", pessoa, cargo: md === "pessoa" ? (Fm.cargo || "") : (p0 ? p0.cargo : (Fm.cCargo || "")), origem: Fm.origemIn, campanha: "", resp: Fm.resp, interesse: "Não identificado", dias: 0, acao: "Primeiro contato", venceEm: "hoje", email: Fm.email || "", tel: Fm.tel || "" };
-          if (Est) {
-            const patch = { leads: (Est.ler("leads", null) || D.LEADS || []).concat(lead) };
-            if (Fm.cadIn) patch.cadencias = Object.assign({}, Est.ler("cadencias", {}), { [lid]: Fm.cadIn });
-            Est.gravar(patch);
-          }
-          if (md === "empresa" && pz.length > 1) this.gravarExtra(pz.slice(1).map((p, k) => ({ id: "x:" + Date.now() + ":p" + k, tipo: "pessoa", nome: p.nome.trim(), cargo: p.cargo, emp: nome, email: p.email, tel: p.tel, rel: "Contato", resp: Fm.resp, origem: Fm.origemIn, campanha: "Cadastrado com a empresa" })));
-          if (md === "empresa" && p0) { lead.email = p0.email || ""; lead.tel = p0.tel || ""; }
-          this.setState({ modal: null, passo: 1, destino: null, aba: "todos", ord: { col: "ultima", dir: 1 }, q: "" });
-          if (Est) setTimeout(() => md === "pessoa" ? Est.irPara("/onface-preview/pessoa", pessoa, { pessoa: slug(pessoa), lead: lid }) : Est.irPara("/onface-preview/empresa", empN, { lead: lid }), 350);
-          return diz(pessoa + " enviado ao Pré-vendas · " + ((ETAPAS_L[lead.etapa]) || "Novo") + (Fm.cadIn ? " · cadência " + Fm.cadIn : ""), "ok");
+        const pr = dest === "prevendas";
+        if (pr && (falta("origemIn") || falta("resp") || (ehP && falta("emp")) || (!ehP && !pz.length && falta("cNome")))) return this.setState({ tentou: true });
+        const contato = ehP ? { nome, email: Fm.email, tel: Fm.tel } : (pz[0] || { nome: Fm.cNome, email: Fm.cEmail, tel: Fm.cTel });
+        if (pr && !(contato.email || "").trim() && !(contato.tel || "").trim()) {
+          this.setState({ tentou: true });
+          return diz("Informe e-mail ou telefone de " + ((contato.nome || "").trim() || "contato") + " para abrir o lead.", "erro");
         }
-        const id = "x:" + Date.now();
-        const extra = dest === "prospeccao"
-          ? { rel: "Prospect", resp: Fm.resp, origem: "Outbound", campanha: "Prospecção · " + Fm.cadOut }
-          : { rel: "Contato", resp: Fm.resp || null, origem: Fm.origem || "Cadastro manual" };
-        this.gravarExtra([Object.assign({ id, tipo: md, nome }, md === "pessoa" ? { cargo: Fm.cargo, emp: empN, email: Fm.email, tel: Fm.tel } : { segmento: Fm.segmento, cnpj: Fm.cnpj, site: Fm.site }, extra)]
-          .concat(md === "empresa" ? pz.map((p, k) => Object.assign({ id: id + ":p" + k, tipo: "pessoa", nome: p.nome.trim(), cargo: p.cargo, emp: nome, email: p.email, tel: p.tel }, extra)) : []));
-        if (md === "empresa" && pz.length) this.setState(s => ({ abertos: Object.assign({}, s.abertos, { [id]: true }) }));
-        this.setState({ modal: null, passo: 1, destino: null, painel: id, aba: "todos", ord: { col: "ultima", dir: 1 }, q: "" });
-        if (Est) setTimeout(() => md === "pessoa" ? Est.irPara("/onface-preview/pessoa", nome, { pessoa: slug(nome), registro: id }) : Est.irPara("/onface-preview/empresa", nome, { registro: id }), 350);
-        diz((md === "pessoa" ? "Contato " : "Empresa ") + nome + (md === "empresa" && pz.length ? " com " + pz.length + (pz.length === 1 ? " pessoa" : " pessoas") : "") + (dest === "prospeccao" ? " enviado para Prospecção · " + Fm.cadOut : " salvo na base"), "ok");
+        if (vEmail(contato.email || "") || vTel(contato.tel || "")) return this.setState({ tentou: true });
+        if (S.salvandoModal) return;
+        const respId = Fm.resp;
+        const entrada = {
+          tipo: md, destino: dest, nome, origem: pr ? Fm.origemIn : (Fm.origem || "Cadastro manual"), etapaInicial: pr ? (Fm.etapaIni || "novo") : undefined, responsavelNome: pr ? respId : null,
+          ...(ehP ? { cargo: Fm.cargo, email: Fm.email, telefone: Fm.tel, empresa: (Fm.emp || "").trim() || null }
+            : { cnpj: Fm.cnpj, segmento: Fm.segmento, site: Fm.site,
+                pessoas: pz.map(p => ({ nome: p.nome, cargo: p.cargo, email: p.email, telefone: p.tel })),
+                contatoPrincipal: !pz.length && pr ? { nome: Fm.cNome, cargo: Fm.cCargo, email: Fm.cEmail, telefone: Fm.cTel } : null }) };
+        /* SÓ fecha o modal e avisa DEPOIS que o servidor respondeu. Antes o aviso de
+           "salvo" saía na hora e o servidor podia recusar em seguida. */
+        this.setState({ salvandoModal: true });
+        Promise.resolve(this.props.cadastrar ? this.props.cadastrar(entrada) : { ok: false, erro: "Cadastro indisponível nesta tela." }).then(r => {
+          if (r && r.ok) this.setState({ modal: null, passo: 1, destino: null, form: {}, tentou: false, salvandoModal: false, aba: "todos", ord: { col: "ultima", dir: 1 }, q: "", pag: 0 });
+          else this.setState({ salvandoModal: false });
+        }, () => this.setState({ salvandoModal: false }));
       };
     }
 
@@ -923,7 +928,7 @@ class Logica extends React.Component<any, any> {
           marcar: (e) => { e.stopPropagation(); this.setState(s => { const n = Object.assign({}, s.marc); if (n[r.id]) delete n[r.id]; else n[r.id] = true; return { marc: n }; }); },
           menu: (e) => { e.stopPropagation(); this.abrirPop("row:" + r.id, e, 210); },
           abrir: () => this.setState({ painel: ativo ? null : r.id }),
-          linha: grade + ";padding-top:" + (nest ? "8px" : "10px") + ";padding-bottom:" + (nest ? "8px" : "10px") + ";min-height:" + (nest ? "48px" : "56px") + ";cursor:pointer;transition:background .1s;border-bottom:1px solid #f3f5f5;background:" + bg
+          linha: grade + ";padding-top:" + (nest ? "8px" : "10px") + ";padding-bottom:" + (nest ? "8px" : "10px") + ";min-height:" + (nest ? "48px" : "56px") + ";cursor:pointer;transition:background .1s;border-bottom:1px solid #f3f5f5;background:" + (S.destaque === r.id ? "#fff7f5;box-shadow:inset 3px 0 0 #fe4f2b" : bg)
         };
       }),
       vazio: pagina.length === 0,

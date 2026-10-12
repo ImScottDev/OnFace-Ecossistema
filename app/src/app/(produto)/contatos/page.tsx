@@ -4,7 +4,7 @@ import { linhasDeContato } from "@/lib/contatos/tela-contatos";
 /* A tela é o desenho do handoff, convertido por máquina. `vendas/Contatos`
    era a versão recriada à mão e sai da rota — mesmo caminho do Pipeline. */
 import { ContatosProto } from "@/components/onface/proto/ContatosProto";
-import { acaoCriarEmpresa, acaoCriarPessoa, acaoExcluirVisao, acaoResponsaveis, acaoSalvarVisao, acaoVisoesSalvas } from "./actions";
+import { acaoCadastrarContato, acaoCriarEmpresa, acaoCriarPessoa, acaoExcluirVisao, acaoResponsaveis, acaoSalvarVisao, acaoVisoesSalvas } from "./actions";
 import { acaoAtribuirEmMassa, acaoCriarLead } from "../pre-vendas/actions";
 
 export const metadata = { title: "Contatos & Empresas" };
@@ -28,7 +28,7 @@ export async function ContatosPage({ searchParams }: {
   const params = await searchParams;
   const busca = params.busca?.trim() || "";
 
-  const [{ linhas, totais, porRelacionamento }, responsaveis, visoes] = await Promise.all([
+  const [{ linhas, empresasSemPessoas, totais, porRelacionamento }, responsaveis, visoes] = await Promise.all([
     linhasDeContato(ctx.organizacaoId, { busca }),
     acaoResponsaveis(),
     acaoVisoesSalvas("contatos"),
@@ -37,6 +37,7 @@ export async function ContatosPage({ searchParams }: {
   return (
     <ContatosProto
       linhas={linhas}
+      empresasSemPessoas={empresasSemPessoas}
       totais={totais}
       porRelacionamento={porRelacionamento}
       responsaveis={responsaveis}
@@ -44,6 +45,7 @@ export async function ContatosPage({ searchParams }: {
       busca={busca}
       agora={Date.now()}
       acoes={{
+        cadastrar: acaoCadastrarContato,
         criarEmpresa: acaoCriarEmpresa,
         criarPessoa: acaoCriarPessoa,
         criarLead: acaoCriarLead,

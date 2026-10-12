@@ -27,9 +27,11 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import type { LinhaContato, TotaisContatos, PorRelacionamento } from "@/lib/contatos/tela-contatos";
+import type { LinhaContato, EmpresaSemPessoas, TotaisContatos, PorRelacionamento } from "@/lib/contatos/tela-contatos";
+import { formatarTelefone } from "@/lib/telefone";
+import { rotaDaEmpresa, rotaDaPessoa, rotaDaPessoaCanonica } from "@/lib/vendas/rota-da-ficha";
 import type { Resultado } from "@/lib/vendas/resultado";
-import type { VisaoSalva } from "@/app/(produto)/contatos/actions";
+import type { VisaoSalva, EntradaCadastro, CadastroCriado } from "@/app/(produto)/contatos/actions";
 import { urlAtendimento } from "@/components/onface/vendas/atendimento";
 import { ContatosLiga } from "./ContatosLiga";
 import { rotaDoDesenho } from "./rota-do-desenho";
@@ -41,6 +43,7 @@ export interface AcoesContatos {
   criarEmpresa: (e: { nome: string; cnpj?: string | null; website?: string | null; setor?: string | null; cidade?: string | null }) => Promise<Resultado<{ empresaId: string; jaExistia: boolean; resolvidaPor: string | null }>>;
   criarPessoa: (p: { nome: string; sobrenome?: string | null; cargo?: string | null; email?: string | null; telefone?: string | null; empresaId?: string | null }) => Promise<Resultado<{ pessoaId: string; jaExistia: boolean }>>;
   criarLead: (l: { empresa: string; pessoaNome: string; cargo?: string | null; email?: string | null; telefone?: string | null; origem?: string | null; responsavelId?: string | null }) => Promise<Resultado<{ leadId: string }>>;
+  cadastrar: (e: EntradaCadastro) => Promise<Resultado<CadastroCriado>>;
   atribuirEmMassa: (leadIds: string[], responsavelId: string | null) => Promise<Resultado<{ total: number }>>;
   salvarVisao: (v: { nome: string; q: string; f: unknown; aba: string; visao: string }) => Promise<Resultado<VisaoSalva>>;
   excluirVisao: (id: string) => Promise<Resultado<null>>;
@@ -70,7 +73,16 @@ function slug(s: string): string {
  * `ordem` alta joga o registro para o fim da ordenação e para a visão
  * "Sem contato há 7+ dias" — nunca ter sido contatado é exatamente isso.
  */
-function ultimaInteracao(iso: string | null, agora: number): { t: string; o: number } {
+function ultimaInteracao(iso: string | null, agora: number, criadoEm?: string | null): { t: string; o: number } {
+  if (!iso && criadoEm) {
+    // Registro cadastrado há pouco e ainda sem interação: aparece como cadastro recente (e ordena por ele),
+    // em vez de cair no fim da lista como "Sem interação".
+    const c = new Date(criadoEm);
+    if (!Number.isNaN(c.getTime()) && agora - c.getTime() < 7 * 86_400_000) {
+      const u = ultimaInteracao(c.toISOString(), agora);
+      return { t: "Cadastrado " + u.t.replace(/^Hoje/, "hoje").replace(/^Ontem/, "ontem"), o: u.o };
+    }
+  }
   if (!iso) return { t: "Sem interação", o: 99999 };
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return { t: "—", o: 99999 };
@@ -135,7 +147,7 @@ function paraODesenho(c: LinhaContato) {
     dias: 0,
     acao: null,
     venceEm: null,
-    tel: c.telefone || c.whatsapp || "—",
+    tel: formatarTelefone(c.telefone || c.whatsapp) || "—",
     email: c.email || "—",
     // Ancora para a subclasse: tudo que o protótipo não sabe carregar.
     real: c,
@@ -184,6 +196,17 @@ class ContatosLigada extends ContatosLiga {
     if (anterior.catalogo?.LEADS !== (this as any).props.catalogo?.LEADS) {
       (this as any).setState({ extras: [], respOv: {} });
     }
+    /* Cadastro recém-criado: com a lista nova na mão, abre o painel do registro e o destaca. */
+    const dados = (this as any).props.catalogo?.LEADS, emps = (this as any).props.empresasSemPessoas;
+    if ((anterior.catalogo?.LEADS !== dados || anterior.empresasSemPessoas !== emps) && (this as any).props.pendente?.current) {
+      const pd = (this as any).props.pendente.current as { painel: string; expandir: boolean };
+      (this as any).props.pendente.current = null;
+      (this as any).setState((s: any) => ({
+        painel: pd.painel, destaque: pd.painel, aba: "todos", pag: 0,
+        abertos: pd.expandir ? { ...s.abertos, [pd.painel]: true } : s.abertos,
+      }));
+      setTimeout(() => (this as any).setState({ destaque: null }), 6000);
+    }
   }
 
   base() {
@@ -197,14 +220,14 @@ class ContatosLigada extends ContatosLiga {
       if (r.extra) continue;
       if (r.tipo === "pessoa") {
         const c: LinhaContato = r.lead.real;
-        const u = ultimaInteracao(c.ultimaInteracao, agora);
+        const u = ultimaInteracao(c.ultimaInteracao, agora, c.criadoEm);
         /* O id do protótipo é "p:" + slug(nome) + "@" + slug(empresa): há 64
            pares de homônimos na mesma empresa no banco, e cada par viraria UMA
            linha (seleção, painel e responsável trocando a pessoa errada). */
         Object.assign(r, {
           id: "p:" + c.id,
           email: c.email || "—",
-          tel: c.telefone || c.whatsapp || "—",
+          tel: formatarTelefone(c.telefone || c.whatsapp) || "—",
           rel: relDaPessoa(c),
           opps: c.negocios.length,
           ultima: u.t, ordem: u.o,
@@ -212,7 +235,7 @@ class ContatosLigada extends ContatosLiga {
       } else {
         const reais: LinhaContato[] = r.leadsEmp.map((l: any) => l.real).filter(Boolean);
         const c = reais.find((x) => x.empresaId) ?? reais[0];
-        const u = reais.map((x) => ultimaInteracao(x.ultimaInteracao, agora)).sort((a, b) => a.o - b.o)[0];
+        const u = reais.map((x) => ultimaInteracao(x.ultimaInteracao, agora, x.criadoEm)).sort((a, b) => a.o - b.o)[0];
         /* `empresas` não tem coluna de e-mail nem de telefone: "—" no lugar
            do "contato@<slug>.com.br" que o desenho escrevia. Segmento vazio
            diz "Sem segmento" — o fallback do desenho afirmava "Serviços" para
@@ -226,6 +249,22 @@ class ContatosLigada extends ContatosLiga {
           real: c,
         });
       }
+    }
+    /* Empresas cadastradas sem nenhuma pessoa: a lista nasce de pessoas, então elas não existiam na tela. */
+    const agoraSp: number = (this as any).props.agora;
+    const nomes = new Set(linhas.filter((x: any) => x.tipo === "empresa").map((x: any) => x.nome));
+    for (const e of ((this as any).props.empresasSemPessoas ?? []) as EmpresaSemPessoas[]) {
+      if (nomes.has(e.nome)) continue;
+      const u = ultimaInteracao(null, agoraSp, e.criadoEm);
+      const id = "e:" + slug(e.nome);
+      linhas.push({
+        id, tipo: "empresa", nome: e.nome, sub: e.setor || "Sem segmento", emp: null,
+        rel: e.relEmpresa === "cliente" ? "Cliente" : e.relEmpresa === "em_oportunidade" ? "Lead" : "Contato",
+        estagio: "", motivo: "", motivoDetalhe: "", resp: null, origem: e.origem || "—", campanha: "",
+        opps: e.negocios.length, ultima: u.t, ordem: u.o, lead: null, leadsEmp: [], acao: null,
+        email: "—", tel: formatarTelefone(e.telefone) || "—", ini: iniciais(e.nome), empresaIdReal: e.empresaId,
+        real: { empresaId: e.empresaId, empresaDominio: e.dominio, empresaNegocios: e.negocios, negocios: [], leadId: null, empresaCidade: e.cidade },
+      });
     }
     return linhas;
   }
@@ -313,10 +352,11 @@ class ContatosLigada extends ContatosLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis, busca, agora, acoes, visoes }: {
+export function ContatosProto({ linhas, empresasSemPessoas, totais, porRelacionamento, responsaveis, busca, agora, acoes, visoes }: {
   /** Visões salvas deste usuário (`visoes_salvas`). */
   visoes: VisaoSalva[];
   linhas: LinhaContato[];
+  empresasSemPessoas: EmpresaSemPessoas[];
   totais: TotaisContatos;
   porRelacionamento: PorRelacionamento;
   responsaveis: Array<{ id: string; nome: string }>;
@@ -360,13 +400,15 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
     if (href.endsWith("/pessoa")) {
       // Id temporário ("x:…", "l…") é linha otimista: o refresh traz a real.
       const c = params.lead ? porId.get(params.lead) : null;
-      if (c) router.push(`/contatos/pessoas/${c.id}`);
+      // Ficha base: pelo lead quando há; senão a porta resolve (e cria o registro de contato que falta).
+      if (c) router.push(c.leadId ? rotaDaPessoa(c.leadId) : rotaDaPessoaCanonica(c.id));
       return;
     }
     if (href.endsWith("/empresa")) {
+      if (params.empresa) { router.push(rotaDaEmpresa(params.empresa)); return; }
       const c = params.lead ? porId.get(params.lead) : null;
       if (!c) return;
-      if (c.empresaId) router.push(`/empresas/${c.empresaId}`);
+      if (c.empresaId) router.push(rotaDaEmpresa(c.empresaId));
       else toast.warning(`"${c.empresa}" existe só como texto no lead — ainda não tem cadastro de empresa.`);
       return;
     }
@@ -401,7 +443,7 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
       return;
     }
     toast(`Atividades são agendadas na ficha do contato.`, c ? {
-      action: { label: "Abrir ficha", onClick: () => router.push(`/contatos/pessoas/${c.id}`) },
+      action: { label: "Abrir ficha", onClick: () => router.push(c.leadId ? rotaDaPessoa(c.leadId) : rotaDaPessoaCanonica(c.id)) },
     } : undefined);
   }, [porId, router, abrirPeca]);
 
@@ -449,6 +491,24 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
       return resultados.every(Boolean);
     } catch { return false; }
   };
+
+  /* Cadastro pelo modal: UMA chamada ao servidor; o modal só fecha, e o aviso só sai, depois da resposta. */
+  const pendente = React.useRef<{ painel: string; expandir: boolean } | null>(null);
+  const cadastrar = React.useCallback(async (e: any): Promise<Resultado<CadastroCriado>> => {
+    const { responsavelNome, ...resto } = e;
+    const r = await acoes.cadastrar({ ...resto, responsavelId: idDoResponsavel(responsavelNome) });
+    if (!r.ok) { toast.error(r.erro); return r; }
+    const d = r.dados!;
+    const quem = e.nome.trim();
+    const ja = e.tipo === "empresa" ? d.empresaJaExistia : d.pessoaJaExistia;
+    const aviso = e.destino === "prevendas" ? `${quem} enviado ao Pré-vendas.` : ja ? `${quem} já existia na base; nada foi duplicado.` : `${e.tipo === "pessoa" ? "Contato" : "Empresa"} ${quem} salvo na base.`;
+    toast.success(aviso, { action: { label: e.tipo === "empresa" ? "Abrir empresa" : "Abrir contato", onClick: () => router.push(d.rota) } });
+    pendente.current = e.tipo === "empresa"
+      ? { painel: "e:" + slug(quem), expandir: true }
+      : { painel: "p:" + d.pessoaId, expandir: false };
+    router.refresh();
+    return r;
+  }, [acoes, idDoResponsavel, router]);
 
   const gravar = React.useCallback(async (patch: Record<string, any>) => {
     let refrescar = false;
@@ -549,6 +609,9 @@ export function ContatosProto({ linhas, totais, porRelacionamento, responsaveis,
         abrir={abrir}
         abrirExterno={abrirExterno}
         gravar={gravar}
+        cadastrar={cadastrar}
+        pendente={pendente}
+        empresasSemPessoas={empresasSemPessoas}
         buscar={buscar}
         atribuir={atribuir}
         irPara={irPara}

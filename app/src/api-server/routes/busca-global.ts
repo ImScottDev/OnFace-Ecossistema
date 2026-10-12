@@ -60,7 +60,7 @@ app.get("/busca-global", async (c) => {
   const com = (rows: any[], base: string) => rows.map((r) => ({ id: r.id, nome: r.nome, apoio: r.apoio ?? "", href: `${base}/${r.id}` }));
   return c.json({
     pessoas: [...com(pessoas as any[], "/pessoas"), ...com(pessoasSemLead as any[], "/contatos/pessoas")],
-    empresas: com(empresas as any[], "/contatos/empresas"),
+    empresas: com(empresas as any[], "/empresas"),
     negocios: com(negocios as any[], "/negocios"),
     propostas: com(propostas as any[], "/propostas"),
   });

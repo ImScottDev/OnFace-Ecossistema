@@ -17,6 +17,7 @@
  */
 
 import { rotaDoLead } from "@/lib/vendas/rota-do-lead";
+import { rotaDaEmpresa, rotaDaPessoa } from "@/lib/vendas/rota-da-ficha";
 
 type Params = Record<string, string | null | undefined>;
 
@@ -53,11 +54,13 @@ export function rotaDoDesenho(href: string, params: Params = {}): string {
     case "/onface-preview/pessoa": {
       // A ficha da pessoa é chaveada pelo LEAD (ver app/(produto)/pessoas/[id]).
       const lead = uuid(p.lead);
-      return lead ? `/pessoas/${lead}` : "/contatos";
+      return lead ? rotaDaPessoa(lead) : "/contatos";
     }
     case "/onface-preview/empresa": {
       // O protótipo só sabe o lead; a empresa dele mora no banco. A rota
       // /empresas/por-lead resolve no servidor, com o tenant da sessão.
+      const empresa = uuid(p.empresa);
+      if (empresa) return rotaDaEmpresa(empresa);
       const lead = uuid(p.lead);
       return lead ? `/empresas/por-lead?lead=${lead}` : "/contatos";
     }
