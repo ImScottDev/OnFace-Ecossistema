@@ -24,6 +24,7 @@
 import * as React from "react";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
+import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
 
 import { PessoaDesenho } from "./PessoaDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
@@ -805,9 +806,11 @@ class Logica extends React.Component<any, any> {
         campos: campos.map(([k, label, dica, largo, area], i) => ({
           label, dica, valor: R[k] || "", linha1: !area, area,
           celula: "display:block;padding:12px 14px;min-width:0;" + (largo ? "grid-column:1 / -1;" : "") + (i >= 2 ? "border-top:1px solid #eef1f1;" : "") + (!largo && i % 2 === 1 ? "border-left:1px solid #eef1f1;" : ""),
-          set: setR(k)
+          set: k === "tel" || k === "whats" ? (e) => setR(k)({ target: { value: mascararTelefone(e.target.value) } }) : setR(k)
         })),
         salvar: () => {
+          if ((R.tel || "").trim() && !normalizarE164(R.tel)) return diz("Telefone inválido", "erro");
+          if ((R.whats || "").trim() && !normalizarE164(R.whats)) return diz("WhatsApp inválido", "erro");
           gravarP({ nome: (R.nome || "").trim() || P.nome, cargo: R.cargo, email: R.email, tel: R.tel, whats: R.whats, linkedin: R.linkedin, cidade: R.cidade, obs: R.obs });
           this.setState({ editando: false });
           diz("Contato atualizado", "ok");

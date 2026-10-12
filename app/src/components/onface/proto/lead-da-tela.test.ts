@@ -7,6 +7,7 @@ import {
   quandoBR, tarefaDaProximaAcao, tilesDeSla,
 } from "./lead-da-tela";
 import { rotaDoDesenho } from "./rota-do-desenho";
+import { registroDoDesenho } from "./registro-do-desenho";
 import { rotaDoLead } from "@/lib/vendas/rota-do-lead";
 
 const AGORA = new Date("2026-10-12T15:00:00Z");
@@ -17,7 +18,7 @@ function lead(o: Partial<DetalheLead> = {}): DetalheLead {
   return {
     id: LEAD_ID,
     empresa: { id: "e1", nome: "Acme", setor: null, porte: null, cidade: null, website: null, cnpj: null, telefone: null, observacoes: null },
-    leadScore: 0, naCarteira: false, jaTeveServico: false, fichaDeCliente: false,
+    leadScore: 0, naCarteira: false, jaTeveServico: false, fichaDeCliente: false, temProcesso: true,
     pessoa: { nome: "Ana Souza", cargo: "CEO", email: "a@acme.com", telefone: "11999990000", whatsapp: null, linkedin: null, observacao: null, cidade: null },
     etapa: "em_contato", etapaRotulo: "Em contato", qualificado: false, qualificadoEm: null, qualificadoPor: null, qualificadoPorTipo: null,
     preQualificado: false, qualificacao: null,
@@ -176,5 +177,16 @@ describe("rota do lead", () => {
   it("id que não é UUID cai na lista, não num 404", () => {
     assert.equal(rotaDoDesenho("/onface-preview/lead", { lead: "registro" }), "/pre-vendas");
     assert.equal(rotaDoDesenho("/onface-preview/lead", {}), "/pre-vendas");
+  });
+});
+
+describe("badge de relacionamento da ficha", () => {
+  it("contato avulso (sem aquisição nem estágio) é Contato, não Lead", () => {
+    assert.equal(registroDoDesenho(lead({ temProcesso: false, etapa: "novo" })).rel, "Contato");
+  });
+  it("quem tem processo em Pré-vendas segue Lead; oportunidade é Prospect; carteira é Cliente", () => {
+    assert.equal(registroDoDesenho(lead({ temProcesso: true, etapa: "novo" })).rel, "Lead");
+    assert.equal(registroDoDesenho(lead({ etapa: "oportunidade" })).rel, "Prospect");
+    assert.equal(registroDoDesenho(lead({ temProcesso: false, naCarteira: true })).rel, "Cliente");
   });
 });

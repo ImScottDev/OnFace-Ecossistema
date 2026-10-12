@@ -183,7 +183,7 @@ async function contadoresDeViews(
             FROM tarefas t
            WHERE t.lead_id = a.lead_legado_id
              AND t.organizacao_id = a.organizacao_id
-             AND t.concluida = false
+             AND t.status NOT IN ('concluida', 'declinada')
            ORDER BY COALESCE(t.vence_em, t.data_vencimento::timestamptz) ASC NULLS LAST
            LIMIT 1
         ) px ON TRUE
@@ -473,7 +473,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
             SELECT 1 FROM tarefas t
              WHERE t.lead_id = a.lead_legado_id
                AND t.organizacao_id = a.organizacao_id
-               AND t.concluida = false
+               AND t.status NOT IN ('concluida', 'declinada')
           )
       )::int AS sem_proxima_acao,
       count(*) FILTER (
@@ -1765,6 +1765,8 @@ export interface DetalheLead {
   jaTeveServico: boolean;
   /** Existe a ficha de Cliente 360 (/clientes/<empresa>): é o gate da própria rota. */
   fichaDeCliente: boolean;
+  /** Existe processo em Pré-vendas (aquisição ou estágio gravado). Contato avulso: false, e não é "Lead". */
+  temProcesso: boolean;
   pessoa: { nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; linkedin: string | null; observacao: string | null; cidade: string | null };
   etapa: EstagioPreVendas;
   etapaRotulo: string;
@@ -1878,7 +1880,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     meta_ad_id: string | null; meta_adset_id: string | null; meta_campaign_id: string | null;
     lead_score: number | null; emp_telefone: string | null; emp_observacoes: string | null;
     na_carteira: boolean; ja_teve_servico: boolean; ficha_de_cliente: boolean;
-    etapa_canonica: string | null; etapa_desde: string | null; ultimo_toque_em: string | null;
+    etapa_canonica: string | null; tem_aquisicao: boolean; etapa_desde: string | null; ultimo_toque_em: string | null;
     nutrido_em: string | null; desqualificado_em: string | null;
   }>(sql`
     SELECT l.id::text, l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa_nome,
@@ -1893,7 +1895,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
            EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = l.empresa_id) AS ja_teve_servico,
            EXISTS (SELECT 1 FROM clientes c WHERE c.empresa_id = l.empresa_id
                     AND c.organizacao_id = l.organizacao_id) AS ficha_de_cliente,
-           l.estagio_pre_vendas AS etapa, pe.codigo AS etapa_canonica,
+           l.estagio_pre_vendas AS etapa, pe.codigo AS etapa_canonica, (a.id IS NOT NULL) AS tem_aquisicao,
            /* Entrou na etapa ATUAL: a mesma conta do cartão do board (última mudança para ela;
               sem histórico, o primeiro contato ou a criação). */
            COALESCE((SELECT max(sc.created_at) FROM status_changes sc
@@ -1983,11 +1985,11 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
   `);
 
   const [tarefa] = await db.execute<{ titulo: string; vence_em: string | null }>(sql`
-    /* MESMA regra do card do board (proximaAcaoLateral): tarefa aberta, a de prazo mais
+    /* MESMA regra do card do board (proximaAcaoLateral): tarefa aberta (status fora de concluída/declinada), a de prazo mais
        próximo, com a data do dia quando só ela existe. Antes a gaveta ignorava
        data_vencimento e mostrava outra "próxima ação" que o cartão. */
     SELECT titulo, COALESCE(vence_em, data_vencimento::timestamptz)::text AS vence_em FROM tarefas
-     WHERE lead_id = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid AND concluida = false
+     WHERE lead_id = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid AND status NOT IN ('concluida', 'declinada')
      ORDER BY COALESCE(vence_em, data_vencimento::timestamptz) ASC NULLS LAST LIMIT 1
   `);
 
@@ -2008,6 +2010,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     naCarteira: l.na_carteira,
     jaTeveServico: l.ja_teve_servico,
     fichaDeCliente: l.ficha_de_cliente,
+    temProcesso: l.tem_aquisicao || l.etapa !== null,
     pessoa: {
       nome: nomeCompleto(l.nome, l.sobrenome) || "Sem contato",
       cargo: l.cargo, email: l.email, telefone: l.telefone, whatsapp: l.whatsapp,

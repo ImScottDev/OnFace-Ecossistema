@@ -12,7 +12,7 @@ import { criarOportunidadeDoLead } from "@/lib/vendas/pipeline";
 import { detalheLead, type DetalheLead } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { resolverEmpresa, aquisicaoAbertaPorContato } from "@/lib/vendas/identidade";
-import { normalizarE164 } from "@/lib/telefone";
+import { formatarTelefone, normalizarE164 } from "@/lib/telefone";
 import { confirmarEspelho } from "@/lib/vendas/sincronizar-aquisicao";
 import { adicionarTag, removerTag } from "@/lib/crm/tags";
 
@@ -536,8 +536,20 @@ export async function acaoSalvarContato(leadId: string, c: {
     const sobrenome = partes ? (partes.slice(1).join(" ") || null) : atual.sobrenome;
     const cargo = limpo(c.cargo) ?? atual.cargo;
     const mail = email === undefined ? atual.email : (email || null);
-    const tel = c.telefone === undefined ? atual.telefone : (limpo(c.telefone) || null);
-    const whats = c.whatsapp === undefined ? atual.whatsapp : (limpo(c.whatsapp) || null);
+    /* Telefone grava em E.164 (a mesma régua do cadastro). O que a ficha devolveu igual ao que
+       ela mostrava (número legado fora do padrão, intocado) fica como está; o que mudou precisa
+       ser número válido. */
+    const fone = (novo: string | undefined, antigo: string | null, rotulo: string) => {
+      if (novo === undefined) return antigo;
+      const t = novo.trim();
+      if (!t) return null;
+      if (antigo && formatarTelefone(antigo) === t) return antigo;
+      const e164 = normalizarE164(t);
+      if (!e164) throw new RegraDeNegocio("telefone_invalido", `${rotulo} inválido. Use DDD + número, ou +código do país.`);
+      return e164;
+    };
+    const tel = fone(limpo(c.telefone), atual.telefone, "Telefone");
+    const whats = fone(limpo(c.whatsapp), atual.whatsapp, "WhatsApp");
     const linkedin = c.linkedin === undefined ? atual.linkedin : (limpo(c.linkedin) || null);
     const extras: Record<string, string> = {};
     if (c.observacao !== undefined) extras.observacaoContato = limpo(c.observacao) ?? "";

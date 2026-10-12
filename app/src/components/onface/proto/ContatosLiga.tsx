@@ -687,22 +687,19 @@ class Logica extends React.Component<any, any> {
         } else {
           const dest = S.destino || "base";
           const INB = ["Meta Ads", "Instagram", "Site", "Formulário", "WhatsApp", "Orgânica"];
-          const COUT = ["Outbound · Primeiro toque", "Outbound · Decisores", "Outbound · Reativação"];
           const DEST = [
             ["base", "Só salvar na base", "Entram como contatos, sem processo aberto.", "Contato", "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8"],
-            ["prospeccao", "Enviar para Prospecção", "Outbound: a lista entra numa cadência de prospecção.", "Prospect", "M22 12h-4l-3 9L9 3l-3 9H2"],
             ["prevendas", "Enviar para Pré-vendas", "Inbound: cada linha vira lead no quadro do Pré-vendas.", "Lead", "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"]
           ];
           const rs = S.impResps || [];
           const existentes = linhasM.filter(x => todos.some(t => t.nome.toLowerCase() === x.nome.toLowerCase() || (x.email && t.email === x.email))).length;
           const tagOps = [["", "Sem tag"]].concat(nomesTags);
           const cfg = [campo("lista", "Nome da lista", { obrig: true, largo: true, dica: "Ex: Evento CX Summit · set/26" })]
-            .concat(dest === "prospeccao" ? [campo("cadOut", "Cadência outbound", { obrig: true, opcoes: [["", "Escolha a cadência"]].concat(COUT) }), campo("tagImp", "Tag", { opcoes: tagOps })]
-              : dest === "prevendas" ? [campo("origemIn", "Origem inbound", { obrig: true, opcoes: [["", "De onde veio?"]].concat(INB) }), campo("etapaIni", "Etapa inicial", { opcoes: [["novo", "Novo"], ["em_contato", "Em contato"]] }), campo("cadIn", "Cadência", { opcoes: [["", "Sem cadência"]].concat(D.CADENCIAS || []) }), campo("tagImp", "Tag", { opcoes: tagOps })]
+            .concat(dest === "prevendas" ? [campo("origemIn", "Origem inbound", { obrig: true, opcoes: [["", "De onde veio?"]].concat(INB) }), campo("etapaIni", "Etapa inicial", { opcoes: [["novo", "Novo"], ["em_contato", "Em contato"]] }), campo("cadIn", "Cadência", { opcoes: [["", "Sem cadência"]].concat(D.CADENCIAS || []) }), campo("tagImp", "Tag", { opcoes: tagOps })]
               : [campo("origem", "Origem", { opcoes: ["Importação CSV", "Evento", "Parceiro", "Indicação"] }), campo("tagImp", "Tag", { opcoes: tagOps })]);
           const por = rs.length ? Math.floor(aceitas.filter(a => a.status === "novo").length / rs.length) : 0, sobra = rs.length ? aceitas.filter(a => a.status === "novo").length % rs.length : 0;
           m = Object.assign(base, { sub: "Passo 4 de 4 · Destino de " + aceitas.length + " contatos", passo2: true, temConfig: true, configTitulo: "Configurar lista",
-            salvarLabel: dest === "base" ? "Importar " + aceitas.length : dest === "prospeccao" ? "Importar e enviar para Prospecção" : "Importar e enviar para Pré-vendas",
+            salvarLabel: dest === "base" ? "Importar " + aceitas.length : "Importar e enviar para Pré-vendas",
             destinos: DEST.map(([k, label, desc, rel, d]) => { const on = dest === k; return { label, desc, rel, d, on, relStyle: relSelo(rel),
               onClick: () => this.setState({ destino: k, tentou: false }),
               style: "display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:11px;border:0;cursor:pointer;text-align:left;background:" + (on ? "#fff7f5" : "#fff") + ";box-shadow:inset 0 0 0 " + (on ? "1.5px #fe4f2b" : "1px #e3e7e8"),
@@ -738,7 +735,7 @@ class Logica extends React.Component<any, any> {
           if (pI === 3) return m.aceitas.length ? this.setState({ passo: 4, tentou: false, destino: S.destino || "base" }) : diz("Nenhum contato válido para importar", "erro");
           const dI = S.destino || "base", rs = S.impResps || [];
           const falta = (k) => !(Fm[k] || "").trim();
-          if (falta("lista") || !rs.length || (dI === "prospeccao" && falta("cadOut")) || (dI === "prevendas" && falta("origemIn"))) return this.setState({ tentou: true });
+          if (falta("lista") || !rs.length || (dI === "prevendas" && falta("origemIn"))) return this.setState({ tentou: true });
           const lista = Fm.lista.trim(), tag = Fm.tagImp || "";
           const Est = this.E, t0 = Date.now();
           const respDe = (k) => rs[k % rs.length];
@@ -758,16 +755,16 @@ class Logica extends React.Component<any, any> {
             }
           } else {
             const novos = novasL.map((l, k) => ({ id: "x:" + t0 + ":" + k, tipo: "pessoa", nome: l.nome, emp: l.emp, cargo: l.cargo, email: l.email, tel: l.tel, importado: true, lista, resp: respDe(k),
-              rel: dI === "prospeccao" ? "Prospect" : "Contato", origem: dI === "prospeccao" ? "Outbound" : (Fm.origem || "Importação CSV"), campanha: dI === "prospeccao" ? "Lista " + lista + " · " + Fm.cadOut : "Lista " + lista }));
+              rel: "Contato", origem: Fm.origem || "Importação CSV", campanha: "Lista " + lista }));
             const jaTem = {}; todos.forEach(t => { if (t.tipo === "empresa") jaTem[t.nome.toLowerCase()] = true; });
             const empsNovas = [];
-            novasL.forEach((l, k) => { if (l.emp && !jaTem[l.emp.toLowerCase()]) { jaTem[l.emp.toLowerCase()] = true; empsNovas.push({ id: "x:" + t0 + ":e" + k, tipo: "empresa", nome: l.emp, segmento: l.segmento, cnpj: l.cnpj, site: l.site, cidade: l.cidade, importado: true, lista, resp: respDe(k), rel: dI === "prospeccao" ? "Prospect" : "Contato", origem: dI === "prospeccao" ? "Outbound" : (Fm.origem || "Importação CSV"), campanha: "Lista " + lista }); } });
+            novasL.forEach((l, k) => { if (l.emp && !jaTem[l.emp.toLowerCase()]) { jaTem[l.emp.toLowerCase()] = true; empsNovas.push({ id: "x:" + t0 + ":e" + k, tipo: "empresa", nome: l.emp, segmento: l.segmento, cnpj: l.cnpj, site: l.site, cidade: l.cidade, importado: true, lista, resp: respDe(k), rel: "Contato", origem: Fm.origem || "Importação CSV", campanha: "Lista " + lista }); } });
             if (tag) novos.forEach(x => { tagsNovo[x.id] = [tag]; });
             this.gravarExtra(empsNovas.concat(novos));
             if (Est && tag) Est.gravar({ tagsLead: tagsNovo });
           }
           this.setState({ modal: null, imp: null, passo: 1, destino: null, impResps: [], tagsLead: tagsNovo, aba: "todos", ord: { col: "ultima", dir: 1 }, q: "" });
-          return diz(novasL.length + " contatos da lista \u201c" + lista + "\u201d " + (dI === "prevendas" ? "enviados ao Pré-vendas" : dI === "prospeccao" ? "enviados para Prospecção" : "importados") + (atualizar.length ? " · " + atualizar.length + " atualizados" : "") + (rs.length > 1 ? " · divididos entre " + rs.length : ""), "ok");
+          return diz(novasL.length + " contatos da lista \u201c" + lista + "\u201d " + (dI === "prevendas" ? "enviados ao Pré-vendas" : "importados") + (atualizar.length ? " · " + atualizar.length + " atualizados" : "") + (rs.length > 1 ? " · divididos entre " + rs.length : ""), "ok");
         }
         const nome = (Fm.nome || "").trim();
         if ((S.passo || 1) === 1) {

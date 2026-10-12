@@ -24,7 +24,7 @@ import * as pipeline from "@/lib/vendas/pipeline";
 // Carregado sob demanda: cadence-engine importa o registro de ferramentas, e um import estático
 // aqui fecha o ciclo registry -> ferramentas -> cadence-engine -> registry (NEXO_TOOLS ainda sem valor).
 const motorDeCadencia = () => import("@/lib/cadencia/cadence-engine");
-import { resolverEmpresa, resolverPessoa } from "@/lib/vendas/identidade";
+import { resolverEmpresa, resolverPessoa, garantirRegistroDeContato } from "@/lib/vendas/identidade";
 import { criarTarefa, alterarTarefa, excluirTarefa, TIPOS_TAREFA, PRIORIDADES_TAREFA, STATUS_TAREFA } from "@/lib/tarefas/portas";
 import { CATALOGO, medir } from "@/lib/metricas/catalogo";
 import { condicaoMinhasConversas, veTodasAsConversas } from "@/lib/whatsapp/acesso";
@@ -185,7 +185,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
         AND (${etapa}::text IS NULL OR l.estagio_pre_vendas = ${etapa})
         AND (${u.pessoal}::boolean = false OR l.responsavel_id = ${u.userId}::uuid)
         AND (${termo}::text IS NULL OR l.nome ILIKE ${termo} OR l.empresa ILIKE ${termo})
-        AND (${i.sem_proxima_acao === true}::boolean = false OR NOT EXISTS (SELECT 1 FROM tarefas t WHERE t.lead_id = l.id AND t.concluida = false))`;
+        AND (${i.sem_proxima_acao === true}::boolean = false OR NOT EXISTS (SELECT 1 FROM tarefas t WHERE t.lead_id = l.id AND t.status NOT IN ('concluida', 'declinada')))`;
       const rows = await db.execute(sql`
         SELECT l.id::text AS id, l.nome, l.empresa, l.estagio_pre_vendas AS etapa, usr.nome AS responsavel, l.created_at, '/pessoas/' || l.id::text AS href
           FROM leads l LEFT JOIN usuarios usr ON usr.id = l.responsavel_id WHERE ${onde} ORDER BY l.updated_at DESC LIMIT ${lim(i.limite)}`);
@@ -399,6 +399,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
       const a = ator(ctx, u);
       const emp = i.empresa ? await resolverEmpresa(ctx.organizacaoId, { nome: String(i.empresa), cnpj: when(i.cnpj), website: when(i.site) }, a) : null;
       const pes = i.nome ? await resolverPessoa(ctx.organizacaoId, { nome: String(i.nome), email: when(i.email), telefone: when(i.telefone), cargo: when(i.cargo), empresaId: emp?.empresaId ?? null } as never, a) : null;
+      if (pes) await garantirRegistroDeContato(ctx.organizacaoId, pes.pessoaId);
       return resumo([emp ? `Empresa ${emp.criada ? "criada" : "já existia"}: ${i.empresa}` : null, pes ? `Contato ${i.nome} registrado` : null].filter(Boolean).join(". ") + ".", emp ? `/empresas/${emp.empresaId}` : "/contatos", { empresaId: emp?.empresaId ?? null });
     })),
   escrita("incluir_em_cadencia", "INCLUI um lead num fluxo de follow-up publicado. O fluxo pode enviar mensagens ao cliente: o chat pede confirmação antes.",

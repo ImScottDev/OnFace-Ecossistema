@@ -197,8 +197,9 @@ export async function salvarDadosDaPessoa(params: {
   }
   if (!pessoaId) {
     if (!nome || !emailValido(dados.email)) return { salvo: false, pessoaId: null };
-    const { resolverPessoa } = await import("./identidade");
+    const { resolverPessoa, garantirRegistroDeContato } = await import("./identidade");
     pessoaId = (await resolverPessoa(organizacaoId, { nome, email: dados.email, telefone: dados.telefone, cargo: dados.cargo, empresaId }, params.ator, tx)).pessoaId;
+    await garantirRegistroDeContato(organizacaoId, pessoaId, tx);
   }
   const atualizado = await tx.execute<{ id: string }>(sql`
     UPDATE pessoas SET

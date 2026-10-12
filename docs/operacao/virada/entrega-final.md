@@ -66,6 +66,8 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0099 | campos do editor de propostas — persistência do conteúdo editável |
 | 0100 | índice único de confirmação NEXO — impede dupla execução da mesma ação aprovada |
 | 0101 | IA opt-in por conversa (`ia_ligada_por/em`) — nenhum agente responde WhatsApp até uma pessoa ligar na conversa |
+| 0102 | número de WhatsApp como entidade — `finalidade` em `whatsapp_sessao` e `whatsapp_sessao_acesso` (quem, além do dono, usa um número compartilhado; aditiva e idempotente) |
+| 0104 | contato avulso ganha o registro que a ficha base exige (lead `tipo = 'contato'`, sem aquisição, sem estágio) — backfill idempotente das pessoas sem lead; a rota `/contatos/pessoas/:id` deixa de escrever no GET |
 
 ## 3. AS-IS → TO-BE
 

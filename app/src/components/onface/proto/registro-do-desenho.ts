@@ -137,7 +137,7 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
        Cliente na ficha enquanto Contatos já dizia outra coisa (P12). */
     rel: l.naCarteira
       ? "Cliente"
-      : relacionamentoDaEtapa(l.etapa),
+      : l.temProcesso ? relacionamentoDaEtapa(l.etapa) : "Contato",
     resp: l.responsavel.nome,
     origem: l.atribuicao.origem,
     campanha: l.atribuicao.campanha,

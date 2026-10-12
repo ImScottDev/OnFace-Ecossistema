@@ -81,7 +81,7 @@ export async function retrato(q: Quem): Promise<Retrato> {
         LEFT JOIN LATERAL (
           SELECT COALESCE(t.vence_em, t.data_vencimento::timestamptz) AS vence_em
             FROM tarefas t
-           WHERE t.lead_id = a.lead_legado_id AND t.organizacao_id = a.organizacao_id AND t.concluida = false
+           WHERE t.lead_id = a.lead_legado_id AND t.organizacao_id = a.organizacao_id AND t.status NOT IN ('concluida', 'declinada')
            ORDER BY COALESCE(t.vence_em, t.data_vencimento::timestamptz) ASC NULLS LAST
            LIMIT 1
         ) px ON TRUE
@@ -131,7 +131,7 @@ export async function retrato(q: Quem): Promise<Retrato> {
        AND NOT EXISTS (
          SELECT 1 FROM tarefas t
           WHERE t.lead_id = a.lead_legado_id AND t.organizacao_id = a.organizacao_id
-            AND t.concluida = false AND COALESCE(t.vence_em, t.data_vencimento::timestamptz) IS NOT NULL)
+            AND t.status NOT IN ('concluida', 'declinada') AND COALESCE(t.vence_em, t.data_vencimento::timestamptz) IS NOT NULL)
      ORDER BY (a.responsavel_id IS NULL) DESC, COALESCE(a.last_touch_at, a.first_touch_at, a.created_at) ASC
      LIMIT 3`);
 
