@@ -873,6 +873,22 @@ async function handleAiSdrResponse(params: {
     ligadaPorPessoa = !!pausa?.ligadaEm;
   }
 
+  // Atribuição persistente de agente (Atendimento/automação): o agente atribuído conduz a conversa pelo ciclo
+  // autônomo (contexto, memória, ferramentas, retomadas), com exclusividade e deduplicação por mensagem.
+  try {
+    const { atribuicaoViva } = await import("../lib/ai-platform/operacao/atribuicoes");
+    const atrib = await atribuicaoViva(organizacaoId, { contatoId, leadId });
+    if (atrib) {
+      const { acionarAgente, EVENTO_MENSAGEM } = await import("../lib/ai-platform/operacao/acionar");
+      const r = await acionarAgente({ organizacaoId, agentId: atrib.agentId, contatoId, leadId, evento: EVENTO_MENSAGEM, mensagem: currentMessage, sourceMessageId: sourceMessageId ?? null, atribuicaoId: atrib.id });
+      console.log(`[Agentes] contato ${contatoId} (atribuição ${atrib.id}): ${r.resultado}${r.motivo ? ` (${r.motivo})` : ""}`);
+      return;
+    }
+  } catch (err) {
+    console.error(`[Agentes] falha na atribuição do contato ${contatoId}:`, err);
+    return;
+  }
+
   // Agente como RESPONSÁVEL (usuário do sistema): se o responsável do lead/conversa é uma agente,
   // ela atende por conta própria (com horário, taxa e parada de segurança). Quem não tem agente
   // como responsável segue o fluxo de antes.
@@ -2822,6 +2838,19 @@ const slaWorker = new Worker(
       return;
     }
 
+    if (job.name === "agentes-retomadas") {
+      // Retomadas que os próprios agentes agendaram ("me chama quinta"). Sem cadência: no horário o
+      // contexto é reconstruído e o agente decide; humano que assumiu bloqueia e o motivo fica registrado.
+      try {
+        const { processarCompromissosVencidos } = await import("../lib/ai-platform/operacao/compromissos");
+        const r = await processarCompromissosVencidos();
+        if (r.concluidos || r.bloqueados || r.falhas || r.expirados || r.cancelados) console.log(`[Retomadas] ok:${r.concluidos} bloqueadas:${r.bloqueados} adiadas:${r.adiados} falhas:${r.falhas} expiradas:${r.expirados}`);
+      } catch (e) {
+        console.error("[Retomadas] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
     if (job.name === "ai-sdr-retry") {
       // Agente SDR: retentativa automática (~2h/24h/40h) pra quem não respondeu.
       try {
@@ -4037,7 +4066,7 @@ async function removerSchedulersObsoletos(queue: Queue, chavesAtuais: string[]):
 
 /** Chaves dos schedulers da fila `scheduled-jobs` nesta versão — fonte da limpeza acima. */
 const SCHEDULERS_JOBS_AGENDADOS = [
-  "sla-check", "sdr-followup-escalation", "ai-sdr-outreach", "agentes-autonomia", "ai-sdr-retry",
+  "sla-check", "sdr-followup-escalation", "ai-sdr-outreach", "agentes-autonomia", "agentes-retomadas", "ai-sdr-retry",
   "ai-sdr-meeting-confirmation", "stripe-sync", "reconcile-pagamentos", "expirar-propostas",
   "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep", "calendar-sync-retry",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
@@ -4051,6 +4080,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("sdr-followup-escalation", { every: 15 * 60 * 1000 }, { name: "sdr-followup-escalation" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-outreach", { every: 5 * 60 * 1000 }, { name: "ai-sdr-outreach" });
   await scheduledQueue.upsertJobScheduler("agentes-autonomia", { every: 60 * 1000 }, { name: "agentes-autonomia" });
+  await scheduledQueue.upsertJobScheduler("agentes-retomadas", { every: 60 * 1000 }, { name: "agentes-retomadas" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-retry", { every: 15 * 60 * 1000 }, { name: "ai-sdr-retry" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-meeting-confirmation", { pattern: "0 9 * * *", tz: "America/Sao_Paulo" }, { name: "ai-sdr-meeting-confirmation" });
   // Stripe = fonte da verdade de billing AI: sync a cada 30 min (polling; vira webhook quando publicar)

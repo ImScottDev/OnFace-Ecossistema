@@ -30,6 +30,8 @@ export const TIPOS_NO = [
   "requisicao_http", "discagem_callface",
   // IA
   "ia_gerar_texto", "ia_classificar", "ia_responder",
+  // Agentes de IA (operadores autônomos): atribuir muda a responsabilidade, acionar pede uma execução. Sem cadência.
+  "agente_atribuir", "agente_acionar", "agente_pausar", "agente_transferir", "agente_encerrar",
 ] as const;
 export type TipoNo = (typeof TIPOS_NO)[number];
 
@@ -326,6 +328,11 @@ export const CATALOGO_NOS: Record<TipoNo, MetaNo> = {
       // evento
       { chave: "evento", rotulo: "O que acontece", tipo: "evento", obrigatorio: true, mostrarSe: { campo: "modo", valores: ["evento"] } },
       { chave: "filtros", rotulo: "Só quando", tipo: "regras", ajuda: "Regras sobre os dados do evento. Vazio = sempre.", mostrarSe: { campo: "modo", valores: ["evento"] } },
+      { chave: "entidadeAlvo", rotulo: "Só para registros do tipo", tipo: "selecao", padrao: "",
+        ajuda: "Tag pode ser aplicada a qualquer registro. Escolha o tipo para o fluxo disparar só nele (ex.: só Oportunidade).",
+        opcoes: [{ valor: "", rotulo: "Qualquer registro" }, { valor: "lead", rotulo: "Lead" }, { valor: "negocio", rotulo: "Negócio" }, { valor: "oportunidade", rotulo: "Oportunidade" },
+          { valor: "contato", rotulo: "Contato" }, { valor: "empresa", rotulo: "Empresa" }, { valor: "cliente", rotulo: "Cliente" }],
+        mostrarSe: { campo: "evento", valores: ["tag.adicionada", "tag.removida"] } },
       { chave: "permitirOrigemAutomacao", rotulo: "Disparar também quando a mudança vier de outra automação", tipo: "booleano", padrao: false,
         ajuda: "Desligado evita automação disparando automação em cadeia.", mostrarSe: { campo: "modo", valores: ["evento"] } },
       // manual
@@ -568,6 +575,48 @@ export const CATALOGO_NOS: Record<TipoNo, MetaNo> = {
     ],
     saidas: OK, saidaCampos: [{ chave: "resposta", rotulo: "Texto enviado" }, { chave: "handoff", rotulo: "Passou para humano" }],
     efeitoExterno: true, exigeEntidade: true,
+  },
+  agente_atribuir: {
+    tipo: "agente_atribuir", categoria: "ia", rotulo: "Agente: atribuir atendimento", descricao: "Passa a responsabilidade operacional do atendimento para um agente de IA. Não envia nada: quem conduz a conversa é o agente.", icone: "UserCheck",
+    campos: [
+      { chave: "agenteId", rotulo: "Agente", tipo: "agente_ia", obrigatorio: true },
+      { chave: "objetivo", rotulo: "Objetivo do agente neste atendimento", tipo: "texto_longo", aceitaExpressao: true, ajuda: "Ex.: qualificar o lead e agendar demonstração. O agente decide como." },
+      { chave: "autonomia", rotulo: "Autonomia nesta atribuição", tipo: "selecao", opcoes: [{ valor: "", rotulo: "A da versão publicada do agente" }, { valor: "suggest", rotulo: "Copiloto (só sugere)" }, { valor: "approval", rotulo: "Sob aprovação" }, { valor: "autonomous", rotulo: "Autônomo controlado" }] },
+      { chave: "trocar", rotulo: "Trocar o agente atual, se houver", tipo: "booleano", padrao: false, ajuda: "Nunca substitui atendimento humano em andamento." },
+    ],
+    saidas: OK, saidaCampos: [{ chave: "status", rotulo: "Resultado (atribuido, ja_atribuido, recusado)" }, { chave: "motivo", rotulo: "Motivo da recusa" }, { chave: "atribuicaoId", rotulo: "Id da atribuição" }],
+    efeitoExterno: true, exigeEntidade: true,
+  },
+  agente_acionar: {
+    tipo: "agente_acionar", categoria: "ia", rotulo: "Agente: acionar com objetivo", descricao: "Pede ao agente uma execução agora, com objetivo e contexto. Ele recupera o histórico completo e decide como proceder.", icone: "Sparkles",
+    campos: [
+      { chave: "agenteId", rotulo: "Agente", tipo: "agente_ia", ajuda: "Vazio = o agente já atribuído a este atendimento." },
+      { chave: "objetivo", rotulo: "Objetivo", tipo: "texto_longo", obrigatorio: true, aceitaExpressao: true, ajuda: "Ex.: retomar a negociação. O motivo da retomada vem do gatilho." },
+      { chave: "instrucao", rotulo: "Orientação adicional", tipo: "texto_longo", aceitaExpressao: true },
+      { chave: "modo", rotulo: "Modo", tipo: "selecao", padrao: "conduzir", opcoes: [{ valor: "conduzir", rotulo: "Conduzir (pode falar com o contato)" }, { valor: "analisar", rotulo: "Só analisar (registra nota, não envia nada)" }] },
+    ],
+    saidas: OK, saidaCampos: [{ chave: "status", rotulo: "Resultado (respondeu, handover, bloqueado, pausado, ignorado...)" }, { chave: "motivo", rotulo: "Motivo, quando bloqueado" }, { chave: "runId", rotulo: "Execução" }, { chave: "handoff", rotulo: "Passou para humano" }],
+    efeitoExterno: true, exigeEntidade: true,
+  },
+  agente_pausar: {
+    tipo: "agente_pausar", categoria: "ia", rotulo: "Agente: pausar", descricao: "Pausa o agente neste atendimento (as retomadas dele ficam guardadas).", icone: "Pause",
+    campos: [{ chave: "motivo", rotulo: "Motivo", tipo: "texto", aceitaExpressao: true }],
+    saidas: OK, saidaCampos: [{ chave: "status", rotulo: "Resultado" }], efeitoExterno: true, exigeEntidade: true,
+  },
+  agente_transferir: {
+    tipo: "agente_transferir", categoria: "ia", rotulo: "Agente: transferir para pessoa", descricao: "Transfere o atendimento para uma pessoa. A IA para de responder e o histórico é preservado.", icone: "ArrowRightLeft",
+    campos: [
+      { chave: "usuarioId", rotulo: "Pessoa", tipo: "usuario", ajuda: "Vazio = quem o agente ou a regra definir." },
+      { chave: "motivo", rotulo: "Motivo", tipo: "texto", aceitaExpressao: true },
+      { chave: "resumo", rotulo: "Resumo para quem assume", tipo: "texto_longo", aceitaExpressao: true },
+      { chave: "copiloto", rotulo: "Agente continua como copiloto interno", tipo: "booleano", padrao: false },
+    ],
+    saidas: OK, saidaCampos: [{ chave: "status", rotulo: "Resultado" }], efeitoExterno: true, exigeEntidade: true,
+  },
+  agente_encerrar: {
+    tipo: "agente_encerrar", categoria: "ia", rotulo: "Agente: encerrar atuação", descricao: "Encerra a atribuição e cancela as retomadas pendentes do agente neste atendimento.", icone: "CircleStop",
+    campos: [{ chave: "motivo", rotulo: "Motivo", tipo: "texto", aceitaExpressao: true }],
+    saidas: OK, saidaCampos: [{ chave: "status", rotulo: "Resultado" }], efeitoExterno: true, exigeEntidade: true,
   },
 };
 

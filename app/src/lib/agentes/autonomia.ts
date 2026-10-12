@@ -26,13 +26,13 @@ import { lerExpressoesHandoff } from "@/lib/ai/agente-escopo";
 
 const DIA = 24 * 60 * 60 * 1000;
 
-async function versaoPublicada(agentId: string) {
+export async function versaoPublicada(agentId: string) {
   const [v] = await db.select().from(aiAgentVersions).where(and(eq(aiAgentVersions.agentId, agentId), eq(aiAgentVersions.status, "published"))).limit(1);
   return v ?? null;
 }
 
 /** Registra um run que NÃO chamou o modelo (parada ou limite), para a execução aparecer em Execuções com o motivo. */
-async function registrarRunBloqueado(p: {
+export async function registrarRunBloqueado(p: {
   organizacaoId: string; agentId: string; versionId: string | null; contatoId: string | null; leadId: string | null;
   evento: string; status: "aborted" | "handed_off"; motivo: string; sourceMessageId?: string | null;
 }) {
@@ -45,7 +45,7 @@ async function registrarRunBloqueado(p: {
   return run.id;
 }
 
-async function contagemDeMensagens(contatoId: string, agora: Date) {
+export async function contagemDeMensagens(contatoId: string, agora: Date) {
   const [c] = await db.execute<{ hora: number; dia: number; seguidas: number }>(sql`
     SELECT count(*) FILTER (WHERE m.created_at > ${new Date(agora.getTime() - 3_600_000).toISOString()}::timestamptz)::int AS hora,
            count(*) FILTER (WHERE m.created_at > ${new Date(agora.getTime() - DIA).toISOString()}::timestamptz)::int AS dia,

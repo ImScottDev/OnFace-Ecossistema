@@ -36,7 +36,13 @@ export const AGENT_TOOL_CATALOG: AgentToolDefinition[] = [
   { id: "deal.advance", nome: "Avançar negócio", descricao: "Move um negócio real para um novo estágio.", categoria: "crm", modo: "acao", disponibilidade: "live" },
   { id: "lead.tag", nome: "Gerenciar tags", descricao: "Adiciona ou remove tags e publica o gatilho para outros fluxos.", categoria: "crm", modo: "acao", disponibilidade: "live" },
   { id: "activity.note", nome: "Registrar nota", descricao: "Salva resumo e contexto na timeline do lead.", categoria: "crm", modo: "acao", disponibilidade: "live" },
-  { id: "meeting.schedule", nome: "Agendar reunião", descricao: "Cria a oportunidade e a reunião confirmada no CRM.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "meeting.schedule", nome: "Agendar reunião", descricao: "Revalida a agenda real (CRM + Outlook), cria o evento, a reunião e a oportunidade, e avisa a closer.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "meeting.reschedule", nome: "Remarcar reunião", descricao: "Remarca uma reunião do lead num horário verificado e atualiza o Outlook.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "meeting.cancel", nome: "Cancelar reunião", descricao: "Cancela uma reunião do lead no CRM e no Outlook.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "agenda.slots", nome: "Consultar horários reais", descricao: "Horários livres da closer definida pela regra comercial (CRM + Outlook).", categoria: "operacao", modo: "leitura", disponibilidade: "live" },
+  { id: "memory.remember", nome: "Lembrar um fato", descricao: "Guarda fato sobre pessoa, empresa, conversa ou operação, com fonte e confirmação.", categoria: "contexto", modo: "acao", disponibilidade: "live" },
+  { id: "followup.schedule", nome: "Agendar retomada própria", descricao: "O agente combina um retorno e é reacionado no horário com o contexto atualizado. Não usa cadência.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
+  { id: "followup.resume_cancel", nome: "Cancelar retomada própria", descricao: "Cancela uma retomada que o agente tinha combinado.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
   { id: "callface.call", nome: "Ligar com Callface AI", descricao: "Envia o lead para a fila de discagem da Callface AI.", categoria: "comunicacao", modo: "acao", disponibilidade: "live" },
   { id: "cadence.pause", nome: "Pausar follow-ups", descricao: "Pausa inscrições ativas quando há resposta ou handoff.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
   { id: "followup.enroll", nome: "Iniciar follow-up", descricao: "Inscreve a entidade em um fluxo publicado.", categoria: "operacao", modo: "acao", disponibilidade: "live" },
@@ -65,6 +71,8 @@ export const AGENT_EVENT_CATALOG = [
   { id: "CanonicalServiceActivated", nome: "Serviço ativado", descricao: "Quando o serviço canônico entra na operação." },
   { id: "prospect.created", nome: "Prospect criado", descricao: "Quando um prospect entra na base outbound." },
   { id: "prospect.response_received", nome: "Prospect respondeu", descricao: "Quando um prospect responde uma abordagem." },
+  { id: "lead.atribuido_ao_agente", nome: "Atendimento atribuído ao agente", descricao: "Quando uma automação, regra ou pessoa atribui o atendimento ao agente." },
+  { id: "agent.retomada", nome: "Retomada combinada venceu", descricao: "Quando chega o horário de uma retomada que o próprio agente agendou." },
   { id: "cadence.step_due", nome: "Passo de cadência vencido", descricao: "Quando uma etapa de cadência está pronta para executar." },
 ] as const;
 

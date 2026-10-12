@@ -15,6 +15,9 @@ import type { Ator } from "@/lib/vendas/dominio";
 import { executarAcaoAvulsa } from "@/lib/cadencia/cadence-engine";
 import { NEXO_TOOLS } from "@/lib/nexo/ferramentas";
 import { devolverAoHumano, resolverHumanoDeDevolucao } from "@/lib/agentes/handover";
+import { FERRAMENTAS_OPERACAO } from "./operacao";
+import { autonomiaDaFerramenta, type ClasseAutonomia, type ModoAutonomia } from "./politica";
+import { solicitarHandoffNaAtribuicao } from "../operacao/atribuicoes";
 
 export type AgentToolContext = {
   organizacaoId: string;
@@ -38,6 +41,17 @@ export type AgentToolContext = {
    * agente que nasce podendo tudo é porta que ninguém abriu de propósito.
    */
   permissoesDelegadas?: ReadonlySet<string>;
+  /** Autonomia por classe de ação desta versão (leitura, mensagens, crm, agenda, comercial). */
+  autonomiaPorClasse?: Partial<Record<ClasseAutonomia, ModoAutonomia>>;
+  /** Mensagem do contato que originou a execução (fonte de fatos e idempotência). */
+  sourceMessageId?: string | null;
+  atribuicaoId?: string | null;
+  /** guardrail_config da versão (ex.: agendaExigirOutlook). */
+  guardrails?: Record<string, unknown>;
+  /** handoff_config da versão (resumo obrigatório, mensagem de transição, copiloto). */
+  handoffConfig?: Record<string, unknown>;
+  /** Execução de análise: tudo vira prévia, exceto a nota na timeline. */
+  analise?: boolean;
 };
 
 export type AgentToolResult = { ok: boolean; data?: unknown; error?: string; handoff?: boolean };
@@ -72,6 +86,12 @@ const atorDoAgente = (ctx: AgentToolContext): Ator => ({
 
 function preview(ctx: AgentToolContext, operation: string, input: Record<string, unknown>): AgentToolResult | null {
   return ctx.mode === "test" || ctx.autonomy !== "autonomous" ? { ok: true, data: { preview: true, approvalRequired: ctx.mode === "live" && ctx.autonomy === "approval", operation, input } } : null;
+}
+
+async function negocioDoLead(organizacaoId: string, leadId: string, negocioId: string): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(negocioId)) return false;
+  const [n] = await db.select({ id: negocios.id }).from(negocios).where(and(eq(negocios.id, negocioId), eq(negocios.organizacaoId, organizacaoId), eq(negocios.leadId, leadId))).limit(1);
+  return Boolean(n);
 }
 
 async function contactContext(ctx: AgentToolContext) {
@@ -151,6 +171,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
                            'MaxWords=40, MinWords=15, ShortWord=3') AS trecho
           FROM ai_knowledge_chunks c
           JOIN ai_knowledge_versions v ON v.id = c.version_id AND v.status = 'published'
+          JOIN ai_knowledge_sources ks ON ks.id = v.source_id AND ks.governanca = 'aprovado' AND ks.status <> 'archived'
          WHERE c.organizacao_id = ${ctx.organizacaoId}::uuid
            AND c.busca @@ onface_query_busca(${query})
          ORDER BY score DESC
@@ -187,20 +208,27 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     execute: async (_ctx, input) => ({ ok: true, data: { messages: input.messages } }),
   },
   {
-    id: "handoff.request", name: "handoff_request", description: "Pausa a IA e solicita atendimento humano com motivo e prioridade.", category: "operation", mutates: true,
-    parameters: objectSchema({ motivo: stringProp("Motivo do handoff"), prioridade: { type: "string", enum: ["normal", "alta", "urgente"] }, mensagem_transicao: stringProp("Mensagem opcional ao contato") }, ["motivo"]),
+    id: "handoff.request", name: "handoff_request", description: "Pausa a IA e passa o atendimento a uma pessoa, com motivo, resumo do que foi conversado e próximo passo.", category: "operation", mutates: true,
+    parameters: objectSchema({ motivo: stringProp("Motivo do handoff"), resumo: stringProp("Resumo útil para quem assume: contexto, dor, o que foi dito, objeções"), proximo_passo: stringProp("O que a pessoa deve fazer agora"), prioridade: { type: "string", enum: ["normal", "alta", "urgente"] }, mensagem_transicao: stringProp("Mensagem curta ao contato avisando da transferência (opcional; há uma padrão)") }, ["motivo"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "handoff.request", input); if (simulated) return { ...simulated, handoff: true };
       if (!ctx.contatoId) return { ok: false, error: "contato ausente" };
+      const cfg = ctx.handoffConfig ?? {};
+      const resumo = [input.resumo ? String(input.resumo).trim() : "", input.proximo_passo ? `Próximo passo: ${String(input.proximo_passo).trim()}` : ""].filter(Boolean).join("\n");
+      // Resumo obrigatório é política da versão, aplicada aqui: sem ele a pessoa que assume recebe um atendimento sem contexto.
+      if (cfg.resumoObrigatorio === true && resumo.length < 20) return { ok: false, error: "resumo obrigatório para o handoff: descreva o que foi conversado e o próximo passo" };
+      const mensagemTransicao = typeof input.mensagem_transicao === "string" && input.mensagem_transicao.trim() ? input.mensagem_transicao.trim() : typeof cfg.mensagemTransicao === "string" ? cfg.mensagemTransicao : null;
+      const prioridade = input.prioridade ? String(input.prioridade) : typeof cfg.prioridade === "string" ? cfg.prioridade : "normal";
       await db.insert(aiSdrContatoState).values({ contatoId: ctx.contatoId, organizacaoId: ctx.organizacaoId, aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(), handoffMotivo: String(input.motivo) })
         .onConflictDoUpdate({ target: aiSdrContatoState.contatoId, set: { aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(), handoffMotivo: String(input.motivo), updatedAt: new Date() } });
-      await db.insert(aiAlerts).values({ organizacaoId: ctx.organizacaoId, kind: "handoff", severity: input.prioridade === "urgente" ? "critical" : "warning", title: "Agente solicitou atendimento humano", body: String(input.motivo), refKind: "contato", refId: ctx.contatoId });
+      await db.insert(aiAlerts).values({ organizacaoId: ctx.organizacaoId, kind: "handoff", severity: prioridade === "urgente" ? "critical" : "warning", title: "Agente solicitou atendimento humano", body: `${String(input.motivo)}${resumo ? `\n${resumo}` : ""}`.slice(0, 1800), refKind: "contato", refId: ctx.contatoId });
+      await solicitarHandoffNaAtribuicao({ organizacaoId: ctx.organizacaoId, contatoId: ctx.contatoId, leadId: ctx.leadId, motivo: String(input.motivo), resumo: resumo || null, copiloto: cfg.copilotoAposHandoff === true });
       // Agente que é responsável do lead devolve o responsável a uma pessoa (regra/delegação), com aviso e nota de contexto.
       if (ctx.agenteUsuarioId) {
-        const h = await devolverAoHumano({ organizacaoId: ctx.organizacaoId, agenteUsuarioId: ctx.agenteUsuarioId, agentId: ctx.agentId, leadId: ctx.leadId, contatoId: ctx.contatoId, motivo: String(input.motivo), resumo: input.mensagem_transicao ? `Mensagem de transição: ${String(input.mensagem_transicao)}` : null, prioridade: input.prioridade ? String(input.prioridade) : null });
-        return { ok: true, data: { status: "human_required", responsavelId: h.humanoId, destino: h.origem }, handoff: true };
+        const h = await devolverAoHumano({ organizacaoId: ctx.organizacaoId, agenteUsuarioId: ctx.agenteUsuarioId, agentId: ctx.agentId, leadId: ctx.leadId, contatoId: ctx.contatoId, motivo: String(input.motivo), resumo: resumo || null, prioridade });
+        return { ok: true, data: { status: "human_required", responsavelId: h.humanoId, destino: h.origem, mensagemTransicao }, handoff: true };
       }
-      return { ok: true, data: { status: "human_required" }, handoff: true };
+      return { ok: true, data: { status: "human_required", mensagemTransicao }, handoff: true };
     },
   },
   {
@@ -261,6 +289,8 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     parameters: objectSchema({ negocio_id: stringProp("UUID do negócio"), status: stringProp("Novo estágio") }, ["negocio_id", "status"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "deal.advance", input); if (simulated) return simulated;
+      // O modelo escolhe o ID, o servidor confere o dono: só oportunidade DESTE lead.
+      if (!ctx.leadId || !(await negocioDoLead(ctx.organizacaoId, ctx.leadId, String(input.negocio_id)))) return { ok: false, error: "oportunidade não pertence a este atendimento" };
       // O gate do Ganho vive no adapter, não aqui: um "não" repetido em cada
       // chamador é um "não" que uma das cópias esquece.
       const r = await executarAcaoAvulsa("crm_update_stage", {
@@ -322,18 +352,6 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       if (!ctx.leadId) return { ok: false, error: "lead ausente" };
       const [row] = await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: String(input.titulo), descricao: input.descricao ? String(input.descricao) : null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId } }).returning({ id: atividades.id });
       return { ok: true, data: row };
-    },
-  },
-  {
-    id: "meeting.schedule", name: "meeting_schedule", description: "Converte o lead em oportunidade e agenda uma reunião real no CRM para a data confirmada pelo contato.", category: "operation", mutates: true,
-    parameters: objectSchema({ data: stringProp("Data/hora ISO confirmada"), titulo: stringProp("Título"), duracao: { type: "integer", minimum: 15, maximum: 180 }, closer_id: stringProp("UUID do closer, opcional"), notas: stringProp("Contexto para o closer") }, ["data"]),
-    execute: async (ctx, input) => {
-      const simulated = preview(ctx, "meeting.schedule", input); if (simulated) return simulated;
-      if (!ctx.leadId) return { ok: false, error: "lead ausente" };
-      const data = new Date(String(input.data));
-      if (Number.isNaN(data.getTime()) || data.getTime() < Date.now() + 5 * 60_000) return { ok: false, error: "data inválida ou já passada" };
-      const result = await converterLeadEmOportunidade(db, { organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, usuarioId: null, closerId: input.closer_id ? String(input.closer_id) : null, reuniao: { data, titulo: input.titulo ? String(input.titulo) : undefined, duracao: Number(input.duracao ?? 30), notas: input.notas ? String(input.notas) : undefined, tipo: "video" } });
-      return "error" in result ? { ok: false, error: result.error } : { ok: true, data: result };
     },
   },
   {
@@ -430,6 +448,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       return { ok: true, data: { budgets, month: usage } };
     },
   },
+  ...FERRAMENTAS_OPERACAO,
   ...NEXO_TOOLS,
 ];
 
@@ -477,7 +496,9 @@ export async function executeRegisteredTool(name: string, ctx: AgentToolContext,
   const faltando = obrigatorios.filter((chave) => input[chave] === undefined || input[chave] === null || String(input[chave]).trim() === "");
   if (faltando.length) return { ok: false, error: `parâmetro obrigatório ausente: ${faltando.join(", ")}` };
 
-  return tool.execute(ctx, input);
+  // Autonomia da CLASSE da ferramenta (ex.: mensagens autônomas, comercial sob aprovação).
+  const efetiva = ctx.analise && tool.id === "activity.note" && ctx.mode === "live" ? "autonomous" : autonomiaDaFerramenta(tool.id, ctx.autonomy, ctx.autonomiaPorClasse ?? {});
+  return tool.execute(efetiva === ctx.autonomy ? ctx : { ...ctx, autonomy: efetiva }, input);
 }
 
 export function knownToolId(id: string) { return byId.has(id); }

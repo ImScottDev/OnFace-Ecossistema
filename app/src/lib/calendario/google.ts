@@ -167,4 +167,17 @@ export const googleCalendar: CalendarProvider = {
       return { ok: false, motivo: "erro_provedor", detalhe: String(e).slice(0, 300), tentarDeNovo: true };
     }
   },
+
+  async ocupados(contaId: string, inicioISO: string, fimISO: string) {
+    if (!this.configurado()) return { ok: false as const, motivo: "nao_configurado" as const, detalhe: "GOOGLE_CLIENT_ID/SECRET ausentes" };
+    try {
+      const token = await accessToken(contaId);
+      const r = await chamar(token, "/freeBusy", { method: "POST", body: JSON.stringify({ timeMin: inicioISO, timeMax: fimISO, items: [{ id: "primary" }] }) });
+      if (!r.ok) return { ok: false as const, ...classificar(r.status, r.corpo) };
+      const j = r.dados as { calendars?: { primary?: { busy?: { start: string; end: string }[] } } };
+      return { ok: true as const, faixas: (j.calendars?.primary?.busy ?? []).map((b) => ({ inicio: new Date(b.start), fim: new Date(b.end) })) };
+    } catch (e) {
+      return { ok: false as const, motivo: "erro_provedor" as const, detalhe: String(e).slice(0, 300) };
+    }
+  },
 };

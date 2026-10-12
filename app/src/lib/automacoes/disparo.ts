@@ -97,6 +97,9 @@ async function dispararParaEventos(args: {
     try {
       const profundidade = profundidadeParaEvento(args.payload, f.automacaoId, f.trigger.permitirOrigemAutomacao === true);
       if (profundidade === null) continue;
+      // Tag (e qualquer evento multi-registro) pode valer só para um tipo: lead e oportunidade não disparam o mesmo fluxo por engano.
+      const soTipo = typeof f.trigger.entidadeAlvo === "string" ? f.trigger.entidadeAlvo : "";
+      if (soTipo && soTipo !== args.entidade.tipo) continue;
       const filtros = (f.trigger.filtros as Regra[] | undefined) ?? [];
       if (filtros.length && !avaliarRegras(filtros, "e", ctx)) continue;
       // Uma ação do usuário grava o fato em dois tipos de evento (legado e canônico).

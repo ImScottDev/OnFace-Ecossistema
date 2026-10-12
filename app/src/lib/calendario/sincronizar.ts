@@ -26,6 +26,24 @@ import { FRASE_DA_FALHA, type CalendarProvider, type NomeProvider } from "./prov
 /** Microsoft primeiro por ser o que a operação usa hoje. */
 const PROVIDERS: CalendarProvider[] = [microsoftCalendar, googleCalendar];
 
+/** Teste: troca os provedores por simulados (sem rede). Devolve a função que restaura. */
+export function usarProvidersDeTeste(lista: CalendarProvider[]): () => void {
+  const original = PROVIDERS.splice(0, PROVIDERS.length, ...lista);
+  return () => { PROVIDERS.splice(0, PROVIDERS.length, ...original); };
+}
+
+/** Conta/provedor de agenda do usuário, ou o motivo de não ter. Fonte única para quem consulta ou cria. */
+export async function agendaDoUsuario(usuarioId: string): Promise<{ provider: CalendarProvider; contaId: string } | { erro: "sem_conta" | "nao_configurado" }> {
+  let algumConfigurado = false;
+  for (const p of PROVIDERS) {
+    if (!p.configurado()) continue;
+    algumConfigurado = true;
+    const contaId = await p.contaDoUsuario(usuarioId);
+    if (contaId) return { provider: p, contaId };
+  }
+  return { erro: algumConfigurado ? "sem_conta" : "nao_configurado" };
+}
+
 export function providerPorNome(nome: string | null | undefined): CalendarProvider | null {
   return PROVIDERS.find((p) => p.nome === nome) ?? null;
 }
@@ -34,6 +52,8 @@ export interface ResultadoSync {
   sincronizado: boolean;
   provider: NomeProvider | null;
   eventId?: string | null;
+  /** Link da reunião online quando o provedor gerou. */
+  link?: string | null;
   /** Frase pronta para a tela. Nula quando deu certo. */
   aviso?: string | null;
 }
@@ -76,7 +96,7 @@ async function carregar(organizacaoId: string, reuniaoId: string): Promise<Linha
 
 async function gravarEstado(
   reuniaoId: string,
-  campos: { provider?: string | null; eventId?: string | null; status: string; erro?: string | null },
+  campos: { provider?: string | null; eventId?: string | null; status: string; erro?: string | null; link?: string | null },
 ): Promise<void> {
   await db.execute(sql`
     UPDATE reunioes SET
@@ -85,6 +105,7 @@ async function gravarEstado(
       calendar_sync_status = ${campos.status},
       calendar_sync_erro = ${campos.erro ?? null},
       calendar_sync_em = now(),
+      link = COALESCE(${campos.link ?? null}, link),
       -- Ponte: o sync antigo lê por outlook_event_id, e ele continua até a
       -- substituição. Escrever só a coluna nova quebraria syncOutlookReunioes.
       outlook_event_id = CASE WHEN ${campos.provider ?? null} = 'microsoft'
@@ -133,8 +154,9 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
     await gravarEstado(reuniaoId, { provider: escolha.provider.nome, status: "falhou", erro: res.detalhe });
     return { sincronizado: false, provider: escolha.provider.nome, aviso: FRASE_DA_FALHA[res.motivo] };
   }
-  await gravarEstado(reuniaoId, { provider: escolha.provider.nome, eventId: res.eventId, status: "ok" });
-  return { sincronizado: true, provider: escolha.provider.nome, eventId: res.eventId, aviso: null };
+  const link = ("joinUrl" in res ? res.joinUrl : null) ?? ("link" in res ? res.link : null) ?? null;
+  await gravarEstado(reuniaoId, { provider: escolha.provider.nome, eventId: res.eventId, status: "ok", link });
+  return { sincronizado: true, provider: escolha.provider.nome, eventId: res.eventId, aviso: null, link };
 }
 
 /**

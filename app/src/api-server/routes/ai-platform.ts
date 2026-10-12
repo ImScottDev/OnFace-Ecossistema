@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { indexarConhecimento } from "@/lib/ai-platform/conhecimento/indexar";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -172,21 +173,7 @@ app.post("/automacoes/ai/knowledge", async (c) => {
   return c.json({ source }, 201);
 });
 
-function chunks(content: string, size = 1200, overlap = 150) {
-  const result: string[] = []; for (let start = 0; start < content.length; start += size - overlap) result.push(content.slice(start, start + size)); return result.filter((item) => item.trim());
-}
-
-async function indexKnowledge(organizacaoId: string, sourceId: string, content: string) {
-  return db.transaction(async (tx) => {
-    const [last] = await tx.select({ versionNumber: aiKnowledgeVersions.versionNumber }).from(aiKnowledgeVersions).where(eq(aiKnowledgeVersions.sourceId, sourceId)).orderBy(desc(aiKnowledgeVersions.versionNumber)).limit(1);
-    await tx.update(aiKnowledgeVersions).set({ status: "superseded" }).where(and(eq(aiKnowledgeVersions.sourceId, sourceId), eq(aiKnowledgeVersions.status, "published")));
-    const pieces = chunks(content);
-    const [version] = await tx.insert(aiKnowledgeVersions).values({ organizacaoId, sourceId, versionNumber: (last?.versionNumber ?? 0) + 1, content, chunkCount: pieces.length, status: "published" }).returning();
-    if (pieces.length) await tx.insert(aiKnowledgeChunks).values(pieces.map((piece, sequence) => ({ organizacaoId, versionId: version.id, sequence, content: piece, tokenCount: Math.ceil(piece.length / 4) })));
-    await tx.update(aiKnowledgeSources).set({ status: "ready", errorMessage: null, indexedAt: new Date(), updatedAt: new Date() }).where(and(eq(aiKnowledgeSources.id, sourceId), eq(aiKnowledgeSources.organizacaoId, organizacaoId)));
-    return version;
-  });
-}
+const indexKnowledge = indexarConhecimento;
 
 app.post("/automacoes/ai/knowledge/:id/reindex", async (c) => {
   const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ content: z.string().min(1).optional() }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Conteudo invalido" }, 400);

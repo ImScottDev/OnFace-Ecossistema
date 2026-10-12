@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { emailContas } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
-  createOutlookEvent, updateOutlookEvent, deleteOutlookEvent,
+  createOutlookEvent, updateOutlookEvent, deleteOutlookEvent, getBusyTimes,
 } from "@/lib/email/microsoft";
 import type {
   CalendarProvider, EventoParaCriar, EventoParaAtualizar, ResultadoProvider, MotivoFalha,
@@ -78,6 +78,15 @@ export const microsoftCalendar: CalendarProvider = {
       return { ok: true, eventId };
     } catch (e) {
       return { ok: false, ...classificar(e) };
+    }
+  },
+
+  async ocupados(contaId: string, inicioISO: string, fimISO: string) {
+    try {
+      return { ok: true as const, faixas: await getBusyTimes(contaId, inicioISO, fimISO) };
+    } catch (e) {
+      const { motivo, detalhe } = classificar(e);
+      return { ok: false as const, motivo, detalhe };
     }
   },
 

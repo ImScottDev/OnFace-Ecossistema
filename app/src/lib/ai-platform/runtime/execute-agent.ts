@@ -13,6 +13,9 @@ import { runModelCall, type AgentMessage, type AiProvider } from "./provider-gat
 import { ClaudeSubscriptionAdapter } from "./claude-subscription-adapter";
 import { usuarioDoAgente } from "@/lib/agentes/usuario-do-agente";
 import { versaoAtendeSessao } from "@/lib/atendimento/ia-conversa";
+import { construirContexto, type ContextoMontado } from "../contexto/builder";
+import { autonomiaDaFerramenta, lerAutonomiaPorAcao, type ModoAutonomia } from "../tools/politica";
+import { avaliarEnvio } from "../operacao/politica-canal";
 
 export type ExecuteAgentInput = {
   organizacaoId: string;
@@ -54,6 +57,15 @@ export type ExecuteAgentInput = {
   autonomia?: "suggest" | "approval" | "autonomous";
   /** O usuário confirmou no chat a ação que esta execução reexecuta. */
   confirmado?: boolean;
+  /** Atribuição persistente que conduz este atendimento (objetivo e autonomia próprios). */
+  atribuicaoId?: string | null;
+  objetivo?: string | null;
+  atribuicaoAutonomia?: ModoAutonomia | null;
+  /** Por que o agente foi acionado agora (retomada, tag, atribuição). Entra no contexto. */
+  motivoDaExecucao?: string | null;
+  compromissoId?: string | null;
+  /** Análise: nenhuma escrita comercial nem mensagem; só nota na timeline. */
+  somenteAnalise?: boolean;
 };
 
 export type ExecuteAgentResult = {
@@ -67,6 +79,8 @@ export type ExecuteAgentResult = {
   tokensOutput: number;
   cost: number;
   handoff: boolean;
+  /** O que o agente viu (secoes/fontes) e o que ficou de fora: a tela de execução mostra isto. */
+  contexto?: Pick<ContextoMontado, "secoes" | "fontes" | "sinais" | "tokensAprox"> | null;
 };
 
 type SelectedAgent = { agent: typeof aiAgents.$inferSelect; version: typeof aiAgentVersions.$inferSelect };
@@ -189,6 +203,9 @@ async function sendMessages(input: ExecuteAgentInput, runId: string, messages: s
   if (input.mode !== "live" || input.suppressEgress || !input.contatoId || !messages.length) return [];
   const [contact] = await db.select().from(contatos).where(and(eq(contatos.id, input.contatoId), eq(contatos.organizacaoId, input.organizacaoId))).limit(1);
   if (!contact?.telefone || !contact.sessaoId) throw new Error("Contato sem telefone/sessão para egress");
+  // Política de canal aplicada pelo backend: opt-out, número desconectado, janela. O modelo não decide isto.
+  const politica = await avaliarEnvio({ organizacaoId: input.organizacaoId, contatoId: contact.id, proativo: input.eventType !== "conversation.message_received" });
+  if (!politica.permitido) throw new Error(`Envio bloqueado pela política de canal: ${politica.motivo}`);
   const sentIds: string[] = [];
   for (let sequence = 0; sequence < messages.length; sequence++) {
     const body = messages[sequence]!;
@@ -229,17 +246,25 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     // gravadas por integrações em inglês. Sem essa normalização o agente
     // sempre caía silenciosamente em suggest.
     const configuredAutonomy = guardrails.autonomia ?? guardrails.autonomy;
-    const autonomy = input.autonomia ?? ((["suggest", "approval", "autonomous"] as const).includes(configuredAutonomy as "suggest") ? configuredAutonomy as "suggest" | "approval" | "autonomous" : "suggest");
-    trace.push({ type: "autonomy", mode: autonomy });
+    const autonomy = input.somenteAnalise ? "suggest" : input.autonomia ?? input.atribuicaoAutonomia ?? ((["suggest", "approval", "autonomous"] as const).includes(configuredAutonomy as "suggest") ? configuredAutonomy as "suggest" | "approval" | "autonomous" : "suggest");
+    // Autonomia por classe de ação (leitura, mensagens, CRM, agenda, comercial). Execução com
+    // autonomia imposta pelo chamador (chat do NEXO) ou pela atribuição ignora o ajuste fino.
+    const porClasse: ReturnType<typeof lerAutonomiaPorAcao> = input.somenteAnalise
+      ? { mensagens: "suggest", crm: "suggest", agenda: "suggest", comercial: "suggest" }
+      : input.autonomia || input.atribuicaoAutonomia ? {} : lerAutonomiaPorAcao(guardrails);
+    const autonomiaMensagens = autonomiaDaFerramenta("message.prepare", autonomy, porClasse);
+    trace.push({ type: "autonomy", mode: autonomy, porClasse, mensagens: autonomiaMensagens });
 
     // Teto de permissão DESTA execução. Sem configuração na versão, o agente
     // fica sem escrita: agente que nasce podendo tudo é porta que ninguém
     // abriu de propósito.
     const { delegacaoDoRun, permissoesDoNexo } = await import("../permissao-delegada");
+    // A agente é um usuário do sistema: quando ninguém a acionou, o teto também é o papel dela (interseção com a versão).
+    const agenteUsuarioId = await usuarioDoAgente(selected.agent.id);
     let delegacao = await delegacaoDoRun({
       organizacaoId: input.organizacaoId,
       agentVersionId: selected.version.id,
-      usuarioId: input.usuarioId ?? null,
+      usuarioId: input.usuarioId ?? (input.delegarComoUsuario ? null : agenteUsuarioId),
     });
     if (input.delegarComoUsuario && input.usuarioId) {
       delegacao = { permissoes: await permissoesDoNexo({
@@ -255,19 +280,40 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       concedidas: [...delegacao.permissoes].sort(),
     });
     await assertBudget(run.id, input, selected.agent.id);
-    // A agente é um usuário do sistema: o que ela faz nas ferramentas sai assinado por ele na timeline.
-    const agenteUsuarioId = await usuarioDoAgente(selected.agent.id);
     const toolIds = Array.isArray(selected.version.tools) ? selected.version.tools.filter((value): value is string => typeof value === "string") : [];
     const tools = modelToolsForIds([...new Set([...(input.somenteFerramentasExtras ? [] : toolIds), ...(input.extraToolIds ?? [])])]);
     const allowedNames = new Set(tools.map((tool) => tool.name));
+    const toolCtx = {
+      organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId,
+      usuarioId: input.usuarioId, agenteUsuarioId, confirmado: input.confirmado, mode: input.mode, autonomy, permissoesDelegadas: delegacao.permissoes,
+      autonomiaPorClasse: porClasse, sourceMessageId: input.sourceMessageId ?? null, atribuicaoId: input.atribuicaoId ?? null, guardrails, analise: Boolean(input.somenteAnalise),
+      handoffConfig: (selected.version.handoffConfig && typeof selected.version.handoffConfig === "object" ? selected.version.handoffConfig : {}) as Record<string, unknown>,
+    };
     const messages: AgentMessage[] = [
       // Instruções + escopo + expressões de handoff + regras fixas: a mesma
       // função que a tela usa em "Ver prompt compilado" (lib/ai/agente-escopo).
       { role: "system", content: compilarPrompt(selected.version) },
       { role: "user", content: input.message || `Evento ${input.eventType}: ${JSON.stringify(input.payload ?? {})}` },
     ];
+    // Context Builder: o agente recebe o relacionamento inteiro, selecionado e rastreável, antes de pensar.
+    let contexto: ContextoMontado | null = null;
+    if (!input.delegarComoUsuario && !input.somenteFerramentasExtras && (input.contatoId || input.leadId)) {
+      const t0 = Date.now();
+      contexto = await construirContexto({
+        organizacaoId: input.organizacaoId, agentId: selected.agent.id, contatoId: input.contatoId, leadId: input.leadId, mensagemAtual: input.message,
+        evento: input.eventType, janelaMensagens: selected.version.historyMessageWindow,
+        motivoDaExecucao: [input.objetivo ? `Objetivo da atuação: ${input.objetivo}` : null, input.motivoDaExecucao].filter(Boolean).join("\n") || null,
+      });
+      messages[0] = { role: "system", content: `${messages[0]!.content}\n\n${contexto.texto}` };
+      await persistStep({
+        organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "context", name: "context_builder", status: "completed",
+        input: { eventType: input.eventType }, output: { secoes: contexto.secoes, fontes: contexto.fontes, sinais: contexto.sinais, tokensAprox: contexto.tokensAprox }, latencyMs: Date.now() - t0,
+      });
+      trace.push({ type: "context", secoes: contexto.secoes.map((x) => x.id), fontes: contexto.fontes.length, tokensAprox: contexto.tokensAprox });
+    }
     const prepared: string[] = [];
     let finalText: string | null = null;
+    let transicao: string | null = null;
     const maxSteps = Math.min(25, Math.max(1, selected.version.maxSteps));
 
     if (provider === "claude_subscription") {
@@ -279,17 +325,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         tools,
         maxTurns: maxSteps,
         invokeTool: (name, toolInput) => executeRegisteredTool(name, {
-          organizacaoId: input.organizacaoId,
-          agentId: selected.agent.id,
-          runId: run.id,
-          contatoId: input.contatoId,
-          leadId: input.leadId,
-          usuarioId: input.usuarioId,
-          agenteUsuarioId,
-          confirmado: input.confirmado,
-          mode: input.mode,
-          autonomy,
-          permissoesDelegadas: delegacao.permissoes,
+          ...toolCtx,
         }, toolInput),
       });
       tokensInput += subscription.tokensInput;
@@ -310,7 +346,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
           errorCode: call.result.ok ? undefined : "tool_failed", errorMessage: call.result.error,
         });
         const previewData = call.result.data && typeof call.result.data === "object" ? call.result.data as Record<string, unknown> : null;
-        if (input.mode === "live" && autonomy === "approval" && previewData?.approvalRequired) {
+        if (input.mode === "live" && previewData?.approvalRequired) {
           await db.insert(aiAlerts).values({ organizacaoId: input.organizacaoId, kind: "approval_required", severity: "warning", title: `Aprovação necessária: ${call.name}`, body: JSON.stringify(call.input).slice(0, 2000), refKind: "run", refId: run.id });
           if (input.contatoId) await db.insert(aiCases).values({ organizacaoId: input.organizacaoId, contatoId: input.contatoId, leadId: input.leadId ?? null, agentId: selected.agent.id, runId: run.id, title: `Aprovar ação: ${call.name}`, summary: "O agente preparou uma ação e aguarda decisão humana.", blocker: "A versão está configurada no modo pedir aprovação.", source: "tool_approval", contextSnapshot: { kind: "tool_approval", toolName: call.name, toolInput: call.input } });
           handoff = true;
@@ -320,6 +356,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
           if (Array.isArray(list)) prepared.push(...list.filter((value): value is string => typeof value === "string"));
         }
         handoff ||= Boolean(call.result.handoff);
+        if (call.name === "handoff_request" && call.result.ok) { const t = (call.result.data as { mensagemTransicao?: unknown } | undefined)?.mensagemTransicao; if (typeof t === "string") transicao = t; }
         trace.push({ type: "tool_call", name: call.name, ok: call.result.ok, handoff: Boolean(call.result.handoff) });
       }
     } else for (let iteration = 0; iteration < maxSteps; iteration++) {
@@ -338,12 +375,12 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         if (!allowedNames.has(call.name)) result = { ok: false, error: `tool fora da allowlist: ${call.name}` };
         else {
           const startedTool = Date.now();
-          try { result = await executeRegisteredTool(call.name, { organizacaoId: input.organizacaoId, agentId: selected.agent.id, runId: run.id, contatoId: input.contatoId, leadId: input.leadId, usuarioId: input.usuarioId, agenteUsuarioId, confirmado: input.confirmado, mode: input.mode, autonomy, permissoesDelegadas: delegacao.permissoes }, call.input); }
+          try { result = await executeRegisteredTool(call.name, toolCtx, call.input); }
           catch (error) { result = { ok: false, error: error instanceof Error ? error.message : String(error) }; }
           await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name, status: result.ok ? "completed" : "failed", input: call.input, output: result, latencyMs: Date.now() - startedTool, errorCode: result.ok ? undefined : "tool_failed", errorMessage: result.error });
         }
         const previewData = result.data && typeof result.data === "object" ? result.data as Record<string, unknown> : null;
-        if (input.mode === "live" && autonomy === "approval" && previewData?.approvalRequired) {
+        if (input.mode === "live" && previewData?.approvalRequired) {
           await db.insert(aiAlerts).values({ organizacaoId: input.organizacaoId, kind: "approval_required", severity: "warning", title: `Aprovação necessária: ${call.name}`, body: JSON.stringify(call.input).slice(0, 2000), refKind: "run", refId: run.id });
           if (input.contatoId) await db.insert(aiCases).values({ organizacaoId: input.organizacaoId, contatoId: input.contatoId, leadId: input.leadId ?? null, agentId: selected.agent.id, runId: run.id, title: `Aprovar ação: ${call.name}`, summary: "O agente preparou uma ação e aguarda decisão humana.", blocker: "A versão está configurada no modo pedir aprovação.", source: "tool_approval", contextSnapshot: { kind: "tool_approval", toolName: call.name, toolInput: call.input } });
           handoff = true;
@@ -353,19 +390,28 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
           if (Array.isArray(list)) prepared.push(...list.filter((value): value is string => typeof value === "string"));
         }
         handoff ||= Boolean(result.handoff);
+        if (call.name === "handoff_request" && result.ok) { const t = (result.data as { mensagemTransicao?: unknown } | undefined)?.mensagemTransicao; if (typeof t === "string") transicao = t; }
         messages.push({ role: "tool", toolCallId: call.id, toolName: call.name, content: JSON.stringify(result) });
         trace.push({ type: "tool_call", name: call.name, ok: result.ok, handoff: Boolean(result.handoff) });
       }
       if (prepared.length || handoff) break;
     }
 
-    const outgoing = responseMessages(finalText, prepared);
+    let outgoing = responseMessages(finalText, prepared);
+    // Handoff: se o agente não escreveu nada, o contato recebe a mensagem de transição configurada (não fica no vácuo).
+    if (handoff && !outgoing.length && transicao) outgoing = [sanitizeResponse(transicao)];
     await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "guardrail", name: "before_send", status: "completed", input: { count: outgoing.length }, output: { sanitized: true } });
-    const sentMessageIds = await sendMessages({ ...input, suppressEgress: input.suppressEgress || autonomy !== "autonomous" }, run.id, outgoing);
+    // Mensagem ao contato segue a autonomia da classe "mensagens": copiloto só sugere, "sob aprovação" abre caso para uma pessoa aprovar.
+    if (input.mode === "live" && !input.suppressEgress && autonomiaMensagens === "approval" && outgoing.length && input.contatoId) {
+      await db.insert(aiAlerts).values({ organizacaoId: input.organizacaoId, kind: "approval_required", severity: "warning", title: "Aprovação necessária: resposta ao contato", body: outgoing.join("\n---\n").slice(0, 2000), refKind: "run", refId: run.id });
+      await db.insert(aiCases).values({ organizacaoId: input.organizacaoId, contatoId: input.contatoId, leadId: input.leadId ?? null, agentId: selected.agent.id, runId: run.id, title: "Aprovar resposta do agente", summary: "O agente preparou uma resposta e aguarda decisão humana.", blocker: "Mensagens estão em modo sob aprovação.", source: "tool_approval", contextSnapshot: { kind: "mensagem", mensagens: outgoing } });
+      handoff = true;
+    }
+    const sentMessageIds = await sendMessages({ ...input, suppressEgress: input.suppressEgress || autonomiaMensagens !== "autonomous" }, run.id, outgoing);
     if (sentMessageIds.length) await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "egress", name: "whatsapp", status: "completed", output: { messageIds: sentMessageIds } });
     const status = handoff ? "handed_off" : "completed";
     await db.update(aiAgentRuns).set({ status, trace, tokens: tokensInput + tokensOutput, tokensInput, tokensOutput, custo: String(cost), stepsCount: sequence, completedAt: new Date() }).where(eq(aiAgentRuns.id, run.id));
-    return { runId: run.id, agentId: selected.agent.id, versionId: selected.version.id, status, responseText: outgoing.join("\n---SPLIT---\n") || null, sentMessageIds, tokensInput, tokensOutput, cost, handoff };
+    return { runId: run.id, agentId: selected.agent.id, versionId: selected.version.id, status, responseText: outgoing.join("\n---SPLIT---\n") || null, sentMessageIds, tokensInput, tokensOutput, cost, handoff, contexto: contexto ? { secoes: contexto.secoes, fontes: contexto.fontes, sinais: contexto.sinais, tokensAprox: contexto.tokensAprox } : null };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes("Orçamento") ? "aborted" : "failed";

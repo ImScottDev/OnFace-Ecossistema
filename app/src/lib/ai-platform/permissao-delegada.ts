@@ -47,7 +47,7 @@ export const PERMISSAO_POR_FERRAMENTA: Record<string, CodigoPermissao> = {
   "activity.note": "acquisition.manage",
   "contact.propose_field": "acquisition.manage",
   "deal.advance": "sales.manage",
-  "meeting.schedule": "sales.manage",
+  "meeting.schedule": "sales.manage", "meeting.reschedule": "sales.manage", "meeting.cancel": "sales.manage",
   "followup.enroll": "automation.manage",
   "followup.cancel": "automation.manage",
   "cadence.pause": "automation.manage",

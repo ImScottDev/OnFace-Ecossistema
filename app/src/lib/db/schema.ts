@@ -2461,6 +2461,9 @@ export const aiKnowledgeSources = pgTable("ai_knowledge_sources", {
   status: text("status").default("pending").notNull(), // pending | indexing | ready | failed | archived
   errorMessage: text("error_message"),
   metadata: jsonb("metadata").default({}).notNull(),
+  // aprovado | rascunho | historico: agente só enxerga "aprovado" (migration 0103)
+  governanca: text("governanca").default("aprovado").notNull(),
+  categoria: text("categoria"),
   createdById: uuid("created_by_id").references(() => usuarios.id),
   indexedAt: timestamp("indexed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2689,6 +2692,109 @@ export const aiSdrContatoState = pgTable("ai_sdr_contato_state", {
 }, (table) => [
   uniqueIndex("idx_ai_sdr_contato_state_contato").on(table.contatoId),
   index("idx_ai_sdr_contato_state_org").on(table.organizacaoId),
+]);
+
+// ─── Agentes de IA: operação autônoma (migration 0103) ──────────────────────
+// Atribuição persistente, retomadas do próprio agente e memória com fonte.
+// Nenhuma das três depende de cadence_*: cadência é outro produto.
+export const aiAgentAtribuicoes = pgTable("ai_agent_atribuicoes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "cascade" }).notNull(),
+  contatoId: uuid("contato_id").references(() => contatos.id, { onDelete: "cascade" }),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  negocioId: uuid("negocio_id").references(() => negocios.id, { onDelete: "set null" }),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "set null" }),
+  status: text("status").default("ativa").notNull(), // ativa | pausada | aguardando_aprovacao | humano | falha | encerrada
+  objetivo: text("objetivo"),
+  autonomia: text("autonomia"),
+  origem: text("origem").default("manual").notNull(), // manual | atendimento | automacao | regra | evento
+  origemRef: text("origem_ref"),
+  atribuidoPor: uuid("atribuido_por").references(() => usuarios.id),
+  copiloto: boolean("copiloto").default(false).notNull(),
+  humanoUsuarioId: uuid("humano_usuario_id").references(() => usuarios.id),
+  motivoEstado: text("motivo_estado"),
+  resumoHandoff: text("resumo_handoff"),
+  estado: jsonb("estado").default({}).notNull(),
+  ultimoRunId: uuid("ultimo_run_id"),
+  ultimaExecucaoEm: timestamp("ultima_execucao_em", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  encerradaEm: timestamp("encerrada_em", { withTimezone: true }),
+}, (table) => [
+  index("idx_ai_agent_atribuicoes_org_status").on(table.organizacaoId, table.status, table.updatedAt),
+  index("idx_ai_agent_atribuicoes_agente").on(table.agentId, table.status),
+]);
+
+export const aiAgentCompromissos = pgTable("ai_agent_compromissos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "cascade" }).notNull(),
+  atribuicaoId: uuid("atribuicao_id").references(() => aiAgentAtribuicoes.id, { onDelete: "set null" }),
+  contatoId: uuid("contato_id").references(() => contatos.id, { onDelete: "cascade" }),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  tipo: text("tipo").default("retomada").notNull(), // retomada | lembrete | verificacao
+  motivo: text("motivo").notNull(),
+  instrucao: text("instrucao"),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  status: text("status").default("pendente").notNull(), // pendente | processando | concluido | cancelado | bloqueado | falhou | expirado
+  bloqueioMotivo: text("bloqueio_motivo"),
+  tentativas: integer("tentativas").default(0).notNull(),
+  origemRunId: uuid("origem_run_id"),
+  origemMensagemId: uuid("origem_mensagem_id"),
+  runId: uuid("run_id"),
+  idempotencyKey: text("idempotency_key"),
+  reagendadoDe: timestamp("reagendado_de", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  concluidoEm: timestamp("concluido_em", { withTimezone: true }),
+}, (table) => [
+  index("idx_ai_agent_compromissos_vencimento").on(table.status, table.dueAt),
+  index("idx_ai_agent_compromissos_contato").on(table.contatoId, table.status),
+]);
+
+export const aiMemoriaFatos = pgTable("ai_memoria_fatos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  escopo: text("escopo").notNull(), // pessoa | empresa | conversa | operacional
+  contatoId: uuid("contato_id").references(() => contatos.id, { onDelete: "cascade" }),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
+  empresaId: uuid("empresa_id").references(() => empresas.id, { onDelete: "cascade" }),
+  tipo: text("tipo").default("fato").notNull(), // fato | preferencia | objecao | promessa | compromisso | proximo_passo | resumo
+  chave: text("chave").notNull(),
+  valor: text("valor").notNull(),
+  fonte: text("fonte").notNull(), // mensagem | formulario | ferramenta | humano | crm
+  fonteRef: text("fonte_ref"),
+  confirmado: boolean("confirmado").default(false).notNull(),
+  confianca: decimal("confianca", { precision: 3, scale: 2 }),
+  status: text("status").default("ativo").notNull(), // ativo | corrigido | excluido | expirado
+  validoAte: timestamp("valido_ate", { withTimezone: true }),
+  agentId: uuid("agent_id").references(() => aiAgents.id, { onDelete: "set null" }),
+  runId: uuid("run_id"),
+  usuarioId: uuid("usuario_id").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_ai_memoria_fatos_contato").on(table.contatoId, table.status, table.updatedAt),
+]);
+
+export const roteamentoComercialRegras = pgTable("roteamento_comercial_regras", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  nome: text("nome").notNull(),
+  familia: text("familia"), // CALLFACE_AI | WHITE_LABEL | PABX | null
+  campanha: text("campanha"),
+  prioridade: integer("prioridade").default(100).notNull(),
+  ativa: boolean("ativa").default(true).notNull(),
+  vigenteDe: timestamp("vigente_de", { withTimezone: true }),
+  vigenteAte: timestamp("vigente_ate", { withTimezone: true }),
+  destinoUsuarioId: uuid("destino_usuario_id").references(() => usuarios.id),
+  fallback: text("fallback").default("fila_humana").notNull(), // fila_humana | rodizio
+  criadoPor: uuid("criado_por").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_roteamento_comercial_org").on(table.organizacaoId, table.ativa, table.prioridade),
 ]);
 
 // ─── AI SDR LOGS (audit trail) ──────────────────────────────────

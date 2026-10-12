@@ -63,7 +63,16 @@ export interface CalendarProvider {
   criar(contaId: string, evento: EventoParaCriar): Promise<ResultadoProvider>;
   atualizar(contaId: string, eventId: string, mudanca: EventoParaAtualizar): Promise<ResultadoProvider>;
   cancelar(contaId: string, eventId: string): Promise<ResultadoProvider>;
+  /**
+   * Horários realmente ocupados na agenda do usuário no intervalo. Falha NÃO vira
+   * "livre": quem oferece horário precisa saber que a checagem não aconteceu.
+   */
+  ocupados(contaId: string, inicioISO: string, fimISO: string): Promise<OcupadosResultado>;
 }
+
+export type OcupadosResultado =
+  | { ok: true; faixas: { inicio: Date; fim: Date }[] }
+  | { ok: false; motivo: MotivoFalha; detalhe: string };
 
 /**
  * Traduz a falha para uma frase que o usuário entende e pode agir.

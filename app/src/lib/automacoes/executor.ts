@@ -32,6 +32,7 @@ import {
 import { estadoVazio, hidratarContexto, origemAutomacao, type EntidadeRef, type EstadoExecucao } from "./contexto";
 import { dentroDoExpediente, formatarNoFuso, proximoHorarioDoNo } from "./agenda";
 import { usuarioDaOrganizacao } from "./adapters-fluxo";
+import "./adapters-agente";
 
 type Regra = Parameters<typeof avaliarRegras>[0][number];
 type Ctx = Record<string, unknown>;
@@ -142,7 +143,9 @@ const ADAPTER: Partial<Record<NoFluxo["tipo"], string>> = {
   enviar_email: "email", inscrever_cadencia: "fluxo_inscrever_cadencia", remover_cadencia: "fluxo_remover_cadencia",
   notificar_usuario: "fluxo_notificar", atualizar_campo: "fluxo_atualizar_campo", adicionar_nota: "crm_add_note",
   requisicao_http: "fluxo_http", discagem_callface: "crm_callface_call", ia_gerar_texto: "fluxo_ia_texto",
-  ia_classificar: "fluxo_ia_classificar", ia_responder: "ai_agent_message",
+  ia_classificar: "fluxo_ia_classificar", ia_responder: "agente_acionar",
+  agente_atribuir: "agente_atribuir", agente_acionar: "agente_acionar", agente_pausar: "agente_pausar",
+  agente_transferir: "agente_transferir", agente_encerrar: "agente_encerrar",
 };
 
 /** Config do catálogo (pt-BR) → config que o adapter conhece. */
@@ -167,7 +170,8 @@ function configDoAdapter(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, time
     case "adicionar_nota":
       return { adapter: "crm_add_note", vars: {}, config: { title: s(c.titulo), description: s(c.descricao) || null } };
     case "ia_responder":
-      return { adapter: "ai_agent_message", vars: {}, config: { agent_id: s(c.agenteId) || undefined, prompt_hint: s(c.instrucao), sessao_id: s(c.sessaoId) || undefined } };
+      // O bloco "IA: responder" fala pelo ciclo próprio do agente (atribuição, contexto, memória), não pelo passo de cadência.
+      return { adapter: "agente_acionar", vars: {}, config: { agenteId: s(c.agenteId), objetivo: s(c.instrucao) || "Responder ao contato e conduzir a conversa", modo: "conduzir", semTrava: true } };
     case "requisicao_http":
       return { adapter: "fluxo_http", vars: {}, config: { ...c, _timeoutMs: timeoutMs } };
     default:
@@ -179,7 +183,7 @@ function configDoAdapter(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, time
 function camposDoResultado(no: NoFluxo, r: CadenceActionResult, config: Record<string, unknown>): Record<string, unknown> {
   const res = r.resultado ?? {};
   if (no.tipo === "mover_etapa") return { etapa: config.etapa ?? null };
-  if (no.tipo === "ia_responder") return { resposta: null, handoff: res.status === "handed_off" };
+  if (no.tipo === "ia_responder") return { resposta: null, handoff: res.handoff === true };
   return Object.fromEntries(CATALOGO_NOS[no.tipo].saidaCampos.map((c) => [c.chave, res[c.chave] ?? null]));
 }
 
@@ -277,6 +281,11 @@ async function previaAcao(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, op:
     case "ia_gerar_texto": return `Pediria à IA: ${corta(s(c.instrucao))}`;
     case "ia_classificar": return "A IA classificaria o texto (no ensaio, segue pela classe escolhida)";
     case "ia_responder": return `O agente responderia a ${alvo} pelo WhatsApp`;
+    case "agente_atribuir": return `Atribuiria o atendimento de ${alvo} ao agente (${corta(s(c.objetivo)) || "sem objetivo definido"})`;
+    case "agente_acionar": return `Acionaria o agente para ${alvo}: ${corta(s(c.objetivo))}${s(c.modo) === "analisar" ? " (só análise)" : ""}`;
+    case "agente_pausar": return `Pausaria o agente no atendimento de ${alvo}`;
+    case "agente_transferir": return `Transferiria o atendimento de ${alvo} para ${await resp(c.usuarioId)}`;
+    case "agente_encerrar": return `Encerraria a atuação do agente em ${alvo}`;
     default: return CATALOGO_NOS[no.tipo].rotulo;
   }
 }
