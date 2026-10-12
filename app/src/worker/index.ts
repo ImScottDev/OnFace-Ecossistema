@@ -2394,6 +2394,12 @@ const whatsappIncomingWorker = new Worker(
         import("../lib/cadencia/cadence-engine"), import("../lib/events/outbox"), import("../lib/automations/event-dispatcher"), import("../lib/db/schema"),
       ]);
       await registrarRespostaEmCadencias({ organizacaoId, contatoId: contato.id, leadId: contato.leadId, recebidaEm });
+      // Prospecção: quem estava em cadência e respondeu passa a RESPONDEU, com a
+      // mensagem como evidência. Best-effort: nunca derruba o roteamento.
+      if (contato.leadId) {
+        const { sincronizarProspectsComCadencia } = await import("../lib/vendas/prospeccao");
+        await sincronizarProspectsComCadencia(organizacaoId).catch((e) => console.error("[prospeccao] sync de resposta falhou:", e));
+      }
       const eventId = await publicarEvento({
         organizacaoId, eventType: "ConversationMessageReceived", aggregateType: "contato", aggregateId: contato.id,
         payload: { contatoId: contato.id, leadId: contato.leadId ?? null, messageId: inboundMsgRow.id, channel: "whatsapp", messageType: msgType },
@@ -3322,6 +3328,10 @@ const slaWorker = new Worker(
       const { sweepCadenciasDevidas } = await import("../lib/cadencia/cadence-engine");
       const { processados } = await sweepCadenciasDevidas();
       if (processados > 0) console.log(`[F5/cadence-engine] ${processados} enrollments avançados`);
+      // Prospecção: cadência concluída sem resposta vira SEM RESPOSTA.
+      const { sincronizarProspectsComCadencia } = await import("../lib/vendas/prospeccao");
+      const sync = await sincronizarProspectsComCadencia().catch((e) => { console.error("[prospeccao] sync pós-sweep falhou:", e); return null; });
+      if (sync && (sync.responderam || sync.semResposta)) console.log(`[prospeccao] ${sync.responderam} responderam, ${sync.semResposta} sem resposta`);
     }
 
     if (job.name === "campanha-sweep") {

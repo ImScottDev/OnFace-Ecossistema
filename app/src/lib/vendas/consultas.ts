@@ -843,128 +843,423 @@ export interface LinhaProspeccao {
   empresaId: string | null;
   pessoa: string | null;
   cargo: string | null;
+  email: string | null;
+  telefone: string | null;
   setor: string | null;
   porte: string | null;
   estado: EstadoProspeccao;
   estadoRotulo: string;
   responsavel: string | null;
+  responsavelId: string | null;
   lista: string | null;
+  fonte: string | null;
   cadencia: string | null;
+  /** Status do motor da matrícula mais recente (active, paused, completed, failed…). */
+  cadenciaStatus: string | null;
+  /** Posição derivada: ações já executadas + a próxima, e `totalPassos` = ações da cadência. */
   passoAtual: number | null;
+  passosExecutados: number | null;
   totalPassos: number | null;
   proximaAcaoEm: string | null;
   preQualificado: boolean;
   descarteMotivo: string | null;
   criadoEm: string;
+  atualizadoEm: string;
 }
+
+export const ORDENS_PROSPECCAO = ["atividade", "empresa", "estado", "responsavel", "cadencia", "proxima", "criado"] as const;
+export type OrdemProspeccao = (typeof ORDENS_PROSPECCAO)[number];
+/** Filas derivadas (indicadores), nunca estados novos no banco. */
+export const FILAS_PROSPECCAO = ["sem_responsavel", "sem_contato", "cadencia_pausada", "cadencia_com_falha"] as const;
+export type FilaProspeccao = (typeof FILAS_PROSPECCAO)[number];
 
 export interface FiltrosProspeccao {
   busca?: string | null;
+  /** UUID, ou "sem" para quem não tem responsável. */
   responsavelId?: string | null;
   estado?: EstadoProspeccao | null;
   lista?: string | null;
+  /** UUID da definição, ou "sem" para quem não está em cadência viva. */
+  cadenciaId?: string | null;
+  fila?: FilaProspeccao | null;
+  ordem?: OrdemProspeccao | null;
+  direcao?: "asc" | "desc" | null;
+  pagina?: number | null;
+  porPagina?: number | null;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * FROM + joins da Prospecção. Um só lugar para o que a lista, o Kanban e os
+ * totais enxergam, para que os números das abas sejam os mesmos da tabela.
+ *
+ * Posição na cadência: o motor guarda `current_step_id` (id, não número) e o
+ * passo pode ser espera ou condição. A posição confiável vem dos EVENTOS
+ * persistidos: quantas ações distintas da versão pinada já foram executadas.
+ */
+const FROM_PROSPECCAO = sql`
+  FROM leads l
+  LEFT JOIN empresas e ON e.id = l.empresa_id
+  LEFT JOIN usuarios u ON u.id = l.responsavel_id
+  LEFT JOIN LATERAL (
+    SELECT * FROM cadence_enrollments x
+     WHERE x.entity_type = 'lead' AND x.entity_id = l.id
+     ORDER BY x.started_at DESC LIMIT 1
+  ) ce ON true
+  LEFT JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+  LEFT JOIN cadence_versions cv ON cv.id = ce.cadence_version_id
+  LEFT JOIN LATERAL (
+    SELECT count(*)::int AS total,
+           count(*) FILTER (WHERE EXISTS (
+             SELECT 1 FROM cadence_enrollment_events ev
+              WHERE ev.enrollment_id = ce.id AND ev.status = 'executado' AND ev.step_id = s.passo ->> 'id'
+           ))::int AS feitos
+      FROM jsonb_array_elements(COALESCE(cv.compiled_steps, cd.steps, '[]'::jsonb)) AS s(passo)
+     WHERE s.passo ->> 'tipo' = 'action'
+  ) pos ON ce.id IS NOT NULL
+`;
+
+function filtrosDeProspeccao(organizacaoId: string, f: FiltrosProspeccao, comEstado: boolean) {
+  const busca = f.busca?.trim() ? `%${f.busca.trim().toLowerCase()}%` : null;
+  const digitos = f.busca?.replace(/\D/g, "") ?? "";
+  const buscaFone = digitos.length >= 4 ? `%${digitos}%` : null;
+  const resp = f.responsavelId && f.responsavelId !== "sem" && UUID_RE.test(f.responsavelId) ? f.responsavelId : null;
+  const semResp = f.responsavelId === "sem";
+  const cad = f.cadenciaId && f.cadenciaId !== "sem" && UUID_RE.test(f.cadenciaId) ? f.cadenciaId : null;
+  const semCad = f.cadenciaId === "sem";
+  const fila = f.fila ?? null;
+
+  return sql`
+    WHERE l.organizacao_id = ${organizacaoId}::uuid
+      AND l.prospeccao_estado IS NOT NULL
+      ${comEstado && f.estado ? sql`AND l.prospeccao_estado = ${f.estado}` : sql``}
+      ${resp ? sql`AND l.responsavel_id = ${resp}::uuid` : sql``}
+      ${semResp ? sql`AND l.responsavel_id IS NULL` : sql``}
+      ${cad ? sql`AND ce.cadence_definition_id = ${cad}::uuid` : sql``}
+      ${semCad ? sql`AND (ce.id IS NULL OR ce.status NOT IN ('active','waiting','waiting_reply','paused'))` : sql``}
+      ${f.lista ? sql`AND EXISTS (
+        SELECT 1 FROM lead_labels ll_lista JOIN labels lb_lista ON lb_lista.id = ll_lista.label_id
+         WHERE ll_lista.lead_id = l.id AND lb_lista.organizacao_id = l.organizacao_id AND lb_lista.nome = ${f.lista})` : sql``}
+      ${fila === "sem_responsavel" ? sql`AND l.responsavel_id IS NULL` : sql``}
+      ${fila === "sem_contato" ? sql`AND COALESCE(trim(l.email),'') = '' AND COALESCE(trim(l.telefone),'') = '' AND COALESCE(trim(l.whatsapp),'') = ''` : sql``}
+      ${fila === "cadencia_pausada" ? sql`AND ce.status = 'paused'` : sql``}
+      ${fila === "cadencia_com_falha" ? sql`AND ce.status = 'failed'` : sql``}
+      ${busca ? sql`AND (lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca}
+            OR lower(concat_ws(' ', l.nome, l.sobrenome)) LIKE ${busca}
+            OR lower(COALESCE(l.email, '')) LIKE ${busca}
+            OR lower(COALESCE(e.setor, '')) LIKE ${busca}
+            ${buscaFone ? sql`OR regexp_replace(COALESCE(l.telefone, l.whatsapp, ''), '\\D', '', 'g') LIKE ${buscaFone}` : sql``})` : sql``}
+  `;
+}
+
+const ORDEM_SQL: Record<OrdemProspeccao, string> = {
+  atividade: "l.updated_at",
+  empresa: "lower(COALESCE(e.nome, l.empresa, ''))",
+  estado: "array_position(ARRAY['novo','em_cadencia','respondeu','sem_resposta','pre_qualificado','oportunidade','descartado'], l.prospeccao_estado)",
+  responsavel: "lower(COALESCE(u.nome, ''))",
+  cadencia: "lower(COALESCE(cd.nome, ''))",
+  proxima: "ce.scheduled_at",
+  criado: "l.created_at",
+};
+
+const COLUNAS_PROSPECCAO = sql`
+  SELECT l.id::text AS lead_id, COALESCE(e.nome, l.empresa) AS empresa, l.empresa_id::text,
+         NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS pessoa, l.cargo,
+         l.email, COALESCE(l.telefone, l.whatsapp) AS telefone,
+         e.setor, e.porte, l.prospeccao_estado AS estado, u.nome AS responsavel, l.responsavel_id::text AS responsavel_id,
+         (SELECT lb.nome FROM lead_labels ll JOIN labels lb ON lb.id = ll.label_id
+           WHERE ll.lead_id = l.id ORDER BY lb.nome LIMIT 1) AS lista,
+         (SELECT COALESCE(pc.source, pc.tipo_origem) FROM pontos_contato pc
+           WHERE pc.lead_id_legado = l.id ORDER BY pc.is_first_touch DESC, pc.ocorrido_em ASC LIMIT 1) AS fonte,
+         cd.nome AS cadencia, ce.status AS cadencia_status,
+         pos.feitos AS passos_feitos, pos.total AS total_passos,
+         CASE WHEN ce.status IN ('active','waiting','waiting_reply') THEN ce.scheduled_at::text END AS proxima_acao_em,
+         l.pre_qualificado, l.prospeccao_descarte_motivo AS descarte_motivo,
+         l.created_at::text AS criado_em, l.updated_at::text AS atualizado_em
+`;
+
+type LinhaBruta = {
+  lead_id: string; empresa: string | null; empresa_id: string | null;
+  pessoa: string | null; cargo: string | null; email: string | null; telefone: string | null;
+  setor: string | null; porte: string | null;
+  estado: string; responsavel: string | null; responsavel_id: string | null; lista: string | null; fonte: string | null;
+  cadencia: string | null; cadencia_status: string | null; passos_feitos: number | null; total_passos: number | null;
+  proxima_acao_em: string | null; pre_qualificado: boolean;
+  descarte_motivo: string | null; criado_em: string; atualizado_em: string;
+};
+
+/**
+ * Posição derivada do motor. Matrícula ativa: a próxima ação a executar
+ * (feitos + 1, limitado ao total). Encerrada (completa, cancelada, falha):
+ * quantas foram de fato executadas. Sem matrícula: nada a mostrar.
+ */
+export function passoDaCadencia(
+  status: string | null, feitos: number | null, total: number | null,
+): { passoAtual: number | null; passosExecutados: number | null } {
+  if (!status || total == null) return { passoAtual: null, passosExecutados: null };
+  const f = Math.max(0, Math.min(feitos ?? 0, total));
+  const viva = ["active", "waiting", "waiting_reply", "paused"].includes(status);
+  if (status === "completed") return { passoAtual: total, passosExecutados: total };
+  return { passoAtual: viva ? Math.min(f + 1, total) : f, passosExecutados: f };
+}
+
+function linhaDeProspeccao(l: LinhaBruta): LinhaProspeccao {
+  const { passoAtual, passosExecutados } = passoDaCadencia(l.cadencia_status, l.passos_feitos, l.total_passos);
+  return {
+    leadId: l.lead_id,
+    empresa: l.empresa?.trim() || "Empresa não informada",
+    empresaId: l.empresa_id,
+    pessoa: l.pessoa,
+    cargo: l.cargo,
+    email: l.email,
+    telefone: l.telefone,
+    setor: l.setor,
+    porte: l.porte,
+    estado: l.estado as EstadoProspeccao,
+    estadoRotulo: ROTULO_ESTADO_PROSPECCAO[l.estado as EstadoProspeccao] ?? l.estado,
+    responsavel: l.responsavel,
+    responsavelId: l.responsavel_id,
+    lista: l.lista,
+    fonte: l.fonte,
+    cadencia: l.cadencia,
+    cadenciaStatus: l.cadencia_status,
+    passoAtual,
+    passosExecutados,
+    totalPassos: l.total_passos,
+    proximaAcaoEm: l.proxima_acao_em,
+    preQualificado: l.pre_qualificado,
+    descarteMotivo: l.descarte_motivo,
+    criadoEm: l.criado_em,
+    atualizadoEm: l.atualizado_em,
+  };
+}
+
+async function opcoesDeFiltroProspeccao(organizacaoId: string) {
+  const [responsaveis, listas, cadencias] = await Promise.all([
+    db.execute<{ id: string; nome: string }>(sql`
+      SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome`),
+    db.execute<{ nome: string }>(sql`
+      SELECT DISTINCT lb.nome FROM labels lb
+        JOIN lead_labels ll ON ll.label_id = lb.id
+        JOIN leads l ON l.id = ll.lead_id
+       WHERE lb.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IS NOT NULL
+       ORDER BY 1 LIMIT 40`),
+    db.execute<{ id: string; nome: string }>(sql`
+      SELECT DISTINCT cd.id::text, cd.nome FROM cadence_enrollments ce
+        JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+        JOIN leads l ON l.id = ce.entity_id AND ce.entity_type = 'lead'
+       WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IS NOT NULL
+       ORDER BY 2 LIMIT 40`),
+  ]);
+  return {
+    responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome })),
+    listas: listas.map((l) => l.nome),
+    cadencias: cadencias.map((c) => ({ id: c.id, nome: c.nome })),
+  };
+}
+
+/** Contagem por estado dentro dos MESMOS filtros (menos o de estado): os
+ *  números das abas acompanham a busca, em vez de contar a base inteira. */
+async function resumoPorEstado(organizacaoId: string, filtros: FiltrosProspeccao): Promise<Record<EstadoProspeccao, number>> {
+  const linhas = await db.execute<{ estado: string; n: number }>(sql`
+    SELECT l.prospeccao_estado AS estado, count(*)::int AS n
+    ${FROM_PROSPECCAO} ${filtrosDeProspeccao(organizacaoId, filtros, false)}
+    GROUP BY 1`);
+  const resumo = Object.fromEntries(ESTADOS_PROSPECCAO.map((e) => [e, 0])) as Record<EstadoProspeccao, number>;
+  for (const r of linhas) resumo[r.estado as EstadoProspeccao] = r.n;
+  return resumo;
+}
+
+export const POR_PAGINA_PROSPECCAO = [25, 50, 100] as const;
 
 export async function listaProspeccao(organizacaoId: string, filtros: FiltrosProspeccao = {}): Promise<{
   linhas: LinhaProspeccao[];
   resumo: Record<EstadoProspeccao, number>;
-  filtros: { responsaveis: Array<{ id: string; nome: string }>; listas: string[] };
+  filtros: { responsaveis: Array<{ id: string; nome: string }>; listas: string[]; cadencias: Array<{ id: string; nome: string }> };
+  /** Total do recorte (com o filtro de estado) e a janela devolvida. */
+  paginacao: { total: number; pagina: number; porPagina: number; paginas: number };
 }> {
-  const busca = filtros.busca?.trim() ? `%${filtros.busca.trim().toLowerCase()}%` : null;
+  const porPagina = (POR_PAGINA_PROSPECCAO as readonly number[]).includes(filtros.porPagina ?? 0) ? filtros.porPagina! : 25;
+  const direcao = filtros.direcao === "asc" ? "ASC" : "DESC";
+  const ordem = filtros.ordem && ORDEM_SQL[filtros.ordem] ? filtros.ordem : "atividade";
+  // Empresa/responsável/cadência/estado leem melhor ascendentes quando o usuário não escolheu.
+  const dir = filtros.direcao ? direcao : ["empresa", "responsavel", "cadencia", "estado"].includes(ordem) ? "ASC" : "DESC";
+  const nulos = ordem === "proxima" ? "NULLS LAST" : "";
 
-  const linhas = await db.execute<{
-    lead_id: string; empresa: string | null; empresa_id: string | null;
-    pessoa: string | null; cargo: string | null; setor: string | null; porte: string | null;
-    estado: string; responsavel: string | null; lista: string | null;
-    cadencia: string | null; passo: string | null; total_passos: number | null;
-    proxima_acao_em: string | null; pre_qualificado: boolean;
-    descarte_motivo: string | null; criado_em: string;
-  }>(sql`
-    SELECT l.id::text AS lead_id, COALESCE(e.nome, l.empresa) AS empresa, l.empresa_id::text,
-           NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS pessoa, l.cargo,
-           e.setor, e.porte, l.prospeccao_estado AS estado, u.nome AS responsavel,
-           (SELECT lb.nome FROM lead_labels ll JOIN labels lb ON lb.id = ll.label_id
-             WHERE ll.lead_id = l.id ORDER BY lb.nome LIMIT 1) AS lista,
-           cd.nome AS cadencia, ce.current_step_id AS passo,
-           jsonb_array_length(COALESCE(cv.compiled_steps, cd.steps)) AS total_passos,
-           ce.scheduled_at::text AS proxima_acao_em,
-           l.pre_qualificado, l.prospeccao_descarte_motivo AS descarte_motivo,
-           l.created_at::text AS criado_em
-      FROM leads l
-      LEFT JOIN empresas e ON e.id = l.empresa_id
-      LEFT JOIN usuarios u ON u.id = l.responsavel_id
-      LEFT JOIN LATERAL (
-        SELECT * FROM cadence_enrollments x
-         WHERE x.entity_type = 'lead' AND x.entity_id = l.id
-         ORDER BY x.started_at DESC LIMIT 1
-      ) ce ON true
-      LEFT JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
-      LEFT JOIN cadence_versions cv ON cv.id = ce.cadence_version_id
-     WHERE l.organizacao_id = ${organizacaoId}::uuid
-       AND l.prospeccao_estado IS NOT NULL
-       AND (${filtros.estado ?? null}::text IS NULL OR l.prospeccao_estado = ${filtros.estado ?? null})
-       AND (${filtros.responsavelId ?? null}::uuid IS NULL OR l.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
-       AND (${filtros.lista ?? null}::text IS NULL OR EXISTS (
-         SELECT 1
-           FROM lead_labels ll_lista
-           JOIN labels lb_lista ON lb_lista.id = ll_lista.label_id
-          WHERE ll_lista.lead_id = l.id
-            AND lb_lista.organizacao_id = l.organizacao_id
-            AND lb_lista.nome = ${filtros.lista ?? null}
-       ))
-       AND (${busca}::text IS NULL OR lower(COALESCE(e.nome, l.empresa, '')) LIKE ${busca}
-            OR lower(concat_ws(' ', l.nome, l.sobrenome)) LIKE ${busca})
-     ORDER BY l.updated_at DESC
-     LIMIT ${LIMITE_PADRAO}
-  `);
+  const [{ n: total }] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n ${FROM_PROSPECCAO} ${filtrosDeProspeccao(organizacaoId, filtros, true)}`);
+  const paginas = Math.max(1, Math.ceil(total / porPagina));
+  const pagina = Math.min(Math.max(1, Math.trunc(filtros.pagina ?? 1) || 1), paginas);
 
-  const resumoLinhas = await db.execute<{ estado: string; n: number }>(sql`
-    SELECT prospeccao_estado AS estado, count(*)::int AS n FROM leads
-     WHERE organizacao_id = ${organizacaoId}::uuid AND prospeccao_estado IS NOT NULL
-     GROUP BY 1
-  `);
-  const resumo = Object.fromEntries(ESTADOS_PROSPECCAO.map((e) => [e, 0])) as Record<EstadoProspeccao, number>;
-  for (const r of resumoLinhas) resumo[r.estado as EstadoProspeccao] = r.n;
+  const linhas = await db.execute<LinhaBruta>(sql`
+    ${COLUNAS_PROSPECCAO} ${FROM_PROSPECCAO} ${filtrosDeProspeccao(organizacaoId, filtros, true)}
+     ORDER BY ${sql.raw(ORDEM_SQL[ordem])} ${sql.raw(dir)} ${sql.raw(nulos)}, l.id
+     LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`);
 
-  const responsaveis = await db.execute<{ id: string; nome: string }>(sql`
-    SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome
-  `);
-  const listas = await db.execute<{ nome: string }>(sql`
-    SELECT DISTINCT lb.nome FROM labels lb
-      JOIN lead_labels ll ON ll.label_id = lb.id
-      JOIN leads l ON l.id = ll.lead_id
-     WHERE lb.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IS NOT NULL
-     ORDER BY 1 LIMIT 40
-  `);
+  const [resumo, opcoes] = await Promise.all([resumoPorEstado(organizacaoId, filtros), opcoesDeFiltroProspeccao(organizacaoId)]);
 
   return {
-    linhas: linhas.map((l) => ({
-      leadId: l.lead_id,
-      empresa: l.empresa?.trim() || "Empresa não informada",
-      empresaId: l.empresa_id,
-      pessoa: l.pessoa,
-      cargo: l.cargo,
-      setor: l.setor,
-      porte: l.porte,
-      estado: l.estado as EstadoProspeccao,
-      estadoRotulo: ROTULO_ESTADO_PROSPECCAO[l.estado as EstadoProspeccao] ?? l.estado,
-      responsavel: l.responsavel,
-      lista: l.lista,
-      cadencia: l.cadencia,
-      // O passo é identificado por id no motor; a posição numérica só existe
-      // quando ela pode ser derivada, e nesse caso fica null em vez de virar 0.
-      passoAtual: null,
-      totalPassos: l.total_passos,
-      proximaAcaoEm: l.proxima_acao_em,
-      preQualificado: l.pre_qualificado,
-      descarteMotivo: l.descarte_motivo,
-      criadoEm: l.criado_em,
+    linhas: linhas.map(linhaDeProspeccao),
+    resumo,
+    filtros: opcoes,
+    paginacao: { total, pagina, porPagina, paginas },
+  };
+}
+
+/** Colunas do Kanban: as três operacionais (o resto são desfechos, tratados como filas). */
+export const COLUNAS_KANBAN_PROSPECCAO = ["novo", "em_cadencia", "respondeu"] as const;
+
+/**
+ * Cartões do Kanban de Prospecção, `porColuna` por estado, mais recentes
+ * primeiro. Mesmo recorte de filtros da lista (menos o de estado: o board é
+ * quem mostra os estados). O total de cada coluna vem do resumo, não do corte.
+ */
+export async function kanbanProspeccao(organizacaoId: string, filtros: FiltrosProspeccao = {}, porColuna = 25): Promise<{
+  colunas: Array<{ estado: EstadoProspeccao; total: number; cards: LinhaProspeccao[] }>;
+  resumo: Record<EstadoProspeccao, number>;
+  filtros: { responsaveis: Array<{ id: string; nome: string }>; listas: string[]; cadencias: Array<{ id: string; nome: string }> };
+}> {
+  const limite = Math.min(Math.max(Math.trunc(porColuna) || 25, 10), 500);
+  const linhas = await db.execute<LinhaBruta>(sql`
+    SELECT * FROM (
+      ${COLUNAS_PROSPECCAO},
+             row_number() OVER (PARTITION BY l.prospeccao_estado ORDER BY l.updated_at DESC, l.id) AS rn
+      ${FROM_PROSPECCAO} ${filtrosDeProspeccao(organizacaoId, { ...filtros, estado: null }, false)}
+        AND l.prospeccao_estado = ANY(ARRAY['novo','em_cadencia','respondeu'])
+    ) t WHERE rn <= ${limite} ORDER BY rn`);
+  const [resumo, opcoes] = await Promise.all([resumoPorEstado(organizacaoId, filtros), opcoesDeFiltroProspeccao(organizacaoId)]);
+  const todas = linhas.map(linhaDeProspeccao);
+  return {
+    colunas: COLUNAS_KANBAN_PROSPECCAO.map((estado) => ({
+      estado, total: resumo[estado] ?? 0, cards: todas.filter((c) => c.estado === estado),
     })),
     resumo,
-    filtros: {
-      responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome })),
-      listas: listas.map((l) => l.nome),
+    filtros: opcoes,
+  };
+}
+
+/* ── Operação / Fila BDR (indicadores REAIS) ───────────────────────────── */
+
+export interface OperacaoProspeccao {
+  total: number;
+  porEstado: Record<EstadoProspeccao, number>;
+  /** Indicadores derivados de dados persistidos. `null` = sem base para calcular. */
+  indicadores: {
+    novosSemResponsavel: number;
+    semContato: number;
+    cadenciaAtiva: number;
+    cadenciaPausada: number;
+    cadenciaComFalha: number;
+    /** Quem respondeu e ainda não foi tratado: o dado mais quente parado. */
+    respondeuAguardando: number;
+    respondeuMaisAntigoEm: string | null;
+    adicionadosUltimos7Dias: number;
+  };
+  /** Quantos chegaram a cada marco (status_changes), com taxa sobre a base. */
+  funil: { base: number; chegaramEmCadencia: number; responderam: number; preQualificados: number; oportunidades: number; descartados: number };
+  descartePorMotivo: Array<{ motivo: string; n: number }>;
+  filaPorResponsavel: Array<{ responsavelId: string | null; nome: string; novo: number; emCadencia: number; respondeu: number; total: number }>;
+  /** Listas (etiquetas) em uso na base, com o total de empresas. */
+  listas: Array<{ nome: string; total: number; abertas: number }>;
+  /** Cadências que já receberam prospects, com o que de fato aconteceu. */
+  cadencias: Array<{ id: string; nome: string; matriculados: number; ativos: number; responderam: number; concluidos: number; falhas: number }>;
+}
+
+export async function operacaoProspeccao(organizacaoId: string): Promise<OperacaoProspeccao> {
+  const [ind] = await db.execute<{
+    total: number; novos_sem_resp: number; sem_contato: number; cad_ativa: number; cad_pausada: number; cad_falha: number;
+    respondeu_aguardando: number; respondeu_mais_antigo: string | null; novos_7d: number;
+  }>(sql`
+    SELECT count(*)::int AS total,
+           count(*) FILTER (WHERE l.prospeccao_estado = 'novo' AND l.responsavel_id IS NULL)::int AS novos_sem_resp,
+           count(*) FILTER (WHERE l.prospeccao_estado IN ('novo','em_cadencia','respondeu','sem_resposta')
+                              AND COALESCE(trim(l.email),'') = '' AND COALESCE(trim(l.telefone),'') = '' AND COALESCE(trim(l.whatsapp),'') = '')::int AS sem_contato,
+           count(*) FILTER (WHERE ce.status IN ('active','waiting','waiting_reply'))::int AS cad_ativa,
+           count(*) FILTER (WHERE ce.status = 'paused')::int AS cad_pausada,
+           count(*) FILTER (WHERE ce.status = 'failed')::int AS cad_falha,
+           count(*) FILTER (WHERE l.prospeccao_estado = 'respondeu')::int AS respondeu_aguardando,
+           min(l.updated_at) FILTER (WHERE l.prospeccao_estado = 'respondeu')::text AS respondeu_mais_antigo,
+           count(*) FILTER (WHERE l.created_at > now() - interval '7 days')::int AS novos_7d
+      FROM leads l
+      LEFT JOIN LATERAL (
+        SELECT status FROM cadence_enrollments x WHERE x.entity_type = 'lead' AND x.entity_id = l.id
+         ORDER BY x.started_at DESC LIMIT 1) ce ON true
+     WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IS NOT NULL
+  `);
+
+  const porEstadoLinhas = await db.execute<{ estado: string; n: number }>(sql`
+    SELECT prospeccao_estado AS estado, count(*)::int AS n FROM leads
+     WHERE organizacao_id = ${organizacaoId}::uuid AND prospeccao_estado IS NOT NULL GROUP BY 1`);
+  const porEstado = Object.fromEntries(ESTADOS_PROSPECCAO.map((e) => [e, 0])) as Record<EstadoProspeccao, number>;
+  for (const r of porEstadoLinhas) porEstado[r.estado as EstadoProspeccao] = r.n;
+
+  // Marcos pelo HISTÓRICO (status_changes): quem já passou por um estado conta
+  // mesmo que tenha seguido adiante.
+  const [marcos] = await db.execute<{ cad: number; resp: number; opp: number; desc: number }>(sql`
+    SELECT count(DISTINCT sc.lead_id) FILTER (WHERE sc.para_status = 'prospeccao:em_cadencia')::int AS cad,
+           count(DISTINCT sc.lead_id) FILTER (WHERE sc.para_status = 'prospeccao:respondeu')::int AS resp,
+           count(DISTINCT sc.lead_id) FILTER (WHERE sc.para_status = 'prospeccao:oportunidade')::int AS opp,
+           count(DISTINCT sc.lead_id) FILTER (WHERE sc.para_status = 'prospeccao:descartado')::int AS desc
+      FROM status_changes sc JOIN leads l ON l.id = sc.lead_id
+     WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IS NOT NULL`);
+
+  const descartes = await db.execute<{ motivo: string; n: number }>(sql`
+    SELECT prospeccao_descarte_motivo AS motivo, count(*)::int AS n FROM leads
+     WHERE organizacao_id = ${organizacaoId}::uuid AND prospeccao_estado = 'descartado' AND prospeccao_descarte_motivo IS NOT NULL
+     GROUP BY 1 ORDER BY 2 DESC`);
+
+  const fila = await db.execute<{ id: string | null; nome: string | null; novo: number; cad: number; resp: number; total: number }>(sql`
+    SELECT l.responsavel_id::text AS id, u.nome,
+           count(*) FILTER (WHERE l.prospeccao_estado = 'novo')::int AS novo,
+           count(*) FILTER (WHERE l.prospeccao_estado = 'em_cadencia')::int AS cad,
+           count(*) FILTER (WHERE l.prospeccao_estado = 'respondeu')::int AS resp,
+           count(*)::int AS total
+      FROM leads l LEFT JOIN usuarios u ON u.id = l.responsavel_id
+     WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IN ('novo','em_cadencia','respondeu')
+     GROUP BY 1, 2 ORDER BY 6 DESC, 2`);
+
+  const listas = await db.execute<{ nome: string; total: number; abertas: number }>(sql`
+    SELECT lb.nome, count(DISTINCT l.id)::int AS total,
+           count(DISTINCT l.id) FILTER (WHERE l.prospeccao_estado IN ('novo','em_cadencia','respondeu','sem_resposta'))::int AS abertas
+      FROM labels lb JOIN lead_labels ll ON ll.label_id = lb.id JOIN leads l ON l.id = ll.lead_id
+     WHERE lb.organizacao_id = ${organizacaoId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IS NOT NULL
+     GROUP BY lb.nome ORDER BY 2 DESC, 1 LIMIT 30`);
+
+  const cadencias = await db.execute<{ id: string; nome: string; matriculados: number; ativos: number; responderam: number; concluidos: number; falhas: number }>(sql`
+    SELECT cd.id::text, cd.nome, count(*)::int AS matriculados,
+           count(*) FILTER (WHERE ce.status IN ('active','waiting','waiting_reply','paused'))::int AS ativos,
+           count(*) FILTER (WHERE ce.last_inbound_at IS NOT NULL)::int AS responderam,
+           count(*) FILTER (WHERE ce.status = 'completed')::int AS concluidos,
+           count(*) FILTER (WHERE ce.status = 'failed')::int AS falhas
+      FROM cadence_enrollments ce
+      JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+      JOIN leads l ON l.id = ce.entity_id AND ce.entity_type = 'lead'
+     WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IS NOT NULL
+     GROUP BY cd.id, cd.nome ORDER BY 3 DESC LIMIT 30`);
+
+  return {
+    listas, cadencias,
+    total: ind?.total ?? 0,
+    porEstado,
+    indicadores: {
+      novosSemResponsavel: ind?.novos_sem_resp ?? 0,
+      semContato: ind?.sem_contato ?? 0,
+      cadenciaAtiva: ind?.cad_ativa ?? 0,
+      cadenciaPausada: ind?.cad_pausada ?? 0,
+      cadenciaComFalha: ind?.cad_falha ?? 0,
+      respondeuAguardando: ind?.respondeu_aguardando ?? 0,
+      respondeuMaisAntigoEm: ind?.respondeu_mais_antigo ?? null,
+      adicionadosUltimos7Dias: ind?.novos_7d ?? 0,
     },
+    funil: {
+      base: ind?.total ?? 0, chegaramEmCadencia: marcos?.cad ?? 0, responderam: marcos?.resp ?? 0,
+      preQualificados: porEstado.pre_qualificado, oportunidades: porEstado.oportunidade, descartados: porEstado.descartado,
+    },
+    descartePorMotivo: descartes.map((d) => ({ motivo: d.motivo, n: d.n })),
+    filaPorResponsavel: fila.map((f) => ({
+      responsavelId: f.id, nome: f.nome ?? "Sem responsável", novo: f.novo, emCadencia: f.cad, respondeu: f.resp, total: f.total,
+    })),
   };
 }
 

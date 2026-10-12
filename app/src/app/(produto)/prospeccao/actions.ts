@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { atorHumano, type Familia, type MotivoDescarte } from "@/lib/vendas/dominio";
+import { atorHumano, RegraDeNegocio, type EstadoProspeccao, type Familia, type MotivoDescarte } from "@/lib/vendas/dominio";
+import { detalheDoProspect, type DetalheDoProspect } from "@/lib/vendas/prospeccao-detalhe";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as prospeccao from "@/lib/vendas/prospeccao";
 
@@ -102,12 +103,55 @@ export async function acaoPausarCadencia(leadId: string, motivo: string): Promis
   });
 }
 
-export async function acaoRegistrarResposta(leadId: string, canal: string | null): Promise<Resultado> {
+export async function acaoRegistrarResposta(
+  leadId: string, canal: string | null, confirmacaoManual?: { canal: string; observacao: string } | null,
+): Promise<Resultado> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("registrar resposta", async () => {
-    await prospeccao.registrarResposta({ organizacaoId: ctx.organizacaoId, leadId, canal, ator: ctx.ator });
+    await prospeccao.registrarResposta({ organizacaoId: ctx.organizacaoId, leadId, canal, confirmacaoManual: confirmacaoManual ?? null, ator: ctx.ator });
     revalidatePath(ROTA);
+  });
+}
+
+export async function acaoRetomarCadencia(leadId: string): Promise<Resultado> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("retomar cadência", async () => {
+    await prospeccao.retomarCadencia({ organizacaoId: ctx.organizacaoId, leadId, ator: ctx.ator });
+    revalidatePath(ROTA);
+  });
+}
+
+/**
+ * Porta do arrastar-e-soltar. A tela NUNCA grava `prospeccao_estado`: pede o
+ * movimento, e o backend valida a transição e executa o comando de domínio.
+ */
+export async function acaoMoverProspect(leadId: string, para: EstadoProspeccao, dados: {
+  cadenceDefinitionId?: string | null;
+  confirmacaoManual?: { canal: string; observacao: string } | null;
+  motivoDescarte?: MotivoDescarte | null;
+  familias?: Familia[];
+  responsavelId?: string | null;
+} = {}): Promise<Resultado<prospeccao.ResultadoDoMovimento>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("mover prospect", async () => {
+    const r = await prospeccao.moverProspect({ organizacaoId: ctx.organizacaoId, leadId, para, ator: ctx.ator, ...dados });
+    revalidatePath(ROTA);
+    if (para === "pre_qualificado") revalidatePath("/pre-vendas");
+    if (para === "oportunidade") revalidatePath("/pipeline");
+    return r;
+  });
+}
+
+export async function acaoDetalheProspect(leadId: string): Promise<Resultado<DetalheDoProspect>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("abrir prospect", async () => {
+    const d = await detalheDoProspect(ctx.organizacaoId, leadId);
+    if (!d) throw new RegraDeNegocio("prospect_nao_encontrado", "Prospect não encontrado.");
+    return d;
   });
 }
 
