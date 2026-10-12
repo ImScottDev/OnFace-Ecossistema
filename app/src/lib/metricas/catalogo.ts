@@ -244,9 +244,13 @@ export const CATALOGO: DefinicaoMetrica[] = [
     tipo: "EVENT",
     unidade: "BRL",
     descricao:
-      "Dinheiro que ENTROU no período, pela data do pagamento. É caixa, não competência.",
-    fonte: "pagamentos canônicos com status pago e paid_at na janela.",
-    naoInclui: "fatura emitida e não paga, e pagamento sem data — este último é caso de reconciliação.",
+      "Dinheiro que ENTROU no período, pela data do pagamento, SÓ onde o ONFACE tem a baixa: pagamentos Stripe " +
+      "(cartão/PIX do Callface AI e parte do White Label). É caixa, não competência.",
+    fonte: "pagamentos canônicos com status pago e paid_at na janela (origem Stripe).",
+    naoInclui:
+      "boleto e nota fiscal do PABX: a baixa deles não está no ONFACE, então este número é parcial e NÃO pode ser " +
+      "lido contra o faturado total (em set/2026: R$ 56 mil recebidos contra R$ 512 mil faturados, por cobertura, não por inadimplência). " +
+      "Também não inclui fatura emitida e não paga nem pagamento sem data.",
     agregacao: "soma",
     filtros: { familia: false },
     ordem: "t.paid_at DESC",
@@ -398,6 +402,46 @@ export const CATALOGO: DefinicaoMetrica[] = [
            AND ${daFamilia("COALESCE(NULLIF(r.service_family, ''), 'UNKNOWN')", p.familia)}
            AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, r.cliente_nome, '')"))}
          GROUP BY COALESCE(r.documento, r.customer_key)`;
+    },
+  }),
+  definir({
+    codigo: "faturas_stripe_fora_da_planilha",
+    nome: "Cobrado no Stripe sem linha na planilha",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao:
+      "Faturas Stripe pagas ou abertas, por empresa e mês, cuja empresa NÃO aparece na planilha de faturamento do mesmo mês. " +
+      "A planilha já espelha a maior parte do Stripe (em set/2026, 38 empresas com valor idêntico); este é o que ficou de fora.",
+    fonte: "faturas (origem Stripe, status paga ou aberta) sem linha em cliente_receita_mensal para a mesma empresa e competência.",
+    naoInclui:
+      "rascunho e fatura anulada. Não é receita adicional confirmada: pode ser cobrança de empresa que a planilha lança sob outro " +
+      "documento. É fila de conciliação, não ajuste de faturamento.",
+    agregacao: "soma",
+    filtros: { familia: false },
+    ordem: "t.valor DESC",
+    explorar: {
+      dimensoes: [{ chave: "situacao", rotulo: "Situação da fatura" }],
+      campoData: "competencia", campoDataTipo: "data", periodoPadrao: "12m",
+      busca: ["empresa"], ordenaveis: ["valor", "empresa", "competencia"],
+      piso: new Date("2025-11-01T00:00:00-03:00"),
+    },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT f.empresa_id::text || '|' || to_char(m.mes, 'YYYY-MM') AS id, f.empresa_id::text AS empresa_id, e.nome AS empresa,
+               m.mes AS competencia,
+               CASE WHEN bool_and(f.status = 'paga') THEN 'paga' WHEN bool_or(f.status = 'paga') THEN 'paga e aberta' ELSE 'aberta' END AS situacao,
+               sum(f.valor)::numeric AS valor
+          FROM faturas f
+          JOIN empresas e ON e.id = f.empresa_id
+          CROSS JOIN LATERAL (SELECT date_trunc('month', coalesce(f.emitida_em, f.created_at) AT TIME ZONE 'America/Sao_Paulo')::date AS mes) m
+         WHERE f.organizacao_id = ${org}::uuid AND f.origem = 'stripe' AND f.status IN ('paga', 'aberta') AND f.empresa_id IS NOT NULL
+           AND m.mes >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND m.mes <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r
+                            WHERE r.organizacao_id = f.organizacao_id AND r.empresa_id = f.empresa_id AND r.competencia = m.mes)
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}
+         GROUP BY f.empresa_id, e.nome, m.mes`;
     },
   }),
 ];

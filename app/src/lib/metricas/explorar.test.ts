@@ -113,3 +113,20 @@ test("clientes faturados conta documentos distintos, não linhas", async () => {
   assert.equal(e.selecionado.registros, Number(o.n));
   assert.equal(e.total, Number(o.n));
 });
+
+test("Stripe fora da planilha: set/2026 bate com a conciliação por empresa feita em SQL separado", async () => {
+  const org = await organizacao();
+  const j = janelaDoPeriodo("custom:2026-09-01:2026-09-30");
+  const e = (await explorar(org, "faturas_stripe_fora_da_planilha", { de: j.de, ate: j.ate, incluirTestes: true }))!;
+  // Oráculo: por empresa, só entra quem NÃO tem nenhuma linha na planilha de setembro (consulta escrita de outro jeito).
+  const [o] = await db.execute<{ v: string; n: string }>(sql`
+    SELECT COALESCE(sum(x.v),0)::text v, count(*)::text n FROM (
+      SELECT f.empresa_id, sum(f.valor) v FROM faturas f
+       WHERE f.organizacao_id = ${org}::uuid AND f.origem = 'stripe' AND f.status IN ('paga','aberta') AND f.empresa_id IS NOT NULL
+         AND to_char(coalesce(f.emitida_em, f.created_at) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM') = '2026-09'
+         AND f.empresa_id NOT IN (SELECT empresa_id FROM cliente_receita_mensal WHERE competencia = '2026-09-01' AND empresa_id IS NOT NULL)
+       GROUP BY f.empresa_id) x`);
+  assert.equal(c(e.total), c(Number(o.v)));
+  assert.equal(e.registrosTotal, Number(o.n));
+  assert.ok(e.registrosTotal > 0, "sem linha o teste não prova nada");
+});

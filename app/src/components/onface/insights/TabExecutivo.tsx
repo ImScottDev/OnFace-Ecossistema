@@ -51,7 +51,8 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
   const mrr = useMetrica("mrr_atual", { familia: f, tamanho: "5" });
   const ativos = useMetrica("clientes_ativos", { familia: f, tamanho: "5" });
   const booking = useMetrica("booking_ganho", { periodo: "mes_atual", familia: f, tamanho: "5" });
-  const recebido = useMetrica("recebido", { periodo: "mes_atual", familia: f, tamanho: "5" });
+  const recebido = useMetrica("recebido", { periodo: "mes_atual", tamanho: "5" });
+  const foraPlanilha = useMetrica("faturas_stripe_fora_da_planilha", { periodo: "12m", tamanho: "5" });
 
   // ── Derivados da série mensal completa (mesma resposta do gráfico) ──
   const pontos = hist.data?.exploracao.serie?.pontos ?? [];
@@ -98,7 +99,7 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
           sub={ult12.length === 12 ? `12 meses: ${dinheiroCurto(soma(ult12), "BRL")}${yoy12 !== null ? ` (${pct(yoy12)} vs 12 anteriores)` : ""}` : "competência fechada mais recente"}
           href={ultimo ? link("faturamento_competencia", { periodo: "tudo", familia: f, de: ultimo.inicio, ate: fimDoPonto(ultimo.inicio, "mes") }) : undefined} />
         <Tile titulo="Booking do mês" rotulo="venda ganha, mês atual até hoje" r={booking} href={link("booking_ganho", { periodo: "mes_atual", familia: f })} comparar />
-        <Tile titulo="Recebido no mês" rotulo="caixa, mês atual até hoje" r={recebido} href={link("recebido", { periodo: "mes_atual" })} comparar
+        <Tile titulo="Recebido no mês" rotulo="só pagamentos Stripe (boleto e NF sem baixa no ONFACE)" r={recebido} href={link("recebido", { periodo: "mes_atual" })} comparar
           naoAplicaFamilia={!!familia} />
         <Tile titulo="Clientes ativos" rotulo="com serviço ativo agora" r={ativos} href={link("clientes_ativos", { familia: f })} />
       </section>
@@ -190,13 +191,21 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
         </section>
       </div>
 
+      {foraPlanilha.data && foraPlanilha.data.exploracao.total > 0 ? (
+        <p className="rx-aviso">
+          <strong>Conciliação pendente:</strong> {dinheiro(foraPlanilha.data.exploracao.total, "BRL")} em {foraPlanilha.data.exploracao.registrosTotal.toLocaleString("pt-BR")} cobranças
+          Stripe dos últimos 12 meses não têm linha na planilha de faturamento do mesmo mês. Não estão somados ao faturado acima.{" "}
+          <Link className="rx-kpi-ver" href={link("faturas_stripe_fora_da_planilha", { periodo: "12m" })}>Ver quais são</Link>
+        </p>
+      ) : null}
+
       <section className="rx-painel" aria-label="O que este painel ainda não responde">
         <h2>O que este painel não responde (e por quê)</h2>
         <ul className="ex-lacunas">
           <li><b>Lucro, margem, CAC completo, payback, burn e runway:</b> só existem custos de mídia organizados; sem custo de equipe, telefonia, IA e fornecedores o cálculo seria inventado.</li>
           <li><b>Bridge de MRR e retenção (NRR/GRR):</b> exigem movimentos de receita reconciliados com o fechamento mensal; entram quando a conciliação por cliente fechar.</li>
           <li><b>Faturamento por família antes da classificação:</b> a planilha base não tem produto, só Business Line; ver o percentual &quot;sem família&quot; acima.</li>
-          <li><b>Recebido por família:</b> pagamentos não carregam a família do serviço.</li>
+          <li><b>Recebido:</b> só existe a baixa dos pagamentos Stripe; boleto e nota fiscal do PABX não têm baixa no ONFACE. Por isso recebido não deve ser lido contra o faturado total, nem por família.</li>
         </ul>
       </section>
     </div>
