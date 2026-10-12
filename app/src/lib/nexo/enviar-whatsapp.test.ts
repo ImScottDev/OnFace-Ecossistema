@@ -20,8 +20,8 @@ let closer: { id: string; nome: string; role: string };
 let sessaoId: string; let contatoId: string;
 
 before(async () => {
-  [admin] = (await db.execute<typeof admin>(sql`SELECT id::text, nome, role FROM usuarios WHERE organizacao_id=${ORG}::uuid AND ativo AND role='admin' LIMIT 1`)) as [typeof admin];
-  [closer] = (await db.execute<typeof closer>(sql`SELECT id::text, nome, role FROM usuarios WHERE organizacao_id=${ORG}::uuid AND ativo AND role='closer' LIMIT 1`)) as [typeof closer];
+  admin = (await db.execute<typeof admin>(sql`SELECT id::text, nome, role FROM usuarios WHERE organizacao_id=${ORG}::uuid AND ativo AND role='admin' LIMIT 1`))[0]!;
+  closer = (await db.execute<typeof closer>(sql`SELECT id::text, nome, role FROM usuarios WHERE organizacao_id=${ORG}::uuid AND ativo AND role='closer' LIMIT 1`))[0]!;
   assert.ok(admin && closer, "banco sem admin/closer");
   await limpar();
   [{ id: sessaoId }] = await db.execute<{ id: string }>(sql`

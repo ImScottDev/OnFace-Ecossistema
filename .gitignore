@@ -81,3 +81,6 @@ _dados/
 db-export/
 *.zip
 scripts/carga-marco-zero/revisao/
+
+# evidências de provas no navegador
+app/.tmp-*/

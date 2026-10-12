@@ -24,7 +24,8 @@ import { PecasHost } from "./pecas-host";
 import { UsuarioDoProtoContexto, iniciaisDe, type UsuarioDoProto } from "./usuario-do-proto";
 import { desenharRadar, tituloDoRadar } from "@/lib/nexo/radar-desenho";
 import type { DadosRadar, MsgNexo } from "@/lib/nexo/painel";
-import { perguntarAoNexo, botoesDaResposta, confirmarAcaoDoNexo, partesComLinks } from "@/lib/nexo/cliente";
+import { perguntarAoNexo, botoesDaResposta, confirmarAcaoDoNexo } from "@/lib/nexo/cliente";
+import { RespostaRica } from "../nexo/RespostaRica";
 
 /* O menu do desenho navega em `/onface-preview/…`, onde estas telas moraram
    antes de virar rota oficial. A tradução para a rota do produto mora em
@@ -323,9 +324,7 @@ class CascaLigada extends CascaLiga {
         /* Envio de WhatsApp: o rascunho do NEXO aparece editável antes do Confirmar.
            O texto que a pessoa deixar aqui é o que vai (o servidor grava o editado). */
         const rascunhos = (msgs[i]?.acoes || []).map((a) => a.confirmar).filter((c): c is { runId: string; passo: number; rascunho?: string } => !!c?.rascunho);
-        const texto = m.ehOni ? partesComLinks(msgs[i]?.texto ?? "").map((parte, j) => parte.href
-          ? <a key={j} href={parte.href} onClick={(e) => { e.preventDefault(); navegar(parte.href!); }} style={{ color: "inherit", textDecoration: "underline" }}>{parte.texto}</a>
-          : parte.texto) : m.texto;
+        const texto = m.ehOni ? <RespostaRica texto={msgs[i]?.texto ?? ""} navegar={navegar} /> : m.texto;
         return {
         ...m,
         texto: rascunhos.length ? <>

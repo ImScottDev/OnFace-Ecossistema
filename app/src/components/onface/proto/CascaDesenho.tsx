@@ -671,7 +671,7 @@ Consultando a base
 </div>
 <div style={{ flex: "0 0 auto", padding: "11px 16px 13px", borderTop: "1px solid #e3e7e8" }}>
 <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", borderRadius: "11px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", padding: "6px 6px 6px 12px" }}>
-<input value={nexo.rascunho} onChange={nexo.setRascunho} onKeyDown={nexo.tecla} placeholder="Oii, usuario Comoo posso te ajudar?" style={{ flex: "1", minWidth: "0", border: "0", outline: "0", background: "transparent", fontSize: "13.5px", height: "32px" }} />
+<input value={nexo.rascunho} onChange={nexo.setRascunho} onKeyDown={nexo.tecla} placeholder="Pergunte ou peça algo ao NEXO" style={{ flex: "1", minWidth: "0", border: "0", outline: "0", background: "transparent", fontSize: "13.5px", height: "32px" }} />
 <button onClick={nexo.enviar} style={estilo(nexo.enviarStyle)} title="Enviar">
 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 <path d="M22 2 11 13M22 2l-7 20-4-9-9-4z" />
