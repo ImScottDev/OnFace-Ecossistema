@@ -3,13 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { isPersonalView } from "@/lib/auth/roles";
 import { entrada, podeVer, type EntradaBiblioteca } from "@/lib/relatorios/biblioteca";
-import { lerMetrica, ROTULO_COLUNA, DESTINO_ID, LIMITE_DRILL } from "@/lib/relatorios/biblioteca-metrica";
 import { definicao } from "@/lib/metricas/catalogo";
 import { ehPeriodoPerformance, PERIODOS_PERFORMANCE, type PeriodoPerformance } from "@/lib/relatorios/performance";
 import { GO_LIVE } from "@/lib/relatorios/periodo";
 import { listarVendasFechadas, listarAgendasRealizadas, listarVendasAtribuidasSdr } from "@/lib/relatorios/fechamento-comercial";
 import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
 import { InsightsRelatorio } from "@/components/onface/relatorios/InsightsRelatorio";
+import { ExploradorMetrica } from "@/components/onface/relatorios/ExploradorMetrica";
 import { moeda, moedaExata, dataCurta } from "@/components/onface/vendas/formato";
 import "@/components/onface/relatorios/relatorios.css";
 
@@ -77,7 +77,7 @@ export default async function RelatorioDaBibliotecaPage({
     );
   }
 
-  if (e.tipo === "metrica") return <Metrica e={e} organizacaoId={ctx.organizacaoId} busca={busca} voltar={voltar} />;
+  if (e.tipo === "metrica") return <Metrica e={e} voltar={voltar} />;
   return <Fechamento e={e} organizacaoId={ctx.organizacaoId} busca={busca} voltar={voltar} />;
 }
 
@@ -93,91 +93,14 @@ function formatarCelula(chave: string, v: unknown): string {
   return String(v);
 }
 
-async function Metrica({ e, organizacaoId, busca, voltar }: { e: EntradaBiblioteca; organizacaoId: string; busca: Busca; voltar: React.ReactNode }) {
+async function Metrica({ e, voltar }: { e: EntradaBiblioteca; voltar: React.ReactNode }) {
   const codigo = e.id.replace(/^metrica-/, "");
   const def = definicao(codigo)!;
-  const periodo: PeriodoPerformance = ehPeriodoPerformance(busca.periodo) ? busca.periodo : "mes_atual";
-  const dados = (await lerMetrica(organizacaoId, codigo, periodo))!;
-  const snapshot = def.tipo === "SNAPSHOT";
-  const brl = def.unidade === "BRL";
-  // negocio_id é só navegação (DESTINO_ID), não coluna.
-  const colunas = dados.linhas[0] ? Object.keys(dados.linhas[0]).filter((c) => c !== "negocio_id") : [];
-  const destino = DESTINO_ID[codigo];
-  // until é exclusivo no mês passado: -1ms mostra o último dia de fato coberto.
-  const janela = `${dataCurta(dados.since.toISOString())} – ${dataCurta(new Date(dados.until.getTime() - 1).toISOString())}`;
-
   return (
     <Pagina>
-      <PaginaCabecalho
-        titulo={def.nome}
-        acoes={
-          <>
-            {voltar}
-            {dados.linhas.length > 0 ? (
-              <a className="rel-btn" href={`/relatorios/biblioteca/${e.id}/exportar${snapshot ? "" : `?periodo=${periodo}`}`} download>Exportar CSV</a>
-            ) : (
-              <span className="rel-motivo">Sem registros para exportar</span>
-            )}
-          </>
-        }
-      />
-      <PaginaResumo
-        itens={[
-          { rotulo: snapshot ? "Agora" : `No período (${janela})`, valor: brl ? moeda(dados.valor.valor) : dados.valor.valor.toLocaleString("pt-BR"), destaque: true, detalhe: snapshot ? "retrato deste instante" : "evento dentro da janela" },
-          { rotulo: "Registros por trás do número", valor: dados.linhas.length, detalhe: dados.linhas.length >= LIMITE_DRILL ? `mostrando os ${LIMITE_DRILL} primeiros` : "drill-down completo" },
-        ]}
-      />
-
-      <section className="rel" aria-label="Detalhe da métrica">
-        <dl className="rel-def">
-          <div><dt>O que é</dt><dd>{def.descricao}</dd></div>
-          <div><dt>De onde sai</dt><dd>{def.fonte}</dd></div>
-          {def.naoInclui ? <div><dt>Não inclui</dt><dd>{def.naoInclui}</dd></div> : null}
-        </dl>
-
-        {snapshot ? null : (
-          <div className="rel-filtros">
-            <nav className="rel-segmento" aria-label="Período">
-              {PERIODOS_PERFORMANCE.map((op) => (
-                <Link key={op.chave} href={`/relatorios/biblioteca/${e.id}?periodo=${op.chave}`} aria-current={periodo === op.chave ? "page" : undefined}>{op.rotulo}</Link>
-              ))}
-            </nav>
-            {dados.since.getTime() === GO_LIVE.getTime() ? <span className="rel-motivo">Janela começa no go-live (01/07/2026).</span> : null}
-          </div>
-        )}
-
-        {dados.linhas.length === 0 ? (
-          <div className="rel-vazio">
-            <strong>Nenhum registro</strong>
-            <span>{snapshot ? "Não há registros nesta métrica agora." : `Nenhum registro entre ${janela}. Tente uma janela maior.`}</span>
-          </div>
-        ) : (
-          <div className="rel-tabela-wrap">
-            <table className="rel-tabela">
-              <thead>
-                <tr>{colunas.map((c) => <th key={c} scope="col">{ROTULO_COLUNA[c] ?? c}</th>)}</tr>
-              </thead>
-              <tbody>
-                {dados.linhas.map((l, i) => (
-                  <tr key={String(l.id ?? i)}>
-                    {colunas.map((c) => (
-                      <td key={c} className={typeof l[c] === "number" || c === "valor" || c === "mrr" ? undefined : "rel-texto"}>
-                        {c === "id" && destino?.(l) ? (
-                          <Link href={destino(l)!}><code>{String(l.id).slice(0, 8)}</code></Link>
-                        ) : c === "id" ? (
-                          <code>{String(l.id).slice(0, 8)}</code>
-                        ) : (
-                          formatarCelula(c, l[c])
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <PaginaCabecalho titulo={def.nome} descricao={def.tipo === "SNAPSHOT" ? "Retrato de agora, com os registros que o compõem." : "Evento por período, com os registros que o compõem."} acoes={voltar} />
+      {/* O explorador lê da rota /api/relatorios/metricas: o mesmo recorte vale para número, gráfico, lista e CSV. */}
+      <ExploradorMetrica codigo={codigo} />
     </Pagina>
   );
 }

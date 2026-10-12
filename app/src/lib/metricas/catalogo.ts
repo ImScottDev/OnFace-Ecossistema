@@ -147,7 +147,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "origem", rotulo: "Origem da linha" }], busca: ["empresa"], ordenaveis: ["valor", "empresa", "familia", "origem"] },
     recorte: (org, p) => sql`
       WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${org}::uuid)
-      SELECT r.empresa_id::text AS id, e.nome AS empresa, NULL::text AS produto,
+      SELECT r.empresa_id::text AS id, e.nome AS empresa,
              COALESCE(r.service_family, 'UNKNOWN') AS familia,
              'fechamento'::text AS origem, sum(r.valor)::numeric AS valor
         FROM cliente_receita_mensal r
@@ -158,7 +158,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
          AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}
        GROUP BY r.empresa_id, e.nome, COALESCE(r.service_family, 'UNKNOWN')
       UNION ALL
-      SELECT a.empresa_id::text, e.nome, NULL::text,
+      SELECT a.empresa_id::text, e.nome,
              COALESCE(sc.service_family, 'UNKNOWN'), 'assinatura'::text, sum(a.mrr)::numeric
         FROM assinaturas a
         JOIN empresas e ON e.id = a.empresa_id
@@ -194,7 +194,8 @@ export const CATALOGO: DefinicaoMetrica[] = [
       const { de, ate } = janela(p);
       return sql`
         SELECT o.id::text, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
-               COALESCE(o.valor, 0)::numeric AS valor, o.ganho_at
+               COALESCE(o.valor, 0)::numeric AS valor, o.ganho_at,
+               o.negocio_id_legado::text AS negocio_id, o.empresa_id::text AS empresa_id
           FROM oportunidades o
           LEFT JOIN empresas e ON e.id = o.empresa_id
          WHERE o.organizacao_id = ${org}::uuid
@@ -221,7 +222,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
       const { de, ate } = janela(p);
       return sql`
         SELECT f.id::text, e.nome AS empresa, COALESCE(f.valor, 0)::numeric AS valor,
-               f.status, COALESCE(f.emitida_em, f.created_at) AS emitida_em
+               f.status, COALESCE(f.emitida_em, f.created_at) AS emitida_em, f.empresa_id::text AS empresa_id
           FROM faturas f
           LEFT JOIN empresas e ON e.id = f.empresa_id
          WHERE f.organizacao_id = ${org}::uuid
@@ -248,7 +249,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
       const { de, ate } = janela(p);
       return sql`
         SELECT pg.id::text, e.nome AS empresa, COALESCE(pg.amount, 0)::numeric AS valor,
-               pg.payment_method AS metodo, pg.paid_at
+               pg.payment_method AS metodo, pg.paid_at, pg.empresa_id::text AS empresa_id
           FROM pagamentos pg
           LEFT JOIN empresas e ON e.id = pg.empresa_id
          WHERE pg.organizacao_id = ${org}::uuid
@@ -299,7 +300,8 @@ export const CATALOGO: DefinicaoMetrica[] = [
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "etapa", rotulo: "Etapa" }], busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "etapa", "previsao_fechamento", "familia"] },
     recorte: (org, p) => sql`
       SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
-             o.etapa, o.valor::numeric AS valor, o.previsao_fechamento
+             o.etapa, o.valor::numeric AS valor, o.previsao_fechamento,
+             o.negocio_id_legado::text AS negocio_id, o.empresa_id::text AS empresa_id
         FROM oportunidades o
         LEFT JOIN empresas e ON e.id = o.empresa_id
        WHERE o.organizacao_id = ${org}::uuid

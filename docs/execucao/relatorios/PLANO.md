@@ -8,7 +8,7 @@ Regra de trabalho: cada lote = dados + consulta + interface + interação + test
 ## Lotes
 
 - [x] L1 Fundação do catálogo: `recorte` único (agregado = detalhe = exportação por construção), filtros família/testes, MRR conciliado. Teste de aditividade.
-- [ ] L2 Drawer de registros no clique (card, barra, ponto), URL com recorte, exportação do recorte completo. Primeira superfície: Executivo consolidado.
+- [x] L2 (métricas oficiais; falta replicar nas demais áreas conforme L5-L8) Drawer de registros no clique (card, barra, ponto), URL com recorte, exportação do recorte completo. Primeira superfície: Executivo consolidado.
 - [ ] L3 Identidade e vínculos Zoho: diagnóstico da cadeia contrato → empresa → serviço → pagador → fatura/pagamento; De/Para com evidência; simulação. Sem aplicar histórico.
 - [ ] L4 Faturamento histórico 2021–2026 (importação rastreável das fontes, cobertura por competência) e tela Receita.
 - [ ] L5 SaaS e carteira: bridge de MRR, coortes, NRR/GRR só onde reconciliar.

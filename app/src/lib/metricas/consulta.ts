@@ -61,11 +61,14 @@ export interface RespostaMetrica {
   metrica: Pick<DefinicaoMetrica, "codigo" | "nome" | "tipo" | "unidade" | "descricao" | "fonte" | "naoInclui" | "agregacao"> & {
     filtros: DefinicaoMetrica["filtros"];
     dimensoes: DefinicaoMetrica["explorar"]["dimensoes"];
+    ordenaveis: string[];
   };
   janela: { de: string; ate: string; rotulo: string; parcial: boolean } | null;
   pisoAplicado: string | null;
   comparacao: { rotulo: string; valor: number; variacao: number | null } | null;
   exploracao: Exploracao;
+  /** Série da janela anterior (mesma seleção), alinhada por posição, para a linha de comparação. */
+  serieAnterior: Exploracao["serie"];
 }
 
 export async function responder(organizacaoId: string, pedido: PedidoMetrica, agora = new Date()): Promise<RespostaMetrica | null> {
@@ -75,18 +78,23 @@ export async function responder(organizacaoId: string, pedido: PedidoMetrica, ag
   if (!exploracao) return null;
   const snapshot = d.tipo === "SNAPSHOT";
   let comparacao: RespostaMetrica["comparacao"] = null;
+  let serieAnterior: RespostaMetrica["serieAnterior"] = null;
   if (!snapshot) {
     const ant = janelaAnterior(pedido.janela, pedido.periodo, agora);
     // Janela anterior que cai antes do piso confiável não é comparável: sem número, sem seta.
     if (!d.explorar.piso || ant.de.getTime() >= d.explorar.piso.getTime()) {
       const v = (await medir(organizacaoId, pedido.codigo, { ...pedido.p, de: ant.de, ate: ant.ate })).valor;
       comparacao = { rotulo: ant.rotulo, valor: v, variacao: v === 0 ? null : (exploracao.total - v) / Math.abs(v) };
+      if (exploracao.serie) {
+        const { de: _de, ate: _ate, ...semIntervalo } = pedido.selecao;
+        serieAnterior = (await explorar(organizacaoId, pedido.codigo, { ...pedido.p, de: ant.de, ate: ant.ate }, semIntervalo, 1, 5))?.serie ?? null;
+      }
     }
   }
   return {
     metrica: {
       codigo: d.codigo, nome: d.nome, tipo: d.tipo, unidade: d.unidade, descricao: d.descricao, fonte: d.fonte,
-      naoInclui: d.naoInclui, agregacao: d.agregacao, filtros: d.filtros, dimensoes: d.explorar.dimensoes,
+      naoInclui: d.naoInclui, agregacao: d.agregacao, filtros: d.filtros, dimensoes: d.explorar.dimensoes, ordenaveis: d.explorar.ordenaveis,
     },
     janela: snapshot ? null : {
       de: pedido.janela.de.toISOString(), ate: pedido.janela.ate.toISOString(),
@@ -95,5 +103,6 @@ export async function responder(organizacaoId: string, pedido: PedidoMetrica, ag
     pisoAplicado: pedido.pisoAplicado?.toISOString() ?? null,
     comparacao,
     exploracao,
+    serieAnterior,
   };
 }
