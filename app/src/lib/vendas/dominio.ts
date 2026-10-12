@@ -306,6 +306,9 @@ export const ROTULO_ESTADO_PROSPECCAO: Record<EstadoProspeccao, string> = {
   descartado: "Descartado",
 };
 
+/** Cor gravada na etiqueta quando a lista/tag é criada pela Prospecção (é dado da linha de `labels`, não estilo). */
+export const COR_DA_ETIQUETA_NOVA = "#2563EB";
+
 /** Tamanhos de página da lista de Prospecção (compartilhado: a tela também precisa). */
 export const POR_PAGINA_PROSPECCAO = [25, 50, 100] as const;
 

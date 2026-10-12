@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import "@/components/onface/vendas/prospeccao.css";
 import "./apollo.css";
 import {
   Search, Radar, UserPlus, Building2, Briefcase, MapPin, Users, Filter,

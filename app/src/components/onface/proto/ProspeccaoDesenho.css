@@ -1,0 +1,6 @@
+/* Complemento de ProspeccaoDesenho (o PreVendasDesenho.css já vem junto).
+   Em aparelho sem hover o seletor e o menu do cartão ficam sempre visíveis:
+   `.of-check` só aparece no :hover, e toque não tem hover. */
+@media (hover: none), (max-width: 767px) {
+  .of-card .of-check { opacity: 1; }
+}

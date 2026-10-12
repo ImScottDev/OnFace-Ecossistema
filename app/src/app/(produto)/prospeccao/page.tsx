@@ -6,7 +6,7 @@ import {
 } from "@/lib/vendas/consultas";
 import { ESTADOS_PROSPECCAO, POR_PAGINA_PROSPECCAO, type EstadoProspeccao } from "@/lib/vendas/dominio";
 import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
-import { Prospeccao, type Visao } from "@/components/onface/vendas/Prospeccao";
+import { ProspeccaoProto, type Visao } from "@/components/onface/proto/ProspeccaoProto";
 import {
   acaoAdicionarProspect, acaoAtribuirEmMassa, acaoAtribuirProspect, acaoCadencias, acaoDetalheProspect, acaoImportarProspects,
   acaoInscreverEmCadencia, acaoMoverProspect, acaoPausarCadencia, acaoResponsaveis, acaoRetomarCadencia,
@@ -76,7 +76,7 @@ export async function ProspeccaoPage({ searchParams }: {
 
   return (
     <div data-workspace="desenho">
-      <Prospeccao
+      <ProspeccaoProto
         visao={visao}
         dados={lista}
         kanban={kanban}

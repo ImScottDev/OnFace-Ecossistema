@@ -1,5 +1,5 @@
-/* Busca Apollo no vocabulário ONFACE. Os botões reusam .pp-primario e
- * .pp-secundario de vendas/prospeccao.css (importado no _busca.tsx) para que a tela
+/* Busca Apollo no vocabulário ONFACE. Os botões .pp-primario e
+ * .pp-secundario vivem aqui (saíram de vendas/prospeccao.css quando a Prospecção passou a usar o desenho de Pré-vendas) para que a tela
  * irmã de /prospeccao tenha exatamente os mesmos controles de 34px.
  * Elevação sempre por anel (box-shadow inset), nunca border: o anel não soma
  * ao box model, então campos e botões alinham na mesma altura. */
@@ -32,3 +32,19 @@ input.ap-campo, .ap-campo input { color: var(--of-tinta-forte); cursor: text; }
 .ap-busca .pp-primario:disabled,
 .ap-busca .pp-secundario:disabled { opacity: .55; cursor: not-allowed; }
 .ap-busca .pp-primario:disabled:hover { background: var(--of-coral-acao); }
+
+/* Botões da busca (movidos de vendas/prospeccao.css) */
+.pp-secundario {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px; height: var(--of-h-controle); padding: 0 12px;
+  border-radius: var(--of-r-acao); border: 0; background: var(--of-papel); box-shadow: var(--of-anel);
+  font-size: 13px; font-weight: var(--of-peso-medio); color: var(--of-tinta); cursor: pointer; white-space: nowrap; text-decoration: none;
+}
+.pp-secundario:hover { background: var(--of-papel-hover); color: var(--of-tinta); }
+.pp-secundario svg { width: 15px; height: 15px; stroke-width: 1.8; }
+.pp-primario {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px; height: var(--of-h-controle); padding: 0 13px 0 11px;
+  border-radius: var(--of-r-acao); border: 0; background: var(--of-coral-acao); color: var(--of-papel);
+  font-size: 13px; font-weight: var(--of-peso-semi); cursor: pointer; white-space: nowrap;
+}
+.pp-primario:hover { background: var(--of-coral-acao-hover); }
+.pp-primario svg { width: 15px; height: 15px; stroke-width: 2.1; }
