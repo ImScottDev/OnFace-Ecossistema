@@ -1,0 +1,17 @@
+# Webhook do WhatsApp do sistema antigo passa pelo rele (entrega ao antigo e espelha ao ONFACE).
+# Remover este arquivo no corte para o ONFACE (crm.callface.io passa a ser do ONFACE).
+http:
+  routers:
+    wa-relay-webhook:
+      rule: "Host(`crm.callface.io`) && Path(`/api/whatsapp/webhook`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: cloudflare
+      priority: 10000
+      service: wa-relay-svc
+  services:
+    wa-relay-svc:
+      loadBalancer:
+        servers:
+          - url: "http://callface-wa-relay:8080"
