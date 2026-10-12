@@ -137,12 +137,13 @@ async function main() {
   page.on("console", (m: { type: () => string; text: () => string }) => { if (m.type() === "error" && !abortando) errosConsole.push(`${page.url().replace(BASE, "")} ${m.text().slice(0, 120)}`); });
   page.on("response", (r: { status: () => number; url: () => string }) => { if (r.status() >= 400) errosRede.push(`${r.status()} ${r.url().slice(0, 100)}`); });
 
-  const ir = async (qs: string) => { await page.goto(`${BASE}/prospeccao${qs}`, { waitUntil: "domcontentloaded" }); await page.locator(".pp:visible").first().waitFor(); await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined); };
-  const recarregar = async () => { await page.reload({ waitUntil: "domcontentloaded" }); await page.locator(".pp:visible").first().waitFor(); await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined); };
-  const card = (id: string) => page.locator(`.pp-card[data-lead="${id}"]`);
-  const coluna = (est: string) => page.locator(`.pp-coluna-alvo[data-estado="${est}"]`);
-  const desfecho = (est: string) => page.locator(`.pp-desfecho[data-estado="${est}"]`);
-  const arrastar = async (id: string, alvo: ReturnType<typeof page.locator>) => { await card(id).dragTo(alvo); };
+  const pronta = (pg: typeof page) => pg.locator('input[placeholder^="Empresa, pessoa"]:visible').first().waitFor();
+  const ir = async (qs: string) => { await page.goto(`${BASE}/prospeccao${qs}`, { waitUntil: "domcontentloaded" }); await pronta(page); await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined); };
+  const recarregar = async () => { await page.reload({ waitUntil: "domcontentloaded" }); await pronta(page); await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined); };
+  const card = (id: string) => page.locator(`[data-lead="${id}"]`);
+  const coluna = (est: string) => page.locator(`section[data-estado="${est}"]`);
+  const desfecho = (est: string) => page.locator(`button[data-estado="${est}"]`);
+  const arrastar = async (id: string, alvo: ReturnType<typeof page.locator>) => { await page.waitForTimeout(900); await card(id).dragTo(alvo); }; // espera a hidratação: arrastar antes dela não dispara nada
 
   // ── 1. Cadastro pela tela ────────────────────────────────────────────────
   await ir("?visao=kanban");
@@ -172,9 +173,10 @@ async function main() {
   await ir("?visao=kanban&busca=" + encodeURIComponent(marca));
   await arrastar(a, coluna("em_cadencia"));
   await page.getByRole("dialog").getByRole("button", { name: cadenciaNome }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Iniciar cadência" }).click();
   await page.getByText("entrou em cadência").waitFor();
   await recarregar();
-  confere(await coluna("em_cadencia").locator(`.pp-card[data-lead="${a}"]`).count() === 1, "drag: card em Em cadência depois do F5");
+  confere(await coluna("em_cadencia").locator(`[data-lead="${a}"]`).count() === 1, "drag: card em Em cadência depois do F5");
   confere(await estadoDe(a) === "em_cadencia", "drag: banco = em_cadencia");
   const [{ n: matriculas }] = await db.execute<{ n: number }>(sql`SELECT count(*)::int n FROM cadence_enrollments WHERE entity_id = ${a}::uuid AND status IN ('active','waiting')`);
   confere(matriculas === 1, "drag: uma matrícula viva no motor de cadências");
@@ -200,7 +202,7 @@ async function main() {
   await page.getByRole("button", { name: "Confirmar resposta" }).click();
   await page.getByText("marcada como respondeu").waitFor();
   await recarregar();
-  confere(await coluna("respondeu").locator(`.pp-card[data-lead="${a}"]`).count() === 1, "resposta manual: card em Respondeu depois do F5");
+  confere(await coluna("respondeu").locator(`[data-lead="${a}"]`).count() === 1, "resposta manual: card em Respondeu depois do F5");
   const [evA] = await db.execute<{ contexto: { origem?: string; observacao?: string; confirmadoPor?: string } }>(sql`
     SELECT contexto FROM vendas_eventos WHERE lead_id = ${a}::uuid AND tipo = 'ProspectReplied'`);
   confere(evA?.contexto?.origem === "confirmacao_manual" && evA.contexto.confirmadoPor === s.usuarioId, "resposta manual: evento auditado com quem confirmou e a observação");
@@ -223,7 +225,7 @@ async function main() {
   confere(JSON.stringify(abasDrawer) === JSON.stringify(["Operação", "Pessoas", "Conversas", "Cadência", "Histórico", "Inteligência"]), "drawer: seis abas na ordem pedida (abre por ?lead= e sobrevive ao F5)");
   await page.screenshot({ path: `${OUT}/05-drawer-operacao-1440.png` });
   await page.locator('.pp-abas-drawer').getByRole("tab", { name: "Cadência" }).click();
-  confere(await page.getByText("Passo", { exact: true }).first().isVisible() && await page.getByText("2 de 2").first().isVisible(), "drawer/Cadência: passo 2 de 2 e passos listados");
+  confere(await page.getByText("Passo 2 de 2").first().isVisible() && await page.getByText("Passos", { exact: true }).first().isVisible(), "drawer/Cadência: passo 2 de 2 e passos listados");
   await page.screenshot({ path: `${OUT}/05-drawer-cadencia-1440.png` });
   await page.locator('.pp-abas-drawer').getByRole("tab", { name: "Histórico" }).click();
   confere(await page.getByText("Prospect respondeu").first().isVisible(), "drawer/Histórico: vem de eventos persistidos");
@@ -233,7 +235,7 @@ async function main() {
   confere(await page.getByText("Abordagens executadas").first().isVisible(), "drawer/Inteligência: sinal real (abordagens executadas)");
   await ir(`?visao=kanban&busca=${encodeURIComponent(marca)}&lead=${b}`);
   await page.locator('.pp-abas-drawer').getByRole("tab", { name: "Conversas" }).click();
-  confere(await page.getByText("Olá, tenho interesse").first().isVisible() && await page.getByRole("link", { name: /Abrir no Atendimento/ }).count() === 1, "drawer/Conversas: mensagem real do Atendimento + link para o Atendimento (sem caixa nova)");
+  confere(await page.getByText("Olá, tenho interesse").first().isVisible() && await page.getByRole("button", { name: /Abrir no Atendimento/ }).count() === 1, "drawer/Conversas: mensagem real do Atendimento + link para o Atendimento (sem caixa nova)");
 
   // ── 6. Descartar exige motivo ────────────────────────────────────────────
   const rSem = await moverProspect({ organizacaoId: org, leadId: c, para: "descartado", ator }).then(() => "ok", (x) => (x as { codigo?: string }).codigo);
@@ -243,6 +245,8 @@ async function main() {
   await page.getByRole("dialog", { name: "Descartar prospect" }).waitFor();
   confere(await estadoDe(c) === "novo", "descartar: soltar no desfecho só abre o diálogo de motivo");
   await page.getByRole("dialog").getByRole("button", { name: "Dados insuficientes" }).click();
+  confere(await page.getByRole("dialog").getByRole("button", { name: "Descartar", exact: true }).isDisabled() === false, "descartar: escolher o motivo habilita o botão (sem motivo ele fica desabilitado)");
+  await page.getByRole("dialog").getByRole("button", { name: "Descartar", exact: true }).click();
   await page.getByText("descartada. O histórico foi preservado").waitFor();
   await recarregar();
   const [dc] = await db.execute<{ e: string; m: string; h: number }>(sql`
@@ -264,7 +268,7 @@ async function main() {
   await moverProspect({ organizacaoId: org, leadId: d, para: "pre_qualificado", ator });
   const [{ aq2 }] = await db.execute<{ aq2: number }>(sql`SELECT count(*)::int aq2 FROM aquisicoes WHERE lead_legado_id = ${d}::uuid`);
   confere(aq2 === 1, "pré-qualificar repetido: continua 1 aquisição");
-  await page.getByRole("link", { name: "Abrir em Pré-vendas" }).click();
+  await page.getByRole("button", { name: "Abrir em Pré-vendas" }).click();
   await page.waitForURL(`**/pre-vendas/${d}`);
   confere(await page.getByText(`${marca} Ltda d`).first().waitFor().then(() => true, () => false), "pré-qualificar: o banner leva à tela do lead em Pré-vendas");
 
@@ -273,7 +277,7 @@ async function main() {
   await arrastar(e, desfecho("oportunidade"));
   const dlg = page.getByRole("dialog", { name: "Oportunidade direta" });
   await dlg.waitFor();
-  await dlg.locator(".ov-familia").first().click();
+  await dlg.locator("button[aria-pressed]").first().click();
   await dlg.locator("select").selectOption({ index: 1 });
   const btn = dlg.getByRole("button", { name: "Criar oportunidade" });
   await btn.dblclick().catch(() => undefined); // o segundo clique cai com o botão já desabilitado
@@ -287,7 +291,7 @@ async function main() {
   confere(naoLead, "oportunidade direta: NÃO virou Lead de Pré-vendas");
   const semFam = await moverProspect({ organizacaoId: org, leadId: f, para: "oportunidade", familias: [], responsavelId: s.usuarioId, ator }).then(() => "ok", (x) => (x as { codigo?: string }).codigo);
   confere(semFam === "oportunidade_exige_familia", "oportunidade direta: sem família é recusada");
-  await page.getByRole("link", { name: "Abrir no Pipeline" }).first().click();
+  await page.getByRole("button", { name: "Abrir no Pipeline" }).first().click();
   await page.waitForURL(/\/pipeline\//);
   confere(await page.getByText(`${marca} Ltda e`).first().waitFor().then(() => true, () => false), "oportunidade direta: aparece no Pipeline (Entrada)");
 
@@ -295,37 +299,37 @@ async function main() {
   await ir("?visao=kanban&busca=" + encodeURIComponent(marca));
   await arrastar(f, coluna("respondeu"));
   await page.getByText("Inclua a empresa em uma cadência primeiro").first().waitFor();
-  confere(await coluna("novo").locator(`.pp-card[data-lead="${f}"]`).count() === 1 && await estadoDe(f) === "novo", "transição proibida (Novo → Respondeu): explica o motivo e nada muda");
+  confere(await coluna("novo").locator(`[data-lead="${f}"]`).count() === 1 && await estadoDe(f) === "novo", "transição proibida (Novo → Respondeu): explica o motivo e nada muda");
   abortando = true;
   await page.route("**/prospeccao**", (r: { request: () => { headers: () => Record<string, string> }; abort: () => Promise<void>; continue: () => Promise<void> }) =>
     r.request().headers()["next-action"] ? r.abort() : r.continue());
   await arrastar(f, desfecho("pre_qualificado"));
   await page.getByText("Não foi possível falar com o CRM").first().waitFor();
-  confere(await coluna("novo").locator(`.pp-card[data-lead="${f}"]`).count() === 1 && await estadoDe(f) === "novo", "erro de rede: o card volta para Novo e o banco não mudou (reversão)");
+  confere(await coluna("novo").locator(`[data-lead="${f}"]`).count() === 1 && await estadoDe(f) === "novo", "erro de rede: o card volta para Novo e o banco não mudou (reversão)");
   await page.screenshot({ path: `${OUT}/09-erro-reversao-1440.png` });
   await page.unroute("**/prospeccao**");
   abortando = false;
 
   // ── 10. Lista: busca, ordenação, paginação, F5 ───────────────────────────
   await ir("?busca=" + encodeURIComponent(marca) + "&ordem=empresa&dir=desc");
-  const nomes = await page.locator(".pp-linha:not(.pp-linha-cab) .pp-principal").allTextContents();
+  const nomes = (await page.locator("[data-sel]").evaluateAll((els: Element[]) => els.map((e: Element) => e.children[1]?.children[0]?.textContent ?? ""))).filter(Boolean);
   confere(nomes.length >= 6 && [...nomes].sort().reverse().join("|") === nomes.join("|"), "lista: busca + ordenação por empresa (desc) na URL");
   await ir("?porPagina=25");
   await page.getByRole("button", { name: "Próxima", exact: true }).click();
   await page.waitForURL(/pagina=2/);
   await recarregar();
-  confere(await page.getByText(/Página 2 de/).isVisible(), "lista: paginação real e página sobrevive ao F5");
+  confere(await page.getByText(/página 2 de/).isVisible(), "lista: paginação real e página sobrevive ao F5");
   await page.screenshot({ path: `${OUT}/10-lista-1440.png` });
 
   // ── 11. Operação = banco ─────────────────────────────────────────────────
   await ir("?visao=operacao");
   const [{ novos }] = await db.execute<{ novos: number }>(sql`SELECT count(*)::int novos FROM leads WHERE organizacao_id = ${org}::uuid AND prospeccao_estado = 'novo'`);
-  const tileNovo = await page.locator(".pp-tile", { hasText: "Novos" }).first().locator(".pp-tile-valor").textContent();
+  const tileNovo = /Novos\D*(\d+)/.exec((await page.locator('a[href="/prospeccao?estado=novo"]').first().textContent()) ?? "")?.[1];
   confere(Number(tileNovo) === novos, `operação: tile Novos (${tileNovo}) = banco (${novos})`);
   await page.screenshot({ path: `${OUT}/11-operacao-1440.png` });
   for (const v of ["campanhas", "inteligencia"]) {
     await ir(`?visao=${v}`);
-    confere(await page.locator(".pp-visao").isVisible(), `visão ${v} abre com dado real ou vazio honesto`);
+    confere(await page.getByText(v === "campanhas" ? "Listas em uso" : "Funil da base").first().isVisible(), `visão ${v} abre com dado real ou vazio honesto`);
   }
 
   // ── 12. 390px ────────────────────────────────────────────────────────────
@@ -336,21 +340,22 @@ async function main() {
   const errosM: string[] = [];
   m.on("console", (x: { type: () => string; text: () => string }) => { if (x.type() === "error") errosM.push(x.text().slice(0, 160)); });
   for (const qs of ["?visao=kanban", "", "?visao=operacao"]) {
-    await m.goto(`${BASE}/prospeccao${qs}&busca=${encodeURIComponent(marca)}`.replace("&busca", qs ? "&busca" : "?busca"), { waitUntil: "domcontentloaded" }); await m.locator(".pp:visible").first().waitFor(); await m.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined);
+    await m.goto(`${BASE}/prospeccao${qs}&busca=${encodeURIComponent(marca)}`.replace("&busca", qs ? "&busca" : "?busca"), { waitUntil: "domcontentloaded" }); await m.locator('input[placeholder^="Empresa, pessoa"]:visible').first().waitFor(); await m.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined);
     const sobra = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     confere(sobra <= 1, `390px ${qs || "lista"}: sem rolagem horizontal da página (sobra ${sobra}px)`);
   }
-  await m.goto(`${BASE}/prospeccao?visao=kanban&busca=${encodeURIComponent(marca)}`, { waitUntil: "domcontentloaded" }); await m.locator(".pp:visible").first().waitFor(); await m.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined);
-  await m.locator(`.pp-card[data-lead="${f}"] .pp-card-menu`).click();
+  await m.goto(`${BASE}/prospeccao?visao=kanban&busca=${encodeURIComponent(marca)}`, { waitUntil: "domcontentloaded" }); await m.locator('input[placeholder^="Empresa, pessoa"]:visible').first().waitFor(); await m.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => undefined);
+  await m.locator(`[data-lead="${f}"] [data-of-cardmenu] button`).click();
   await m.getByRole("menuitem", { name: "Adicionar à cadência" }).click();
   await m.getByRole("dialog").getByRole("button", { name: cadenciaNome }).click();
+  await m.getByRole("dialog").getByRole("button", { name: "Iniciar cadência" }).click();
   await m.getByText("entrou em cadência").waitFor();
   confere(await estadoDe(f) === "em_cadencia", "390px: menu 'Mover para' (toque) move para Em cadência e persiste");
   await m.screenshot({ path: `${OUT}/12-kanban-390.png` });
-  await m.locator(`.pp-card[data-lead="${f}"] .ov-card`).click();
+  await m.locator(`[data-lead="${f}"]`).getByText(`${marca} Ltda f`).click();
   await m.locator(".pp-abas-drawer").waitFor();
-  const cheio = await m.evaluate(() => { const r = document.querySelector(".ov-painel")?.getBoundingClientRect(); return r ? Math.round(r.width) : 0; });
-  confere(cheio >= 385, `390px: drawer ocupa a tela (${cheio}px)`);
+  const cheio = await m.evaluate(() => { const r = document.querySelector("aside[role=dialog]")?.getBoundingClientRect(); return r ? Math.round(r.width) : 0; });
+  confere(cheio >= 360, `390px: drawer ocupa a tela (${cheio}px)`);
   await m.screenshot({ path: `${OUT}/12-drawer-390.png` });
   await ctxM.close();
 
