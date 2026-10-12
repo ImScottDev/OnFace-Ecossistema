@@ -130,6 +130,59 @@ async function main() {
     ok(erros.length === 0, `sem erro de console no faturamento (${erros.join(" | ") || "limpo"})`);
     await page.context().close();
 
+    // ── Permissão: quem não é gestão/leitor não lê métrica oficial ──
+    const closer = await sessaoDeSmoke({ role: "closer" });
+    for (const [rotulo, cookie, esperado] of [["sem sessão", "", 401], ["closer", closer.cookie, 403]] as const) {
+      const r = await fetch(`http://localhost:3012/api/relatorios/metricas/mrr_atual`, { headers: cookie ? { cookie } : {} });
+      const e = await fetch(`http://localhost:3012/api/relatorios/metricas/mrr_atual/exportar`, { headers: cookie ? { cookie } : {} });
+      ok(r.status === esperado && e.status === esperado, `${rotulo}: leitura e exportação recusadas com ${esperado} (${r.status}/${e.status})`);
+    }
+
+    // ── Painel executivo ──
+    ({ page, erros } = await abrir(1440));
+    await page.goto(`${BASE}/relatorios`, { waitUntil: "networkidle", timeout: 90000 });
+    await page.locator(".ex-kpis").waitFor({ timeout: 40000 });
+    ok(await page.getByRole("tab", { name: "Executivo" }).getAttribute("aria-selected") === "true", "a gestão abre no Executivo (consolidado)");
+    await page.locator(".ex-kpi-valor").first().waitFor();
+    await page.locator(".recharts-bar-rectangle").first().waitFor({ timeout: 30000 });
+    await page.waitForTimeout(900);
+    const mrrCard = num(await page.locator(".ex-kpi-valor").first().innerText());
+    ok(Math.abs(mrrCard - 478013.79) < 1, `MRR do painel = MRR do explorador (${mrrCard})`);
+    const faturadoSet = num(await page.locator(".ex-kpi-valor").nth(1).innerText());
+    ok(Math.abs(faturadoSet - 512404.49) < 0.01, `Faturado de set/26 = rodapé da planilha (${faturadoSet})`);
+    await page.screenshot({ path: `${OUT}/7-executivo-1440.png`, fullPage: true });
+    // filtro de família muda os números e a URL; recarregar mantém
+    await page.getByRole("button", { name: "PABX", exact: true }).click();
+    await page.waitForFunction(() => location.search.includes("familia=PABX"));
+    await page.waitForTimeout(1200);
+    const mrrPabx = num(await page.locator(".ex-kpi-valor").first().innerText());
+    ok(Math.abs(mrrPabx - 376431.9) < 1, `família PABX muda o MRR do painel (${mrrPabx})`);
+    ok((await page.locator(".ex-kpi[data-vazio=true]").count()) === 1, "recebido não se aplica a família e diz isso em vez de zero");
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator(".ex-kpis").waitFor({ timeout: 40000 });
+    ok(await page.getByRole("button", { name: "PABX", exact: true }).getAttribute("aria-pressed") === "true", "recarregar mantém a família");
+    // clicar no card leva ao explorador com o mesmo recorte
+    await page.locator("a.ex-kpi").first().click();
+    await page.waitForURL(/metrica-mrr_atual\?familia=PABX/, { timeout: 20000 });
+    await page.locator(".rx-kpi-valor").waitFor({ timeout: 30000 });
+    await page.waitForTimeout(600);
+    ok(Math.abs(num(await page.locator(".rx-kpi-valor").innerText()) - mrrPabx) < 0.01, "o card abre o explorador com o mesmo número");
+    ok(erros.length === 0, `sem erro de console no executivo (${erros.join(" | ") || "limpo"})`);
+    await page.context().close();
+    for (const w of [820, 390]) {
+      ({ page, erros } = await abrir(w, 844));
+      await page.goto(`${BASE}/relatorios`, { waitUntil: "networkidle", timeout: 90000 });
+      await page.locator(".ex-kpis").waitFor({ timeout: 40000 });
+      await page.locator(".recharts-bar-rectangle").first().waitFor({ timeout: 30000 });
+      await page.waitForTimeout(900);
+      const estouro = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      const quebra = await page.evaluate(() => [...document.querySelectorAll(".ex-kpi-valor")].filter((el) => (el as HTMLElement).getBoundingClientRect().height > 40).length);
+      ok(estouro <= 1, `executivo ${w}px: sem rolagem horizontal (sobra ${estouro}px)`);
+      ok(quebra === 0, `executivo ${w}px: nenhum valor monetário quebrado em duas linhas`);
+      await page.screenshot({ path: `${OUT}/8-executivo-${w}.png`, fullPage: true });
+      await page.context().close();
+    }
+
     // ── Larguras: tablet e celular ──
     for (const w of [820, 390]) {
       ({ page, erros } = await abrir(w, 844));

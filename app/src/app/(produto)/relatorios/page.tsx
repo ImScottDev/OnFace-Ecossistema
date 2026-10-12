@@ -16,7 +16,7 @@ const PERIODO_OK = /^(mes_atual|mes_passado|7d|30d|60d|90d|365d|12m|custom:\d{4}
  * abram exatamente o que a pessoa estava vendo. A aba é validada contra o
  * papel no cliente: aba que o papel não enxerga cai na padrão.
  */
-export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ aba?: string; periodo?: string }> }) {
+export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ aba?: string; periodo?: string; familia?: string; janela?: string }> }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
@@ -26,7 +26,9 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
 
   return (
     <Pagina>
-      <InsightsOnface abaInicial={aba} periodoInicial={periodo} />
+      <InsightsOnface abaInicial={aba} periodoInicial={periodo}
+        familiaInicial={["CALLFACE_AI", "PABX", "WHITE_LABEL"].includes(sp.familia ?? "") ? sp.familia! : ""}
+        janelaInicial={["12m", "ano_atual", "tudo"].includes(sp.janela ?? "") ? sp.janela! : "12m"} />
     </Pagina>
   );
 }

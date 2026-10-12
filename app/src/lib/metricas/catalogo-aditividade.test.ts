@@ -72,20 +72,33 @@ test("MRR: a soma por família fecha o total (cada empresa+família cai numa fam
 });
 
 test("testes marcados saem do total por padrão e voltam com incluirTestes; nada é apagado", async () => {
-  const org = await organizacao();
-  const [e] = await db.execute<{ id: string }>(sql`
-    INSERT INTO empresas (organizacao_id, nome) VALUES (${org}::uuid, ${"[QA] aditividade " + Date.now()}) RETURNING id::text`);
+  // Organização PRÓPRIA do teste: gravar linha de teste na organização real mexeria nos totais
+  // que os outros arquivos de teste (rodando em paralelo) estão medindo.
+  const [o] = await db.execute<{ id: string }>(sql`
+    INSERT INTO organizacoes (nome, slug) VALUES (${"[QA] aditividade org"}, ${"qa-aditividade-" + Date.now().toString(36)}) RETURNING id::text`);
+  const org = o.id;
   try {
-    await db.execute(sql`INSERT INTO cliente_receita_mensal (organizacao_id, empresa_id, customer_key, cliente_nome, competencia, valor, revenue_nature, service_family, source, source_hash)
-      VALUES (${org}::uuid, ${e.id}::uuid, 'qa-aditividade', '[QA] aditividade', (SELECT max(competencia) FROM cliente_receita_mensal), 1234.56, 'MRR', 'PABX', 'teste', ${"qa-" + Date.now()})`);
+    const empresa = async (nome: string) => (await db.execute<{ id: string }>(sql`
+      INSERT INTO empresas (organizacao_id, nome) VALUES (${org}::uuid, ${nome}) RETURNING id::text`))[0].id;
+    const linha = (emp: string, nome: string, valor: string, hash: string) => db.execute(sql`
+      INSERT INTO cliente_receita_mensal (organizacao_id, empresa_id, customer_key, cliente_nome, competencia, valor, revenue_nature, service_family, source, source_hash)
+      VALUES (${org}::uuid, ${emp}::uuid, ${hash}, ${nome}, '2026-09-01', ${valor}, 'MRR', 'PABX', 'teste', ${hash})`);
+    const real = await empresa("Cliente real aditividade");
+    const teste = await empresa("[QA] aditividade");
+    await linha(real, "Cliente real aditividade", "1000.00", "adit-real-" + org);
+    await linha(teste, "[QA] aditividade", "1234.56", "adit-qa-" + org);
     const padrao = await medir(org, "mrr_atual", {});
     const comTestes = await medir(org, "mrr_atual", { incluirTestes: true });
-    assert.equal(centavos(comTestes.valor) - centavos(padrao.valor), 123456);
-    const linhasPadrao = await detalhar(org, "mrr_atual", {}, 1_000_000);
-    assert.equal(linhasPadrao.some((l) => l.id === e.id), false);
+    assert.equal(centavos(padrao.valor), 100000, "o teste marcado não pode entrar no total padrão");
+    assert.equal(centavos(comTestes.valor), 100000 + 123456);
+    const linhasPadrao = await detalhar(org, "mrr_atual", {}, 100);
+    assert.equal(linhasPadrao.some((l) => l.id === teste), false, "o detalhe precisa seguir o mesmo filtro do card");
+    const [preservado] = await db.execute<{ n: number }>(sql`SELECT count(*)::int n FROM cliente_receita_mensal WHERE empresa_id = ${teste}::uuid`);
+    assert.equal(preservado.n, 1, "o registro de teste não é apagado");
   } finally {
-    await db.execute(sql`DELETE FROM cliente_receita_mensal WHERE empresa_id = ${e.id}::uuid`);
-    await db.execute(sql`DELETE FROM empresas WHERE id = ${e.id}::uuid`);
+    await db.execute(sql`DELETE FROM cliente_receita_mensal WHERE organizacao_id = ${org}::uuid`);
+    await db.execute(sql`DELETE FROM empresas WHERE organizacao_id = ${org}::uuid`);
+    await db.execute(sql`DELETE FROM organizacoes WHERE id = ${org}::uuid`);
   }
 });
 
@@ -101,5 +114,19 @@ test("toda métrica aditiva: card = soma do detalhe; filtro sem suporte avisa em
     if (!m.filtros.familia) {
       await assert.rejects(() => medir(org, m.codigo, { ...p, familia: "PABX" }), FiltroNaoSuportado, `${m.codigo} aceitou um filtro que não aplica`);
     }
+  }
+});
+
+test("isolamento: outra organização não enxerga nenhum valor, nem de MRR nem de faturamento histórico", async () => {
+  const [o] = await db.execute<{ id: string }>(sql`
+    INSERT INTO organizacoes (nome, slug) VALUES (${"[QA] isolamento org"}, ${"qa-isolamento-" + Date.now().toString(36)}) RETURNING id::text`);
+  try {
+    for (const codigo of ["mrr_atual", "faturamento_competencia", "clientes_faturados", "clientes_ativos", "oportunidades_abertas"]) {
+      const v = await medir(o.id, codigo, { de: new Date("2021-01-01T03:00:00Z"), ate: new Date("2027-01-01T03:00:00Z"), incluirTestes: true });
+      assert.equal(v.valor, 0, `${codigo} vazou valor para outra organização`);
+      assert.equal((await detalhar(o.id, codigo, { incluirTestes: true }, 10)).length, 0, `${codigo} vazou registros`);
+    }
+  } finally {
+    await db.execute(sql`DELETE FROM organizacoes WHERE id = ${o.id}::uuid`);
   }
 });

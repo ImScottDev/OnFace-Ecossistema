@@ -16,6 +16,7 @@ import { isAdminView } from "@/lib/auth/roles";
 import { GO_LIVE, GO_LIVE_ISO, parsePeriodo } from "@/lib/relatorios/periodo";
 import { moeda } from "@/components/onface/vendas/formato";
 import { TabFechamento } from "./TabFechamento";
+import { TabExecutivo } from "./TabExecutivo";
 import { BlocoGestao } from "./BlocoGestao";
 import { preencherSemanas, type Semana } from "./semanas";
 import "./insights.css";
@@ -37,6 +38,7 @@ import "./insights.css";
  */
 
 const ABAS_GESTAO = [
+  { key: "executivo", label: "Executivo" },
   { key: "comercial", label: "Comercial" },
   { key: "sdr", label: "Pré-vendas" },
   { key: "pos-venda", label: "Pós-venda" },
@@ -76,7 +78,7 @@ type Esteira = {
   porResponsavel?: { usuarioId: string; total: number; novo: number; qualificado: number; taxaQualificacao: number }[];
 };
 
-export function InsightsOnface({ abaInicial, periodoInicial }: { abaInicial: string; periodoInicial: string }) {
+export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = "", janelaInicial = "12m" }: { abaInicial: string; periodoInicial: string; familiaInicial?: string; janelaInicial?: string }) {
   // Papel EFETIVO (respeita view-as) decide o menu. Segurança real é no backend
   // (o Hono filtra por responsavelId/403 conforme o papel).
   const { data: me, isLoading: meLoading } = useMe();
@@ -86,13 +88,17 @@ export function InsightsOnface({ abaInicial, periodoInicial }: { abaInicial: str
 
   const [periodo, setPeriodo] = useState(periodoInicial);
   const [aba, setAba] = useState(abaInicial);
+  // Filtros do painel executivo: moram na URL como os demais, para o link colado abrir o mesmo recorte.
+  const [familiaExec, setFamiliaExec] = useState(familiaInicial);
+  const [janelaExec, setJanelaExec] = useState(janelaInicial);
 
   // Growth responde 403 para leitor (gate isAdminView no Hono). Antes a aba
   // aparecia e quebrava; agora só aparece para quem consegue ler.
   const abas = gestao
     ? ABAS_GESTAO.filter((a) => a.key !== "growth" || isAdminView(role))
     : ABAS_PESSOAIS;
-  const abaPadrao = !gestao && isSdr ? "sdr" : "comercial";
+  // Gestão abre no consolidado executivo (decisão de 12/10); SDR na própria esteira; closer no próprio desempenho.
+  const abaPadrao = gestao ? "executivo" : isSdr ? "sdr" : "comercial";
   const abaAtiva = abas.some((a) => a.key === aba) ? aba : abaPadrao;
 
   // Grava o recorte na URL sem navegar (sem refetch do server component).
@@ -101,9 +107,13 @@ export function InsightsOnface({ abaInicial, periodoInicial }: { abaInicial: str
     const qs = new URLSearchParams(window.location.search);
     qs.set("aba", abaAtiva);
     qs.set("periodo", periodo);
+    if (abaAtiva === "executivo") {
+      if (familiaExec) qs.set("familia", familiaExec); else qs.delete("familia");
+      qs.set("janela", janelaExec);
+    } else { qs.delete("familia"); qs.delete("janela"); }
     const novo = `${window.location.pathname}?${qs.toString()}`;
     if (novo !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", novo);
-  }, [abaAtiva, periodo, meLoading]);
+  }, [abaAtiva, periodo, meLoading, familiaExec, janelaExec]);
 
   return (
     <div className="ins">
@@ -111,11 +121,12 @@ export function InsightsOnface({ abaInicial, periodoInicial }: { abaInicial: str
         <div>
           <h1 className="ins-titulo">Insights</h1>
           <p className="ins-sub">
-            {gestao || meLoading ? "Desempenho da operação" : "Seus números"} · histórico confiável desde{" "}
-            {GO_LIVE.toLocaleDateString("pt-BR")}, quando a base saiu do Zoho.
+            {abaAtiva === "executivo"
+              ? "Consolidado Callface · faturamento desde março/2021, conciliado com as planilhas originais"
+              : <>{gestao || meLoading ? "Desempenho da operação" : "Seus números"} · histórico confiável desde{" "}{GO_LIVE.toLocaleDateString("pt-BR")}, quando a base saiu do Zoho.</>}
           </p>
         </div>
-        <SeletorPeriodo value={periodo} onChange={setPeriodo} />
+        {abaAtiva === "executivo" ? null : <SeletorPeriodo value={periodo} onChange={setPeriodo} />}
       </header>
 
       {meLoading ? (
@@ -124,7 +135,7 @@ export function InsightsOnface({ abaInicial, periodoInicial }: { abaInicial: str
           <span className="ins-rotulo-escuro">Carregando…</span>
           <div className="ins-hero-valor"><strong>—</strong></div>
         </section>
-      ) : isSdr && !gestao ? (
+      ) : abaAtiva === "executivo" ? null : isSdr && !gestao ? (
         <HeroSdr periodo={periodo} />
       ) : (
         <HeroComercial periodo={periodo} gestao={gestao} />
@@ -149,6 +160,10 @@ export function InsightsOnface({ abaInicial, periodoInicial }: { abaInicial: str
           <div className="ins-corpo" role="tabpanel">
             {gestao ? (
               <>
+                {abaAtiva === "executivo" && (
+                  <TabExecutivo familiaInicial={familiaExec} janelaInicial={janelaExec}
+                    aoMudar={(m) => { if (m.familia !== undefined) setFamiliaExec(m.familia); if (m.janela !== undefined) setJanelaExec(m.janela); }} />
+                )}
                 {abaAtiva === "comercial" && (
                   <>
                     <TabComercial periodo={periodo} ocultarHero />

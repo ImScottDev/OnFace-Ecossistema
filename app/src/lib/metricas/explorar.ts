@@ -70,6 +70,10 @@ export interface Exploracao {
   registrosTotal: number;
   /** A seleção atual (igual ao total quando não há seleção). */
   selecionado: { valor: number; registros: number };
+  /** Soma da coluna `valor` do recorte inteiro quando a métrica é de contagem (concentração, ticket). */
+  somaValor: number | null;
+  /** Data do registro mais recente do recorte (atualização da fonte): sem ela, 'mês até hoje' esconde dado parado. */
+  ultimoEm: string | null;
   linhas: Record<string, unknown>[];
   pagina: number;
   tamanho: number;
@@ -102,6 +106,16 @@ export async function explorar(
   const [tot] = await db.execute<{ valor: string; n: string }>(sql`SELECT ${medida(d)}::text AS valor, count(*)::text AS n FROM (${base}) t`);
   const [escolhido] = await db.execute<{ valor: string; n: string }>(sql`SELECT ${medida(d)}::text AS valor, count(*)::text AS n FROM (${base}) t ${onde(sel)}`);
   const registros = Number(escolhido.n);
+  let ultimoEm: string | null = null;
+  if (d.explorar.campoData) {
+    const [u] = await db.execute<{ v: string | null }>(sql`SELECT max(${col(d.explorar.campoData)})::text AS v FROM (${base}) t ${onde(sel)}`);
+    ultimoEm = u?.v ?? null;
+  }
+  let somaValor: number | null = null;
+  if (d.explorar.somaValor) {
+    const [sv] = await db.execute<{ v: string }>(sql`SELECT COALESCE(sum(t.valor), 0)::text AS v FROM (${base}) t ${onde(sel)}`);
+    somaValor = Number(sv.v);
+  }
   const linhas = await db.execute<Record<string, unknown>>(
     sql`SELECT * FROM (${base}) t ${onde(sel)} ORDER BY ${ordem} LIMIT ${tam} OFFSET ${(pag - 1) * tam}`);
 
@@ -145,6 +159,7 @@ export async function explorar(
     total: Number(tot.valor),
     registrosTotal: Number(tot.n),
     selecionado: { valor: Number(escolhido.valor), registros },
+    somaValor, ultimoEm,
     linhas: [...linhas],
     pagina: pag, tamanho: tam, paginas: Math.max(1, Math.ceil(registros / tam)),
     dimensoes, serie,

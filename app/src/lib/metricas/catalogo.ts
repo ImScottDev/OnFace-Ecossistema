@@ -80,6 +80,8 @@ export interface DefinicaoMetrica {
     busca: string[];
     /** Colunas aceitas em ORDER BY do detalhe. */
     ordenaveis: string[];
+    /** Métrica de contagem cujo recorte também tem coluna `valor`: a tela mostra a soma (ex.: concentração). */
+    somaValor?: boolean;
     /** Primeira data com dado confiável nesta fonte; antes disso a janela é encurtada e a tela avisa. */
     piso?: Date;
   };
@@ -376,7 +378,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     explorar: {
       dimensoes: [{ chave: "familia", rotulo: "Família" }],
       busca: ["empresa", "documento"],
-      ordenaveis: ["valor", "empresa", "competencias"],
+      ordenaveis: ["valor", "empresa", "competencias"], somaValor: true,
       periodoPadrao: "12m", piso: new Date("2021-03-01T00:00:00-03:00"),
     },
     recorte: (org, p) => {
