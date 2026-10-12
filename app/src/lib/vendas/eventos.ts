@@ -228,6 +228,19 @@ export async function registrarMudancaDeEtapa(params: {
     )
   `);
 
+  /* Sair da nutrição encerra a retomada: a tarefa "Retomar lead em nutrição" (criada por `nutrir`
+     quando há data) perde o sentido no instante em que o lead volta, seja por mover, qualificar,
+     desqualificar ou criar oportunidade. Concluída (e não declinada): `concluida` e `status` ficam
+     fechados para TODO leitor, inclusive os que só olham `concluida = false` (a próxima ação do cartão,
+     da gaveta e os contadores do board). Aqui é a porta única das etapas, então vale para todo caminho. */
+  if (params.tipo === "StageChanged" && params.leadId && params.de === "nutricao" && params.para !== "nutricao") {
+    await tx.execute(sql`
+      UPDATE tarefas SET status = 'concluida'
+       WHERE organizacao_id = ${params.organizacaoId}::uuid AND lead_id = ${params.leadId}::uuid
+         AND titulo = 'Retomar lead em nutrição' AND origem = 'PLAYBOOK'
+         AND status NOT IN ('concluida', 'declinada')`);
+  }
+
   // CUTOVER DE ESCRITA (fase 25). A etapa da aquisição passa a ser GRAVADA no
   // canônico, e não mais deduzida de fatos.
   //

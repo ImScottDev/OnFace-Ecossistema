@@ -109,12 +109,14 @@ export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): Repositori
                      JOIN backfill_provenance b ON b.entidade_canonica = 'aquisicao' AND b.id_canonico = a.id
                      WHERE a.organizacao_id = ${organizacaoId}::uuid AND b.chave_identidade = ${chave} LIMIT 1`);
     },
-    async acharAquisicaoAberta(organizacaoId, pessoaId, empresaId) {
-      if (!pessoaId && !empresaId) return null;
+    /* Aquisição é da PESSOA: só reaproveita a aberta da mesma pessoa. Duas pessoas da mesma
+       empresa são dois processos (dois cartões no board); casar por empresa fazia a segunda
+       cair na aquisição da primeira e ficar sem cartão próprio. */
+    async acharAquisicaoAberta(organizacaoId, pessoaId) {
+      if (!pessoaId) return null;
       return um(sql`SELECT id FROM aquisicoes
                      WHERE organizacao_id = ${organizacaoId}::uuid AND closed_at IS NULL
-                       AND (${pessoaId}::uuid IS NOT NULL AND pessoa_id = ${pessoaId}::uuid
-                            OR ${empresaId}::uuid IS NOT NULL AND empresa_id = ${empresaId}::uuid)
+                       AND pessoa_id = ${pessoaId}::uuid
                      ORDER BY created_at DESC LIMIT 1`);
     },
     async criarAquisicao(e) {

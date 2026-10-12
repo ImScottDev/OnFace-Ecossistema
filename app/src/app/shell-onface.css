@@ -1390,7 +1390,10 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  max-width: calc(100vw - 32px);
+  /* `left:50%` + `translateX(-50%)` deixa o aviso encolher à metade da janela: com nome longo e a ação
+     "Abrir contato" o texto quebrava numa coluna estreita. Largura do conteúdo, com teto. */
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
   font-size: 12.5px;
   font-weight: 500;
   line-height: 1.4;

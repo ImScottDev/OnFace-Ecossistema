@@ -19,6 +19,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { acaoSalvarContato } from "@/app/(produto)/pre-vendas/actions";
 
 import type { Familia } from "@/lib/vendas/dominio";
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
@@ -314,6 +315,8 @@ export class PecasLigadas extends PecasLiga {
       const q = this._qualPendente[leadId];
       if (!q) return;
       delete this._qualPendente[leadId];
+      /* A observação é do contato (campos_custom), não da qualificação: grava pela mesma ação da ficha. */
+      if (typeof q.obs === "string") void acaoSalvarContato(leadId, { observacao: q.obs }).catch(() => undefined);
       const salvar = (this as any).props?.acoes?.salvarQualificacao;
       if (!salvar) return;
       const interesse = String(q.interesse ?? "");

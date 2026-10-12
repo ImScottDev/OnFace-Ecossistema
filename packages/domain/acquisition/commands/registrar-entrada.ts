@@ -60,9 +60,10 @@ export interface RepositorioAquisicao extends RepositorioIdentidade {
   criarEmpresa(organizacaoId: string, dados: DadosEmpresa): Promise<string>;
   vincularPessoaEmpresa(organizacaoId: string, pessoaId: string, empresaId: string, cargo: string | null): Promise<void>;
   acharAquisicaoPorChave(organizacaoId: string, chave: string): Promise<{ id: string } | null>;
-  /** Aquisição ABERTA da mesma identidade. O SPEC §8.1 permite várias ao longo
-   *  do tempo, mas duas abertas ao mesmo tempo são a mesma coisa duplicada. */
-  acharAquisicaoAberta(organizacaoId: string, pessoaId: string | null, empresaId: string | null): Promise<{ id: string } | null>;
+  /** Aquisição ABERTA da mesma PESSOA. O SPEC §8.1 permite várias ao longo do
+   *  tempo, mas duas abertas ao mesmo tempo para a mesma pessoa são a mesma coisa
+   *  duplicada. Outra pessoa da mesma empresa é outra aquisição. */
+  acharAquisicaoAberta(organizacaoId: string, pessoaId: string | null): Promise<{ id: string } | null>;
   criarAquisicao(entrada: EntradaAquisicao & { pessoaId: string | null; empresaId: string | null }): Promise<string>;
   /**
    * Grava a chave do fato externo APONTANDO para a aquisição que o recebeu.
@@ -125,9 +126,9 @@ export async function registrarEntrada(
     await repo.vincularPessoaEmpresa(entrada.organizacaoId, pessoaId, empresaId, entrada.pessoa.cargo ?? null);
   }
 
-  // 3. Aquisição. Já existe uma aberta para esta identidade? Então é a mesma
-  //    entrada chegando de novo, não um processo novo.
-  const aberta = await repo.acharAquisicaoAberta(entrada.organizacaoId, pessoaId, empresaId);
+  // 3. Aquisição. Já existe uma aberta para esta PESSOA? Então é a mesma entrada
+  //    chegando de novo, não um processo novo. Outra pessoa da mesma empresa abre a sua.
+  const aberta = await repo.acharAquisicaoAberta(entrada.organizacaoId, pessoaId);
   if (aberta) {
     await repo.registrarTouchpoint(aberta.id, { ...entrada, pessoaId, empresaId });
     if (entrada.idempotencyKey) await repo.registrarChave(aberta.id, entrada);

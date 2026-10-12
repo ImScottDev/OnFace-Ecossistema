@@ -563,8 +563,8 @@ export async function moverEtapa(params: {
   // desfeita no canônico também. A carga grava essas aquisições com `closed_at`
   // preenchido, e o board só mostra encerrada se ela ainda estiver desqualificada
   // ou em nutrição. Sem limpar, o lead reativado (183 em nutrição na carga) sumia
-  // do board sem erro nenhum. A tarefa "Retomar lead em nutrição" também perde o
-  // sentido: o lead já voltou, então ela não pode ficar aberta na fila.
+  // do board sem erro nenhum. A tarefa "Retomar lead em nutrição" é encerrada em
+  // `registrarMudancaDeEtapa` (porta única das etapas): o lead já voltou.
   if (reativando) {
     await db.execute(sql`
       UPDATE leads SET desqualificado_em = NULL, desqualificacao_motivo = NULL, desqualificacao_detalhe = NULL
@@ -572,11 +572,6 @@ export async function moverEtapa(params: {
     await db.execute(sql`
       UPDATE aquisicoes SET closed_at = NULL, desqualificado_em = NULL, motivo_desqualificacao = NULL
        WHERE lead_legado_id = ${params.leadId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid`);
-    await db.execute(sql`
-      UPDATE tarefas SET status = 'declinada'
-       WHERE organizacao_id = ${params.organizacaoId}::uuid AND lead_id = ${params.leadId}::uuid
-         AND titulo = 'Retomar lead em nutrição' AND origem = 'PLAYBOOK'
-         AND status NOT IN ('concluida', 'declinada')`);
   }
 
   await registrarMudancaDeEtapa({
@@ -732,6 +727,12 @@ export async function nutrir(params: {
   // que reaparece na fila operacional na data. Sem isso "retomar em" seria só
   // um texto que ninguém lê de novo.
   if (params.retomarEm) {
+    // Nutrir de novo com outra data substitui a retomada: a antiga é cancelada, não duplicada.
+    await db.execute(sql`
+      UPDATE tarefas SET status = 'declinada'
+       WHERE organizacao_id = ${params.organizacaoId}::uuid AND lead_id = ${params.leadId}::uuid
+         AND titulo = 'Retomar lead em nutrição' AND origem = 'PLAYBOOK'
+         AND status NOT IN ('concluida', 'declinada')`);
     await db.execute(sql`
       INSERT INTO tarefas (organizacao_id, lead_id, empresa_id, usuario_id, titulo, descricao,
                            tipo, prioridade, data_vencimento, vence_em, origem, status)

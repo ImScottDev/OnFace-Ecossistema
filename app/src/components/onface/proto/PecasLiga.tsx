@@ -712,9 +712,14 @@ class Logica extends React.Component<any, any> {
         { campo: "interesse", label: "Interesse", tipo: "multi", opcoes: ["White Label", "Callface AI", "PABX", "Não identificado"] },
         { campo: "tamanho", label: "Tamanho da operação", tipo: "numero" },
         { campo: "dor", label: "Dor principal", tipo: "texto", dica: "Ex: atendimento manual não escala" },
-        { campo: "fit", label: "Fit", tipo: "escolha", opcoes: ["Alto", "Médio", "Baixo"] }
+        { campo: "fit", label: "Fit", tipo: "escolha", opcoes: ["Alto", "Médio", "Baixo"] },
+        /* A observação do contato (a mesma da ficha e da tela do lead). Vem do detalhe real; o que a
+           pessoa digita aqui sobrepõe e é gravado no contato, não na qualificação. */
+        { campo: "obs", label: "Observação", tipo: "texto", dica: "Contexto sobre a pessoa para o time" }
       ].map(q => {
-        const valor = qualLead[q.campo] || "";
+        const valor = q.campo === "obs"
+          ? (qualLead.obs !== undefined ? qualLead.obs : ((DR && DR.pessoa && DR.pessoa.observacao) || ""))
+          : (qualLead[q.campo] || "");
         const marcados = q.tipo === "multi" ? String(valor).split("|").filter(Boolean) : [];
         const n = parseInt(String(valor).replace(/[^0-9]/g, ""), 10);
         const temN = !isNaN(n) && n > 0;

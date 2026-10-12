@@ -174,8 +174,9 @@ async function main() {
   const ator = atorHumano(u.id);
   const novo = async (sufixo: string, nome = `${marca}-${sufixo}`) => (await criarLead({
     organizacaoId: org.id,
-    // Uma empresa por lead: a entrada canônica reaproveita a aquisição ABERTA da mesma empresa
-    // (`acharAquisicaoAberta`), e o segundo lead dela ficaria sem aquisição própria.
+    // Uma empresa por lead só para isolar os cenários; a entrada canônica reaproveita a aquisição
+    // aberta apenas da MESMA pessoa (`acharAquisicaoAberta`), então duas pessoas na mesma empresa
+    // também têm um cartão cada.
     empresa: { nome: `${marca} Ltda ${sufixo}` },
     pessoa: { nome, email: `${marca}-${sufixo}@teste.local` },
     touchpoint: { tipoOrigem: "organica", source: "smoke" },
@@ -189,6 +190,46 @@ async function main() {
              (SELECT count(*) FROM aquisicoes WHERE organizacao_id = ${org.id}::uuid)::int AS aq,
              (SELECT coalesce(max(n), 0) FROM (SELECT count(*) n FROM aquisicoes WHERE pessoa_id IS NOT NULL GROUP BY pessoa_id) x)::int AS max_aq_por_pessoa`);
     console.log(`  (informativo) pessoas ${m.pessoas}, aquisições ${m.aq}, máx. de aquisições por pessoa canônica: ${m.max_aq_por_pessoa}`);
+
+    console.log("\n═══ aquisição é por PESSOA: duas pessoas da mesma empresa = dois cartões ═══");
+    const mesmaEmpresa = `${marca} Ltda mesma`;
+    const entrada = (sufixo: string) => ({
+      organizacaoId: org.id, empresa: { nome: mesmaEmpresa },
+      pessoa: { nome: `${marca}-${sufixo}`, email: `${marca}-${sufixo}@teste.local` },
+      touchpoint: { tipoOrigem: "organica", source: "smoke" }, origem: "site", responsavelId: u.id,
+    });
+    const p1 = await criarLead(entrada("p1") as never, { tipo: "HUMAN", usuarioId: u.id });
+    const p2 = await criarLead(entrada("p2") as never, { tipo: "HUMAN", usuarioId: u.id });
+    ok(p1.leadId !== p2.leadId && p1.empresaId === p2.empresaId, "dois leads, a mesma empresa");
+    const [aqs] = await db.execute<{ n: number; distintas: number }>(sql`
+      SELECT count(*)::int AS n, count(DISTINCT lead_legado_id)::int AS distintas FROM aquisicoes
+       WHERE lead_legado_id IN (${p1.leadId}::uuid, ${p2.leadId}::uuid) AND closed_at IS NULL`);
+    ok(aqs.n === 2 && aqs.distintas === 2, `cada pessoa tem a sua aquisição aberta (${aqs.n})`);
+    const quadro = await boardPreVendas(org.id, { aba: "ativos" });
+    const cartoes = Object.values(quadro.colunas).flatMap((col) => col.cards).filter((x) => x.leadId === p1.leadId || x.leadId === p2.leadId);
+    ok(cartoes.length === 2, `o board mostra os dois cartões (${cartoes.length})`);
+    const repetida = await criarLead(entrada("p1") as never, { tipo: "HUMAN", usuarioId: u.id });
+    const [aqs2] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM aquisicoes WHERE pessoa_id = (SELECT id FROM pessoas WHERE lead_id_legado = ${p1.leadId}::uuid) AND closed_at IS NULL`);
+    ok(repetida.leadId === p1.leadId && aqs2.n === 1, "a MESMA pessoa entrando de novo devolve o mesmo lead e não abre segunda aquisição");
+
+    console.log("\n═══ sair da nutrição encerra a tarefa de retomada ═══");
+    const tarefaRetomada = async (id: string) => (await db.execute<{ status: string; concluida: boolean }>(sql`
+      SELECT status, concluida FROM tarefas WHERE lead_id = ${id}::uuid AND titulo = 'Retomar lead em nutrição'`));
+    await nutrir({ organizacaoId: org.id, leadId: p1.leadId, motivo: "sem_orcamento", retomarEm: "2030-02-01", ator });
+    ok((await tarefaRetomada(p1.leadId))[0]?.status === "a_fazer", "nutrir com data cria a tarefa de retomada aberta");
+    let vis = await boardPreVendas(org.id, { aba: "nutricao" });
+    ok(Object.values(vis.colunas).flatMap((col) => col.cards).some((x) => x.leadId === p1.leadId), "o lead aparece na aba Nutrição");
+    await moverEtapa({ organizacaoId: org.id, leadId: p1.leadId, para: "em_contato", ator });
+    const t = (await tarefaRetomada(p1.leadId))[0];
+    ok(t?.status === "concluida" && t.concluida === true, `reativar conclui a retomada (${t?.status}, concluida=${t?.concluida})`);
+    const dl = await detalheLead(org.id, p1.leadId);
+    ok(dl?.proximaAcao?.titulo !== "Retomar lead em nutrição", `a retomada não é mais a próxima ação (${dl?.proximaAcao?.titulo ?? "sem próxima ação"})`);
+    vis = await boardPreVendas(org.id, { aba: "ativos" });
+    const cartao = Object.values(vis.colunas).flatMap((col) => col.cards).find((x) => x.leadId === p1.leadId);
+    ok(cartao?.proximaAcao?.titulo !== "Retomar lead em nutrição", "nem no cartão do board");
+    await nutrir({ organizacaoId: org.id, leadId: p2.leadId, motivo: "sem_orcamento", retomarEm: "2030-02-01", ator });
+    await qualificar({ organizacaoId: org.id, leadId: p2.leadId, ator });
+    ok((await tarefaRetomada(p2.leadId))[0]?.status === "concluida", "qualificar a partir da nutrição também conclui a retomada");
 
     console.log("\n═══ Relações da PESSOA: todas as aquisições dela ═══");
     const a = await novo("a");
