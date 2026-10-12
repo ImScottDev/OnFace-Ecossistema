@@ -89,7 +89,9 @@ function ultimaInteracao(iso: string | null, agora: number, criadoEm?: string | 
   const fmt = (x: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", ...o }).format(x);
   const dia = (x: Date) => fmt(x, { year: "numeric", month: "2-digit", day: "2-digit" });
   const hora = fmt(d, { hour: "2-digit", minute: "2-digit" });
-  if (dia(d) === dia(new Date(agora))) return { t: `Hoje, ${hora}`, o: 0 };
+  /* Hoje: ordem fracionada (fração do dia), para o mais recente vir primeiro entre os de hoje.
+     Com 0 para todos, o desempate caía no nome e o registro novo se perdia no meio. */
+  if (dia(d) === dia(new Date(agora))) return { t: `Hoje, ${hora}`, o: Math.min(0.99, Math.max(0, (agora - d.getTime()) / 86_400_000)) };
   if (dia(d) === dia(new Date(agora - 86_400_000))) return { t: `Ontem, ${hora}`, o: 1 };
   const dias = Math.max(2, Math.floor((agora - d.getTime()) / 86_400_000));
   return { t: `há ${dias} dias`, o: dias };

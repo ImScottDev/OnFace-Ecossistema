@@ -50,7 +50,14 @@ const IDENTIDADE_SEM_AQUISICAO = ["worker/index.ts"];
  * Isenção NOMEADA, e não padrão frouxo. O padrão frouxo foi exatamente o que
  * escondeu sete criadores de lead e seis de negócio até o CP56.
  */
-const FORA_DA_REGRA = ["lib/db/seed.ts"];
+const FORA_DA_REGRA = [
+  "lib/db/seed.ts",
+  /* `garantirRegistroDeContato`: o contato cadastrado avulso em /contatos ganha o registro que a ficha base
+     exige (notas, tags e atividades são chaveadas por ele), mas NÃO é processo comercial: nasce sem etapa de
+     Pré-vendas, sem aquisição e sem dono. Passar pela porta canônica abriria aquisição para quem ninguém
+     está vendendo, que é o erro que o caso do worker já evita. Quando entra em Pré-vendas, `criarLead` chama a porta. */
+  "lib/vendas/identidade.ts",
+];
 
 test("todo criador de identidade migrado chama a porta canônica", () => {
   const faltando = MIGRADOS.filter((p) => !ler(p).includes("garantirEntradaCanonica"));

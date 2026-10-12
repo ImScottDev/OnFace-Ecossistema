@@ -7,6 +7,7 @@
  * tentar encaixar `Empresa360` num molde que não é o dela.
  * ───────────────────────────────────────────────────────────────────────── */
 
+import { formatarTelefone } from "@/lib/telefone";
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import { qualDoDesenho } from "./qual-do-desenho";
 import { linhasOrigemMeta } from "@/lib/vendas/respostas-formulario";
@@ -117,8 +118,8 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     segmento: l.empresa.setor,
     site: l.empresa.website,
     email: l.pessoa.email,
-    tel: l.pessoa.telefone,
-    whatsapp: l.pessoa.whatsapp,
+    tel: formatarTelefone(l.pessoa.telefone) || null,
+    whatsapp: formatarTelefone(l.pessoa.whatsapp) || null,
     /* A ficha monta "linkedin.com/in/" + o nome quando o campo não vem, e o
        botão "Abrir LinkedIn" leva a um perfil que não é da pessoa. Passar o
        valor real — ou `null` — é o que faz a tela mostrar "—" em vez de um
@@ -151,7 +152,7 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     respostas: l.respostasFormulario,
     rastreio: rastreioDoLead(l.atribuicao, l.metaRastreio),
     leadScore: l.leadScore,
-    empresaTel: l.empresa.telefone,
+    empresaTel: formatarTelefone(l.empresa.telefone) || null,
     empresaObs: l.empresa.observacoes,
     anuncioHref: linkDoAnuncio(l.atribuicao.metaAdId),
   };

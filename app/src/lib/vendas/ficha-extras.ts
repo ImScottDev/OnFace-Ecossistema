@@ -171,6 +171,7 @@ export async function relacoesDaPessoa(organizacaoId: string, leadId: string): P
     id: string; nome: string; sobrenome: string | null; email: string | null; telefone: string | null; whatsapp: string | null;
     canonical: string | null; pessoa_id: string | null; etapa: string; origem: string | null; criado_em: string;
     responsavel: string | null; nutricao_motivo: string | null; nutrido_em: string | null; retomar_em: string | null;
+    tem_processo: boolean;
   };
   const identidade = (c: Candidato): IdentidadeDoLead => ({
     id: c.id, pessoaId: c.pessoa_id, canonicalLeadId: c.canonical, nome: c.nome, email: c.email, telefones: [c.telefone, c.whatsapp],
@@ -192,6 +193,7 @@ export async function relacoesDaPessoa(organizacaoId: string, leadId: string): P
       SELECT l.id::text, l.nome, l.sobrenome, l.email, l.telefone, l.whatsapp, l.canonical_lead_id::text AS canonical, p.id::text AS pessoa_id,
              CASE WHEN l.estagio_pre_vendas = 'qualificacao' THEN 'qualificacao'
                   ELSE COALESCE(pe.codigo, l.estagio_pre_vendas, 'novo') END AS etapa,
+             (a.id IS NOT NULL OR l.estagio_pre_vendas IS NOT NULL) AS tem_processo,
              COALESCE(a.origem, l.origem) AS origem, l.created_at::text AS criado_em, u.nome AS responsavel,
              COALESCE(NULLIF(a.nutricao_status, 'em_nutricao'), l.nutricao_motivo) AS nutricao_motivo,
              COALESCE(l.nutrido_em, (SELECT max(sc.created_at) FROM status_changes sc
@@ -218,7 +220,8 @@ export async function relacoesDaPessoa(organizacaoId: string, leadId: string): P
   }
   const meus = [...achados.values()].sort((a, b) => b.criado_em.localeCompare(a.criado_em));
 
-  const aquisicoes: AquisicaoDaPessoa[] = meus.map((c) => ({
+  // Contato avulso (registro sem etapa e sem aquisição) é identidade, não processo: não é relação em andamento.
+  const aquisicoes: AquisicaoDaPessoa[] = meus.filter((c) => c.tem_processo).map((c) => ({
     id: c.id, etapa: c.etapa, etapaRotulo: ROTULO_ETAPA_PRE_VENDAS[c.etapa as EstagioPreVendas] ?? c.etapa,
     origem: c.origem, criadoEm: c.criado_em, responsavel: c.responsavel,
     pessoa: [c.nome, c.sobrenome].filter(Boolean).join(" "),
