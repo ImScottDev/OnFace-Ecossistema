@@ -1255,6 +1255,8 @@ export interface Empresa360 {
   oportunidades: Array<{ id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null; valor: number | null; responsavel: string | null }>;
   propostas: Array<{ id: string; numero: number; versao: number; status: string; total: number | null; enviadaEm: string | null }>;
   servicos: Array<{ id: string; familia: string; produto: string | null; valor: number; ativo: boolean }>;
+  /** Existe a ficha de Cliente 360 (/clientes/<empresa>): é o gate da própria rota. */
+  fichaDeCliente: boolean;
 }
 
 export async function empresa360(organizacaoId: string, empresaId: string): Promise<Empresa360 | null> {
@@ -1371,6 +1373,10 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
      ORDER BY current_recurring_value DESC LIMIT 20
   `);
 
+  const [cli360] = await db.execute<{ existe: boolean }>(sql`
+    SELECT EXISTS (SELECT 1 FROM clientes WHERE empresa_id = ${empresaId}::uuid
+                    AND organizacao_id = ${organizacaoId}::uuid) AS existe`);
+
   // Mesma fonte de verdade do gate de envio da proposta: se a lista mudar lá,
   // a Empresa 360 acompanha sozinha.
   const { CAMPOS_JURIDICOS } = await import("./propostas");
@@ -1414,6 +1420,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
       id: s.id, familia: s.familia, produto: s.produto,
       valor: Number(s.valor), ativo: s.ciclo === "ACTIVE",
     })),
+    fichaDeCliente: !!cli360?.existe,
   };
 }
 
@@ -1438,6 +1445,10 @@ export interface DetalheLead {
   leadScore: number;
   /** Empresa com serviço ativo na carteira: é o que define "Cliente". */
   naCarteira: boolean;
+  /** A empresa já teve serviço (ativo ou encerrado). Distingue ex-cliente de quem nunca comprou. */
+  jaTeveServico: boolean;
+  /** Existe a ficha de Cliente 360 (/clientes/<empresa>): é o gate da própria rota. */
+  fichaDeCliente: boolean;
   pessoa: { nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; linkedin: string | null; observacao: string | null; cidade: string | null };
   etapa: EstagioPreVendas;
   etapaRotulo: string;
@@ -1544,7 +1555,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     campos_custom: Record<string, unknown> | null;
     meta_ad_id: string | null; meta_adset_id: string | null; meta_campaign_id: string | null;
     lead_score: number | null; emp_telefone: string | null; emp_observacoes: string | null;
-    na_carteira: boolean;
+    na_carteira: boolean; ja_teve_servico: boolean; ficha_de_cliente: boolean;
   }>(sql`
     SELECT l.id::text, l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa_nome,
            COALESCE(e.setor, l.empresa_setor) AS setor, COALESCE(e.porte, l.empresa_porte) AS porte,
@@ -1555,6 +1566,9 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
            -- "Cliente" = está na carteira (serviço ativo), não "teve algum ganho".
            EXISTS (SELECT 1 FROM servicos_canonicos s
                     WHERE s.empresa_id = l.empresa_id AND s.commercial_lifecycle = 'ACTIVE') AS na_carteira,
+           EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = l.empresa_id) AS ja_teve_servico,
+           EXISTS (SELECT 1 FROM clientes c WHERE c.empresa_id = l.empresa_id
+                    AND c.organizacao_id = l.organizacao_id) AS ficha_de_cliente,
            l.estagio_pre_vendas AS etapa, l.qualificado, l.qualificado_em::text,
            qu.nome AS qualificado_por, l.qualificado_por_tipo, l.pre_qualificado,
            l.qualificacao, COALESCE(a.origem, l.origem) AS origem,
@@ -1655,6 +1669,8 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     },
     leadScore: l.lead_score ?? 0,
     naCarteira: l.na_carteira,
+    jaTeveServico: l.ja_teve_servico,
+    fichaDeCliente: l.ficha_de_cliente,
     pessoa: {
       nome: nomeCompleto(l.nome, l.sobrenome) || "Sem contato",
       cargo: l.cargo, email: l.email, telefone: l.telefone, whatsapp: l.whatsapp,

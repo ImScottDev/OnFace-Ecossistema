@@ -10,7 +10,7 @@ const base = { empresaId: empresa, pessoaId: null, leadId: lead, titulo: "Conta"
 test("aquisição abre qualificação, não a ficha da pessoa", () => {
   const r = relacoesDoRegistro([{ ...base, id: lead, k: "aquisicao" }], { empresaId: empresa, leadId: lead });
   assert.equal(r.length, 1);
-  assert.equal(r[0].href, `/pre-vendas/${lead}`);
+  assert.equal(r[0].href, `/pre-vendas?lead=${lead}`);
   assert.equal(r[0].tipo, "Pré-vendas");
 });
 
@@ -30,7 +30,7 @@ test("contato não herda aquisição de outra pessoa da mesma conta", () => {
     { ...base, id: outro, leadId: outro, k: "aquisicao" },
     { ...base, id: empresa, leadId: null, k: "cliente" },
   ], { empresaId: empresa, leadId: lead });
-  assert.deepEqual(r.map(x => x.href), [`/pre-vendas/${lead}`, `/clientes/${empresa}`]);
+  assert.deepEqual(r.map(x => x.href), [`/pre-vendas?lead=${lead}`, `/clientes/${empresa}`]);
 });
 
 test("empresas homônimas não misturam relações", () => {
@@ -38,7 +38,7 @@ test("empresas homônimas não misturam relações", () => {
     { ...base, id: lead, k: "aquisicao" },
     { ...base, empresaId: outro, id: outro, k: "aquisicao" },
   ], { empresaId: empresa });
-  assert.deepEqual(r.map(x => x.href), [`/pre-vendas/${lead}`]);
+  assert.deepEqual(r.map(x => x.href), [`/pre-vendas?lead=${lead}`]);
 });
 
 test("pessoa canônica sem lead usa seu próprio vínculo", () => {
@@ -46,7 +46,7 @@ test("pessoa canônica sem lead usa seu próprio vínculo", () => {
     { ...base, pessoaId: outro, id: lead, k: "aquisicao" },
     { ...base, pessoaId: lead, id: outro, k: "aquisicao" },
   ], { empresaId: empresa, pessoaId: outro });
-  assert.deepEqual(r.map(x => x.href), [`/pre-vendas/${lead}`]);
+  assert.deepEqual(r.map(x => x.href), [`/pre-vendas?lead=${lead}`]);
 });
 
 test("vínculo inválido não produz URL para outra entidade", () => {

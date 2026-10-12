@@ -16,6 +16,7 @@ import type { DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { PessoaLiga } from "./PessoaLiga";
 import { levarParametros } from "./rota-do-desenho";
+import { corrigirVazio, montarRelacoes, paraALiga } from "./relacoes-da-ficha";
 import { registroDoDesenho } from "./registro-do-desenho";
 import { qualDoDesenho } from "./PreVendasProto";
 import { usePecas } from "./pecas-host";
@@ -110,6 +111,7 @@ class PessoaLigada extends PessoaLiga {
     vals.semOpps = reais.length === 0;
     const aba = (vals.abas ?? []).find((a: any) => a.label === "Oportunidades");
     if (aba) { aba.conta = String(reais.length); aba.temConta = reais.length > 0; }
+    corrigirVazio(vals.relAtivas, (this as any).props.relacoes, !!(this as any).state?.hidratado);
     return corrigirInventados(vals, r);
   }
 }
@@ -139,6 +141,23 @@ export function PessoaProto({ lead, timeline, cadencia, extras }: {
   const [equipe, setEquipe] = React.useState<Array<{ id: string; nome: string }>>([]);
   React.useEffect(() => { void acaoResponsaveis().then(setEquipe).catch(() => undefined); }, []);
 
+  /* A pessoa É a aquisição: a ficha é chaveada pelo lead, então ele entra como
+     "Aquisição" com a etapa real de Pré-vendas. Propostas não são lidas aqui. */
+  const relacoes = React.useMemo(() => montarRelacoes({
+    empresaId: lead.empresa.id ?? "", leadId: lead.id,
+    aquisicoes: [{
+      id: lead.id, etapa: lead.etapa, etapaRotulo: lead.etapaRotulo, titulo: "Lead em Pré-vendas",
+      sub: [lead.atribuicao.origem ?? "Origem não informada", lead.responsavel.nome].filter(Boolean).join(" · "),
+    }],
+    oportunidades: lead.oportunidades,
+    propostas: null,
+    conta: {
+      nome: lead.empresa.nome, ativo: lead.naCarteira, jaTeveServico: lead.jaTeveServico,
+      ficha: lead.fichaDeCliente,
+    },
+    vazioPrefixo: `Nenhuma aquisição ativa ou oportunidade registrada para ${lead.pessoa.nome}.`,
+  }), [lead]);
+
   const catalogo = React.useMemo(() => ({
     EQUIPE: equipe.length ? equipe.map((e) => e.nome) : (lead.responsavel.nome ? [lead.responsavel.nome] : []),
     /* `ETAPAS` é o que dá o chip de etapa no cabeçalho — sem ele a ficha
@@ -147,36 +166,11 @@ export function PessoaProto({ lead, timeline, cadencia, extras }: {
       Object.entries(ROTULO_ETAPA_PRE_VENDAS).map(([k, label]) => [k, { label }]),
     ),
     LEADS: [], CONVERSAS: [], CADENCIAS: [], SEGMENTOS: [],
-    /* O card "Relações em andamento" pergunta por aqui. Sem esta função ele
-       caía em `{ itens: [] }` e dizia "Nada em andamento" mesmo com
-       oportunidade gravada. Abertas viram linha; perdidas só contam. Ganho
-       é cliente (a Visão 360 mostra), não relação em andamento. */
-    Relacoes: () => ({
-      itens: [
-        /* Ganho é o vínculo de cliente — a relação ativa mais importante da
-           ficha. Entra primeiro, com `k:"cliente"` (o que acende "Cliente" no
-           topo) e tom verde. Sem isto, a ficha de quem já paga dizia "Nada em
-           andamento". */
-        ...lead.oportunidades
-          .filter((o) => o.etapa === "ganho")
-          .map((o) => ({
-            k: "cliente", tipo: "Cliente", titulo: o.titulo,
-            sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
-            status: "Cliente ativo", tom: "verde",
-            ir: () => router.push(`/pipeline/${o.id}`),
-          })),
-        ...lead.oportunidades
-          .filter((o) => o.etapa !== "ganho" && o.etapa !== "perdido")
-          .map((o) => ({
-            k: "opp", tipo: "Oportunidade", titulo: o.titulo,
-            sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
-            status: o.etapaRotulo, tom: "coral",
-            ir: () => router.push(`/pipeline/${o.id}`),
-          })),
-      ],
-      perdidas: lead.oportunidades.filter((o) => o.etapa === "perdido").length,
-    }),
-  }), [lead.responsavel.nome, lead.oportunidades, router, equipe]);
+    /* O card "Relações em andamento" pergunta por aqui. A regra (aquisição,
+       oportunidade, venda ganha, Cliente ativo x 360) mora em
+       `relacoes-da-ficha.ts`; o vazio só vale com as fontes lidas. */
+    Relacoes: () => paraALiga(relacoes, (rota) => router.push(rota)),
+  }), [lead.responsavel.nome, relacoes, router, equipe]);
 
   const oportunidades = React.useMemo(
     () => lead.oportunidades.map((o) => ({
@@ -320,6 +314,7 @@ export function PessoaProto({ lead, timeline, cadencia, extras }: {
           "E-mail": registro.email,
         }}
         catalogo={catalogo}
+        relacoes={relacoes}
         oportunidades={oportunidades}
         abrir={abrir}
         gravar={gravar}

@@ -15,11 +15,12 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { ROTULO_ETAPA_PRE_VENDAS, ROTULO_FAMILIA, type Familia } from "@/lib/vendas/dominio";
+import { ROTULO_ETAPA_PRE_VENDAS } from "@/lib/vendas/dominio";
 import type { DetalheLead, Empresa360 } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { EmpresaLiga } from "./EmpresaLiga";
 import { levarParametros } from "./rota-do-desenho";
+import { corrigirVazio, montarRelacoes, paraALiga } from "./relacoes-da-ficha";
 import { registroDoDesenho, linkDoAnuncio } from "./registro-do-desenho";
 import { qualDoDesenho } from "./qual-do-desenho";
 import { usePecas } from "./pecas-host";
@@ -96,6 +97,7 @@ class EmpresaLigada extends EmpresaLiga {
         if (ok) (this as any).setState({ excluir: false });
       };
     }
+    corrigirVazio(vals.relAtivas, P.relacoes, !!(this as any).state?.hidratado);
     return vals;
   }
 
@@ -169,6 +171,27 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
   const [equipe, setEquipe] = React.useState<Array<{ id: string; nome: string }>>([]);
   React.useEffect(() => { void acaoResponsaveis().then(setEquipe).catch(() => undefined); }, []);
 
+  const relacoes = React.useMemo(() => montarRelacoes({
+    empresaId: empresa.id,
+    aquisicoes: empresa.leads.map((a) => {
+      /* O lead principal tem a etapa real (detalheLead); os demais só a derivada do empresa360. */
+      const real = lead && lead.id === a.id ? lead : null;
+      return {
+        id: a.id, etapa: real?.etapa ?? a.etapa, etapaRotulo: real?.etapaRotulo ?? a.etapaRotulo,
+        titulo: `Entrada em ${a.criadoEm.slice(0, 10).split("-").reverse().join("/")}`,
+        sub: a.origem ?? "Origem não informada",
+      };
+    }),
+    oportunidades: empresa.oportunidades,
+    propostas: empresa.propostas,
+    conta: {
+      nome: empresa.nome, ativo: empresa.relacionamento === "cliente",
+      jaTeveServico: empresa.servicos.length > 0, ficha: empresa.fichaDeCliente,
+      detalheAtivo: `${empresa.servicos.filter((s) => s.ativo).length || 1} serviço(s) ativo(s) na carteira`,
+    },
+    vazioPrefixo: `Nenhuma aquisição ativa, oportunidade, proposta ou serviço registrado para ${empresa.nome}. Por enquanto ela só existe na base.`,
+  }), [empresa, lead]);
+
   const catalogo = React.useMemo(() => ({
     EQUIPE: equipe.length ? equipe.map((e) => e.nome) : (registro.resp ? [registro.resp] : []),
     /* `ETAPAS` é o que dá o chip de etapa no cabeçalho — sem ele a ficha
@@ -177,32 +200,11 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
       Object.entries(ROTULO_ETAPA_PRE_VENDAS).map(([k, label]) => [k, { label }]),
     ),
     LEADS: [], CONVERSAS: [], CADENCIAS: [], SEGMENTOS: [],
-    /* Mesmo card "Relações em andamento" da ficha da Pessoa, agora na Empresa:
-       sem isto a empresa CLIENTE (oportunidade ganha) dizia "Nada em andamento".
-       Ganho vira vínculo de Cliente (verde), abertas viram oportunidade (coral),
-       perdidas só contam. Fonte: oportunidades reais do empresa360. */
-    Relacoes: () => ({
-      itens: [
-        ...empresa.oportunidades
-          .filter((o) => o.etapa === "ganho")
-          .map((o) => ({
-            k: "cliente", tipo: "Cliente", titulo: o.titulo,
-            sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
-            status: "Cliente ativo", tom: "verde",
-            ir: () => router.push(`/pipeline/${o.id}`),
-          })),
-        ...empresa.oportunidades
-          .filter((o) => o.etapa !== "ganho" && o.etapa !== "perdido")
-          .map((o) => ({
-            k: "opp", tipo: "Oportunidade", titulo: o.titulo,
-            sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
-            status: o.etapaRotulo, tom: "coral",
-            ir: () => router.push(`/pipeline/${o.id}`),
-          })),
-      ],
-      perdidas: empresa.oportunidades.filter((o) => o.etapa === "perdido").length,
-    }),
-  }), [registro.resp, empresa.oportunidades, router, equipe]);
+    /* Mesmo card "Relações em andamento" da ficha da Pessoa, mesma regra
+       (`relacoes-da-ficha.ts`): aquisição, oportunidade, proposta e Cliente
+       ativo x acesso ao 360, lidos do empresa360. */
+    Relacoes: () => paraALiga(relacoes, (rota) => router.push(rota)),
+  }), [registro.resp, relacoes, router, equipe]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
@@ -405,6 +407,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
           } },
         }}
         catalogo={catalogo}
+        relacoes={relacoes}
         abrir={abrir}
         gravar={gravar}
         persistir={persistir}
