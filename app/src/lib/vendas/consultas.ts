@@ -1481,8 +1481,14 @@ export interface DetalheLead {
   tags: Array<{ id: string; nome: string }>;
   primeiroContatoEm: string | null;
   criadoEm: string;
-  nutricao: { motivo: string | null; retomarEm: string | null; observacao: string | null };
-  desqualificacao: { motivo: string | null; detalhe: string | null; deEtapa: string | null };
+  /** `desde` = quando entrou em nutrição (`leads.nutrido_em`). */
+  nutricao: { motivo: string | null; retomarEm: string | null; observacao: string | null; desde: string | null };
+  /** `em` = quando foi desqualificado (`leads.desqualificado_em`). */
+  desqualificacao: { motivo: string | null; detalhe: string | null; deEtapa: string | null; em: string | null };
+  /** Quando entrou na etapa ATUAL (mesma conta do cartão do board). */
+  etapaDesde: string | null;
+  /** Último toque (aquisição canônica, com o legado como reserva): base do "sem interação". */
+  ultimoToqueEm: string | null;
   oportunidades: Array<{ id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null }>;
   proximaAcao: { titulo: string; venceEm: string | null } | null;
 }
@@ -1556,6 +1562,8 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     meta_ad_id: string | null; meta_adset_id: string | null; meta_campaign_id: string | null;
     lead_score: number | null; emp_telefone: string | null; emp_observacoes: string | null;
     na_carteira: boolean; ja_teve_servico: boolean; ficha_de_cliente: boolean;
+    etapa_canonica: string | null; etapa_desde: string | null; ultimo_toque_em: string | null;
+    nutrido_em: string | null; desqualificado_em: string | null;
   }>(sql`
     SELECT l.id::text, l.empresa_id::text, COALESCE(e.nome, l.empresa) AS empresa_nome,
            COALESCE(e.setor, l.empresa_setor) AS setor, COALESCE(e.porte, l.empresa_porte) AS porte,
@@ -1569,7 +1577,15 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
            EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = l.empresa_id) AS ja_teve_servico,
            EXISTS (SELECT 1 FROM clientes c WHERE c.empresa_id = l.empresa_id
                     AND c.organizacao_id = l.organizacao_id) AS ficha_de_cliente,
-           l.estagio_pre_vendas AS etapa, l.qualificado, l.qualificado_em::text,
+           l.estagio_pre_vendas AS etapa, pe.codigo AS etapa_canonica,
+           /* Entrou na etapa ATUAL: a mesma conta do cartão do board (última mudança para ela;
+              sem histórico, o primeiro contato ou a criação). */
+           COALESCE((SELECT max(sc.created_at) FROM status_changes sc
+                      WHERE sc.lead_id = l.id AND sc.para_status = COALESCE(pe.codigo, l.estagio_pre_vendas)),
+                    l.contato_desde_at, l.created_at)::text AS etapa_desde,
+           COALESCE(a.last_touch_at, l.last_contact_at)::text AS ultimo_toque_em,
+           l.nutrido_em::text AS nutrido_em, l.desqualificado_em::text AS desqualificado_em,
+           l.qualificado, l.qualificado_em::text,
            qu.nome AS qualificado_por, l.qualificado_por_tipo, l.pre_qualificado,
            l.qualificacao, COALESCE(a.origem, l.origem) AS origem,
            -- Atribuição é canônica em pontos_contato (SPEC §8.3): nenhuma
@@ -1600,6 +1616,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
       LEFT JOIN usuarios u ON u.id = l.responsavel_id
       LEFT JOIN usuarios qu ON qu.id = l.qualificado_por
       LEFT JOIN aquisicoes a ON a.lead_legado_id = l.id
+      LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
       LEFT JOIN LATERAL (
         SELECT campaign, medium, content, term, landing_page
           FROM pontos_contato t
@@ -1658,7 +1675,11 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
      ORDER BY COALESCE(vence_em, data_vencimento::timestamptz) ASC NULLS LAST LIMIT 1
   `);
 
-  const etapa = (l.etapa ?? "novo") as EstagioPreVendas;
+  /* A etapa que o BOARD mostra: a gravada na aquisição manda; o legado só refina
+     "qualificacao" (mesma regra de `boardPreVendas`). Antes o detalhe lia só o
+     campo legado, que 3 leads locais tinham defasado: o cartão dizia Qualificado
+     e a ficha dizia Em contato. */
+  const etapa = (l.etapa === "qualificacao" ? "qualificacao" : (l.etapa_canonica ?? l.etapa ?? "novo")) as EstagioPreVendas;
 
   return {
     id: l.id,
@@ -1703,8 +1724,10 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     tags: tags.map((t) => ({ id: t.id, nome: t.nome })),
     primeiroContatoEm: l.primeiro_contato_at,
     criadoEm: l.criado_em,
-    nutricao: { motivo: l.nutricao_motivo, retomarEm: l.nutricao_retomar_em, observacao: l.nutricao_observacao },
-    desqualificacao: { motivo: l.desq_motivo, detalhe: l.desq_detalhe, deEtapa: l.desq_de_etapa },
+    nutricao: { motivo: l.nutricao_motivo, retomarEm: l.nutricao_retomar_em, observacao: l.nutricao_observacao, desde: l.nutrido_em },
+    desqualificacao: { motivo: l.desq_motivo, detalhe: l.desq_detalhe, deEtapa: l.desq_de_etapa, em: l.desqualificado_em },
+    etapaDesde: l.etapa_desde,
+    ultimoToqueEm: l.ultimo_toque_em,
     oportunidades: oportunidades.map((o) => ({
       id: o.id, titulo: o.titulo, etapa: o.etapa ?? "entrada",
       etapaRotulo: ROTULO_ETAPA_PIPELINE[(o.etapa ?? "entrada") as EtapaPipeline] ?? o.etapa ?? "",

@@ -16,6 +16,8 @@
  * rota de detalhe: cairia num 404. Vai para a lista, que é honesto.
  */
 
+import { rotaDoLead } from "@/lib/vendas/rota-do-lead";
+
 type Params = Record<string, string | null | undefined>;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -42,6 +44,11 @@ export function rotaDoDesenho(href: string, params: Params = {}): string {
       // O editor de proposta nasce da oportunidade: é o que /propostas/nova lê.
       const opp = uuid(p.opp);
       return opp ? `/propostas/nova?oportunidade=${opp}` : "/propostas/nova";
+    }
+    case "/onface-preview/lead": {
+      // A tela do lead de Pré-vendas (id = leadId). Sem id válido cai na lista, não num 404.
+      const lead = uuid(p.lead);
+      return lead ? rotaDoLead(lead) : "/pre-vendas";
     }
     case "/onface-preview/pessoa": {
       // A ficha da pessoa é chaveada pelo LEAD (ver app/(produto)/pessoas/[id]).

@@ -774,6 +774,8 @@ class Logica extends React.Component<any, any> {
       abrirEmpresa: () => L0.empresa
         ? (this.setState({ detalhe: false }), this.E && this.E.irPara("/onface-preview/empresa", "Empresa", { lead: L0.id }))
         : this.setState({ vincAberto: true, vincModo: "vincular", vincBusca: "", vincSel: null, vincNova: { nome: "", cnpj: "", site: "", segmento: "" }, vincTentou: false }),
+      /* A tela própria do lead (/pre-vendas/[id]). Contato e Empresa continuam abaixo: contato é a pessoa; o lead é o que está em Pré-vendas. */
+      abrirLead: () => { this.setState({ detalhe: false }); const E = this.E; if (E) E.irPara("/onface-preview/lead", "Lead", { lead: L0.id }); },
       abrirContato: () => { this.setState({ detalhe: false }); const E = this.E; if (E) E.irPara("/onface-preview/pessoa", "Contato", { lead: L0.id, pessoa: slug(L0.pessoa || "") }); },
 
       temMaisTimeline: (((S.timelineReal && S.timelineReal[S.detalheId]) || []).length > 5),

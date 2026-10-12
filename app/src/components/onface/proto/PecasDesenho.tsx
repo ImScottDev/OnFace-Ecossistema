@@ -497,6 +497,14 @@ TIMELINE
 </div>
 </div>
 <div style={{ flex: "0 0 auto", padding: "11px 16px", borderTop: "1px solid #e3e7e8", display: "flex", gap: "7px", flexWrap: "wrap" }}>
+<button onClick={det.abrirLead} title="Abrir a tela do lead" style={{ display: "flex", alignItems: "center", gap: "6px", height: "34px", padding: "0 12px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500", whiteSpace: "nowrap", flex: "0 0 auto" }} className={[hover("background:#f6f7f7")].filter(Boolean).join(" ")}>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
+<path d="M7 17 17 7M8 7h9v9" />
+</svg>
+<span>
+Abrir lead
+</span>
+</button>
 <button onClick={det.abrirEmpresa} style={estilo(det.empresaBtn)} title={det.empresaDica}>
 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "0 0 auto" }}>
 <path d="M3 21V7l9-4 9 4v14M9 21v-6h6v6M8 11h.01M16 11h.01" />

@@ -11,6 +11,7 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { textoSimples } from "./texto";
 
 export interface CadenciaDoLead {
   /** Nome da cadência (definição) em que o lead está inscrito. */
@@ -83,4 +84,44 @@ export async function enriquecimentoDaEmpresa(organizacaoId: string, empresaId: 
            (apollo_id IS NOT NULL OR enriched_at IS NOT NULL) AS "deApollo"
       FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
   return e ?? { funcionarios: null, faturamento: null, linkedin: null, tecnologias: null, deApollo: false };
+}
+
+export interface TarefaDoLead {
+  id: string; titulo: string; tipo: string | null; status: string;
+  descricao: string | null; venceEm: string | null; responsavel: string | null;
+}
+
+/**
+ * As atividades do lead: a tabela `tarefas` (a mesma de /tarefas e da peça de
+ * Atividade). É a mesma consulta de `detalheOportunidade`, trocando o vínculo
+ * de negócio por lead; a próxima ação do cartão (`proximaAcaoLateral`) sai
+ * daqui também, então a lista e o cartão nunca discordam.
+ */
+export async function tarefasDoLead(organizacaoId: string, leadId: string): Promise<TarefaDoLead[]> {
+  const linhas = await db.execute<{
+    id: string; titulo: string; tipo: string | null; status: string; descricao: string | null; vence_em: string | null; responsavel: string | null;
+  }>(sql`
+    SELECT t.id::text, t.titulo, t.tipo, t.status, t.descricao,
+           COALESCE(t.vence_em, t.data_vencimento)::text AS vence_em, u.nome AS responsavel
+      FROM tarefas t LEFT JOIN usuarios u ON u.id = t.usuario_id
+     WHERE t.lead_id = ${leadId}::uuid AND t.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY (t.status IN ('concluida','declinada')), COALESCE(t.vence_em, t.data_vencimento) NULLS LAST, t.created_at DESC
+     LIMIT 100`);
+  return linhas.map((t) => ({
+    id: t.id, titulo: t.titulo, tipo: t.tipo, status: t.status, descricao: textoSimples(t.descricao),
+    venceEm: t.vence_em, responsavel: t.responsavel,
+  }));
+}
+
+export interface NotaDoLead { id: string; texto: string; autor: string | null; em: string }
+
+/** Notas do lead (`notas.lead_id`): as mesmas que a ficha da Pessoa lê por /api/notas. */
+export async function notasDoLead(organizacaoId: string, leadId: string): Promise<NotaDoLead[]> {
+  const linhas = await db.execute<{ id: string; texto: string | null; autor: string | null; em: string }>(sql`
+    SELECT n.id::text, COALESCE(n.conteudo, n.conteudo_raw) AS texto,
+           COALESCE(u.nome, n.autor_display_name) AS autor, n.created_at::text AS em
+      FROM notas n LEFT JOIN usuarios u ON u.id = n.autor_id
+     WHERE n.lead_id = ${leadId}::uuid AND n.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY n.created_at DESC LIMIT 100`);
+  return linhas.map((n) => ({ id: n.id, texto: textoSimples(n.texto) ?? "", autor: n.autor, em: n.em }));
 }
