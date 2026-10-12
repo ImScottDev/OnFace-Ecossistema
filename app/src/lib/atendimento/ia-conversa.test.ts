@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { decidirEstadoIa, versaoAtendeSessao, type EntradaEstadoIa } from "./ia-conversa";
 
 const base: EntradaEstadoIa = {
-  agentes: [], legadoAtivo: false, pausa: null, ultimaExecucao: null, ultimaEntradaEm: null,
+  agentes: [], legadoAtivo: false, pausa: null, ligada: { por: "Scott", em: "2026-10-08T11:00:00Z" }, ultimaExecucao: null, ultimaEntradaEm: null,
   sessao: { id: "s1", label: "Scott Growth", status: "connected" },
 };
 
@@ -43,4 +43,14 @@ test("versão ligada a um número só atende conversa dele (regra do runtime)", 
   assert.equal(versaoAtendeSessao("s1", "s1"), true);
   assert.equal(versaoAtendeSessao("s1", "s2"), false);
   assert.equal(versaoAtendeSessao("s1", null), false);
+});
+
+test("agente publicado mas ninguém ligou a IA na conversa: desligada, e explica a mensagem sem resposta", () => {
+  const ag = [{ id: "a", nome: "SDR Assistente", sessaoId: null, prioridade: 1 }];
+  const r = decidirEstadoIa({ ...base, agentes: ag, ligada: null, ultimaEntradaEm: "2026-10-08T13:00:00Z" });
+  assert.equal(r.estado, "desligada");
+  assert.match(r.motivo, /Ligue para SDR Assistente/);
+  assert.match(r.semResposta ?? "", /ninguém ligou/);
+  assert.equal(decidirEstadoIa({ ...base, agentes: ag, ligada: null, legadoAtivo: true }).estado, "desligada");
+  assert.match(decidirEstadoIa({ ...base, agentes: ag }).motivo, /ligado por Scott/);
 });

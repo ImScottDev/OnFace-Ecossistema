@@ -485,7 +485,7 @@ class AtendimentoLigado extends AtendimentoLiga {
       const est = C.id ? (P.iaEstados ?? {})[C.id] : undefined;
       const ativaIa = est?.estado === "ativa";
       v.ia.ativa = ativaIa;
-      v.ia.btnLabel = !est ? "IA" : ativaIa ? "IA ativa" : est.estado === "pausada" ? "IA pausada" : "Sem agente";
+      v.ia.btnLabel = !est ? "IA" : ativaIa ? "IA ativa" : est.estado === "pausada" ? "IA pausada" : est.estado === "desligada" ? "Ligar IA" : "Sem agente";
       v.ia.btnTitulo = est ? [est.motivo, est.aviso, est.semResposta].filter(Boolean).join(" ") : "Verificando a IA desta conversa";
       v.ia.btnStyle = "display:flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 8px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;"
         + (ativaIa ? "background:var(--of-tinta-forte);color:var(--of-papel)" : "background:var(--of-papel);color:var(--of-tinta);box-shadow:inset 0 0 0 1px var(--of-linha-controle)");
@@ -493,7 +493,7 @@ class AtendimentoLigado extends AtendimentoLiga {
         if (!C.id) return;
         if (!est) return toast("Verificando a IA desta conversa. Tente de novo em instantes.");
         if (est.estado === "sem_agente") return toast(est.motivo, { description: "Abra Automações > Agentes para ligar um agente a este número." });
-        P.alternarIa?.(C.id, est.estado === "pausada");
+        P.alternarIa?.(C.id, est.estado === "pausada" || est.estado === "desligada");
       };
       v.ia.resumo = est ? [est.agente?.nome, est.aviso ?? est.semResposta].filter(Boolean).join(" · ") || est.motivo : "";
       v.ia.editar = () => (est?.agente?.id ? P.abrirAgente?.(est.agente.id) : toast("Esta resposta vem da configuração clássica do SDR, em Automações > Agentes."));

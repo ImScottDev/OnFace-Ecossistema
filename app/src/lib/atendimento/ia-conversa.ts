@@ -23,11 +23,13 @@ export type EntradaEstadoIa = {
   legadoAtivo: boolean;
   sessao: { id: string; label: string; status: string } | null;
   pausa: { aiAtivo: boolean; motivo: string | null; por: string | null; em: string | null } | null;
+  /** Quem ligou a resposta automática nesta conversa (opt-in). Sem isso, nenhum agente responde. */
+  ligada: { por: string | null; em: string | null } | null;
   ultimaExecucao: { status: string; em: string; agente: string | null; erro: string | null } | null;
   ultimaEntradaEm: string | null;
 };
 export type EstadoIa = {
-  estado: "ativa" | "pausada" | "sem_agente";
+  estado: "ativa" | "pausada" | "sem_agente" | "desligada";
   agente: { id: string | null; nome: string; origem: "nativo" | "legado" } | null;
   /** Por que está neste estado, em uma frase. */
   motivo: string;
@@ -66,9 +68,12 @@ export function decidirEstadoIa(e: EntradaEstadoIa): EstadoIa {
     estado = "pausada";
     const por = e.pausa.motivo ? (MOTIVOS_PAUSA[e.pausa.motivo] ?? `motivo: ${e.pausa.motivo}`) : "pausada";
     motivo = `IA pausada nesta conversa: ${por}${e.pausa.por ? ` (${e.pausa.por})` : ""}${e.pausa.em ? ` em ${quando(e.pausa.em)}` : ""}.`;
+  } else if (agente && !e.ligada) {
+    estado = "desligada";
+    motivo = `Resposta automática desligada nesta conversa. Ligue para ${agente.nome} responder as mensagens novas.`;
   } else if (agente) {
     estado = "ativa";
-    motivo = `${agente.nome} responde as mensagens novas desta conversa.`;
+    motivo = `${agente.nome} responde as mensagens novas desta conversa${e.ligada?.por ? ` (ligado por ${e.ligada.por}` : ""}${e.ligada?.por && e.ligada.em ? ` em ${quando(e.ligada.em)})` : e.ligada?.por ? ")" : ""}.`;
   } else {
     estado = "sem_agente";
     const outro = e.agentes.find((a) => a.sessaoId && a.sessaoId !== e.sessao?.id);
@@ -87,6 +92,7 @@ export function decidirEstadoIa(e: EntradaEstadoIa): EstadoIa {
   if (entrada && (!exec || new Date(exec.em) < new Date(entrada))) {
     if (estado === "pausada") semResposta = `A mensagem de ${quando(entrada)} não foi respondida pela IA porque ela está pausada.`;
     else if (estado === "sem_agente") semResposta = `A mensagem de ${quando(entrada)} ficou sem resposta automática: não há agente para este número.`;
+    else if (estado === "desligada") semResposta = `A mensagem de ${quando(entrada)} ficou sem resposta automática: ninguém ligou a IA nesta conversa.`;
     else if (aviso) semResposta = `A mensagem de ${quando(entrada)} não teve resposta automática: o número está desconectado.`;
     else semResposta = `A mensagem de ${quando(entrada)} ainda não tem execução do agente (a resposta pode estar na fila).`;
   } else if (exec && ["failed", "aborted"].includes(exec.status)) {
@@ -118,9 +124,9 @@ export async function estadoDaIaNaConversa(organizacaoId: string, contatoId: str
       ? db.execute<{ id: string; label: string; status: string }>(sql`
           SELECT id::text, COALESCE(NULLIF(btrim(label), ''), session_name) AS label, status FROM whatsapp_sessao WHERE id = ${contato.sessao_id}::uuid`)
       : Promise.resolve([] as { id: string; label: string; status: string }[]),
-    db.execute<{ ai_ativo: boolean; motivo: string | null; por: string | null; em: string | null }>(sql`
-      SELECT s.ai_ativo, s.handoff_motivo AS motivo, u.nome AS por, s.handoff_at::text AS em
-        FROM ai_sdr_contato_state s LEFT JOIN usuarios u ON u.id = s.handoff_usuario_id
+    db.execute<{ ai_ativo: boolean; motivo: string | null; por: string | null; em: string | null; ligada_por: string | null; ligada_em: string | null }>(sql`
+      SELECT s.ai_ativo, s.handoff_motivo AS motivo, u.nome AS por, s.handoff_at::text AS em, l.nome AS ligada_por, s.ia_ligada_em::text AS ligada_em
+        FROM ai_sdr_contato_state s LEFT JOIN usuarios u ON u.id = s.handoff_usuario_id LEFT JOIN usuarios l ON l.id = s.ia_ligada_por
        WHERE s.contato_id = ${contatoId}::uuid`),
     db.execute<{ ativo: boolean }>(sql`SELECT ativo FROM ai_sdr_config WHERE organizacao_id = ${organizacaoId}::uuid`),
     db.execute<{ status: string; em: string; agente: string | null; erro: string | null }>(sql`
@@ -138,6 +144,7 @@ export async function estadoDaIaNaConversa(organizacaoId: string, contatoId: str
     legadoAtivo: legado[0]?.ativo === true,
     sessao: sessao[0] ?? null,
     pausa: pausa[0] ? { aiAtivo: pausa[0].ai_ativo, motivo: pausa[0].motivo, por: pausa[0].por, em: pausa[0].em } : null,
+    ligada: pausa[0]?.ligada_em ? { por: pausa[0].ligada_por, em: pausa[0].ligada_em } : null,
     ultimaExecucao: run[0] ?? null,
     ultimaEntradaEm: entrada[0]?.em ?? null,
   });

@@ -861,14 +861,16 @@ async function handleAiSdrResponse(params: {
      agente nativo também. Antes só o SDR legado lia `ai_ativo`; o agente publicado seguia
      respondendo a conversa que uma pessoa tinha assumido. Handoff "leve" não pausa (o
      legado reativa abaixo), como já era. */
+  let ligadaPorPessoa = false;
   {
     const { aiSdrContatoState: pausaT } = await import("../lib/db/schema");
-    const [pausa] = await db.select({ ativo: pausaT.aiAtivo, motivo: pausaT.handoffMotivo }).from(pausaT)
+    const [pausa] = await db.select({ ativo: pausaT.aiAtivo, motivo: pausaT.handoffMotivo, ligadaEm: pausaT.iaLigadaEm }).from(pausaT)
       .where(eq(pausaT.contatoId, contatoId)).limit(1);
     if (pausa && !pausa.ativo && !["criterio_concluido", "pedido_contato"].includes(pausa.motivo ?? "")) {
       console.log(`[AI] IA pausada na conversa ${contatoId} (${pausa.motivo ?? "sem motivo"}), não responde`);
       return;
     }
+    ligadaPorPessoa = !!pausa?.ligadaEm;
   }
 
   // Agente como RESPONSÁVEL (usuário do sistema): se o responsável do lead/conversa é uma agente,
@@ -883,6 +885,14 @@ async function handleAiSdrResponse(params: {
     }
   } catch (err) {
     console.error(`[Agentes] falha ao acionar a agente responsável do contato ${contatoId}:`, err);
+    return;
+  }
+
+  /* Resposta automática é OPT-IN por conversa (decisão do Scott, 12/10): sem alguém ter
+     ligado a IA nesta conversa, nem o agente nativo nem o SDR clássico respondem. Agente
+     que é o RESPONSÁVEL da conversa (acima) continua, porque a atribuição já é explícita. */
+  if (!ligadaPorPessoa) {
+    console.log(`[AI] conversa ${contatoId} sem IA ligada por uma pessoa: não responde automaticamente`);
     return;
   }
 

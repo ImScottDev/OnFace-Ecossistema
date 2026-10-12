@@ -2657,6 +2657,10 @@ export const aiSdrContatoState = pgTable("ai_sdr_contato_state", {
   handoffAt: timestamp("handoff_at", { withTimezone: true }),
   handoffMotivo: text("handoff_motivo"),
   handoffUsuarioId: uuid("handoff_usuario_id").references(() => usuarios.id),
+  // Resposta automática é opt-in por conversa: quem ligou e quando. NULL = ninguém ligou,
+  // então nenhum agente responde aqui (exceto agente que é o responsável da conversa).
+  iaLigadaPor: uuid("ia_ligada_por").references(() => usuarios.id),
+  iaLigadaEm: timestamp("ia_ligada_em", { withTimezone: true }),
   ultimaAiMsgAt: timestamp("ultima_ai_msg_at", { withTimezone: true }),
   aiMsgsNaJanela: integer("ai_msgs_na_janela").default(0).notNull(),
   janelaResetAt: timestamp("janela_reset_at", { withTimezone: true }),

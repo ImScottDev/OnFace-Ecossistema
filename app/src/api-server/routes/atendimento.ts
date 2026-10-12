@@ -496,13 +496,14 @@ app.post("/atendimento/conversas/:id/ia", async (c) => {
   if (!parsed.success) return c.json({ error: "Informe { ativa: boolean }" }, 400);
   if (!(await checarAcessoContato(ctx, id)).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
 
-  const [antes] = await db.select({ aiAtivo: aiSdrContatoState.aiAtivo }).from(aiSdrContatoState)
+  const [antes] = await db.select({ aiAtivo: aiSdrContatoState.aiAtivo, ligadaEm: aiSdrContatoState.iaLigadaEm }).from(aiSdrContatoState)
     .where(eq(aiSdrContatoState.contatoId, id)).limit(1);
-  const ativaAntes = antes?.aiAtivo ?? true;
+  const ativaAntes = !!antes && antes.aiAtivo && !!antes.ligadaEm;
   const agora = new Date();
+  // Ligar = opt-in explícito (quem e quando); desligar/assumir limpa o opt-in e pausa.
   const valores = parsed.data.ativa
-    ? { aiAtivo: true, handoffStatus: "ai_handling", handoffAt: null, handoffMotivo: null, handoffUsuarioId: null }
-    : { aiAtivo: false, handoffStatus: "human_assigned", handoffAt: agora, handoffMotivo: "manual_toggle", handoffUsuarioId: ctx.userId };
+    ? { aiAtivo: true, handoffStatus: "ai_handling", handoffAt: null, handoffMotivo: null, handoffUsuarioId: null, iaLigadaPor: ctx.userId, iaLigadaEm: agora }
+    : { aiAtivo: false, handoffStatus: "human_assigned", handoffAt: agora, handoffMotivo: "manual_toggle", handoffUsuarioId: ctx.userId, iaLigadaPor: null, iaLigadaEm: null };
   await db.insert(aiSdrContatoState)
     .values({ contatoId: id, organizacaoId: ctx.organizacaoId, ...valores, updatedAt: agora })
     .onConflictDoUpdate({ target: aiSdrContatoState.contatoId, set: { ...valores, updatedAt: agora } });
