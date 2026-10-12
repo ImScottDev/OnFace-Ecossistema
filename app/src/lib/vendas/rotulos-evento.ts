@@ -71,7 +71,9 @@ const ROTULO_EVENTO: Record<string, string> = {
   onboardingstarted: "Onboarding iniciado",
   // Diretório
   companycreated: "Empresa criada",
+  companyupdated: "Empresa atualizada",
   personcreated: "Pessoa criada",
+  personupdated: "Pessoa atualizada",
   personlinkedtocompany: "Pessoa vinculada à empresa",
   personunlinkedfromcompany: "Pessoa desvinculada",
   // Tipos de atividade (quando a timeline traz atividade crua)

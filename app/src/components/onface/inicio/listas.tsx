@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCheck, ListChecks, Phone, Rocket, Video } from "lucide-react";
 import type { Agenda, Atalho, Atencao, ItemAgenda, Severidade } from "@/lib/inicio/tipos";
+import { abrirNexo } from "@/lib/nexo/cliente";
 import { TopoDeCartao, Vazio, inteiro } from "./compartilhado";
 
 const ROTULO_SEVERIDADE: Record<Severidade, string> = { critico: "Crítico", alto: "Alto", moderado: "Moderado" };
@@ -115,10 +116,6 @@ export function AgendaDoDia({ a }: { a: Agenda }) {
  * alterna o painel, e este botão o dispara. Não há outra porta para ele: a
  * casca é dona do estado do painel.
  */
-function abrirNexo() {
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", metaKey: true, bubbles: true, cancelable: true }));
-}
-
 export function Atalhos({ atalhos, comNexo }: { atalhos: Atalho[]; comNexo: boolean }) {
   return (
     <nav className="ini-atalhos" aria-label="Atalhos">
@@ -130,7 +127,7 @@ export function Atalhos({ atalhos, comNexo }: { atalhos: Atalho[]; comNexo: bool
         ))}
       </ul>
       {comNexo ? (
-        <button type="button" className="ini-nexo" onClick={abrirNexo}>
+        <button type="button" className="ini-nexo" onClick={() => abrirNexo()}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/onface/oni/oni-avatar.png" alt="" aria-hidden="true" />
           <span>Perguntar ao NEXO</span>

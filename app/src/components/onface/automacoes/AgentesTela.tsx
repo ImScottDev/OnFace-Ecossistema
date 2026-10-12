@@ -1,6 +1,6 @@
 "use client";
 
-/* Automação → Agentes (NEXO / Agentes IA) na linguagem ONFACE.
+/* Automação → Agentes especializados na linguagem ONFACE.
  *
  * Substitui o `Cf2AgentesWorkspace` mantendo o que ele fazia (lista dos agentes
  * reais, criar agente em rascunho e abrir o detalhe) e acrescentando o que a
@@ -201,10 +201,10 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
 
   return (
     <div className="agn-tela">
-      <section className="agn-hero" aria-label="Resumo dos agentes">
+      <section className="agn-hero" aria-label="Resumo dos agentes especializados">
         <span className="agn-hero-brilho" />
         <div>
-          <span className="agn-rotulo">Agentes publicados</span>
+          <span className="agn-rotulo">Agentes especializados publicados</span>
           <span className="agn-numero">{publicados}<small>de {agentes.length}</small></span>
           <span className="agn-sub">
             {publicados === 0
@@ -266,7 +266,7 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
       <div className="agn-toolbar">
         <div className="agn-busca">
           <Search size={14} />
-          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Agente, papel ou modelo" aria-label="Buscar agente" />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Agente, papel ou modelo" aria-label="Buscar agente especializado" />
         </div>
         <div className="agn-segmento" role="group" aria-label="Filtrar por status">
           {([["todos", "Todos"], ["published", "Publicados"], ["draft", "Rascunhos"]] as const).map(([id, rotulo]) => (
@@ -285,7 +285,7 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
       <div className="agn-colunas">
         <section className="agn-cartao" aria-labelledby="agn-lista-titulo">
           <div className="agn-cartao-topo">
-            <h2 id="agn-lista-titulo">Agentes</h2>
+            <h2 id="agn-lista-titulo">Agentes especializados</h2>
             <span>{lista.length === agentes.length ? `${agentes.length} configurados` : `${lista.length} de ${agentes.length}`}</span>
           </div>
           {lista.length === 0 ? (

@@ -235,17 +235,17 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     // Teto de permissão DESTA execução. Sem configuração na versão, o agente
     // fica sem escrita: agente que nasce podendo tudo é porta que ninguém
     // abriu de propósito.
-    const { delegacaoDoRun } = await import("../permissao-delegada");
+    const { delegacaoDoRun, permissoesDoNexo } = await import("../permissao-delegada");
     let delegacao = await delegacaoDoRun({
       organizacaoId: input.organizacaoId,
       agentVersionId: selected.version.id,
       usuarioId: input.usuarioId ?? null,
     });
     if (input.delegarComoUsuario && input.usuarioId) {
-      const { permissoesEfetivas } = await import("@/lib/auth/permissoes");
-      const doUsuario = await permissoesEfetivas({ usuarioId: input.usuarioId, organizacaoId: input.organizacaoId, role: input.usuarioPapel ?? null });
-      const teto = delegacao.origem === "nenhuma" ? doUsuario : new Set([...doUsuario].filter((c) => delegacao.permissoes.has(c)));
-      delegacao = { permissoes: teto, origem: "versao+usuario" };
+      delegacao = { permissoes: await permissoesDoNexo({
+        organizacaoId: input.organizacaoId, agentVersionId: selected.version.id,
+        usuarioId: input.usuarioId, usuarioPapel: input.usuarioPapel ?? null,
+      }), origem: "versao+usuario" };
     }
     // O trace guarda o teto, não o pedido: quando o agente disser "não pude",
     // o registro precisa mostrar o que ele podia.

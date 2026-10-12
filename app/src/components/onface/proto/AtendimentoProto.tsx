@@ -24,7 +24,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { analisarConversaDoAtendimento, type AnaliseConversa } from "@/lib/nexo/cliente";
+import { analisarConversaDoAtendimento, abrirNexo } from "@/lib/nexo/cliente";
 
 import type { ConversaAtendimento, DadosAtendimento, LeadAtendimento } from "@/lib/atendimento/tela";
 import type { ContextoAtendimento, TarefaDoLead } from "@/lib/atendimento/contexto";
@@ -287,18 +287,6 @@ function minutosAte(rotulo: string | undefined): number | null {
  * Nada aqui edita o gerado: cada intervenção é um método sobrescrito ou uma
  * correção na SAÍDA de `renderVals`, que é a fronteira com o markup.
  */
-/** O painel do desenho mostra um título e um parágrafo: a análise estruturada vira os dois. */
-function textoDaAnalise(r: AnaliseConversa): { titulo: string; texto: string } {
-  if (r.tipo === "resumo") {
-    const pedidos = r.pedidos.length ? ` Pedidos: ${r.pedidos.join("; ")}.` : "";
-    const passo = r.proximoPasso ? ` Próximo passo: ${r.proximoPasso}` : "";
-    return { titulo: "RESUMO", texto: `${r.resumo}${pedidos}${passo}` };
-  }
-  if (r.tipo === "sugestao") return { titulo: "SUGESTÃO", texto: r.resposta };
-  const sinais = r.sinais.length ? ` Sinais: ${r.sinais.join("; ")}.` : "";
-  return { titulo: "SENTIMENTO", texto: `${r.tom.charAt(0).toUpperCase()}${r.tom.slice(1)}. ${r.motivo}${sinais}` };
-}
-
 class AtendimentoLigado extends AtendimentoLiga {
   _audio: HTMLAudioElement | null = null;
   _durs: Record<string, number> = {};
@@ -476,22 +464,13 @@ class AtendimentoLigado extends AtendimentoLiga {
       v.sug.usar = () => { self.setState({ texto: sr?.texto ?? "", sugReal: null }); toast("Sugestão no campo. Revise antes de enviar."); };
       v.sug.dispensar = () => self.setState({ sugReal: null });
     }
-    /* NEXO: resumo e sentimento pelo agente de verdade (lib/nexo/analise, via
-       cliente único). O servidor lê as mensagens do contato aberto; aqui só o
-       estado do painel (`nexo`, que o desenho já renderiza). Falha aparece como
-       falha, com o motivo. */
+    /* O botão contextual abre a conversa única do NEXO. A sugestão no compositor
+       continua local, pois é um rascunho editável antes do envio humano. */
     const tiposNexo = ["resumo", "sentimento"];
     (v.nexoAcoes ?? []).forEach((a: any, i: number) => {
       const tipo = tiposNexo[i];
       if (!tipo || !C.id) return a.onClick = aviso("Abra uma conversa para o NEXO ler.");
-      a.onClick = () => {
-        const id = C.id as string;
-        self.setState({ nexo: { tipo, id, carregando: true } });
-        analisarConversaDoAtendimento(id, tipo as "resumo" | "sentimento").then(
-          (r) => self.setState((s: any) => s.nexo?.id === id && s.nexo.tipo === tipo ? { nexo: { tipo, id, ...textoDaAnalise(r) } } : null),
-          (e: Error) => self.setState((s: any) => s.nexo?.id === id && s.nexo.tipo === tipo ? { nexo: { tipo, id, titulo: tipo === "resumo" ? "RESUMO INDISPONÍVEL" : "SENTIMENTO INDISPONÍVEL", texto: e.message } } : null),
-        );
-      };
+      a.onClick = () => abrirNexo(`${tipo === "resumo" ? "Resuma" : "Analise o sentimento de"} a conversa WhatsApp do contato ${C.id}. Use nexo_conversas com contato_id e cite apenas o que as mensagens sustentam.`);
     });
     /* O desenho decide "rótulos nos botões" pela largura da JANELA (>= 1100), mas a conversa
        divide a janela com a casca (246), a fila (350) e o painel (340): em 1440 o cabeçalho

@@ -44,6 +44,7 @@ import type { DadosTelaCs, ClienteDaTela } from "@/lib/cs/tela-cs";
 import { CAMADAS_FATURAMENTO, passoDoEixo } from "@/lib/clientes/evolucao-geometria";
 import type { FaturamentoMes } from "@/lib/financeiro/faturamento-natureza";
 import { CsLiga } from "./CsLiga";
+import { abrirNexo } from "@/lib/nexo/cliente";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
 
@@ -352,7 +353,22 @@ class CsLigada extends CsLiga {
 
   renderVals() {
     const self = this as any;
-    return corrigir(super.renderVals(), { ...self.state, setState: (x: any) => self.setState(x) }, self.props.correcao);
+    const v = corrigir(super.renderVals(), { ...self.state, setState: (x: any) => self.setState(x) }, self.props.correcao);
+    // O bloco contextual de CS é só uma entrada: conversa, ações e memória vivem no painel global.
+    if (v.nx) {
+      v.nx.status = "NEXO · inteligência central";
+      v.nx.brief = "Pergunte sobre sua carteira ou abra o NEXO para agir.";
+      v.nx.digitando = false;
+      v.nx.mostraPlano = false;
+      v.nx.temPend = false;
+      v.nx.temMsgs = false;
+      v.nx.pensando = false;
+      v.nx.msgs = [];
+      v.nx.enviar = () => abrirNexo(v.nx.rasc);
+      v.nx.tecla = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); abrirNexo(v.nx.rasc); } };
+      v.nx.chips = (v.nx.chips ?? []).map((chip: { l: string }) => ({ ...chip, onClick: () => abrirNexo(chip.l) }));
+    }
+    return v;
   }
 }
 

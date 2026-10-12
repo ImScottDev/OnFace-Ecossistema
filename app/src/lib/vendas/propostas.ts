@@ -16,6 +16,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { registrarEvento } from "./eventos";
+import type { ExecutorDb } from "./executor";
 import { moverEtapa } from "./pipeline";
 import {
   juntarEndereco, separarEndereco, comPadraoDaPolitica, ehCliente, emailValido, faltaRepresentante, normalizarSignatarios, PAPEL_CLIENTE,
@@ -136,9 +137,9 @@ export async function salvarDadosJuridicos(params: {
   empresaId: string;
   dados: DadosJuridicos;
   ator: Ator;
-}): Promise<void> {
+}, tx: ExecutorDb = db): Promise<void> {
   const { dados } = params;
-  await db.execute(sql`
+  const atualizado = await tx.execute<{ id: string }>(sql`
     UPDATE empresas SET
       razao_social = COALESCE(${dados.razaoSocial ?? null}, razao_social),
       cnpj = COALESCE(${dados.cnpj ?? null}, cnpj),
@@ -151,7 +152,13 @@ export async function salvarDadosJuridicos(params: {
       cep = COALESCE(${dados.cep ?? null}, cep),
       updated_at = now()
     WHERE id = ${params.empresaId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid
+    RETURNING id::text
   `);
+  if (!atualizado[0]) throw new RegraDeNegocio("empresa_nao_encontrada", "Empresa não encontrada.");
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "CompanyUpdated", ator: params.ator,
+    empresaId: params.empresaId, contexto: { origem: "dados_juridicos" },
+  }, tx);
 }
 
 export interface DadosDaPessoaNoContrato {
@@ -171,17 +178,17 @@ export interface DadosDaPessoaNoContrato {
 export async function salvarDadosDaPessoa(params: {
   organizacaoId: string; empresaId: string; pessoaId?: string | null; nome: string;
   dados: DadosDaPessoaNoContrato; ator: Ator;
-}): Promise<{ salvo: boolean; pessoaId: string | null }> {
+}, tx: ExecutorDb = db): Promise<{ salvo: boolean; pessoaId: string | null }> {
   const { organizacaoId, empresaId, dados } = params;
   const nome = params.nome.trim();
   let pessoaId: string | null = null;
   if (params.pessoaId) {
-    const [p] = await db.execute<{ id: string }>(sql`
+    const [p] = await tx.execute<{ id: string }>(sql`
       SELECT id::text FROM pessoas WHERE id = ${params.pessoaId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
     pessoaId = p?.id ?? null;
   }
   if (!pessoaId && nome) {
-    const [p] = await db.execute<{ id: string }>(sql`
+    const [p] = await tx.execute<{ id: string }>(sql`
       SELECT id::text FROM pessoas
        WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
          AND lower(trim(nome || ' ' || COALESCE(sobrenome, ''))) = lower(${nome})
@@ -191,9 +198,9 @@ export async function salvarDadosDaPessoa(params: {
   if (!pessoaId) {
     if (!nome || !emailValido(dados.email)) return { salvo: false, pessoaId: null };
     const { resolverPessoa } = await import("./identidade");
-    pessoaId = (await resolverPessoa(organizacaoId, { nome, email: dados.email, telefone: dados.telefone, cargo: dados.cargo, empresaId }, params.ator)).pessoaId;
+    pessoaId = (await resolverPessoa(organizacaoId, { nome, email: dados.email, telefone: dados.telefone, cargo: dados.cargo, empresaId }, params.ator, tx)).pessoaId;
   }
-  await db.execute(sql`
+  const atualizado = await tx.execute<{ id: string }>(sql`
     UPDATE pessoas SET
       cargo = COALESCE(${dados.cargo ?? null}, cargo),
       email = COALESCE(${dados.email ?? null}, email),
@@ -202,7 +209,13 @@ export async function salvarDadosDaPessoa(params: {
                       ELSE COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('cpf', ${dados.cpf ?? null}::text) END,
       updated_at = now()
     WHERE id = ${pessoaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
+    RETURNING id::text
   `);
+  if (!atualizado[0]) throw new RegraDeNegocio("pessoa_nao_encontrada", "Pessoa não encontrada.");
+  await registrarEvento({
+    organizacaoId, tipo: "PersonUpdated", ator: params.ator,
+    pessoaId, empresaId, contexto: { origem: "dados_contrato" },
+  }, tx);
   return { salvo: true, pessoaId };
 }
 
@@ -216,27 +229,29 @@ export async function salvarDadosDoContrato(params: {
   empresa?: { razao?: string; cnpj?: string; rua?: string; bairro?: string; cep?: string; cidade?: string; uf?: string };
   pessoa?: { pessoaId?: string | null; nome: string; cargo?: string; email?: string; telefone?: string; cpf?: string };
 }): Promise<{ pessoaSalva: boolean; pessoaId: string | null }> {
-  const e = params.empresa;
-  if (e) {
-    const fim = e.rua !== undefined ? separarEndereco(e.rua) : null;
-    await salvarDadosJuridicos({
-      organizacaoId: params.organizacaoId, empresaId: params.empresaId, ator: params.ator,
-      dados: {
-        razaoSocial: e.razao, cnpj: e.cnpj, bairro: e.bairro, cep: e.cep, cidade: e.cidade,
-        estado: e.uf !== undefined ? e.uf.trim().toUpperCase() : undefined,
-        logradouro: fim?.logradouro, numero: fim?.numero, complemento: fim?.complemento,
-      },
-    });
-  }
-  let pessoa: { salvo: boolean; pessoaId: string | null } = { salvo: false, pessoaId: null };
-  if (params.pessoa) {
-    const p = params.pessoa;
-    pessoa = await salvarDadosDaPessoa({
-      organizacaoId: params.organizacaoId, empresaId: params.empresaId, pessoaId: p.pessoaId ?? null, nome: p.nome, ator: params.ator,
-      dados: { cargo: p.cargo, email: p.email, telefone: p.telefone, cpf: p.cpf },
-    });
-  }
-  return { pessoaSalva: pessoa.salvo, pessoaId: pessoa.pessoaId };
+  return db.transaction(async (tx) => {
+    const e = params.empresa;
+    if (e) {
+      const fim = e.rua !== undefined ? separarEndereco(e.rua) : null;
+      await salvarDadosJuridicos({
+        organizacaoId: params.organizacaoId, empresaId: params.empresaId, ator: params.ator,
+        dados: {
+          razaoSocial: e.razao, cnpj: e.cnpj, bairro: e.bairro, cep: e.cep, cidade: e.cidade,
+          estado: e.uf !== undefined ? e.uf.trim().toUpperCase() : undefined,
+          logradouro: fim?.logradouro, numero: fim?.numero, complemento: fim?.complemento,
+        },
+      }, tx);
+    }
+    let pessoa: { salvo: boolean; pessoaId: string | null } = { salvo: false, pessoaId: null };
+    if (params.pessoa) {
+      const p = params.pessoa;
+      pessoa = await salvarDadosDaPessoa({
+        organizacaoId: params.organizacaoId, empresaId: params.empresaId, pessoaId: p.pessoaId ?? null, nome: p.nome, ator: params.ator,
+        dados: { cargo: p.cargo, email: p.email, telefone: p.telefone, cpf: p.cpf },
+      }, tx);
+    }
+    return { pessoaSalva: pessoa.salvo, pessoaId: pessoa.pessoaId };
+  });
 }
 
 /**

@@ -1347,7 +1347,9 @@ export function rotuloEvento(tipo: string): string {
     ProspectNoResponse: "Sem resposta",
     ProspectDiscarded: "Prospect descartado",
     CompanyCreated: "Empresa criada",
+    CompanyUpdated: "Empresa atualizada",
     PersonCreated: "Pessoa criada",
+    PersonUpdated: "Pessoa atualizada",
     PersonLinkedToCompany: "Pessoa vinculada à empresa",
   };
   return mapa[tipo] ?? tipo;

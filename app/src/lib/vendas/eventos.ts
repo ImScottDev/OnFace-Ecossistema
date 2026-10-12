@@ -56,7 +56,8 @@ export type TipoEventoVendas =
   | "OpportunityCreatedFromProspecting" | "ProspectNoResponse" | "ProspectDiscarded"
   | "ProspectArchived"
   // Diretório
-  | "CompanyCreated" | "PersonCreated" | "PersonLinkedToCompany" | "PersonUnlinkedFromCompany";
+  | "CompanyCreated" | "CompanyUpdated" | "PersonCreated" | "PersonUpdated"
+  | "PersonLinkedToCompany" | "PersonUnlinkedFromCompany";
 
 export interface EventoVendas {
   organizacaoId: string;

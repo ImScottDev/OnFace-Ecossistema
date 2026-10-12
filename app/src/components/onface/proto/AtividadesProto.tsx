@@ -20,6 +20,7 @@ import type { Atividade, DadosAtividades } from "@/components/onface/atividades/
 import type { ReuniaoDaAgenda } from "@/lib/calendario/agenda-do-calendario";
 import { acaoResponsaveis } from "@/app/(produto)/pre-vendas/actions";
 import { AtividadesLiga } from "./AtividadesLiga";
+import { abrirNexo } from "@/lib/nexo/cliente";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
 import {
@@ -27,6 +28,7 @@ import {
 } from "./atividade-tarefa";
 
 class AtividadesLigada extends AtividadesLiga {
+  nexo(pergunta?: string) { abrirNexo(pergunta ?? ""); }
   constructor(props: any) {
     super(props);
     // Sem isto o `irPara` da Liga perde o id do registro e cai em rota do protótipo (404).

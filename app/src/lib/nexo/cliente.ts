@@ -40,6 +40,25 @@ async function pedir<T>(url: string, corpo?: unknown): Promise<T> {
 
 export const novaConversaId = (): string => crypto.randomUUID();
 
+/** Entrada única do NEXO: qualquer tela abre a mesma conversa da casca. */
+export function abrirNexo(pergunta = ""): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("onface:nexo-abrir", { detail: { pergunta } }));
+}
+
+/** Links internos citados pelo NEXO continuam clicáveis sem interpretar HTML do modelo. */
+export function partesComLinks(texto: string): { texto: string; href?: string }[] {
+  const partes: { texto: string; href?: string }[] = [];
+  const links = /\[([^\]]{1,80})\]\((\/(?!\/)[^\s)]*)\)/g;
+  let inicio = 0;
+  for (const achado of texto.matchAll(links)) {
+    if (achado.index > inicio) partes.push({ texto: texto.slice(inicio, achado.index) });
+    partes.push({ texto: achado[1], href: achado[2] });
+    inicio = achado.index + achado[0].length;
+  }
+  if (inicio < texto.length) partes.push({ texto: texto.slice(inicio) });
+  return partes;
+}
+
 /** Pergunta ao NEXO. Lança Error com o motivo quando o servidor recusa; falha do provedor volta com `falhou`. */
 export async function perguntarAoNexo(p: { conversaId: string; pergunta: string; rota: string; area: string }): Promise<RespostaDoNexo> {
   const r = await pedir<RespostaDoNexo>("/api/nexo/perguntar", p);

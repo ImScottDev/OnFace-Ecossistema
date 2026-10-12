@@ -8,21 +8,26 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { aiAgents, aiAgentVersions, aiAgentRuns } from "@/lib/db/schema";
-import { eq, and, count, desc, inArray } from "drizzle-orm";
+import { eq, and, count, desc, inArray, not } from "drizzle-orm";
 import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
 import {
   AGENT_EVENT_CATALOG,
+  AGENT_SYSTEM_SLUGS,
   AGENT_PURPOSES,
   AGENT_TOOL_CATALOG,
   DEFAULT_HANDOFF_CONFIG,
   DEFAULT_TRIGGER_CONFIG,
+  isSystemAgentSlug,
   isKnownAgentTool,
 } from "@/lib/ai/agent-studio";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 import { verificarProntidao, resumoDasFaltas } from "@/lib/ai-platform/prontidao";
 
 const app = new Hono();
+const agenteConfiguravel = (id: string, organizacaoId: string) => and(
+  eq(aiAgents.id, id), eq(aiAgents.organizacaoId, organizacaoId), not(inArray(aiAgents.slug, [...AGENT_SYSTEM_SLUGS])),
+);
 
 app.get("/automacoes/agentes", async (c) => {
   const ctx = await getCtx(c);
@@ -41,7 +46,7 @@ app.get("/automacoes/agentes", async (c) => {
     modelo: aiAgentVersions.modelo,
   }).from(aiAgents)
     .leftJoin(aiAgentVersions, and(eq(aiAgentVersions.agentId, aiAgents.id), eq(aiAgentVersions.status, "published")))
-    .where(eq(aiAgents.organizacaoId, orgId))
+    .where(and(eq(aiAgents.organizacaoId, orgId), not(inArray(aiAgents.slug, [...AGENT_SYSTEM_SLUGS]))))
     .orderBy(desc(aiAgents.prioridade), desc(aiAgents.updatedAt));
 
   const agentIds = catalogo.map((agent) => agent.id);
@@ -99,7 +104,7 @@ const versionSchema = z.object({
 
 const agentSchema = z.object({
   nome: z.string().min(1).max(120),
-  slug: z.string().regex(/^[a-z0-9-]+$/).max(80),
+  slug: z.string().regex(/^[a-z0-9-]+$/).max(80).refine((slug) => !isSystemAgentSlug(slug), "Identidade interna reservada"),
   descricao: z.string().max(500).nullable().optional(),
   finalidade: z.string().min(1).max(80).default("atendimento"),
   prioridade: z.number().int().min(0).max(10000).default(100),
@@ -169,7 +174,7 @@ app.post("/automacoes/agentes/dispatch-dry-run", async (c) => {
       version: aiAgentVersions,
     }).from(aiAgents)
       .innerJoin(aiAgentVersions, and(eq(aiAgentVersions.agentId, aiAgents.id), eq(aiAgentVersions.status, "published")))
-      .where(and(eq(aiAgents.organizacaoId, ctx.organizacaoId), eq(aiAgents.status, "published"))),
+      .where(and(eq(aiAgents.organizacaoId, ctx.organizacaoId), eq(aiAgents.status, "published"), not(inArray(aiAgents.slug, [...AGENT_SYSTEM_SLUGS])))),
   ]);
 
   const eventType = parsed.data.eventType.trim();
@@ -230,7 +235,7 @@ app.post("/automacoes/agentes/dispatch-dry-run", async (c) => {
 
 app.get("/automacoes/agentes/:id", async (c) => {
   const ctx = await getCtx(c);
-  const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  const [agent] = await db.select().from(aiAgents).where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const versions = await db.select().from(aiAgentVersions).where(eq(aiAgentVersions.agentId, agent.id)).orderBy(desc(aiAgentVersions.versao));
   const runs = await db.select().from(aiAgentRuns).where(and(eq(aiAgentRuns.agentId, agent.id), eq(aiAgentRuns.organizacaoId, ctx.organizacaoId))).orderBy(desc(aiAgentRuns.startedAt)).limit(50);
@@ -241,6 +246,8 @@ app.patch("/automacoes/agentes/:id", async (c) => {
   const ctx = await exigirCtx(c, "ai.configure");
   const parsed = agentSchema.partial({ versao: true }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Agente invalido", details: parsed.error.flatten() }, 400);
+  const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents).where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).limit(1);
+  if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const [updated] = await db.update(aiAgents).set({
     ...(parsed.data.nome ? { nome: parsed.data.nome } : {}),
     ...(parsed.data.slug ? { slug: parsed.data.slug } : {}),
@@ -248,14 +255,14 @@ app.patch("/automacoes/agentes/:id", async (c) => {
     ...(parsed.data.finalidade ? { finalidade: parsed.data.finalidade } : {}),
     ...(parsed.data.prioridade !== undefined ? { prioridade: parsed.data.prioridade } : {}),
     updatedAt: new Date(),
-  }).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).returning();
+  }).where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).returning();
   if (!updated) return c.json({ error: "Agente nao encontrado" }, 404);
   return c.json(updated);
 });
 
 app.post("/automacoes/agentes/:id/versions", async (c) => {
   const ctx = await exigirCtx(c, "ai.configure");
-  const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  const [agent] = await db.select().from(aiAgents).where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const parsed = versionSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Versao invalida", details: parsed.error.flatten() }, 400);
@@ -267,7 +274,7 @@ app.post("/automacoes/agentes/:id/versions", async (c) => {
 app.patch("/automacoes/agentes/:id/versions/:versionId", async (c) => {
   const ctx = await exigirCtx(c, "ai.configure");
   const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents)
-    .where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+    .where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const parsed = versionSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Versao invalida", details: parsed.error.flatten() }, 400);
@@ -286,7 +293,7 @@ app.patch("/automacoes/agentes/:id/versions/:versionId", async (c) => {
 app.get("/automacoes/agentes/:id/versions/:versionId/prontidao", async (c) => {
   const ctx = await exigirCtx(c, "ai.configure");
   const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents)
-    .where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+    .where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const [version] = await db.select().from(aiAgentVersions)
     .where(and(eq(aiAgentVersions.id, c.req.param("versionId")), eq(aiAgentVersions.agentId, agent.id))).limit(1);
@@ -296,7 +303,7 @@ app.get("/automacoes/agentes/:id/versions/:versionId/prontidao", async (c) => {
 
 app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
   const ctx = await exigirCtx(c, "ai.configure");
-  const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents).where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const [version] = await db.select().from(aiAgentVersions).where(and(eq(aiAgentVersions.id, c.req.param("versionId")), eq(aiAgentVersions.agentId, agent.id))).limit(1);
   if (!version) return c.json({ error: "Versao nao encontrada" }, 404);
@@ -327,7 +334,7 @@ app.post("/automacoes/agentes/:id/versions/:versionId/publish", async (c) => {
 
 app.post("/automacoes/agentes/:id/test", async (c) => {
   const ctx = await exigirCtx(c, "ai.use");
-  const [agent] = await db.select().from(aiAgents).where(and(eq(aiAgents.id, c.req.param("id")), eq(aiAgents.organizacaoId, ctx.organizacaoId))).limit(1);
+  const [agent] = await db.select().from(aiAgents).where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).limit(1);
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const parsed = z.object({
     versionId: z.string().uuid().optional(),

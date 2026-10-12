@@ -6,7 +6,7 @@ const ABAS = [
   { href: "/automacoes", l: "Visão geral" },
   { href: "/automacoes/fluxos", l: "Fluxos" },
   { href: "/automacoes/cadencias", l: "Cadências" },
-  { href: "/automacoes/agentes", l: "Agentes IA" },
+  { href: "/automacoes/agentes", l: "Agentes especializados" },
   { href: "/automacoes/execucoes", l: "Execuções" },
 ];
 

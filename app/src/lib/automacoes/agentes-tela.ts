@@ -12,9 +12,9 @@
  */
 import { db } from "@/lib/db";
 import { aiAgents, aiAgentVersions, aiAgentRuns, aiProviderCredentials } from "@/lib/db/schema";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { provedoresNoAmbiente, verificarProntidao, type Falta } from "@/lib/ai-platform/prontidao";
-import { AGENT_PURPOSES, AGENT_TOOL_CATALOG, isKnownAgentTool, type AgentToolCategory } from "@/lib/ai/agent-studio";
+import { AGENT_PURPOSES, AGENT_SYSTEM_SLUGS, AGENT_TOOL_CATALOG, isKnownAgentTool, type AgentToolCategory } from "@/lib/ai/agent-studio";
 
 export type ProviderId = "groq" | "openai" | "anthropic" | "google" | "claude_subscription";
 
@@ -67,6 +67,7 @@ export interface DadosTelaAgentes {
 // Finalidades que existem no banco mas não estão no catálogo de presets
 // (NEXO = copiloto, Hermes = orquestração). Sem isto a tela mostraria o id cru.
 const PAPEL_EXTRA: Record<string, string> = { copiloto: "Copiloto", orquestracao: "Orquestração" };
+const AGENTES_DE_PRODUTO = not(inArray(aiAgents.slug, [...AGENT_SYSTEM_SLUGS]));
 export function nomeDoPapel(id: string) {
   return AGENT_PURPOSES.find((p) => p.id === id)?.nome ?? PAPEL_EXTRA[id] ?? id;
 }
@@ -80,20 +81,21 @@ export async function dadosTelaAgentes(organizacaoId: string): Promise<DadosTela
 
   const [agentes, versoes, porAgente, execucoes, serieBruta, credenciais] = await Promise.all([
     db.select().from(aiAgents)
-      .where(eq(aiAgents.organizacaoId, organizacaoId))
+      .where(and(eq(aiAgents.organizacaoId, organizacaoId), AGENTES_DE_PRODUTO))
       .orderBy(desc(aiAgents.prioridade), desc(aiAgents.updatedAt)),
     db.select().from(aiAgentVersions)
       .where(eq(aiAgentVersions.organizacaoId, organizacaoId))
       .orderBy(desc(aiAgentVersions.versao)),
     db.select({ agentId: aiAgentRuns.agentId, total: count(), ultima: sql<string>`max(${aiAgentRuns.startedAt})` })
-      .from(aiAgentRuns).where(eq(aiAgentRuns.organizacaoId, organizacaoId)).groupBy(aiAgentRuns.agentId),
+      .from(aiAgentRuns).innerJoin(aiAgents, eq(aiAgents.id, aiAgentRuns.agentId))
+      .where(and(eq(aiAgentRuns.organizacaoId, organizacaoId), AGENTES_DE_PRODUTO)).groupBy(aiAgentRuns.agentId),
     db.select({
       id: aiAgentRuns.id, agenteId: aiAgentRuns.agentId, agente: aiAgents.nome, modo: aiAgentRuns.modo,
       status: aiAgentRuns.status, tokens: aiAgentRuns.tokens, latenciaMs: aiAgentRuns.latencyMs,
       erro: aiAgentRuns.erro, handoff: aiAgentRuns.handoffMotivo, inicio: aiAgentRuns.startedAt,
     }).from(aiAgentRuns)
       .innerJoin(aiAgents, eq(aiAgents.id, aiAgentRuns.agentId))
-      .where(eq(aiAgentRuns.organizacaoId, organizacaoId))
+      .where(and(eq(aiAgentRuns.organizacaoId, organizacaoId), AGENTES_DE_PRODUTO))
       .orderBy(desc(aiAgentRuns.startedAt)).limit(12),
     db.select({
       dia: sql<string>`to_char(${aiAgentRuns.startedAt} at time zone 'America/Sao_Paulo', 'YYYY-MM-DD')`,
@@ -101,8 +103,8 @@ export async function dadosTelaAgentes(organizacaoId: string): Promise<DadosTela
       falhas: sql<number>`count(*) filter (where ${aiAgentRuns.status} in ('failed', 'aborted'))::int`, // aborted = orçamento estourou (execute-agent.ts)
       handoffs: sql<number>`count(*) filter (where ${aiAgentRuns.handoffMotivo} is not null or ${aiAgentRuns.status} = 'handed_off')::int`,
       tokens: sql<number>`coalesce(sum(${aiAgentRuns.tokens}), 0)::int`,
-    }).from(aiAgentRuns)
-      .where(and(eq(aiAgentRuns.organizacaoId, organizacaoId), 
+    }).from(aiAgentRuns).innerJoin(aiAgents, eq(aiAgents.id, aiAgentRuns.agentId))
+      .where(and(eq(aiAgentRuns.organizacaoId, organizacaoId), AGENTES_DE_PRODUTO,
         // Mesmo corte da série, calculado no banco: meia-noite BRT de 29 dias atrás.
         sql`${aiAgentRuns.startedAt} >= ((now() at time zone 'America/Sao_Paulo')::date - 29)::timestamp at time zone 'America/Sao_Paulo'`))
       .groupBy(sql`1`),

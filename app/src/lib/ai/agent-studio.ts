@@ -1,5 +1,11 @@
 export type AgentToolCategory = "contexto" | "comunicacao" | "crm" | "operacao";
 
+/** Identidades internas da plataforma, não agentes configuráveis pelo time. */
+export const AGENT_SYSTEM_SLUGS = ["nexo", "hermes"] as const;
+export function isSystemAgentSlug(slug: string) {
+  return (AGENT_SYSTEM_SLUGS as readonly string[]).includes(slug);
+}
+
 export interface AgentToolDefinition {
   id: string;
   nome: string;

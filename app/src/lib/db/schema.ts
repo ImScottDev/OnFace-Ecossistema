@@ -2306,6 +2306,9 @@ export const aiAgentRuns = pgTable("ai_agent_runs", {
   index("idx_ai_agent_runs_agent").on(table.agentId, table.startedAt),
   index("idx_ai_agent_runs_contato").on(table.contatoId, table.startedAt),
   uniqueIndex("uq_ai_agent_runs_one_live_per_contact").on(table.contatoId).where(sql`${table.status} = 'running' AND ${table.modo} = 'live' AND ${table.contatoId} IS NOT NULL`),
+  uniqueIndex("uq_ai_agent_runs_nexo_confirmacao")
+    .on(table.organizacaoId, sql`(${table.input}->'payload'->>'confirmaDe')`)
+    .where(sql`${table.input}->'payload'->>'canal' = 'nexo_confirmacao' AND ${table.input}->'payload'->>'confirmaDe' IS NOT NULL`),
 ]);
 
 export const aiAgentRunSteps = pgTable("ai_agent_run_steps", {

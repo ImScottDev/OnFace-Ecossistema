@@ -24,7 +24,7 @@ import { PecasHost } from "./pecas-host";
 import { UsuarioDoProtoContexto, iniciaisDe, type UsuarioDoProto } from "./usuario-do-proto";
 import { desenharRadar, tituloDoRadar } from "@/lib/nexo/radar-desenho";
 import type { DadosRadar, MsgNexo } from "@/lib/nexo/painel";
-import { perguntarAoNexo, botoesDaResposta, confirmarAcaoDoNexo } from "@/lib/nexo/cliente";
+import { perguntarAoNexo, botoesDaResposta, confirmarAcaoDoNexo, partesComLinks } from "@/lib/nexo/cliente";
 
 /* O menu do desenho navega em `/onface-preview/…`, onde estas telas moraram
    antes de virar rota oficial. A tradução para a rota do produto mora em
@@ -87,17 +87,26 @@ class CascaLigada extends CascaLiga {
 
   componentDidMount() {
     super.componentDidMount();
+    window.addEventListener("onface:nexo-abrir", this.abrirNexoDaTela as EventListener);
     this.carregarNexo();
     void this.carregarNotificacoes();
     this._notifI = setInterval(() => void this.carregarNotificacoes(), 60000);
   }
 
   componentWillUnmount() {
+    window.removeEventListener("onface:nexo-abrir", this.abrirNexoDaTela as EventListener);
     if ((super.componentWillUnmount as any)) (super.componentWillUnmount as any)();
     clearInterval(this._notifI);
   }
 
   _notifI: any = null;
+
+  abrirNexoDaTela = (evento: CustomEvent<{ pergunta?: string }>) => {
+    const pergunta = evento.detail?.pergunta?.trim();
+    this.setState({ nexoAberto: true, nexoAba: null, nexoPensando: false }, () => {
+      if (pergunta) this.perguntarNexo(pergunta);
+    });
+  };
 
   async carregarNotificacoes() {
     try {
@@ -310,10 +319,21 @@ class CascaLigada extends CascaLiga {
       const msgs: MsgNexo[] = S.nexoMsgs[conv] || [];
       nx.mensagens = (nx.mensagens || []).map((m: any, i: number) => ({
         ...m,
+        texto: m.ehOni ? partesComLinks(msgs[i]?.texto ?? "").map((parte, j) => parte.href
+          ? <a key={j} href={parte.href} onClick={(e) => { e.preventDefault(); navegar(parte.href!); }} style={{ color: "inherit", textDecoration: "underline" }}>{parte.texto}</a>
+          : parte.texto) : m.texto,
         acoes: (m.acoes || []).map((a: any, j: number) => {
           const href = msgs[i]?.acoes?.[j]?.href;
           const conf = (msgs[i]?.acoes?.[j] as { confirmar?: { runId: string; passo: number } } | undefined)?.confirmar;
-          if (conf) return { ...a, onClick: () => void confirmarAcaoDoNexo(conf).then((r) => { this.diz(r.texto, r.ok ? "ok" : "erro"); if (r.ok && r.href) navegar(r.href); }) };
+          if (conf) return { ...a, onClick: () => void confirmarAcaoDoNexo(conf).then((r) => {
+            this.diz(r.texto, r.ok ? "ok" : "erro");
+            if (r.ok) {
+              pedirJson(`/api/nexo/conversas/${conv}`)
+                .then((d: { mensagens: MsgNexo[] }) => this.setState((s: any) => ({ nexoMsgs: { ...s.nexoMsgs, [conv]: d.mensagens } })))
+                .catch(() => undefined);
+              if (r.href) navegar(r.href);
+            }
+          }).catch(() => this.diz("Não consegui confirmar. Verifique a ação antes de tentar novamente.", "erro")) };
           return { ...a, onClick: () => (href ? navegar(href) : undefined) };
         }),
       }));

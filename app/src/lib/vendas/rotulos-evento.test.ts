@@ -17,6 +17,8 @@ describe("tituloDoEvento — troca de responsável", () => {
 describe("tituloDoEvento — evento de domínio sem título", () => {
   it("sai em português, nunca o nome do tipo cru", () => {
     assert.equal(tituloDoEvento("CompanyCreated", null, null), "Empresa criada");
+    assert.equal(tituloDoEvento("CompanyUpdated", null, null), "Empresa atualizada");
+    assert.equal(tituloDoEvento("PersonUpdated", null, null), "Pessoa atualizada");
     assert.equal(tituloDoEvento("PersonLinkedToCompany", null, {}), "Pessoa vinculada à empresa");
   });
 });

@@ -17,6 +17,7 @@ import type { CarteiraDoDesenho, ClienteDoDesenho } from "@/lib/clientes/carteir
 import { CAMADAS_FATURAMENTO, geometriaFaturamento } from "@/lib/clientes/evolucao-geometria";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ClientesLiga } from "./ClientesLiga";
+import { abrirNexo } from "@/lib/nexo/cliente";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
 
@@ -189,6 +190,7 @@ function corrigirSaida(v: any, c: CarteiraDoDesenho, DC: ClienteDoDesenho | null
 }
 
 class ClientesLigada extends ClientesLiga {
+  nexo(pergunta?: string) { abrirNexo(pergunta ?? ""); }
   _mudo = false;
 
   constructor(props: any) {

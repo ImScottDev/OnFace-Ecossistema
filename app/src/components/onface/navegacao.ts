@@ -101,7 +101,7 @@ export const NAVEGACAO: AreaNav[] = [
       { label: "Visão Geral", href: "/automacoes", icon: Zap },
       { label: "Fluxos", href: "/automacoes/fluxos", icon: Workflow },
       { label: "Cadências / Follow-ups", href: "/automacoes/cadencias", icon: Repeat },
-      { label: "NEXO / Agentes IA", href: "/automacoes/agentes", icon: Bot },
+      { label: "Agentes especializados", href: "/automacoes/agentes", icon: Bot },
       { label: "Execuções", href: "/automacoes/execucoes", icon: LineChart },
     ],
   },

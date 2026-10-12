@@ -30,6 +30,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { permissoesDoUsuario, type CodigoPermissao } from "@/lib/auth/permissoes";
+import { permissoesEfetivas } from "@/lib/auth/permissoes";
 
 /**
  * Permissão que cada ferramenta exige.
@@ -54,13 +55,13 @@ export const PERMISSAO_POR_FERRAMENTA: Record<string, CodigoPermissao> = {
   // NEXO (chat do ecossistema): leitura também é gateada pelo papel, porque o
   // painel age COMO o usuário. As escritas checam dentro da ferramenta, porque
   // a permissão depende do alvo (lead x oportunidade).
-  "nexo.agenda": "sales.read", "nexo.leads": "acquisition.read", "nexo.pipeline": "sales.read",
+  "nexo.agenda": "sales.read", "nexo.leads": "acquisition.read", "nexo.entradas": "acquisition.read", "nexo.horarios_entrada": "acquisition.read", "nexo.pipeline": "sales.read",
   "nexo.criar_atividade": "acquisition.manage", "nexo.editar_atividade": "acquisition.manage", "nexo.excluir_atividade": "acquisition.manage",
   "nexo.criar_nota": "acquisition.manage", "nexo.tag": "acquisition.manage", "nexo.decidir_lead": "acquisition.manage", "nexo.criar_lead": "acquisition.manage",
   "nexo.mover_etapa": "acquisition.manage", "nexo.atribuir_responsavel": "acquisition.manage", "nexo.criar_empresa_contato": "companies.write",
   "nexo.agendar_reuniao": "sales.manage", "nexo.criar_oportunidade": "sales.manage", "nexo.perder_oportunidade": "sales.manage",
   "nexo.incluir_em_cadencia": "automation.manage",
-  "nexo.propostas": "sales.read", "nexo.clientes": "cs.read", "nexo.conversas": "acquisition.read",
+  "nexo.propostas": "sales.read", "nexo.clientes": "cs.read", "nexo.conversas": "acquisition.read", "nexo.nao_respondidas": "acquisition.read",
   // Fora daqui, de propósito: `handoff.request`, `case.open` e `alert.create`
   // são o que o agente faz quando NÃO pode agir — pedir ajuda, abrir caso,
   // levantar alerta. Um agente que não consegue pedir socorro é pior que um sem
@@ -111,6 +112,16 @@ export async function delegacaoDoRun(params: {
   const intersecao = new Set<CodigoPermissao>();
   for (const p of daVersao) if (doUsuario.has(p)) intersecao.add(p);
   return { permissoes: intersecao, origem: "versao+usuario" };
+}
+
+/** O NEXO executa como a pessoa, limitado também pela política da versão interna. */
+export async function permissoesDoNexo(params: {
+  organizacaoId: string; agentVersionId: string; usuarioId: string; usuarioPapel: string | null;
+}): Promise<Set<CodigoPermissao>> {
+  const versao = await delegacaoDoRun({ organizacaoId: params.organizacaoId, agentVersionId: params.agentVersionId });
+  if (versao.origem === "nenhuma") return new Set();
+  const usuario = await permissoesEfetivas({ usuarioId: params.usuarioId, organizacaoId: params.organizacaoId, role: params.usuarioPapel });
+  return new Set([...versao.permissoes].filter((codigo) => usuario.has(codigo)));
 }
 
 export interface VerificacaoFerramenta {

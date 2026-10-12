@@ -27,6 +27,7 @@ const motorDeCadencia = () => import("@/lib/cadencia/cadence-engine");
 import { resolverEmpresa, resolverPessoa } from "@/lib/vendas/identidade";
 import { criarTarefa, alterarTarefa, excluirTarefa, TIPOS_TAREFA, PRIORIDADES_TAREFA, STATUS_TAREFA } from "@/lib/tarefas/portas";
 import { CATALOGO, medir } from "@/lib/metricas/catalogo";
+import { condicaoMinhasConversas, veTodasAsConversas } from "@/lib/whatsapp/acesso";
 import type { AgentToolContext, AgentToolRegistration } from "@/lib/ai-platform/tools/registry";
 
 type R = { ok: boolean; data?: unknown; error?: string };
@@ -74,6 +75,11 @@ async function comConfirmacao(ctx: AgentToolContext, operacao: string, rotulo: s
 
 const when = (v: unknown) => (v ? String(v) : null);
 const lim = (v: unknown, def = 15, max = 30) => Math.min(max, Math.max(1, Number(v ?? def) || def));
+const dataCivil = (v: unknown): string | null => {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const data = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(data.getTime()) && data.toISOString().slice(0, 10) === v ? v : null;
+};
 const hojeSP = sql`date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')`;
 
 /** Leitura é consulta direta (ler não tem efeito colateral a coordenar). */
@@ -88,6 +94,55 @@ const escrita = (id: string, descricao: string, parametros: Record<string, unkno
 
 export const NEXO_TOOLS: AgentToolRegistration[] = [
   /* ── Leitura ─────────────────────────────────────────────────────────── */
+  leitura("entradas", "Leads/aquisições que ENTRARAM num dia ou intervalo, inclusive os que já saíram de Pré-vendas. Informe de e ate como datas YYYY-MM-DD no fuso de São Paulo. Devolve campanha/origem e cobertura da atribuição; nunca adivinhe campanha ausente.",
+    { de: str("YYYY-MM-DD, início inclusivo"), ate: str("YYYY-MM-DD, fim inclusivo; padrão de"), campanha: str("parte do nome da campanha"), limite: { type: "integer", minimum: 1, maximum: 50 } }, ["de"],
+    async (ctx, u, i) => {
+      if (u.role === "leitor") return { ok: false, error: "o papel leitor não consulta registros individuais" };
+      const de = dataCivil(i.de); const ate = dataCivil(i.ate ?? i.de);
+      if (!de || !ate || ate < de) return { ok: false, error: "Informe de/ate válidos no formato YYYY-MM-DD." };
+      const campanha = i.campanha ? `%${String(i.campanha).replace(/[%_\\]/g, "\\$&")}%` : null;
+      const base = sql`a.organizacao_id = ${ctx.organizacaoId}::uuid
+        AND a.created_at >= (${de}::date::timestamp AT TIME ZONE 'America/Sao_Paulo')
+        AND a.created_at < ((${ate}::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo')
+        AND (${u.pessoal}::boolean = false OR a.responsavel_id = ${u.userId}::uuid)
+        AND (${campanha}::text IS NULL OR COALESCE(NULLIF(pc.campaign, ''), NULLIF(l.utm_campaign, ''), '') ILIKE ${campanha})`;
+      const origem = sql`FROM aquisicoes a
+        LEFT JOIN leads l ON l.id = a.lead_legado_id AND l.organizacao_id = a.organizacao_id
+        LEFT JOIN pessoas p ON p.id = a.pessoa_id AND p.organizacao_id = a.organizacao_id
+        LEFT JOIN empresas e ON e.id = a.empresa_id AND e.organizacao_id = a.organizacao_id
+        LEFT JOIN LATERAL (SELECT campaign, campaign_id, source FROM pontos_contato pc0
+          WHERE pc0.organizacao_id = a.organizacao_id AND (pc0.aquisicao_id = a.id OR pc0.lead_id_legado = a.lead_legado_id)
+          ORDER BY (pc0.aquisicao_id = a.id) DESC, pc0.is_first_touch DESC, pc0.ocorrido_em ASC LIMIT 1) pc ON TRUE`;
+      const [tot] = await db.execute<{ n: number; sem_campanha: number }>(sql`
+        SELECT count(*)::int n, count(*) FILTER (WHERE COALESCE(NULLIF(pc.campaign, ''), NULLIF(l.utm_campaign, '')) IS NULL)::int sem_campanha
+        ${origem} WHERE ${base}`);
+      const rows = await db.execute(sql`
+        SELECT a.id::text id, a.created_at AS entrada_em, COALESCE(p.nome, l.nome, e.nome, 'Sem nome') nome,
+               COALESCE(e.nome, l.empresa) empresa, COALESCE(pc.source, l.utm_source, a.origem) origem,
+               COALESCE(NULLIF(pc.campaign, ''), NULLIF(l.utm_campaign, '')) campanha, COALESCE(pc.campaign_id, l.meta_campaign_id) campanha_id,
+               u2.nome responsavel, CASE WHEN a.lead_legado_id IS NOT NULL THEN '/pessoas/' || a.lead_legado_id::text ELSE '/pre-vendas' END href
+          ${origem} LEFT JOIN usuarios u2 ON u2.id = a.responsavel_id
+         WHERE ${base} ORDER BY a.created_at DESC LIMIT ${lim(i.limite, 20, 50)}`);
+      return { ok: true, data: { fonte: "aquisicoes + pontos_contato (fallback leads)", filtros: { de, ate, campanha: i.campanha ?? null, escopo: u.pessoal ? "meus" : "organizacao" }, total: tot?.n ?? 0, semCampanha: tot?.sem_campanha ?? 0, leads: rows } };
+    }),
+  leitura("horarios_entrada", "Distribuição real da chegada de leads/aquisições por dia da semana e hora local. Para quinta-feira use dia_semana=4. Padrão: últimos 90 dias. Mostre período e volume da amostra.",
+    { de: str("YYYY-MM-DD, opcional"), ate: str("YYYY-MM-DD, opcional"), dia_semana: { type: "integer", minimum: 1, maximum: 7 } }, [],
+    async (ctx, u, i) => {
+      const de = i.de == null ? null : dataCivil(i.de); const ate = i.ate == null ? null : dataCivil(i.ate);
+      if ((i.de != null && !de) || (i.ate != null && !ate) || (de && ate && ate < de)) return { ok: false, error: "Período inválido: use YYYY-MM-DD." };
+      const dia = i.dia_semana == null ? null : Number(i.dia_semana);
+      if (dia != null && (!Number.isInteger(dia) || dia < 1 || dia > 7)) return { ok: false, error: "dia_semana deve ser 1 (segunda) a 7 (domingo)." };
+      const rows = await db.execute<{ dia_semana: number; hora: number; total: number }>(sql`
+        SELECT EXTRACT(isodow FROM a.created_at AT TIME ZONE 'America/Sao_Paulo')::int dia_semana,
+               EXTRACT(hour FROM a.created_at AT TIME ZONE 'America/Sao_Paulo')::int hora, count(*)::int total
+          FROM aquisicoes a WHERE a.organizacao_id = ${ctx.organizacaoId}::uuid
+           AND a.created_at >= COALESCE((${de}::date::timestamp AT TIME ZONE 'America/Sao_Paulo'), now() - interval '90 days')
+           AND a.created_at < COALESCE(((${ate}::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo'), now())
+           AND (${u.pessoal}::boolean = false OR a.responsavel_id = ${u.userId}::uuid)
+           AND (${dia}::int IS NULL OR EXTRACT(isodow FROM a.created_at AT TIME ZONE 'America/Sao_Paulo')::int = ${dia})
+         GROUP BY 1, 2 ORDER BY total DESC, dia_semana, hora`);
+      return { ok: true, data: { fonte: "aquisicoes.created_at", fuso: "America/Sao_Paulo", periodo: { de: de ?? "ultimos_90_dias", ate: ate ?? "agora" }, amostra: rows.reduce((n, x) => n + x.total, 0), horarios: rows } };
+    }),
   leitura("atividades", "Lista atividades (tarefas) do CRM. filtro: abertas, atrasadas, hoje, semana (próximos 7 dias), concluidas_semana. escopo=equipe só vale para gestão.",
     { filtro: { type: "string", enum: ["abertas", "atrasadas", "hoje", "semana", "concluidas_semana"] }, escopo: { type: "string", enum: ["minhas", "equipe"] }, limite: { type: "integer", minimum: 1, maximum: 30 } }, ["filtro"],
     async (ctx, u, i) => {
@@ -175,22 +230,44 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
     }),
   leitura("conversas", "Conversas do Atendimento (WhatsApp): lista recente ou, com contato_id, as últimas mensagens daquela conversa.", { contato_id: str("uuid do contato"), somente_nao_lidas: { type: "boolean" }, limite: { type: "integer" } }, [],
     async (ctx, u, i) => {
+      if (u.role === "leitor") return { ok: false, error: "o papel leitor não consulta conversas individuais" };
+      const acesso = veTodasAsConversas(u.role) ? sql`TRUE` : condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
       if (i.contato_id) {
         const id = String(i.contato_id);
         if (!UUID.test(id)) return { ok: false, error: "contato_id inválido" };
-        const [c] = await db.execute<{ nome: string; responsavel_id: string | null }>(sql`SELECT nome, responsavel_id::text FROM contatos WHERE id = ${id}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+        const [c] = await db.execute<{ nome: string; responsavel_id: string | null }>(sql`SELECT c.nome, c.responsavel_id::text FROM contatos c WHERE c.id = ${id}::uuid AND c.organizacao_id = ${ctx.organizacaoId}::uuid AND ${acesso}`);
         if (!c) return { ok: false, error: "conversa não encontrada" };
-        if (!meuAlvo(u, c.responsavel_id)) return alheio();
         const msgs = await db.execute(sql`SELECT direcao, left(coalesce(conteudo, '[' || tipo || ']'), 500) AS texto, created_at FROM (SELECT * FROM whatsapp_mensagens WHERE contato_id = ${id}::uuid ORDER BY created_at DESC LIMIT ${lim(i.limite, 20, 40)}) m ORDER BY created_at`);
         return { ok: true, data: { contato: c.nome, mensagens: msgs } };
       }
       const rows = await db.execute(sql`
         SELECT c.id::text AS id, c.nome, c.canal, left(c.ultima_msg, 120) AS ultima_msg, c.ultima_msg_at, c.nao_lidas, c.status, usr.nome AS responsavel, '/atendimento' AS href
           FROM contatos c LEFT JOIN usuarios usr ON usr.id = c.responsavel_id
-         WHERE c.organizacao_id = ${ctx.organizacaoId}::uuid AND (${u.pessoal}::boolean = false OR c.responsavel_id = ${u.userId}::uuid OR c.responsavel_id IS NULL)
+         WHERE c.organizacao_id = ${ctx.organizacaoId}::uuid AND ${acesso}
            AND (${i.somente_nao_lidas === true}::boolean = false OR c.nao_lidas > 0)
          ORDER BY c.ultima_msg_at DESC NULLS LAST LIMIT ${lim(i.limite)}`);
       return { ok: true, data: { conversas: rows } };
+    }),
+  leitura("nao_respondidas", "Lista conversas WhatsApp em que a última mensagem recebida ainda não teve nenhuma resposta enviada. Inclui trecho e horário da mensagem. Não confundir 'não lida' com 'não respondida'.",
+    { limite: { type: "integer", minimum: 1, maximum: 30 } }, [],
+    async (ctx, u, i) => {
+      if (u.role === "leitor") return { ok: false, error: "o papel leitor não consulta conversas individuais" };
+      const acesso = veTodasAsConversas(u.role) ? sql`TRUE` : condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
+      const base = sql`FROM contatos c
+        JOIN LATERAL (SELECT m.id, m.created_at, m.conteudo, m.tipo FROM whatsapp_mensagens m
+          WHERE m.contato_id = c.id AND m.direcao = 'in' ORDER BY m.created_at DESC LIMIT 1) recebida ON TRUE
+        LEFT JOIN LATERAL (SELECT m.created_at FROM whatsapp_mensagens m
+          WHERE m.contato_id = c.id AND m.direcao = 'out' ORDER BY m.created_at DESC LIMIT 1) enviada ON TRUE
+        WHERE c.organizacao_id = ${ctx.organizacaoId}::uuid AND c.canal = 'whatsapp' AND c.status = 'open'
+          AND ${acesso} AND (enviada.created_at IS NULL OR recebida.created_at > enviada.created_at)`;
+      const [tot] = await db.execute<{ n: number }>(sql`SELECT count(*)::int n ${base}`);
+      const rows = await db.execute(sql`
+        SELECT c.id::text id, c.nome, c.telefone, c.responsavel_id::text responsavel_id,
+               recebida.created_at recebida_em, left(COALESCE(recebida.conteudo, '[' || recebida.tipo || ']'), 500) mensagem,
+               EXTRACT(EPOCH FROM now() - recebida.created_at)::int / 3600 horas_sem_resposta,
+               '/atendimento?contatoId=' || c.id::text href
+          ${base} ORDER BY recebida.created_at ASC LIMIT ${lim(i.limite)}`);
+      return { ok: true, data: { fonte: "whatsapp_mensagens", criterio: "ultima mensagem inbound posterior a ultima outbound, conversa aberta", escopo: veTodasAsConversas(u.role) ? "todas" : "minhas", total: tot?.n ?? 0, conversas: rows } };
     }),
   leitura("kpis", "Métrica do catálogo único (mrr_atual, booking_ganho, faturado, recebido, clientes_ativos, oportunidades_abertas). Sem codigo: lista as disponíveis. Números da organização inteira: não disponível para papéis pessoais.",
     { codigo: str("código da métrica"), de: str("ISO"), ate: str("ISO") }, [],
