@@ -558,6 +558,16 @@ class AtendimentoLigado extends AtendimentoLiga {
       }
     }
 
+    /* 5b. O que não tem porta de domínio não aparece como se tivesse (decisão 12/10):
+       "Aguardando time" não existe como status gravável; prioridade não existe no
+       domínio do atendimento; trocar o número da conversa e transferir para "agente
+       NEXO" não têm comando. Antes eram botões que só avisavam ao clicar. */
+    if (v.pop?.titulo === "STATUS DA CONVERSA" || v.pop?.titulo === "STATUS") {
+      v.pop.itens = (v.pop.itens ?? []).filter((i: any) => !/^Aguardando time\b/.test(String(i.label ?? "")));
+    }
+    if (v.cv?.stats) v.cv.stats = v.cv.stats.filter((s: any) => s.label !== "PRIORIDADE");
+    if (v.tr?.abas) { v.tr.abas = []; v.tr.temDica = false; } // só "Pessoas" sobra; uma aba só não é escolha
+
     /* 6. Tags. O popup lista as cinco do protótipo ("Inbound", "Lead
           quente"…) com automações descritas que não existem. Ficam só as
           tags reais da organização (`labels`), sem a nota inventada. */
