@@ -193,7 +193,7 @@ export function LeadLiga({ l, acoes }: Props) {
     const cor = COR_ETAPA[l.etapa] ?? "#4a5560";
     const tel = l.pessoa.telefone || l.pessoa.whatsapp;
     const temTel = !!(tel && tel.replace(/\D/g, "").length >= 10);
-    const metaBtn = (link: boolean) => "display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:transparent;font-size:12.5px;white-space:nowrap;cursor:" + (link ? "pointer" : "default");
+    const metaBtn = (link: boolean) => "display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:transparent;font-size:12.5px;white-space:nowrap;max-width:100%;min-width:0;cursor:" + (link ? "pointer" : "default");
     const meta = [
       [ICONE.empresa, "Empresa:", l.empresa.temEmpresa ? l.empresa.nome : "Sem empresa", l.empresa.temEmpresa ? () => acoes.ir(`/empresas/${l.empresa.id}`) : () => abrirPeca("vincular"), true],
       [ICONE.pessoa, "Contato:", l.pessoa.cargo ? `${l.pessoa.nome} (${l.pessoa.cargo})` : l.pessoa.nome, () => acoes.ir(`/pessoas/${l.id}`), true],
@@ -201,7 +201,7 @@ export function LeadLiga({ l, acoes }: Props) {
       [ICONE.origem, "Origem:", l.origem.titulo, null, true],
     ].map(([d, label, valor, onClick, tem]) => ({
       d, label, valor, onClick: (onClick as (() => void) | null) ?? (() => {}), style: metaBtn(!!onClick),
-      valorStyle: "font-weight:600;color:" + (onClick ? "#c2330f" : tem ? "#12171d" : "#c2330f"),
+      valorStyle: "min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:" + (onClick ? "#c2330f" : tem ? "#12171d" : "#c2330f"),
     }));
     const tagsCab = l.tags.slice(0, 4).map((nome) => ({
       nome, style: "display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:9999px;font-size:11.5px;font-weight:600;background:#eeeff3;color:#1f252c",

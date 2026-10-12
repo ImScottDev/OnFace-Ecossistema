@@ -106,6 +106,12 @@ async function main() {
   await moverEtapa({ organizacaoId: org, leadId: a.leadId, para: "em_contato", ator });
   const semEmpresa = await novo("sem", false);
   const paraNutrir = await novo("nutri");
+  const paraErro = await novo("erro");
+  // Sem telefone e sem e-mail: o contato só existe pelo nome.
+  const semContato = (await criarLead({
+    organizacaoId: org, empresa: { nome: `${marca} Ltda sc` }, pessoa: { nome: `${marca}-sc` },
+    touchpoint: { tipoOrigem: "organica", source: "prova" }, origem: "Manual", responsavelId: s.usuarioId,
+  } as never, ator)).leadId;
 
   const browser = await chromium.launch({ executablePath: CHROME, headless: true });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -115,7 +121,10 @@ async function main() {
 
   /* Console e rede: tudo que não for ruído conhecido derruba a prova. */
   const ruido: string[] = [];
+  /* Durante a falha SIMULADA (rota abortada de propósito) o erro de rede é o esperado, não ruído. */
+  let simulandoFalha = false;
   page.on("console", (m: { type(): string; text(): string; location(): { url: string } }) => {
+    if (simulandoFalha) return;
     /* Conhecido e FORA desta tela: o board (PreVendasDesenho, gerado) renderiza o placeholder da coluna
        vazia com estilo diferente no servidor e no cliente quando a busca esvazia colunas. Não é da tela do lead. */
     if (page.url().includes("/pre-vendas?busca=") && /didn't match the client properties/.test(m.text())) return;
@@ -128,6 +137,7 @@ async function main() {
   page.on("pageerror", (e: Error) => ruido.push(`pageerror: ${e.message.slice(0, 200)}`));
   page.on("response", (r: { status(): number; url(): string }) => { if (r.status() >= 400) ruido.push(`http ${r.status()} ${r.url().replace(BASE, "")}`); });
   page.on("requestfailed", (r: { url(): string; failure(): { errorText: string } | null }) => {
+    if (simulandoFalha) return;
     const motivo = r.failure()?.errorText ?? "";
     if (!/ERR_ABORTED/.test(motivo)) ruido.push(`requestfailed ${r.url().replace(BASE, "")} ${motivo}`);
   });
@@ -315,6 +325,42 @@ async function main() {
     await foto("7-sem-empresa");
     await page.keyboard.press("Escape");
 
+    /* ── 6b. estados: sem telefone/e-mail, 404 e erro de gravação ── */
+    console.log("\n== estados ==");
+    await abre(`/pre-vendas/${semContato}`);
+    const barra = page.locator("[data-r=toolbar]");
+    for (const [nome, motivo] of [["Ligar", /Sem telefone/], ["WhatsApp", /Sem telefone/], ["E-mail", /Sem e-mail/]] as const) {
+      const b = barra.getByRole("button", { name: nome, exact: true });
+      confere((await b.getAttribute("aria-disabled")) === "true" && motivo.test((await b.getAttribute("title")) ?? ""), `sem contato: ${nome} desabilitado, com o motivo no title`);
+    }
+    await barra.getByRole("button", { name: "Ligar", exact: true }).click({ force: true });
+    await page.getByText("Sem telefone cadastrado para ligar").first().waitFor();
+    confere(true, "e clicar em Ligar sem telefone avisa em vez de fingir que ligou");
+    const t404 = await (async () => { await abre("/pre-vendas/nao-e-uuid"); return texto(); })();
+    confere(/404|não foi encontrada|not found/i.test(t404) && !/LEAD/.test(t404), "id que não é UUID cai no 404");
+    await abre("/pre-vendas/00000000-0000-4000-8000-000000000000");
+    confere(/404|não foi encontrada|not found/i.test(await texto()), "lead que não existe cai no 404");
+
+    await abre(`/pre-vendas/${paraErro.leadId}`);
+    simulandoFalha = true;
+    await page.route("**/pre-vendas/**", (r: { request(): { method(): string }; abort(): Promise<void>; continue(): Promise<void> }) =>
+      (r.request().method() === "POST" ? r.abort() : r.continue()));
+    const qErro = page.locator("section", { has: page.getByLabel("Dor principal") }).first();
+    await qErro.getByRole("button", { name: "Baixo", exact: true }).click();
+    await page.getByText("Não consegui salvar a qualificação").first().waitFor();
+    await page.waitForTimeout(400);
+    confere((await qErro.getByRole("button", { name: "Baixo", exact: true }).getAttribute("aria-pressed")) === "false", "erro de gravação: toast e o campo volta ao valor gravado (rollback)");
+    confere(/Não consegui salvar/.test(await qErro.innerText()), "e o cartão de Qualificação diz o erro");
+    await foto("6e-erro-de-gravacao");
+    await page.unroute("**/pre-vendas/**");
+    simulandoFalha = false;
+    await qErro.getByRole("button", { name: "Baixo", exact: true }).click();
+    await page.getByText("Qualificação salva").first().waitFor();
+    confere(true, "sem o erro, a mesma ação grava");
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForTimeout(500);
+    confere((await page.locator("section", { has: page.getByLabel("Dor principal") }).first().getByRole("button", { name: "Baixo", exact: true }).getAttribute("aria-pressed")) === "true", "e o F5 mantém");
+
     /* ── 7. converter em oportunidade ── */
     console.log("\n== converter em oportunidade ==");
     await qualificar({ organizacaoId: org, leadId: a.leadId, ator });   // a saída que o modal "Qualificar" chama
@@ -357,10 +403,13 @@ async function main() {
     /* ── 8. 390px ── */
     console.log("\n== 390px ==");
     await page.setViewportSize({ width: 390, height: 900 });
-    await abre(`/pre-vendas/${paraNutrir.leadId}`);
-    const sobra = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    confere(sobra <= 1, `sem rolagem horizontal em 390px (sobra ${sobra}px)`);
-    await foto("11-390");
+    for (const [nome, id] of [["convertido", a.leadId], ["em contato", paraNutrir.leadId], ["sem empresa", semEmpresa.leadId], ["sem contato", semContato]] as const) {
+      await abre(`/pre-vendas/${id}`);
+      const sobra = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      const largos = await page.evaluate(() => [...document.querySelectorAll("section")].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1).length);
+      confere(sobra <= 1 && largos === 0, `390px (${nome}): sem rolagem horizontal e nenhum cartão estoura (sobra ${sobra}px, ${largos} largos)`);
+      await foto(`11-390-${nome.replace(" ", "-")}`);
+    }
   } finally {
     await browser.close();
     await limpar();
