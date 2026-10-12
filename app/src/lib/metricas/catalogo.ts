@@ -24,6 +24,7 @@
  */
 import { db } from "@/lib/db";
 import { sql, type SQL } from "drizzle-orm";
+import { janelaDoPeriodo } from "@/lib/metricas/janela";
 import { daFamilia, nomeDeTeste, semTestes, type Familia } from "@/lib/metricas/recorte";
 
 export type TipoMetrica = "EVENT" | "SNAPSHOT" | "COHORT";
@@ -65,6 +66,19 @@ export interface DefinicaoMetrica {
   recorte: (organizacaoId: string, p: Periodo) => SQL;
   /** ORDER BY do detalhe (colunas do recorte). */
   ordem: string;
+  /** Como a tela explora o recorte (gráficos, filtro cruzado, busca, ordenação). Tudo vira coluna do recorte. */
+  explorar: {
+    /** Colunas de texto que viram gráfico de composição e filtro por clique. */
+    dimensoes: Array<{ chave: string; rotulo: string }>;
+    /** Coluna de data do evento (só EVENT): base da série temporal. */
+    campoData?: string;
+    /** Colunas pesquisadas pela caixa de busca. */
+    busca: string[];
+    /** Colunas aceitas em ORDER BY do detalhe. */
+    ordenaveis: string[];
+    /** Primeira data com dado confiável nesta fonte; antes disso a janela é encurtada e a tela avisa. */
+    piso?: Date;
+  };
   /** O valor agregado: derivado do recorte, nunca escrito à parte. */
   valor: (organizacaoId: string, p: Periodo) => SQL;
   /** Os registros reais por trás do número (Módulo 12 exige drill-down). */
@@ -99,10 +113,10 @@ function definir(d: DefinicaoSemDerivados): DefinicaoMetrica {
 
 /** SNAPSHOT ignora período; EVENT precisa de um, e sem ele usa o mês corrente. */
 function janela(p: Periodo): { de: string; ate: string } {
-  const agora = new Date();
-  const de = p.de ?? new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1));
-  const ate = p.ate ?? new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth() + 1, 1));
-  return { de: de.toISOString(), ate: ate.toISOString() };
+  // Sem janela explícita vale o mês atual em São Paulo (não em UTC: às 22h de 30/09
+  // o mês UTC já é outubro e a métrica pegava um mês que ainda não começou).
+  const padrao = janelaDoPeriodo("mes_atual");
+  return { de: (p.de ?? padrao.de).toISOString(), ate: (p.ate ?? padrao.ate).toISOString() };
 }
 
 export const CATALOGO: DefinicaoMetrica[] = [
@@ -130,6 +144,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     // Uma linha por empresa + família + origem. `origem` diz de onde a linha veio:
     // `fechamento` (competência fechada) ou `assinatura` (vendida depois do fechamento).
     // O card soma ESTAS linhas; é por isso que a lista explica o total inteiro.
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "origem", rotulo: "Origem da linha" }], busca: ["empresa"], ordenaveis: ["valor", "empresa", "familia", "origem"] },
     recorte: (org, p) => sql`
       WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${org}::uuid)
       SELECT r.empresa_id::text AS id, e.nome AS empresa, NULL::text AS produto,
@@ -174,6 +189,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     // mas quem não tem família fica de fora dele (declarado na tela como cobertura).
     filtros: { familia: true },
     ordem: "t.ganho_at DESC",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], campoData: "ganho_at", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "ganho_at", "familia"], piso: new Date("2026-07-01T00:00:00-03:00") },
     recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
@@ -200,6 +216,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     agregacao: "soma",
     filtros: { familia: false },
     ordem: "t.emitida_em DESC",
+    explorar: { dimensoes: [{ chave: "status", rotulo: "Status da fatura" }], campoData: "emitida_em", busca: ["empresa"], ordenaveis: ["valor", "empresa", "emitida_em", "status"] },
     recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
@@ -226,6 +243,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     agregacao: "soma",
     filtros: { familia: false },
     ordem: "t.paid_at DESC",
+    explorar: { dimensoes: [{ chave: "metodo", rotulo: "Método de pagamento" }], campoData: "paid_at", busca: ["empresa"], ordenaveis: ["valor", "empresa", "paid_at", "metodo"] },
     recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
@@ -255,6 +273,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     filtros: { familia: true },
     ordem: "t.mrr DESC",
     // Uma linha por empresa: contar linhas = contar empresas distintas.
+    explorar: { dimensoes: [], busca: ["empresa"], ordenaveis: ["mrr", "empresa", "servicos_ativos"] },
     recorte: (org, p) => sql`
       SELECT e.id::text AS id, e.nome AS empresa,
              count(s.id)::int AS servicos_ativos,
@@ -277,6 +296,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     agregacao: "contagem",
     filtros: { familia: true },
     ordem: "t.valor DESC NULLS LAST",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "etapa", rotulo: "Etapa" }], busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "etapa", "previsao_fechamento", "familia"] },
     recorte: (org, p) => sql`
       SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
              o.etapa, o.valor::numeric AS valor, o.previsao_fechamento

@@ -16,7 +16,7 @@ export const ROTULO_COLUNA: Record<string, string> = {
   id: "ID", titulo: "Oportunidade", empresa: "Empresa", produto: "Produto", familia: "Família",
   valor: "Valor", mrr: "MRR", ganho_at: "Ganho em", status: "Status", emitida_em: "Emitida em",
   metodo: "Método", paid_at: "Pago em", servicos_ativos: "Serviços ativos", etapa: "Etapa",
-  previsao_fechamento: "Previsão",
+  previsao_fechamento: "Previsão", origem: "Origem da linha",
 };
 
 /** Para onde o ID de cada drill leva. Só onde existe tela de destino.
