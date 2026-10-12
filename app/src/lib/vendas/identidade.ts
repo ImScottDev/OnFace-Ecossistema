@@ -16,6 +16,7 @@ import { db } from "@/lib/db";
 import type { ExecutorDb } from "./executor";
 import { registrarEvento } from "./eventos";
 import { type Ator, type RelacionamentoEmpresa, type PapelPessoa } from "./dominio";
+import { chaveTelefone, normalizarE164 } from "@/lib/telefone";
 
 
 
@@ -59,7 +60,26 @@ export function dominioDoEmail(email: string | null | undefined): string | null 
   return pessoais.has(dominio) ? null : dominio;
 }
 
-/** Só dígitos, com o 55 do país removido quando presente. */
+/**
+ * Chave de comparação de telefone no BANCO, igual a `chaveTelefone` (lib/telefone):
+ * "(11) 99999-0001", "11999990001" e "+55 11 99999-0001" dão a mesma chave. A base
+ * tem formatos misturados, então comparar coluna crua com texto cru nunca casa.
+ */
+export function telefoneChaveSql(coluna: "telefone" | "whatsapp" | "p.telefone" | "p.whatsapp") {
+  const d = sql.raw(`regexp_replace(COALESCE(${coluna}, ''), '\\D', '', 'g')`);
+  return sql`(CASE WHEN ${d} ~ '^55[1-9][0-9]{9,10}$' THEN ${d}
+                   WHEN ${d} ~ '^[1-9][0-9]{9,10}$' THEN '55' || ${d}
+                   ELSE ${d} END)`;
+}
+
+/** O que se grava: E.164 quando dá, senão o texto como veio (webhook/legado não perde dado). */
+export const telefoneParaGravar = (v: string | null | undefined): string | null =>
+  normalizarE164(v) ?? (v?.trim() || null);
+
+/**
+ * LEGADO: só dígitos locais, 55 removido. Não é mais usado para resolver
+ * identidade (isso é `chaveTelefone`); fica porque o contrato de teste o cobre.
+ */
 export function normalizarTelefone(valor: string | null | undefined): string | null {
   if (!valor) return null;
   let digitos = valor.replace(/\D/g, "");
@@ -107,6 +127,15 @@ export async function resolverEmpresa(
 ): Promise<ResultadoResolucao> {
   const nome = dados.nome.trim();
   if (!nome) throw new Error("Empresa precisa de nome");
+
+  /* Corrida: dois pedidos simultâneos com a mesma empresa (duplo clique, lote
+     com o mesmo nome) liam "não existe" ao mesmo tempo e criavam as duas.
+     A busca e o INSERT agora rodam sob um lock de transação por organização.
+     Sem transação do chamador abrimos uma aqui, senão o lock soltaria na hora.
+     ponytail: lock por organização serializa toda criação de empresa da org;
+     troque por lock por chave (cnpj/domínio/nome) se o volume de criação crescer. */
+  if (tx === db) return db.transaction((t) => resolverEmpresa(organizacaoId, dados, ator, t));
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${"empresa:" + organizacaoId}, 0))`);
 
   const cnpj = normalizarCnpj(dados.cnpj);
   const dominio = normalizarDominio(dados.dominio ?? dados.website) ?? dominioDoEmail(dados.email);
@@ -164,7 +193,7 @@ export async function resolverEmpresa(
     VALUES (
       ${organizacaoId}::uuid, ${nome}, ${dados.cnpj ?? null}, ${dominio},
       ${dados.website ?? null}, ${dados.setor ?? null}, ${dados.porte ?? null},
-      ${dados.cidade ?? null}, ${dados.estado ?? null}, ${dados.telefone ?? null},
+      ${dados.cidade ?? null}, ${dados.estado ?? null}, ${telefoneParaGravar(dados.telefone)},
       ${dados.razaoSocial ?? null}
     )
     RETURNING id::text
@@ -191,7 +220,7 @@ async function completarEmpresa(empresaId: string, dados: DadosEmpresa, tx: Exec
       porte = COALESCE(porte, ${dados.porte ?? null}),
       cidade = COALESCE(cidade, ${dados.cidade ?? null}),
       estado = COALESCE(estado, ${dados.estado ?? null}),
-      telefone = COALESCE(telefone, ${dados.telefone ?? null}),
+      telefone = COALESCE(telefone, ${telefoneParaGravar(dados.telefone)}),
       razao_social = COALESCE(razao_social, ${dados.razaoSocial ?? null}),
       updated_at = now()
     WHERE id = ${empresaId}::uuid
@@ -208,6 +237,10 @@ export interface DadosPessoa {
   whatsapp?: string | null;
   cargo?: string | null;
   empresaId?: string | null;
+  /** Papel e principalidade do vínculo com `empresaId`. Sem `principal`: a empresa
+   *  vira a principal só se a pessoa ainda não tem nenhuma. */
+  papel?: PapelPessoa;
+  principal?: boolean;
 }
 
 export interface ResultadoPessoa {
@@ -234,40 +267,45 @@ export async function resolverPessoa(
   if (!nome) throw new Error("Pessoa precisa de nome");
 
   const email = dados.email?.trim().toLowerCase() || null;
-  const telefone = normalizarTelefone(dados.telefone ?? dados.whatsapp);
+  const chave = chaveTelefone(dados.telefone) ?? chaveTelefone(dados.whatsapp);
+  const dadosGravaveis: DadosPessoa = {
+    ...dados, email, telefone: telefoneParaGravar(dados.telefone), whatsapp: telefoneParaGravar(dados.whatsapp),
+  };
 
-  if (email) {
-    const [porEmail] = await tx.execute<{ id: string }>(sql`
-      SELECT id::text FROM pessoas
-       WHERE organizacao_id = ${organizacaoId}::uuid AND lower(email) = ${email}
-       LIMIT 1
-    `);
-    if (porEmail) {
-      await completarPessoa(porEmail.id, dados, tx);
-      return { pessoaId: porEmail.id, criada: false, resolvidaPor: "email" };
+  const existente = async (): Promise<ResultadoPessoa | null> => {
+    if (email) {
+      const [porEmail] = await tx.execute<{ id: string }>(sql`
+        SELECT id::text FROM pessoas
+         WHERE organizacao_id = ${organizacaoId}::uuid AND lower(email) = ${email}
+         LIMIT 1
+      `);
+      if (porEmail) return { pessoaId: porEmail.id, criada: false, resolvidaPor: "email" };
     }
-  }
+    if (chave) {
+      const [porTelefone] = await tx.execute<{ id: string }>(sql`
+        SELECT id::text FROM pessoas
+         WHERE organizacao_id = ${organizacaoId}::uuid
+           AND (${telefoneChaveSql("telefone")} = ${chave} OR ${telefoneChaveSql("whatsapp")} = ${chave})
+         LIMIT 1
+      `);
+      if (porTelefone) return { pessoaId: porTelefone.id, criada: false, resolvidaPor: "telefone" };
+    }
+    return null;
+  };
 
-  if (telefone) {
-    const [porTelefone] = await tx.execute<{ id: string }>(sql`
-      SELECT id::text FROM pessoas
-       WHERE organizacao_id = ${organizacaoId}::uuid
-         AND (regexp_replace(COALESCE(telefone, ''), '\\D', '', 'g') LIKE ${"%" + telefone}
-           OR regexp_replace(COALESCE(whatsapp, ''), '\\D', '', 'g') LIKE ${"%" + telefone})
-       LIMIT 1
-    `);
-    if (porTelefone) {
-      await completarPessoa(porTelefone.id, dados, tx);
-      return { pessoaId: porTelefone.id, criada: false, resolvidaPor: "telefone" };
-    }
+  const achada = await existente();
+  if (achada) {
+    await completarPessoa(achada.pessoaId, dadosGravaveis, tx);
+    if (dados.empresaId) await garantirVinculoDaResolucao(organizacaoId, achada.pessoaId, dados, ator, tx);
+    return achada;
   }
 
   const [criada] = await tx.execute<{ id: string }>(sql`
     INSERT INTO pessoas (organizacao_id, empresa_id, nome, sobrenome, email, telefone, whatsapp, cargo)
     VALUES (
-      ${organizacaoId}::uuid, ${dados.empresaId ?? null}::uuid, ${nome},
-      ${dados.sobrenome ?? null}, ${dados.email ?? null}, ${dados.telefone ?? null},
-      ${dados.whatsapp ?? null}, ${dados.cargo ?? null}
+      ${organizacaoId}::uuid, NULL, ${nome},
+      ${dados.sobrenome ?? null}, ${dadosGravaveis.email ?? null}, ${dadosGravaveis.telefone ?? null},
+      ${dadosGravaveis.whatsapp ?? null}, ${dados.cargo ?? null}
     )
     RETURNING id::text
   `);
@@ -277,14 +315,32 @@ export async function resolverPessoa(
     empresaId: dados.empresaId ?? null, contexto: { nome, email },
   }, tx);
 
-  if (dados.empresaId) {
-    await vincularPessoaEmpresa({
-      organizacaoId, pessoaId: criada.id, empresaId: dados.empresaId,
-      papel: "contato_principal", principal: true, ator,
-    }, tx);
-  }
+  // `pessoas.empresa_id` NÃO é gravado no INSERT: quem o mantém é o vínculo
+  // principal (vincularPessoaEmpresa), para as duas fontes nunca divergirem.
+  if (dados.empresaId) await garantirVinculoDaResolucao(organizacaoId, criada.id, { ...dados, principal: dados.principal ?? true }, ator, tx);
 
   return { pessoaId: criada.id, criada: true, resolvidaPor: null };
+}
+
+/** Pessoa resolvida com empresa: garante o vínculo ATIVO com ela, sem derrubar a principal que já existe. */
+async function garantirVinculoDaResolucao(
+  organizacaoId: string, pessoaId: string, dados: DadosPessoa, ator: Ator, tx: ExecutorDb,
+): Promise<void> {
+  let principal = dados.principal;
+  if (principal === undefined) {
+    // Principal existente = vínculo principal ativo OU `pessoas.empresa_id` legado ainda sem vínculo.
+    const [tem] = await tx.execute<{ n: number }>(sql`
+      SELECT (SELECT count(*) FROM pessoa_empresa_vinculos
+               WHERE pessoa_id = ${pessoaId}::uuid AND principal AND encerrado_em IS NULL
+                 AND empresa_id <> ${dados.empresaId!}::uuid)::int
+           + (SELECT count(*) FROM pessoas
+               WHERE id = ${pessoaId}::uuid AND empresa_id IS NOT NULL
+                 AND empresa_id <> ${dados.empresaId!}::uuid)::int AS n`);
+    principal = (tem?.n ?? 0) === 0;
+  }
+  await vincularPessoaEmpresa({
+    organizacaoId, pessoaId, empresaId: dados.empresaId!, papel: dados.papel ?? "contato_principal", principal, ator,
+  }, tx);
 }
 
 async function completarPessoa(pessoaId: string, dados: DadosPessoa, tx: ExecutorDb): Promise<void> {
@@ -295,7 +351,6 @@ async function completarPessoa(pessoaId: string, dados: DadosPessoa, tx: Executo
       telefone = COALESCE(telefone, ${dados.telefone ?? null}),
       whatsapp = COALESCE(whatsapp, ${dados.whatsapp ?? null}),
       cargo = COALESCE(cargo, ${dados.cargo ?? null}),
-      empresa_id = COALESCE(empresa_id, ${dados.empresaId ?? null}::uuid),
       updated_at = now()
     WHERE id = ${pessoaId}::uuid
   `);
@@ -322,27 +377,43 @@ export async function vincularPessoaEmpresa(params: {
   ator: Ator;
 }, tx: ExecutorDb = db): Promise<void> {
   const papel = params.papel ?? "contato_principal";
+  const principal = params.principal ?? false;
 
-  if (params.encerrarAnteriores) {
+  /* Um único vínculo principal por pessoa. Promover uma empresa a principal
+     ENCERRA (com data, não apaga) o principal anterior. `encerrarAnteriores`
+     vai além e encerra também os secundários (troca de emprego). */
+  if (params.encerrarAnteriores || principal) {
     await tx.execute(sql`
-      UPDATE pessoa_empresa_vinculos SET encerrado_em = now()
+      UPDATE pessoa_empresa_vinculos SET encerrado_em = now(), updated_at = now()
        WHERE pessoa_id = ${params.pessoaId}::uuid
          AND empresa_id <> ${params.empresaId}::uuid
          AND encerrado_em IS NULL
+         ${params.encerrarAnteriores ? sql`` : sql`AND principal`}
     `);
   }
 
+  /* O índice único vale para (pessoa, empresa) mesmo com vínculo encerrado, então
+     voltar para uma empresa antiga REABRE a linha em vez de colidir. Vínculo já
+     principal não é rebaixado por um "adicionar" repetido. */
   await tx.execute(sql`
     INSERT INTO pessoa_empresa_vinculos (organizacao_id, pessoa_id, empresa_id, papel, principal)
     VALUES (${params.organizacaoId}::uuid, ${params.pessoaId}::uuid, ${params.empresaId}::uuid,
-            ${papel}, ${params.principal ?? false})
-    ON CONFLICT (pessoa_id, empresa_id) WHERE encerrado_em IS NULL
-    DO UPDATE SET papel = EXCLUDED.papel, principal = EXCLUDED.principal
+            ${papel}, ${principal})
+    ON CONFLICT (pessoa_id, empresa_id)
+    DO UPDATE SET
+      papel = EXCLUDED.papel,
+      principal = CASE WHEN pessoa_empresa_vinculos.encerrado_em IS NULL
+                       THEN pessoa_empresa_vinculos.principal OR EXCLUDED.principal
+                       ELSE EXCLUDED.principal END,
+      iniciado_em = CASE WHEN pessoa_empresa_vinculos.encerrado_em IS NULL
+                         THEN pessoa_empresa_vinculos.iniciado_em ELSE now() END,
+      encerrado_em = NULL,
+      updated_at = now()
   `);
 
   // `pessoas.empresa_id` continua sendo o vínculo atual porque é o que as
   // consultas existentes leem; o vínculo principal é quem manda nele.
-  if (params.principal ?? false) {
+  if (principal) {
     await tx.execute(sql`
       UPDATE pessoas SET empresa_id = ${params.empresaId}::uuid, updated_at = now()
        WHERE id = ${params.pessoaId}::uuid
@@ -352,7 +423,7 @@ export async function vincularPessoaEmpresa(params: {
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "PersonLinkedToCompany",
     ator: params.ator, pessoaId: params.pessoaId, empresaId: params.empresaId,
-    contexto: { papel, principal: params.principal ?? false },
+    contexto: { papel, principal },
   }, tx);
 }
 
