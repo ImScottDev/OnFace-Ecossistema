@@ -49,9 +49,16 @@ test("filtro de lista restringe a página de prospecção antes do limite", asyn
          AND lb.nome = ${caso.lista}
     `)).map((linha) => linha.lead_id));
 
-    const resultado = await listaProspeccao(caso.organizacao_id, { lista: caso.lista });
+    const resultado = await listaProspeccao(caso.organizacao_id, { lista: caso.lista, porPagina: 100 });
 
-    assert.ok(resultado.linhas.some((linha) => linha.leadId === caso.lead_id));
+    // A lista filtra ANTES de paginar: o total do recorte é o da lista inteira,
+    // não o da primeira página (a versão com teto fixo de 400 cortava antes).
+    const [{ n }] = await db.execute<{ n: number }>(sql`
+      SELECT count(DISTINCT l.id)::int AS n FROM leads l
+        JOIN lead_labels ll ON ll.lead_id = l.id JOIN labels lb ON lb.id = ll.label_id
+       WHERE l.organizacao_id = ${caso.organizacao_id}::uuid AND l.prospeccao_estado IS NOT NULL
+         AND lb.organizacao_id = ${caso.organizacao_id}::uuid AND lb.nome = ${caso.lista}`);
+    assert.equal(resultado.paginacao.total, n);
     assert.ok(
       resultado.linhas.every((linha) => idsDaLista.has(linha.leadId)),
       "a página limitada precisa conter somente leads da lista escolhida",
