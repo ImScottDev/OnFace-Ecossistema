@@ -11,7 +11,11 @@ import { z } from "zod";
 import { getCtx, parseBody } from "../compat.js";
 import { whatsappIncomingQueue, whatsappOutgoingQueue } from "@/lib/queue";
 import { normalizePhone } from "@/lib/whatsapp/phone-utils";
-import { veTodasAsConversas, checarAcessoContato } from "@/lib/whatsapp/acesso";
+import {
+  veTodasAsConversas, checarAcessoContato, sessaoAutorizadaParaEnvio, sessaoMinha, sessaoVisivel,
+  escopoDeGestao, usuariosDoTime,
+} from "@/lib/whatsapp/acesso";
+import { whatsappSessaoAcesso, auditLog } from "@/lib/db/schema";
 import {
   reactToMessage, markRead, setPresence, deleteMessage, sessionToConfig,
   getStatus, createSession, disconnectSession, downloadAndSaveAvatar,
@@ -263,73 +267,24 @@ app.post("/whatsapp/send", async (c) => {
 
   let resolvedSessaoId = sessaoId ?? sessaoDaConversa ?? undefined;
 
-  /* sessaoId vem do corpo: sem esta conferência qualquer usuário mandava pelo WhatsApp
-     de uma sessão de OUTRA organização (só a ausência de sessão era tratada). */
+  /* O número por onde a mensagem sai tem que ser autorizado para quem envia (dono,
+     compartilhado com ele, ou gestão do dono). Antes só a organização era conferida:
+     qualquer um mandava pelo WhatsApp de um colega passando o `sessaoId` no corpo. */
   if (resolvedSessaoId) {
-    const [sessaoOrg] = await db.select({ id: whatsappSessao.id }).from(whatsappSessao)
-      .where(and(eq(whatsappSessao.id, resolvedSessaoId), eq(whatsappSessao.organizacaoId, ctx.organizacaoId))).limit(1);
-    if (!sessaoOrg) return c.json({ error: "Sessao nao encontrada" }, 404);
+    if (!(await sessaoAutorizadaParaEnvio(ctx, resolvedSessaoId))) return c.json({ error: "Sessao nao encontrada" }, 404);
   }
 
   if (!resolvedSessaoId) {
-    // Sessão CONECTADA do próprio usuário: a mensagem sai pelo WhatsApp de quem
-    // clicou. Vem antes da "default" porque default desconectada não envia.
-    const [userConnected] = await db.select({ id: whatsappSessao.id })
-      .from(whatsappSessao)
-      .where(and(
-        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
-        eq(whatsappSessao.usuarioId, ctx.userId),
-        eq(whatsappSessao.status, "connected"),
-      ))
-      .orderBy(desc(whatsappSessao.isDefault))
-      .limit(1);
-    resolvedSessaoId = userConnected?.id;
-  }
-
-  if (!resolvedSessaoId) {
-    const [userDefault] = await db.select({ id: whatsappSessao.id })
-      .from(whatsappSessao)
-      .where(and(
-        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
-        eq(whatsappSessao.usuarioId, ctx.userId),
-        eq(whatsappSessao.isDefault, true),
-      ))
-      .limit(1);
-    resolvedSessaoId = userDefault?.id;
-  }
-
-  if (!resolvedSessaoId) {
-    const [userAny] = await db.select({ id: whatsappSessao.id })
-      .from(whatsappSessao)
-      .where(and(
-        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
-        eq(whatsappSessao.usuarioId, ctx.userId),
-      ))
-      .limit(1);
-    resolvedSessaoId = userAny?.id;
-  }
-
-  if (!resolvedSessaoId) {
-    const [sharedDefault] = await db.select({ id: whatsappSessao.id })
-      .from(whatsappSessao)
-      .where(and(
-        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
-        isNull(whatsappSessao.usuarioId),
-        eq(whatsappSessao.isDefault, true),
-      ))
-      .limit(1);
-    resolvedSessaoId = sharedDefault?.id;
-  }
-
-  if (!resolvedSessaoId) {
-    const [sharedAny] = await db.select({ id: whatsappSessao.id })
-      .from(whatsappSessao)
-      .where(and(
-        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
-        isNull(whatsappSessao.usuarioId),
-      ))
-      .limit(1);
-    resolvedSessaoId = sharedAny?.id;
+    /* Sem número definido: o MEU (dono ou autorizado), preferindo conectado e
+       depois padrão. Número compartilhado só entra se eu estiver autorizado nele:
+       "sem dono" deixou de ser "de todo mundo" (migration 0102). */
+    const [meu] = await db.execute<{ id: string }>(sql`
+      SELECT s.id::text FROM whatsapp_sessao s
+       WHERE s.organizacao_id = ${ctx.organizacaoId}::uuid
+         AND ${sessaoMinha(ctx.userId, sql`s.id`, sql`s.usuario_id`)}
+       ORDER BY (s.status = 'connected') DESC, s.is_default DESC, (s.usuario_id = ${ctx.userId}::uuid) DESC, s.updated_at DESC
+       LIMIT 1`);
+    resolvedSessaoId = meu?.id;
   }
 
   // Sem sessão não há por onde enviar: antes gravava com sessaoId null e a
@@ -1096,13 +1051,10 @@ app.post("/whatsapp/actions", async (c) => {
 
   const data = parsed.data;
 
-  // A sessão precisa ser do próprio usuário: reagir/apagar/marcar lido roda no
+  // A sessão precisa ser autorizada para o usuário: reagir/apagar/marcar lido roda no
   // WhatsApp pessoal de alguém. Sem sessaoId, isto pegava a PRIMEIRA sessão da
   // organização — o número de outra pessoa.
   const sessaoId = "sessaoId" in data ? data.sessaoId : undefined;
-  const escopoSessao = veTodasAsConversas(ctx)
-    ? []
-    : [or(eq(whatsappSessao.usuarioId, ctx.userId), isNull(whatsappSessao.usuarioId))!];
 
   let config = undefined;
   const [sessao] = await db.select({ apiToken: whatsappSessao.apiToken })
@@ -1110,7 +1062,7 @@ app.post("/whatsapp/actions", async (c) => {
     .where(and(
       eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
       ...(sessaoId ? [eq(whatsappSessao.id, sessaoId)] : []),
-      ...escopoSessao,
+      sessaoVisivel(ctx, sql`${whatsappSessao.id}`, sql`${whatsappSessao.usuarioId}`),
     ))
     .limit(1);
   if (sessao) config = sessionToConfig(sessao);
@@ -1278,7 +1230,7 @@ app.get("/whatsapp/status", async (c) => {
 
     if (!sessao) return c.json({ error: "Sessão não encontrada" }, 404);
 
-    if (effectiveUserId && sessao.usuarioId !== null && sessao.usuarioId !== effectiveUserId) {
+    if (!(await sessaoAutorizadaParaEnvio({ ...ctx, userId: effectiveUserId ?? ctx.userId }, sessao.id))) {
       return c.json({ error: "Sessão não encontrada" }, 404);
     }
 
@@ -1311,19 +1263,14 @@ app.get("/whatsapp/status", async (c) => {
     });
   }
 
-  let sessions;
-  if (effectiveUserId) {
-    sessions = await db.select()
-      .from(whatsappSessao)
-      .where(and(
-        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
-        or(eq(whatsappSessao.usuarioId, effectiveUserId), isNull(whatsappSessao.usuarioId)),
-      ));
-  } else {
-    sessions = await db.select()
-      .from(whatsappSessao)
-      .where(eq(whatsappSessao.organizacaoId, ctx.organizacaoId));
-  }
+  /* Os números que a pessoa pode USAR: seus e os compartilhados com ela. A gestão
+     vê os da equipe em /whatsapp/numeros; aqui é a lista de envio/ações. */
+  const sessions = await db.select()
+    .from(whatsappSessao)
+    .where(and(
+      eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
+      ...(effectiveUserId ? [sessaoMinha(effectiveUserId, sql`${whatsappSessao.id}`, sql`${whatsappSessao.usuarioId}`)] : []),
+    ));
 
   const results = await Promise.all(sessions.map(async (sessao) => {
     const config = sessionToConfig(sessao);
@@ -1362,19 +1309,48 @@ app.post("/whatsapp/status", async (c) => {
   const ctx = await getCtx(c);
 
   const body = await c.req.json();
-  const { action, sessionId, sessionName, label, telefone } = body as {
+  const { action, sessionId, sessionName, label, telefone, usuarioId, finalidade, tipo, acessos } = body as {
     action: string;
     sessionId?: string;
     sessionName?: string;
     label?: string;
     telefone?: string;
+    /** Dono do número (pessoa ou agente). Só a gestão escolhe outro que não ela mesma; null = compartilhado. */
+    usuarioId?: string | null;
+    finalidade?: string | null;
+    tipo?: "pessoal" | "compartilhada";
+    /** Usuários autorizados num número compartilhado. */
+    acessos?: string[];
   };
+
+  const gestao = escopoDeGestao(ctx);
+  const auditar = (acao: string, entityId: string, before: unknown, after: unknown) =>
+    db.insert(auditLog).values({
+      organizacaoId: ctx.organizacaoId, actorId: ctx.userId, action: acao,
+      entityType: "whatsapp_sessao", entityId, before: before as never, after: after as never,
+    });
+
+  /* Dono do número vindo do corpo: a gestão pode atribuir a alguém do seu escopo
+     (organização, ou o time); qualquer outro só cria número para si. `null`
+     explícito = compartilhado, e o autorizado entra em `acessos`. */
+  async function donoPermitido(alvo: string | null | undefined): Promise<string | null | "proibido"> {
+    if (alvo === undefined) return ctx.userId;
+    if (alvo === ctx.userId) return alvo;
+    if (!gestao) return "proibido";
+    if (alvo === null) return null;
+    const [u] = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM usuarios WHERE id = ${alvo}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND ativo
+         AND ${gestao === "organizacao" ? sql`TRUE` : sql`id IN ${usuariosDoTime(ctx.userId)}`}`);
+    return u ? u.id : "proibido";
+  }
 
   if (action === "create") {
     if (!sessionName) return c.json({ error: "sessionName required" }, 400);
     if (!WEBHOOK_SECRET) {
       return c.json({ error: "UAZAPI_WEBHOOK_SECRET nao configurado" }, 503);
     }
+    const dono = await donoPermitido(usuarioId);
+    if (dono === "proibido") return c.json({ error: "Você não pode criar número para esta pessoa." }, 403);
 
     const token = randomBytes(24).toString("hex");
     const webhookBaseUrl = `${appUrl()}/api/whatsapp/webhook`;
@@ -1394,30 +1370,97 @@ app.post("/whatsapp/status", async (c) => {
 
     const [created] = await db.insert(whatsappSessao).values({
       organizacaoId: ctx.organizacaoId,
-      usuarioId: ctx.userId,
+      usuarioId: dono,
       sessionName,
       label: label || sessionName,
       apiToken: token,
       isDefault: existing.length === 0,
+      tipo: dono === null ? "compartilhada" : (tipo ?? "pessoal"),
+      finalidade: finalidade ?? null,
     }).returning();
+    if (dono === null && acessos?.length) {
+      await db.insert(whatsappSessaoAcesso)
+        .values(acessos.map((u) => ({ sessaoId: created.id, usuarioId: u, concedidoPor: ctx.userId })))
+        .onConflictDoNothing();
+    }
+    await auditar("whatsapp.numero_criado", created.id, null, { label: created.label, usuarioId: dono, finalidade: created.finalidade, tipo: created.tipo });
 
     return c.json(created, 201);
   }
 
   if (!sessionId) return c.json({ error: "sessionId required" }, 400);
 
+  /* Conectar, desconectar, excluir e mudar vínculo rodam no WhatsApp de alguém:
+     só o dono, quem está autorizado no compartilhado, ou a gestão do dono.
+     Antes bastava estar na organização. */
   const [sessao] = await db.select()
     .from(whatsappSessao)
-    .where(and(eq(whatsappSessao.id, sessionId), eq(whatsappSessao.organizacaoId, ctx.organizacaoId)))
+    .where(and(
+      eq(whatsappSessao.id, sessionId),
+      eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
+      sessaoVisivel(ctx, sql`${whatsappSessao.id}`, sql`${whatsappSessao.usuarioId}`),
+    ))
     .limit(1);
 
   if (!sessao) return c.json({ error: "Sessão não encontrada" }, 404);
+
+  /* Quem está só AUTORIZADO num compartilhado usa o número (conecta, envia); não
+     o reconfigura nem o apaga. Isso é do dono ou da gestão. */
+  const ehDono = sessao.usuarioId === ctx.userId;
+  if (["vincular", "set-default", "delete", "update"].includes(action) && !ehDono && !gestao) {
+    return c.json({ error: "Só o dono do número ou a gestão pode alterá-lo." }, 403);
+  }
 
   const config = sessionToConfig(sessao);
 
   if (action === "connect") {
     await createSession(config);
+    await auditar("whatsapp.numero_conectar", sessao.id, { status: sessao.status }, { status: "connecting" });
     return c.json({ status: "connecting" });
+  }
+
+  /* Vínculo do número: dono (pessoa ou agente), finalidade, privado/compartilhado e
+     quem mais pode usar. Trocar o dono é da gestão; finalidade o próprio dono muda. */
+  if (action === "vincular") {
+    const mudaDono = usuarioId !== undefined && usuarioId !== sessao.usuarioId;
+    if ((mudaDono || acessos !== undefined || tipo !== undefined) && !gestao) {
+      return c.json({ error: "Só a gestão altera dono, tipo e acessos de um número." }, 403);
+    }
+    let dono = sessao.usuarioId;
+    if (mudaDono) {
+      const d = await donoPermitido(usuarioId);
+      if (d === "proibido") return c.json({ error: "Esta pessoa está fora do seu escopo." }, 403);
+      dono = d;
+    }
+    const FINALIDADES = ["comercial", "atendimento", "suporte", "sdr", "cs", "outro"];
+    if (finalidade != null && finalidade !== "" && !FINALIDADES.includes(finalidade)) {
+      return c.json({ error: `Finalidade inválida. Use: ${FINALIDADES.join(", ")}.` }, 400);
+    }
+    const novoTipo = dono === null ? "compartilhada" : (tipo ?? sessao.tipo);
+    const antes = { usuarioId: sessao.usuarioId, finalidade: sessao.finalidade, tipo: sessao.tipo };
+    await db.transaction(async (tx) => {
+      await tx.update(whatsappSessao).set({
+        usuarioId: dono,
+        tipo: novoTipo,
+        ...(finalidade !== undefined && { finalidade: finalidade || null }),
+        ...(label !== undefined && { label }),
+        updatedAt: new Date(),
+      }).where(eq(whatsappSessao.id, sessao.id));
+      if (acessos !== undefined) {
+        const validos = acessos.length
+          ? await tx.execute<{ id: string }>(sql`
+              SELECT id::text FROM usuarios WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo
+                 AND id IN (${sql.join(acessos.map((a) => sql`${a}::uuid`), sql`, `)})`)
+          : [];
+        await tx.delete(whatsappSessaoAcesso).where(eq(whatsappSessaoAcesso.sessaoId, sessao.id));
+        if (validos.length) {
+          await tx.insert(whatsappSessaoAcesso)
+            .values(validos.map((u) => ({ sessaoId: sessao.id, usuarioId: u.id, concedidoPor: ctx.userId })));
+        }
+      }
+    });
+    await auditar("whatsapp.numero_vinculado", sessao.id, antes, { usuarioId: dono, finalidade: finalidade ?? sessao.finalidade, tipo: novoTipo, acessos });
+    return c.json({ ok: true });
   }
 
   /* Pareamento por código: a alternativa ao QR Code, para número virtual e para
@@ -1441,12 +1484,16 @@ app.post("/whatsapp/status", async (c) => {
   if (action === "disconnect") {
     await disconnectSession(config);
     await db.update(whatsappSessao).set({ status: "disconnected", updatedAt: new Date() }).where(eq(whatsappSessao.id, sessao.id));
+    await auditar("whatsapp.numero_desconectado", sessao.id, { status: sessao.status }, { status: "disconnected" });
     return c.json({ status: "disconnected" });
   }
 
   if (action === "set-default") {
+    /* O padrão é da ORGANIZAÇÃO (envios automáticos e notificações): só a gestão troca. */
+    if (!gestao) return c.json({ error: "Só a gestão define o número padrão da organização." }, 403);
     await db.update(whatsappSessao).set({ isDefault: false }).where(eq(whatsappSessao.organizacaoId, ctx.organizacaoId));
     await db.update(whatsappSessao).set({ isDefault: true, updatedAt: new Date() }).where(eq(whatsappSessao.id, sessao.id));
+    await auditar("whatsapp.numero_padrao", sessao.id, { isDefault: sessao.isDefault }, { isDefault: true });
     return c.json({ ok: true });
   }
 
@@ -1480,10 +1527,101 @@ app.post("/whatsapp/status", async (c) => {
     } catch (e) {
       return c.json({ error: "Sessão ainda em uso por agente ou roteador de IA. Troque o canal deles antes de remover." }, 409);
     }
+    await auditar("whatsapp.numero_excluido", sessao.id, { label: sessao.label, usuarioId: sessao.usuarioId, phoneNumber: sessao.phoneNumber }, null);
     return c.json({ ok: true });
   }
 
   return c.json({ error: "Invalid action" }, 400);
+});
+
+// ─── Números (Ajustes > WhatsApp) ───────────────────────────────────────────
+//
+// A lista completa de cada número com o que a tela precisa para não mentir:
+// dono (pessoa ou agente), agente que atende pelo número, finalidade, acessos,
+// time, quantas conversas passam por ele e última conexão. Escopo no servidor:
+// os meus (dono ou autorizado) sempre; os da equipe só para a gestão, e só do
+// seu escopo (organização ou time). Todo filtro da tela é um WHERE aqui.
+app.get("/whatsapp/numeros", async (c) => {
+  const ctx = await getCtx(c);
+  const q = c.req.query();
+  const gestao = escopoDeGestao(ctx);
+
+  const cond: SQL[] = [sql`s.organizacao_id = ${ctx.organizacaoId}::uuid`];
+  cond.push(sessaoVisivel(ctx, sql`s.id`, sql`s.usuario_id`));
+  if (q.status === "connected") cond.push(sql`s.status = 'connected'`);
+  if (q.status === "disconnected") cond.push(sql`s.status <> 'connected'`);
+  if (q.usuario) cond.push(sql`s.usuario_id = ${q.usuario}::uuid`);
+  if (q.equipe) cond.push(sql`u.team_id = ${q.equipe}::uuid`);
+  if (q.agente) cond.push(sql`(u.agente_id = ${q.agente}::uuid OR ag.id = ${q.agente}::uuid)`);
+  if (q.finalidade) cond.push(sql`s.finalidade = ${q.finalidade}`);
+  if (q.compartilhado === "1") cond.push(sql`(s.usuario_id IS NULL OR s.tipo = 'compartilhada')`);
+  if (q.compartilhado === "0") cond.push(sql`(s.usuario_id IS NOT NULL AND s.tipo <> 'compartilhada')`);
+  if (q.padrao === "1") cond.push(sql`s.is_default`);
+  if (q.busca) {
+    const p = `%${q.busca}%`;
+    cond.push(sql`(s.label ILIKE ${p} OR s.session_name ILIKE ${p} OR s.phone_number ILIKE ${p} OR u.nome ILIKE ${p})`);
+  }
+
+  const linhas = await db.execute<{
+    id: string; session_name: string; label: string | null; phone_number: string | null; status: string;
+    is_default: boolean; tipo: string; finalidade: string | null; last_connected_at: string | null;
+    usuario_id: string | null; usuario_nome: string | null; usuario_tipo: string | null; usuario_agente_id: string | null;
+    time_id: string | null; time_nome: string | null;
+    agente_id: string | null; agente_nome: string | null;
+    conversas: number; minha: boolean; acessos: Array<{ id: string; nome: string }> | null;
+  }>(sql`
+    SELECT s.id::text, s.session_name, s.label, s.phone_number, s.status, s.is_default, s.tipo, s.finalidade,
+           s.last_connected_at::text,
+           s.usuario_id::text, u.nome AS usuario_nome, u.tipo AS usuario_tipo, u.agente_id::text AS usuario_agente_id,
+           t.id::text AS time_id, t.nome AS time_nome,
+           ag.id::text AS agente_id, ag.nome AS agente_nome,
+           (SELECT count(*)::int FROM contatos c WHERE c.sessao_id = s.id AND c.canal = 'whatsapp') AS conversas,
+           ${sessaoMinha(ctx.userId, sql`s.id`, sql`s.usuario_id`)} AS minha,
+           (SELECT json_agg(json_build_object('id', au.id, 'nome', au.nome) ORDER BY au.nome)
+              FROM whatsapp_sessao_acesso a JOIN usuarios au ON au.id = a.usuario_id WHERE a.sessao_id = s.id) AS acessos
+      FROM whatsapp_sessao s
+      LEFT JOIN usuarios u ON u.id = s.usuario_id
+      LEFT JOIN teams t ON t.id = u.team_id
+      -- Agente que ATENDE por este número: a versão publicada ligada a ele (é o que o runtime lê).
+      LEFT JOIN LATERAL (
+        SELECT a.id, a.nome FROM ai_agents a JOIN ai_agent_versions v ON v.id = a.published_version_id
+         WHERE v.channel_session_id = s.id AND a.status = 'published' AND a.archived_at IS NULL
+         ORDER BY a.prioridade DESC LIMIT 1
+      ) ag ON TRUE
+     WHERE ${sql.join(cond, sql` AND `)}
+     ORDER BY (s.usuario_id = ${ctx.userId}::uuid) DESC NULLS LAST, (s.status = 'connected') DESC, u.nome NULLS LAST, s.label`);
+
+  /* Opções dos filtros, limitadas ao mesmo escopo da lista: a gestão de time não
+     recebe a lista de usuários da organização inteira por tabela. */
+  const [usuariosOpt, equipesOpt, agentesOpt] = gestao ? await Promise.all([
+    db.execute<{ id: string; nome: string; tipo: string; team_id: string | null }>(sql`
+      SELECT id::text, nome, tipo, team_id::text FROM usuarios
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo
+         AND ${gestao === "organizacao" ? sql`TRUE` : sql`id IN ${usuariosDoTime(ctx.userId)}`}
+       ORDER BY (tipo = 'agente'), nome`),
+    db.execute<{ id: string; nome: string }>(sql`
+      SELECT id::text, nome FROM teams WHERE organizacao_id = ${ctx.organizacaoId}::uuid
+         AND ${gestao === "organizacao" ? sql`TRUE` : sql`(manager_id = ${ctx.userId}::uuid OR id = (SELECT team_id FROM usuarios WHERE id = ${ctx.userId}::uuid))`}
+       ORDER BY nome`),
+    db.execute<{ id: string; nome: string }>(sql`
+      SELECT id::text, nome FROM ai_agents WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND status = 'published' AND archived_at IS NULL ORDER BY nome`),
+  ]) : [[], [], []];
+
+  return c.json({
+    gestao,
+    eu: ctx.userId,
+    numeros: linhas.map((l) => ({
+      id: l.id, sessionName: l.session_name, label: (l.label ?? "").trim() || l.session_name,
+      phoneNumber: l.phone_number ? l.phone_number.replace(/:.*$/, "") : null,
+      status: l.status, isDefault: l.is_default, tipo: l.tipo, finalidade: l.finalidade,
+      lastConnectedAt: l.last_connected_at,
+      usuario: l.usuario_id ? { id: l.usuario_id, nome: l.usuario_nome ?? "", tipo: l.usuario_tipo ?? "humano", agenteId: l.usuario_agente_id } : null,
+      time: l.time_id ? { id: l.time_id, nome: l.time_nome ?? "" } : null,
+      agente: l.agente_id ? { id: l.agente_id, nome: l.agente_nome ?? "" } : null,
+      conversas: l.conversas, minha: l.minha, acessos: l.acessos ?? [],
+    })),
+    filtros: { usuarios: [...usuariosOpt], equipes: [...equipesOpt], agentes: [...agentesOpt] },
+  });
 });
 
 // ─── Templates ──────────────────────────────────────────────────────────────

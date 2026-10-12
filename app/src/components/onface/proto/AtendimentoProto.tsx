@@ -99,6 +99,22 @@ const ROTULO_TIPO: Record<string, string> = {
  * `concat` do Liga são chamados sobre arrays dele, não sobre esta.
  * Quando o script parar de gerar EXTRA, isto fica inerte sozinho.
  */
+type SessaoDoSeletor = {
+  id: string; label: string; fone: string | null; status: string;
+  donoId: string | null; donoNome: string | null; donoTipo: "humano" | "agente" | null;
+};
+
+/** Caixa selecionada: um número (`id` da sessão) ou todos os números de um dono (`u:<id>`; `u:` = compartilhados). */
+function filtraCaixa<T extends { sessaoId: string | null }>(lista: T[], cx: string | null | undefined, sessoes: Array<{ id: string; donoId: string | null }>): T[] {
+  if (!cx) return lista;
+  if (cx.startsWith("u:")) {
+    const dono = cx.slice(2);
+    const ids = new Set(sessoes.filter((s) => (s.donoId ?? "") === dono).map((s) => s.id));
+    return lista.filter((c) => !!c.sessaoId && ids.has(c.sessaoId));
+  }
+  return lista.filter((c) => c.sessaoId === cx);
+}
+
 function semExtra<T>(arr: T[]): T[] {
   const a = arr.slice();
   Object.defineProperty(a, "concat", { value: function (this: T[]) { return Array.prototype.slice.call(this); } });
@@ -305,7 +321,7 @@ class AtendimentoLigado extends AtendimentoLiga {
       if (k !== "conversas") return lerOriginal(k, alt);
       const todas = self.props.dados?.conversas ?? [];
       const cx = self.state?.caixaReal;
-      return cx ? semExtra(todas.filter((c: any) => c.sessaoId === cx)) : todas;
+      return cx ? semExtra(filtraCaixa(todas, cx, self.props.sessoes ?? [])) : todas;
     };
     // O Liga só repassa o href; "Ver pessoa"/"Ver empresa" precisam do lead.
     self.E.irPara = (href: string, rotulo?: string, params?: any) => self.props.ir?.(href, rotulo, params);
@@ -430,7 +446,7 @@ class AtendimentoLigado extends AtendimentoLiga {
            não lidas que o próprio desenho já tem (`soNaoLidas`). */
     for (const a of v.abas ?? []) {
       if (a.label !== "Não lidas") continue;
-      const base = S.caixaReal ? todas.filter((c) => c.sessaoId === S.caixaReal) : todas;
+      const base = filtraCaixa(todas, S.caixaReal, P.sessoes ?? []);
       a.conta = String(base.filter((c) => c.naoLidas > 0).length);
       a.onClick = () => self.setState({ aba: "todos", soNaoLidas: true });
     }
@@ -503,17 +519,22 @@ class AtendimentoLigado extends AtendimentoLiga {
     /* 5. Números (caixas). Os cinco do protótipo — (11) 97700-4410,
           4003-1020/1030/1040/1050 — não existem; as caixas são as sessões de
           whatsapp_sessao. Contagem sobre a lista inteira, não a filtrada. */
-    const sessoes: Array<{ id: string; label: string; fone: string | null }> = P.sessoes ?? [];
-    const cxSel = S.caixaReal ?? null;
+    const sessoes: SessaoDoSeletor[] = P.sessoes ?? [];
+    const cxSel: string | null = S.caixaReal ?? null;
     const sessaoSel = sessoes.find((s) => s.id === cxSel);
     const nlDe = (lista: any[]) => lista.filter((c) => c.naoLidas > 0).length;
     // Escopo Minhas / Equipe (regra única em lib/whatsapp/acesso, escolhida na URL).
     const esc: { atual: string; pode: boolean; mudar?: (e: string) => void } = P.escopo ?? { atual: "minhas", pode: false };
+    /* Em "Equipe" a caixa pode ser uma PESSOA ou um AGENTE (todos os números dele): `u:<id>`. */
+    const donoSel = cxSel?.startsWith("u:") ? sessoes.find((s) => (s.donoId ?? "") === cxSel.slice(2)) : undefined;
+    const rotuloDono = (s: SessaoDoSeletor) => s.donoNome ?? "Compartilhado";
     if (v.caixa) {
-      const lista = cxSel ? todas.filter((c) => c.sessaoId === cxSel) : todas;
+      const lista = filtraCaixa(todas, cxSel, sessoes);
       const nl = nlDe(lista);
-      v.caixa.nome = sessaoSel ? sessaoSel.label : (esc.atual === "equipe" ? "Equipe · todos os números" : "Meus números");
-      v.caixa.num = sessaoSel ? (fmtTel(sessaoSel.fone) ?? "WhatsApp") : `${sessoes.length} ${sessoes.length === 1 ? "número" : "números"}`;
+      v.caixa.nome = sessaoSel ? sessaoSel.label : donoSel ? rotuloDono(donoSel) : (esc.atual === "equipe" ? "Equipe · todos os números" : "Meus números");
+      v.caixa.num = sessaoSel
+        ? [esc.atual === "equipe" && sessaoSel.donoId !== P.euId ? rotuloDono(sessaoSel) : null, fmtTel(sessaoSel.fone) ?? "WhatsApp"].filter(Boolean).join(" · ")
+        : `${donoSel ? sessoes.filter((s) => (s.donoId ?? "") === cxSel!.slice(2)).length : sessoes.length} ${(donoSel ? sessoes.filter((s) => (s.donoId ?? "") === cxSel!.slice(2)).length : sessoes.length) === 1 ? "número" : "números"}`;
       v.caixa.ehIa = false;
       v.caixa.temNaoLidas = nl > 0;
       v.caixa.naoLidas = String(nl);
@@ -521,21 +542,38 @@ class AtendimentoLigado extends AtendimentoLiga {
       v.caixa.icoStyle = "flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--of-papel);color:" + (sessaoSel ? "var(--of-canal-whatsapp-tinta)" : "var(--of-tinta-forte)") + ";box-shadow:inset 0 0 0 1px var(--of-linha)";
     }
     if (v.pop?.ehCaixas) {
-      const linhas = [{ id: null as string | null, label: esc.atual === "equipe" ? "Todos os números da equipe" : "Todos os meus números", fone: `${sessoes.length} ${sessoes.length === 1 ? "número" : "números"}` }]
-        .concat(sessoes.map((s) => ({ id: s.id, label: s.label, fone: fmtTel(s.fone) ?? "Sem número registrado" })));
-      v.pop.caixas = linhas.map((x, i) => {
-        const doX = x.id ? todas.filter((c) => c.sessaoId === x.id) : todas;
+      const linha = (x: { id: string | null; label: string; fone: string; ehDono?: boolean; recuo?: boolean }, i: number) => {
+        const doX = filtraCaixa(todas, x.id, sessoes);
         const nl = nlDe(doX);
         const on = (cxSel ?? null) === x.id;
         return {
-          nome: x.label, num: x.fone, ia: false, naoIa: true, d: x.id ? ICO_WA : ICO_TODAS,
+          nome: x.label, num: x.fone, ia: false, naoIa: true, d: x.id && !x.ehDono ? ICO_WA : ICO_TODAS,
           total: String(doX.length), temNl: nl > 0, nl: String(nl),
-          icoStyle: "flex:0 0 auto;width:32px;height:32px;border-radius:9px;display:grid;place-items:center;overflow:hidden;" + (x.id ? "background:var(--of-canal-whatsapp-fundo);color:var(--of-canal-whatsapp-tinta)" : "background:var(--of-papel);color:var(--of-tinta-forte);box-shadow:inset 0 0 0 1px var(--of-linha)"),
+          icoStyle: "flex:0 0 auto;width:32px;height:32px;border-radius:9px;display:grid;place-items:center;overflow:hidden;" + (x.id && !x.ehDono ? "background:var(--of-canal-whatsapp-fundo);color:var(--of-canal-whatsapp-tinta)" : "background:var(--of-papel);color:var(--of-tinta-forte);box-shadow:inset 0 0 0 1px var(--of-linha)"),
           checkStyle: "flex:0 0 auto;width:16px;height:16px;border-radius:9999px;display:grid;place-items:center;" + (on ? "background:var(--of-tinta-forte)" : "background:transparent"),
-          style: "display:flex;align-items:center;gap:10px;width:100%;padding:8px 9px;border-radius:9px;border:0;cursor:pointer;text-align:left;" + (on ? "background:var(--of-papel-tela)" : "background:transparent") + (i === 0 ? ";margin-bottom:4px;box-shadow:0 1px 0 var(--of-fio)" : ""),
+          style: "display:flex;align-items:center;gap:10px;width:100%;padding:8px 9px;border-radius:9px;border:0;cursor:pointer;text-align:left;" + (on ? "background:var(--of-papel-tela)" : "background:transparent") + (i === 0 ? ";margin-bottom:4px;box-shadow:0 1px 0 var(--of-fio)" : "") + (x.recuo ? ";padding-left:22px" : "") + (x.ehDono ? ";margin-top:4px" : ""),
           onClick: () => self.setState({ pop: null, caixaReal: x.id }),
         };
-      });
+      };
+      const fone = (s: SessaoDoSeletor) => (fmtTel(s.fone) ?? "Sem número registrado") + (s.status !== "connected" ? " · desconectado" : "");
+      const topo = { id: null as string | null, label: esc.atual === "equipe" ? "Todos os números da equipe" : "Todos os meus números", fone: `${sessoes.length} ${sessoes.length === 1 ? "número" : "números"}` };
+      let linhas: Array<Parameters<typeof linha>[0]>;
+      if (esc.atual === "equipe") {
+        /* Agrupado por dono: pessoa ou agente, e cada número dele recuado abaixo. A
+           linha do dono seleciona TODOS os números dele; compartilhados ficam no fim. */
+        const grupos = new Map<string, SessaoDoSeletor[]>();
+        for (const s of sessoes) (grupos.get(s.donoId ?? "") ?? grupos.set(s.donoId ?? "", []).get(s.donoId ?? "")!).push(s);
+        linhas = [topo];
+        for (const [dono, lista] of [...grupos.entries()].sort(([a], [b]) => (a === "" ? 1 : 0) - (b === "" ? 1 : 0))) {
+          const primeiro = lista[0];
+          const ehAgente = primeiro.donoTipo === "agente";
+          linhas.push({ id: `u:${dono}`, label: (dono ? rotuloDono(primeiro) : "Compartilhados") + (ehAgente ? " · agente" : ""), fone: `${lista.length} ${lista.length === 1 ? "número" : "números"}`, ehDono: true });
+          for (const s of lista) linhas.push({ id: s.id, label: s.label, fone: fone(s), recuo: true });
+        }
+      } else {
+        linhas = [topo, ...sessoes.map((s) => ({ id: s.id, label: s.label, fone: fone(s) }))];
+      }
+      v.pop.caixas = linhas.map(linha);
       /* Seletor de escopo, só para quem pode ver a equipe. As duas linhas no topo SÃO o "todos os
          números" de cada escopo (a linha genérica sai); os números individuais vêm abaixo. */
       if (esc.pode) {
@@ -1340,6 +1378,7 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
         catalogo={catalogo}
         contexto={contexto}
         sessoes={dados.sessoes}
+        euId={dados.eu.id}
         escopo={{ atual: dados.escopo, pode: dados.podeVerEquipe, mudar: mudarEscopo }}
         setores={setores}
         primeiraResposta={primeiraResposta}

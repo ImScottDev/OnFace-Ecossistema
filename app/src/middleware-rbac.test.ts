@@ -34,7 +34,7 @@ const middleware = fs.readFileSync(path.join(APP, "src/middleware.ts"), "utf8");
 const ROTAS_DE_GESTAO = ["/financeiro", "/clientes/financeiro", "/ajustes"];
 
 /** Rotas pessoais que qualquer papel autenticado precisa alcançar. */
-const ROTAS_PESSOAIS = ["/ajustes/email"];
+const ROTAS_PESSOAIS = ["/ajustes/email", "/ajustes/whatsapp"];
 
 function listaDoMiddleware(nome: string): string[] {
   const m = middleware.match(new RegExp(`const ${nome} = \\[([^\\]]*)\\]`));

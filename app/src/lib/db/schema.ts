@@ -12,6 +12,7 @@ import {
   inet,
   index,
   uniqueIndex,
+  primaryKey,
   date,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
@@ -1271,10 +1272,23 @@ export const whatsappSessao = pgTable("whatsapp_sessao", {
   phoneNumber: text("phone_number"),
   qrCode: text("qr_code"),
   lastConnectedAt: timestamp("last_connected_at", { withTimezone: true }),
+  /** Para que serve o número: comercial | atendimento | suporte | sdr | cs | outro (migration 0102). */
+  finalidade: text("finalidade"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_wa_sessao_org").on(table.organizacaoId),
   index("idx_wa_sessao_user").on(table.usuarioId),
+]);
+
+/** Quem pode usar um número além do dono (número compartilhado). Migration 0102. */
+export const whatsappSessaoAcesso = pgTable("whatsapp_sessao_acesso", {
+  sessaoId: uuid("sessao_id").references(() => whatsappSessao.id, { onDelete: "cascade" }).notNull(),
+  usuarioId: uuid("usuario_id").references(() => usuarios.id, { onDelete: "cascade" }).notNull(),
+  concedidoPor: uuid("concedido_por").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.sessaoId, table.usuarioId] }),
+  index("idx_wa_sessao_acesso_usuario").on(table.usuarioId),
 ]);
 
 // ─── CADENCIA SDR (execuções por lead+toque) ───────────────

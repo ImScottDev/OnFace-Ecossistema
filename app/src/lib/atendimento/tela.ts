@@ -16,7 +16,7 @@
 import { nomeCompleto } from "@/lib/vendas/texto";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { condicaoMinhasConversas, veTodasAsConversas } from "@/lib/whatsapp/acesso";
+import { condicaoMinhasConversas, condicaoEquipe, podeVerEquipe as podeEquipe, sessaoMinha, sessaoVisivel } from "@/lib/whatsapp/acesso";
 
 type Ctx = {
   organizacaoId: string;
@@ -70,14 +70,18 @@ export type DadosAtendimento = {
   eu: { id: string; nome: string };
   /** Escopo efetivo da lista (pedido da URL já limitado pela permissão). */
   escopo: EscopoAtendimento;
-  /** Pode alternar para "Equipe": decisão de 09/09 mantida, só super_admin. */
+  /** Pode alternar para "Equipe": gestão (admin vê a organização; gerente/coordenador vê o time). */
   podeVerEquipe: boolean;
   conversas: ConversaAtendimento[];
   leads: LeadAtendimento[];
   equipe: Array<{ id: string; nome: string }>;
   /** Conversas abertas de WhatsApp por responsável (nome), na organização inteira: a carga que a transferência mostra. */
   cargaEquipe: Record<string, number>;
-  sessoes: Array<{ id: string; label: string; fone: string | null }>;
+  /** Números visíveis no escopo, com o dono (pessoa ou agente) para o seletor agrupar. */
+  sessoes: Array<{
+    id: string; label: string; fone: string | null; status: string;
+    donoId: string | null; donoNome: string | null; donoTipo: "humano" | "agente" | null;
+  }>;
   labels: Array<{ id: string; nome: string }>;
   tagsPorContato: Record<string, string[]>;
   templates: Array<{ id: string; nome: string; categoria: string; conteudo: string }>;
@@ -101,10 +105,10 @@ export async function paginaDeAtendimento(ctx: Ctx, escopoPedido: EscopoAtendime
      pode pedir "Equipe". A mesma condição vale para a lista, os números, as
      abas, a busca e as métricas — total que conta conversa fora do escopo
      seria o mesmo vazamento disfarçado. */
-  const podeVerEquipe = veTodasAsConversas(ctx);
+  const podeVerEquipe = podeEquipe(ctx);
   const escopo: EscopoAtendimento = escopoPedido === "equipe" && podeVerEquipe ? "equipe" : "minhas";
   const acesso = escopo === "equipe"
-    ? sql`TRUE`
+    ? condicaoEquipe(ctx, sql`c.responsavel_id`, sql`c.sessao_id`)
     : condicaoMinhasConversas(ctx.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
 
   const [conversas, leadsTel, equipe, sessoes, labels, tags, templates, eu, carga, resp] = await Promise.all([
@@ -161,18 +165,18 @@ export async function paginaDeAtendimento(ctx: Ctx, escopoPedido: EscopoAtendime
     // Destino de transferência: quem está ativo na organização, não só quem já tem conversa.
     db.execute<{ id: string; nome: string }>(sql`
       SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${org} AND ativo ORDER BY nome`),
-    /* Os números DA PESSOA, não os da organização.
-       O seletor de caixa listava os 8 números da empresa. O conteúdo nunca
-       vazou — `acesso` acima já barra conversa alheia — mas o rótulo e o
-       TELEFONE dos colegas apareciam, e escolher a caixa de outro abria uma
-       lista vazia. A mesma regra da query de conversas, aplicada aqui.
-       Sessão sem dono é compartilhada da organização e continua visível. */
-    db.execute<{ id: string; label: string; fone: string | null }>(sql`
-      SELECT id::text, btrim(label) AS label, NULLIF(split_part(phone_number, ':', 1), '') AS fone
-        FROM whatsapp_sessao
-       WHERE organizacao_id = ${org}
-         AND ${escopo === "equipe" ? sql`TRUE` : sql`(usuario_id = ${ctx.userId} OR usuario_id IS NULL)`}
-       ORDER BY label`),
+    /* Os números DA PESSOA (dono ou autorizado), não os da organização; em
+       "Equipe", os do escopo de gestão, com o dono para o seletor agrupar por
+       pessoa e por agente. A mesma regra da query de conversas, aplicada aqui:
+       número compartilhado só aparece para quem está autorizado nele. */
+    db.execute<{ id: string; label: string; fone: string | null; status: string; dono_id: string | null; dono_nome: string | null; dono_tipo: "humano" | "agente" | null }>(sql`
+      SELECT s.id::text, COALESCE(NULLIF(btrim(s.label), ''), s.session_name) AS label,
+             NULLIF(split_part(s.phone_number, ':', 1), '') AS fone, s.status,
+             s.usuario_id::text AS dono_id, u.nome AS dono_nome, u.tipo AS dono_tipo
+        FROM whatsapp_sessao s LEFT JOIN usuarios u ON u.id = s.usuario_id
+       WHERE s.organizacao_id = ${org}
+         AND ${escopo === "equipe" ? sessaoVisivel(ctx, sql`s.id`, sql`s.usuario_id`) : sessaoMinha(ctx.userId, sql`s.id`, sql`s.usuario_id`)}
+       ORDER BY (s.usuario_id = ${ctx.userId}) DESC NULLS LAST, (u.tipo = 'agente'), u.nome NULLS LAST, label`),
     db.execute<{ id: string; nome: string }>(sql`
       SELECT id::text, nome FROM labels WHERE organizacao_id = ${org} ORDER BY nome`),
     db.execute<{ contato_id: string; nome: string }>(sql`
@@ -275,7 +279,7 @@ export async function paginaDeAtendimento(ctx: Ctx, escopoPedido: EscopoAtendime
     leads,
     equipe: [...equipe],
     cargaEquipe: Object.fromEntries(carga.map((r) => [r.nome, r.n])),
-    sessoes: [...sessoes],
+    sessoes: sessoes.map((s) => ({ id: s.id, label: s.label, fone: s.fone, status: s.status, donoId: s.dono_id, donoNome: s.dono_nome, donoTipo: s.dono_tipo })),
     labels: [...labels],
     tagsPorContato,
     templates: [...templates],

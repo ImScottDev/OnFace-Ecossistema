@@ -63,9 +63,11 @@ export default auth((req) => {
   // Backend também passou a checar papel (getGestaoCtx / isAdminView nas rotas
   // financeiras): isto aqui é navegação, não é a única barreira.
   const GESTAO = ["/configuracoes", "/financeiro", "/campanhas", "/clientes/financeiro", "/ajustes"];
-  // Conexão de e-mail/calendário é PESSOAL (cada um conecta a própria conta),
-  // não configuração da organização — closer e SDR precisam alcançar.
-  const PESSOAIS = ["/configuracoes/email", "/ajustes/email"];
+  // Conexão de e-mail/calendário e de número de WhatsApp é PESSOAL (cada um
+  // conecta a própria conta e o próprio número), não configuração da
+  // organização — closer e SDR precisam alcançar. O escopo do que aparece lá
+  // dentro é do servidor (lib/whatsapp/acesso), não deste gate.
+  const PESSOAIS = ["/configuracoes/email", "/ajustes/email", "/ajustes/whatsapp"];
   const ehPessoal = PESSOAIS.some((p) => pathname.startsWith(p));
   if (req.auth && !ehPessoal && GESTAO.some((p) => pathname.startsWith(p))) {
     if (!isAdminView(effectiveRole)) {

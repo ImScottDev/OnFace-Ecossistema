@@ -26,11 +26,11 @@ export interface SessaoDeSmoke {
 }
 
 /** Sessão de um usuário real da organização. Sem usuário, não há o que validar. */
-export async function sessaoDeSmoke(opts: { role?: string } = {}): Promise<SessaoDeSmoke> {
+export async function sessaoDeSmoke(opts: { role?: string; usuarioId?: string } = {}): Promise<SessaoDeSmoke> {
   const segredo = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || "";
   if (!segredo) throw new Error("NEXTAUTH_SECRET ausente: sem ele não há sessão para emitir");
 
-  const filtro = opts.role ? sql`AND u.role = ${opts.role}` : sql``;
+  const filtro = opts.usuarioId ? sql`AND u.id = ${opts.usuarioId}::uuid` : opts.role ? sql`AND u.role = ${opts.role}` : sql``;
   const [u] = await db.execute<{
     id: string; nome: string; email: string; role: string;
     organizacao_id: string; slug: string | null;
