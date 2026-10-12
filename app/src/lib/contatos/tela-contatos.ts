@@ -38,6 +38,9 @@ export interface LinhaContato {
   responsavel: string | null;
   estagio: string | null;
   ultimaInteracao: string | null;
+  /** Quando o registro entrou na base. Sem interação, é ele que ordena a lista:
+   *  o registro novo aparece no topo em vez de sumir sob o corte de 500. */
+  criadoEm: string | null;
   /** Motivo de saída: desqualificação, nutrição ou perda do negócio. Sempre
    *  que o relacionamento é "contato", é isto que explica o porquê. */
   motivo: { chave: string; rotulo: string; detalhe: string | null } | null;
@@ -47,6 +50,20 @@ export interface LinhaContato {
   negocios: Array<{ titulo: string; etapa: string }>;
   /** Negócios abertos da EMPRESA inteira — é o que o painel de empresa lista. */
   empresaNegocios: Array<{ titulo: string; etapa: string }>;
+}
+
+/** Empresa cadastrada que nenhuma pessoa da lista aponta: sem esta linha ela não existia na tela. */
+export interface EmpresaSemPessoas {
+  empresaId: string;
+  nome: string;
+  setor: string | null;
+  cidade: string | null;
+  dominio: string | null;
+  telefone: string | null;
+  origem: string | null;
+  criadoEm: string;
+  relEmpresa: NonNullable<LinhaContato["relEmpresa"]>;
+  negocios: Array<{ titulo: string; etapa: string }>;
 }
 
 export interface TotaisContatos { pessoas: number; empresas: number }
@@ -88,7 +105,7 @@ const REL_SQL = sql`
   END`;
 
 export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: string | null; limite?: number } = {}): Promise<{
-  linhas: LinhaContato[]; totais: TotaisContatos; porRelacionamento: PorRelacionamento;
+  linhas: LinhaContato[]; empresasSemPessoas: EmpresaSemPessoas[]; totais: TotaisContatos; porRelacionamento: PorRelacionamento;
 }> {
   const busca = opcoes.busca?.trim() ? `%${opcoes.busca.trim().toLowerCase()}%` : null;
   /* A LISTA continua limitada: carregar as 4.084 pessoas levava o DOM a 99.645
@@ -105,7 +122,7 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
     email: string | null; telefone: string | null; whatsapp: string | null;
     empresa_id: string | null; empresa: string | null; setor: string | null; cidade: string | null; estado: string | null; dominio: string | null;
     origem: string | null; campanha: string | null; responsavel: string | null; estagio: string | null;
-    ultima: string | null; negocios: Array<{ titulo: string; etapa: string }> | null;
+    ultima: string | null; criado_em: string | null; negocios: Array<{ titulo: string; etapa: string }> | null;
     emp_negocios: Array<{ titulo: string; etapa: string }> | null;
     serv_ativo: boolean | null; serv_hist: boolean | null; emp_opps: number | null; emp_lead_ativo: boolean | null;
     prospeccao_estado: string | null; tem_negocio_aberto: boolean | null; relacionamento: string;
@@ -119,28 +136,28 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
              COALESCE(p.telefone, l.telefone) AS telefone,
              COALESCE(p.whatsapp, l.whatsapp) AS whatsapp,
              COALESCE(p.empresa_id, l.empresa_id) AS empresa_id,
-             l.empresa AS empresa_texto
+             l.empresa AS empresa_texto, p.created_at AS criado
         FROM pessoas p
         LEFT JOIN leads l ON l.id = p.lead_id_legado
        WHERE p.organizacao_id = ${organizacaoId}::uuid
       UNION ALL
       SELECT l.id, 'lead', l.id,
              NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), ''),
-             l.cargo, l.email, l.telefone, l.whatsapp, l.empresa_id, l.empresa
+             l.cargo, l.email, l.telefone, l.whatsapp, l.empresa_id, l.empresa, l.created_at
         FROM leads l
        WHERE l.organizacao_id = ${organizacaoId}::uuid
          AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
     ), ult AS (
       -- Última atividade por lead agregada UMA vez. A subconsulta correlata por
       -- linha varria atividades 4 mil vezes antes do LIMIT (7s medido).
-      SELECT a.lead_id, max(a.created_at)::text AS ultima
+      SELECT a.lead_id, max(a.created_at) AS ts, max(a.created_at)::text AS ultima
         FROM atividades a WHERE a.lead_id IS NOT NULL GROUP BY a.lead_id
     ), base AS (
       SELECT i.*, COALESCE(e.nome, i.empresa_texto) AS empresa,
              e.setor, e.cidade, e.estado, e.dominio,
              l.origem, l.utm_campaign AS campanha, u.nome AS responsavel, l.estagio_pre_vendas AS estagio,
              l.prospeccao_estado, l.desqualificacao_motivo, l.desqualificacao_detalhe,
-             l.nutricao_motivo, ul.ultima
+             l.nutricao_motivo, ul.ultima, ul.ts AS ultima_ts
         FROM ident i
         LEFT JOIN empresas e ON e.id = i.empresa_id
         LEFT JOIN leads l ON l.id = i.lead_id
@@ -151,12 +168,13 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
           OR lower(COALESCE(i.email, '')) LIKE ${busca}
           OR regexp_replace(COALESCE(i.telefone, ''), '\\D', '', 'g') LIKE ${busca}
           OR lower(COALESCE(e.nome, i.empresa_texto, '')) LIKE ${busca}
-       ORDER BY ultima DESC NULLS LAST, nome
+       ORDER BY COALESCE(ul.ts, i.criado) DESC, nome
        LIMIT ${limite}
     ), linha AS (
     SELECT b.id::text, b.fonte, b.lead_id::text, b.nome, b.cargo, b.email, b.telefone, b.whatsapp,
            b.empresa_id::text, b.empresa, b.setor, b.cidade, b.estado, b.dominio,
-           b.origem, b.campanha, b.responsavel, b.estagio, b.ultima,
+           COALESCE(b.origem, (SELECT t.source FROM pontos_contato t WHERE b.fonte = 'pessoa' AND t.pessoa_id = b.id ORDER BY t.ocorrido_em DESC LIMIT 1)) AS origem,
+           b.campanha, b.responsavel, b.estagio, b.ultima, b.criado::text AS criado_em, COALESCE(b.ultima_ts, b.criado) AS ordem_ts,
            (SELECT json_agg(json_build_object('titulo', n.titulo, 'etapa', n.etapa))
               FROM negocios n WHERE n.lead_id = b.lead_id AND n.etapa IN ${ETAPAS_ABERTAS}) AS negocios,
            EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = b.empresa_id AND s.commercial_lifecycle = 'ACTIVE') AS serv_ativo,
@@ -180,7 +198,7 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
     )
     SELECT linha.*, ${REL_SQL} AS relacionamento
       FROM linha
-     ORDER BY ultima DESC NULLS LAST, nome
+     ORDER BY ordem_ts DESC, nome
   `);
 
   /* Contagem do FILTRO: sobre a base inteira, não sobre a página. Contar o
@@ -213,7 +231,40 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
            (SELECT count(*)::int FROM empresas WHERE organizacao_id = ${organizacaoId}::uuid) AS empresas
   `);
 
+  /* Empresas que nenhuma linha acima carrega (cadastradas sem pessoa): a lista
+     nasce de pessoas e leads, então elas ficavam invisíveis. Mesma regra de
+     "quem aponta para a empresa" do `ident` acima. */
+  const semPessoas = await db.execute<{
+    id: string; nome: string; setor: string | null; cidade: string | null; estado: string | null; dominio: string | null;
+    telefone: string | null; origem: string | null; criado_em: string; serv_ativo: boolean; serv_hist: boolean;
+    opps: number; negocios: Array<{ titulo: string; etapa: string }> | null;
+  }>(sql`
+    SELECT e.id::text, e.nome, e.setor, e.cidade, e.estado, e.dominio, e.telefone, e.created_at::text AS criado_em,
+           (SELECT t.source FROM pontos_contato t WHERE t.empresa_id = e.id ORDER BY t.ocorrido_em DESC LIMIT 1) AS origem,
+           EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = e.id AND s.commercial_lifecycle = 'ACTIVE') AS serv_ativo,
+           EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = e.id) AS serv_hist,
+           (SELECT count(*)::int FROM negocios n WHERE n.empresa_id = e.id AND n.etapa IN ${ETAPAS_ABERTAS}) AS opps,
+           (SELECT json_agg(json_build_object('titulo', n.titulo, 'etapa', n.etapa))
+              FROM negocios n WHERE n.empresa_id = e.id AND n.etapa IN ${ETAPAS_ABERTAS}) AS negocios
+      FROM empresas e
+     WHERE e.organizacao_id = ${organizacaoId}::uuid
+       AND NOT EXISTS (SELECT 1 FROM pessoas p LEFT JOIN leads l ON l.id = p.lead_id_legado
+                        WHERE p.organizacao_id = ${organizacaoId}::uuid AND COALESCE(p.empresa_id, l.empresa_id) = e.id)
+       AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.empresa_id = e.id
+                        AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id))
+       AND (${busca}::text IS NULL OR lower(e.nome) LIKE ${busca} OR lower(COALESCE(e.dominio, '')) LIKE ${busca})
+     ORDER BY e.created_at DESC
+     LIMIT ${limite}
+  `);
+
   return {
+    empresasSemPessoas: semPessoas.map((e) => ({
+      empresaId: e.id, nome: e.nome, setor: e.setor,
+      cidade: e.cidade ? [e.cidade, e.estado].filter(Boolean).join(" / ") : null,
+      dominio: e.dominio, telefone: e.telefone, origem: e.origem?.trim() || null, criadoEm: e.criado_em,
+      relEmpresa: e.serv_ativo ? "cliente" : e.opps > 0 ? "em_oportunidade" : e.serv_hist ? "ex_cliente" : "cadastrada",
+      negocios: e.negocios ?? [],
+    })),
     linhas: linhas.map((l) => ({
       id: l.id,
       fonte: l.fonte as "pessoa" | "lead",
@@ -242,6 +293,7 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
       relacionamento: l.relacionamento as Relacionamento,
       motivo: l.motivo_chave ? { chave: l.motivo_chave, rotulo: rotuloDeMotivo(l.motivo_chave), detalhe: l.motivo_detalhe } : null,
       ultimaInteracao: l.ultima,
+      criadoEm: l.criado_em,
       negocios: l.negocios ?? [],
       empresaNegocios: l.emp_negocios ?? [],
     })),
