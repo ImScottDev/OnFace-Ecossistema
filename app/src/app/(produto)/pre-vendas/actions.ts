@@ -12,11 +12,30 @@ import { criarOportunidadeDoLead } from "@/lib/vendas/pipeline";
 import { detalheLead, type DetalheLead } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { resolverEmpresa } from "@/lib/vendas/identidade";
+import { confirmarEspelho } from "@/lib/vendas/sincronizar-aquisicao";
 import { adicionarTag, removerTag } from "@/lib/crm/tags";
 
 /* Rota que toda escrita desta página revalida. Revalidar outro caminho deixa
  * o cache da tela real velho: o F5 traz o estado anterior de volta. */
 const ROTA = "/pre-vendas";
+
+/**
+ * Toda tela que lê o lead: o board, a tela do lead, a ficha da Pessoa (chaveada
+ * pelo lead) e a da Empresa. Revalidar só o board deixava as outras com o dado de
+ * antes até o F5. As rotas dinâmicas entram pelo padrão do segmento.
+ */
+function revalidarLead() {
+  revalidatePath(ROTA);
+  revalidatePath("/pre-vendas/[id]", "page");
+  revalidatePath("/pessoas/[id]", "page");
+  revalidatePath("/empresas/[id]", "page");
+}
+
+/** Falha visível: se o board não confirma o que a ação gravou, a tela diz (ver `confirmarEspelho`). */
+async function exigirEspelho(organizacaoId: string, leadId: string, esperado: { etapa?: string; responsavelId?: string | null }) {
+  const aviso = await confirmarEspelho(organizacaoId, leadId, esperado);
+  if (aviso) throw new RegraDeNegocio("espelho_nao_confirmou", aviso);
+}
 
 /** Tenant e ator vêm SEMPRE do servidor: o cliente nunca escolhe em nome de
  *  qual organização ou de qual usuário a ação acontece. */
@@ -31,7 +50,8 @@ export async function acaoMoverEtapa(leadId: string, para: "novo" | "em_contato"
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("mover etapa", async () => {
     await preVendas.moverEtapa({ organizacaoId: ctx.organizacaoId, leadId, para, ator: ctx.ator });
-    revalidatePath(ROTA);
+    await exigirEspelho(ctx.organizacaoId, leadId, { etapa: para });
+    revalidarLead();
   });
 }
 
@@ -40,7 +60,8 @@ export async function acaoQualificar(leadId: string, qualificacao: Qualificacao)
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("qualificar", async () => {
     await preVendas.qualificar({ organizacaoId: ctx.organizacaoId, leadId, qualificacao, ator: ctx.ator });
-    revalidatePath(ROTA);
+    await exigirEspelho(ctx.organizacaoId, leadId, { etapa: "qualificado" });
+    revalidarLead();
   });
 }
 
@@ -49,7 +70,7 @@ export async function acaoSalvarQualificacao(leadId: string, qualificacao: Quali
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("salvar qualificação", async () => {
     await preVendas.salvarQualificacao({ organizacaoId: ctx.organizacaoId, leadId, qualificacao, ator: ctx.ator });
-    revalidatePath(ROTA);
+    revalidarLead();
   });
 }
 
@@ -60,7 +81,8 @@ export async function acaoNutrir(
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("nutrir", async () => {
     await preVendas.nutrir({ organizacaoId: ctx.organizacaoId, leadId, motivo, retomarEm, observacao, ator: ctx.ator });
-    revalidatePath(ROTA);
+    await exigirEspelho(ctx.organizacaoId, leadId, { etapa: "nutricao" });
+    revalidarLead();
   });
 }
 
@@ -71,7 +93,8 @@ export async function acaoDesqualificar(
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("desqualificar", async () => {
     await preVendas.desqualificar({ organizacaoId: ctx.organizacaoId, leadId, motivo, detalhe, ator: ctx.ator });
-    revalidatePath(ROTA);
+    await exigirEspelho(ctx.organizacaoId, leadId, { etapa: "desqualificado" });
+    revalidarLead();
   });
 }
 
@@ -83,7 +106,8 @@ export async function acaoReativar(leadId: string): Promise<Resultado> {
       organizacaoId: ctx.organizacaoId, leadId, para: "em_contato",
       ator: ctx.ator, motivo: "Lead retomado",
     });
-    revalidatePath(ROTA);
+    await exigirEspelho(ctx.organizacaoId, leadId, { etapa: "em_contato" });
+    revalidarLead();
   });
 }
 
@@ -94,7 +118,7 @@ export async function acaoRegistrarContato(
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("registrar contato", async () => {
     await preVendas.registrarPrimeiroContato({ organizacaoId: ctx.organizacaoId, leadId, canal, ator: ctx.ator });
-    revalidatePath(ROTA);
+    revalidarLead();
   });
 }
 
@@ -106,7 +130,8 @@ export async function acaoAtribuir(leadId: string, responsavelId: string | null)
       organizacaoId: ctx.organizacaoId, leadId, responsavelId,
       origemAtribuicao: "manual", ator: ctx.ator,
     });
-    revalidatePath(ROTA);
+    await exigirEspelho(ctx.organizacaoId, leadId, { responsavelId });
+    revalidarLead();
   });
 }
 
@@ -133,7 +158,7 @@ export async function acaoCriarOportunidade(entrada: {
       reuniao: entrada.reuniao ?? null,
       ator: ctx.ator,
     });
-    revalidatePath(ROTA);
+    revalidarLead();
     revalidatePath("/pipeline");
     return { ids: resultado.oportunidades.map((o) => o.id) };
   });
@@ -206,7 +231,7 @@ export async function acaoCriarLead(entrada: {
       responsavelId: entrada.responsavelId ?? null,
       servicosInteresse: entrada.servicosInteresse?.length ? entrada.servicosInteresse : null,
     }, ctx.ator);
-    revalidatePath(ROTA);
+    revalidarLead();
     return { leadId: criado.leadId };
   });
 }
@@ -221,7 +246,7 @@ export async function acaoAssociarEmpresa(leadId: string, nome: string, cnpj: st
       UPDATE leads SET empresa_id = ${empresa.empresaId}::uuid, empresa = ${nome}, updated_at = now()
        WHERE id = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
     `);
-    revalidatePath(ROTA);
+    revalidarLead();
   });
 }
 
@@ -290,7 +315,7 @@ export async function acaoCriarTarefa(entrada: {
               ${venceEm ? venceEm.toISOString() : null}::timestamptz,
               ${venceEm ? venceEm.toISOString() : null}::date, 'MANUAL')
       RETURNING id::text`);
-    revalidatePath(ROTA);
+    revalidarLead();
     return { tarefaId: linha.id };
   });
 }
@@ -337,7 +362,7 @@ export async function acaoAtribuirEmMassa(
         ? primeiraFalha
         : new Error("Nenhuma aquisição pôde ser atribuída.");
     }
-    revalidatePath(ROTA);
+    revalidarLead();
     return { total };
   });
 }
@@ -367,7 +392,7 @@ export async function acaoEmMassa(
       atorId: ctx.ator.usuarioId,
       valor,
     });
-    revalidatePath(ROTA);
+    revalidarLead();
     return r;
   });
 }
@@ -421,7 +446,7 @@ export async function acaoTagDoLead(
     // `adicionarTag` devolve ok:false (tag inexistente) sem lançar. Sem esta
     // checagem a gaveta recebia "ok" e mostrava a tag aplicada que nunca gravou.
     if (!r.ok) throw new RegraDeNegocio("tag_invalida", r.erro ?? "Tag não encontrada.");
-    revalidatePath(ROTA);
+    revalidarLead();
     return { mudou: r.mudou };
   });
 }
@@ -483,7 +508,7 @@ export async function acaoRemoverDaCadencia(leadId: string): Promise<Resultado<{
          AND entity_id = ${leadId}::uuid AND status IN ('active', 'waiting')`);
     const { cancelarCadencia } = await import("@/lib/cadencia/cadence-engine");
     for (const v of vivas) await cancelarCadencia(v.id, "removido_manualmente");
-    revalidatePath(ROTA);
+    revalidarLead();
     return { canceladas: vivas.length };
   });
 }
@@ -532,8 +557,7 @@ export async function acaoSalvarContato(leadId: string, c: {
       UPDATE pessoas SET nome = ${nome}, sobrenome = ${sobrenome}, cargo = ${cargo}, email = ${mail},
              telefone = ${tel}, whatsapp = ${whats}, updated_at = now()
        WHERE lead_id_legado = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
-    revalidatePath(ROTA);
-    revalidatePath(`/pessoas/${leadId}`);
+    revalidarLead();
     return null;
   });
 }
@@ -558,8 +582,7 @@ export async function acaoSalvarEmpresa(empresaId: string, c: {
              cidade = ${escolhe(limpo(c.cidade), atual.cidade)}, estado = ${escolhe(limpo(c.estado), atual.estado)},
              observacoes = ${escolhe(limpo(c.observacoes), atual.observacoes)}, updated_at = now()
        WHERE id = ${empresaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
-    revalidatePath(`/empresas/${empresaId}`);
-    revalidatePath(ROTA);
+    revalidarLead();
     return null;
   });
 }

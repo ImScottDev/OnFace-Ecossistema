@@ -162,7 +162,7 @@ export function bannerDoLead(l: DetalheLead, agora = new Date()): BannerDoLead |
     const de = l.desqualificacao.deEtapa ? ROTULO_ETAPA_PRE_VENDAS[l.desqualificacao.deEtapa as keyof typeof ROTULO_ETAPA_PRE_VENDAS] : null;
     const partes = [
       l.desqualificacao.em ? `Em ${dataBR(l.desqualificacao.em)}` : null,
-      de ? `estava em ${de}` : null,
+      de ? `etapa anterior: ${de}` : null,
       l.desqualificacao.detalhe?.trim() || null,
     ].filter(Boolean);
     return {

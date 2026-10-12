@@ -99,6 +99,20 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
   const leadId = id ?? (typeof contexto.leadId === "string" ? contexto.leadId : null)
     ?? (typeof contexto.lead === "string" ? contexto.lead : null);
 
+  /* A tela que abriu a peça pode querer saber onde a oportunidade nasceu (a tela do lead
+     segue para ela). O contexto leva a função; `criarOportunidade` a chama com os ids. */
+  const criadas = React.useRef<string[] | null>(null);
+  const acoes = React.useMemo<AcoesPreVendas>(() => ({
+    ...ACOES,
+    criarOportunidade: async (entrada) => {
+      const r = await ACOES.criarOportunidade(entrada);
+      /* Guarda e deixa a navegação para o FIM da gravação (ver `gravar`): a oportunidade ainda
+         pode pedir a próxima ação, e uma navegação feita no meio é desfeita pela ação seguinte. */
+      if (r.ok && typeof contexto.aoCriarOportunidade === "function") criadas.current = r.dados?.ids ?? [];
+      return r;
+    },
+  }), [contexto]);
+
   const [carga, setCarga] = React.useState<{ detalhe: DetalheLead; equipe: Array<{ id: string; nome: string }> } | null>(null);
 
   React.useEffect(() => {
@@ -154,7 +168,7 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
       const intencoes = intencoesDoPatch(ultimos.current, patch.leads);
       ultimos.current = patch.leads;
       for (const i of intencoes) {
-        const erro = await executarIntencao(i, ctx, ACOES, idDoResponsavel);
+        const erro = await executarIntencao(i, ctx, acoes, idDoResponsavel);
         if (erro) toast.error(erro);
       }
     }
@@ -176,8 +190,14 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
       }
       ultimasTags.current = { ...ultimasTags.current, ...patch.tagsLead };
     }
+    const ids = criadas.current;
+    if (ids && typeof contexto.aoCriarOportunidade === "function") {
+      criadas.current = null;
+      (contexto.aoCriarOportunidade as (ids: string[]) => void)(ids);
+      return;
+    }
     gravou();
-  }, [idDoResponsavel, gravou]);
+  }, [idDoResponsavel, gravou, acoes, contexto]);
 
   /** Os toques de canal da gaveta: registra o contato e abre o Atendimento. */
   const falar = React.useCallback(async (canal: CanalAtendimento, alvo: string) => {
@@ -202,7 +222,7 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
       /* Sem `acoes` a peça de cadência não via nada ("Nenhuma cadência publicada" em toda
          tela que a abre por aqui: `carregarCadencias` lê props.acoes.cadenciasDoSistema),
          e a qualificação perdia o salvar ao digitar. Mesmo conjunto que Pré-vendas passa. */
-      acoes={ACOES}
+      acoes={acoes}
       ir={(href: string) => router.push(href)}
       abrir={abrir}
       gravar={gravar}

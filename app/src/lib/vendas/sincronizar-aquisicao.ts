@@ -90,3 +90,52 @@ export async function sincronizarAquisicaoDoLead(leadId: string): Promise<void> 
     console.error("[sincronizar-aquisicao] falhou; a ação comercial seguiu:", e);
   }
 }
+
+/**
+ * O espelho confirma o que a ação acabou de gravar?
+ *
+ * `sincronizarAquisicaoDoLead` engole o erro de propósito (a ação comercial já
+ * foi gravada no legado e o backfill reconcilia), o que é certo para o
+ * pipeline de eventos mas deixa a TELA sem saber: o usuário salvava, via
+ * "sucesso" e o board continuava no lugar antigo. Aqui a ação lê de volta pela
+ * MESMA expressão do board (etapa gravada na aquisição; o legado só refina
+ * "qualificacao") e, se divergir, tenta o espelho UMA vez e confere de novo.
+ *
+ * Devolve a mensagem para a tela, ou null quando concorda (ou quando não há
+ * aquisição para espelhar: lead antigo sem ela não tem o que divergir).
+ *
+ * NÃO desfaz a gravação nem lança dentro do espelho: quem chama decide como
+ * mostrar. A mensagem diz a verdade: gravou, mas o board não confirmou.
+ */
+export async function confirmarEspelho(
+  organizacaoId: string,
+  leadId: string,
+  esperado: { etapa?: string; responsavelId?: string | null },
+): Promise<string | null> {
+  const ler = async () => {
+    const [r] = await db.execute<{ tem: boolean; etapa: string | null; responsavel_id: string | null }>(sql`
+      SELECT a.id IS NOT NULL AS tem,
+             CASE WHEN l.estagio_pre_vendas = 'qualificacao' THEN 'qualificacao'
+                  ELSE COALESCE(pe.codigo, l.estagio_pre_vendas) END AS etapa,
+             a.responsavel_id::text AS responsavel_id
+        FROM leads l
+        LEFT JOIN aquisicoes a ON a.lead_legado_id = l.id
+        LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
+       WHERE l.id = ${leadId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid`);
+    return r ?? null;
+  };
+  const diverge = (r: Awaited<ReturnType<typeof ler>>) => {
+    if (!r?.tem) return null;
+    if (esperado.etapa !== undefined && r.etapa !== esperado.etapa) return `etapa (board: ${r.etapa ?? "vazia"}, esperado: ${esperado.etapa})`;
+    if (esperado.responsavelId !== undefined && (r.responsavel_id ?? null) !== (esperado.responsavelId ?? null)) return "responsável";
+    return null;
+  };
+
+  let falha = diverge(await ler());
+  if (!falha) return null;
+  await sincronizarAquisicaoDoLead(leadId);
+  falha = diverge(await ler());
+  if (!falha) return null;
+  console.error(`[espelho] lead ${leadId}: o board não confirmou a gravação (${falha})`);
+  return "Gravei no lead, mas o board ainda não reflete a mudança. Atualize a página; se continuar assim, avise o time.";
+}

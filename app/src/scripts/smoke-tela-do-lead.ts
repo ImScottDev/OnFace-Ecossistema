@@ -15,9 +15,13 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { criarLead, moverEtapa, nutrir } from "@/lib/vendas/pre-vendas";
+import { atribuirResponsavel, criarLead, desqualificar, moverEtapa, nutrir, qualificar, salvarQualificacao } from "@/lib/vendas/pre-vendas";
 import { boardPreVendas, detalheLead, empresa360 } from "@/lib/vendas/consultas";
-import { relacoesDaPessoa } from "@/lib/vendas/ficha-extras";
+import { notasDoLead, relacoesDaPessoa, tarefasDoLead } from "@/lib/vendas/ficha-extras";
+import { confirmarEspelho } from "@/lib/vendas/sincronizar-aquisicao";
+import { adicionarTag } from "@/lib/crm/tags";
+import { bannerDoLead, qualDaTela, qualParaDominio, tilesDeSla } from "@/components/onface/proto/lead-da-tela";
+import { qualDoDesenho } from "@/components/onface/proto/qual-do-desenho";
 import { atorHumano } from "@/lib/vendas/dominio";
 import { aquisicaoDaFicha } from "@/components/onface/proto/relacoes-da-ficha";
 
@@ -36,6 +40,7 @@ async function limpar() {
   const meusNegocios = sql`(SELECT id FROM negocios WHERE lead_id IN ${meusLeads} OR empresa_id IN ${minhasEmpresas})`;
   for (const q of [
     sql`DELETE FROM notas WHERE lead_id IN ${meusLeads}`,
+    sql`DELETE FROM labels WHERE nome LIKE ${PREFIXO}`,
     sql`DELETE FROM entity_labels WHERE entity_type = 'lead' AND entity_id IN ${meusLeads}`,
     sql`DELETE FROM lead_labels WHERE lead_id IN ${meusLeads}`,
     sql`DELETE FROM contratos WHERE lead_id IN ${meusLeads}`,
@@ -62,6 +67,104 @@ async function limpar() {
   await db.execute(sql`
     DELETE FROM backfill_provenance bp WHERE bp.entidade_canonica = 'aquisicao'
       AND NOT EXISTS (SELECT 1 FROM aquisicoes a WHERE a.id = bp.id_canonico)`).catch(() => undefined);
+}
+
+/** Cada edição da tela do lead, lida de volta por TODAS as telas que leem o lead. */
+async function persistencia(org: string, usuarioId: string, ator: ReturnType<typeof atorHumano>, leadId: string) {
+  console.log("\n═══ editar na tela do lead: o board, o detalhe, a Pessoa e a Empresa leem o mesmo ═══");
+  const leituras = async () => {
+    const board = await boardPreVendas(org, { aba: "ativos" });
+    const card = Object.values(board.colunas).flatMap((c) => c.cards).find((x) => x.leadId === leadId) ?? null;
+    const det = await detalheLead(org, leadId);
+    const pessoa = (await relacoesDaPessoa(org, leadId)).aquisicoes.find((x) => x.id === leadId) ?? null;
+    const e360 = det?.empresa.id ? await empresa360(org, det.empresa.id) : null;
+    return { card, det, pessoa, empresa: e360?.leads.find((x) => x.id === leadId) ?? null };
+  };
+
+  // 1. Qualificação (interesse, tamanho, dor, fit) — grava como a tela: qualParaDominio + salvarQualificacao.
+  await db.execute(sql`UPDATE leads SET qualificacao = jsonb_build_object('observacoes', 'Cliente indicado · Fit Baixo', 'icp', 'ICP A') WHERE id = ${leadId}::uuid`);
+  const editado = { interesse: ["PABX", "Callface AI"], tamanho: "42", dor: "Fila longa no suporte", fit: "Alto", observacao: "" };
+  const antes = await detalheLead(org, leadId);
+  await salvarQualificacao({ organizacaoId: org, leadId, qualificacao: qualParaDominio(editado, antes?.qualificacao?.observacoes), ator });
+  let r = await leituras();
+  const daTela = qualDaTela(r.det!);
+  ok(JSON.stringify(daTela.interesse) === JSON.stringify(editado.interesse) && daTela.tamanho === "42" && daTela.dor === editado.dor && daTela.fit === "Alto",
+    `a tela do lead lê o que gravou (${daTela.interesse.join("+")}, ${daTela.tamanho}, "${daTela.dor}", Fit ${daTela.fit})`);
+  const doCard = qualDoDesenho(r.card?.qualificacao);
+  const doDet = qualDoDesenho(r.det?.qualificacao);
+  ok(JSON.stringify(doCard) === JSON.stringify(doDet) && doCard?.tamanho === "42" && doCard?.fit === "Alto",
+    "o drawer do board (cartão) e a ficha da Pessoa leem a MESMA qualificação");
+  ok(String(r.det?.qualificacao?.observacoes).includes("Cliente indicado") && r.det?.qualificacao?.icp === "ICP A",
+    `mudar o Fit preserva a observação e o ICP (observacoes "${r.det?.qualificacao?.observacoes}")`);
+
+  // 2. Responsável.
+  const [outro] = await db.execute<{ id: string; nome: string }>(sql`
+    SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${org}::uuid AND ativo = true AND id <> ${usuarioId}::uuid LIMIT 1`);
+  if (outro) {
+    await atribuirResponsavel({ organizacaoId: org, leadId, responsavelId: outro.id, origemAtribuicao: "manual", ator });
+    r = await leituras();
+    ok(r.card?.responsavel === outro.nome && r.det?.responsavel.nome === outro.nome && r.pessoa?.responsavel === outro.nome && r.empresa?.responsavel === outro.nome,
+      `responsável: cartão "${r.card?.responsavel}" · tela "${r.det?.responsavel.nome}" · Pessoa "${r.pessoa?.responsavel}" · Empresa "${r.empresa?.responsavel}"`);
+    ok(await confirmarEspelho(org, leadId, { responsavelId: outro.id }) === null, "e o espelho confirma");
+  } else console.log("  (sem segundo usuário ativo: troca de responsável não exercitada)");
+
+  // 3. Tag.
+  const [lb] = await db.execute<{ id: string }>(sql`INSERT INTO labels (nome, organizacao_id) VALUES (${marca + " tag"}, ${org}::uuid) RETURNING id::text`);
+  const t = await adicionarTag({ organizacaoId: org, entityType: "lead", entityId: leadId, label: lb.id, atorId: usuarioId });
+  r = await leituras();
+  ok(t.ok && r.card?.tag === `${marca} tag` && r.det?.tags.some((x) => x.nome === `${marca} tag`), `tag: cartão "${r.card?.tag}" · tela ${JSON.stringify(r.det?.tags.map((x) => x.nome))}`);
+
+  // 4. Próxima ação (a Task real) — o mesmo INSERT de acaoCriarTarefa.
+  const venceEm = new Date(Date.now() + 3 * 86_400_000);
+  await db.execute(sql`
+    INSERT INTO tarefas (organizacao_id, lead_id, usuario_id, titulo, descricao, tipo, prioridade, vence_em, data_vencimento, origem)
+    VALUES (${org}::uuid, ${leadId}::uuid, ${usuarioId}::uuid, ${marca + " ligar"}, null, 'tarefa', 'media',
+            ${venceEm.toISOString()}::timestamptz, ${venceEm.toISOString()}::date, 'MANUAL')`);
+  r = await leituras();
+  const tarefas = await tarefasDoLead(org, leadId);
+  ok(r.card?.proximaAcao?.titulo === `${marca} ligar` && r.det?.proximaAcao?.titulo === `${marca} ligar` && tarefas[0]?.titulo === `${marca} ligar`,
+    `próxima ação: cartão "${r.card?.proximaAcao?.titulo}" · tela "${r.det?.proximaAcao?.titulo}" · atividades "${tarefas[0]?.titulo}"`);
+
+  // 5. Nota (a mesma tabela que /api/notas grava e a Pessoa lê).
+  await db.execute(sql`INSERT INTO notas (organizacao_id, lead_id, conteudo, autor_id) VALUES (${org}::uuid, ${leadId}::uuid, ${marca + " nota @alguém"}, ${usuarioId}::uuid)`);
+  const notas = await notasDoLead(org, leadId);
+  ok(notas[0]?.texto === `${marca} nota @alguém`, "nota: a tela do lead lê o que /api/notas grava");
+
+  console.log("\n═══ saídas: nutrir, desqualificar, reativar — o board confirma cada uma ═══");
+  await nutrir({ organizacaoId: org, leadId, motivo: "timing", retomarEm: "2030-02-01", observacao: "Q1", ator });
+  r = await leituras();
+  ok(r.card === null && r.det?.etapa === "nutricao" && r.pessoa?.etapa === "nutricao" && r.empresa?.etapa === "nutricao", "nutrir: sai dos ativos e as telas leem Nutrição");
+  const banner = bannerDoLead(r.det!);
+  ok(banner?.acao === "reativar" && /Timing inadequado/.test(banner.titulo) && /retomar em 01\/02\/2030/.test(banner.sub), `banner de nutrição: "${banner?.titulo}" | ${banner?.sub}`);
+  ok(await confirmarEspelho(org, leadId, { etapa: "nutricao" }) === null, "o espelho confirma a nutrição");
+
+  await desqualificar({ organizacaoId: org, leadId, motivo: "sem_fit", detalhe: "Só revende", ator });
+  r = await leituras();
+  const bd = bannerDoLead(r.det!);
+  ok(r.det?.etapa === "desqualificado" && r.pessoa?.etapa === "desqualificado" && bd?.acaoLabel === "Reativar" && /Empresa sem fit/.test(bd.titulo), `desqualificar com motivo: "${bd?.titulo}"`);
+  ok(await confirmarEspelho(org, leadId, { etapa: "desqualificado" }) === null, "o espelho confirma a desqualificação");
+
+  await moverEtapa({ organizacaoId: org, leadId, para: "em_contato", ator, motivo: "Lead retomado" });
+  r = await leituras();
+  ok(r.card?.etapa === "em_contato" && r.det?.etapa === "em_contato" && bannerDoLead(r.det!) === null, "reativar: volta ao board em Em contato, sem banner");
+  ok(r.det?.desqualificacao.motivo === null, `e limpa a desqualificação (motivo ${r.det?.desqualificacao.motivo})`);
+  const tiles = tilesDeSla(r.det!, null);
+  ok(tiles.length === 4 && tiles[0].label === "Na etapa", "a faixa de SLA monta com o dado real");
+
+  console.log("\n═══ falha visível: o espelho que não acompanha NÃO passa em silêncio ═══");
+  const [aq] = await db.execute<{ id: string; pipeline_id: string }>(sql`SELECT id::text, pipeline_id::text FROM aquisicoes WHERE lead_legado_id = ${leadId}::uuid`);
+  const [novoEtapa] = await db.execute<{ id: string; atual: string }>(sql`
+    SELECT (SELECT id::text FROM pipeline_etapas WHERE pipeline_id = ${aq.pipeline_id}::uuid AND codigo = 'novo' LIMIT 1) AS id,
+           (SELECT etapa_id::text FROM aquisicoes WHERE id = ${aq.id}::uuid) AS atual`);
+  if (novoEtapa.id) {
+    await db.execute(sql`UPDATE aquisicoes SET etapa_id = ${novoEtapa.id}::uuid WHERE id = ${aq.id}::uuid`);   // o espelho "falhou"
+    const aviso = await confirmarEspelho(org, leadId, { etapa: "em_contato" });
+    ok(Boolean(aviso) && /board ainda não reflete/.test(aviso ?? ""), `divergência devolve aviso para a tela ("${aviso?.slice(0, 60)}…")`);
+    await db.execute(sql`UPDATE aquisicoes SET etapa_id = ${novoEtapa.atual}::uuid WHERE id = ${aq.id}::uuid`);
+    ok(await confirmarEspelho(org, leadId, { etapa: "em_contato" }) === null, "restaurado, o espelho volta a confirmar");
+  } else console.log("  (pipeline sem etapa 'novo': divergência não exercitada)");
+  await qualificar({ organizacaoId: org, leadId, ator });
+  ok(await confirmarEspelho(org, leadId, { etapa: "qualificado" }) === null, "qualificar: o espelho confirma Qualificado");
 }
 
 async function main() {
@@ -145,6 +248,8 @@ async function main() {
       `board ${card?.etapa} · detalhe ${det?.etapa} · empresa ${linhaA?.etapa} · pessoa ${rp.aquisicoes.find((x) => x.id === a)?.etapa}`);
     const detB = await detalheLead(org.id, b);
     ok(detB?.etapa === "nutricao" && Boolean(detB.nutricao.desde) && detB.nutricao.motivo === "sem_orcamento", `o detalhe da nutrição traz motivo e data (${detB?.nutricao.motivo}, ${detB?.nutricao.desde?.slice(0, 10)})`);
+
+    await persistencia(org.id, u.id, ator, a);
   } finally {
     await limpar();
     const [resto] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM leads WHERE nome LIKE ${PREFIXO}`);

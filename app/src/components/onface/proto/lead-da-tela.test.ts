@@ -52,7 +52,7 @@ describe("banner do lead", () => {
   it("desqualificado mostra motivo, data e de que etapa saiu, com Reativar", () => {
     const b = bannerDoLead(lead({ etapa: "desqualificado", desqualificacao: { motivo: "sem_fit", detalhe: "Só revende", deEtapa: "qualificacao", em: iso(2) } }), AGORA)!;
     assert.match(b.titulo, /Desqualificado · Empresa sem fit/);
-    assert.match(b.sub, /estava em Qualificação/);
+    assert.match(b.sub, /etapa anterior: Qualificação/);
     assert.match(b.sub, /Só revende/);
     assert.equal(b.acaoLabel, "Reativar");
   });
