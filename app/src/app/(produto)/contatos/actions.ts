@@ -9,7 +9,7 @@ import { executar, type Resultado } from "@/lib/vendas/resultado";
 import type { ExecutorDb } from "@/lib/vendas/executor";
 import {
   resolverEmpresa, resolverPessoa, vincularPessoaEmpresa, garantirRegistroDeContato, aquisicaoAbertaPorContato,
-  telefoneChaveSql, registrarTouchpoint,
+  telefoneChaveSql, registrarTouchpoint, telefoneParaGravar,
 } from "@/lib/vendas/identidade";
 import { chaveTelefone, normalizarE164 } from "@/lib/telefone";
 import { rotaDaEmpresa, rotaDaPessoa } from "@/lib/vendas/rota-da-ficha";
@@ -672,11 +672,13 @@ export async function acaoSalvarDadosDaEmpresa(empresaId: string, c: {
            AND regexp_replace(coalesce(cnpj, ''), '[^0-9]', '', 'g') = ${digitos} LIMIT 1`);
       if (outra) throw new RegraDeNegocio("cnpj_duplicado", `Este CNPJ já é de "${outra.nome}". Abra aquela empresa em vez de duplicar o cadastro.`);
     }
+    const fone = t(c.telefone);
+    if (fone && !normalizarE164(fone)) throw new RegraDeNegocio("telefone_invalido", "Telefone geral inválido. Use DDD + número, ou + e o código do país.");
     const func = t(c.funcionarios), tec = t(c.tecnologias);
     const numero = func !== undefined && /^\d{1,7}$/.test(func.replace(/\./g, "")) ? Number(func.replace(/\./g, "")) : null;
     await db.execute(sql`
       UPDATE empresas SET cnpj = ${cnpj}, website = ${pick(t(c.website), atual.website)}, setor = ${pick(t(c.setor), atual.setor)},
-             telefone = ${pick(t(c.telefone), atual.telefone)}, cidade = ${pick(t(c.cidade), atual.cidade)}, estado = ${pick(t(c.estado), atual.estado)},
+             telefone = ${pick(fone === undefined ? undefined : telefoneParaGravar(fone) ?? "", atual.telefone)}, cidade = ${pick(t(c.cidade), atual.cidade)}, estado = ${pick(t(c.estado), atual.estado)},
              linkedin = ${pick(t(c.linkedin), atual.linkedin)}, annual_revenue = ${pick(t(c.faturamento), atual.annual_revenue)},
              employee_count = ${func === undefined ? atual.employee_count : numero},
              campos_custom = coalesce(campos_custom, '{}'::jsonb)

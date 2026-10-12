@@ -24,6 +24,7 @@
 import * as React from "react";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
+import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
 
 import { EmpresaDesenho } from "./EmpresaDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
@@ -356,10 +357,10 @@ posFlutuante(r, alto) {
     const setR = (k, v) => this.setState(s => ({ rascunho: Object.assign({}, s.rascunho, { [k]: v }) }));
     let nCampo = 0;
     const linhaDe = () => "padding:13px 14px 14px;" + (nCampo++ === 0 ? "" : "border-top:1px solid #eef1f1");
-    const campoTexto = (k, label, dica, largo, ajuda) => ({
+    const campoTexto = (k, label, dica, largo, ajuda, masc) => ({
       label, dica: dica || "", ajuda: ajuda || "", ehTexto: true, ehSeg: false, ehChips: false, valor: R[k] || "", opcoes: [],
       linha: linhaDe(), segGrid: "",
-      set: (e) => setR(k, e.target.value)
+      set: (e) => setR(k, masc ? mascararTelefone(e.target.value) : e.target.value)
     });
     const campoOpcoes = (k, label, opcoes, multi, ajuda) => {
       const atual = multi ? (R[k] || []) : R[k];
@@ -392,7 +393,7 @@ posFlutuante(r, alto) {
         campoTexto("site", "Site", "https://", true), campoTexto("cidade", "Cidade / UF", "São Paulo / SP"),
         campoTexto("segmento", "Segmento", "Logística e Transporte"),
         campoTexto("funcionarios", "Funcionários", "Ex: 320 · 201–500"), campoTexto("faturamento", "Faturamento anual", "Ex: R$ 50–100 mi"),
-        campoTexto("telefone", "Telefone geral", "+55 11 0000-0000"), campoTexto("linkedin", "LinkedIn", "linkedin.com/company/…"),
+        campoTexto("telefone", "Telefone geral", "(11) 0000-0000 ou +1 415 555 0100", false, "", true), campoTexto("linkedin", "LinkedIn", "linkedin.com/company/…"),
         campoTexto("tecnologias", "Tecnologias", "Separe com ·", true)
       ] },
       qualif: { titulo: "Editar qualificação", campos: [
@@ -413,7 +414,7 @@ posFlutuante(r, alto) {
       ] },
       pessoa: { titulo: "Adicionar pessoa", campos: [
         campoTexto("nome", "Nome", "Nome completo", true), campoTexto("cargo", "Cargo", "Ex: Diretora de Operações"),
-        campoTexto("tel", "Telefone", "+55 11 90000-0000"), campoTexto("email", "E-mail", "nome@" + dominio, true)
+        campoTexto("tel", "Telefone", "(11) 90000-0000 ou +1 415 555 0100", false, "", true), campoTexto("email", "E-mail", "nome@" + dominio, true)
       ] }
     };
     // "—" é o que a ficha mostra para campo vazio: no formulário viraria valor digitado.
@@ -430,10 +431,13 @@ posFlutuante(r, alto) {
       if (k === "origem") { this.gravarLead(E.id, { origem: R.origem, campanha: R.campanha }); this.gravarEmpresa(nomeEmp, { conjunto: R.conjunto, criativo: R.criativo }); }
       if (k === "pessoa") {
         if (!(R.nome || "").trim()) return diz("Informe o nome da pessoa", "erro");
+        if (R.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(R.email)) return diz("E-mail inválido", "erro");
+        if (R.tel && !normalizarE164(R.tel)) return diz("Telefone inválido", "erro");
         this.gravarEmpresa(nomeEmp, { pessoas: (X.pessoas || []).concat({ nome: R.nome.trim(), cargo: R.cargo || "", tel: R.tel || "—", email: R.email || "" }) });
         this.registrarEvento(nomeEmp, "Pessoa vinculada", R.nome.trim(), "M12 5v14M5 12h14");
+        // Sem aviso de sucesso aqui: quem confirma é o adaptador, depois de o servidor responder.
         this.setState({ editando: null });
-        return diz(R.nome.trim() + " vinculada à empresa", "ok");
+        return;
       }
       this.setState({ editando: null });
       /* NÃO canta sucesso aqui. Estas edições passam por `gravarEmpresa`, que

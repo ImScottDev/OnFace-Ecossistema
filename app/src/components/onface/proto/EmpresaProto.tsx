@@ -14,6 +14,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { formatarTelefone } from "@/lib/telefone";
 
 import { ROTULO_ETAPA_PRE_VENDAS } from "@/lib/vendas/dominio";
 import type { DetalheLead, Empresa360 } from "@/lib/vendas/consultas";
@@ -156,7 +157,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
       dominio: empresa.dominio || empresa.website || null,
       /* E12: o que a produção mostrava e a empresa perdeu. O score é o maior
          entre os leads da empresa, não o do lead principal. */
-      empresaTel: empresa.telefone,
+      empresaTel: formatarTelefone(empresa.telefone) || null,
       empresaObs: empresa.observacoes,
       leadScore: empresa.leadScore ?? 0,
       /* Respostas do formulário de cada lead da empresa, com o anúncio de origem. */
@@ -281,6 +282,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
         for (const n of (p.pessoas as Array<{ nome: string; cargo?: string; tel?: string; email?: string }>).filter((x) => !tem.has(x.nome))) {
           const r = await acaoAdicionarPessoaNaEmpresa(empresa.id, { nome: n.nome, cargo: n.cargo, email: n.email, telefone: n.tel === "—" ? "" : n.tel });
           if (!r.ok) return falha(r.erro);
+          toast.success(r.dados?.jaExistia ? `${n.nome} já existia na base e foi vinculada à empresa.` : `${n.nome} vinculada à empresa.`);
         }
         router.refresh();
       }
@@ -400,7 +402,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
                porque a ficha já o mostra à parte. */
             pessoas: empresa.pessoas
               .filter((p) => p.nome !== registro.pessoa)
-              .map((p) => ({ nome: p.nome, cargo: p.cargo ?? "", tel: p.telefone || "—", email: p.email ?? "" })),
+              .map((p) => ({ nome: p.nome, cargo: p.cargo ?? "", tel: formatarTelefone(p.telefone) || "—", email: p.email ?? "" })),
           } },
         }}
         catalogo={catalogo}
