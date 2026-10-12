@@ -162,6 +162,11 @@ test("contrato sem processo comercial ainda resolve dono, e o que sobra vira cas
 
   if (r.orfaos === 0) return; // base sem o problema: nada a provar
 
+  // Os casos nascem do backfill da fase 09. Banco que não passou pelos backfills (cópia local, só
+  // proveniência de runtime) não tem como ter casos: não é regressão, é ausência da carga.
+  const [prov] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM backfill_provenance WHERE fase = '05'`);
+  if (prov.n === 0) return t.skip("backfill da fase 05 ainda não rodou neste banco");
+
   assert.equal(
     r.casos, r.orfaos,
     `${r.orfaos} contratos sem processo comercial e ${r.casos} casos registrados: ` +

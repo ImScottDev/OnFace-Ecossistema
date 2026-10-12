@@ -194,7 +194,10 @@ test("coluna de negócio não guarda marcador de carga", async () => {
     "coluna de negócio com marcador de backfill: a proveniência vai em backfill_provenance");
 });
 
-test("a proveniência do backfill continua registrada", async () => {
+test("a proveniência do backfill continua registrada", async (t) => {
+  // Mesma guarda dos testes da fase 05: banco que não passou pelos backfills (cópia local só com
+  // proveniência de runtime) não tem o que conferir. Onde o backfill rodou, a conta vale.
+  if (!(await backfillRodou())) return t.skip("backfill da fase 05 ainda não rodou neste banco");
   // O contraponto do teste acima: tirar o marcador da coluna de negócio não
   // pode significar perder de onde o registro veio.
   const [r] = await db.execute<{ n: number }>(sql`

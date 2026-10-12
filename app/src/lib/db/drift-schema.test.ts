@@ -37,6 +37,10 @@ const FORA_DO_DRIZZLE = new Set(["_migracoes_aplicadas", "_carga_contagem_antes"
  */
 const GERADAS_PELO_BANCO = new Set(["ai_knowledge_chunks.busca"]);
 
+/* Tabelas de trabalho da carga (marco zero, conferência, NFS-e) que sobram em banco local; produção não as tem.
+   Por prefixo, para a próxima carga não reabrir o teste. */
+const ESCRATCH = /^(_mz_|_carga_|tmp_)/;
+
 interface Declarada { tabela: string; colunas: Set<string> }
 
 function lerSchema(): Map<string, Declarada> {
@@ -75,7 +79,7 @@ test("toda tabela do Drizzle existe no banco, e nenhuma tabela real ficou de for
     const soNoDrizzle = [...declaradas.keys()].filter((t) => !nomesReais.has(t));
     assert.deepEqual(soNoDrizzle, [], `declaradas no Drizzle e ausentes no banco:\n${soNoDrizzle.join("\n")}`);
 
-    const soNoBanco = [...nomesReais].filter((t) => !declaradas.has(t) && !FORA_DO_DRIZZLE.has(t));
+    const soNoBanco = [...nomesReais].filter((t) => !declaradas.has(t) && !FORA_DO_DRIZZLE.has(t) && !ESCRATCH.test(t));
     assert.deepEqual(soNoBanco, [], `existem no banco e não estão no Drizzle:\n${soNoBanco.join("\n")}`);
   } finally {
     await sql.end();
