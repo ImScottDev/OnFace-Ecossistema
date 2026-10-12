@@ -306,6 +306,9 @@ export const ROTULO_ESTADO_PROSPECCAO: Record<EstadoProspeccao, string> = {
   descartado: "Descartado",
 };
 
+/** Tamanhos de página da lista de Prospecção (compartilhado: a tela também precisa). */
+export const POR_PAGINA_PROSPECCAO = [25, 50, 100] as const;
+
 /** Bloco 04 §15: em Prospecção é "Descartado", não "Desqualificado" — nem
  *  todo prospect descartado passou por qualificação comercial formal. */
 export const MOTIVOS_DESCARTE = [

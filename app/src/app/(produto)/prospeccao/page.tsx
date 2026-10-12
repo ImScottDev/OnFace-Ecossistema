@@ -1,34 +1,65 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { listaProspeccao } from "@/lib/vendas/consultas";
-import type { EstadoProspeccao } from "@/lib/vendas/dominio";
-import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
-import { Prospeccao } from "@/components/onface/vendas/Prospeccao";
 import {
-  acaoAdicionarProspect, acaoAtribuirEmMassa, acaoCadencias, acaoDescartar, acaoImportarProspects,
-  acaoInscreverEmCadencia, acaoMarcarSemResposta, acaoOportunidadeDireta,
-  acaoPausarCadencia, acaoPreQualificar, acaoRegistrarResposta, acaoResponsaveis,
+  FILAS_PROSPECCAO, ORDENS_PROSPECCAO, kanbanProspeccao, listaProspeccao, operacaoProspeccao,
+  type FilaProspeccao, type OrdemProspeccao,
+} from "@/lib/vendas/consultas";
+import { ESTADOS_PROSPECCAO, POR_PAGINA_PROSPECCAO, type EstadoProspeccao } from "@/lib/vendas/dominio";
+import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
+import { Prospeccao, type Visao } from "@/components/onface/vendas/Prospeccao";
+import {
+  acaoAdicionarProspect, acaoAtribuirEmMassa, acaoAtribuirProspect, acaoCadencias, acaoDetalheProspect, acaoImportarProspects,
+  acaoInscreverEmCadencia, acaoMoverProspect, acaoPausarCadencia, acaoResponsaveis, acaoRetomarCadencia,
 } from "./actions";
 
 export const metadata = { title: "Prospecção" };
 export const dynamic = "force-dynamic";
 
-/** Prospecção (Módulo 01, Bloco 04). */
+const VISOES: Visao[] = ["operacao", "kanban", "lista", "campanhas", "inteligencia"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Prospecção (Módulo 01, Bloco 04).
+ *
+ * Todo recorte vive na URL (visão, estado, busca, filtros, ordem, página,
+ * prospect aberto): F5, link compartilhado e volta do detalhe devolvem a mesma
+ * tela. Só a visão aberta consulta o que precisa.
+ */
 export async function ProspeccaoPage({ searchParams }: {
-  searchParams: Promise<{ visao?: string; busca?: string; estado?: string; responsavel?: string; lista?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const params = await searchParams;
-  const visao = params.visao === "kanban" ? "kanban" : "lista";
-  const busca = params.busca?.trim() || "";
-  const estado = (params.estado || null) as EstadoProspeccao | null;
-  const responsavelId = params.responsavel || null;
-  const lista = params.lista?.trim() || null;
+  const p = await searchParams;
+  const visao: Visao = VISOES.includes(p.visao as Visao) ? (p.visao as Visao) : "lista";
+  const estado = (ESTADOS_PROSPECCAO as readonly string[]).includes(p.estado ?? "") ? (p.estado as EstadoProspeccao) : null;
+  const filtro = {
+    busca: p.busca?.trim() || "",
+    estado,
+    responsavelId: p.responsavel === "sem" || UUID.test(p.responsavel ?? "") ? p.responsavel! : null,
+    lista: p.lista?.trim() || null,
+    cadenciaId: p.cadencia === "sem" || UUID.test(p.cadencia ?? "") ? p.cadencia! : null,
+    fila: (FILAS_PROSPECCAO as readonly string[]).includes(p.fila ?? "") ? (p.fila as FilaProspeccao) : null,
+    ordem: (ORDENS_PROSPECCAO as readonly string[]).includes(p.ordem ?? "") ? (p.ordem as OrdemProspeccao) : null,
+    direcao: p.dir === "asc" || p.dir === "desc" ? p.dir : null,
+  } as const;
+  const consulta = {
+    busca: filtro.busca, estado, responsavelId: filtro.responsavelId, lista: filtro.lista,
+    cadenciaId: filtro.cadenciaId, fila: filtro.fila, ordem: filtro.ordem, direcao: filtro.direcao,
+  };
+  const pagina = Number.parseInt(p.pagina ?? "", 10);
+  const porPagina = Number.parseInt(p.porPagina ?? "", 10);
+  const mostrar = Number.parseInt(p.mostrar ?? "", 10);
+  const porColuna = Number.isFinite(mostrar) ? Math.min(Math.max(mostrar, 25), 500) : 25;
+  const abertoId = UUID.test(p.lead ?? "") ? p.lead! : null;
 
-  const [dados, cadencias, responsaveis, chaveApollo] = await Promise.all([
-    listaProspeccao(ctx.organizacaoId, { busca, estado, responsavelId, lista }),
+  const [lista, kanban, operacao, cadencias, responsaveis, chaveApollo] = await Promise.all([
+    visao === "lista"
+      ? listaProspeccao(ctx.organizacaoId, { ...consulta, pagina: Number.isFinite(pagina) ? pagina : 1, porPagina: (POR_PAGINA_PROSPECCAO as readonly number[]).includes(porPagina) ? porPagina : 25 })
+      : null,
+    visao === "kanban" ? kanbanProspeccao(ctx.organizacaoId, consulta, porColuna) : null,
+    visao === "operacao" || visao === "campanhas" || visao === "inteligencia" ? operacaoProspeccao(ctx.organizacaoId) : null,
     acaoCadencias(),
     acaoResponsaveis(),
     getOrgApolloKey(ctx.organizacaoId),
@@ -41,28 +72,31 @@ export async function ProspeccaoPage({ searchParams }: {
     ? "Apollo não configurado para esta organização."
     : !admin ? "Enriquecer é restrito a administradores." : null;
 
-  // Sem `Pagina`/`PaginaResumo`: arquétipo B (Contatos) pinta o papel até a
-  // borda e leva os contadores de estado para as abas da própria lista — o
-  // resumo em caixas repetia os mesmos números duas vezes na tela.
+  const opcoes = (lista ?? kanban)?.filtros ?? { responsaveis, listas: [], cadencias: [] };
+
   return (
     <div data-workspace="desenho">
       <Prospeccao
-        dados={dados}
-        filtro={{ busca, estado, responsavelId, lista }}
         visao={visao}
+        dados={lista}
+        kanban={kanban}
+        operacao={operacao}
+        filtro={filtro}
+        opcoes={opcoes}
         cadencias={cadencias}
         responsaveis={responsaveis}
+        abertoId={abertoId}
+        porColuna={porColuna}
         motivoSemEnriquecer={motivoSemEnriquecer}
         acoes={{
           adicionar: acaoAdicionarProspect,
           importar: acaoImportarProspects,
           inscreverEmCadencia: acaoInscreverEmCadencia,
           pausarCadencia: acaoPausarCadencia,
-          registrarResposta: acaoRegistrarResposta,
-          marcarSemResposta: acaoMarcarSemResposta,
-          preQualificar: acaoPreQualificar,
-          oportunidadeDireta: acaoOportunidadeDireta,
-          descartar: acaoDescartar,
+          retomarCadencia: acaoRetomarCadencia,
+          mover: acaoMoverProspect,
+          detalhe: acaoDetalheProspect,
+          atribuir: acaoAtribuirProspect,
           atribuirEmMassa: acaoAtribuirEmMassa,
         }}
       />

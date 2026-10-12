@@ -19,7 +19,7 @@ import {
   ROTULO_ESTADO_PROSPECCAO, ROTULO_RELACIONAMENTO,
   ETAPAS_PIPELINE, ETAPAS_FECHADAS, ETAPAS_PRE_VENDAS,
   SAIDAS_PRE_VENDAS, ESTADOS_PROSPECCAO,
-  type EstadoProspeccao, type EstagioPreVendas, type EtapaPipeline,
+  POR_PAGINA_PROSPECCAO, type EstadoProspeccao, type EstagioPreVendas, type EtapaPipeline,
   type RelacionamentoEmpresa,
 } from "./dominio";
 import { HORAS_ATRASO } from "./sla";
@@ -1071,7 +1071,6 @@ async function resumoPorEstado(organizacaoId: string, filtros: FiltrosProspeccao
   return resumo;
 }
 
-export const POR_PAGINA_PROSPECCAO = [25, 50, 100] as const;
 
 export async function listaProspeccao(organizacaoId: string, filtros: FiltrosProspeccao = {}): Promise<{
   linhas: LinhaProspeccao[];
@@ -1153,7 +1152,7 @@ export interface OperacaoProspeccao {
     cadenciaComFalha: number;
     /** Quem respondeu e ainda não foi tratado: o dado mais quente parado. */
     respondeuAguardando: number;
-    respondeuMaisAntigoEm: string | null;
+    respondeuMaisAntigoHoras: number | null;
     adicionadosUltimos7Dias: number;
   };
   /** Quantos chegaram a cada marco (status_changes), com taxa sobre a base. */
@@ -1169,7 +1168,7 @@ export interface OperacaoProspeccao {
 export async function operacaoProspeccao(organizacaoId: string): Promise<OperacaoProspeccao> {
   const [ind] = await db.execute<{
     total: number; novos_sem_resp: number; sem_contato: number; cad_ativa: number; cad_pausada: number; cad_falha: number;
-    respondeu_aguardando: number; respondeu_mais_antigo: string | null; novos_7d: number;
+    respondeu_aguardando: number; respondeu_mais_antigo_h: number | null; novos_7d: number;
   }>(sql`
     SELECT count(*)::int AS total,
            count(*) FILTER (WHERE l.prospeccao_estado = 'novo' AND l.responsavel_id IS NULL)::int AS novos_sem_resp,
@@ -1179,7 +1178,7 @@ export async function operacaoProspeccao(organizacaoId: string): Promise<Operaca
            count(*) FILTER (WHERE ce.status = 'paused')::int AS cad_pausada,
            count(*) FILTER (WHERE ce.status = 'failed')::int AS cad_falha,
            count(*) FILTER (WHERE l.prospeccao_estado = 'respondeu')::int AS respondeu_aguardando,
-           min(l.updated_at) FILTER (WHERE l.prospeccao_estado = 'respondeu')::text AS respondeu_mais_antigo,
+           floor(extract(epoch FROM now() - min(l.updated_at) FILTER (WHERE l.prospeccao_estado = 'respondeu')) / 3600)::int AS respondeu_mais_antigo_h,
            count(*) FILTER (WHERE l.created_at > now() - interval '7 days')::int AS novos_7d
       FROM leads l
       LEFT JOIN LATERAL (
@@ -1249,7 +1248,7 @@ export async function operacaoProspeccao(organizacaoId: string): Promise<Operaca
       cadenciaPausada: ind?.cad_pausada ?? 0,
       cadenciaComFalha: ind?.cad_falha ?? 0,
       respondeuAguardando: ind?.respondeu_aguardando ?? 0,
-      respondeuMaisAntigoEm: ind?.respondeu_mais_antigo ?? null,
+      respondeuMaisAntigoHoras: ind?.respondeu_mais_antigo_h ?? null,
       adicionadosUltimos7Dias: ind?.novos_7d ?? 0,
     },
     funil: {
