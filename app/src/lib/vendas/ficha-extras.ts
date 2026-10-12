@@ -12,6 +12,8 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { textoSimples } from "./texto";
+import { ROTULO_ETAPA_PIPELINE, ROTULO_ETAPA_PRE_VENDAS, type EstagioPreVendas, type EtapaPipeline } from "./dominio";
+import { emailNormalizado, mesmaPessoa, telefoneDeIdentidade, type IdentidadeDoLead } from "./mesma-pessoa";
 
 export interface CadenciaDoLead {
   /** Nome da cadência (definição) em que o lead está inscrito. */
@@ -124,4 +126,121 @@ export async function notasDoLead(organizacaoId: string, leadId: string): Promis
      WHERE n.lead_id = ${leadId}::uuid AND n.organizacao_id = ${organizacaoId}::uuid
      ORDER BY n.created_at DESC LIMIT 100`);
   return linhas.map((n) => ({ id: n.id, texto: textoSimples(n.texto) ?? "", autor: n.autor, em: n.em }));
+}
+
+/* ── Aquisições da PESSOA ──────────────────────────────────────────────── */
+
+export interface AquisicaoDaPessoa {
+  id: string;
+  etapa: string;
+  etapaRotulo: string;
+  origem: string | null;
+  criadoEm: string;
+  responsavel: string | null;
+  pessoa: string;
+  nutricao: { motivo: string | null; desde: string | null; retomarEm: string | null } | null;
+}
+export interface OportunidadeDaPessoa { id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null }
+
+/**
+ * Todas as aquisições (e as oportunidades delas) da pessoa que a ficha mostra.
+ *
+ * Modelo: pessoa e lead são 1:1 (`pessoas.lead_id_legado` e
+ * `aquisicoes.lead_legado_id` únicos; hoje 1 aquisição por pessoa). Mas a MESMA
+ * pessoa entra mais de uma vez (36 e-mails repetidos, 52 leads ligados por
+ * `canonical_lead_id`), e é isso que "todas as aquisições dela" tem de cobrir.
+ * A consulta traz os candidatos por e-mail, telefone e vínculo canônico; quem
+ * decide se são a mesma pessoa é `mesmaPessoa` (telefone sozinho não basta).
+ *
+ * A etapa é a do BOARD (gravada na aquisição, com o legado só refinando
+ * "qualificacao"), e a nutrição traz motivo e a data em que entrou.
+ */
+export async function relacoesDaPessoa(organizacaoId: string, leadId: string): Promise<{
+  aquisicoes: AquisicaoDaPessoa[]; oportunidades: OportunidadeDaPessoa[];
+}> {
+  const [eu] = await db.execute<{
+    id: string; nome: string; email: string | null; telefone: string | null; whatsapp: string | null;
+    canonical: string | null; pessoa_id: string | null;
+  }>(sql`
+    SELECT l.id::text, l.nome, l.email, l.telefone, l.whatsapp, l.canonical_lead_id::text AS canonical, p.id::text AS pessoa_id
+      FROM leads l LEFT JOIN pessoas p ON p.lead_id_legado = l.id
+     WHERE l.id = ${leadId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid`);
+  if (!eu) return { aquisicoes: [], oportunidades: [] };
+
+  type Candidato = {
+    id: string; nome: string; sobrenome: string | null; email: string | null; telefone: string | null; whatsapp: string | null;
+    canonical: string | null; pessoa_id: string | null; etapa: string; origem: string | null; criado_em: string;
+    responsavel: string | null; nutricao_motivo: string | null; nutrido_em: string | null; retomar_em: string | null;
+  };
+  const identidade = (c: Candidato): IdentidadeDoLead => ({
+    id: c.id, pessoaId: c.pessoa_id, canonicalLeadId: c.canonical, nome: c.nome, email: c.email, telefones: [c.telefone, c.whatsapp],
+  });
+  const literal = (v: string[]) => `{${v.map((x) => `"${x.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`;
+
+  /* A pessoa é o fecho das ligações: A liga a B pelo e-mail e B liga a D pelo telefone, então
+     D também é dela. Cada volta traz os candidatos das identidades já achadas, até não crescer
+     (no máximo 3 voltas: um grupo de duplicatas não passa disso). */
+  let procura: IdentidadeDoLead[] = [{ id: eu.id, pessoaId: eu.pessoa_id, canonicalLeadId: eu.canonical, nome: eu.nome, email: eu.email, telefones: [eu.telefone, eu.whatsapp] }];
+  const achados = new Map<string, Candidato>();
+  for (let volta = 0; volta < 3 && procura.length; volta++) {
+    const emails = [...new Set(procura.map((p) => emailNormalizado(p.email)).filter((x): x is string => !!x))];
+    /* Superset por SQL (últimos 10 dígitos); o veredito é de `mesmaPessoa`. */
+    const fones = [...new Set(procura.flatMap((p) => p.telefones ?? []).map(telefoneDeIdentidade).filter((x): x is string => !!x).map((d) => d.slice(-10)))];
+    const idsDaVolta = procura.map((p) => p.id);
+    const canons = [...new Set(procura.map((p) => p.canonicalLeadId).filter((x): x is string => !!x))];
+    const candidatos = await db.execute<Candidato>(sql`
+      SELECT l.id::text, l.nome, l.sobrenome, l.email, l.telefone, l.whatsapp, l.canonical_lead_id::text AS canonical, p.id::text AS pessoa_id,
+             CASE WHEN l.estagio_pre_vendas = 'qualificacao' THEN 'qualificacao'
+                  ELSE COALESCE(pe.codigo, l.estagio_pre_vendas, 'novo') END AS etapa,
+             COALESCE(a.origem, l.origem) AS origem, l.created_at::text AS criado_em, u.nome AS responsavel,
+             COALESCE(NULLIF(a.nutricao_status, 'em_nutricao'), l.nutricao_motivo) AS nutricao_motivo,
+             COALESCE(l.nutrido_em, (SELECT max(sc.created_at) FROM status_changes sc
+                                      WHERE sc.lead_id = l.id AND sc.para_status = 'nutricao'))::text AS nutrido_em,
+             COALESCE(l.nutricao_retomar_em::text, (a.retomar_em AT TIME ZONE 'America/Sao_Paulo')::date::text) AS retomar_em
+        FROM leads l
+        LEFT JOIN pessoas p ON p.lead_id_legado = l.id
+        LEFT JOIN aquisicoes a ON a.lead_legado_id = l.id
+        LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
+        LEFT JOIN usuarios u ON u.id = l.responsavel_id
+       WHERE l.organizacao_id = ${organizacaoId}::uuid
+         AND (l.id = ANY(${literal(idsDaVolta)}::uuid[])
+           OR l.canonical_lead_id = ANY(${literal(idsDaVolta)}::uuid[])
+           OR l.id = ANY(${literal(canons)}::uuid[])
+           OR l.canonical_lead_id = ANY(${literal(canons)}::uuid[])
+           OR lower(trim(l.email)) = ANY(${literal(emails)}::text[])
+           OR right(regexp_replace(coalesce(l.telefone, ''), '[^0-9]', '', 'g'), 10) = ANY(${literal(fones)}::text[])
+           OR right(regexp_replace(coalesce(l.whatsapp, ''), '[^0-9]', '', 'g'), 10) = ANY(${literal(fones)}::text[]))
+       ORDER BY l.created_at DESC
+       LIMIT 60`);
+    const novos = candidatos.filter((c) => !achados.has(c.id) && (c.id === eu.id || procura.some((p) => mesmaPessoa(p, identidade(c)))));
+    for (const c of novos) achados.set(c.id, c);
+    procura = novos.map(identidade);
+  }
+  const meus = [...achados.values()].sort((a, b) => b.criado_em.localeCompare(a.criado_em));
+
+  const aquisicoes: AquisicaoDaPessoa[] = meus.map((c) => ({
+    id: c.id, etapa: c.etapa, etapaRotulo: ROTULO_ETAPA_PRE_VENDAS[c.etapa as EstagioPreVendas] ?? c.etapa,
+    origem: c.origem, criadoEm: c.criado_em, responsavel: c.responsavel,
+    pessoa: [c.nome, c.sobrenome].filter(Boolean).join(" "),
+    nutricao: c.etapa === "nutricao" ? { motivo: c.nutricao_motivo, desde: c.nutrido_em, retomarEm: c.retomar_em } : null,
+  }));
+
+  const ids = meus.map((c) => c.id);
+  if (!ids.length) return { aquisicoes, oportunidades: [] };
+  const oportunidades = await db.execute<{ id: string; titulo: string; etapa: string | null; familia: string | null }>(sql`
+    SELECT DISTINCT ON (COALESCE(o.negocio_id_legado, o.id)) COALESCE(o.negocio_id_legado, o.id)::text AS id, o.titulo, o.etapa, o.service_family AS familia
+      FROM oportunidades o
+     WHERE o.organizacao_id = ${organizacaoId}::uuid
+       AND (o.lead_id = ANY(${`{${ids.join(",")}}`}::uuid[])
+         OR o.negocio_id_legado IN (SELECT id FROM negocios WHERE lead_id = ANY(${`{${ids.join(",")}}`}::uuid[])))
+       AND COALESCE(o.stage, '') <> 'ativo'
+     ORDER BY COALESCE(o.negocio_id_legado, o.id), o.created_at DESC`);
+  return {
+    aquisicoes,
+    oportunidades: oportunidades.map((o) => ({
+      id: o.id, titulo: o.titulo, etapa: o.etapa ?? "entrada",
+      etapaRotulo: ROTULO_ETAPA_PIPELINE[(o.etapa ?? "entrada") as EtapaPipeline] ?? o.etapa ?? "",
+      familia: o.familia,
+    })),
+  };
 }

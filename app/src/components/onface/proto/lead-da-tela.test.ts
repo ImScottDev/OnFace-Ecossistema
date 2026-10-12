@@ -145,6 +145,12 @@ describe("próxima ação e tempo", () => {
     assert.equal(proximaDaTela({ proximaAcao: null }, [], AGORA), null);
   });
 
+  it("texto de timestamp do Postgres (espaço, fuso sem minutos) vira instante válido em qualquer navegador", () => {
+    assert.equal(dataBR("2030-01-15 00:00:00-03"), "15/01/2030");
+    assert.equal(dataBR("2026-10-12 15:00:00.123+00"), "12/10/2026");
+    assert.equal(haQuanto("2026-10-09 15:00:00+00", AGORA), "há 3 dias");
+  });
+
   it("coluna só-data (retomar_em, data_vencimento) não recua um dia pelo fuso", () => {
     assert.equal(dataBR("2026-11-20"), "20/11/2026");
     assert.equal(quandoBR("2026-10-12", AGORA), "Hoje");

@@ -20,7 +20,7 @@ import type { DetalheLead, Empresa360 } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { EmpresaLiga } from "./EmpresaLiga";
 import { levarParametros } from "./rota-do-desenho";
-import { corrigirVazio, montarRelacoes, paraALiga } from "./relacoes-da-ficha";
+import { aquisicaoDaFicha, corrigirVazio, montarRelacoes, paraALiga } from "./relacoes-da-ficha";
 import { registroDoDesenho, linkDoAnuncio } from "./registro-do-desenho";
 import { qualDoDesenho } from "./qual-do-desenho";
 import { usePecas } from "./pecas-host";
@@ -173,15 +173,12 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
 
   const relacoes = React.useMemo(() => montarRelacoes({
     empresaId: empresa.id,
-    aquisicoes: empresa.leads.map((a) => {
-      /* O lead principal tem a etapa real (detalheLead); os demais só a derivada do empresa360. */
-      const real = lead && lead.id === a.id ? lead : null;
-      return {
-        id: a.id, etapa: real?.etapa ?? a.etapa, etapaRotulo: real?.etapaRotulo ?? a.etapaRotulo,
-        titulo: `Entrada em ${a.criadoEm.slice(0, 10).split("-").reverse().join("/")}`,
-        sub: a.origem ?? "Origem não informada",
-      };
-    }),
+    /* A etapa vem do empresa360 (a gravada na aquisição, como o board): cada lead
+       da empresa tem a própria, e a nutrição traz motivo e data de entrada. */
+    aquisicoes: empresa.leads.map((a) => aquisicaoDaFicha({
+      id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo, origem: a.origem, criadoEm: a.criadoEm,
+      responsavel: a.responsavel, pessoa: a.pessoa, nutricao: a.nutricao,
+    })),
     oportunidades: empresa.oportunidades,
     propostas: empresa.propostas,
     conta: {
@@ -190,7 +187,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
       detalheAtivo: `${empresa.servicos.filter((s) => s.ativo).length || 1} serviço(s) ativo(s) na carteira`,
     },
     vazioPrefixo: `Nenhuma aquisição ativa, oportunidade, proposta ou serviço registrado para ${empresa.nome}. Por enquanto ela só existe na base.`,
-  }), [empresa, lead]);
+  }), [empresa]);
 
   const catalogo = React.useMemo(() => ({
     EQUIPE: equipe.length ? equipe.map((e) => e.nome) : (registro.resp ? [registro.resp] : []),

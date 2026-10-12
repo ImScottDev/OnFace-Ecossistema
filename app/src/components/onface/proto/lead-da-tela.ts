@@ -17,6 +17,12 @@ import { qualDoDesenho } from "./qual-do-desenho";
 
 const DIA = 86_400_000;
 
+/**
+ * Instante a partir do texto do Postgres ("2026-10-12 15:00:00.1+00", "… 00:00:00-03").
+ * O espaço no lugar do "T" e o fuso sem minutos não são ISO: o Chrome aceita, o Safari não.
+ */
+const instante = (s: string) => new Date(s.includes(":") ? s.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00") : s);
+
 /* ── Datas ─────────────────────────────────────────────────────────────── */
 
 /* Fuso fixo: o servidor e o navegador renderizam a MESMA string (sem aviso de
@@ -30,7 +36,7 @@ export function dataBR(iso: string | null | undefined): string {
   if (!iso) return "—";
   const dia = SO_DATA.exec(iso);
   if (dia) return `${dia[3]}/${dia[2]}/${dia[1]}`;
-  const d = new Date(iso);
+  const d = instante(iso);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: FUSO });
 }
 
@@ -43,7 +49,7 @@ export function quandoBR(iso: string | null | undefined, agora = new Date()): st
     const dias = Math.round((new Date(iso).getTime() - new Date(hoje).getTime()) / DIA);
     return dias === 0 ? "Hoje" : dias === -1 ? "Ontem" : dias === 1 ? "Amanhã" : dataBR(iso).slice(0, 5);
   }
-  const d = new Date(iso);
+  const d = instante(iso);
   if (Number.isNaN(d.getTime())) return "—";
   const dia = (x: Date) => x.toLocaleDateString("en-CA", { timeZone: FUSO });
   const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: FUSO });
@@ -57,7 +63,7 @@ export function quandoBR(iso: string | null | undefined, agora = new Date()): st
 /** "há 3 dias", "há 5 h", "agora há pouco": o tempo corrido, na escala que importa. */
 export function haQuanto(iso: string | null | undefined, agora = new Date()): string | null {
   if (!iso) return null;
-  const t = new Date(iso).getTime();
+  const t = instante(iso).getTime();
   if (Number.isNaN(t)) return null;
   const ms = Math.max(0, agora.getTime() - t);
   const dias = Math.floor(ms / DIA);
@@ -68,7 +74,7 @@ export function haQuanto(iso: string | null | undefined, agora = new Date()): st
 
 function horasDesde(iso: string | null | undefined, agora: Date): number | null {
   if (!iso) return null;
-  const t = new Date(iso).getTime();
+  const t = instante(iso).getTime();
   return Number.isNaN(t) ? null : Math.max(0, Math.floor((agora.getTime() - t) / 3_600_000));
 }
 

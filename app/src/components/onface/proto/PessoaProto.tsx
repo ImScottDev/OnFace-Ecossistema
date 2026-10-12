@@ -16,7 +16,7 @@ import type { DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { PessoaLiga } from "./PessoaLiga";
 import { levarParametros } from "./rota-do-desenho";
-import { corrigirVazio, montarRelacoes, paraALiga } from "./relacoes-da-ficha";
+import { aquisicaoDaFicha, corrigirVazio, montarRelacoes, paraALiga } from "./relacoes-da-ficha";
 import { registroDoDesenho } from "./registro-do-desenho";
 import { qualDoDesenho } from "./PreVendasProto";
 import { usePecas } from "./pecas-host";
@@ -24,7 +24,7 @@ import { acaoAtribuir, acaoRemoverDaCadencia, acaoResponsaveis, acaoSalvarContat
 import {
   acaoBuscarEmpresas, acaoDesvincularEmpresaExtra, acaoExcluirContato, acaoPausarCadenciaDoLead, acaoVincularEmpresaExtra,
 } from "@/app/(produto)/contatos/actions";
-import type { CadenciaDoLead, EmpresaExtraDaPessoa } from "@/lib/vendas/ficha-extras";
+import type { AquisicaoDaPessoa, CadenciaDoLead, EmpresaExtraDaPessoa, OportunidadeDaPessoa } from "@/lib/vendas/ficha-extras";
 
 /**
  * Corrige, na saída do protótipo, os campos que ele INVENTA.
@@ -116,13 +116,15 @@ class PessoaLigada extends PessoaLiga {
   }
 }
 
-export function PessoaProto({ lead, timeline, cadencia, extras }: {
+export function PessoaProto({ lead, timeline, cadencia, extras, daPessoa }: {
   lead: DetalheLead;
   timeline: LinhaDoTempo[];
   /** A inscrição viva do lead numa cadência (ou null). */
   cadencia: CadenciaDoLead | null;
   /** As outras empresas a que a pessoa está vinculada (vínculo aberto). */
   extras: EmpresaExtraDaPessoa[];
+  /** TODAS as aquisições e oportunidades da pessoa (`relacoesDaPessoa`): a mesma pessoa pode ter mais de um lead. */
+  daPessoa: { aquisicoes: AquisicaoDaPessoa[]; oportunidades: OportunidadeDaPessoa[] };
 }) {
   const router = useRouter();
 
@@ -141,22 +143,24 @@ export function PessoaProto({ lead, timeline, cadencia, extras }: {
   const [equipe, setEquipe] = React.useState<Array<{ id: string; nome: string }>>([]);
   React.useEffect(() => { void acaoResponsaveis().then(setEquipe).catch(() => undefined); }, []);
 
-  /* A pessoa É a aquisição: a ficha é chaveada pelo lead, então ele entra como
-     "Aquisição" com a etapa real de Pré-vendas. Propostas não são lidas aqui. */
+  /* TODAS as aquisições da pessoa, não só o lead que a ficha abriu: a mesma
+     pessoa entra mais de uma vez (e-mail repetido, deduplicação), e cada entrada
+     é uma relação em andamento. `leadId: null` é de propósito: restringir por lead
+     as esconderia. A nutrição mostra motivo e quando entrou. */
   const relacoes = React.useMemo(() => montarRelacoes({
-    empresaId: lead.empresa.id ?? "", leadId: lead.id,
-    aquisicoes: [{
-      id: lead.id, etapa: lead.etapa, etapaRotulo: lead.etapaRotulo, titulo: "Lead em Pré-vendas",
-      sub: [lead.atribuicao.origem ?? "Origem não informada", lead.responsavel.nome].filter(Boolean).join(" · "),
-    }],
-    oportunidades: lead.oportunidades,
+    empresaId: lead.empresa.id ?? "", leadId: null,
+    aquisicoes: daPessoa.aquisicoes.map((a) => aquisicaoDaFicha({
+      id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo, origem: a.origem, criadoEm: a.criadoEm,
+      responsavel: a.responsavel, nutricao: a.nutricao,
+    })),
+    oportunidades: daPessoa.oportunidades,
     propostas: null,
     conta: {
       nome: lead.empresa.nome, ativo: lead.naCarteira, jaTeveServico: lead.jaTeveServico,
       ficha: lead.fichaDeCliente,
     },
     vazioPrefixo: `Nenhuma aquisição ativa ou oportunidade registrada para ${lead.pessoa.nome}.`,
-  }), [lead]);
+  }), [lead, daPessoa]);
 
   const catalogo = React.useMemo(() => ({
     EQUIPE: equipe.length ? equipe.map((e) => e.nome) : (lead.responsavel.nome ? [lead.responsavel.nome] : []),
@@ -173,11 +177,11 @@ export function PessoaProto({ lead, timeline, cadencia, extras }: {
   }), [lead.responsavel.nome, relacoes, router, equipe]);
 
   const oportunidades = React.useMemo(
-    () => lead.oportunidades.map((o) => ({
+    () => daPessoa.oportunidades.map((o) => ({
       titulo: o.titulo, etapa: o.etapaRotulo,
       familia: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
     })),
-    [lead.oportunidades],
+    [daPessoa.oportunidades],
   );
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */

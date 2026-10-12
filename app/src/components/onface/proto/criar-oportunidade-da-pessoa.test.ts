@@ -17,7 +17,8 @@ test("a saída 'criar-oportunidade' chama o command, não devolve 'ainda não es
 test("a ficha da Pessoa lê as oportunidades gravadas (Relacoes + aba)", () => {
   const src = ler("./PessoaProto.tsx");
   assert.match(src, /Relacoes:\s*\(\)\s*=>/);
-  assert.ok(src.includes("lead.oportunidades"));
+  /* Todas as da PESSOA (dos leads dela), não só as do lead aberto. */
+  assert.ok(src.includes("daPessoa.oportunidades"));
 });
 
 test("o responsável do modal vem do catálogo da organização, sem nome do protótipo", () => {

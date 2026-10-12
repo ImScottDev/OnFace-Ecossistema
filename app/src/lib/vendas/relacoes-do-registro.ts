@@ -9,6 +9,8 @@
  * nunca teve caller: o card caía sempre em "Nada em andamento".
  */
 
+import { rotaDoLead } from "./rota-do-lead";
+
 export interface VinculoDoRegistro {
   id: string;
   empresaId: string;
@@ -31,11 +33,11 @@ export interface RelacaoDoRegistro extends VinculoDoRegistro {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Destino da aquisição. HOJE o que existe é o drawer do board
- * (`/pre-vendas?lead=<id>`). Quando a tela própria do lead de Pré-vendas
- * (`/pre-vendas/[id]`) entrar, é SÓ aqui que se troca.
+ * Destino da aquisição: a tela do lead (`/pre-vendas/[id]`). Era o drawer do
+ * board (`/pre-vendas?lead=<id>`) enquanto a tela própria não existia; a rota
+ * mora em `rota-do-lead.ts`, a mesma que o drawer e o protótipo usam.
  */
-export const rotaDaAquisicao = (leadId: string) => `/pre-vendas?lead=${encodeURIComponent(leadId)}`;
+export const rotaDaAquisicao = rotaDoLead;
 
 const TIPO = { cliente: "Cliente", aquisicao: "Pré-vendas", opp: "Oportunidade", proposta: "Proposta" } as const;
 

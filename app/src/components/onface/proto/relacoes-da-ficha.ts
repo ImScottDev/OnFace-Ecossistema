@@ -15,15 +15,61 @@
 
 import { ROTULO_FAMILIA, type Familia } from "@/lib/vendas/dominio";
 import { relacoesDoRegistro, type RelacaoDoRegistro, type VinculoDoRegistro } from "@/lib/vendas/relacoes-do-registro";
+import { MOTIVOS_NUTRICAO } from "@/lib/vendas/dominio";
+import { dataBR } from "./lead-da-tela";
 
 export interface AquisicaoDaFicha { id: string; etapa: string; etapaRotulo: string; titulo: string; sub: string }
+
+/** O que se sabe de uma aquisição, antes de virar linha do card. */
+export interface DadosDeAquisicao {
+  id: string; etapa: string; etapaRotulo: string;
+  origem: string | null; criadoEm: string | null; responsavel: string | null;
+  /** Nome do contato: a Empresa tem leads de várias pessoas; a Pessoa só dela. */
+  pessoa?: string | null;
+  nutricao?: { motivo: string | null; desde: string | null; retomarEm: string | null } | null;
+}
+
+const MOTIVO_NUTRICAO = new Map<string, string>(MOTIVOS_NUTRICAO.map((m) => [m.chave, m.rotulo]));
+
+/**
+ * A linha da aquisição, igual na ficha da Pessoa e na da Empresa.
+ *
+ * Nutrição é "em andamento" e mostra o MOTIVO e QUANDO entrou (e a retomada):
+ * sem isso ela aparecia como "Pré-vendas · Nutrição" sem dizer por quê nem
+ * desde quando. As demais mostram quando a aquisição entrou, que é o que
+ * diferencia uma da outra quando a pessoa tem mais de uma.
+ */
+export function aquisicaoDaFicha(a: DadosDeAquisicao): AquisicaoDaFicha {
+  const origem = a.origem ?? "Origem não informada";
+  if (a.etapa === "nutricao") {
+    const n = a.nutricao;
+    const motivo = n?.motivo && n.motivo !== "em_nutricao" ? (MOTIVO_NUTRICAO.get(n.motivo) ?? n.motivo) : "motivo não registrado";
+    return {
+      id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo,
+      titulo: `Em nutrição: ${motivo}`,
+      sub: [
+        a.pessoa,
+        n?.desde ? `desde ${dataBR(n.desde)}` : "entrada sem data registrada",
+        n?.retomarEm ? `retomar em ${dataBR(n.retomarEm)}` : "sem data de retomada",
+        origem,
+      ].filter(Boolean).join(" · "),
+    };
+  }
+  return {
+    id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo,
+    titulo: a.pessoa ? `Lead de ${a.pessoa}` : "Lead em Pré-vendas",
+    sub: [origem, a.responsavel, a.criadoEm ? `entrou em ${dataBR(a.criadoEm)}` : null].filter(Boolean).join(" · "),
+  };
+}
 export interface OportunidadeDaFicha { id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null }
 export interface PropostaDaFicha { id: string; numero: number; versao: number; status: string }
 
 export interface FatosDasRelacoes {
   empresaId: string;
+  /** Só a aquisição deste lead. A ficha da Pessoa passa null: ela mostra TODAS as da pessoa
+   *  (`relacoesDaPessoa` já trouxe só as dela), e restringir por lead as esconderia. */
   leadId?: string | null;
-  /** Aquisições da pessoa (o próprio lead) ou da empresa. */
+  /** Aquisições da pessoa (todas) ou da empresa. */
   aquisicoes: AquisicaoDaFicha[];
   oportunidades: OportunidadeDaFicha[];
   /** null = esta ficha não consulta propostas. */

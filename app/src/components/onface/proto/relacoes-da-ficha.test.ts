@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { corrigirVazio, montarRelacoes, paraALiga, type FatosDasRelacoes } from "./relacoes-da-ficha";
+import { aquisicaoDaFicha, corrigirVazio, montarRelacoes, paraALiga, type FatosDasRelacoes } from "./relacoes-da-ficha";
 
 const E = "3714f498-de84-47ae-9366-ae671eeab1f5";
 const L = "135dc5f9-a317-4f2b-bc80-6b690b55703d";
@@ -24,7 +24,7 @@ describe("relações da ficha", () => {
     assert.equal(r.itens[0].k, "aquisicao");
     assert.equal(r.itens[0].tipo, "Pré-vendas");
     assert.equal(r.itens[0].status, "Em contato");
-    assert.equal(r.itens[0].href, `/pre-vendas?lead=${L}`);
+    assert.equal(r.itens[0].href, `/pre-vendas/${L}`);
   });
 
   it("desqualificado não é em andamento, mas também não é ausência", () => {
@@ -90,6 +90,46 @@ describe("relações da ficha", () => {
     const vis: string[] = [];
     const l = paraALiga(com({ aquisicoes: [lead] }, { ativo: true, ficha: true }), (r) => vis.push(r));
     l.itens.forEach((i: any) => i.ir());
-    assert.deepEqual(vis, [`/clientes/${E}`, `/pre-vendas?lead=${L}`]);
+    assert.deepEqual(vis, [`/clientes/${E}`, `/pre-vendas/${L}`]);
+  });
+
+  it("a PESSOA vê TODAS as aquisições dela, em qualquer etapa em andamento", () => {
+    const duplicada = { ...lead, id: O2, etapa: "qualificacao", etapaRotulo: "Qualificação" };
+    const nutri = { ...lead, id: "c1896da5-ae42-49ab-8f9a-cec69c54fced", etapa: "nutricao", etapaRotulo: "Nutrição" };
+    const r = com({ leadId: null, aquisicoes: [lead, duplicada, nutri, { ...lead, id: "d1896da5-ae42-49ab-8f9a-cec69c54fced", etapa: "desqualificado", etapaRotulo: "Desqualificado" }] });
+    assert.deepEqual(r.itens.map((i) => i.id), [L, O2, "c1896da5-ae42-49ab-8f9a-cec69c54fced"], "desqualificada é história, não andamento");
+    assert.equal(r.vazio, false);
+    assert.ok(r.itens.every((i) => i.href === `/pre-vendas/${i.id}`));
+  });
+
+  it("nutrição é relação em andamento, com tom próprio", () => {
+    const r = com({ aquisicoes: [{ ...lead, etapa: "nutricao", etapaRotulo: "Nutrição" }] });
+    assert.equal(r.itens[0].status, "Nutrição");
+    assert.equal(r.itens[0].tom, "azul");
+  });
+});
+
+describe("linha da aquisição", () => {
+  const base = { id: L, etapa: "em_contato", etapaRotulo: "Em contato", origem: "Meta Ads", criadoEm: "2026-05-17T14:00:00Z", responsavel: "Ana" };
+
+  it("nutrição mostra o MOTIVO, QUANDO entrou e a retomada", () => {
+    const a = aquisicaoDaFicha({ ...base, etapa: "nutricao", etapaRotulo: "Nutrição", nutricao: { motivo: "sem_orcamento", desde: "2026-10-07T12:00:00Z", retomarEm: "2026-11-15" } });
+    assert.equal(a.titulo, "Em nutrição: Sem orçamento agora");
+    assert.equal(a.sub, "desde 07/10/2026 · retomar em 15/11/2026 · Meta Ads");
+  });
+
+  it("nutrição de carga antiga não inventa data nem motivo", () => {
+    const a = aquisicaoDaFicha({ ...base, etapa: "nutricao", etapaRotulo: "Nutrição", nutricao: { motivo: "em_nutricao", desde: null, retomarEm: null } });
+    assert.equal(a.titulo, "Em nutrição: motivo não registrado");
+    assert.match(a.sub, /entrada sem data registrada/);
+    assert.match(a.sub, /sem data de retomada/);
+  });
+
+  it("as demais mostram quando entraram (é o que separa duas aquisições da mesma pessoa)", () => {
+    const a = aquisicaoDaFicha(base);
+    assert.equal(a.titulo, "Lead em Pré-vendas");
+    assert.equal(a.sub, "Meta Ads · Ana · entrou em 17/05/2026");
+    assert.equal(aquisicaoDaFicha({ ...base, pessoa: "Bia Lima", origem: null, responsavel: null, criadoEm: null }).titulo, "Lead de Bia Lima");
+    assert.equal(aquisicaoDaFicha({ ...base, origem: null, responsavel: null, criadoEm: null }).sub, "Origem não informada");
   });
 });

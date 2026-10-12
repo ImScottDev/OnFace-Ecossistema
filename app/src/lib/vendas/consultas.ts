@@ -1251,7 +1251,12 @@ export interface Empresa360 {
    *  a tela dizer o que falta em vez de só dizer que falta alguma coisa. */
   dadosJuridicosFaltando: string[];
   pessoas: Array<{ id: string; fonte: "pessoa" | "lead"; nome: string; cargo: string | null; papel: string | null; email: string | null; telefone: string | null }>;
-  leads: Array<{ id: string; etapa: string; etapaRotulo: string; origem: string | null; criadoEm: string }>;
+  /** Aquisições da empresa: etapa do board, de quem é, e a nutrição com motivo e data de entrada. */
+  leads: Array<{
+    id: string; etapa: string; etapaRotulo: string; origem: string | null; criadoEm: string;
+    pessoa: string | null; responsavel: string | null;
+    nutricao: { motivo: string | null; desde: string | null; retomarEm: string | null } | null;
+  }>;
   oportunidades: Array<{ id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null; valor: number | null; responsavel: string | null }>;
   propostas: Array<{ id: string; numero: number; versao: number; status: string; total: number | null; enviadaEm: string | null }>;
   servicos: Array<{ id: string; familia: string; produto: string | null; valor: number; ativo: boolean }>;
@@ -1299,16 +1304,31 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
   // Aquisições da empresa. Era `leads ... AND estagio_pre_vendas IS NOT NULL`,
   // o mesmo filtro que escondia 2.392 registros no board: aqui ele fazia a
   // empresa parecer não ter histórico de entrada nenhum.
-  const leads = await db.execute<{ id: string; etapa: string | null; origem: string | null; criado_em: string }>(sql`
+  const leads = await db.execute<{
+    id: string; etapa: string | null; origem: string | null; criado_em: string; pessoa: string | null; responsavel: string | null;
+    nutricao_motivo: string | null; nutrido_em: string | null; retomar_em: string | null;
+  }>(sql`
     SELECT COALESCE(a.lead_legado_id, a.id)::text AS id,
-           CASE
-             WHEN a.desqualificado_em IS NOT NULL THEN 'desqualificado'
-             WHEN a.nutricao_status IS NOT NULL AND a.nutricao_status <> '' THEN 'nutricao'
-             WHEN a.qualificado THEN 'qualificado'
-             ELSE 'novo'
-           END AS etapa,
-           a.origem, a.created_at::text AS criado_em
-      FROM aquisicoes a WHERE a.empresa_id = ${empresaId}::uuid
+           -- A etapa GRAVADA na aquisição manda (a mesma do board); o CASE é só o reserva
+           -- de aquisição sem etapa. O legado refina "qualificacao", como no board.
+           CASE WHEN l.estagio_pre_vendas = 'qualificacao' THEN 'qualificacao'
+                ELSE COALESCE(pe.codigo, CASE
+                  WHEN a.desqualificado_em IS NOT NULL THEN 'desqualificado'
+                  WHEN a.nutricao_status IS NOT NULL AND a.nutricao_status <> '' THEN 'nutricao'
+                  WHEN a.qualificado THEN 'qualificado'
+                  ELSE 'novo'
+                END) END AS etapa,
+           a.origem, a.created_at::text AS criado_em,
+           NULLIF(trim(concat_ws(' ', l.nome, l.sobrenome)), '') AS pessoa, u.nome AS responsavel,
+           COALESCE(NULLIF(a.nutricao_status, 'em_nutricao'), l.nutricao_motivo) AS nutricao_motivo,
+           COALESCE(l.nutrido_em, (SELECT max(sc.created_at) FROM status_changes sc
+                                    WHERE sc.lead_id = l.id AND sc.para_status = 'nutricao'))::text AS nutrido_em,
+           COALESCE(a.retomar_em, l.nutricao_retomar_em)::text AS retomar_em
+      FROM aquisicoes a
+      LEFT JOIN leads l ON l.id = a.lead_legado_id
+      LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
+      LEFT JOIN usuarios u ON u.id = COALESCE(a.responsavel_id, l.responsavel_id)
+     WHERE a.empresa_id = ${empresaId}::uuid
      ORDER BY a.created_at DESC LIMIT 20
   `);
 
@@ -1406,6 +1426,8 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
       id: l.id, etapa: l.etapa ?? "novo",
       etapaRotulo: ROTULO_ETAPA_PRE_VENDAS[(l.etapa ?? "novo") as EstagioPreVendas] ?? l.etapa ?? "",
       origem: origemCanonica(l.origem), criadoEm: l.criado_em,
+      pessoa: l.pessoa, responsavel: l.responsavel,
+      nutricao: l.etapa === "nutricao" ? { motivo: l.nutricao_motivo, desde: l.nutrido_em, retomarEm: l.retomar_em } : null,
     })),
     oportunidades: oportunidades.map((o) => ({
       id: o.id, titulo: o.titulo, etapa: o.etapa ?? "entrada",
