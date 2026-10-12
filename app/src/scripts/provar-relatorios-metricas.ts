@@ -110,6 +110,26 @@ async function main() {
     ok(erros.length === 0, `sem erro de console no booking (${erros.join(" | ") || "limpo"})`);
     await page.context().close();
 
+    // ── Faturamento por competência (histórico desde 2021) ──
+    ({ page, erros } = await abrir(1440));
+    await page.goto(`${BASE}/relatorios/biblioteca/metrica-faturamento_competencia?periodo=tudo`, { waitUntil: "networkidle", timeout: 90000 });
+    await page.locator(".rx-kpi-valor").waitFor({ timeout: 30000 });
+    await page.locator(".recharts-bar-rectangle").first().waitFor({ timeout: 20000 });
+    await page.waitForTimeout(800);
+    const hist = num(await page.locator(".rx-kpi-valor").innerText());
+    ok(hist > 25_000_000 && hist < 26_000_000, `histórico completo soma R$ 25,3 mi (${await page.locator(".rx-kpi-valor").innerText()})`);
+    const barras = await page.locator(".recharts-bar-rectangle").count();
+    ok(barras === 67, `uma barra por competência: ${barras} de 67`);
+    await page.screenshot({ path: `${OUT}/6-faturamento-tudo.png`, fullPage: true });
+    await page.goto(`${BASE}/relatorios/biblioteca/metrica-faturamento_competencia`, { waitUntil: "networkidle" });
+    await page.locator(".rx-seg button[aria-pressed=true]", { hasText: "12 meses" }).waitFor({ timeout: 20000 });
+    ok(true, "abre em 12 meses (período padrão da métrica) com o botão marcado");
+    await page.locator(".rx-seg button", { hasText: "Todo o histórico" }).click();
+    await page.waitForFunction(() => location.search.includes("periodo=tudo"));
+    ok(true, "trocar o período grava na URL");
+    ok(erros.length === 0, `sem erro de console no faturamento (${erros.join(" | ") || "limpo"})`);
+    await page.context().close();
+
     // ── Larguras: tablet e celular ──
     for (const w of [820, 390]) {
       ({ page, erros } = await abrir(w, 844));

@@ -25,8 +25,8 @@ const dia = (v: string | null | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v
 export function lerPedido(codigo: string, q: URLSearchParams, agora = new Date()): PedidoMetrica | null {
   const d = definicao(codigo);
   if (!d) return null;
-  const bruto = q.get("periodo") ?? "mes_atual";
-  const periodo = PERIODO_RE.test(bruto) ? bruto : "mes_atual";
+  const bruto = q.get("periodo") ?? d.explorar.periodoPadrao ?? "mes_atual";
+  const periodo = PERIODO_RE.test(bruto) ? bruto : (d.explorar.periodoPadrao ?? "mes_atual");
   let janela = janelaDoPeriodo(periodo, agora);
   let pisoAplicado: Date | null = null;
   const piso = d.explorar.piso;
@@ -63,6 +63,8 @@ export interface RespostaMetrica {
     dimensoes: DefinicaoMetrica["explorar"]["dimensoes"];
     ordenaveis: string[];
   };
+  /** Período efetivo (o padrão da métrica quando a URL não diz). */
+  periodo: string;
   janela: { de: string; ate: string; rotulo: string; parcial: boolean } | null;
   pisoAplicado: string | null;
   comparacao: { rotulo: string; valor: number; variacao: number | null } | null;
@@ -87,7 +89,9 @@ export async function responder(organizacaoId: string, pedido: PedidoMetrica, ag
       comparacao = { rotulo: ant.rotulo, valor: v, variacao: v === 0 ? null : (exploracao.total - v) / Math.abs(v) };
       if (exploracao.serie) {
         const { de: _de, ate: _ate, ...semIntervalo } = pedido.selecao;
-        serieAnterior = (await explorar(organizacaoId, pedido.codigo, { ...pedido.p, de: ant.de, ate: ant.ate }, semIntervalo, 1, 5))?.serie ?? null;
+        const anterior = (await explorar(organizacaoId, pedido.codigo, { ...pedido.p, de: ant.de, ate: ant.ate }, semIntervalo, 1, 5))?.serie ?? null;
+        // Janela anterior sem nenhum ponto não é "zero": é ausência de dado, e a linha de comparação nem aparece.
+        serieAnterior = anterior && anterior.pontos.length > 0 ? anterior : null;
       }
     }
   }
@@ -96,6 +100,7 @@ export async function responder(organizacaoId: string, pedido: PedidoMetrica, ag
       codigo: d.codigo, nome: d.nome, tipo: d.tipo, unidade: d.unidade, descricao: d.descricao, fonte: d.fonte,
       naoInclui: d.naoInclui, agregacao: d.agregacao, filtros: d.filtros, dimensoes: d.explorar.dimensoes, ordenaveis: d.explorar.ordenaveis,
     },
+    periodo: pedido.periodo,
     janela: snapshot ? null : {
       de: pedido.janela.de.toISOString(), ate: pedido.janela.ate.toISOString(),
       rotulo: pedido.janela.rotulo, parcial: pedido.janela.parcial,

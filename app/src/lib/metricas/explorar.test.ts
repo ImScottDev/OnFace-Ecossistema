@@ -74,3 +74,42 @@ test("evento: série mensal soma o card; clicar num ponto filtra para o valor do
   const f = (await explorar(org, "recebido", p, { de, ate }))!;
   assert.equal(c(f.selecionado.valor), c(ponto.valor));
 });
+
+test("faturamento por competência: set/2026 fecha no rodapé da planilha original e a série mensal soma o card", async () => {
+  const org = await organizacao();
+  // Rodapés das planilhas originais (arquivos preservados em db-export/.../fontes): independentes do banco.
+  const RODAPE = { "2026-07": 44537574, "2026-08": 43562664, "2026-09": 51240449 };
+  const j = janelaDoPeriodo("custom:2026-07-01:2026-09-30");
+  const e = (await explorar(org, "faturamento_competencia", { de: j.de, ate: j.ate, incluirTestes: true }))!;
+  assert.equal(e.serie!.granularidade, "mes");
+  for (const [mes, esperado] of Object.entries(RODAPE)) {
+    const ponto = e.serie!.pontos.find((p) => p.inicio === `${mes}-01`);
+    assert.ok(ponto, `competência ${mes} ausente da série`);
+    assert.equal(c(ponto!.valor), esperado, `${mes}: a série não bate com o rodapé da planilha`);
+  }
+  assert.equal(e.serie!.pontos.reduce((a, x) => a + c(x.valor), 0), c(e.total));
+  const dim = e.dimensoes.find((d) => d.chave === "familia")!;
+  assert.equal(dim.itens.reduce((a, i) => a + c(i.valor), 0) + c(dim.outros?.valor ?? 0), c(e.total));
+});
+
+test("faturamento histórico: o card de todo o histórico é a soma dos 67 meses e cada mês aparece", async () => {
+  const org = await organizacao();
+  const j = janelaDoPeriodo("tudo");
+  const e = (await explorar(org, "faturamento_competencia", { de: j.de, ate: j.ate, incluirTestes: true }))!;
+  const [oraculo] = await db.execute<{ v: string; n: string }>(sql`SELECT COALESCE(sum(valor),0)::text v, count(DISTINCT competencia)::text n FROM cliente_receita_mensal WHERE organizacao_id = ${org}::uuid`);
+  assert.equal(c(e.total), c(Number(oraculo.v)));
+  assert.equal(e.serie!.pontos.length, Number(oraculo.n));
+  // Clicar num mês filtra para o valor do mês.
+  const ponto = e.serie!.pontos[10];
+  const f = (await explorar(org, "faturamento_competencia", { de: j.de, ate: j.ate, incluirTestes: true }, { de: new Date(`${ponto.inicio}T00:00:00-03:00`), ate: new Date(`${ponto.inicio.slice(0, 7)}-15T00:00:00-03:00`) }))!;
+  assert.equal(c(f.selecionado.valor), c(ponto.valor));
+});
+
+test("clientes faturados conta documentos distintos, não linhas", async () => {
+  const org = await organizacao();
+  const j = janelaDoPeriodo("custom:2026-09-01:2026-09-30");
+  const e = (await explorar(org, "clientes_faturados", { de: j.de, ate: j.ate, incluirTestes: true }))!;
+  const [o] = await db.execute<{ n: string }>(sql`SELECT count(DISTINCT COALESCE(documento, customer_key))::text n FROM cliente_receita_mensal WHERE organizacao_id = ${org}::uuid AND competencia = '2026-09-01' AND valor > 0`);
+  assert.equal(e.selecionado.registros, Number(o.n));
+  assert.equal(e.total, Number(o.n));
+});

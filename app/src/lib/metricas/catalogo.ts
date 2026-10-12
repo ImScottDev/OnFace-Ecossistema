@@ -72,6 +72,10 @@ export interface DefinicaoMetrica {
     dimensoes: Array<{ chave: string; rotulo: string }>;
     /** Coluna de data do evento (só EVENT): base da série temporal. */
     campoData?: string;
+    /** `data` = coluna `date` de calendário (competência), sem hora nem fuso; padrão é timestamptz. */
+    campoDataTipo?: "data";
+    /** Período com que a tela abre quando a URL não diz (padrão: mês atual). */
+    periodoPadrao?: string;
     /** Colunas pesquisadas pela caixa de busca. */
     busca: string[];
     /** Colunas aceitas em ORDER BY do detalhe. */
@@ -308,6 +312,91 @@ export const CATALOGO: DefinicaoMetrica[] = [
          AND o.ganho_at IS NULL AND o.perdido_at IS NULL AND o.etapa IS NOT NULL
          AND ${daFamilia("o.service_family", p.familia)}
          AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(o.titulo, '')"))}`,
+  }),
+  definir({
+    codigo: "faturamento_competencia",
+    nome: "Faturamento por competência",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao:
+      "Valor FATURADO em cada competência mensal (planilhas de faturamento, desde março/2021). " +
+      "Não é recebimento, não é MRR e não é venda: é o que foi cobrado no mês de competência.",
+    fonte:
+      "cliente_receita_mensal: 11.111 linhas da base histórica (03/2021 a 06/2026) e os fechamentos de " +
+      "julho a setembro de 2026, conciliados ao centavo com os arquivos originais (ver conciliação).",
+    naoInclui:
+      "recebimento (faturamento não prova pagamento), venda decidida e MRR contratado. Mês ainda não fechado " +
+      "aparece como ausente, nunca como zero. A família é a da Business Line da planilha (CALL FACE - LEASE " +
+      "conta como PABX); linhas sem família ficam em 'Sem família'.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.competencia DESC, t.valor DESC",
+    explorar: {
+      dimensoes: [
+        { chave: "familia", rotulo: "Família" },
+        { chave: "natureza", rotulo: "Natureza da receita" },
+        { chave: "confianca", rotulo: "Confiança da classificação" },
+        { chave: "fonte", rotulo: "Fonte do dado" },
+      ],
+      campoData: "competencia", campoDataTipo: "data", periodoPadrao: "12m", piso: new Date("2021-03-01T00:00:00-03:00"),
+      busca: ["empresa", "documento"],
+      ordenaveis: ["valor", "empresa", "competencia", "familia", "natureza"],
+    },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT r.id::text AS id, r.empresa_id::text AS empresa_id, COALESCE(e.nome, r.cliente_nome) AS empresa,
+               r.documento, r.competencia, COALESCE(NULLIF(r.service_family, ''), 'UNKNOWN') AS familia,
+               r.revenue_nature AS natureza, r.confidence AS confianca, r.source AS fonte,
+               r.valor::numeric AS valor
+          FROM cliente_receita_mensal r
+          LEFT JOIN empresas e ON e.id = r.empresa_id
+         WHERE r.organizacao_id = ${org}::uuid
+           AND r.competencia >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND r.competencia <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND ${daFamilia("COALESCE(NULLIF(r.service_family, ''), 'UNKNOWN')", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, r.cliente_nome, '')"))}`;
+    },
+  }),
+  definir({
+    codigo: "clientes_faturados",
+    nome: "Clientes faturados",
+    tipo: "EVENT",
+    unidade: "contagem",
+    descricao:
+      "Documentos (CNPJ/CPF) distintos com algum valor faturado na janela. Cliente faturado não é " +
+      "cliente ativo: é quem recebeu cobrança no período, mesmo de setup ou avulso.",
+    fonte: "cliente_receita_mensal, um registro por documento somando as competências da janela.",
+    naoInclui:
+      "serviço ativo sem faturamento no período e cliente que paga por outro documento. Primeiro faturamento " +
+      "observado não prova primeira venda, e ausência de faturamento não prova cancelamento.",
+    agregacao: "contagem",
+    filtros: { familia: true },
+    ordem: "t.valor DESC",
+    explorar: {
+      dimensoes: [{ chave: "familia", rotulo: "Família" }],
+      busca: ["empresa", "documento"],
+      ordenaveis: ["valor", "empresa", "competencias"],
+      periodoPadrao: "12m", piso: new Date("2021-03-01T00:00:00-03:00"),
+    },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT COALESCE(r.documento, r.customer_key) AS id, max(r.empresa_id::text) AS empresa_id,
+               COALESCE(max(e.nome), max(r.cliente_nome)) AS empresa, COALESCE(r.documento, r.customer_key) AS documento,
+               CASE WHEN count(DISTINCT COALESCE(NULLIF(r.service_family, ''), 'UNKNOWN')) = 1
+                    THEN max(COALESCE(NULLIF(r.service_family, ''), 'UNKNOWN')) ELSE 'UNKNOWN' END AS familia,
+               count(DISTINCT r.competencia)::int AS competencias, sum(r.valor)::numeric AS valor
+          FROM cliente_receita_mensal r
+          LEFT JOIN empresas e ON e.id = r.empresa_id
+         WHERE r.organizacao_id = ${org}::uuid
+           AND r.competencia >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND r.competencia <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND r.valor > 0
+           AND ${daFamilia("COALESCE(NULLIF(r.service_family, ''), 'UNKNOWN')", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, r.cliente_nome, '')"))}
+         GROUP BY COALESCE(r.documento, r.customer_key)`;
+    },
   }),
 ];
 

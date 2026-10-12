@@ -72,7 +72,6 @@ export function ExploradorMetrica({ codigo }: { codigo: string }) {
     staleTime: 30_000,
   });
 
-  const periodo = busca.get("periodo") ?? "mes_atual";
   const familia = busca.get("familia") ?? "";
   const testes = busca.get("testes") === "1";
   const dim = busca.get("dim");
@@ -97,7 +96,7 @@ export function ExploradorMetrica({ codigo }: { codigo: string }) {
   }
   if (!data) return null;
 
-  const { metrica: m, exploracao: e, janela, comparacao, serieAnterior } = data;
+  const { metrica: m, exploracao: e, janela, comparacao, serieAnterior, periodo } = data;
   const snapshot = m.tipo === "SNAPSHOT";
   const filtroAtivo = !!(dim || de || (busca.get("q") ?? ""));
   const exportarHref = `/api/relatorios/metricas/${codigo}/exportar?${(() => { const p = new URLSearchParams(qs); p.delete("pagina"); return p.toString(); })()}`;
@@ -128,7 +127,7 @@ export function ExploradorMetrica({ codigo }: { codigo: string }) {
         {snapshot ? null : (
           <div className="rx-seg" role="group" aria-label="Período">
             {PERIODOS_EVENTO.map((p) => (
-              <button key={p.chave} type="button" aria-pressed={periodo === p.chave} onClick={() => mudar({ periodo: p.chave === "mes_atual" ? null : p.chave, de: null, ate: null })}>{p.rotulo}</button>
+              <button key={p.chave} type="button" aria-pressed={periodo === p.chave} onClick={() => mudar({ periodo: p.chave, de: null, ate: null })}>{p.rotulo}</button>
             ))}
           </div>
         )}
@@ -157,13 +156,13 @@ export function ExploradorMetrica({ codigo }: { codigo: string }) {
         </div>
       ) : null}
 
-      <div className="rx-grade" data-sem-serie={!serie}>
+      <div className="rx-grade" data-modo={!serie ? "retrato" : m.dimensoes.length > 2 ? "largo" : "lado"}>
         {/* ── Número + série ─────────────────────────────────────── */}
         <section className="rx-painel" aria-label="Resultado">
           <div className="rx-kpi">
             <span className="rx-kpi-rotulo">
               {m.nome}
-              {snapshot ? " · retrato de agora" : janela ? ` · ${janela.rotulo}${janela.parcial ? " (em andamento)" : ""}` : ""}
+              {snapshot ? " · retrato de agora" : janela ? ` · ${janela.rotulo}${janela.parcial && (periodo === "mes_atual" || periodo === "ano_atual") ? " (em andamento)" : ""}` : ""}
               {mostraSelecionado ? " · recorte selecionado" : ""}
             </span>
             <div className="rx-kpi-linha">
@@ -180,6 +179,7 @@ export function ExploradorMetrica({ codigo }: { codigo: string }) {
               <span className="rx-dica">Do total de {dinheiro(e.total, m.unidade)}: {e.total ? ((e.selecionado.valor / e.total) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : "0"}% em {e.selecionado.registros.toLocaleString("pt-BR")} de {e.registrosTotal.toLocaleString("pt-BR")} registros.</span>
             ) : (
               <span className="rx-dica">
+                {serie && pontos.length > 0 ? <>Dados de {rotuloPonto(pontos[0].inicio, serie.granularidade)} a {rotuloPonto(pontos[pontos.length - 1].inicio, serie.granularidade)}{janela?.parcial ? " (o período corrente ainda não fechou)" : ""}. </> : null}
                 {e.registrosTotal.toLocaleString("pt-BR")} {e.registrosTotal === 1 ? "registro compõe" : "registros compõem"} este número. {" "}
                 <button type="button" className="rx-kpi-ver" onClick={() => document.getElementById("rx-registros")?.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "start" })}>Ver a lista</button>
               </span>

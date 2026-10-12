@@ -259,6 +259,6 @@
 .rx-tabela th.rx-num, .rx-tabela td.rx-num { text-align: right; }
 
 /* Retrato sem série: o número ocupa a largura toda e as composições se distribuem em colunas, sem buraco ao lado. */
-.rx-grade[data-sem-serie="true"] { grid-template-columns: minmax(0, 1fr); }
-.rx-grade[data-sem-serie="true"] > section[aria-label="Composição"] { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px 28px; }
-.rx-grade[data-sem-serie="true"] > section[aria-label="Composição"] > details { grid-column: 1 / -1; }
+.rx-grade[data-modo="retrato"], .rx-grade[data-modo="largo"] { grid-template-columns: minmax(0, 1fr); }
+.rx-grade[data-modo="retrato"] > section[aria-label="Composição"], .rx-grade[data-modo="largo"] > section[aria-label="Composição"] { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px 28px; align-items: start; }
+.rx-grade[data-modo="retrato"] > section[aria-label="Composição"] > details, .rx-grade[data-modo="largo"] > section[aria-label="Composição"] > details { grid-column: 1 / -1; }

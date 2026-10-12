@@ -46,8 +46,14 @@ function condicoes(d: DefinicaoMetrica, s: Selecao): SQL[] {
       : sql`${col(dim.chave)}::text = ${s.valorDim}`);
   }
   const campo = d.explorar.campoData;
-  if (campo && s.de) c.push(sql`${col(campo)} >= ${s.de.toISOString()}::timestamptz`);
-  if (campo && s.ate) c.push(sql`${col(campo)} < ${s.ate.toISOString()}::timestamptz`);
+  if (campo && d.explorar.campoDataTipo === "data") {
+    const dia = (x: Date) => sql`(${x.toISOString()}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date`;
+    if (s.de) c.push(sql`${col(campo)} >= ${dia(s.de)}`);
+    if (s.ate) c.push(sql`${col(campo)} < ${dia(s.ate)}`);
+  } else if (campo) {
+    if (s.de) c.push(sql`${col(campo)} >= ${s.de.toISOString()}::timestamptz`);
+    if (s.ate) c.push(sql`${col(campo)} < ${s.ate.toISOString()}::timestamptz`);
+  }
   return c;
 }
 
@@ -120,11 +126,15 @@ export async function explorar(
   let serie: Exploracao["serie"] = null;
   if (d.explorar.campoData && d.tipo === "EVENT") {
     const dias = p.de && p.ate ? (p.ate.getTime() - p.de.getTime()) / 86_400_000 : 31;
-    const granularidade = dias <= 92 ? "dia" : "mes";
+    const ehData = d.explorar.campoDataTipo === "data";
+    // Competência é data de calendário: a menor unidade com sentido é o mês, e não passa por fuso.
+    const granularidade = ehData || dias > 92 ? "mes" : "dia";
     const campo = d.explorar.campoData;
     const semData = condicoes(d, { ...s, de: undefined, ate: undefined });
+    const unidade = granularidade === "dia" ? "day" : "month";
+    const base0 = ehData ? sql`${col(campo)}::timestamp` : sql`${col(campo)} AT TIME ZONE 'America/Sao_Paulo'`;
     const pontos = await db.execute<{ inicio: string; valor: string; n: string }>(sql`
-      SELECT to_char(date_trunc(${granularidade === "dia" ? "day" : "month"}, ${col(campo)} AT TIME ZONE 'America/Sao_Paulo'), 'YYYY-MM-DD') AS inicio,
+      SELECT to_char(date_trunc(${unidade}, ${base0}), 'YYYY-MM-DD') AS inicio,
              ${medida(d)}::text AS valor, count(*)::text AS n
         FROM (${base}) t ${onde(semData)} GROUP BY 1 ORDER BY 1`);
     serie = { granularidade, pontos: pontos.map((r) => ({ inicio: r.inicio, valor: Number(r.valor), registros: Number(r.n) })) };

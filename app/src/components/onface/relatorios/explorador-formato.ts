@@ -6,7 +6,7 @@ export const COLUNAS_OCULTAS = new Set(["negocio_id", "empresa_id", "id"]);
 export const ROTULOS: Record<string, string> = {
   titulo: "Oportunidade", empresa: "Empresa", produto: "Produto", familia: "Família", valor: "Valor", mrr: "MRR",
   ganho_at: "Ganho em", status: "Status", emitida_em: "Emitida em", metodo: "Método", paid_at: "Pago em",
-  servicos_ativos: "Serviços ativos", etapa: "Etapa", previsao_fechamento: "Previsão", origem: "Origem da linha",
+  servicos_ativos: "Serviços ativos", competencia: "Competência", competencias: "Competências", documento: "Documento", natureza: "Natureza", confianca: "Confiança", fonte: "Fonte", etapa: "Etapa", previsao_fechamento: "Previsão", origem: "Origem da linha",
 };
 
 export const VALOR_FAMILIA: Record<string, string> = {
@@ -53,6 +53,11 @@ export function formatarCelula(coluna: string, v: unknown, unidade: string): str
   if (v === null || v === undefined || v === "") return "—";
   if (coluna === "valor" || coluna === "mrr") return moedaExata(Number(v));
   if (coluna === "familia" || coluna === "origem") return rotuloValor(coluna, String(v));
+  if (coluna === "competencia") {
+    const iso = v instanceof Date ? v.toISOString() : String(v);
+    const m = /^(\d{4})-(\d{2})/.exec(iso);
+    return m ? `${m[2]}/${m[1]}` : iso;
+  }
   if (/_at$|_em$|previsao/.test(coluna)) {
     const d = new Date(String(v));
     return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
