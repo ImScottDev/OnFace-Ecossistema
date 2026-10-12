@@ -1,29 +1,26 @@
 import { notFound, redirect } from "next/navigation";
-import { sql } from "drizzle-orm";
-import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { pessoaPorId } from "@/lib/vendas/consultas";
-import { lerLinhaDoTempo } from "@/lib/vendas/eventos";
-import { Pagina } from "@/components/onface/shell/Pagina";
-import { DetalhePessoaPagina } from "@/components/onface/vendas/pagina";
+import { garantirRegistroDeContato } from "@/lib/vendas/identidade";
+import { rotaDaPessoa } from "@/lib/vendas/rota-da-ficha";
 
+export const dynamic = "force-dynamic";
+
+/**
+ * `/contatos/pessoas/:id` não é ficha: é a porta que recebe o id de uma pessoa
+ * canônica (busca global, links antigos, lista) e leva à ficha base
+ * (`PessoaProto`, em `/pessoas/:leadId`, chaveada pelo lead).
+ *
+ * Pessoa que ainda não tem registro de contato (cadastro avulso antigo) ganha
+ * um aqui, idempotente e sem processo comercial, para a ficha poder abrir.
+ * Antes ela caía numa página simplificada, paralela à ficha base.
+ */
 export default async function PessoaPorId({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ctx = await getTenantContext();
-  if (!ctx) notFound();
+  if (!ctx) redirect("/login");
   const pessoa = await pessoaPorId(ctx.organizacaoId, id);
   if (!pessoa) notFound();
-
-  /* A ficha da pessoa é o desenho do handoff (`PessoaProto`) em
-     `/pessoas/:leadId` — centrada no LEAD, que carrega origem, etapa e
-     próxima ação. Toda pessoa canônica com lead de origem vai para lá; só as
-     poucas sem lead (cadastro importado) continuam nesta página. */
-  if (pessoa.fonte === "lead") redirect(`/pessoas/${pessoa.id}`);
-  const [origem] = await db.execute<{ lead: string | null }>(sql`
-    SELECT lead_id_legado::text AS lead FROM pessoas
-     WHERE id = ${pessoa.id}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
-  if (origem?.lead) redirect(`/pessoas/${origem.lead}`);
-  const timeline = await lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, pessoaId: pessoa.id, limite: 40 });
-  // `Pagina` é a moldura atual; o par OnfacePage/Surface (faixa grafite) desenhava uma laje escura em volta da ficha.
-  return <Pagina><DetalhePessoaPagina pessoa={pessoa} timeline={timeline} voltar="/contatos" /></Pagina>;
+  if (pessoa.fonte === "lead") redirect(rotaDaPessoa(pessoa.id));
+  redirect(rotaDaPessoa(await garantirRegistroDeContato(ctx.organizacaoId, pessoa.id)));
 }

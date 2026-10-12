@@ -356,6 +356,49 @@ async function completarPessoa(pessoaId: string, dados: DadosPessoa, tx: Executo
   `);
 }
 
+/**
+ * Toda pessoa precisa de um registro de contato (`leads`, tipo "contato") para ter
+ * ficha: a ficha base, as notas, as tags e as atividades são chaveadas por ele.
+ * Contato avulso NÃO é processo comercial: o registro nasce sem etapa de
+ * Pré-vendas, sem aquisição, sem SDR e sem responsável, então não aparece no
+ * board e a lista o classifica como "Contato". Idempotente: devolve o existente.
+ */
+export async function garantirRegistroDeContato(organizacaoId: string, pessoaId: string, tx: ExecutorDb = db): Promise<string> {
+  const [p] = await tx.execute<{ lead: string | null; nome: string; sobrenome: string | null; email: string | null;
+    telefone: string | null; whatsapp: string | null; cargo: string | null; empresa_id: string | null; empresa: string | null }>(sql`
+    SELECT p.lead_id_legado::text AS lead, p.nome, p.sobrenome, p.email, p.telefone, p.whatsapp, p.cargo,
+           p.empresa_id::text, e.nome AS empresa
+      FROM pessoas p LEFT JOIN empresas e ON e.id = p.empresa_id
+     WHERE p.id = ${pessoaId}::uuid AND p.organizacao_id = ${organizacaoId}::uuid`);
+  if (!p) throw new Error("pessoa não encontrada");
+  if (p.lead) return p.lead;
+  const [l] = await tx.execute<{ id: string }>(sql`
+    INSERT INTO leads (organizacao_id, nome, sobrenome, email, telefone, whatsapp, cargo, empresa_id, empresa,
+                       tipo, status, sdr_status, estagio_pre_vendas)
+    VALUES (${organizacaoId}::uuid, ${p.nome}, ${p.sobrenome}, ${p.email}, ${p.telefone}, ${p.whatsapp}, ${p.cargo},
+            ${p.empresa_id}::uuid, ${p.empresa}, 'contato', 'novo', NULL, NULL)
+    RETURNING id::text`);
+  await tx.execute(sql`UPDATE pessoas SET lead_id_legado = ${l.id}::uuid, updated_at = now() WHERE id = ${pessoaId}::uuid`);
+  return l.id;
+}
+
+/** Lead em aberto em Pré-vendas para quem tem este e-mail ou telefone (comparação normalizada). */
+export async function aquisicaoAbertaPorContato(
+  organizacaoId: string, email: string | null, telefone: string | null, tx: ExecutorDb = db,
+): Promise<string | null> {
+  const em = email?.trim().toLowerCase() || null;
+  const chave = chaveTelefone(telefone);
+  if (!em && !chave) return null;
+  const [a] = await tx.execute<{ lead: string }>(sql`
+    SELECT a.lead_legado_id::text AS lead FROM aquisicoes a
+      JOIN pessoas p ON p.id = a.pessoa_id
+     WHERE a.organizacao_id = ${organizacaoId}::uuid AND a.closed_at IS NULL AND a.lead_legado_id IS NOT NULL
+       AND ((${em}::text IS NOT NULL AND lower(p.email) = ${em})
+         OR (${chave}::text IS NOT NULL AND (${telefoneChaveSql("p.telefone")} = ${chave} OR ${telefoneChaveSql("p.whatsapp")} = ${chave})))
+     LIMIT 1`);
+  return a?.lead ?? null;
+}
+
 /* ── Vínculo Pessoa ↔ Empresa ──────────────────────────────────────────── */
 
 /**

@@ -11,7 +11,8 @@ import * as preVendas from "@/lib/vendas/pre-vendas";
 import { criarOportunidadeDoLead } from "@/lib/vendas/pipeline";
 import { detalheLead, type DetalheLead } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
-import { resolverEmpresa } from "@/lib/vendas/identidade";
+import { resolverEmpresa, aquisicaoAbertaPorContato } from "@/lib/vendas/identidade";
+import { normalizarE164 } from "@/lib/telefone";
 import { confirmarEspelho } from "@/lib/vendas/sincronizar-aquisicao";
 import { adicionarTag, removerTag } from "@/lib/crm/tags";
 
@@ -206,18 +207,12 @@ export async function acaoCriarLead(entrada: {
     // dele moviam algo). Recusar com o motivo é melhor que um sucesso invisível.
     const email = entrada.email?.trim().toLowerCase() || null;
     const fone = entrada.telefone?.trim() || null;
-    if (email || fone) {
-      const [aberta] = await db.execute<{ lead: string | null }>(sql`
-        SELECT a.lead_legado_id::text AS lead FROM aquisicoes a
-          JOIN pessoas p ON p.id = a.pessoa_id
-         WHERE a.organizacao_id = ${ctx.organizacaoId}::uuid AND a.closed_at IS NULL
-           AND a.lead_legado_id IS NOT NULL
-           AND ((${email}::text IS NOT NULL AND lower(p.email) = ${email})
-             OR (${fone}::text IS NOT NULL AND (p.telefone = ${fone} OR p.whatsapp = ${fone})))
-         LIMIT 1`);
-      if (aberta) {
-        throw new RegraDeNegocio("lead_ja_aberto", "Esta pessoa já tem um lead em aberto em Pré-vendas. Trabalhe o lead existente em vez de criar outro.");
-      }
+    if (fone && !normalizarE164(fone)) {
+      throw new RegraDeNegocio("telefone_invalido", "Telefone inválido. Use DDD + número, ou + e o código do país.");
+    }
+    // Comparação por telefone NORMALIZADO: a base tem "(11) 9…", "+55 11 9…" e "119…" para o mesmo número.
+    if (await aquisicaoAbertaPorContato(ctx.organizacaoId, email, fone)) {
+      throw new RegraDeNegocio("lead_ja_aberto", "Esta pessoa já tem um lead em aberto em Pré-vendas. Trabalhe o lead existente em vez de criar outro.");
     }
     const criado = await preVendas.criarLead({
       organizacaoId: ctx.organizacaoId,

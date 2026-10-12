@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import type { ExecutorDb } from "./executor";
 import { registrarEvento, registrarMudancaDeEtapa } from "./eventos";
 import {
-  resolverEmpresa, resolverPessoa, registrarTouchpoint,
+  resolverEmpresa, resolverPessoa, registrarTouchpoint, telefoneParaGravar,
   type DadosEmpresa, type Touchpoint,
 } from "./identidade";
 import {
@@ -232,8 +232,8 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
       ${entrada.pessoa.nome},
       ${entrada.pessoa.sobrenome ?? null},
       ${entrada.pessoa.email ?? null},
-      ${entrada.pessoa.telefone ?? null},
-      ${entrada.pessoa.whatsapp ?? null},
+      ${telefoneParaGravar(entrada.pessoa.telefone)},
+      ${telefoneParaGravar(entrada.pessoa.whatsapp)},
       ${entrada.pessoa.cargo ?? null},
       ${empresa?.empresaId ?? null}::uuid,
       ${entrada.empresa?.nome ?? null},

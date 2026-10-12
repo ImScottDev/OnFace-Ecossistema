@@ -7,7 +7,13 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { atorHumano, RegraDeNegocio, type Familia, type PapelPessoa } from "@/lib/vendas/dominio";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
 import type { ExecutorDb } from "@/lib/vendas/executor";
-import { resolverEmpresa, resolverPessoa, vincularPessoaEmpresa } from "@/lib/vendas/identidade";
+import {
+  resolverEmpresa, resolverPessoa, vincularPessoaEmpresa, garantirRegistroDeContato, aquisicaoAbertaPorContato,
+  telefoneChaveSql, registrarTouchpoint,
+} from "@/lib/vendas/identidade";
+import { chaveTelefone, normalizarE164 } from "@/lib/telefone";
+import { rotaDaEmpresa, rotaDaPessoa } from "@/lib/vendas/rota-da-ficha";
+import { acaoCriarLead, acaoMoverEtapa } from "../pre-vendas/actions";
 import { criarLead } from "@/lib/vendas/pre-vendas";
 import { criarOportunidade } from "@/lib/vendas/pipeline";
 import { salvarDadosJuridicos, conferirDadosJuridicos, type DadosJuridicos } from "@/lib/vendas/propostas";
@@ -55,17 +61,169 @@ export async function acaoCriarPessoa(entrada: {
     const r = await resolverPessoa(ctx.organizacaoId, {
       nome: entrada.nome.trim(), sobrenome: entrada.sobrenome ?? null, cargo: entrada.cargo ?? null,
       email: entrada.email ?? null, telefone: entrada.telefone ?? null, whatsapp: entrada.whatsapp ?? null,
-      empresaId: entrada.empresaId ?? null,
+      empresaId: entrada.empresaId ?? null, papel: entrada.papel,
     }, ctx.ator);
-    if (entrada.empresaId) {
-      await vincularPessoaEmpresa({
-        organizacaoId: ctx.organizacaoId, pessoaId: r.pessoaId, empresaId: entrada.empresaId,
-        papel: entrada.papel ?? "contato_principal", principal: (entrada.papel ?? "contato_principal") === "contato_principal",
-        ator: ctx.ator,
-      });
-    }
     revalidatePath(ROTA);
     return { pessoaId: r.pessoaId, jaExistia: !r.criada };
+  });
+}
+
+
+/* ═══ Cadastro pelo modal "Novo contato / Nova empresa" ═════════════════════
+ *
+ * UMA ação para o modal inteiro. Antes o modal gravava a tela otimista, avisava
+ * "salvo" e só depois o adaptador mandava criar empresa e pessoas uma a uma, sem
+ * validar nada junto: o toast mentia quando o servidor recusava. Aqui valida
+ * tudo ANTES de gravar, cria a empresa UMA vez e só depois as pessoas, e devolve
+ * os ids e a rota da ficha base para a tela abrir o que foi criado.
+ */
+
+export interface PessoaDoCadastro { nome: string; cargo?: string | null; email?: string | null; telefone?: string | null }
+
+export interface EntradaCadastro {
+  tipo: "pessoa" | "empresa";
+  /** `base`: só na base, sem processo. `prevendas`: abre lead em Pré-vendas. */
+  destino: "base" | "prevendas";
+  nome: string;
+  /** tipo pessoa */
+  cargo?: string | null; email?: string | null; telefone?: string | null;
+  empresa?: string | null;
+  /** tipo empresa */
+  cnpj?: string | null; segmento?: string | null; site?: string | null;
+  pessoas?: PessoaDoCadastro[];
+  /** Pré-vendas, empresa sem pessoas na lista: o contato principal. */
+  contatoPrincipal?: PessoaDoCadastro | null;
+  /** base: de onde veio (vira ponto de contato). prevendas: origem inbound. */
+  origem?: string | null;
+  etapaInicial?: "novo" | "em_contato";
+  /** Só Pré-vendas: contato avulso não tem dono no domínio. */
+  responsavelId?: string | null;
+}
+
+export interface CadastroCriado {
+  empresaId: string | null;
+  empresaJaExistia: boolean;
+  pessoaId: string | null;
+  pessoaJaExistia: boolean;
+  leadId: string | null;
+  /** Ficha base do que foi criado (pessoa, ou empresa quando não há pessoa). */
+  rota: string;
+  /** Linha que a lista deve abrir/destacar depois do refresh. */
+  destaque: { tipo: "pessoa" | "empresa"; id: string };
+}
+
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+function limpaPessoa(p: PessoaDoCadastro): PessoaDoCadastro & { nome: string } {
+  return { nome: p.nome?.trim() ?? "", cargo: p.cargo?.trim() || null, email: p.email?.trim().toLowerCase() || null, telefone: p.telefone?.trim() || null };
+}
+
+function validaPessoa(p: PessoaDoCadastro & { nome: string }, rotulo: string) {
+  if (!p.nome) throw new RegraDeNegocio("nome", `${rotulo} precisa de nome.`);
+  if (p.email && !EMAIL_OK.test(p.email)) throw new RegraDeNegocio("email_invalido", `E-mail inválido em ${p.nome}.`);
+  if (p.telefone && !normalizarE164(p.telefone)) {
+    throw new RegraDeNegocio("telefone_invalido", `Telefone inválido em ${p.nome}. Use DDD + número, ou + e o código do país.`);
+  }
+}
+
+export async function acaoCadastrarContato(entrada: EntradaCadastro): Promise<Resultado<CadastroCriado>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("cadastrar contato", async () => {
+    const org = ctx.organizacaoId;
+    const nome = entrada.nome?.trim() ?? "";
+    if (!nome) throw new RegraDeNegocio("nome", entrada.tipo === "pessoa" ? "A pessoa precisa de um nome." : "A empresa precisa de um nome.");
+    const prevendas = entrada.destino === "prevendas";
+    const origem = entrada.origem?.trim() || null;
+
+    /* Quem é a pessoa deste cadastro, e quem são as outras. */
+    const donaDoCadastro = entrada.tipo === "pessoa"
+      ? limpaPessoa({ nome, cargo: entrada.cargo, email: entrada.email, telefone: entrada.telefone })
+      : null;
+    const listadas = (entrada.pessoas ?? []).map(limpaPessoa);
+    const principalDaEmpresa = entrada.tipo === "empresa"
+      ? (listadas[0] ?? (entrada.contatoPrincipal ? limpaPessoa(entrada.contatoPrincipal) : null))
+      : null;
+    const empresaNome = entrada.tipo === "empresa" ? nome : (entrada.empresa?.trim() || null);
+
+    // ── Validação completa, antes de gravar qualquer coisa ──
+    if (donaDoCadastro) validaPessoa(donaDoCadastro, "A pessoa");
+    listadas.forEach((p, i) => validaPessoa(p, `A pessoa ${i + 1}`));
+    if (!donaDoCadastro && entrada.contatoPrincipal && !listadas.length) validaPessoa(principalDaEmpresa!, "O contato principal");
+
+    const contatoDoLead = donaDoCadastro ?? principalDaEmpresa;
+    if (prevendas) {
+      if (!empresaNome) throw new RegraDeNegocio("sem_empresa", "Pré-vendas precisa de uma empresa: informe a empresa do contato.");
+      if (!contatoDoLead) throw new RegraDeNegocio("sem_contato", "Informe o contato principal do lead.");
+      if (!contatoDoLead.email && !contatoDoLead.telefone) {
+        throw new RegraDeNegocio("sem_identificador", `Informe e-mail ou telefone de ${contatoDoLead.nome}: sem eles não há como falar com o lead.`);
+      }
+      const aberto = await aquisicaoAbertaPorContato(org, contatoDoLead.email ?? null, contatoDoLead.telefone ?? null);
+      if (aberto) throw new RegraDeNegocio("lead_ja_aberto", "Esta pessoa já tem um lead em aberto em Pré-vendas. Trabalhe o lead existente em vez de criar outro.");
+    }
+
+    // ── Empresa: uma vez, antes das pessoas ──
+    const emp = empresaNome
+      ? await resolverEmpresa(org, {
+          nome: empresaNome,
+          cnpj: entrada.tipo === "empresa" ? entrada.cnpj?.trim() || null : null,
+          website: entrada.tipo === "empresa" ? entrada.site?.trim() || null : null,
+          setor: entrada.tipo === "empresa" ? entrada.segmento?.trim() || null : null,
+        }, ctx.ator)
+      : null;
+    const empresaId = emp?.empresaId ?? null;
+    if (emp?.criada && origem) {
+      await registrarTouchpoint({ organizacaoId: org, empresaId, touchpoint: { tipoOrigem: "manual", source: origem } });
+    }
+
+    /* Cria (ou reconhece) uma pessoa da empresa, com ficha e origem. */
+    const pessoaDaEmpresa = async (p: PessoaDoCadastro & { nome: string }) => {
+      const r = await resolverPessoa(org, { nome: p.nome, cargo: p.cargo, email: p.email, telefone: p.telefone, empresaId }, ctx.ator);
+      const leadId = await garantirRegistroDeContato(org, r.pessoaId);
+      if (r.criada && origem) {
+        await registrarTouchpoint({ organizacaoId: org, pessoaId: r.pessoaId, empresaId, leadIdLegado: leadId, touchpoint: { tipoOrigem: "manual", source: origem } });
+      }
+      return { pessoaId: r.pessoaId, leadId, jaExistia: !r.criada };
+    };
+
+    let pessoaId: string | null = null, leadId: string | null = null, pessoaJaExistia = false;
+
+    if (prevendas) {
+      const c = contatoDoLead!;
+      const lead = await acaoCriarLead({
+        empresa: empresaNome!, empresaId, pessoaNome: c.nome, cargo: c.cargo, email: c.email, telefone: c.telefone,
+        origem, responsavelId: entrada.responsavelId || null,
+      });
+      if (!lead.ok) throw new RegraDeNegocio(lead.codigo ?? "lead", lead.erro);
+      leadId = lead.dados!.leadId;
+      const [pe] = await db.execute<{ id: string }>(sql`SELECT id::text FROM pessoas WHERE lead_id_legado = ${leadId}::uuid AND organizacao_id = ${org}::uuid`);
+      pessoaId = pe?.id ?? null;
+      // Etapa escolhida no modal: o lead nasce em Novo e anda pela porta de etapa (histórico e aquisição).
+      if (entrada.etapaInicial === "em_contato") {
+        const m = await acaoMoverEtapa(leadId, "em_contato");
+        if (!m.ok) throw new RegraDeNegocio("etapa", `Lead criado, mas não consegui movê-lo para Em contato: ${m.erro}`);
+      }
+      for (const p of listadas.slice(1)) await pessoaDaEmpresa(p);
+    } else if (donaDoCadastro) {
+      const r = await pessoaDaEmpresa(donaDoCadastro);
+      pessoaId = r.pessoaId; leadId = r.leadId; pessoaJaExistia = r.jaExistia;
+    } else {
+      for (const p of listadas) {
+        const r = await pessoaDaEmpresa(p);
+        if (!pessoaId) { pessoaId = r.pessoaId; leadId = r.leadId; pessoaJaExistia = r.jaExistia; }
+      }
+    }
+
+    revalidatePath(ROTA);
+    if (empresaId) revalidatePath(rotaDaEmpresa(empresaId));
+    if (prevendas) revalidatePath("/pre-vendas");
+
+    const destaque = entrada.tipo === "empresa" && !pessoaId ? { tipo: "empresa" as const, id: empresaId! } : { tipo: "pessoa" as const, id: pessoaId! };
+    return {
+      empresaId, empresaJaExistia: emp ? !emp.criada : false, pessoaId, pessoaJaExistia, leadId,
+      rota: entrada.tipo === "empresa" && empresaId ? rotaDaEmpresa(empresaId) : leadId ? rotaDaPessoa(leadId) : ROTA,
+      destaque,
+    };
   });
 }
 
@@ -457,17 +615,28 @@ export async function acaoAdicionarPessoaNaEmpresa(empresaId: string, d: {
   return executar("adicionar pessoa", async () => {
     const [emp] = await db.execute<{ id: string }>(sql`SELECT id::text FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
     if (!emp) throw new RegraDeNegocio("empresa_inexistente", "Empresa não encontrada.");
+    const fone = d.telefone?.trim() || null;
+    if (fone && !normalizarE164(fone)) throw new RegraDeNegocio("telefone_invalido", "Telefone inválido. Use DDD + número, ou + e o código do país.");
+    const chave = chaveTelefone(fone);
+    /* Já está na empresa? Vínculo ativo OU `empresa_id` legado; nome igual, e-mail igual ou telefone
+       igual (comparação normalizada: a base tem formatos misturados). */
     const [dup] = await db.execute<{ id: string }>(sql`
-      SELECT id::text FROM pessoas WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
-         AND (lower(trim(concat_ws(' ', nome, sobrenome))) = ${nome.toLowerCase()} ${email ? sql`OR lower(email) = ${email}` : sql``})`);
+      SELECT p.id::text FROM pessoas p
+       WHERE p.organizacao_id = ${ctx.organizacaoId}::uuid
+         AND (p.empresa_id = ${empresaId}::uuid
+              OR EXISTS (SELECT 1 FROM pessoa_empresa_vinculos v WHERE v.pessoa_id = p.id AND v.empresa_id = ${empresaId}::uuid AND v.encerrado_em IS NULL))
+         AND (lower(trim(concat_ws(' ', p.nome, p.sobrenome))) = ${nome.toLowerCase()}
+              ${email ? sql`OR lower(p.email) = ${email}` : sql``}
+              ${chave ? sql`OR ${telefoneChaveSql("p.telefone")} = ${chave} OR ${telefoneChaveSql("p.whatsapp")} = ${chave}` : sql``})
+       LIMIT 1`);
     if (dup) throw new RegraDeNegocio("pessoa_duplicada", `${nome} já está na empresa.`);
+    /* `resolverPessoa` reaproveita quem já existe (e-mail/telefone) e faz o vínculo com a empresa.
+       Quem já tem outra empresa principal entra aqui como secundária; quem é novo, como principal. */
     const r = await resolverPessoa(ctx.organizacaoId, {
-      nome, cargo: d.cargo?.trim() || null, email, telefone: d.telefone?.trim() || null, whatsapp: null, empresaId,
+      nome, cargo: d.cargo?.trim() || null, email, telefone: fone, whatsapp: null, empresaId,
+      papel: PAPEL_POR_TEXTO.find(([re]) => re.test(d.cargo ?? ""))?.[1] ?? "outro",
     }, ctx.ator);
-    await vincularPessoaEmpresa({
-      organizacaoId: ctx.organizacaoId, pessoaId: r.pessoaId, empresaId,
-      papel: PAPEL_POR_TEXTO.find(([re]) => re.test(d.cargo ?? ""))?.[1] ?? "outro", principal: false, ator: ctx.ator,
-    });
+    await garantirRegistroDeContato(ctx.organizacaoId, r.pessoaId);
     revalidatePath("/empresas/" + empresaId);
     revalidatePath("/contatos");
     return { pessoaId: r.pessoaId, jaExistia: !r.criada };
