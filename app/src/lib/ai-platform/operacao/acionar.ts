@@ -13,7 +13,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentRuns, aiAlerts, aiCases, aiAgents, whatsappMensagens } from "@/lib/db/schema";
 import { executeAgent, NoEligibleAgentError } from "@/lib/ai-platform/runtime/execute-agent";
-import { contagemDeMensagens, registrarRunBloqueado, versaoPublicada } from "@/lib/agentes/autonomia";
+import { contagemDeMensagens, contatoDoLead, registrarRunBloqueado, versaoPublicada } from "@/lib/agentes/autonomia";
 import { dentroDoHorario, excedeTaxa, lerLimites, motivoDeParada, ROTULO_PARADA } from "@/lib/agentes/guardrails";
 import { devolverAoHumano } from "@/lib/agentes/handover";
 import { usuarioDoAgente } from "@/lib/agentes/usuario-do-agente";
@@ -25,6 +25,7 @@ import {
 import { avaliarEnvio } from "./politica-canal";
 import { lembrar } from "./memoria";
 import { garantirTranscricoes } from "../midia/transcrever";
+import { notificarSupervisor } from "./supervisao";
 
 export const EVENTO_MENSAGEM = "conversation.message_received";
 
@@ -92,6 +93,18 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
   const mode = e.mode ?? "live";
   const versao = await versaoPublicada(e.agentId);
   if (!versao && mode === "live") return bloqueado("agente_sem_versao_publicada");
+  if (mode === "live") {
+    const [ag] = await db.select({ status: aiAgents.status }).from(aiAgents).where(and(eq(aiAgents.id, e.agentId), eq(aiAgents.organizacaoId, e.organizacaoId))).limit(1);
+    if (!ag) return bloqueado("agente_nao_encontrado");
+    if (ag.status !== "published") { await registrarBloqueio(e, versao?.id ?? null, "agente_pausado_globalmente"); return bloqueado("agente_pausado_globalmente"); }
+  }
+
+  // Atendimento que começou pelo lead: o contato de WhatsApp é resolvido (ou criado no número do agente) aqui, uma vez.
+  if (mode === "live" && !e.contatoId && e.leadId) {
+    const ct = await contatoDoLead(e.organizacaoId, e.leadId, versao?.channelSessionId ?? null).catch(() => null);
+    if (ct) e = { ...e, contatoId: ct.id };
+    else { const runId = await registrarBloqueio(e, versao?.id ?? null, "lead_sem_whatsapp"); return bloqueado("lead_sem_whatsapp", runId); }
+  }
 
   // 1. Atribuição e exclusividade ------------------------------------------------
   let atrib: Atribuicao | null = null;
@@ -134,6 +147,14 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
 
   // 3. Canal e paradas de segurança (antes de gastar modelo) ----------------------
   if (mode === "live" && e.contatoId) {
+    // Número autorizado: uma conexão configurada NÃO pertence ao agente por padrão. Só os números escolhidos na versão valem.
+    const canais = ((versao?.guardrailConfig as Record<string, unknown> | null)?.canais ?? {}) as { whatsapp?: boolean; sessoes?: string[] };
+    if (canais.whatsapp === false) { const runId = await registrarBloqueio(e, versao?.id ?? null, "canal_whatsapp_desligado"); return bloqueado("canal_whatsapp_desligado", runId); }
+    const autorizadas = [versao?.channelSessionId, ...(Array.isArray(canais.sessoes) ? canais.sessoes : [])].filter((x): x is string => typeof x === "string" && x.length > 0);
+    if (autorizadas.length) {
+      const [ct] = await db.execute<{ sessao_id: string | null }>(sql`SELECT sessao_id::text FROM contatos WHERE id = ${e.contatoId}::uuid AND organizacao_id = ${e.organizacaoId}::uuid`);
+      if (!ct?.sessao_id || !autorizadas.includes(ct.sessao_id)) { const runId = await registrarBloqueio(e, versao?.id ?? null, "numero_nao_autorizado_para_o_agente"); return bloqueado("numero_nao_autorizado_para_o_agente", runId); }
+    }
     const canal = await avaliarEnvio({ organizacaoId: e.organizacaoId, contatoId: e.contatoId, proativo: Boolean(e.proativo), agora });
     if (!canal.permitido) { const runId = await registrarBloqueio(e, versao?.id ?? null, canal.codigo); return bloqueado(canal.codigo, runId); }
     if (e.evento === EVENTO_MENSAGEM) {
@@ -197,6 +218,7 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
         if (/duplicate key|uq_ai_agent_runs_one_live_per_contact/i.test(msg)) { ultimo = { resultado: "ocupado", motivo: "execucao_em_andamento" }; break; }
         if (atrib) await registrarExecucaoNaAtribuicao(atrib.id, { runId: atrib.ultimoRunId ?? "00000000-0000-0000-0000-000000000000", status: "falha", motivo: msg.slice(0, 300) }).catch(() => undefined);
         console.error(`[agentes] falha ao acionar ${e.agentId} (${entrada.evento}):`, err);
+        await notificarSupervisor(e.organizacaoId, versao?.guardrailConfig, { titulo: "Agente falhou ao atender", mensagem: msg, link: "/automacoes/execucoes" }).catch(() => undefined);
         ultimo = { resultado: "falhou", motivo: msg };
         break;
       }

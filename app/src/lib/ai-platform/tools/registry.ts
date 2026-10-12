@@ -18,6 +18,7 @@ import { devolverAoHumano, resolverHumanoDeDevolucao } from "@/lib/agentes/hando
 import { FERRAMENTAS_OPERACAO } from "./operacao";
 import { autonomiaDaFerramenta, type ClasseAutonomia, type ModoAutonomia } from "./politica";
 import { solicitarHandoffNaAtribuicao } from "../operacao/atribuicoes";
+import { notificarSupervisor } from "../operacao/supervisao";
 
 export type AgentToolContext = {
   organizacaoId: string;
@@ -222,6 +223,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       await db.insert(aiSdrContatoState).values({ contatoId: ctx.contatoId, organizacaoId: ctx.organizacaoId, aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(), handoffMotivo: String(input.motivo) })
         .onConflictDoUpdate({ target: aiSdrContatoState.contatoId, set: { aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(), handoffMotivo: String(input.motivo), updatedAt: new Date() } });
       await db.insert(aiAlerts).values({ organizacaoId: ctx.organizacaoId, kind: "handoff", severity: prioridade === "urgente" ? "critical" : "warning", title: "Agente solicitou atendimento humano", body: `${String(input.motivo)}${resumo ? `\n${resumo}` : ""}`.slice(0, 1800), refKind: "contato", refId: ctx.contatoId });
+      await notificarSupervisor(ctx.organizacaoId, ctx.guardrails, { titulo: "Agente passou um atendimento para uma pessoa", mensagem: `${String(input.motivo)}${resumo ? ` — ${resumo}` : ""}`, link: "/atendimento" }).catch(() => undefined);
       await solicitarHandoffNaAtribuicao({ organizacaoId: ctx.organizacaoId, contatoId: ctx.contatoId, leadId: ctx.leadId, motivo: String(input.motivo), resumo: resumo || null, copiloto: cfg.copilotoAposHandoff === true });
       // Agente que é responsável do lead devolve o responsável a uma pessoa (regra/delegação), com aviso e nota de contexto.
       if (ctx.agenteUsuarioId) {

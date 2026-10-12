@@ -131,7 +131,7 @@ export async function acionarAgenteParaMensagem(p: {
 /* ── Conversa do lead (contato) ────────────────────────────────────────── */
 
 /** Contato de WhatsApp do lead; cria na sessão do agente (ou a padrão) quando não existe. */
-async function contatoDoLead(organizacaoId: string, leadId: string, sessaoDoAgente: string | null) {
+export async function contatoDoLead(organizacaoId: string, leadId: string, sessaoDoAgente: string | null) {
   const [ja] = await db.select().from(contatos).where(and(eq(contatos.organizacaoId, organizacaoId), eq(contatos.leadId, leadId)))
     .orderBy(...(sessaoDoAgente ? [sql`(${contatos.sessaoId} = ${sessaoDoAgente}::uuid) DESC`] : []), desc(contatos.ultimaMsgAt)).limit(1);
   if (ja) return ja;

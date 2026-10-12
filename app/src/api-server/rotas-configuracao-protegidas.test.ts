@@ -32,6 +32,7 @@ const SO_CONFIGURACAO = [
   "automacoes-fluxos.ts",
   "automacoes-cadencias.ts",
   "automacoes-agentes.ts",
+  "automacoes-agentes-operacao.ts",
   "automacoes-tags.ts",
   "ai-platform.ts",
   "api-tokens.ts",

@@ -54,6 +54,7 @@ export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
     }, ["escopo", "chave", "valor"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "memory.remember", input); if (simulated) return simulated;
+      if ((ctx.guardrails?.memoria as { ativa?: boolean } | undefined)?.ativa === false) return { ok: false, error: "a memória está desligada para este agente" };
       const lead = await leadDoContexto(ctx);
       if (!ctx.contatoId && !lead) return { ok: false, error: "sem contato ou lead para ancorar a memória" };
       const escopo = String(input.escopo) as "pessoa" | "empresa" | "conversa" | "operacional";

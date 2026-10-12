@@ -302,6 +302,10 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       contexto = await construirContexto({
         organizacaoId: input.organizacaoId, agentId: selected.agent.id, contatoId: input.contatoId, leadId: input.leadId, mensagemAtual: input.message,
         evento: input.eventType, janelaMensagens: selected.version.historyMessageWindow,
+        politica: {
+          memoria: (guardrails.memoria as { ativa?: boolean } | undefined)?.ativa !== false,
+          conhecimento: { ativo: (selected.version.knowledgeConfig as { ativo?: boolean } | null)?.ativo !== false, categorias: ((selected.version.knowledgeConfig as { categorias?: unknown } | null)?.categorias as string[] | undefined) ?? undefined, max: (selected.version.knowledgeConfig as { maxTrechos?: number } | null)?.maxTrechos },
+        },
         motivoDaExecucao: [input.objetivo ? `Objetivo da atuação: ${input.objetivo}` : null, input.motivoDaExecucao].filter(Boolean).join("\n") || null,
       });
       messages[0] = { role: "system", content: `${messages[0]!.content}\n\n${contexto.texto}` };

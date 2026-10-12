@@ -130,6 +130,11 @@ export async function atribuirAgente(e: EntradaAtribuir): Promise<{ atribuicao: 
 
   let leadId = e.leadId ?? null;
   let contatoId = e.contatoId ?? null;
+  if (e.negocioId && !leadId) {
+    const [n] = await db.execute<{ lead_id: string | null }>(sql`SELECT lead_id::text FROM negocios WHERE id = ${e.negocioId}::uuid AND organizacao_id = ${e.organizacaoId}::uuid`);
+    if (!n) throw new AtribuicaoRecusada("oportunidade_invalida", "Oportunidade não encontrada nesta organização.");
+    leadId = n.lead_id;
+  }
   if (contatoId && !leadId) {
     const [c] = await db.select({ leadId: contatos.leadId }).from(contatos).where(and(eq(contatos.id, contatoId), eq(contatos.organizacaoId, e.organizacaoId))).limit(1);
     if (!c) throw new AtribuicaoRecusada("contato_invalido", "Contato não encontrado nesta organização.");

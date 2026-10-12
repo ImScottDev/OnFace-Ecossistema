@@ -31,6 +31,15 @@ function objeto(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 }
 
+/** Identidade do agente (guardrail_config.identidade): entra no prompt, não é enfeite. */
+export interface IdentidadeAgente { funcao: string; objetivo: string; especialidade: string; idioma: string; personalidade: string; estilo: string }
+
+export function lerIdentidade(guardrailConfig: unknown): IdentidadeAgente {
+  const i = objeto(objeto(guardrailConfig).identidade);
+  const t = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  return { funcao: t(i.funcao), objetivo: t(i.objetivo), especialidade: t(i.especialidade), idioma: t(i.idioma), personalidade: t(i.personalidade), estilo: t(i.estilo) };
+}
+
 export function lerEscopo(guardrailConfig: unknown): EscopoAgente {
   const e = objeto(objeto(guardrailConfig).escopo);
   return { podeAjudar: lista(e.podeAjudar), naoDeveTratar: lista(e.naoDeveTratar), transferirQuando: lista(e.transferirQuando) };
@@ -46,6 +55,12 @@ export function compilarPrompt(version: { systemPrompt: string | null; guardrail
   const escopo = lerEscopo(version.guardrailConfig);
   const expressoes = lerExpressoesHandoff(version.handoffConfig);
   const partes = [(version.systemPrompt ?? "").trim()];
+  const id = lerIdentidade(version.guardrailConfig);
+  const identidade = [
+    id.funcao ? `Função: ${id.funcao}` : null, id.objetivo ? `Objetivo: ${id.objetivo}` : null, id.especialidade ? `Especialidade: ${id.especialidade}` : null,
+    id.idioma ? `Idioma das respostas: ${id.idioma}` : null, id.personalidade ? `Personalidade: ${id.personalidade}` : null, id.estilo ? `Estilo de comunicação: ${id.estilo}` : null,
+  ].filter(Boolean);
+  if (identidade.length) partes.push(`Sua identidade nesta operação:\n${identidade.map((x) => `- ${x}`).join("\n")}`);
 
   if (escopo.podeAjudar.length) {
     partes.push(`Você pode ajudar com:\n${escopo.podeAjudar.map((x) => `- ${x}`).join("\n")}`);

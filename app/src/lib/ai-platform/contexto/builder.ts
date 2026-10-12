@@ -26,6 +26,8 @@ export interface EntradaContexto {
   janelaMensagens?: number;
   /** Instrução do compromisso/objetivo que motivou esta execução. */
   motivoDaExecucao?: string | null;
+  /** Política da versão: o que entra no contexto. Padrão: memória ligada, conhecimento ligado (4 trechos, todas as categorias). */
+  politica?: { memoria?: boolean; conhecimento?: { ativo?: boolean; categorias?: string[]; max?: number } };
   agora?: Date;
 }
 
@@ -265,13 +267,14 @@ export async function construirContexto(e: EntradaContexto): Promise<ContextoMon
   if (atribuicao) m.fontes.push({ tipo: "atribuicao", ref: s(atribuicao.id), rotulo: "Atribuição do agente" });
 
   // ── Memória ─────────────────────────────────────────────────────────────
-  const fatos = await recordar({ organizacaoId: org, contatoId: ids.contatoId, leadId: ids.leadId, empresaId: ids.empresaId, limite: 30 });
+  const memoriaLigada = e.politica?.memoria !== false;
+  const fatos = memoriaLigada ? await recordar({ organizacaoId: org, contatoId: ids.contatoId, leadId: ids.leadId, empresaId: ids.empresaId, limite: 30 }) : [];
   const porEscopo = (esc: string) => fatos.filter((f) => f.escopo === esc).map(formatarFato);
   m.add("memoria", "Memória (fatos com fonte; inferência não vale como dado confirmado)", [
     ...porEscopo("pessoa"), ...porEscopo("empresa"), ...porEscopo("conversa"), ...porEscopo("operacional"),
   ], 3200);
   for (const f of fatos.slice(0, 12)) m.fontes.push({ tipo: "memoria", ref: f.id, rotulo: `${f.chave}` });
-  const [orgMem] = await db.execute<Row>(sql`
+  const [orgMem] = !memoriaLigada ? [] : await db.execute<Row>(sql`
     SELECT string_agg('- ' || title || ': ' || left(body, 300), E'\n') AS t FROM (
       SELECT title, body FROM ai_memory_entries WHERE organizacao_id = ${org}::uuid AND status = 'active' ORDER BY created_at DESC LIMIT 8) x`);
   if (orgMem?.t) m.add("org", "Políticas e aprendizados da organização", [s(orgMem.t)], 2400);
@@ -279,7 +282,9 @@ export async function construirContexto(e: EntradaContexto): Promise<ContextoMon
   // ── Conhecimento aprovado relevante ─────────────────────────────────────
   const produtos = Array.isArray(lead?.servicos_interesse) ? (lead!.servicos_interesse as string[]).join(" ") : "";
   const consulta = [e.mensagemAtual, produtos, s(lead?.utm_campaign)].filter(Boolean).join(" ").slice(0, 400).trim();
-  if (consulta) {
+  const conhecimentoCfg = e.politica?.conhecimento ?? {};
+  if (consulta && conhecimentoCfg.ativo !== false) {
+    const categorias = conhecimentoCfg.categorias?.length ? conhecimentoCfg.categorias : null;
     const trechos = await db.execute<Row>(sql`
       SELECT c.id::text, ks.nome AS fonte, ks.categoria, left(c.content, 700) AS trecho,
              ts_rank(c.busca, onface_query_busca(${consulta}))::float AS score
@@ -287,7 +292,8 @@ export async function construirContexto(e: EntradaContexto): Promise<ContextoMon
         JOIN ai_knowledge_versions v ON v.id = c.version_id AND v.status = 'published'
         JOIN ai_knowledge_sources ks ON ks.id = v.source_id AND ks.governanca = 'aprovado' AND ks.status <> 'archived'
        WHERE c.organizacao_id = ${org}::uuid AND c.busca @@ onface_query_busca(${consulta})
-       ORDER BY score DESC LIMIT 4`).catch(() => [] as Row[]);
+         AND (${categorias === null} OR ks.categoria = ANY(${categorias ?? []}::text[]))
+       ORDER BY score DESC LIMIT ${Math.min(8, Math.max(1, conhecimentoCfg.max ?? 4))}`).catch(() => [] as Row[]);
     m.add("conhecimento", "Conhecimento aprovado relevante (use só isto como verdade comercial)", trechos.map((t) => `- [${s(t.fonte)}] ${corta(s(t.trecho).replace(/\s+/g, " "), 650)}`), 3200);
     for (const t of trechos) m.fontes.push({ tipo: "conhecimento", ref: s(t.id), rotulo: s(t.fonte) });
   }

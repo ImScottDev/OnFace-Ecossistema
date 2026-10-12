@@ -508,6 +508,16 @@ app.post("/atendimento/conversas/:id/ia", async (c) => {
     .values({ contatoId: id, organizacaoId: ctx.organizacaoId, ...valores, updatedAt: agora })
     .onConflictDoUpdate({ target: aiSdrContatoState.contatoId, set: { ...valores, updatedAt: agora } });
 
+  // A atribuição persistente acompanha: pessoa assumiu = agente em "humano"; pessoa devolveu = agente volta a conduzir.
+  try {
+    const { atribuicaoViva, transferirParaHumano, retomarAtribuicao } = await import("@/lib/ai-platform/operacao/atribuicoes");
+    const viva = await atribuicaoViva(ctx.organizacaoId, { contatoId: id });
+    if (viva) {
+      if (!parsed.data.ativa && viva.status !== "humano") await transferirParaHumano({ organizacaoId: ctx.organizacaoId, atribuicaoId: viva.id, motivo: "Pessoa assumiu a conversa", humanoUsuarioId: ctx.userId, ator: { usuarioId: ctx.userId } });
+      if (parsed.data.ativa && ["humano", "pausada", "falha"].includes(viva.status)) await retomarAtribuicao({ organizacaoId: ctx.organizacaoId, atribuicaoId: viva.id, ator: { usuarioId: ctx.userId } });
+    }
+  } catch (e) { console.error("[atendimento] sincronizar atribuição do agente:", e); }
+
   if (ativaAntes !== parsed.data.ativa) {
     await publicarEvento({
       organizacaoId: ctx.organizacaoId,
