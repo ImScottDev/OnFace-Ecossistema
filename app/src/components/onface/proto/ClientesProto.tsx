@@ -23,7 +23,7 @@ import { usePecas } from "./pecas-host";
 
 const brlC = (n: number) => "R$ " + Math.round(n).toLocaleString("pt-BR");
 const MESC = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-const pillC = (ok: boolean) => "display:inline-flex;align-items:center;gap:3px;height:20px;padding:0 7px;border-radius:9999px;font-size:11px;font-weight:700;white-space:nowrap;" + (ok ? "background:#e6f4ee;color:#1f7256" : "background:#fdeeea;color:#c2330f");
+const pillC = (ok: boolean) => "display:inline-flex;align-items:center;gap:3px;height:20px;padding:0 7px;border-radius:9999px;font-size:11px;font-weight:700;white-space:nowrap;" + (ok ? "background:var(--of-sucesso-fundo);color:var(--of-sucesso-tinta)" : "background:var(--of-coral-fundo-forte);color:var(--of-coral-texto)");
 
 /**
  * VISÃO PRINCIPAL da Carteira (decisão do Scott, 06/10): evolução do
@@ -49,7 +49,7 @@ function evolucaoFaturamento(v: any, c: CarteiraDoDesenho, S: any) {
     aStyle: "transition:opacity .2s;opacity:" + (hE == null ? 1 : .85), lStyle: "",
   })).reverse();
   // Linha de MRR por cima de tudo: sem área, traço claro, desenhada por último.
-  camadas.push({ gid: "evoGmrrTopo", cor: "#ffffff", fill: "none", linha: g.linhaMrr, area: "", aStyle: "", lStyle: "" });
+  camadas.push({ gid: "evoGmrrTopo", cor: "white", fill: "none", linha: g.linhaMrr, area: "", aStyle: "", lStyle: "" });
   Object.assign(v.evo, {
     desc: "Faturamento por natureza · " + mesTxt(serie[0].competencia) + " a " + mesTxt(serie[EN - 1].competencia) + " · linha branca = MRR",
     total: brlC(serie[EN - 1].total),
@@ -57,17 +57,17 @@ function evolucaoFaturamento(v: any, c: CarteiraDoDesenho, S: any) {
     eixo: [4, 3, 2, 1, 0].map((k) => ({ l: g.passo * k >= 1000 ? "R$ " + ((g.passo * k) / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "k" : "R$ " + Math.round(g.passo * k) })),
     camadas,
     cols: serie.map((_, i) => ({ entrar: () => { if (S.hvE !== i) S.setState?.({ hvE: i }); } })),
-    rot: serie.map((m, i) => ({ l: MESC[Number(m.competencia.slice(5)) - 1], st: "position:absolute;top:0;transform:translateX(-50%);font-size:10.5px;color:#67787c;white-space:nowrap;left:" + (EN === 1 ? 50 : (i / (EN - 1)) * 100) + "%" + ((EN - 1 - i) % passoRot ? ";visibility:hidden" : "") + (i === 0 ? ";transform:none" : i === EN - 1 ? ";transform:translateX(-100%)" : "") })),
+    rot: serie.map((m, i) => ({ l: MESC[Number(m.competencia.slice(5)) - 1], st: "position:absolute;top:0;transform:translateX(-50%);font-size:10.5px;color:var(--of-tinta-3);white-space:nowrap;left:" + (EN === 1 ? 50 : (i / (EN - 1)) * 100) + "%" + ((EN - 1 - i) % passoRot ? ";visibility:hidden" : "") + (i === 0 ? ";transform:none" : i === EN - 1 ? ";transform:translateX(-100%)" : "") })),
     temDica: hE != null,
     guia: hE != null ? "position:absolute;top:0;bottom:0;width:0;border-left:1px dashed rgba(254,79,43,.45);pointer-events:none;left:" + dicaX + "%" : "display:none",
-    pts: hE != null ? g.visiveis.map((cm, j) => ({ st: "position:absolute;pointer-events:none;width:9px;height:9px;border-radius:9999px;background:" + cm.cor + ";box-shadow:0 0 0 2px #12171d;transform:translate(-50%,-50%);left:" + dicaX + "%;top:" + (g.Y(g.cum[j][hE]) * 170 / 220) + "px" })) : [],
+    pts: hE != null ? g.visiveis.map((cm, j) => ({ st: "position:absolute;pointer-events:none;width:9px;height:9px;border-radius:9999px;background:" + cm.cor + ";box-shadow:0 0 0 2px var(--of-tinta-forte);transform:translate(-50%,-50%);left:" + dicaX + "%;top:" + (g.Y(g.cum[j][hE]) * 170 / 220) + "px" })) : [],
     dicaT: hE != null ? mesTxt(serie[hE].competencia) : "",
     dicaL: hE != null ? g.visiveis.slice().reverse().map((cm) => ({ l: cm.l, v: brlC(serie[hE][cm.k]), dot: "width:8px;height:8px;border-radius:2px;background:" + cm.cor })) : [],
     dicaTot: hE != null ? brlC(g.totais[hE]) : "",
     legenda: CAMADAS_FATURAMENTO.map((cm) => { const off = !!(S.evoOff || {})[cm.k]; return {
       l: cm.l, onClick: () => S.setState?.((s: any) => ({ evoOff: Object.assign({}, s.evoOff || {}, { [cm.k]: !off }) })),
-      st: "display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 6px;border-radius:7px;border:0;background:transparent;cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap;color:" + (off ? "#4a5560;text-decoration:line-through" : "#a3aab0"),
-      dot: "width:9px;height:9px;border-radius:2px;background:" + (off ? "#2a3139" : cm.cor),
+      st: "display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 6px;border-radius:7px;border:0;background:transparent;cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap;color:" + (off ? "var(--of-tinta-2);text-decoration:line-through" : "var(--of-tinta-no-escuro)"),
+      dot: "width:9px;height:9px;border-radius:2px;background:" + (off ? "var(--of-grafite-borda)" : cm.cor),
     }; }),
   });
   /* KPIs: MRR | Setup/Avulso | Total, sempre separados. Sem natureza
@@ -94,7 +94,7 @@ function evolucaoFaturamento(v: any, c: CarteiraDoDesenho, S: any) {
     const dm = delta(ult.mrr, ant?.mrr);
     Object.assign(v.hero, {
       mrr: brlC(ult.mrr), dt: dm.dt, dIco: dm.dIco,
-      dStyle: dm.temD ? "display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:9999px;font-size:12px;font-weight:700;white-space:nowrap;" + (dm.dt && ult.mrr < (ant?.mrr ?? 0) ? "background:rgba(254,79,43,.14);color:#ff8a70" : "background:rgba(62,207,142,.12);color:#3ecf8e") : "display:none",
+      dStyle: dm.temD ? "display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:9999px;font-size:12px;font-weight:700;white-space:nowrap;" + (dm.dt && ult.mrr < (ant?.mrr ?? 0) ? "background:rgba(254,79,43,.14);color:var(--of-coral-no-escuro)" : "background:rgba(62,207,142,.12);color:var(--of-sucesso-no-escuro)") : "display:none",
       dTxt: "MRR vs. mês anterior",
       /* Setup/Avulso e Débito recuperado são naturezas distintas (regra do Scott):
          juntar os dois escondia os R$ 6 mil de débito dentro do "avulso". */

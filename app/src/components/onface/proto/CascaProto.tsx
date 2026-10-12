@@ -333,7 +333,7 @@ class CascaLigada extends CascaLiga {
             <textarea key={chaveDe(c)} aria-label="Mensagem de WhatsApp a enviar" rows={4}
               value={edicoes[chaveDe(c)] ?? c.rascunho}
               onChange={(e) => this.setState((s: any) => ({ nexoEdicoes: { ...(s.nexoEdicoes || {}), [chaveDe(c)]: e.target.value } }))}
-              style={{ display: "block", width: "100%", marginTop: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--of-shell-borda, #dbdede)", font: "inherit", fontSize: 13, lineHeight: 1.5, resize: "vertical", background: "#fff", color: "#1f252c" }} />
+              style={{ display: "block", width: "100%", marginTop: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--of-shell-borda, var(--of-linha-controle))", font: "inherit", fontSize: 13, lineHeight: 1.5, resize: "vertical", background: "var(--of-papel)", color: "var(--of-tinta)" }} />
           ))}
         </> : texto,
         acoes: (m.acoes || []).map((a: any, j: number) => {

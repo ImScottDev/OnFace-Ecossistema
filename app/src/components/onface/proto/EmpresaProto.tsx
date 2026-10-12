@@ -76,7 +76,7 @@ class EmpresaLigada extends EmpresaLiga {
        O motor não guarda a posição numérica do passo: não afirmar um. */
     if (vals.temCad) {
       vals.cadPasso = P.cadPausada ? "Pausada" : "Em andamento";
-      vals.cadPassos = (vals.cadPassos ?? []).map(() => ({ style: "flex:1;height:3px;border-radius:2px;background:#e3e7e8" }));
+      vals.cadPassos = (vals.cadPassos ?? []).map(() => ({ style: "flex:1;height:3px;border-radius:2px;background:var(--of-linha)" }));
     }
     /* Arquivos: o envio e a remoção do desenho só mexiam na sessão da tela. */
     vals.enviarArquivo = (e: any) => {
@@ -322,7 +322,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
     const tagDaEmpresa = async (nome: string, tirar: boolean) => {
       let lab = labels.find((l) => l.nome === nome);
       if (!lab && !tirar) {
-        const c = await fetch("/api/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome, cor: "#8b949e" }) });
+        const c = await fetch("/api/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nome }) });
         if (!c.ok) return false;
         lab = await c.json();
       }

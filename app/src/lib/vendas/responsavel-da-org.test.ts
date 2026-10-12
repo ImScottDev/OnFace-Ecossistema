@@ -26,7 +26,7 @@ test("a guarda filtra o usuário por organizacao_id e exige ativo", () => {
   const corpo = semComentarios.slice(i, i + 600);
   assert.match(corpo, /FROM usuarios/, "a guarda tem que consultar a tabela de usuários");
   assert.match(corpo, /organizacao_id = \$\{organizacaoId\}/, "a guarda tem que casar a organização");
-  assert.match(corpo, /throw new Error/, "id de fora da organização tem que ser recusado, não ignorado");
+  assert.match(corpo, /throw new (Error|RegraDeNegocio)/, "id de fora da organização tem que ser recusado, não ignorado");
   assert.match(corpo, /if \(!responsavelId\) return/, "null é válido: lead sem dono não pode quebrar");
 });
 

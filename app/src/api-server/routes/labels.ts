@@ -10,7 +10,8 @@ const app = new Hono();
 
 const createLabelSchema = z.object({
   nome: z.string().min(1).max(50),
-  cor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Cor deve ser hex válido (#RRGGBB)"),
+  /* Opcional: a tela da peça não tem seletor de cor; sem ela a tag nasce neutra (cinza). */
+  cor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Cor deve ser hex válido (#RRGGBB)").optional(),
 });
 
 const updateLabelSchema = z.object({
@@ -92,7 +93,7 @@ app.post("/labels", async (c) => {
       .insert(labels)
       .values({
         nome: data.nome,
-        cor: data.cor,
+        cor: data.cor ?? "#6B7280",
         organizacaoId: ctx.organizacaoId,
       })
       .returning();

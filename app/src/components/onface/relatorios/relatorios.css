@@ -174,8 +174,8 @@
 }
 .rx-kpi-valor[data-carregando="true"] { opacity: .45; }
 .rx-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rx-delta[data-tom="alta"] { color: var(--status-success-strong, #137333); }
-.rx-delta[data-tom="queda"] { color: var(--status-danger, #e7000b); }
+.rx-delta[data-tom="alta"] { color: var(--status-success-strong); }
+.rx-delta[data-tom="queda"] { color: var(--status-danger); }
 .rx-delta[data-tom="neutro"] { color: var(--of-tinta-3); }
 .rx-kpi-ver { all: unset; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--of-tinta-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--of-linha-controle); border-radius: 4px; }
 .rx-kpi-ver:hover { color: var(--of-coral-texto); text-decoration-color: currentColor; }

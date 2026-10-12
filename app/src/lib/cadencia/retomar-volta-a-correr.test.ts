@@ -20,8 +20,11 @@ const SRC = path.resolve(__dirname, "..", "..");
 const ROTA = path.join(SRC, "api-server", "routes", "automacoes-cadencias.ts");
 const MOTOR = path.join(SRC, "lib", "cadencia", "cadence-engine.ts");
 
+/* Só tira bloco que ABRE no começo da linha: `"/automacoes/cadencias/*"` (rota com curinga, dentro de
+   string) parecia abertura de comentário e levava junto tudo até o próximo `*\/`, inclusive o bloco que a
+   trava procura. */
 const semComentarios = (fonte: string) =>
-  fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  fonte.replace(/^[ \t]*\/\*[\s\S]*?\*\//gm, "").replace(/^\s*\/\/.*$/gm, "");
 
 test("retomar devolve o agendamento, senão a inscrição fica ativa e parada", () => {
   const rota = semComentarios(fs.readFileSync(ROTA, "utf8"));

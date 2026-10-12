@@ -489,9 +489,9 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], 
         <button
           type="button"
           onClick={() => setFamAberto(true)}
-          style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", margin: "0 0 12px", padding: "12px 14px", borderRadius: 12, border: "1px solid #f3c6bb", background: "#fff6f4", color: "#c2330f", font: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", textAlign: "left" }}
+          style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", margin: "0 0 12px", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--of-coral-anel)", background: "var(--of-coral-fundo)", color: "var(--of-coral-texto)", font: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", textAlign: "left" }}
         >
-          <span aria-hidden style={{ flex: "0 0 auto", width: 22, height: 22, borderRadius: 7, background: "#c2330f", color: "#fff", display: "grid", placeItems: "center", fontSize: 14 }}>!</span>
+          <span aria-hidden style={{ flex: "0 0 auto", width: 22, height: 22, borderRadius: 7, background: "var(--of-coral-texto)", color: "var(--of-papel)", display: "grid", placeItems: "center", fontSize: 14 }}>!</span>
           Esta oportunidade (legado) está sem família comercial. Clique para definir e poder avançar.
         </button>
       )}
@@ -515,22 +515,22 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], 
           onClick={() => !famSalvando && setFamAberto(false)}
           style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(18,23,29,.45)", display: "grid", placeItems: "center", padding: 16 }}
         >
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(440px, 100%)", background: "#fff", borderRadius: 18, padding: 22, boxShadow: "0 24px 60px rgba(0,0,0,.25)" }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#12171d", letterSpacing: "-.02em" }}>A qual família pertence?</h2>
-            <p style={{ margin: "6px 0 16px", fontSize: 13, color: "#4a5560" }}>Oportunidade legada sem família. Escolha uma para amarrar e seguir o fluxo (proposta, checkout, ganho).</p>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(440px, 100%)", background: "var(--of-papel)", borderRadius: 18, padding: 22, boxShadow: "0 24px 60px rgba(0,0,0,.25)" }}>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "var(--of-tinta-forte)", letterSpacing: "-.02em" }}>A qual família pertence?</h2>
+            <p style={{ margin: "6px 0 16px", fontSize: 13, color: "var(--of-tinta-2)" }}>Oportunidade legada sem família. Escolha uma para amarrar e seguir o fluxo (proposta, checkout, ganho).</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {FAMILIAS_ESCOLHA.map((f) => (
                 <button
                   key={f.v} type="button" disabled={!!famSalvando}
                   onClick={() => escolherFamilia(f.v)}
-                  style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid #e3e7e8", background: famSalvando === f.v ? "#fff6f4" : "#fff", cursor: famSalvando ? "wait" : "pointer", textAlign: "left", font: "inherit" }}
+                  style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid var(--of-linha)", background: famSalvando === f.v ? "var(--of-coral-fundo)" : "var(--of-papel)", cursor: famSalvando ? "wait" : "pointer", textAlign: "left", font: "inherit" }}
                 >
-                  <span style={{ fontSize: 14.5, fontWeight: 700, color: "#12171d" }}>{f.rotulo}{famSalvando === f.v ? " · salvando…" : ""}</span>
-                  <span style={{ fontSize: 12, color: "#67787c" }}>{f.desc}</span>
+                  <span style={{ fontSize: 14.5, fontWeight: 700, color: "var(--of-tinta-forte)" }}>{f.rotulo}{famSalvando === f.v ? " · salvando…" : ""}</span>
+                  <span style={{ fontSize: 12, color: "var(--of-tinta-3)" }}>{f.desc}</span>
                 </button>
               ))}
             </div>
-            <button type="button" onClick={() => !famSalvando && setFamAberto(false)} style={{ marginTop: 14, width: "100%", padding: "10px", borderRadius: 10, border: 0, background: "transparent", color: "#4a5560", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Agora não</button>
+            <button type="button" onClick={() => !famSalvando && setFamAberto(false)} style={{ marginTop: 14, width: "100%", padding: "10px", borderRadius: 10, border: 0, background: "transparent", color: "var(--of-tinta-2)", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Agora não</button>
           </div>
         </div>
       )}

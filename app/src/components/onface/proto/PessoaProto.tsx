@@ -79,7 +79,7 @@ class PessoaLigada extends PessoaLiga {
     const vals = super.renderVals();
     const r = (this as any).props.reais ?? {};
     /* A barra "2 de 5" é do protótipo: o motor não guarda a posição numérica do passo. */
-    if (vals.cad?.tem) vals.cad.passos = (vals.cad.passos ?? []).map(() => ({ style: "flex:1;height:3px;border-radius:2px;background:#e3e7e8" }));
+    if (vals.cad?.tem) vals.cad.passos = (vals.cad.passos ?? []).map(() => ({ style: "flex:1;height:3px;border-radius:2px;background:var(--of-linha)" }));
     /* Excluir contato: o desenho avisava "excluído" e navegava sem nada ter
        acontecido. Agora só avisa e sai depois que o servidor apagar; com
        histórico comercial ele recusa e o motivo aparece na tela. */

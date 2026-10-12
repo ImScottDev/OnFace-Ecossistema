@@ -289,4 +289,10 @@
   --of-coral-no-escuro: #ff8a70;
   --of-coral-no-escuro-2: #ff9f85;
   --of-coral-no-escuro-3: #ffd5c8;
+
+  /* Sobre o grafite (gráfico e dica escuros de Clientes e CS): a borda do cartão, o rótulo apagado
+     e o verde que lê no escuro. O verde de sucesso claro (#1f7a45) some em fundo grafite. */
+  --of-grafite-borda: #2a3139;
+  --of-tinta-no-escuro: #a3aab0;
+  --of-sucesso-no-escuro: #3ecf8e;
 }

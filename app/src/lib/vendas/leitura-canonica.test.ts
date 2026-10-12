@@ -27,12 +27,17 @@ test("o board de pré-vendas conta toda aquisição aberta do seu universo, sem 
   const board = await boardPreVendas(org.id, { aba: "ativos" });
 
   // Universo de Pré-vendas: aquisição aberta que não é prospect de outbound
-  // ainda em prospecção (ver `somenteDePreVendas`, a mesma regra do board).
+  // ainda em prospecção (ver `somenteDePreVendas`, a mesma regra do board). Nutrição
+  // tem aba própria: o comando `nutrir` mantém a aquisição aberta, mas o board
+  // de "ativos" não a mostra (só a carga antiga as tinha fechadas, por isso o teste
+  // passava sem este filtro).
   const { somenteDePreVendas } = await import("@onface/acquisition");
   const [real] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM aquisicoes a
       LEFT JOIN leads lg ON lg.id = a.lead_legado_id
+      LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
      WHERE a.organizacao_id = ${org.id}::uuid AND a.closed_at IS NULL
+       AND pe.codigo IS DISTINCT FROM 'nutricao'
        AND ${somenteDePreVendas(sql)}`);
 
   const somaDasColunas = board.colunas.reduce((n, c) => n + c.total, 0);

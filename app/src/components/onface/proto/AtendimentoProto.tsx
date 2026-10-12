@@ -1180,7 +1180,7 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
     for (const item of lista) {
       const nome = String(typeof item === "string" ? item : item?.nome ?? "").trim();
       if (!nome || labelPorNome.has(nome) || labelsCriadasRef.current.has(nome)) continue;
-      labelsCriadasRef.current.set(nome, chamar("/api/labels", { method: "POST", body: JSON.stringify({ nome, cor: "#6B7280" }) }, `Não consegui criar a tag "${nome}".`).then((l) => l.id as string));
+      labelsCriadasRef.current.set(nome, chamar("/api/labels", { method: "POST", body: JSON.stringify({ nome }) }, `Não consegui criar a tag "${nome}".`).then((l) => l.id as string));
     }
   }, [labelPorNome, chamar]);
 

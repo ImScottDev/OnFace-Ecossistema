@@ -262,7 +262,7 @@ function corrigir(vals: any, S: any, p: { clientes: ClienteDaTela[]; equipe: str
         segs: CAMADAS_FATURAMENTO.map((c, j) => ({ st: "display:block;min-height:0;flex:" + m[c.k] + " 0 0;background:" + c.cor + ";border-radius:" + (j === CAMADAS_FATURAMENTO.length - 1 ? "5px 5px 2px 2px" : "2px") })).reverse(),
       })),
       temDica: hv != null,
-      dicaPos: "position:absolute;z-index:3;pointer-events:none;top:6px;left:8px;width:190px;padding:9px 11px;border-radius:10px;background:#1f252c;box-shadow:0 0 0 1px #2a3139,0 14px 30px -12px rgba(0,0,0,.6)",
+      dicaPos: "position:absolute;z-index:3;pointer-events:none;top:6px;left:8px;width:190px;padding:9px 11px;border-radius:10px;background:var(--of-tinta);box-shadow:0 0 0 1px var(--of-grafite-borda),0 14px 30px -12px rgba(0,0,0,.6)",
       dicaT: hv != null ? nomeMes(FAT[hv].competencia) + " " + FAT[hv].competencia.slice(0, 4) : "",
       dicaL: hv != null ? CAMADAS_FATURAMENTO.map((c) => ({ l: c.l, v: brl(FAT[hv][c.k]), dot: "width:8px;height:8px;border-radius:2px;background:" + c.cor })) : [],
       dicaTot: hv != null ? brl(FAT[hv].total) : "",
