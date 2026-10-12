@@ -20,7 +20,7 @@ export interface RespostaDoNexo {
   mensagem: { de: "oni" | "eu"; texto: string };
   propostas?: PropostaNexo[];
   executadas?: { ferramenta: string; resumo: string; href: string | null }[];
-  confirmacoes?: { rotulo: string; runId: string; passo: number; ferramenta: string }[];
+  confirmacoes?: { rotulo: string; runId: string; passo: number; ferramenta: string; rascunho?: string }[];
 }
 
 export type AnaliseConversa =
@@ -72,7 +72,7 @@ export function avisarQueMudou(): void {
 }
 
 /** Confirmar no chat. O servidor relê a ação do banco; aqui só vai o run e o passo. */
-export async function confirmarAcaoDoNexo(c: { runId: string; passo: number }): Promise<{ ok: boolean; texto: string; href?: string | null }> {
+export async function confirmarAcaoDoNexo(c: { runId: string; passo: number; conteudo?: string }): Promise<{ ok: boolean; texto: string; href?: string | null }> {
   try {
     const r = await pedir<{ ok: boolean; texto: string; href?: string | null }>("/api/nexo/acoes/confirmar", c);
     if (r.ok) avisarQueMudou();
@@ -100,7 +100,7 @@ export function destinoDaProposta(p: PropostaNexo): string {
   return `/tarefas?${qs.toString()}`;
 }
 
-export interface BotaoNexo { rotulo: string; href?: string; confirmar?: { runId: string; passo: number } }
+export interface BotaoNexo { rotulo: string; href?: string; confirmar?: { runId: string; passo: number; rascunho?: string } }
 
 /**
  * A resposta do servidor vira texto limpo + botões, igual em toda superfície:
@@ -112,7 +112,7 @@ export function botoesDaResposta(d: RespostaDoNexo): { texto: string; botoes: Bo
   const vistos = new Set<string>();
   const curto = (t: string) => (t.length > 40 ? t.slice(0, 40) + "..." : t);
   const add = (b: BotaoNexo) => { const k = b.href ?? JSON.stringify(b.confirmar); if (!vistos.has(k)) { vistos.add(k); botoes.push(b); } };
-  for (const c of d.confirmacoes ?? []) add({ rotulo: `Confirmar: ${c.rotulo}`, confirmar: { runId: c.runId, passo: c.passo } });
+  for (const c of d.confirmacoes ?? []) add({ rotulo: `Confirmar: ${c.rotulo}`, confirmar: { runId: c.runId, passo: c.passo, ...(c.rascunho ? { rascunho: c.rascunho } : {}) } });
   for (const e of d.executadas ?? []) if (e.href) add({ rotulo: "Abrir: " + curto(e.resumo), href: e.href });
   for (const p of d.propostas ?? []) add({ rotulo: p.rotulo, href: destinoDaProposta(p) });
   const texto = d.mensagem.texto.replace(/\[([^\]]+)\]\((\/[^)\s]*)\)/g, (_m, rotulo: string, href: string) => {

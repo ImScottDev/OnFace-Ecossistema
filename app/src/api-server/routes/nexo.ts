@@ -63,7 +63,7 @@ app.post("/nexo/conversa/analisar", async (c) => {
 // Confirmar no chat uma ação que o NEXO deixou aguardando (envia, apaga ou não desfaz).
 app.post("/nexo/acoes/confirmar", async (c) => {
   const ctx = await exigirCtx(c, "ai.use");
-  const body = z.object({ runId: z.string().uuid(), passo: z.number().int().min(0) }).safeParse(await c.req.json().catch(() => null));
+  const body = z.object({ runId: z.string().uuid(), passo: z.number().int().min(0), conteudo: z.string().max(4000).optional() }).safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: "Pedido inválido" }, 400);
   const r = await confirmarAcao(quem(ctx), body.data);
   return c.json(r);

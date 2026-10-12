@@ -42,7 +42,7 @@ export interface MsgNexo {
   rotulo?: string;
   itens?: string[];
   /** Só ação que navega de verdade. */
-  acoes?: { label: string; tom: "primario" | ""; href: string; confirmar?: { runId: string; passo: number } }[];
+  acoes?: { label: string; tom: "primario" | ""; href: string; confirmar?: { runId: string; passo: number; rascunho?: string } }[];
 }
 
 const TZ = "America/Sao_Paulo";
@@ -377,7 +377,7 @@ export async function mensagensDaConversa(q: Quem, conversaId: string): Promise<
     const d = p.output?.data;
     if (!d) continue;
     const lista = acoes.get(p.run_id) ?? [];
-    if (d.aguardandoConfirmacao && !p.confirmado) lista.push({ label: `Confirmar: ${String(d.rotulo ?? p.name)}`, tom: "primario", href: "", confirmar: { runId: p.run_id, passo: p.sequence } });
+    if (d.aguardandoConfirmacao && !p.confirmado) lista.push({ label: `Confirmar: ${String(d.rotulo ?? p.name)}`, tom: "primario", href: "", confirmar: { runId: p.run_id, passo: p.sequence, ...rascunhoDe(p.name, d.input) } });
     else if (d.mudou && typeof d.href === "string" && d.href.startsWith("/")) lista.push({ label: `Abrir: ${String(d.resumo ?? "registro").slice(0, 40)}`, tom: "", href: d.href });
     acoes.set(p.run_id, lista);
   }
@@ -416,7 +416,7 @@ export interface PropostaNexo {
 /** Ação que o NEXO executou de verdade neste turno (a tela atualiza e mostra o atalho). */
 export interface ExecutadaNexo { ferramenta: string; resumo: string; href: string | null }
 /** Ação que exige Confirmar no chat (envia mensagem externa, apaga ou não desfaz). */
-export interface ConfirmacaoNexo { rotulo: string; runId: string; passo: number; ferramenta: string }
+export interface ConfirmacaoNexo { rotulo: string; runId: string; passo: number; ferramenta: string; /** Texto editável antes de confirmar (envio de WhatsApp). */ rascunho?: string }
 
 export interface RespostaNexo {
   conversaId: string;
@@ -481,7 +481,7 @@ async function resultadoDoRun(runId: string): Promise<{ executadas: ExecutadaNex
   for (const p of passos) {
     const d = p.output?.data;
     if (!d) continue;
-    if (d.aguardandoConfirmacao) confirmacoes.push({ rotulo: String(d.rotulo ?? p.name), runId, passo: p.sequence, ferramenta: p.name });
+    if (d.aguardandoConfirmacao) confirmacoes.push({ rotulo: String(d.rotulo ?? p.name), runId, passo: p.sequence, ferramenta: p.name, ...rascunhoDe(p.name, d.input) });
     else if (d.mudou) executadas.push({ ferramenta: p.name, resumo: String(d.resumo ?? ""), href: typeof d.href === "string" ? d.href : null });
   }
   return { executadas, confirmacoes };
@@ -554,7 +554,13 @@ export async function perguntar(q: Quem, entrada: { conversaId?: string | null; 
  * banco (o cliente só diz runId e passo, nunca o que executar), como o usuário e
  * com o teto de permissão dele. Cada passo confirma uma vez.
  */
-export async function confirmarAcao(q: Quem, entrada: { runId: string; passo: number }): Promise<{ ok: boolean; texto: string; href?: string | null }> {
+/** Só o envio de WhatsApp tem texto editável; o `input` gravado no passo é a fonte. */
+function rascunhoDe(ferramenta: string, input: unknown): { rascunho?: string } {
+  const c = (input as { conteudo?: unknown } | undefined)?.conteudo;
+  return ferramenta === "nexo_enviar_whatsapp" && typeof c === "string" ? { rascunho: c } : {};
+}
+
+export async function confirmarAcao(q: Quem, entrada: { runId: string; passo: number; /** Texto editado pela pessoa (só para nexo_enviar_whatsapp). */ conteudo?: string }): Promise<{ ok: boolean; texto: string; href?: string | null }> {
   const [run] = await db.execute<{ agent_id: string; version_id: string; conversa: string | null }>(sql`
     SELECT r.agent_id::text, r.version_id::text, r.input->'payload'->>'conversaId' AS conversa
       FROM ai_agent_runs r JOIN ai_agents a ON a.id = r.agent_id
@@ -564,6 +570,8 @@ export async function confirmarAcao(q: Quem, entrada: { runId: string; passo: nu
   const [passo] = await db.execute<{ name: string; input: Record<string, unknown>; output: { data?: Record<string, unknown> } | null }>(sql`
     SELECT name, input, output FROM ai_agent_run_steps WHERE run_id = ${entrada.runId}::uuid AND sequence = ${entrada.passo} AND kind = 'tool_call'`);
   if (!passo || !passo.output?.data?.aguardandoConfirmacao) return { ok: false, texto: "Esta ação não está aguardando confirmação." };
+  const conteudoEditado = passo.name === "nexo_enviar_whatsapp" && typeof entrada.conteudo === "string" && entrada.conteudo.trim() ? entrada.conteudo.trim() : null;
+  const inputEfetivo = conteudoEditado ? { ...passo.input, conteudo: conteudoEditado } : passo.input;
   const { executeRegisteredTool } = await import("@/lib/ai-platform/tools/registry");
   // Run próprio da confirmação (auditável); a ferramenta roda pelo executor único do registry e checa a permissão do usuário.
   const prep = await prepararAgenteNexo(q);
@@ -582,7 +590,7 @@ export async function confirmarAcao(q: Quem, entrada: { runId: string; passo: nu
     r = await executeRegisteredTool(passo.name, {
       organizacaoId: q.organizacaoId, agentId: run.agent_id, runId: reg.id, usuarioId: q.userId, confirmado: true,
       mode: "live", autonomy: "autonomous", permissoesDelegadas: permissoes,
-    }, passo.input);
+    }, inputEfetivo);
   } catch (erro) {
     const mensagem = erro instanceof Error ? erro.message : "Falha inesperada";
     await db.execute(sql`UPDATE ai_agent_runs SET status = 'failed', erro = ${mensagem}, completed_at = now() WHERE id = ${reg.id}::uuid`);
@@ -591,7 +599,7 @@ export async function confirmarAcao(q: Quem, entrada: { runId: string; passo: nu
   const d = (r.data ?? {}) as Record<string, unknown>;
   await db.execute(sql`
     INSERT INTO ai_agent_run_steps (organizacao_id, run_id, sequence, kind, name, status, input, output, error_message, completed_at)
-    VALUES (${q.organizacaoId}::uuid, ${reg.id}::uuid, 0, 'tool_call', ${passo.name}, ${r.ok ? "completed" : "failed"}, ${JSON.stringify(passo.input)}::jsonb, ${JSON.stringify(r)}::jsonb, ${r.ok ? null : r.error ?? null}, now())`);
+    VALUES (${q.organizacaoId}::uuid, ${reg.id}::uuid, 0, 'tool_call', ${passo.name}, ${r.ok ? "completed" : "failed"}, ${JSON.stringify(inputEfetivo)}::jsonb, ${JSON.stringify(r)}::jsonb, ${r.ok ? null : r.error ?? null}, now())`);
   await db.execute(sql`UPDATE ai_agent_runs SET status = ${r.ok ? "completed" : "failed"}, erro = ${r.ok ? null : r.error ?? null}, completed_at = now() WHERE id = ${reg.id}::uuid`);
   return r.ok ? { ok: true, texto: String(d.resumo ?? "Feito."), href: typeof d.href === "string" ? d.href : null } : { ok: false, texto: r.error ?? "Não consegui executar." };
 }

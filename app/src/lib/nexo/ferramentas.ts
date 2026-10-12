@@ -410,6 +410,22 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
       const id = await (await motorDeCadencia()).iniciarCadencia({ cadenceDefinitionId: d.id, organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: String(i.lead_id) });
       return id ? resumo("Lead incluído na cadência.", `/pessoas/${i.lead_id}`, { enrollmentId: id }) : { ok: false, error: "a cadência não iniciou (lead já inscrito ou fluxo sem passos)" };
     })),
+  escrita("enviar_whatsapp", "PREPARA uma resposta de WhatsApp numa conversa do Atendimento (contato_id vem de nexo_conversas ou nexo_nao_respondidas). Escreva o texto completo em conteudo, no tom do usuário. NUNCA sai sozinha: a tela mostra o rascunho para a pessoa editar e confirmar; só então a mensagem é enviada pelo número da conversa.",
+    { contato_id: str("uuid do contato da conversa"), conteudo: str("texto da mensagem, pronto para enviar") }, ["contato_id", "conteudo"],
+    async (ctx, u, i) => {
+      const id = String(i.contato_id ?? "");
+      if (!UUID.test(id)) return { ok: false, error: "contato_id inválido" };
+      const acesso = veTodasAsConversas(u.role) ? sql`TRUE` : condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
+      const [c] = await db.execute<{ nome: string }>(sql`SELECT c.nome FROM contatos c WHERE c.id = ${id}::uuid AND c.organizacao_id = ${ctx.organizacaoId}::uuid AND ${acesso}`);
+      if (!c) return { ok: false, error: "conversa não encontrada ou de outra pessoa" };
+      const conteudo = String(i.conteudo ?? "").trim();
+      if (!conteudo) return { ok: false, error: "conteudo vazio" };
+      return comConfirmacao(ctx, "enviar_whatsapp", `Enviar WhatsApp para ${c.nome}`, { contato_id: id, conteudo }, async () => {
+        const { enviarTextoNaConversa } = await import("@/lib/whatsapp/enviar-texto");
+        const r = await enviarTextoNaConversa({ organizacaoId: ctx.organizacaoId, userId: u.userId, userRole: u.role, contatoId: id, conteudo, aiRunId: ctx.runId });
+        return r.ok ? resumo(`Mensagem enviada para ${r.contatoNome || c.nome}.`, `/atendimento?contatoId=${id}`, { mensagemId: r.mensagemId }) : { ok: false, error: r.erro };
+      });
+    }),
   {
     id: "nexo.propor_acao", name: "nexo_propor_acao", description: "Mostra um botão de atalho (abrir_tela com href interno). Para criar/alterar algo use as ferramentas de ação, que executam; use esta só para levar a pessoa a uma tela.", category: "communication", mutates: false,
     parameters: objectSchema({ kind: { type: "string", enum: ["abrir_tela"] }, rotulo: str("texto do botão"), href: str("rota interna, ex.: /pipeline") }, ["kind", "rotulo", "href"]),

@@ -317,15 +317,30 @@ class CascaLigada extends CascaLiga {
 
     if (!ehRadar) {
       const msgs: MsgNexo[] = S.nexoMsgs[conv] || [];
-      nx.mensagens = (nx.mensagens || []).map((m: any, i: number) => ({
-        ...m,
-        texto: m.ehOni ? partesComLinks(msgs[i]?.texto ?? "").map((parte, j) => parte.href
+      const edicoes: Record<string, string> = S.nexoEdicoes || {};
+      const chaveDe = (c: { runId: string; passo: number }) => `${c.runId}:${c.passo}`;
+      nx.mensagens = (nx.mensagens || []).map((m: any, i: number) => {
+        /* Envio de WhatsApp: o rascunho do NEXO aparece editável antes do Confirmar.
+           O texto que a pessoa deixar aqui é o que vai (o servidor grava o editado). */
+        const rascunhos = (msgs[i]?.acoes || []).map((a) => a.confirmar).filter((c): c is { runId: string; passo: number; rascunho?: string } => !!c?.rascunho);
+        const texto = m.ehOni ? partesComLinks(msgs[i]?.texto ?? "").map((parte, j) => parte.href
           ? <a key={j} href={parte.href} onClick={(e) => { e.preventDefault(); navegar(parte.href!); }} style={{ color: "inherit", textDecoration: "underline" }}>{parte.texto}</a>
-          : parte.texto) : m.texto,
+          : parte.texto) : m.texto;
+        return {
+        ...m,
+        texto: rascunhos.length ? <>
+          {texto}
+          {rascunhos.map((c) => (
+            <textarea key={chaveDe(c)} aria-label="Mensagem de WhatsApp a enviar" rows={4}
+              value={edicoes[chaveDe(c)] ?? c.rascunho}
+              onChange={(e) => this.setState((s: any) => ({ nexoEdicoes: { ...(s.nexoEdicoes || {}), [chaveDe(c)]: e.target.value } }))}
+              style={{ display: "block", width: "100%", marginTop: 8, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--of-shell-borda, #dbdede)", font: "inherit", fontSize: 13, lineHeight: 1.5, resize: "vertical", background: "#fff", color: "#1f252c" }} />
+          ))}
+        </> : texto,
         acoes: (m.acoes || []).map((a: any, j: number) => {
           const href = msgs[i]?.acoes?.[j]?.href;
-          const conf = (msgs[i]?.acoes?.[j] as { confirmar?: { runId: string; passo: number } } | undefined)?.confirmar;
-          if (conf) return { ...a, onClick: () => void confirmarAcaoDoNexo(conf).then((r) => {
+          const conf = (msgs[i]?.acoes?.[j] as { confirmar?: { runId: string; passo: number; rascunho?: string } } | undefined)?.confirmar;
+          if (conf) return { ...a, onClick: () => void confirmarAcaoDoNexo({ runId: conf.runId, passo: conf.passo, ...(conf.rascunho ? { conteudo: edicoes[chaveDe(conf)] ?? conf.rascunho } : {}) }).then((r) => {
             this.diz(r.texto, r.ok ? "ok" : "erro");
             if (r.ok) {
               pedirJson(`/api/nexo/conversas/${conv}`)
@@ -336,7 +351,7 @@ class CascaLigada extends CascaLiga {
           }).catch(() => this.diz("Não consegui confirmar. Verifique a ação antes de tentar novamente.", "erro")) };
           return { ...a, onClick: () => (href ? navegar(href) : undefined) };
         }),
-      }));
+      }; });
     }
 
     const enviar = () => { const t = String(S.nexoRascunho || "").trim(); if (t) this.perguntarNexo(t); };
