@@ -24,14 +24,27 @@
  */
 import { db } from "@/lib/db";
 import { sql, type SQL } from "drizzle-orm";
+import { daFamilia, nomeDeTeste, semTestes, type Familia } from "@/lib/metricas/recorte";
 
 export type TipoMetrica = "EVENT" | "SNAPSHOT" | "COHORT";
 
+/** O recorte de uma consulta: janela de tempo + filtros. O mesmo objeto alimenta card, detalhe e exportação. */
 export interface Periodo {
   /** Início inclusivo. Ignorado por métrica SNAPSHOT, que é um instante. */
   de?: Date | null;
   /** Fim exclusivo. */
   ate?: Date | null;
+  /** Família de serviço. Só vale em métrica que declara `filtros.familia`. */
+  familia?: Familia;
+  /** Testes explicitamente marcados ficam de fora, a não ser que isto seja true. */
+  incluirTestes?: boolean;
+}
+
+/** Pedido de filtro que a métrica não sabe aplicar: dizer "não se aplica" em vez de ignorar em silêncio. */
+export class FiltroNaoSuportado extends Error {
+  constructor(public codigo: string, public filtro: string) {
+    super(`A métrica ${codigo} não tem ${filtro}: o filtro não se aplica e não foi ignorado em silêncio.`);
+  }
 }
 
 export interface DefinicaoMetrica {
@@ -44,10 +57,44 @@ export interface DefinicaoMetrica {
   fonte: string;
   /** O que ela deliberadamente NÃO inclui. */
   naoInclui?: string;
-  /** O valor agregado. */
+  /** Como o recorte vira número: soma da coluna `valor` ou contagem de linhas. */
+  agregacao: "soma" | "contagem";
+  /** Filtros que a métrica sabe aplicar de verdade. */
+  filtros: { familia: boolean };
+  /** UMA consulta: as linhas que compõem a métrica. O valor e o detalhe saem DELA. */
+  recorte: (organizacaoId: string, p: Periodo) => SQL;
+  /** ORDER BY do detalhe (colunas do recorte). */
+  ordem: string;
+  /** O valor agregado: derivado do recorte, nunca escrito à parte. */
   valor: (organizacaoId: string, p: Periodo) => SQL;
   /** Os registros reais por trás do número (Módulo 12 exige drill-down). */
   drill: (organizacaoId: string, p: Periodo) => SQL;
+}
+
+type DefinicaoSemDerivados = Omit<DefinicaoMetrica, "valor" | "drill">;
+
+/**
+ * Monta a métrica com valor e detalhe derivados do MESMO recorte. É a trava
+ * estrutural contra o defeito original do MRR (agregado com uma regra, lista
+ * com outra): não há onde divergir, porque só existe uma consulta.
+ */
+function definir(d: DefinicaoSemDerivados): DefinicaoMetrica {
+  const checar = (p: Periodo) => {
+    if (p.familia && !d.filtros.familia) throw new FiltroNaoSuportado(d.codigo, "família");
+  };
+  return {
+    ...d,
+    valor: (org, p) => {
+      checar(p);
+      return d.agregacao === "soma"
+        ? sql`SELECT COALESCE(sum(t.valor), 0)::numeric AS valor FROM (${d.recorte(org, p)}) t`
+        : sql`SELECT count(*)::numeric AS valor FROM (${d.recorte(org, p)}) t`;
+    },
+    drill: (org, p) => {
+      checar(p);
+      return sql`SELECT * FROM (${d.recorte(org, p)}) t ORDER BY ${sql.raw(d.ordem)}`;
+    },
+  };
 }
 
 /** SNAPSHOT ignora período; EVENT precisa de um, e sem ele usa o mês corrente. */
@@ -59,50 +106,58 @@ function janela(p: Periodo): { de: string; ate: string } {
 }
 
 export const CATALOGO: DefinicaoMetrica[] = [
-  {
+  definir({
     codigo: "mrr_atual",
     nome: "MRR atual",
     tipo: "SNAPSHOT",
     unidade: "BRL",
     descricao:
-      "Receita recorrente (natureza MRR) faturada na última competência fechada. É o mesmo " +
-      "número da Carteira e o que o Scott confere na planilha de faturamento do mês.",
+      "Receita recorrente (natureza MRR) faturada na última competência fechada, mais as " +
+      "assinaturas ativas vendidas depois desse fechamento. É o mesmo número da Carteira e o " +
+      "que o Scott confere na planilha de faturamento do mês.",
     fonte:
       "cliente_receita_mensal na maior competência, revenue_nature = MRR (regra do Scott, " +
-      "06/10: MRR oficial = faturado no último fechamento). servicos_canonicos continua " +
-      "como leitura de recorrência contratada, mas deixou de ser o MRR exibido: as duas " +
-      "fontes davam R$ 385 mil x R$ 476 mil e cada tela mostrava uma.",
+      "06/10: MRR oficial = faturado no último fechamento) + assinaturas ativas de clientes " +
+      "ainda sem a competência fechada. servicos_canonicos continua como leitura de " +
+      "recorrência contratada, mas deixou de ser o MRR exibido: as duas fontes davam " +
+      "R$ 385 mil x R$ 476 mil e cada tela mostrava uma.",
     naoInclui:
       "setup, venda avulsa, débito recuperado e projeto (naturezas SETUP/AVULSO/" +
       "DEBITO_RECUPERADO da mesma tabela), que aparecem separados como faturamento.",
-    // + clientes vendidos DEPOIS do fechamento: até a competência deles fechar,
-    // entram pela assinatura ativa (mesma regra de lib/clientes/carteira-desenho.ts).
-    valor: (org) => sql`
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.valor DESC NULLS LAST",
+    // Uma linha por empresa + família + origem. `origem` diz de onde a linha veio:
+    // `fechamento` (competência fechada) ou `assinatura` (vendida depois do fechamento).
+    // O card soma ESTAS linhas; é por isso que a lista explica o total inteiro.
+    recorte: (org, p) => sql`
       WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${org}::uuid)
-      SELECT (
-        SELECT COALESCE(sum(r.valor), 0) FROM cliente_receita_mensal r, uc
-         WHERE r.organizacao_id = ${org}::uuid AND r.revenue_nature = 'MRR' AND r.competencia = uc.c
-      ) + (
-        SELECT COALESCE(sum(a.mrr), 0) FROM assinaturas a
-         WHERE a.organizacao_id = ${org}::uuid AND a.status = 'active' AND a.empresa_id IS NOT NULL
-           AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${org}::uuid)
-           AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc
-                            WHERE r2.organizacao_id = ${org}::uuid AND r2.empresa_id = a.empresa_id
-                              AND r2.competencia = uc.c AND r2.revenue_nature = 'MRR')
-      )::numeric AS valor`,
-    drill: (org) => sql`
       SELECT r.empresa_id::text AS id, e.nome AS empresa, NULL::text AS produto,
-             NULL::text AS familia, sum(r.valor)::numeric AS valor
+             COALESCE(r.service_family, 'UNKNOWN') AS familia,
+             'fechamento'::text AS origem, sum(r.valor)::numeric AS valor
         FROM cliente_receita_mensal r
+        JOIN uc ON r.competencia = uc.c
         LEFT JOIN empresas e ON e.id = r.empresa_id
-       WHERE r.organizacao_id = ${org}::uuid
-         AND r.revenue_nature = 'MRR'
-         AND r.competencia = (SELECT max(competencia) FROM cliente_receita_mensal
-                               WHERE organizacao_id = ${org}::uuid)
-       GROUP BY r.empresa_id, e.nome
-       ORDER BY 5 DESC NULLS LAST`,
-  },
-  {
+       WHERE r.organizacao_id = ${org}::uuid AND r.revenue_nature = 'MRR'
+         AND ${daFamilia("r.service_family", p.familia)}
+         AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}
+       GROUP BY r.empresa_id, e.nome, COALESCE(r.service_family, 'UNKNOWN')
+      UNION ALL
+      SELECT a.empresa_id::text, e.nome, NULL::text,
+             COALESCE(sc.service_family, 'UNKNOWN'), 'assinatura'::text, sum(a.mrr)::numeric
+        FROM assinaturas a
+        JOIN empresas e ON e.id = a.empresa_id
+        LEFT JOIN servicos_canonicos sc ON sc.id = a.servico_id
+       WHERE a.organizacao_id = ${org}::uuid AND a.status = 'active' AND a.empresa_id IS NOT NULL
+         AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${org}::uuid)
+         AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc
+                          WHERE r2.organizacao_id = ${org}::uuid AND r2.empresa_id = a.empresa_id
+                            AND r2.competencia = uc.c AND r2.revenue_nature = 'MRR')
+         AND ${daFamilia("COALESCE(sc.service_family, 'UNKNOWN')", p.familia)}
+         AND ${semTestes(p.incluirTestes, nomeDeTeste("e.nome"))}
+       GROUP BY a.empresa_id, e.nome, COALESCE(sc.service_family, 'UNKNOWN')`,
+  }),
+  definir({
     codigo: "booking_ganho",
     nome: "Booking (venda ganha)",
     tipo: "EVENT",
@@ -114,27 +169,25 @@ export const CATALOGO: DefinicaoMetrica[] = [
     naoInclui:
       "oportunidades abertas, ganhos de períodos anteriores e qualquer previsão. " +
       "Booking não vira MRR automaticamente: parte da venda é setup e avulso.",
-    valor: (org, p) => {
+    agregacao: "soma",
+    // oportunidades.service_family está preenchida em poucas linhas: o filtro é real,
+    // mas quem não tem família fica de fora dele (declarado na tela como cobertura).
+    filtros: { familia: true },
+    ordem: "t.ganho_at DESC",
+    recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
-        SELECT COALESCE(sum(o.valor), 0)::numeric AS valor
-          FROM oportunidades o
-         WHERE o.organizacao_id = ${org}::uuid
-           AND o.ganho_at >= ${de}::timestamptz AND o.ganho_at < ${ate}::timestamptz`;
-    },
-    drill: (org, p) => {
-      const { de, ate } = janela(p);
-      return sql`
-        SELECT o.id::text, o.titulo, e.nome AS empresa, o.service_family AS familia,
-               o.valor::numeric AS valor, o.ganho_at
+        SELECT o.id::text, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
+               COALESCE(o.valor, 0)::numeric AS valor, o.ganho_at
           FROM oportunidades o
           LEFT JOIN empresas e ON e.id = o.empresa_id
          WHERE o.organizacao_id = ${org}::uuid
            AND o.ganho_at >= ${de}::timestamptz AND o.ganho_at < ${ate}::timestamptz
-         ORDER BY o.ganho_at DESC`;
+           AND ${daFamilia("o.service_family", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(o.titulo, '')"))}`;
     },
-  },
-  {
+  }),
+  definir({
     codigo: "faturado",
     nome: "Faturado",
     tipo: "EVENT",
@@ -144,20 +197,13 @@ export const CATALOGO: DefinicaoMetrica[] = [
       "quanto foi cobrado, independentemente de ter sido pago.",
     fonte: "faturas com data de emissão dentro da janela.",
     naoInclui: "fatura cancelada e recebimento — quem paga é a métrica recebido.",
-    valor: (org, p) => {
+    agregacao: "soma",
+    filtros: { familia: false },
+    ordem: "t.emitida_em DESC",
+    recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
-        SELECT COALESCE(sum(f.valor), 0)::numeric AS valor
-          FROM faturas f
-         WHERE f.organizacao_id = ${org}::uuid
-           AND COALESCE(f.emitida_em, f.created_at) >= ${de}::timestamptz
-           AND COALESCE(f.emitida_em, f.created_at) < ${ate}::timestamptz
-           AND COALESCE(f.status, '') <> 'cancelada'`;
-    },
-    drill: (org, p) => {
-      const { de, ate } = janela(p);
-      return sql`
-        SELECT f.id::text, e.nome AS empresa, f.valor::numeric AS valor,
+        SELECT f.id::text, e.nome AS empresa, COALESCE(f.valor, 0)::numeric AS valor,
                f.status, COALESCE(f.emitida_em, f.created_at) AS emitida_em
           FROM faturas f
           LEFT JOIN empresas e ON e.id = f.empresa_id
@@ -165,10 +211,10 @@ export const CATALOGO: DefinicaoMetrica[] = [
            AND COALESCE(f.emitida_em, f.created_at) >= ${de}::timestamptz
            AND COALESCE(f.emitida_em, f.created_at) < ${ate}::timestamptz
            AND COALESCE(f.status, '') <> 'cancelada'
-         ORDER BY COALESCE(f.emitida_em, f.created_at) DESC`;
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}`;
     },
-  },
-  {
+  }),
+  definir({
     codigo: "recebido",
     nome: "Recebido (caixa)",
     tipo: "EVENT",
@@ -177,29 +223,23 @@ export const CATALOGO: DefinicaoMetrica[] = [
       "Dinheiro que ENTROU no período, pela data do pagamento. É caixa, não competência.",
     fonte: "pagamentos canônicos com status pago e paid_at na janela.",
     naoInclui: "fatura emitida e não paga, e pagamento sem data — este último é caso de reconciliação.",
-    valor: (org, p) => {
+    agregacao: "soma",
+    filtros: { familia: false },
+    ordem: "t.paid_at DESC",
+    recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
-        SELECT COALESCE(sum(pg.amount), 0)::numeric AS valor
-          FROM pagamentos pg
-         WHERE pg.organizacao_id = ${org}::uuid
-           AND upper(pg.status) IN ('PAGO','PAID','SUCCEEDED')
-           AND pg.paid_at >= ${de}::timestamptz AND pg.paid_at < ${ate}::timestamptz`;
-    },
-    drill: (org, p) => {
-      const { de, ate } = janela(p);
-      return sql`
-        SELECT pg.id::text, e.nome AS empresa, pg.amount::numeric AS valor,
+        SELECT pg.id::text, e.nome AS empresa, COALESCE(pg.amount, 0)::numeric AS valor,
                pg.payment_method AS metodo, pg.paid_at
           FROM pagamentos pg
           LEFT JOIN empresas e ON e.id = pg.empresa_id
          WHERE pg.organizacao_id = ${org}::uuid
            AND upper(pg.status) IN ('PAGO','PAID','SUCCEEDED')
            AND pg.paid_at >= ${de}::timestamptz AND pg.paid_at < ${ate}::timestamptz
-         ORDER BY pg.paid_at DESC`;
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}`;
     },
-  },
-  {
+  }),
+  definir({
     codigo: "clientes_ativos",
     nome: "Clientes ativos",
     tipo: "SNAPSHOT",
@@ -211,22 +251,22 @@ export const CATALOGO: DefinicaoMetrica[] = [
     naoInclui:
       "a marca leads.tipo = cliente, que envelhece: medido em 21/09, 111 marcados sem " +
       "contrato ativo e 124 com contrato ativo e sem a marca.",
-    valor: (org) => sql`
-      SELECT count(DISTINCT s.empresa_id)::numeric AS valor
-        FROM servicos_canonicos s
-       WHERE s.organizacao_id = ${org}::uuid
-         AND s.commercial_lifecycle = 'ACTIVE' AND s.empresa_id IS NOT NULL`,
-    drill: (org) => sql`
-      SELECT e.id::text, e.nome AS empresa,
+    agregacao: "contagem",
+    filtros: { familia: true },
+    ordem: "t.mrr DESC",
+    // Uma linha por empresa: contar linhas = contar empresas distintas.
+    recorte: (org, p) => sql`
+      SELECT e.id::text AS id, e.nome AS empresa,
              count(s.id)::int AS servicos_ativos,
              COALESCE(sum(s.current_recurring_value) FILTER (WHERE s.revenue_nature = 'MRR'), 0)::numeric AS mrr
         FROM servicos_canonicos s
         JOIN empresas e ON e.id = s.empresa_id
        WHERE s.organizacao_id = ${org}::uuid AND s.commercial_lifecycle = 'ACTIVE'
-       GROUP BY e.id, e.nome
-       ORDER BY mrr DESC`,
-  },
-  {
+         AND ${daFamilia("s.service_family", p.familia)}
+         AND ${semTestes(p.incluirTestes, nomeDeTeste("e.nome"))}
+       GROUP BY e.id, e.nome`,
+  }),
+  definir({
     codigo: "oportunidades_abertas",
     nome: "Oportunidades abertas",
     tipo: "SNAPSHOT",
@@ -234,19 +274,19 @@ export const CATALOGO: DefinicaoMetrica[] = [
     descricao: "Oportunidades que não foram ganhas nem perdidas neste instante, dentro do funil comercial.",
     fonte: "oportunidades com ganho_at e perdido_at nulos e etapa canônica preenchida (a mesma contagem do Pipeline).",
     naoInclui: "ganhas e perdidas, inclusive as fechadas hoje, e o legado com status ativo sem etapa (decisão de 05/10: ativo não é etapa comercial, fica fora do funil).",
-    valor: (org) => sql`
-      SELECT count(*)::numeric AS valor FROM oportunidades o
-       WHERE o.organizacao_id = ${org}::uuid
-         AND o.ganho_at IS NULL AND o.perdido_at IS NULL AND o.etapa IS NOT NULL`,
-    drill: (org) => sql`
-      SELECT o.id::text, o.titulo, e.nome AS empresa, o.service_family AS familia,
+    agregacao: "contagem",
+    filtros: { familia: true },
+    ordem: "t.valor DESC NULLS LAST",
+    recorte: (org, p) => sql`
+      SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
              o.etapa, o.valor::numeric AS valor, o.previsao_fechamento
         FROM oportunidades o
         LEFT JOIN empresas e ON e.id = o.empresa_id
        WHERE o.organizacao_id = ${org}::uuid
          AND o.ganho_at IS NULL AND o.perdido_at IS NULL AND o.etapa IS NOT NULL
-       ORDER BY o.valor DESC NULLS LAST`,
-  },
+         AND ${daFamilia("o.service_family", p.familia)}
+         AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(o.titulo, '')"))}`,
+  }),
 ];
 
 const POR_CODIGO = new Map(CATALOGO.map((m) => [m.codigo, m]));
