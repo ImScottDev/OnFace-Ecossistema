@@ -65,6 +65,7 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0098 | `contrato_templates.tipo_documento` aceita DOWNGRADE — o termo aditivo de downgrade PABX tem texto próprio (só amplia o CHECK; aditiva e idempotente) |
 | 0099 | campos do editor de propostas — persistência do conteúdo editável |
 | 0100 | índice único de confirmação NEXO — impede dupla execução da mesma ação aprovada |
+| 0101 | IA opt-in por conversa (`ia_ligada_por/em`) — nenhum agente responde WhatsApp até uma pessoa ligar na conversa |
 
 ## 3. AS-IS → TO-BE
 

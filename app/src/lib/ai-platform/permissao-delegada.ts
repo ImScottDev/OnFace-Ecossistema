@@ -61,6 +61,8 @@ export const PERMISSAO_POR_FERRAMENTA: Record<string, CodigoPermissao> = {
   "nexo.mover_etapa": "acquisition.manage", "nexo.atribuir_responsavel": "acquisition.manage", "nexo.criar_empresa_contato": "companies.write",
   "nexo.agendar_reuniao": "sales.manage", "nexo.criar_oportunidade": "sales.manage", "nexo.perder_oportunidade": "sales.manage",
   "nexo.incluir_em_cadencia": "automation.manage",
+  // Responder WhatsApp em nome do usuário é escrita no atendimento, mesma família de quem assume a conversa.
+  "nexo.enviar_whatsapp": "acquisition.manage",
   "nexo.propostas": "sales.read", "nexo.clientes": "cs.read", "nexo.conversas": "acquisition.read", "nexo.nao_respondidas": "acquisition.read",
   // Fora daqui, de propósito: `handoff.request`, `case.open` e `alert.create`
   // são o que o agente faz quando NÃO pode agir — pedir ajuda, abrir caso,
