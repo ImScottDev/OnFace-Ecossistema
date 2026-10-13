@@ -38,3 +38,8 @@ Price original, preço de tabela, preço negociado, desconto, quantidade, period
 
 ## Critério de aceite
 Uma proposta pode ser criada, salva, editada enquanto rascunho, revisada, enviada, visualizada, aceita, recusada ou devolvida para ajuste, sem inconsistência de valores, versões ou estados. O fechamento gera os contratos e cobranças certos, atualiza os módulos e nunca duplica nada financeiro. Não declarar pronto sem evidência.
+
+## Decisão do Scott (13/10/2026): desconto sem limite, tudo registrado
+- Não há limite de desconto nem aprovação por permissão. Qualquer vendedor pode dar desconto.
+- Toda alteração comercial fica registrada de forma estruturada e visível: desconto, preço negociado, quantidade, item adicionado ou removido, validade e condições. O registro guarda quem, quando, o valor antes, o valor depois e o motivo opcional, e aparece na timeline da proposta e da oportunidade.
+- A permissão `sales.approve_discount` não é usada.
