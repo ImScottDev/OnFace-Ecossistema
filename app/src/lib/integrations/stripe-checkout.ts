@@ -300,6 +300,12 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
   if (params.boletoExpiresAfterDays) {
     appendNested(form, "payment_method_options", { boleto: { expires_after_days: params.boletoExpiresAfterDays } });
   }
+  /* Pix: a conta da Callface é brasileira, e lá o Pix só existe em pagamento
+     ÚNICO (Pix Automático não está disponível no Brasil). Em modo subscription
+     o Stripe simplesmente não oferece Pix, e não passamos `payment_method_types`
+     de propósito: a lista dinâmica da conta decide. O QR vale 24 h (o default
+     de 4 h vence antes de o cliente do financeiro pagar). */
+  if (stripeMode === "payment") appendNested(form, "payment_method_options", { pix: { expires_after_seconds: 86400 } });
   appendMetadata(form, metadata);
   /* `integration_identifier` saiu daqui.
    *

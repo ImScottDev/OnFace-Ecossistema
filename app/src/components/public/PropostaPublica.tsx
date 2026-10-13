@@ -251,13 +251,20 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
 
       {(grupo.status === "aguardando_checkout" || grupo.status === "checkout_gerado") && (
         grupo.pagamentoEstado === "boleto_pendente" ? (
-          <Aviso tom="neutro">Boleto emitido — aguardando compensação (até 1 dia útil).</Aviso>
+          <Aviso tom="neutro">Pagamento em andamento — aguardando compensação (boleto: até 1 dia útil; Pix: confirma em instantes após o pagamento no app do banco).</Aviso>
         ) : grupo.pagamentoEstado === "indisponivel" ? (
           <Aviso tom="erro">Não conseguimos gerar o link de pagamento agora. Fale com quem te enviou a proposta.</Aviso>
         ) : grupo.checkoutUrl ? (
-          <a href={grupo.checkoutUrl} className="pp-btn pp-btn-primario pp-btn-largo">
-            <CreditCard size={15} aria-hidden /> Ir para o pagamento seguro
-          </a>
+          <>
+            <a href={grupo.checkoutUrl} className="pp-btn pp-btn-primario pp-btn-largo">
+              <CreditCard size={15} aria-hidden /> Ir para o pagamento seguro
+            </a>
+            <Aviso tom="neutro">
+              {grupo.itens.some((i) => i.tipo === "recorrente")
+                ? "Pagamento por cartão ou boleto. Pix não está disponível para cobrança recorrente."
+                : "Pague por Pix, cartão ou boleto. O QR code do Pix vale 24 horas."}
+            </Aviso>
+          </>
         ) : (
           <Aviso tom="neutro">Preparando o link de pagamento…</Aviso>
         )

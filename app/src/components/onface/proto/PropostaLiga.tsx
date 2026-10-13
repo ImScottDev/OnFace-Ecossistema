@@ -597,7 +597,7 @@ class Logica extends React.Component<any, any> {
       ["contrato", "Com contrato", "Aceitou, assina o contrato. A assinatura marca como ganha e o Stripe cria a cobrança em seguida. Use para condição especial, fidelidade ou desconto negociado.", recF === "contrato" ? "Recomendado" : ""]
     ];
     const FORMAS = [["cliente", "Cliente escolhe", "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"], ["boleto", "Boleto", "M3 5h2v14H3zM7 5h1v14H7zM10 5h2v14h-2zM14 5h1v14h-1zM17 5h1v14h-1zM20 5h1v14h-1z"], ["cartao", "Cartão", "M2 5h20v14H2zM2 10h20M6 15h4"]];
-    const FM = d.forma === "cliente" ? "Boleto ou cartão" : (FORMAS.find(x => x[0] === d.forma) || [0, "—"])[1];
+    const FM = d.forma === "cliente" ? (c.mrrLiq > 0 ? "Boleto ou cartão" : "Pix, boleto ou cartão") : (FORMAS.find(x => x[0] === d.forma) || [0, "—"])[1];
     const setupTxt = c.unico ? "Setup " + (c.parc > 1 ? "em " + c.parc + "x" : "à vista") : "";
     const recTxt = c.teste ? "Assinatura em teste até " + fmtD(new Date(hoje.getTime() + c.tDias * 864e5)) : "Mensalidade " + ({ assinatura: d.fechamento === "contrato" ? "a partir da assinatura" : "a partir do pagamento", implantacao: "após a implantação", data: d.dataInicio ? "a partir de " + d.dataInicio.split("-").reverse().join("/") : "em data a definir", teste: "após o teste" }[d.inicio] || "");
     const fluxos = {
@@ -623,7 +623,7 @@ class Logica extends React.Component<any, any> {
       .concat(adtVig === "agora" ? [[difM >= 0 ? "Pró-rata cobrado agora" : "Crédito no próximo ciclo", brl(Math.abs(prorata)), true]] : [["Primeira cobrança nova", fmtD(proxV)]]) : [];
     const f3 = {
       soContrato: d.familia !== "CALLFACE_AI", soContratoTxt: (d.familia === "PABX" ? "PABX" : "White Label") + " fecha sempre com contrato assinado.",
-      formaNota: d.forma === "cliente" ? "No checkout do Stripe o cliente escolhe entre boleto e cartão." : "O checkout abre direto em " + FM.toLowerCase() + ".",
+      formaNota: d.forma === "cliente" ? "No checkout do Stripe o cliente escolhe a forma de pagamento. " + (c.mrrLiq > 0 ? "Com mensalidade, só cartão e boleto: o Pix não existe para cobrança recorrente." : "Como a proposta é só pagamento único, o Pix também aparece.") : "O checkout abre direto em " + FM.toLowerCase() + ".",
       vend: O.resp || "—", vendIni: ini(O.resp || ""), toggleVend: () => up({ vendAssina: d.vendAssina === false }), vendTrilho: trilho(d.vendAssina !== false), vendBola: bolaT,
       rep: d.repCf || this.eu, repIni: ini(d.repCf || this.eu), setRep: (e) => up({ repCf: e.target.value }),
       reps: [this.eu].concat((D.EQUIPE || [])).filter((x, i, a) => a.indexOf(x) === i).map(p => ({ v: p, l: p })),
@@ -996,7 +996,7 @@ class Logica extends React.Component<any, any> {
         .map(([t, s], i, arr) => ({ n: String(i + 1), t, s, trilho: "flex:1;height:2px;margin:0 6px;border-radius:9999px;background:" + (i < arr.length - 1 ? "#f3d9d1" : "transparent") })),
       proximos: (d.fechamento === "contrato"
         ? [["Aceite a proposta", "Leva um minuto, direto por esta página."], ["Assine o contrato", "Geramos o contrato com os dados desta proposta. A assinatura é digital."], ["Implantação", "Nosso time começa a implantação logo após a assinatura."]]
-        : [["Aceite a proposta", "Leva um minuto, direto por esta página."], ["Pagamento seguro", "Você segue para o checkout e escolhe entre boleto e cartão."], ["Acesso liberado", "Assim que o pagamento é confirmado, a conta é ativada."]]).map(([t, s], i) => ({ n: "0" + (i + 1), t, s })),
+        : [["Aceite a proposta", "Leva um minuto, direto por esta página."], ["Pagamento seguro", "Você segue para o checkout e escolhe a forma de pagamento."], ["Acesso liberado", "Assim que o pagamento é confirmado, a conta é ativada."]]).map(([t, s], i) => ({ n: "0" + (i + 1), t, s })),
       decTitulo: "Proposta válida até " + fmtD(valida),
       decSub: d.fechamento === "contrato" ? "Ao aceitar, você segue para a assinatura digital do contrato. Se algo não estiver certo, peça um ajuste." : "Ao aceitar, você segue para o pagamento seguro. Se algo não estiver certo, peça um ajuste.",
       decValorL: ehWl && c.res && !c.mrr ? "Setup" : "Mensalidade", decValor: ehWl && c.res && !c.mrr ? brl(c.unicoLiq) : brl(c.mrrLiq) + "/mês",

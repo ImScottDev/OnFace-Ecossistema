@@ -424,7 +424,7 @@ export function descreverEventoFinanceiro(event: EventoStripe): FatoFinanceiro |
     const total = asNum(o.amount_total);
     return {
       ...b, tipo: "PaymentFailed", chave: `payment-failed:${asStr(o.id) ?? eid}`,
-      titulo: `Pagamento falhou — boleto não compensou (${formatarValor(total, asStr(o.currency))})`,
+      titulo: `Pagamento falhou — boleto ou Pix não compensou (${formatarValor(total, asStr(o.currency))})`,
       descricao: null, valorCentavos: total, moeda: asStr(o.currency), contexto: {},
     };
   }

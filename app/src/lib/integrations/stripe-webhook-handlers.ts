@@ -361,8 +361,8 @@ export async function handleAsyncPaymentFailed(session: Record<string, unknown>)
     await inserirNotificacaoUmaVez({
       usuarioId: proposta.criadoPorId,
       tipo: "pagamento_falhou",
-      titulo: `Boleto não compensou — ${quem}`,
-      mensagem: `O boleto da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} venceu sem pagamento. O link ${appUrl()}/p/${proposta.id} já gera um checkout novo automaticamente — combine com o cliente uma nova forma de pagamento.`,
+      titulo: `Pagamento não compensou — ${quem}`,
+      mensagem: `O boleto ou Pix da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} venceu sem pagamento. O link ${appUrl()}/p/${proposta.id} já gera um checkout novo automaticamente — combine com o cliente uma nova forma de pagamento.`,
       link: `/propostas/${proposta.id}`,
     }).catch((e) => console.error("[StripeWebhook] falha ao notificar boleto falhado:", e));
   }
