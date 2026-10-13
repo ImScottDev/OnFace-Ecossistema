@@ -311,6 +311,6 @@ CREATE TEMP TABLE _el AS
 SELECT md5('el:lead:' || ll.lead_id || ':' || ll.label_id)::uuid AS id, l.organizacao_id, 'lead'::text AS entity_type,
        ll.lead_id AS entity_id, ll.label_id, ll.created_at
   FROM _ll ll JOIN leads l ON l.id = ll.lead_id;
-SELECT 'entity_labels' AS tabela, pg_temp.mz_carga('entity_labels', '_el') AS linhas;
+SELECT 'entity_labels' AS tabela, pg_temp.mz_carga('entity_labels', '_el', 'NOT EXISTS (SELECT 1 FROM public.entity_labels x WHERE x.entity_type = s.entity_type AND x.entity_id = s.entity_id AND x.label_id = s.label_id AND x.id <> s.id)') AS linhas;
 
 COMMIT;

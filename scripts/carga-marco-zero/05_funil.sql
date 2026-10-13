@@ -79,7 +79,7 @@ CREATE TEMP TABLE _eln AS
 SELECT md5('el:negocio:' || nl.negocio_id || ':' || nl.label_id)::uuid AS id, n.organizacao_id, 'negocio'::text AS entity_type,
        nl.negocio_id AS entity_id, nl.label_id, nl.created_at
   FROM negocio_labels nl JOIN negocios n ON n.id = nl.negocio_id;
-SELECT 'entity_labels(negocio)' AS tabela, pg_temp.mz_carga('entity_labels', '_eln') AS linhas;
+SELECT 'entity_labels(negocio)' AS tabela, pg_temp.mz_carga('entity_labels', '_eln', 'NOT EXISTS (SELECT 1 FROM public.entity_labels x WHERE x.entity_type = s.entity_type AND x.entity_id = s.entity_id AND x.label_id = s.label_id AND x.id <> s.id)') AS linhas;
 
 -- ───────────────────────── 3. status_changes ─────────────────────────
 SELECT 'status_changes' AS tabela, pg_temp.mz_carga('status_changes', 'legado.status_changes',
@@ -124,7 +124,7 @@ SELECT md5('opp:' || n.id)::uuid AS id, n.organizacao_id,
        (SELECT pe.id FROM pipeline_etapas pe WHERE pe.pipeline_id = n.pipeline_id AND pe.codigo = n.etapa) AS etapa_id,
        n.motivo_estagnacao, n.estagnado_em, n.trial_iniciado_em
   FROM negocios n JOIN _mz_negocio_depara d ON d.negocio_id = n.id;
-SELECT 'oportunidades' AS tabela, pg_temp.mz_carga('oportunidades', '_o') AS linhas;
+SELECT 'oportunidades' AS tabela, pg_temp.mz_carga('oportunidades', '_o', $$NOT EXISTS (SELECT 1 FROM public.oportunidades x WHERE x.negocio_id_legado = s.negocio_id_legado AND x.id <> s.id)$$) AS linhas;
 
 -- Depois das oportunidades: servicos_canonicos.oportunidade_origem_id so aponta para
 -- negocio com origem real. O 06 completa contrato_id. Aqui nada a ligar: prod nao

@@ -155,7 +155,7 @@ SELECT 'lead_user_unread' AS tabela, pg_temp.mz_carga('lead_user_unread', 'true'
 -- Prod tem 18 fb_lead_id repetidos (o retry de 5 min do webhook gravou 2x); o destino tem
 -- indice unico em fb_lead_id. Entra o mais antigo de cada um: 650 -> 632.
 SELECT 'meta_lead_staging' AS tabela, pg_temp.mz_carga('meta_lead_staging',
-  $$ s.fb_lead_id IS NULL OR s.id = (SELECT x.id FROM legado.meta_lead_staging x WHERE x.fb_lead_id = s.fb_lead_id ORDER BY x.created_at, x.id LIMIT 1) $$) AS linhas;
+  $$ (s.fb_lead_id IS NULL OR NOT EXISTS (SELECT 1 FROM public.meta_lead_staging px WHERE px.fb_lead_id = s.fb_lead_id AND px.id <> s.id)) AND (s.fb_lead_id IS NULL OR s.id = (SELECT x.id FROM legado.meta_lead_staging x WHERE x.fb_lead_id = s.fb_lead_id ORDER BY x.created_at, x.id LIMIT 1)) $$) AS linhas;
 SELECT 'audit_log' AS tabela, pg_temp.mz_carga('audit_log') AS linhas;
 SELECT 'ai_sdr_config' AS tabela, pg_temp.mz_carga('ai_sdr_config') AS linhas;
 SELECT 'ai_sdr_logs' AS tabela, pg_temp.mz_carga('ai_sdr_logs') AS linhas;

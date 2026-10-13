@@ -94,7 +94,7 @@ SELECT md5('mz-pagamento:' || f.id)::uuid, f.organizacao_id, f.id, f.empresa_id,
        jsonb_build_object('marco_zero', true, 'status_origem', f.status), f.paga_em, f.paga_em
   FROM faturas f
  WHERE f.origem = 'stripe' AND f.status = 'paga' AND f.paga_em IS NOT NULL AND f.empresa_id IS NOT NULL
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- ─── 5. MRR movimentos, ledger, webhooks ───────────────────────────────────
 SELECT 'mrr_movimentos' AS tabela, pg_temp.mz_carga('mrr_movimentos', 'true', jsonb_build_object(
