@@ -26,7 +26,7 @@ echo "[4] carga aditiva (tunel local -> dev, banco $DB; legado = $SCR)"
 ssh -i "$K" -f -N -L 15432:$(sh "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $PG"):5432 "$H"
 trap 'pkill -f "15432:" || true' EXIT
 echo "  (senha do usuario callface do dev em PGPASSWORD)"; : "${PGPASSWORD:?exporte PGPASSWORD (senha do postgres do dev, esta em /opt/callface/crm2-dev/.env)}"
-export PGHOST=localhost PGPORT=15432 PGUSER=callface LEGADO_HOST=localhost LEGADO_PORT=15432 LEGADO_USER=callface LEGADO_PASS="$PGPASSWORD"
+export PGHOST=localhost PGPORT=15432 PGUSER=callface LEGADO_HOST=localhost LEGADO_PORT=5432 LEGADO_USER=callface LEGADO_PASS="$PGPASSWORD"
 ( cd "$RAIZ/scripts/carga-marco-zero" && ./run.sh --legado "$SCR" --alvo "$DB" --ate 10 --sem-checks --planilha "$PLAN" )
 psql -X -d "$DB" -v ON_ERROR_STOP=1 -1 -f "$RAIZ/scripts/carga-aditiva/remover-qa.sql"
 
