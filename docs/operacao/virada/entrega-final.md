@@ -70,6 +70,8 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0103 | agentes de IA 2.0: `ai_agent_atribuicoes` (uma atribuição viva por contato), `ai_agent_compromissos` (retomadas que o próprio agente agenda), `ai_memoria_fatos`, `roteamento_comercial_regras` e governança de `ai_knowledge_sources` (aprovado, rascunho, histórico); aditiva e idempotente, não toca dado existente |
 | 0104 | contato avulso ganha o registro que a ficha base exige (lead `tipo = 'contato'`, sem aquisição, sem estágio) — backfill idempotente das pessoas sem lead; a rota `/contatos/pessoas/:id` deixa de escrever no GET |
 | 0105 | Callface AI: vínculo com evidência e estado (`evidencia`, `estado`, `org_nome`), pendências com razão (chave única empresa+organização), `callface_ai_tenant_detalhe` e `callface_ai_uso_diario` — aditiva e idempotente |
+| 0106 | catálogo: desativa os 15 produtos de test mode (`prod_VM7m…`) e seus Prices no espelho, e reaponta os 3 itens de proposta BINA ao Price real de mesmo valor — idempotente, sem apagar |
+| 0107 | proposta: numeração atômica por organização (contador) e unicidade (organizacao_id, numero) — idempotente |
 
 ## 3. AS-IS → TO-BE
 
