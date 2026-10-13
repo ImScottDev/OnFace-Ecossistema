@@ -9,6 +9,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { isAdminView } from "@/lib/auth/roles";
+import { SQL_EH_AGENTE } from "@/lib/agentes/eh-agente";
 import { nomeCompleto } from "@/lib/vendas/texto";
 
 export type ReuniaoDaPeca = {
@@ -23,6 +24,8 @@ export type ReuniaoDaPeca = {
   notas: string | null;
   responsavelId: string | null;
   responsavel: string | null;
+  /** O responsável é um agente de IA: o selo aparece onde a reunião mostra quem conduz. */
+  responsavelEhAgente: boolean;
   negocioId: string | null;
   leadId: string | null;
   pessoa: string | null;
@@ -36,7 +39,7 @@ export type ReuniaoDaPeca = {
   respostas: Record<string, string>;
 }
 
-export type MembroDaPeca = { id: string; nome: string; outlook: boolean }
+export type MembroDaPeca = { id: string; nome: string; outlook: boolean; ehAgente: boolean }
 export type OppDaPeca = {
   id: string; titulo: string; empresa: string; pessoa: string; cargo: string;
   leadId: string | null; email: string | null; resp: string | null;
@@ -51,7 +54,7 @@ export async function acaoReuniaoDaPeca(id: string): Promise<ReuniaoDaPeca | nul
   const [r] = await db.execute<ReuniaoDaPeca>(sql`
     SELECT r.id::text, r.titulo, to_char(r.data AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data,
            r.duracao, r.tipo, r.status, coalesce(to_jsonb(r.participantes), '[]'::jsonb) AS participantes, r.link, r.notas,
-           r.responsavel_id::text AS "responsavelId", u.nome AS responsavel,
+           r.responsavel_id::text AS "responsavelId", u.nome AS responsavel, ${sql.raw(SQL_EH_AGENTE("u"))} AS "responsavelEhAgente",
            r.negocio_id::text AS "negocioId", coalesce(l.id, ln.id)::text AS "leadId",
            coalesce(l.nome, ln.nome) AS pessoa, coalesce(l.email, ln.email) AS email,
            coalesce(el.nome, nullif(l.empresa, ''), en.nome, eln.nome, nullif(ln.empresa, '')) AS empresa,
@@ -96,7 +99,7 @@ export async function acaoBaseDaPeca(entrada: { negocioId?: string | null; leadI
 
   const [equipe, opps, leads] = await Promise.all([
     db.execute<MembroDaPeca>(sql`
-      SELECT u.id::text, u.nome,
+      SELECT u.id::text, u.nome, ${sql.raw(SQL_EH_AGENTE("u"))} AS "ehAgente",
              EXISTS (SELECT 1 FROM email_contas ec WHERE ec.usuario_id = u.id AND ec.tipo = 'microsoft' AND ec.sync_status = 'active') AS outlook
         FROM usuarios u
        WHERE u.organizacao_id = ${org}::uuid AND u.ativo = true AND u.role <> 'leitor'

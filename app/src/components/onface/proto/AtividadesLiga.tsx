@@ -182,7 +182,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {};
-    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n));
+    const ini = (n, ia) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n), ia);
     const EU = this.eu, equipe = (D.EQUIPE || [] /* ANTES: sem equipe real, listava Camila Reis / Diego Nunes / Ana Vitória como colegas. Nomes inventados. */).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
     const H0 = this.hoje(), H1 = new Date(H0.getTime() + 864e5), H2 = new Date(H0.getTime() + 2 * 864e5), agora = new Date();
     const fimSem = new Date(H0); fimSem.setDate(fimSem.getDate() + (7 - fimSem.getDay()) % 7 + 1);
@@ -335,7 +335,7 @@ class Logica extends React.Component<any, any> {
       const coms = X.comentarios || [];
       const seguidores = X.seguidores || asg.concat(X.criadoPor && X.criadoPor !== "Sistema" && X.criadoPor !== "NEXO" ? [X.criadoPor] : []);
       const segue = seguidores.indexOf(EU) >= 0;
-      const eventos = [{ autor: X.criadoPor || (X.src === "o" ? X.resp : "Sistema"), texto: X.src === "o" ? "criou a atividade na oportunidade " + (X.oppRot || "") : X.src === "l" ? "próxima ação do lead no Pré-vendas" : (X.fila && !asg.length ? "enviou para a fila de " + X.fila : "criou a atividade" + (asg.length ? " para " + asg.join(", ") : "")), quando: "Criada", ev: true }];
+      const eventos = [{ ehAgente: X.criadoPorEhAgente || undefined, autor: X.criadoPor || (X.src === "o" ? X.resp : "Sistema"), texto: X.src === "o" ? "criou a atividade na oportunidade " + (X.oppRot || "") : X.src === "l" ? "próxima ação do lead no Pré-vendas" : (X.fila && !asg.length ? "enviou para a fila de " + X.fila : "criou a atividade" + (asg.length ? " para " + asg.join(", ") : "")), quando: "Criada", ev: true }];
       if (X.origem === "nexo") eventos[0] = { autor: "NEXO", texto: X.nexoMotivo || "criou esta atividade", quando: "Automático", ev: true };
       const mq = /(^|\s)@([^\s@]{0,20})$/.exec(S.comentario || "");
       const SI = S.subAberta != null && X.sub[S.subAberta] ? S.subAberta : null, SB = SI != null ? X.sub[SI] : null;
@@ -382,7 +382,7 @@ class Logica extends React.Component<any, any> {
           remover: () => setSubs(X.sub.filter((_, j) => j !== i).map(y => Object.assign({}, y, { fimX: undefined })), null) })),
         teclaSub: (e) => { if (e.key === "Enter" && S.novaSub.trim()) { setSubs(X.sub.map(y => Object.assign({}, y, { fimX: undefined })).concat([{ t: S.novaSub.trim(), feita: false, resp: asg[0] || null }]), null); this.setState({ novaSub: "" }); } },
         feedN: coms.length ? coms.length + (coms.length > 1 ? " comentários" : " comentário") : "",
-        feed: eventos.concat((X.log || []).map(l => Object.assign({ ev: true }, l)), coms).map(c => ({ temAnx: !!(c.anexos && c.anexos.length), anx: (c.anexos || []).map(a2 => ({ nome: a2.nome, temImg: !!a2.url, big: "display:block;width:220px;height:150px;border-radius:9px;box-shadow:0 0 0 1px #eef1f1;background:#fafaf8 center/cover no-repeat url(" + (a2.url || "") + ")", chip: a2.url ? "display:none" : "display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px 0 4px;border-radius:7px;background:#f3f4f4;font-size:11.5px;font-weight:500;color:#1f252c", ext: ((a2.nome || "").split(".").pop() || "").slice(0, 4).toUpperCase() })), autor: c.autor, ini: c.autor === "Sistema" ? "OF" : c.autor === "NEXO" ? "NX" : ini(c.autor), quando: c.quando || "", av: av(c.autor === "Sistema" ? null : c.autor, 24), partes: c.ev ? [{ t: c.texto, s: "" }] : partes(c.texto || ""),
+        feed: eventos.concat((X.log || []).map(l => Object.assign({ ev: true }, l)), coms).map(c => ({ temAnx: !!(c.anexos && c.anexos.length), anx: (c.anexos || []).map(a2 => ({ nome: a2.nome, temImg: !!a2.url, big: "display:block;width:220px;height:150px;border-radius:9px;box-shadow:0 0 0 1px #eef1f1;background:#fafaf8 center/cover no-repeat url(" + (a2.url || "") + ")", chip: a2.url ? "display:none" : "display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px 0 4px;border-radius:7px;background:#f3f4f4;font-size:11.5px;font-weight:500;color:#1f252c", ext: ((a2.nome || "").split(".").pop() || "").slice(0, 4).toUpperCase() })), autor: c.autor, ini: c.autor === "Sistema" ? "OF" : c.autor === "NEXO" ? "NX" : ini(c.autor, c.ehAgente), quando: c.quando || "", av: av(c.autor === "Sistema" ? null : c.autor, 24), partes: c.ev ? [{ t: c.texto, s: "" }] : partes(c.texto || ""),
           box: c.ev ? "padding:4px 2px" : "padding:12px 14px;border-radius:12px;background:#fff;box-shadow:0 0 0 1px #eef1f1",
           txtStyle: "display:block;margin-top:6px;font-size:" + (c.ev ? "12px;color:#8b949e" : "13px;color:#1f252c") + ";line-height:1.55;white-space:pre-wrap;text-wrap:pretty" })),
         comentario: S.comentario, setComentario: (e) => this.setState({ comentario: e.target.value }),

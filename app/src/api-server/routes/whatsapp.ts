@@ -23,6 +23,7 @@ import {
 } from "@/lib/whatsapp/client";
 import { randomBytes } from "crypto";
 import { appUrl } from "@/lib/app-url";
+import { ehAgenteUsuario } from "@/lib/agentes/eh-agente";
 import { guardarNoAcervo } from "@/lib/arquivos/servico";
 import { decodificarAnexo } from "@/lib/atendimento/anexo-whatsapp";
 
@@ -968,12 +969,16 @@ app.get("/whatsapp/messages/:leadId", async (c) => {
   }
 
   const senderNameMap = new Map<string, string>();
+  const senderAgenteIds = new Set<string>();
   if (senderIds.length > 0) {
     const senderRows = await db
-      .select({ id: usuarios.id, nome: usuarios.nome })
+      .select({ id: usuarios.id, nome: usuarios.nome, tipo: usuarios.tipo, agenteId: usuarios.agenteId })
       .from(usuarios)
       .where(inArray(usuarios.id, senderIds));
-    for (const u of senderRows) senderNameMap.set(u.id, u.nome);
+    for (const u of senderRows) {
+      senderNameMap.set(u.id, u.nome);
+      if (ehAgenteUsuario(u)) senderAgenteIds.add(u.id);
+    }
   }
 
   const enrichedMessages = messages.map(m => {
@@ -983,6 +988,8 @@ app.get("/whatsapp/messages/:leadId", async (c) => {
       sessaoUsuarioId: sessaoInfo?.usuarioId || null,
       sessaoUsuarioNome: sessaoInfo?.usuarioNome || null,
       enviadoPorNome: m.enviadoPorId ? (senderNameMap.get(m.enviadoPorId) || null) : null,
+      /** Quem enviou foi um agente de IA: o Atendimento marca o balão. */
+      enviadoPorEhAgente: !!m.enviadoPorId && senderAgenteIds.has(m.enviadoPorId),
     };
   });
 

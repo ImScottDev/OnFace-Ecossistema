@@ -189,7 +189,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {}, EU = this.eu();
-    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n));
+    const ini = (n, ia) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n), ia);
     const equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
     const FMT = { Vídeo: "m22 8-6 4 6 4V8zM2 6h14v12H2z", Ligação: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", Presencial: "M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" };
     const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
@@ -228,7 +228,7 @@ class Logica extends React.Component<any, any> {
         entrar: () => E && E.abrirExterno ? E.abrirExterno(link) : window.open(link, "_blank"),
         temLocal: formato !== "Vídeo", localL: formato === "Presencial" ? "Local" : "Ligação", localV: formato === "Presencial" ? (RE.local || "Local não informado") : "Callface liga para " + (M.pessoa || "o contato"),
         rsResumo: [contRS.aceitou ? contRS.aceitou + " aceitou" : null, contRS.talvez ? contRS.talvez + " talvez" : null, contRS.recusou ? contRS.recusou + " recusou" : null, contRS.aguardando ? contRS.aguardando + " aguardando" : null].filter(Boolean).join(" · "),
-        organizador: closer, orgIni: ini(closer),
+        organizador: closer, orgIni: ini(closer, RE.closerEhAgente),
         part: parts.map(p => { const st = RS[rsvp[p] || "aguardando"], nm = nomeDe(p); return { nome: nm, email: p, ini: ini(nm), st: st[0], d: st[3],
           stStyle: "display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap;background:" + st[1] + ";color:" + st[2],
           removivel: p !== emailC, remover: () => { const r2 = Object.assign({}, rsvp); delete r2[p]; grava(null, { participantes: parts.filter(x => x !== p), rsvp: r2 }, "Participante removido · " + p); this.diz(p + " removido do convite"); } }; }),

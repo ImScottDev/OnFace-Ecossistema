@@ -19,6 +19,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -71,7 +72,7 @@ function paraItem(r: ReuniaoDaPeca) {
     iniD: iso(ini), iniH: hm(ini), fimD: iso(fim), fimH: hm(fim), inicio: null, fim: null,
     reuniao: {
       data: iso(ini), hora: hm(ini), duracao: dur, formato: FORMATO_DO_TIPO[r.tipo ?? "call"] ?? "Ligação",
-      closer: r.responsavel ?? "", participantes: Array.isArray(r.participantes) ? r.participantes : [],
+      closer: r.responsavel ?? "", closerEhAgente: r.responsavelEhAgente || undefined, participantes: Array.isArray(r.participantes) ? r.participantes : [],
       rsvp: {}, // o aceite real vem de `respostas` (lido do Outlook) em renderVals
       link: r.link, local, resultado: RESULTADO_DO_STATUS[status] ?? null,
     },
@@ -252,6 +253,7 @@ const Ligada = ReuniaoLigada as unknown as React.ComponentType<any>;
 type Carga = { equipe: MembroDaPeca[]; opps: OppDaPeca[]; leads: LeadDaPeca[] };
 
 export default function ReuniaoPecaProto({ peca, id, contexto, fechar, gravou }: PecaProps) {
+  const ordenarEquipe = useOrdemDaEquipe();
   const router = useRouter();
   const ctx = contexto as Record<string, any>;
   const reuniaoId = id && UUID.test(id) ? id : null;
@@ -385,5 +387,5 @@ export default function ReuniaoPecaProto({ peca, id, contexto, fechar, gravou }:
   }, [base, reunioes, buscados, fechar, mudar, salvar, buscar]);
 
   if (!ponte) return null;
-  return <Ligada ref={liga} ponte={ponte} catalogo={{ EQUIPE: ponte.equipe.map((m) => m.nome) }} ir={(href: string) => router.push(href)} />;
+  return <Ligada ref={liga} ponte={ponte} catalogo={{ EQUIPE: ordenarEquipe(ponte.equipe.map((m) => m.nome)) }} ir={(href: string) => router.push(href)} />;
 }

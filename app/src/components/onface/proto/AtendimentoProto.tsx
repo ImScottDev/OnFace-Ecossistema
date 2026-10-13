@@ -246,6 +246,7 @@ function msgDoBanco(m: any, porId: Map<string, any>): MsgDesenho {
     // O tique verde é o `status` real que o WhatsApp devolveu, não um timer.
     lido: out ? m.status === "read" : undefined,
     autor: m.enviadoPorNome ?? undefined,
+    agente: out && m.enviadoPorEhAgente ? true : undefined,
     waId: m.uazapiMessageId ?? null,
     mediaUrl: m.mediaUrl ?? null,
     t: texto,

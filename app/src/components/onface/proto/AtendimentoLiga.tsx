@@ -606,7 +606,7 @@ class Logica extends React.Component<any, any> {
         temCit: !!m.cit, citQuem: m.cit ? m.cit.quem : "", citT: m.cit ? m.cit.t : "",
         citStyle: "margin:0 0 6px;padding:6px 9px;border-radius:8px;min-width:0;max-width:100%;" + (ehOut ? "background:rgba(255,255,255,.65);box-shadow:inset 0 0 0 1px #cfe5da" : "background:#f6f6f3;box-shadow:inset 0 0 0 1px #e3e7e8"),
         tickCor: m.lido ? "#1f7256" : "#a3a8a4",
-        avIni: ehIn ? ini(L.pessoa) : iniEU,
+        avIni: ehIn ? ini(L.pessoa) : m.agente ? avatarDe(m.autor, undefined, true) : iniEU,
         avSlot: (ehIn ? av(L.pessoa, 28, 10) : "flex:0 0 auto;width:28px;height:28px;border-radius:9999px;background:#12171d;color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center") + ";align-self:flex-end" + (fim ? "" : ";visibility:hidden"),
         linha: "display:flex;align-items:flex-end;gap:8px;animation:ofIn .2s ease both;margin-top:" + (temDia || temNovas ? 4 : inicio ? 12 : 2) + "px;" + (ehOut ? "justify-content:flex-end;padding-left:56px" : "padding-right:56px"),
         coluna: "position:relative;display:flex;flex-direction:column;min-width:0;max-width:560px;" + (ehOut ? "align-items:flex-end" : "align-items:flex-start"),
