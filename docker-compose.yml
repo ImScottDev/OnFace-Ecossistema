@@ -61,8 +61,9 @@ services:
     # Versão fixa, não `latest`: um `up` futuro trocaria a imagem sem aviso, e
     # o WhatsApp já caiu inteiro antes por "ClientOutdated" quando o whatsmeow
     # de dentro dela ficou velho. Subir de versão passa a ser decisão, testada
-    # em dev antes. Última conferida: v1.0.9 (17/09/2026).
-    image: asternic/wuzapi:v1.0.9
+    # em dev antes. Fixado por DIGEST: a tag `v1.0.9` que estava aqui não existe
+    # no Docker Hub (13/10/2026), e o que roda é a `latest` de 17/09/2026.
+    image: asternic/wuzapi:latest@sha256:7f2aee54a6585fcc67f78dbbec41cf56e3bdab31577183cf3b97f9a78d84df66
     container_name: callface-crm2-dev-wuzapi
     restart: unless-stopped
     environment:
