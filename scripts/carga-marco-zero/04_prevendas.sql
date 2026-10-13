@@ -17,7 +17,7 @@ BEGIN;
 \ir _lib.sql
 
 CREATE TEMP TABLE _aq AS
-SELECT md5('aq:' || l.id)::uuid AS id, l.organizacao_id, l.empresa_id, md5('pessoa:' || coalesce(l.canonical_lead_id, l.id))::uuid AS pessoa_id,
+SELECT md5('aq:' || l.id)::uuid AS id, l.organizacao_id, l.empresa_id, coalesce((SELECT p.id FROM pessoas p WHERE p.lead_id_legado = coalesce(l.canonical_lead_id, l.id)), md5('pessoa:' || coalesce(l.canonical_lead_id, l.id))::uuid) AS pessoa_id,
        -- vocabulario fechado do SPEC 8.1; sem acento e em caixa baixa porque o dado real tem "Midia Paga"
        CASE
          WHEN o.k = '' THEN 'MANUAL'
@@ -45,7 +45,7 @@ SELECT 'aquisicoes' AS tabela, pg_temp.mz_carga('aquisicoes', '_aq', 'true', '{}
 -- Ponto de contato: 1 first-touch por aquisicao. tipo_origem segue a regra que o
 -- sync de runtime (sync-domain-model.ts classificarOrigem) aplica a lead novo.
 CREATE TEMP TABLE _pc AS
-SELECT md5('pc:' || l.id)::uuid AS id, l.organizacao_id, md5('pessoa:' || coalesce(l.canonical_lead_id, l.id))::uuid AS pessoa_id, l.empresa_id,
+SELECT md5('pc:' || l.id)::uuid AS id, l.organizacao_id, coalesce((SELECT p.id FROM pessoas p WHERE p.lead_id_legado = coalesce(l.canonical_lead_id, l.id)), md5('pessoa:' || coalesce(l.canonical_lead_id, l.id))::uuid) AS pessoa_id, l.empresa_id,
        coalesce(l.utm_source, l.origem) AS source, l.utm_medium AS medium, l.utm_campaign AS campaign,
        l.utm_term AS term, l.utm_content AS content, l.landing_page,
        l.meta_campaign_id AS campaign_id,
