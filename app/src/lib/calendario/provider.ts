@@ -66,7 +66,8 @@ export interface CalendarProvider {
   contaDoUsuario(usuarioId: string): Promise<string | null>;
   criar(contaId: string, evento: EventoParaCriar): Promise<ResultadoProvider>;
   atualizar(contaId: string, eventId: string, mudanca: EventoParaAtualizar): Promise<ResultadoProvider>;
-  cancelar(contaId: string, eventId: string): Promise<ResultadoProvider>;
+  /** Cancela avisando os convidados. `comentario` vai na mensagem de cancelamento quando o provedor suporta. */
+  cancelar(contaId: string, eventId: string, comentario?: string | null): Promise<ResultadoProvider>;
   /**
    * Horários realmente ocupados na agenda do usuário no intervalo. Falha NÃO vira
    * "livre": quem oferece horário precisa saber que a checagem não aconteceu.

@@ -1960,6 +1960,10 @@ export const closerDisponibilidade = pgTable(
   },
   (table) => [
     uniqueIndex("uq_closer_disponibilidade_usuario").on(table.usuarioId),
+    /** Conta (email_contas) em que o evento vive: atualizar/cancelar usam esta (migration 0110). */
+    calendarContaId: uuid("calendar_conta_id"),
+    /** Resposta de cada convidado lida do Outlook: {email: accepted|declined|tentativelyAccepted|none}. */
+    participantesRespostas: jsonb("participantes_respostas").$type<Record<string, string>>().notNull().default({}),
     index("idx_closer_disponibilidade_org").on(table.organizacaoId),
   ]
 );

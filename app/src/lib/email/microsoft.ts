@@ -1,6 +1,7 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import { EmailClient, SendEmailParams, SendEmailResult, RawEmail, EmailContaConfig, FetchEmailsOptions } from "./types";
 import { decrypt, encrypt } from "./encryption";
+import { dataHoraGraph } from "@/lib/calendario/fuso";
 import { db } from "@/lib/db";
 import { emailContas } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -261,7 +262,7 @@ export async function refreshMicrosoftToken(refreshToken: string): Promise<{
 // aqui cada chamada resolve/atualiza o token da conta a partir do banco.
 
 /** Garante um access token válido pra uma conta Microsoft, refrescando e persistindo se preciso. */
-async function getValidAccessToken(contaId: string): Promise<string> {
+export async function getValidAccessToken(contaId: string): Promise<string> {
   const [conta] = await db
     .select({
       accessToken: emailContas.accessToken,
@@ -289,7 +290,7 @@ async function getValidAccessToken(contaId: string): Promise<string> {
   return refreshed.accessToken;
 }
 
-async function graphFetch(accessToken: string, path: string, init?: RequestInit) {
+export async function graphFetch(accessToken: string, path: string, init?: RequestInit) {
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
     ...init,
     headers: {
@@ -357,8 +358,8 @@ export async function createOutlookEvent(params: CriarEventoParams): Promise<Eve
   const accessToken = await getValidAccessToken(params.contaId);
   const body: Record<string, unknown> = {
     subject: params.titulo,
-    start: { dateTime: params.inicioISO, timeZone: "UTC" },
-    end: { dateTime: params.fimISO, timeZone: "UTC" },
+    start: dataHoraGraph(params.inicioISO),
+    end: dataHoraGraph(params.fimISO),
     ...(params.semTeams ? { showAs: "busy" } : { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" }),
   };
   if (params.corpo) body.body = { contentType: "text", content: params.corpo };
@@ -396,15 +397,34 @@ export async function updateOutlookEvent(params: {
   attendeeEmails?: string[] | null;
 }): Promise<{ atualizado: boolean; naoExiste?: boolean }> {
   const accessToken = await getValidAccessToken(params.contaId);
+  const idUrl = encodeURIComponent(params.eventId);
   const body: Record<string, unknown> = {};
   if (params.titulo) body.subject = params.titulo;
-  if (params.inicioISO) body.start = { dateTime: params.inicioISO, timeZone: "UTC" };
-  if (params.fimISO) body.end = { dateTime: params.fimISO, timeZone: "UTC" };
+  if (params.inicioISO) body.start = dataHoraGraph(params.inicioISO);
+  if (params.fimISO) body.end = dataHoraGraph(params.fimISO);
   if (params.corpo) body.body = { contentType: "text", content: params.corpo };
-  if (params.attendeeEmails) body.attendees = params.attendeeEmails.map((address) => ({ emailAddress: { address }, type: "required" }));
+  if (params.attendeeEmails) {
+    // Mantém os convidados que já estão no evento (com a resposta deles) e só
+    // acrescenta/remove a diferença; reenviar a lista crua zera aceites.
+    const atual = await fetch(`https://graph.microsoft.com/v1.0/me/events/${idUrl}?$select=attendees`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (atual.status === 404) return { atualizado: false, naoExiste: true };
+    if (!atual.ok) throw new Error(`Graph GET event ${params.eventId}: HTTP ${atual.status} ${(await atual.text()).slice(0, 200)}`);
+    const existentes = ((await atual.json()) as { attendees?: Array<{ emailAddress?: { address?: string }; type?: string }> }).attendees ?? [];
+    const desejados = new Set(params.attendeeEmails.map((e) => e.toLowerCase()));
+    const jaTem = new Set(existentes.map((a) => (a.emailAddress?.address ?? "").toLowerCase()));
+    const igual = desejados.size === jaTem.size && [...desejados].every((e) => jaTem.has(e));
+    if (!igual) {
+      body.attendees = [
+        ...existentes.filter((a) => desejados.has((a.emailAddress?.address ?? "").toLowerCase())),
+        ...params.attendeeEmails.filter((e) => !jaTem.has(e.toLowerCase())).map((address) => ({ emailAddress: { address }, type: "required" })),
+      ];
+    }
+  }
   if (Object.keys(body).length === 0) return { atualizado: false };
 
-  const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${params.eventId}`, {
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${idUrl}`, {
     method: "PATCH",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -416,6 +436,23 @@ export async function updateOutlookEvent(params: {
     throw new Error(`Graph PATCH event ${params.eventId}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
   }
   return { atualizado: true };
+}
+
+/**
+ * Cancela a reunião avisando os convidados (POST /cancel, com comentário). Só o
+ * organizador pode, e só se o evento tem convidado: nos demais casos (400) cai
+ * no DELETE. Já não existir (404) é sucesso. Falha real LANÇA: a versão antiga
+ * engolia o erro e a reunião cancelada no ONFACE seguia de pé no Outlook.
+ */
+export async function cancelOutlookEvent(contaId: string, eventId: string, comentario?: string | null): Promise<void> {
+  const accessToken = await getValidAccessToken(contaId);
+  const base = `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`;
+  const h = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+  const r = await fetch(`${base}/cancel`, { method: "POST", headers: h, body: JSON.stringify({ comment: comentario ?? "Reunião cancelada." }) });
+  if (r.ok || r.status === 404) return;
+  if (r.status !== 400 && r.status !== 403) throw new Error(`Graph cancel event ${eventId}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+  const d = await fetch(base, { method: "DELETE", headers: h });
+  if (!d.ok && d.status !== 404) throw new Error(`Graph DELETE event ${eventId}: HTTP ${d.status} ${(await d.text()).slice(0, 200)}`);
 }
 
 export interface EventoOutlook {

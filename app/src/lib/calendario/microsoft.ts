@@ -10,9 +10,10 @@
  */
 import { db } from "@/lib/db";
 import { emailContas } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
+import { ocupadosPorSchedule } from "./graph-calendario";
 import {
-  createOutlookEvent, updateOutlookEvent, deleteOutlookEvent, getBusyTimes,
+  createOutlookEvent, updateOutlookEvent, cancelOutlookEvent, getBusyTimes,
 } from "@/lib/email/microsoft";
 import type {
   CalendarProvider, EventoParaCriar, EventoParaAtualizar, ResultadoProvider, MotivoFalha,
@@ -44,6 +45,7 @@ export const microsoftCalendar: CalendarProvider = {
         eq(emailContas.tipo, "microsoft"),
         eq(emailContas.syncStatus, "active"),
       ))
+      .orderBy(asc(emailContas.createdAt))
       .limit(1);
     return conta?.id ?? null;
   },
@@ -84,6 +86,12 @@ export const microsoftCalendar: CalendarProvider = {
 
   async ocupados(contaId: string, inicioISO: string, fimISO: string) {
     try {
+      // getSchedule da própria caixa; se o Graph recusar, calendarView. Nenhum dos dois falha para "livre".
+      const [conta] = await db.select({ email: emailContas.email }).from(emailContas).where(eq(emailContas.id, contaId)).limit(1);
+      if (conta?.email) {
+        try { return { ok: true as const, faixas: await ocupadosPorSchedule(contaId, conta.email, inicioISO, fimISO) }; }
+        catch (e) { console.warn("[calendario] getSchedule falhou, usando calendarView:", String(e).slice(0, 200)); }
+      }
       return { ok: true as const, faixas: await getBusyTimes(contaId, inicioISO, fimISO) };
     } catch (e) {
       const { motivo, detalhe } = classificar(e);
@@ -91,9 +99,9 @@ export const microsoftCalendar: CalendarProvider = {
     }
   },
 
-  async cancelar(contaId: string, eventId: string): Promise<ResultadoProvider> {
+  async cancelar(contaId: string, eventId: string, comentario?: string | null): Promise<ResultadoProvider> {
     try {
-      await deleteOutlookEvent(contaId, eventId);
+      await cancelOutlookEvent(contaId, eventId, comentario);
       return { ok: true, eventId };
     } catch (e) {
       return { ok: false, ...classificar(e) };

@@ -33,6 +33,8 @@ export interface OpcoesHorarios {
   duracaoMin?: number;
   dias?: number;
   maxSlots?: number;
+  /** Máximo de horários por dia (padrão 2: a oferta cobre dias diferentes em vez de empilhar manhãs). */
+  porDia?: number;
   /** Padrão true: sem Outlook verificado, não oferece horário. */
   exigirOutlook?: boolean;
 }
@@ -63,10 +65,9 @@ export async function horariosLivres(o: OpcoesHorarios): Promise<Disponibilidade
   const grade = await getFullAvailability(db, o.closerId, { durationMin: duracao, lookaheadDays: dias, busyExtra, maxSlotsPerDay: 12 });
   const max = o.maxSlots ?? 6;
   const escolhidos: SlotLivre[] = [];
-  // No máximo 2 por dia, para a oferta cobrir dias diferentes em vez de empilhar manhãs.
-  const limite = Date.now() + ANTECEDENCIA_MINIMA_MIN * 60_000;
+    const limite = Date.now() + ANTECEDENCIA_MINIMA_MIN * 60_000;
   for (const d of grade) {
-    for (const s of d.slots.filter((x) => x.inicio.getTime() >= limite).slice(0, 2)) {
+    for (const s of d.slots.filter((x) => x.inicio.getTime() >= limite).slice(0, o.porDia ?? 2)) {
       if (escolhidos.length >= max) break;
       escolhidos.push({ inicioISO: s.inicio.toISOString(), fimISO: s.fim.toISOString(), label: formatSlotLabel(s) });
     }
@@ -191,7 +192,7 @@ export async function reagendarReuniao(p: { organizacaoId: string; reuniaoId: st
 export async function cancelarReuniaoDoAgente(p: { organizacaoId: string; reuniaoId: string; motivo?: string }): Promise<{ ok: boolean; sincronizado: boolean; aviso?: string | null; erro?: string }> {
   const [r] = await db.select({ id: reunioes.id }).from(reunioes).where(and(eq(reunioes.id, p.reuniaoId), eq(reunioes.organizacaoId, p.organizacaoId))).limit(1);
   if (!r) return { ok: false, sincronizado: false, erro: "reunião não encontrada" };
-  const sync = await cancelarNaAgenda(p.organizacaoId, r.id);
+  const sync = await cancelarNaAgenda(p.organizacaoId, r.id, p.motivo ?? null);
   await db.update(reunioes).set({ status: "cancelada", notas: sql`coalesce(${reunioes.notas}, '') || ${p.motivo ? `\n[cancelada: ${p.motivo}]` : ""}`, updatedAt: new Date() }).where(eq(reunioes.id, r.id));
   return { ok: true, sincronizado: sync.sincronizado, aviso: sync.aviso ?? null };
 }

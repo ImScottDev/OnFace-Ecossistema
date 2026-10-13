@@ -72,6 +72,7 @@ interface LinhaReuniao extends Record<string, unknown> {
   responsavel_id: string | null;
   calendar_provider: string | null;
   calendar_event_id: string | null;
+  calendar_conta_id: string | null;
   convidado_email: string | null;
   participantes: string[] | null;
 }
@@ -96,6 +97,7 @@ async function carregar(organizacaoId: string, reuniaoId: string): Promise<Linha
            -- lá ela é o que impede duplicata na agenda do cliente.
            COALESCE(r.calendar_provider, CASE WHEN r.outlook_event_id IS NOT NULL THEN 'microsoft' END) AS calendar_provider,
            COALESCE(r.calendar_event_id, r.outlook_event_id) AS calendar_event_id,
+           r.calendar_conta_id::text AS calendar_conta_id,
            -- O convidado é o contato do processo: pessoa canônica primeiro,
            -- lead legado como ponte enquanto ele existir.
            COALESCE(p.email, l.email) AS convidado_email,
@@ -109,12 +111,13 @@ async function carregar(organizacaoId: string, reuniaoId: string): Promise<Linha
 
 async function gravarEstado(
   reuniaoId: string,
-  campos: { provider?: string | null; eventId?: string | null; status: string; erro?: string | null; link?: string | null },
+  campos: { provider?: string | null; eventId?: string | null; contaId?: string | null; status: string; erro?: string | null; link?: string | null },
 ): Promise<void> {
   await db.execute(sql`
     UPDATE reunioes SET
       calendar_provider = COALESCE(${campos.provider ?? null}, calendar_provider),
       calendar_event_id = COALESCE(${campos.eventId ?? null}, calendar_event_id),
+      calendar_conta_id = COALESCE(${campos.contaId && /^[0-9a-f-]{36}$/i.test(campos.contaId) ? campos.contaId : null}::uuid, calendar_conta_id),
       calendar_sync_status = ${campos.status},
       calendar_sync_erro = ${campos.erro ?? null},
       calendar_sync_em = now(),
@@ -133,6 +136,9 @@ async function escolher(
   r: LinhaReuniao,
 ): Promise<{ provider: CalendarProvider; contaId: string } | { erro: "sem_conta" | "nao_configurado" }> {
   const jaVinculado = providerPorNome(r.calendar_provider);
+  // A conta que criou o evento é a que o atualiza: com duas contas Microsoft, "a primeira ativa" podia ser
+  // outra, o PATCH dava 404 e o evento era recriado (duplicata no Outlook).
+  if (jaVinculado?.configurado() && r.calendar_conta_id) return { provider: jaVinculado, contaId: r.calendar_conta_id };
   const candidatos = jaVinculado ? [jaVinculado] : PROVIDERS;
 
   let algumConfigurado = false;
@@ -150,11 +156,24 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
   const r = await carregar(organizacaoId, reuniaoId);
   if (!r) return { sincronizado: false, provider: null, aviso: "Reunião não encontrada." };
 
+  // Já tem evento: criar de novo é duplicar. Quem pede "criar" numa reunião vinculada está atualizando.
+  if (r.calendar_event_id) return atualizarNaAgenda(organizacaoId, reuniaoId);
+
   const escolha = await escolher(r);
   if ("erro" in escolha) {
     await gravarEstado(reuniaoId, { status: escolha.erro === "sem_conta" ? "falhou" : "sem_provedor", erro: escolha.erro });
     return { sincronizado: false, provider: null, aviso: FRASE_DA_FALHA[escolha.erro] };
   }
+
+  // Reserva a criação: duas chamadas ao mesmo tempo (POST seguido de PATCH, retry do worker) liam
+  // "sem evento" e criavam dois. Quem não ganha a reserva não cria.
+  // ponytail: a edição que perde a corrida não é reenviada depois; o retry só pega 'falhou'.
+  const [reserva] = await db.execute<{ id: string }>(sql`
+    UPDATE reunioes SET calendar_sync_status = 'pendente', calendar_sync_em = now()
+     WHERE id = ${reuniaoId}::uuid AND calendar_event_id IS NULL AND outlook_event_id IS NULL
+       AND (calendar_sync_status IS DISTINCT FROM 'pendente' OR calendar_sync_em IS NULL OR calendar_sync_em < now() - interval '2 minutes')
+    RETURNING id::text`);
+  if (!reserva) return { sincronizado: false, provider: escolha.provider.nome, aviso: "O convite desta reunião já está sendo criado na agenda." };
 
   const inicio = new Date(r.data);
   const fim = new Date(inicio.getTime() + (r.duracao || 30) * 60_000);
@@ -173,7 +192,7 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
   // desfeito no provedor: reconcilia sem deixar convite órfão e sem duplicar no reprocessamento.
   for (let tentativa = 1; ; tentativa++) {
     try {
-      await gravarEstado(reuniaoId, { provider: escolha.provider.nome, eventId: res.eventId, status: "ok", link });
+      await gravarEstado(reuniaoId, { provider: escolha.provider.nome, eventId: res.eventId, contaId: escolha.contaId, status: "ok", link });
       // Quem foi convidado fica na reunião: o card mostra os participantes que o convite levou.
       if (!(r.participantes ?? []).length && convidados.length) {
         await db.execute(sql`UPDATE reunioes SET participantes = ARRAY[${sql.join(convidados.map((e) => sql`${e}`), sql`, `)}]::text[] WHERE id = ${reuniaoId}::uuid`);
@@ -224,21 +243,22 @@ export async function atualizarNaAgenda(
   }
   // Apagado do lado do provedor: recria em vez de insistir num id morto.
   if ("naoExiste" in res && res.naoExiste) {
-    await db.execute(sql`UPDATE reunioes SET calendar_event_id = NULL WHERE id = ${reuniaoId}::uuid`);
+    console.warn(`[calendario] evento ${r.calendar_event_id} da reunião ${reuniaoId} não existe mais na conta ${escolha.contaId}; recriando`);
+    await db.execute(sql`UPDATE reunioes SET calendar_event_id = NULL, outlook_event_id = NULL WHERE id = ${reuniaoId}::uuid`);
     return criarNaAgenda(organizacaoId, reuniaoId);
   }
-  await gravarEstado(reuniaoId, { provider: escolha.provider.nome, status: "ok" });
+  await gravarEstado(reuniaoId, { provider: escolha.provider.nome, contaId: escolha.contaId, status: "ok" });
   return { sincronizado: true, provider: escolha.provider.nome, eventId: r.calendar_event_id, aviso: null, semConvidado: convidados.length === 0 };
 }
 
-export async function cancelarNaAgenda(organizacaoId: string, reuniaoId: string): Promise<ResultadoSync> {
+export async function cancelarNaAgenda(organizacaoId: string, reuniaoId: string, comentario?: string | null): Promise<ResultadoSync> {
   const r = await carregar(organizacaoId, reuniaoId);
   if (!r?.calendar_event_id) return { sincronizado: true, provider: null, aviso: null };
 
   const escolha = await escolher(r);
   if ("erro" in escolha) return { sincronizado: false, provider: null, aviso: FRASE_DA_FALHA[escolha.erro] };
 
-  const res = await escolha.provider.cancelar(escolha.contaId, r.calendar_event_id);
+  const res = await escolha.provider.cancelar(escolha.contaId, r.calendar_event_id, comentario);
   if (!res.ok) {
     await gravarEstado(reuniaoId, { provider: escolha.provider.nome, status: "falhou", erro: res.detalhe });
     return { sincronizado: false, provider: escolha.provider.nome, aviso: FRASE_DA_FALHA[res.motivo] };
@@ -255,7 +275,7 @@ export async function reprocessarSyncPendente(
   organizacaoId: string, limite = 50,
 ): Promise<{ tentadas: number; resolvidas: number }> {
   const pendentes = await db.execute<{ id: string; tem_evento: boolean }>(sql`
-    SELECT id::text, (calendar_event_id IS NOT NULL) AS tem_evento
+    SELECT id::text, (COALESCE(calendar_event_id, outlook_event_id) IS NOT NULL) AS tem_evento
       FROM reunioes
      WHERE organizacao_id = ${organizacaoId}::uuid
        AND calendar_sync_status = 'falhou'

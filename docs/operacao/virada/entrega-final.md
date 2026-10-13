@@ -74,6 +74,7 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0107 | proposta: numeração atômica por organização (contador) e unicidade (organizacao_id, numero) — idempotente |
 | 0108 | aquisição convertida em oportunidade (handoff) passa a ter `closed_at` e etapa `oportunidade`: sai de Relações em andamento; backup em `_relacoes_conversao_20261013` — idempotente |
 | 0109 | catálogo: coluna `servicos_catalogo.descricao_comercial` (texto de venda do ONFACE, ganha da description do Stripe; a sincronização não a toca) e os textos dos 15 produtos vendáveis, só onde ainda está vazia — idempotente |
+| 0110 | calendário: `reunioes.calendar_conta_id` (conta que criou o evento), `reunioes.participantes_respostas` (aceite por convidado) e `calendario_assinaturas` (assinatura Graph + cursor de delta por conta) — aditiva e idempotente |
 
 ## 3. AS-IS → TO-BE
 
