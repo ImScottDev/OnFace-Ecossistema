@@ -11,7 +11,7 @@ import { executarComPortas, type LinhaInbox, type PortasInbox, type ResultadoInb
 import { depsReais, processarEventoStripe, type StripeEventPayload } from "./stripe-webhook-processor";
 
 /** Eventos de CLIENTE: sem vínculo persistido não há como saber de quem são (a conta é compartilhada com o SaaS). */
-const ESCOPO_CLIENTE = (t: string) => t === "customer.updated" || t.startsWith("payment_method.");
+const ESCOPO_CLIENTE = (t: string) => t === "customer.updated" || t.startsWith("customer.tax_id.") || t.startsWith("payment_method.");
 
 export interface DecisaoTenant { organizacaoId: string | null; ignorar: null | "saas" | "cliente_desconhecido" }
 

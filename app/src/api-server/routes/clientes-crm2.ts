@@ -18,7 +18,7 @@ import { z } from "zod";
 import { lerUsoCallfaceAi } from "@/lib/integrations/callface-ai/leitura-dominio";
 import { healthDaEmpresa } from "@/lib/cs/health";
 import { getCtx, getGestaoCtx, exigirCtx } from "../compat.js";
-import { abrirPortal } from "@/lib/integrations/stripe-portal";
+import { abrirPortal, PortalConfigError } from "@/lib/integrations/stripe-portal";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { publicarEvento } from "@/lib/events/outbox";
 import { appUrl } from "@/lib/app-url";
@@ -1731,6 +1731,8 @@ app.post("/clientes/:empresaId/portal-stripe", async (c) => {
     if (!portal.url) return c.json({ error: portal.motivo ?? "Portal indisponível neste ambiente." }, 503);
     return c.json({ url: portal.url, stripeCustomerId });
   } catch (erro) {
+    // Falta de política/termos para criar a configuração do portal: o que falta e onde pôr, não um 502 cru.
+    if (erro instanceof PortalConfigError) return c.json({ error: erro.message, codigo: erro.codigo }, 422);
     // O 500 genérico esconderia o que o Stripe disse (configuração sem termos,
     // customer apagado, chave errada) — e sem isso ninguém conserta.
     return c.json({ error: `O Stripe recusou abrir o portal: ${erro instanceof Error ? erro.message : String(erro)}` }, 502);

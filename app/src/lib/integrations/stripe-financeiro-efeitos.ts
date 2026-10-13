@@ -10,6 +10,7 @@ import { checkouts } from "@/lib/db/schema";
 import { registrarEvento } from "@/lib/vendas/eventos";
 import { destinatariosDaConta, inserirNotificacaoUmaVez, leadDoCustomer } from "./stripe-webhook-handlers";
 import { estadoDoRecebivel, estadoPorEvento, type FatoFinanceiro, type PagamentoDoEvento } from "./stripe-financeiro";
+import { planoDeCadastro, type MudancaDoCliente } from "./stripe-portal-retorno";
 
 const linhas = <T>(r: unknown) => r as unknown as T[];
 
@@ -173,4 +174,52 @@ export async function avisarEquipe(a: { organizacaoId: string; customerId: strin
     });
   }
   return `${dest.length} notificado(s)`;
+}
+
+/**
+ * Cadastro de cobrança que o cliente corrigiu no portal → empresa do ONFACE.
+ *
+ * A empresa vem do vínculo canônico (`empresas.stripe_customer_id`), com o lead
+ * como segunda via. Só PREENCHE o que está vazio (`planoDeCadastro`); onde o CRM
+ * tem outro valor devolve a divergência para o processador avisar a equipe —
+ * dado que foi editado à mão ou veio de contrato não é sobrescrito por um
+ * formulário público. Idempotente: reaplicar o mesmo evento não muda nada.
+ */
+export async function aplicarCadastroDoCliente(
+  organizacaoId: string, customerId: string | null, m: MudancaDoCliente,
+): Promise<{ resumo: string; divergencias: string[] }> {
+  if (!customerId) return { resumo: "evento sem customer — cadastro não aplicado", divergencias: [] };
+  let empresaId: string | null = linhas<{ id: string }>(await db.execute(sql`
+    SELECT id::text FROM empresas
+     WHERE organizacao_id = ${organizacaoId}::uuid AND stripe_customer_id = ${customerId} LIMIT 1`))[0]?.id ?? null;
+  if (!empresaId) {
+    const lead = await leadDoCustomer(customerId);
+    empresaId = lead && lead.organizacaoId === organizacaoId ? lead.empresaId : null;
+  }
+  if (!empresaId) return { resumo: "customer sem empresa vinculada — cadastro não aplicado", divergencias: [] };
+
+  const [atual] = linhas<{ telefone: string | null; endereco: string | null; cep: string | null; cidade: string | null; estado: string | null; cnpj: string | null }>(await db.execute(sql`
+    SELECT telefone, endereco, cep, cidade, estado, cnpj FROM empresas
+     WHERE id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid`));
+  if (!atual) return { resumo: "empresa não encontrada nesta organização", divergencias: [] };
+
+  const { preencher, divergencias } = planoDeCadastro(atual, m.novo);
+  const colunas = Object.keys(preencher) as (keyof typeof preencher)[];
+  if (colunas.length) {
+    // Cada coluna só é gravada se ainda estiver vazia NO MOMENTO do update: duas entregas concorrentes não se sobrescrevem.
+    await db.execute(sql`
+      UPDATE empresas SET
+        telefone = CASE WHEN COALESCE(telefone, '') = '' THEN COALESCE(${preencher.telefone ?? null}, telefone) ELSE telefone END,
+        endereco = CASE WHEN COALESCE(endereco, '') = '' THEN COALESCE(${preencher.endereco ?? null}, endereco) ELSE endereco END,
+        cep      = CASE WHEN COALESCE(cep, '') = ''      THEN COALESCE(${preencher.cep ?? null}, cep) ELSE cep END,
+        cidade   = CASE WHEN COALESCE(cidade, '') = ''   THEN COALESCE(${preencher.cidade ?? null}, cidade) ELSE cidade END,
+        estado   = CASE WHEN COALESCE(estado, '') = ''   THEN COALESCE(${preencher.estado ?? null}, estado) ELSE estado END,
+        cnpj     = CASE WHEN COALESCE(cnpj, '') = ''     THEN COALESCE(${preencher.cnpj ?? null}, cnpj) ELSE cnpj END,
+        updated_at = now()
+       WHERE id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
+  }
+  return {
+    resumo: `${colunas.length ? `preenchido: ${colunas.join(", ")}` : "nada a preencher"}${divergencias.length ? `; ${divergencias.length} divergência(s)` : ""}`,
+    divergencias,
+  };
 }

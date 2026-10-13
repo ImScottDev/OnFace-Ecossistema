@@ -64,7 +64,7 @@ export type TipoEventoVendas =
   | "SubscriptionUpgraded" | "SubscriptionDowngraded" | "SubscriptionTrialEnding"
   | "InvoiceIssued" | "InvoicePaid" | "InvoiceOverdue" | "InvoicePaymentFailed" | "InvoiceActionRequired"
   | "InvoiceVoided" | "InvoiceUncollectible" | "PaymentReceived" | "PaymentFailed" | "PaymentRefunded"
-  | "PaymentMethodAttached" | "PaymentMethodUpdated" | "PaymentMethodDetached";
+  | "PaymentMethodAttached" | "PaymentMethodUpdated" | "PaymentMethodDetached" | "CustomerBillingUpdated";
 
 export interface EventoVendas {
   organizacaoId: string;

@@ -105,7 +105,7 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
       moeda: s.moeda,
       mrr: s.mrr ? Number(s.mrr) : null,
       renovaEm: s.currentPeriodEnd,
-      cancelaNoFimDoPeriodo: (s.raw as { cancel_at_period_end?: boolean } | null)?.cancel_at_period_end === true,
+      cancelaNoFimDoPeriodo: (() => { const r = s.raw as { cancel_at_period_end?: boolean; cancela_no_fim?: boolean } | null; return r?.cancela_no_fim === true || r?.cancel_at_period_end === true; })(),
       itens: itens.filter((i) => i.assinaturaId === s.id && i.status !== "inactive" && i.stripeSubscriptionItemId).map((i) => ({
         itemId: i.stripeSubscriptionItemId, priceId: i.stripePriceId,
         produto: (i.stripePriceId && doCatalogo.get(i.stripePriceId)?.produto) || i.produto,

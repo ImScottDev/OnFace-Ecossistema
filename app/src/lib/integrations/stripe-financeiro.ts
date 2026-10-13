@@ -13,6 +13,8 @@
  *   3. em que estado fica o recebível e o pagamento.
  */
 
+import { motivoDoPortal, mudancasDoCliente } from "./stripe-portal-retorno";
+
 type Obj = Record<string, unknown>;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -178,7 +180,8 @@ export type TipoFinanceiro =
   | "InvoiceIssued" | "InvoicePaid" | "InvoiceOverdue" | "InvoicePaymentFailed" | "InvoiceActionRequired"
   | "InvoiceVoided" | "InvoiceUncollectible"
   | "PaymentReceived" | "PaymentFailed" | "PaymentRefunded"
-  | "PaymentMethodAttached" | "PaymentMethodUpdated" | "PaymentMethodDetached";
+  | "PaymentMethodAttached" | "PaymentMethodUpdated" | "PaymentMethodDetached"
+  | "CustomerBillingUpdated";
 
 export interface FatoFinanceiro {
   tipo: TipoFinanceiro;
@@ -288,12 +291,16 @@ export function descreverEventoFinanceiro(event: EventoStripe): FatoFinanceiro |
       const agora = o.cancel_at_period_end === true || asNum(o.cancel_at) != null;
       const antes = prev.cancel_at_period_end === true || (prev.cancel_at != null && prev.cancel_at !== 0);
       if (agora && !antes) {
+        const motivoPeloCliente = motivoDoPortal(o.cancellation_details);
         const quando = formatarData(asNum(o.cancel_at) ?? fimDoPeriodo(o));
         return {
           ...b, tipo: "SubscriptionCancelScheduled", chave: `sub-cancel-sched:${eid}`,
           titulo: `Cancelamento agendado${quando ? ` para ${quando}` : ""}`,
-          descricao: "A assinatura segue ativa até o fim do período já pago.", valorCentavos: null, moeda: null,
-          contexto: { cancelAt: asNum(o.cancel_at) },
+          // Pelo portal o cliente informa o motivo; no Dashboard vem vazio. Esta é a hora de salvar a conta.
+          descricao: [motivoPeloCliente ? `Motivo informado pelo cliente: ${motivoPeloCliente}.` : null, "A assinatura segue ativa até o fim do período já pago."]
+            .filter(Boolean).join(" "),
+          valorCentavos: null, moeda: null,
+          contexto: { cancelAt: asNum(o.cancel_at), motivo: motivoPeloCliente },
         };
       }
       if (!agora && antes) {
@@ -437,6 +444,21 @@ export function descreverEventoFinanceiro(event: EventoStripe): FatoFinanceiro |
     };
   }
 
+  /* ── Cadastro de cobrança (o que o cliente corrige no portal) ── */
+  if (type === "customer.updated" || type.startsWith("customer.tax_id.")) {
+    const m = mudancasDoCliente(event);
+    if (!m) return null;
+    const lista = m.rotulos.join(", ");
+    return {
+      ...b, tipo: "CustomerBillingUpdated",
+      chave: `${m.origem === "tax_id" ? "customer-taxid" : "customer-updated"}:${eid}`,
+      titulo: m.excluido ? `Cliente removeu o documento fiscal` : `Cliente atualizou dados de cobrança — ${lista}`,
+      descricao: m.documento ? `${m.documento.tipo} ${m.documento.valor}` : null,
+      valorCentavos: null, moeda: null,
+      contexto: { campos: m.rotulos, origem: m.origem, emailMudou: m.emailMudou },
+    };
+  }
+
   return null;
 }
 
@@ -541,11 +563,14 @@ export const EVENTOS_ESPERADOS = [
   "checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed",
   "checkout.session.expired", "charge.refunded", "charge.dispute.created", "charge.dispute.closed",
   "customer.updated", "payment_method.attached", "payment_method.updated", "payment_method.detached",
+  // Documento fiscal corrigido no portal NÃO vem em customer.updated: tem evento próprio.
+  "customer.tax_id.created", "customer.tax_id.updated", "customer.tax_id.deleted",
 ] as const;
 
-/** Os 8 que faltavam no endpoint de crm.callface.io (que ouve 20). */
+/** Os 11 que faltam no endpoint de crm.callface.io (que ouve 20): 8 do lote 4 + 3 do documento fiscal (lote 6). */
 export const EVENTOS_NOVOS = [
   "invoice.created", "invoice.overdue", "invoice.payment_action_required", "customer.updated",
   "payment_method.attached", "payment_method.updated", "payment_method.detached",
   "customer.subscription.trial_will_end",
+  "customer.tax_id.created", "customer.tax_id.updated", "customer.tax_id.deleted",
 ] as const;

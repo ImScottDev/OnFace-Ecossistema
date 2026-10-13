@@ -140,9 +140,9 @@ test("recebível: open/paid/overdue/uncollectible/void", () => {
   assert.equal(estadoDoRecebivel("rascunho", null), null);
 });
 
-test("o endpoint passa de 20 para 28 eventos, e os 8 novos estão todos na lista", () => {
-  assert.equal(EVENTOS_NOVOS.length, 8);
-  assert.equal(EVENTOS_ESPERADOS.length, 28);
+test("o endpoint passa de 20 para 31 eventos, e os 11 novos (8 do lote 4 + 3 do documento fiscal) estão todos na lista", () => {
+  assert.equal(EVENTOS_NOVOS.length, 11);
+  assert.equal(EVENTOS_ESPERADOS.length, 31);
   for (const e of EVENTOS_NOVOS) assert.ok((EVENTOS_ESPERADOS as readonly string[]).includes(e), e);
 });
 
@@ -162,6 +162,7 @@ function depsFalsas(chamadas: string[], falhaEm?: string): DepsProcessamento {
     recebivel: async () => { chamadas.push("recebivel"); return "ok"; },
     recalcular: async () => { chamadas.push("recalcular"); return "0"; },
     avisar: async (a) => { chamadas.push(`avisar:${a.tipo}`); return "1 notificado(s)"; },
+    cadastro: async (_o, _c, m) => { chamadas.push(`cadastro:${m.rotulos.join("+")}`); return { resumo: "ok", divergencias: [] }; },
   };
 }
 const ctx = { organizacaoId: "org-1", inboxId: "inbox-1" };

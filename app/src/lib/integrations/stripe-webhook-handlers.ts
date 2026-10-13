@@ -12,7 +12,8 @@
 import { db } from "@/lib/db";
 import { propostas, leads, empresas, checkouts, notificacoes, usuarios, billingResolutionCases } from "@/lib/db/schema";
 import { eq, and, isNull, or, sql, desc, gt } from "drizzle-orm";
-import { subscriptionIdDe } from "./stripe-financeiro";
+import { negocioIdDaMetadata, subscriptionIdDe } from "./stripe-financeiro";
+import { montarCaso } from "./stripe-caso-cobranca";
 import { buscarCheckoutPorSessionId } from "@/lib/crm/checkout";
 import { concluirGrupo, marcarPagamentoFalhouNoGrupo } from "@/lib/crm/grupo-comercial";
 import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
@@ -52,13 +53,15 @@ export async function inserirNotificacaoUmaVez(valores: typeof notificacoes.$inf
  * Idempotente: checkout.status='pago' já setado é um no-op (Stripe reenvia
  * o mesmo evento por retry/duplicidade).
  */
-export async function handlePaymentConfirmed(session: Record<string, unknown>, checkoutOverride?: typeof checkouts.$inferSelect): Promise<string> {
+export async function handlePaymentConfirmed(session: Record<string, unknown>, checkoutOverride?: typeof checkouts.$inferSelect, organizacaoId?: string | null): Promise<string> {
   const stripeSessionId = typeof session.id === "string" ? session.id : null;
   if (!stripeSessionId) return "session sem id";
 
   const checkout = checkoutOverride || await buscarCheckoutPorSessionId(stripeSessionId);
   if (!checkout) {
     await abrirCasoDePagamentoOrfao({
+      organizacaoId,
+      objeto: session,
       stripeCustomerId: typeof session.customer === "string" ? session.customer : null,
       stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : null,
       referencia: stripeSessionId,
@@ -173,10 +176,12 @@ async function findCheckoutForBillingObject(object: Record<string, unknown>) {
   return null;
 }
 
-export async function handleInvoicePaid(invoice: Record<string, unknown>): Promise<string> {
+export async function handleInvoicePaid(invoice: Record<string, unknown>, organizacaoId?: string | null): Promise<string> {
   const checkout = await findCheckoutForBillingObject(invoice);
   if (!checkout) {
     await abrirCasoDePagamentoOrfao({
+      organizacaoId,
+      objeto: invoice,
       stripeCustomerId: typeof invoice.customer === "string" ? invoice.customer : null,
       stripeSubscriptionId: subscriptionIdDe(invoice),
       referencia: typeof invoice.id === "string" ? invoice.id : "(sem id)",
@@ -193,7 +198,7 @@ export async function handleInvoicePaid(invoice: Record<string, unknown>): Promi
     payment_intent: typeof invoice.payment_intent === "string" ? invoice.payment_intent : null,
     payment_status: "paid",
   };
-  return handlePaymentConfirmed(session, checkout);
+  return handlePaymentConfirmed(session, checkout, organizacaoId);
 }
 
 export async function handleSubscriptionLink(subscription: Record<string, unknown>): Promise<string> {
@@ -454,6 +459,10 @@ export async function handleInvoicePaymentFailed(invoice: Record<string, unknown
  * o mesmo caso três vezes transformaria a fila em ruído.
  */
 async function abrirCasoDePagamentoOrfao(params: {
+  /** Do EVENTO (inbox). Sem ela, cai na do lead; sem nenhuma das duas o caso não se abre (lança). */
+  organizacaoId?: string | null;
+  /** O objeto do Stripe (invoice/session): a metadata pode apontar o negócio que a pessoa vai procurar. */
+  objeto: Record<string, unknown>;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   referencia: string;
@@ -461,9 +470,19 @@ async function abrirCasoDePagamentoOrfao(params: {
   valor: number | null;
 }): Promise<void> {
   const lead = await leadDoCustomer(params.stripeCustomerId);
-  await db.insert(billingResolutionCases).values({
-    organizacaoId: lead?.organizacaoId ?? null,
-    queue: "PAGAMENTO_SEM_NEGOCIO",
+  const organizacaoId = params.organizacaoId ?? lead?.organizacaoId ?? null;
+  /* O negócio que a metadata cita (invoices antigos carregam `negocioId`): só vale se existe NESTA organização.
+     NÃO marca ganho — decidir qual negócio o pagamento fecha continua sendo de uma pessoa —, mas a evidência
+     já chega com o id na mão, em vez de dizer "sem negócio" para quem tem o id no payload. */
+  let negocioDaMetadata: string | null = null;
+  const cand = negocioIdDaMetadata(params.objeto);
+  if (cand && organizacaoId) {
+    const [n] = await db.execute(sql`SELECT id::text FROM negocios WHERE id = ${cand}::uuid AND organizacao_id = ${organizacaoId}::uuid LIMIT 1`) as unknown as { id: string }[];
+    negocioDaMetadata = n?.id ?? null;
+  }
+  const caso = montarCaso({
+    organizacaoId,
+    motivo: "PAGAMENTO_SEM_NEGOCIO",
     stripeCustomerId: params.stripeCustomerId,
     stripeSubscriptionId: params.stripeSubscriptionId,
     crmEntityType: lead ? "lead" : null,
@@ -473,13 +492,17 @@ async function abrirCasoDePagamentoOrfao(params: {
       referencia: params.referencia,
       valor: params.valor,
       cliente: lead?.empresa || lead?.nome || null,
+      negocioDaMetadata,
       detectadoEm: new Date().toISOString(),
     },
     recommendedAction: {
       acao: "vincular_a_negocio_ou_registrar_venda",
       porque: "pagamento confirmado no Stripe sem checkout correspondente no CRM; o negócio não foi marcado ganho",
+      negocioSugerido: negocioDaMetadata,
     },
-  }).catch((e) => console.error("[StripeWebhook] falha ao abrir caso de pagamento órfão:", e));
+  });
+  /* Sem `.catch`: o erro engolido deixava o evento "processado" SEM o caso aberto, e o dinheiro sumia da fila. */
+  await db.insert(billingResolutionCases).values(caso);
 
   if (lead) {
     const quem = lead.empresa || lead.nome || "cliente";

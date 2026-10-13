@@ -26,6 +26,7 @@ import { assinaturaItens, assinaturas, clientes, contratos, faturas, leads, mrrM
 import { eq, gt, sql, and, inArray, isNotNull } from "drizzle-orm";
 import { resolveBillingCustomer, type BillingResolution } from "./billing-identity";
 import { negocioDaMetadataStripe } from "../crm/metadata-comercial";
+import { resumoDeCancelamento } from "./stripe-portal-retorno";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 
@@ -62,18 +63,23 @@ export async function getCheckoutSessionStatus(
   return { status: d.status || "", payment_status: d.payment_status || "" };
 }
 
+const PAGINAS_MAXIMAS = 1000;
+
 async function paginate<T extends { id: string }>(path: string, params: Record<string, string> = {}): Promise<T[]> {
   const items: T[] = [];
   let startingAfter: string | undefined;
-  for (let i = 0; i < 50; i++) {
+  /* Teto de segurança contra laço infinito, NÃO limite de negócio. Era 50 páginas (5.000 itens) e cortava em
+     silêncio: o sync seguia "com sucesso" sobre um espelho incompleto. Agora 1.000 páginas (100.000 itens) e, se
+     ainda sobrar página, falha ALTO — um sync que não viu tudo não pode se passar por completo. */
+  for (let i = 0; i < PAGINAS_MAXIMAS; i++) {
     const p = { ...params, limit: "100" };
     if (startingAfter) (p as Record<string, string>).starting_after = startingAfter;
     const page = await stripeGet<T>(path, p);
     items.push(...page.data);
-    if (!page.has_more) break;
+    if (!page.has_more) return items;
     startingAfter = page.data[page.data.length - 1].id;
   }
-  return items;
+  throw new Error(`Stripe ${path}: mais de ${PAGINAS_MAXIMAS} páginas — a paginação foi interrompida e o espelho ficaria incompleto`);
 }
 
 function mrrOf(sub: StripeSubscription): number {
@@ -95,6 +101,9 @@ interface StripeSubscription {
   status: string;
   start_date?: number;
   canceled_at?: number | null;
+  /** Cancelamento agendado (portal ou Dashboard): classic usa `cancel_at_period_end`, flexible usa `cancel_at`. */
+  cancel_at_period_end?: boolean;
+  cancel_at?: number | null;
   current_period_start?: number;
   current_period_end?: number;
   cancellation_details?: { reason?: string | null; feedback?: string | null; comment?: string | null } | null;
@@ -404,6 +413,8 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             stripePriceId: item0?.price?.id || null,
             quantidade: quantidadeTotal,
             currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
+            // Mescla (não substitui): outros escritores podem ter guardado evidência no mesmo jsonb.
+            raw: sql`COALESCE(${assinaturas.raw}, '{}'::jsonb) || ${JSON.stringify(resumoDeCancelamento(s))}::jsonb`,
             syncedAt: new Date(),
             updatedAt: new Date(),
           })
@@ -521,6 +532,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             iniciadaEm: s.start_date ? new Date(s.start_date * 1000) : null,
             canceladaEm,
             currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
+            raw: resumoDeCancelamento(s),
             syncedAt: new Date(),
           })
           .returning({ id: assinaturas.id });

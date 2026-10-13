@@ -22,14 +22,15 @@
  */
 
 import { getStripeCheckoutMode } from "./stripe-checkout";
+import {
+  MARCA_CONFIG, MENSAGEM_FALTAM_POLITICAS, PortalConfigError, decidirConfiguracao, ehRecusaPorPoliticas, formDaConfiguracao,
+  type ConfiguracaoDoStripe, type PoliticasPortal,
+} from "./stripe-portal-config";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 /* MESMA constante dos módulos vizinhos: duas versões de API conversando com a
    mesma conta devolvem formas diferentes do mesmo objeto. */
 const STRIPE_API_VERSION = process.env.STRIPE_API_VERSION || "2026-08-26.dahlia";
-
-/** Marca da nossa configuração. Subir a versão aqui força o update no Stripe. */
-const MARCA_CONFIG = "crm-cliente-360-v1";
 
 function chave(): string {
   const k = process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY;
@@ -59,102 +60,70 @@ async function stripe<T>(path: string, form?: URLSearchParams, idempotencyKey?: 
 
 /* ── A configuração ───────────────────────────────────────────────────────── */
 
-/**
- * O corpo da configuração, puro, para o teste poder travar o que importa sem
- * tocar na rede.
- *
- * `payment_method_update` é a razão de tudo isto existir — sem ele o portal
- * mostra faturas e não resolve boleto→cartão. `cancellation_reason` é pedido do
- * CS: cancelamento sem motivo registrado é churn que ninguém aprende.
- */
-export function formDaConfiguracao(): URLSearchParams {
-  const form = new URLSearchParams();
+/* A decisão (o que o ONFACE quer, como reconhecer a configuração dele, quando
+   criar/atualizar/reusar) é pura e mora em `stripe-portal-config.ts`, com teste.
+   Aqui ficam só as chamadas de rede. */
+export { formDaConfiguracao, PortalConfigError } from "./stripe-portal-config";
 
-  // O que resolve a dor: o cliente informa o cartão novo e a assinatura passa
-  // a cobrar nele, sem o CRM nunca ver o número.
-  form.append("features[payment_method_update][enabled]", "true");
-  // Faturas e recibos: é o que evita o pedido de "me manda a nota de março" no
-  // WhatsApp do closer.
-  form.append("features[invoice_history][enabled]", "true");
-
-  /* Cadastro de cobrança. `tax_id` entra porque CNPJ errado na nota é retrabalho
-     do financeiro, e o cliente é quem sabe o número certo. `email` fica FORA de
-     propósito: ele é a identidade do Customer no Stripe e casa o webhook com a
-     empresa no CRM — deixar o cliente trocar sozinho quebraria a conciliação. */
-  form.append("features[customer_update][enabled]", "true");
-  ["address", "tax_id", "name", "phone"].forEach((campo, i) =>
-    form.append(`features[customer_update][allowed_updates][${i}]`, campo),
-  );
-
-  /* Cancelamento no FIM do período, nunca imediato: o cliente já pagou o mês
-     corrente, e cortar na hora gera crédito/reembolso que ninguém pediu. Até a
-     data do corte o CS ainda tem prazo para reverter. */
-  form.append("features[subscription_cancel][enabled]", "true");
-  form.append("features[subscription_cancel][mode]", "at_period_end");
-  form.append("features[subscription_cancel][cancellation_reason][enabled]", "true");
-  /* O Stripe exige um mínimo de opções quando o motivo está ligado, e só aceita
-     as chaves do enum dele — o texto livre é o `other`. */
-  ["too_expensive", "missing_features", "switched_service", "unused", "customer_service", "too_complex", "low_quality", "other"]
-    .forEach((motivo, i) => form.append(`features[subscription_cancel][cancellation_reason][options][${i}]`, motivo));
-
-  /* Criar configuração sem política de privacidade/termos é recusado pelo Stripe
-     quando a conta não tem os dois no branding. Mandamos se houver no .env; se
-     não houver, o erro do Stripe é claro e melhor do que um default inventado. */
-  if (process.env.STRIPE_PORTAL_PRIVACY_URL) form.append("business_profile[privacy_policy_url]", process.env.STRIPE_PORTAL_PRIVACY_URL);
-  if (process.env.STRIPE_PORTAL_TERMS_URL) form.append("business_profile[terms_of_service_url]", process.env.STRIPE_PORTAL_TERMS_URL);
-
-  form.append("metadata[crm_portal]", MARCA_CONFIG);
-  return form;
+function politicasDoAmbiente(): PoliticasPortal {
+  return { privacyUrl: process.env.STRIPE_PORTAL_PRIVACY_URL, termsUrl: process.env.STRIPE_PORTAL_TERMS_URL };
 }
 
-/** Memo de processo: evita relistar as configurações a cada clique. */
-let idEmMemoria: string | null = null;
+/** Memo de processo, com validade: uma mudança feita à mão no Dashboard é percebida em minutos, sem listar a cada clique. */
+let memo: { id: string; ate: number } | null = null;
+const VALIDADE_MEMO_MS = 10 * 60 * 1000;
 
 export interface ConfiguracaoDoPortal {
   id: string | null;
-  /** `criada` na primeira vez, `atualizada` quando já existia, `mock` sem chave. */
-  acao: "criada" | "atualizada" | "reusada" | "mock";
+  /** `mock` sem chave; `fixada` quando o operador fixou o id no ambiente. */
+  acao: "criada" | "atualizada" | "reusada" | "fixada" | "mock";
+  /** Riscos de usar uma configuração que não é a do ONFACE (só no `fixada`). */
+  riscos?: string[];
 }
 
 /**
- * Cria a configuração na primeira vez e ATUALIZA a mesma depois.
+ * Garante a configuração do ONFACE e devolve o id.
  *
- * O id é reencontrado pela metadata em vez de guardado em tabela: configuração
- * é objeto de ambiente (uma por conta Stripe), não dado de tenant, e uma coluna
- * nova para isso seria migração para guardar uma string por instalação. Quem
- * quiser fixar à mão usa `STRIPE_PORTAL_CONFIGURATION_ID`.
+ * Ordem: (1) id fixado em `STRIPE_PORTAL_CONFIGURATION_ID` — escolha explícita do
+ * operador, respeitada sem rede; (2) a configuração marcada `crm_portal` — usada
+ * como está, ou atualizada SÓ se divergir (antes escrevia no Stripe a cada
+ * clique); (3) criar. Nunca toca a padrão da conta nem a do SaaS. Se o Stripe
+ * recusar criar por falta de política/termos, lança `PortalConfigError` com o que
+ * falta — a rota mostra a mensagem, não um 400 cru.
  */
 export async function configurarPortal(): Promise<ConfiguracaoDoPortal> {
   if (getStripeCheckoutMode() === "mock") return { id: null, acao: "mock" };
 
-  const fixado = process.env.STRIPE_PORTAL_CONFIGURATION_ID;
-  if (fixado) {
-    idEmMemoria = fixado;
-    return { id: fixado, acao: "reusada" };
+  const fixadoId = process.env.STRIPE_PORTAL_CONFIGURATION_ID || null;
+  if (fixadoId) {
+    const d = decidirConfiguracao({ fixadoId });
+    return { id: d.acao === "usar_fixada" ? d.id : fixadoId, acao: "fixada" };
   }
 
-  const existente = idEmMemoria ?? (await acharConfiguracao());
-  const form = formDaConfiguracao();
-  if (existente) {
-    /* Update, não create: cada create deixa uma configuração órfã ativa na conta,
-       e em pouco tempo ninguém sabe qual está em uso. */
-    const r = await stripe<{ id: string }>(`billing_portal/configurations/${existente}`, form);
-    idEmMemoria = r.id;
-    return { id: r.id, acao: "atualizada" };
+  if (memo && memo.ate > Date.now()) return { id: memo.id, acao: "reusada" };
+
+  const lista = (await stripe<{ data: ConfiguracaoDoStripe[] }>("billing_portal/configurations?limit=100&active=true")).data ?? [];
+  const politicas = politicasDoAmbiente();
+  const d = decidirConfiguracao({ lista, politicas });
+
+  if (d.acao === "reusar") { memo = { id: d.id, ate: Date.now() + VALIDADE_MEMO_MS }; return { id: d.id, acao: "reusada" }; }
+  if (d.acao === "atualizar") {
+    /* Update, não create: cada create deixa uma configuração órfã ativa na conta. */
+    await stripe(`billing_portal/configurations/${d.id}`, formDaConfiguracao(politicas));
+    memo = { id: d.id, ate: Date.now() + VALIDADE_MEMO_MS };
+    return { id: d.id, acao: "atualizada" };
   }
+  if (d.acao !== "criar") throw new PortalConfigError("fixada_invalida", "Configuração do portal inválida.");
 
-  /* Idempotency-Key com a marca da versão: duas réplicas subindo juntas não
-     criam duas configurações. */
-  const r = await stripe<{ id: string }>("billing_portal/configurations", form, `portal-config-${MARCA_CONFIG}`);
-  idEmMemoria = r.id;
-  return { id: r.id, acao: "criada" };
-}
-
-async function acharConfiguracao(): Promise<string | null> {
-  const r = await stripe<{ data: { id: string; metadata?: Record<string, string> | null }[] }>(
-    "billing_portal/configurations?limit=100&active=true",
-  );
-  return (r.data ?? []).find((c) => c.metadata?.crm_portal === MARCA_CONFIG)?.id ?? null;
+  try {
+    /* Idempotency-Key com a marca da versão: duas réplicas subindo juntas não criam duas configurações. */
+    const r = await stripe<{ id: string }>("billing_portal/configurations", formDaConfiguracao(politicas), `portal-config-${MARCA_CONFIG}`);
+    memo = { id: r.id, ate: Date.now() + VALIDADE_MEMO_MS };
+    return { id: r.id, acao: "criada" };
+  } catch (erro) {
+    if (ehRecusaPorPoliticas(erro)) throw new PortalConfigError("faltam_politicas", MENSAGEM_FALTAM_POLITICAS);
+    throw erro;
+  }
 }
 
 /* ── A sessão ─────────────────────────────────────────────────────────────── */

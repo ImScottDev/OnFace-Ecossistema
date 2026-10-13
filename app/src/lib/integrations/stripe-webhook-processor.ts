@@ -7,6 +7,7 @@
  * Tudo é idempotente: o Stripe reentrega e a fila reprocessa.
  * Dependências entram por `deps` para o teste rodar sem banco, sem Redis e sem Stripe.
  */
+import { mudancasDoCliente, type MudancaDoCliente } from "./stripe-portal-retorno";
 import {
   customerIdDe, descreverEventoFinanceiro, invoiceIdDe, pagamentoDoEvento, subscriptionIdDe,
   type FatoFinanceiro, type PagamentoDoEvento,
@@ -26,8 +27,8 @@ export type StripeEventPayload = {
 export interface ContextoProcessamento { organizacaoId: string; inboxId: string }
 
 export interface DepsProcessamento {
-  paymentConfirmed(session: Obj): Promise<string>;
-  invoicePaid(invoice: Obj): Promise<string>;
+  paymentConfirmed(session: Obj, organizacaoId: string): Promise<string>;
+  invoicePaid(invoice: Obj, organizacaoId: string): Promise<string>;
   asyncPaymentFailed(session: Obj): Promise<string>;
   checkoutExpired(session: Obj): Promise<string>;
   invoicePaymentFailed(invoice: Obj): Promise<string>;
@@ -43,12 +44,15 @@ export interface DepsProcessamento {
   recebivel(organizacaoId: string, invoiceId: string, tipoEvento: string): Promise<string>;
   recalcular(organizacaoId: string): Promise<string>;
   avisar(a: { organizacaoId: string; customerId: string | null; tipo: string; titulo: string; mensagem: string }): Promise<string>;
+  /** Cadastro que o cliente corrigiu no portal → empresa (só preenche vazio); devolve onde o CRM tem outro valor. */
+  cadastro(organizacaoId: string, customerId: string | null, mudanca: MudancaDoCliente): Promise<{ resumo: string; divergencias: string[] }>;
 }
 
 /** Eventos sem efeito no espelho de assinaturas/faturas: o sync completo seria custo sem ganho. */
 const SEM_SYNC = new Set([
   "customer.updated", "payment_method.attached", "payment_method.updated", "payment_method.detached",
   "customer.subscription.trial_will_end",
+  "customer.tax_id.created", "customer.tax_id.updated", "customer.tax_id.deleted",
 ]);
 
 export async function depsReais(): Promise<DepsProcessamento> {
@@ -58,8 +62,8 @@ export async function depsReais(): Promise<DepsProcessamento> {
   const { isStripeMockMode } = await import("./stripe-checkout");
   const { dispararAutomacoesFinanceiras } = await import("@/lib/crm/automacao-engine");
   return {
-    paymentConfirmed: (o) => h.handlePaymentConfirmed(o),
-    invoicePaid: h.handleInvoicePaid,
+    paymentConfirmed: (o, org) => h.handlePaymentConfirmed(o, undefined, org),
+    invoicePaid: (o, org) => h.handleInvoicePaid(o, org),
     asyncPaymentFailed: h.handleAsyncPaymentFailed,
     checkoutExpired: h.handleCheckoutExpired,
     invoicePaymentFailed: h.handleInvoicePaymentFailed,
@@ -75,6 +79,7 @@ export async function depsReais(): Promise<DepsProcessamento> {
     recebivel: f.atualizarRecebivel,
     recalcular: f.recalcularRecebiveis,
     avisar: f.avisarEquipe,
+    cadastro: f.aplicarCadastroDoCliente,
   };
 }
 
@@ -92,13 +97,13 @@ export async function processarEventoStripe(
   // checkout.session.completed dispara quando o cliente TERMINA o checkout, não quando PAGA:
   // em boleto a sessão fica "unpaid" até compensar. Só "paid" confirma (async_payment_succeeded cobre o resto).
   if (type === "checkout.session.completed" || type === "checkout.session.async_payment_succeeded") {
-    if (object.payment_status === "paid") await passo("pagamento confirmado", () => deps.paymentConfirmed(object));
+    if (object.payment_status === "paid") await passo("pagamento confirmado", () => deps.paymentConfirmed(object, org));
     else passos.push(`${type} ignorado: payment_status=${String(object.payment_status)} (aguardando compensação)`);
   }
   if (type === "checkout.session.async_payment_failed") await passo("boleto falhou", () => deps.asyncPaymentFailed(object));
   if (type === "checkout.session.expired") await passo("checkout expirado", () => deps.checkoutExpired(object));
   if (type === "invoice.payment_failed") await passo("cobrança falhou", () => deps.invoicePaymentFailed(object));
-  if (type === "invoice.paid") await passo("fatura paga", () => deps.invoicePaid(object));
+  if (type === "invoice.paid") await passo("fatura paga", () => deps.invoicePaid(object, org));
   if (type === "charge.refunded") await passo("estorno", () => deps.chargeRefunded(object));
   if (type === "charge.dispute.created" || type === "charge.dispute.closed") {
     await passo("contestação", () => deps.dispute(object, type.endsWith(".closed")));
@@ -119,9 +124,35 @@ export async function processarEventoStripe(
       }));
     }
   }
-  if (type === "customer.updated") passos.push("customer.updated registrado no inbox (sem efeito no espelho)");
+  // Cancelamento AGENDADO pelo cliente (portal ou Dashboard): é a última hora de reverter, então avisa na hora.
+  if (fato?.tipo === "SubscriptionCancelScheduled") {
+    await passo("aviso", () => deps.avisar({
+      organizacaoId: org, customerId, tipo: "cancelamento_agendado", titulo: fato.titulo.split(" para ")[0],
+      mensagem: [fato.titulo, fato.descricao, "Ainda dá para reverter até o fim do período."].filter(Boolean).join(". ").replace(/\.\./g, "."),
+    }));
+  }
+
+  const cadastro = mudancasDoCliente(event);
+  if (!cadastro && type === "customer.updated") passos.push("customer.updated registrado no inbox (sem mudança de cadastro: sem efeito no espelho)");
 
   if (mock) { passos.push("modo mock: sync e efeitos financeiros pulados"); return { passos }; }
+
+  // Cadastro de cobrança corrigido no portal (customer.updated / customer.tax_id.*): vai para a empresa.
+  if (cadastro) {
+    await passo("cadastro", async () => {
+      const r = await deps.cadastro(org, customerId, cadastro);
+      if (r.divergencias.length || cadastro.emailMudou) {
+        await deps.avisar({
+          organizacaoId: org, customerId, tipo: "cadastro_divergente", titulo: "Cadastro de cobrança diferente do CRM",
+          mensagem: [
+            ...r.divergencias,
+            cadastro.emailMudou ? "O e-mail do cliente no Stripe mudou: confira se o vínculo com a empresa continua certo." : null,
+          ].filter(Boolean).join(". "),
+        });
+      }
+      return r.resumo;
+    });
+  }
 
   if (!SEM_SYNC.has(type)) {
     const r = await deps.sync(org);
