@@ -9,6 +9,17 @@ export function areasEmBreve(): string[] {
   return (process.env.AREAS_EM_BREVE || "").split(",").map((a) => a.trim().toLowerCase()).filter(Boolean);
 }
 
-export function areaEmBreve(area: "automacoes"): boolean {
+/** Área fechável. O label é o do menu, e é por ele que o selo acha o item. */
+export const AREAS_FECHAVEIS = { automacoes: "Automações", insights: "Insights" } as const;
+export type AreaFechavel = keyof typeof AREAS_FECHAVEIS;
+
+export function areaEmBreve(area: AreaFechavel): boolean {
   return areasEmBreve().includes(area);
+}
+
+/** Os labels de menu fechados agora, para o selo e para a árvore do menu. */
+export function labelsEmBreve(fechadas: string[]): string[] {
+  return (Object.entries(AREAS_FECHAVEIS) as [AreaFechavel, string][])
+    .filter(([chave]) => fechadas.includes(chave))
+    .map(([, label]) => label);
 }

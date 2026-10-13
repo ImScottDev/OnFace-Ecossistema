@@ -18,6 +18,7 @@ import { db } from "@/lib/db";
 import { getAtendimentoResumo, getCsResumo, getImplantacaoResumo } from "@/lib/analytics/command-center";
 import { getPrecisaAtencao } from "@/lib/analytics/inicio";
 import { vermelhosDoDia } from "@/lib/callface-ai/uso";
+import { areasEmBreve } from "@/lib/areas-em-breve";
 import { boardPreVendas } from "@/lib/vendas/consultas";
 import {
   dataPorExtenso, focoDoDia, horaEmSaoPaulo, lenteDoPapel, permissoesDaLente, saudacaoDaHora, type SinalDoFoco,
@@ -82,6 +83,15 @@ const ATALHOS: Record<Lente, Atalho[]> = {
   ],
   leitor: [{ rotulo: "Relatórios", href: "/relatorios", contagem: null }],
 };
+
+/** Área fechada por AREAS_EM_BREVE não vira atalho: o Início era o caminho
+ *  que furava a trava, porque o selo do menu não vale para o atalho. */
+function atalhosAbertos(lista: Atalho[]): Atalho[] {
+  const fechadas = areasEmBreve();
+  const rotas: Record<string, string> = { automacoes: "/automacoes", insights: "/relatorios" };
+  const bloqueadas = fechadas.map((a) => rotas[a]).filter(Boolean);
+  return lista.filter((a) => !bloqueadas.some((r) => a.href === r || a.href.startsWith(`${r}/`) || a.href.startsWith(`${r}?`)));
+}
 
 /** Esquece a leitura guardada desta pessoa (botão "Atualizar"). */
 export function limparCacheDoInicio(orgId: string, userId: string) {
@@ -185,7 +195,7 @@ async function montar(entrada: EntradaDoPainel, lente: Lente, agora: Date): Prom
     saude: s,
     entrega: e,
     financeiro: fi,
-    atalhos: ATALHOS[lente],
+    atalhos: atalhosAbertos(ATALHOS[lente]),
     podeAgir: perm.acoes,
   };
 }

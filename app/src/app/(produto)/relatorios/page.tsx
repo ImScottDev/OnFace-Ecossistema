@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { Pagina } from "@/components/onface/shell/Pagina";
-import { EmBreve } from "@/components/onface/shell/EmBreve";
 import { InsightsOnface } from "@/components/onface/insights/InsightsOnface";
 
 export const metadata = { title: "Insights" };
@@ -17,15 +16,11 @@ const PERIODO_OK = /^(mes_atual|mes_passado|7d|30d|60d|90d|365d|12m|custom:\d{4}
  * abram exatamente o que a pessoa estava vendo. A aba é validada contra o
  * papel no cliente: aba que o papel não enxerga cai na padrão.
  */
-// Decisão do Scott, 13/10/2026: Insights fica como "em breve" para o time,
-// junto com Automações, até ele liberar. Já tentei abrir uma vez por conta
-// própria e foi desfeito — não mude isto sem OK dele.
-const EM_BREVE = true;
+// O fechamento por ambiente mora em ./layout.tsx (AREAS_EM_BREVE=insights).
 
 export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ aba?: string; periodo?: string; familia?: string; janela?: string }> }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
-  if (EM_BREVE) return <Pagina><EmBreve titulo="Insights" /></Pagina>;
 
   const sp = await searchParams;
   const periodo = sp.periodo && PERIODO_OK.test(sp.periodo) ? sp.periodo : "mes_atual";

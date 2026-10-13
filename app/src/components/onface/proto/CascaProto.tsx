@@ -27,6 +27,7 @@ import { desenharRadar, tituloDoRadar } from "@/lib/nexo/radar-desenho";
 import type { DadosRadar, MsgNexo } from "@/lib/nexo/painel";
 import { perguntarAoNexo, botoesDaResposta, confirmarAcaoDoNexo } from "@/lib/nexo/cliente";
 import { RespostaRica } from "../nexo/RespostaRica";
+import { labelsEmBreve } from "@/lib/areas-em-breve";
 
 /* O menu do desenho navega em `/onface-preview/…`, onde estas telas moraram
    antes de virar rota oficial. A tradução para a rota do produto mora em
@@ -76,8 +77,8 @@ function quando(iso: string): string {
 class CascaLigada extends CascaLiga {
   /* "Em breve" no menu segue AREAS_EM_BREVE do ambiente (lida no layout). */
   arvore() {
-    const fechadas: string[] = this.props.areasEmBreve ?? [];
-    return super.arvore().map((m: any) => (m.label === "Automações" && fechadas.includes("automacoes") ? { ...m, emBreve: true } : m));
+    const labels = labelsEmBreve(this.props.areasEmBreve ?? []);
+    return super.arvore().map((m: any) => (labels.includes(m.label) ? { ...m, emBreve: true } : m));
   }
 
   constructor(props: any) {
@@ -372,11 +373,12 @@ class CascaLigada extends CascaLiga {
 /* Selo "Em breve" no item do menu. O markup da casca é gerado e não aceita o
    componente Badge; o selo segue o mesmo desenho (pílula, texto xs, medium)
    pela cor corrente, sem hex. Só é injetado quando a área está fechada. */
-const SELO_EM_BREVE = `nav > div > button[title="Automações"] > span::after {
+const seloEmBreve = (labels: string[]) =>
+  labels.map((label) => `nav > div > button[title="${label}"] > span::after {
   content: "Em breve"; margin-left: 0.5rem; padding: 0.0625rem 0.5rem;
   border: 1px solid currentColor; border-radius: 999px;
   font-size: 0.6875rem; font-weight: 500; letter-spacing: 0;
-}`;
+}`).join("\n");
 
 export function CascaProto({
   children,
@@ -417,7 +419,7 @@ export function CascaProto({
     {/* As peças do protótipo abrem por cima de qualquer tela: o hospedeiro
         fica por fora do miolo e a peça aberta é irmã dele. */}
     <PecasHost>
-    {areasEmBreve.includes("automacoes") && <style>{SELO_EM_BREVE}</style>}
+    {labelsEmBreve(areasEmBreve).length > 0 && <style>{seloEmBreve(labelsEmBreve(areasEmBreve))}</style>}
     <CascaLigada
       areasEmBreve={areasEmBreve}
       naoLidas={naoLidas}
