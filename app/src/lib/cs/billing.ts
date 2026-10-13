@@ -129,12 +129,8 @@ export async function billingDaConta(organizacaoId: string, empresaId: string): 
     SELECT a.id, a.servico_id, a.stripe_subscription_id, a.stripe_customer_id, a.stripe_price_id,
            a.produto, a.quantidade, a.mrr::text, a.moeda, a.status,
            a.iniciada_em::text, a.cancelada_em::text, a.contrato_id,
-<<<<<<< Updated upstream
-           COALESCE((a.raw->>'cancela_no_fim')::boolean, (a.raw->>'cancel_at_period_end')::boolean) AS cancela_no_fim
-=======
            to_json(a.current_period_end)#>>'{}' AS periodo_fim,
-           (a.raw->>'cancel_at_period_end')::boolean AS cancela_no_fim
->>>>>>> Stashed changes
+           COALESCE((a.raw->>'cancela_no_fim')::boolean, (a.raw->>'cancel_at_period_end')::boolean) AS cancela_no_fim
       FROM assinaturas a
      WHERE a.organizacao_id = ${organizacaoId} AND a.empresa_id = ${empresaId}
      ORDER BY a.status = 'active' DESC, a.updated_at DESC`);
