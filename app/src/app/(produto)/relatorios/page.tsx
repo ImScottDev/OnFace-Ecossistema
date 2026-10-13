@@ -17,8 +17,10 @@ const PERIODO_OK = /^(mes_atual|mes_passado|7d|30d|60d|90d|365d|12m|custom:\d{4}
  * abram exatamente o que a pessoa estava vendo. A aba é validada contra o
  * papel no cliente: aba que o papel não enxerga cai na padrão.
  */
-// Área ainda não liberada ao time: vire para false quando ficar pronta.
-const EM_BREVE = true;
+// Insights/Relatórios CONTINUA LIBERADO: é a tela que o time usa hoje para
+// conferir faturamento, pré-vendas e comercial, e foi a referência de número
+// na virada de 13/10. Só Automações entrou em 'em breve'.
+const EM_BREVE = false;
 
 export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ aba?: string; periodo?: string; familia?: string; janela?: string }> }) {
   const ctx = await getTenantContext();
