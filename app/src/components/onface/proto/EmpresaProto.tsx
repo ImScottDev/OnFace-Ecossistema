@@ -179,7 +179,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
        da empresa tem a própria, e a nutrição traz motivo e data de entrada. */
     aquisicoes: empresa.leads.map((a) => aquisicaoDaFicha({
       id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo, origem: a.origem, criadoEm: a.criadoEm,
-      responsavel: a.responsavel, pessoa: a.pessoa, nutricao: a.nutricao,
+      responsavel: a.responsavel, pessoa: a.pessoa, nutricao: a.nutricao, encerrada: a.encerrada,
     })),
     oportunidades: empresa.oportunidades,
     propostas: empresa.propostas,

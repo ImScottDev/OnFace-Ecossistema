@@ -18,6 +18,7 @@ function lead(o: Partial<DetalheLead> = {}): DetalheLead {
   return {
     id: LEAD_ID,
     empresa: { id: "e1", nome: "Acme", setor: null, porte: null, cidade: null, website: null, cnpj: null, telefone: null, observacoes: null },
+    classificacao: { classe: "lead", motivo: null, estagio: "Pré-vendas · Em contato" },
     leadScore: 0, naCarteira: false, jaTeveServico: false, fichaDeCliente: false, temProcesso: true,
     pessoa: { nome: "Ana Souza", cargo: "CEO", email: "a@acme.com", telefone: "11999990000", whatsapp: null, linkedin: null, observacao: null, cidade: null },
     etapa: "em_contato", etapaRotulo: "Em contato", qualificado: false, qualificadoEm: null, qualificadoPor: null, qualificadoPorTipo: null,
@@ -181,12 +182,12 @@ describe("rota do lead", () => {
 });
 
 describe("badge de relacionamento da ficha", () => {
-  it("contato avulso (sem aquisição nem estágio) é Contato, não Lead", () => {
-    assert.equal(registroDoDesenho(lead({ temProcesso: false, etapa: "novo" })).rel, "Contato");
-  });
-  it("quem tem processo em Pré-vendas segue Lead; oportunidade é Prospect; carteira é Cliente", () => {
-    assert.equal(registroDoDesenho(lead({ temProcesso: true, etapa: "novo" })).rel, "Lead");
-    assert.equal(registroDoDesenho(lead({ etapa: "oportunidade" })).rel, "Prospect");
-    assert.equal(registroDoDesenho(lead({ temProcesso: false, naCarteira: true })).rel, "Cliente");
+  const rel = (classe: "cliente" | "lead" | "prospect" | "contato") =>
+    registroDoDesenho(lead({ classificacao: { classe, motivo: null, estagio: null } })).rel;
+  it("o rótulo vem da classificação única (lib/vendas/classificacao.ts), não da etapa", () => {
+    assert.equal(rel("contato"), "Contato");
+    assert.equal(rel("lead"), "Lead");
+    assert.equal(rel("prospect"), "Prospect");
+    assert.equal(rel("cliente"), "Cliente");
   });
 });

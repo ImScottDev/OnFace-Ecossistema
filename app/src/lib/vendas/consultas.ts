@@ -11,6 +11,7 @@
  *   - **Contador de resumo nunca sai de lista truncada**: os totais vêm de
  *     `count()` sobre a tabela inteira, não do array que a página carregou.
  */
+import { classificarEmpresas, classificarLeads, ROTULO_CLASSE, type Classificacao } from "./classificacao";
 import { proximoCompromisso, temCompromissoAberto } from "./proxima-acao";
 import { origemCanonica } from "./origem-canonica";
 import { sql } from "drizzle-orm";
@@ -1254,7 +1255,9 @@ export interface LinhaEmpresa {
   setor: string | null;
   cidade: string | null;
   relacionamento: RelacionamentoEmpresa;
+  /** Rótulo da classe (Cliente, Lead, Prospect, Contato) vinda de `classificacao.ts`. */
   relacionamentoRotulo: string;
+  classificacao: Classificacao;
   pessoas: number;
   oportunidadesAbertas: number;
   servicosAtivos: number;
@@ -1293,7 +1296,8 @@ export async function diretorioEmpresas(organizacaoId: string, filtros: {
           AND s.commercial_lifecycle = 'ACTIVE') AS servicos_ativos,
         (SELECT count(*)::int FROM servicos_canonicos s WHERE s.empresa_id = e.id) AS servicos_historicos,
         (SELECT count(*)::int FROM leads l WHERE l.empresa_id = e.id
-          AND l.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')) AS leads_ativos,
+          AND l.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')
+          AND NOT EXISTS (SELECT 1 FROM aquisicoes aq WHERE aq.lead_legado_id = l.id AND aq.closed_at IS NOT NULL)) AS leads_ativos,
         (SELECT u.nome FROM clientes c JOIN usuarios u ON u.id = c.responsavel_id
           WHERE c.empresa_id = e.id LIMIT 1) AS responsavel,
         -- A atividade chega à empresa por DOIS caminhos, e só um estava aqui.
@@ -1346,7 +1350,8 @@ export async function diretorioEmpresas(organizacaoId: string, filtros: {
         EXISTS (SELECT 1 FROM negocios n WHERE n.empresa_id = e.id
                  AND n.etapa IN ('entrada','diagnostico','proposta','negociacao')) AS tem_oportunidade,
         EXISTS (SELECT 1 FROM leads l WHERE l.empresa_id = e.id
-                 AND l.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')) AS tem_lead
+                 AND l.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')
+          AND NOT EXISTS (SELECT 1 FROM aquisicoes aq WHERE aq.lead_legado_id = l.id AND aq.closed_at IS NOT NULL)) AS tem_lead
         FROM empresas e WHERE e.organizacao_id = ${organizacaoId}::uuid
     )
     SELECT
@@ -1358,6 +1363,7 @@ export async function diretorioEmpresas(organizacaoId: string, filtros: {
       FROM fatos
   `);
 
+  const classes = await classificarEmpresas(organizacaoId, linhas.map((l) => l.id));
   const mapeadas = linhas.map((l) => {
     const relacionamento: RelacionamentoEmpresa =
       l.servicos_ativos > 0 ? "cliente"
@@ -1368,7 +1374,8 @@ export async function diretorioEmpresas(organizacaoId: string, filtros: {
 
     return {
       id: l.id, nome: l.nome, cnpj: l.cnpj, setor: l.setor, cidade: l.cidade,
-      relacionamento, relacionamentoRotulo: ROTULO_RELACIONAMENTO[relacionamento],
+      relacionamento, relacionamentoRotulo: ROTULO_CLASSE[classes.get(l.id)?.classe ?? "contato"],
+      classificacao: classes.get(l.id) ?? { classe: "contato" as const, motivo: null, estagio: null },
       pessoas: l.pessoas, oportunidadesAbertas: l.oportunidades_abertas,
       servicosAtivos: l.servicos_ativos, responsavel: l.responsavel,
       ultimaAtividade: l.ultima_atividade,
@@ -1523,6 +1530,7 @@ export interface Empresa360 {
   endereco: { logradouro: string | null; numero: string | null; complemento: string | null; bairro: string | null; cep: string | null };
   relacionamento: RelacionamentoEmpresa;
   relacionamentoRotulo: string;
+  classificacao: Classificacao;
   dadosJuridicosCompletos: boolean;
   /** Rótulos dos campos que faltam, na mesma ordem do formulário. Existe para
    *  a tela dizer o que falta em vez de só dizer que falta alguma coisa. */
@@ -1533,6 +1541,7 @@ export interface Empresa360 {
     id: string; etapa: string; etapaRotulo: string; origem: string | null; criadoEm: string;
     pessoa: string | null; responsavel: string | null;
     nutricao: { motivo: string | null; desde: string | null; retomarEm: string | null } | null;
+    encerrada: boolean;
   }>;
   oportunidades: Array<{ id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null; valor: number | null; responsavel: string | null }>;
   propostas: Array<{ id: string; numero: number; versao: number; status: string; total: number | null; enviadaEm: string | null }>;
@@ -1557,6 +1566,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
 
   const { derivarRelacionamento } = await import("./identidade");
   const relacionamento = await derivarRelacionamento(organizacaoId, empresaId);
+  const classeEmpresa = (await classificarEmpresas(organizacaoId, [empresaId])).get(empresaId) ?? { classe: "contato" as const, motivo: null, estagio: null };
 
   const pessoas = await db.execute<{
     id: string; fonte: string; nome: string; cargo: string | null; papel: string | null;
@@ -1583,9 +1593,9 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
   // empresa parecer não ter histórico de entrada nenhum.
   const leads = await db.execute<{
     id: string; etapa: string | null; origem: string | null; criado_em: string; pessoa: string | null; responsavel: string | null;
-    nutricao_motivo: string | null; nutrido_em: string | null; retomar_em: string | null;
+    nutricao_motivo: string | null; nutrido_em: string | null; retomar_em: string | null; encerrada: boolean;
   }>(sql`
-    SELECT COALESCE(a.lead_legado_id, a.id)::text AS id,
+    SELECT COALESCE(a.lead_legado_id, a.id)::text AS id, (a.closed_at IS NOT NULL) AS encerrada,
            -- A etapa GRAVADA na aquisição manda (a mesma do board); o CASE é só o reserva
            -- de aquisição sem etapa. O legado refina "qualificacao", como no board.
            CASE WHEN l.estagio_pre_vendas = 'qualificacao' THEN 'qualificacao'
@@ -1693,7 +1703,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     setor: e.setor, porte: e.porte, cidade: e.cidade, estado: e.estado,
     website: e.website, dominio: e.dominio,
     endereco: { logradouro: e.logradouro, numero: e.numero, complemento: e.complemento, bairro: e.bairro, cep: e.cep },
-    relacionamento, relacionamentoRotulo: ROTULO_RELACIONAMENTO[relacionamento],
+    relacionamento, relacionamentoRotulo: ROTULO_CLASSE[classeEmpresa.classe], classificacao: classeEmpresa,
     dadosJuridicosCompletos: juridicosFaltando.length === 0,
     dadosJuridicosFaltando: juridicosFaltando,
     pessoas: pessoas.map((p) => ({
@@ -1706,6 +1716,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
       origem: origemCanonica(l.origem), criadoEm: l.criado_em,
       pessoa: l.pessoa, responsavel: l.responsavel,
       nutricao: l.etapa === "nutricao" ? { motivo: l.nutricao_motivo, desde: l.nutrido_em, retomarEm: l.retomar_em } : null,
+      encerrada: l.encerrada,
     })),
     oportunidades: oportunidades.map((o) => ({
       id: o.id, titulo: o.titulo, etapa: o.etapa ?? "entrada",
@@ -1744,6 +1755,8 @@ export interface DetalheLead {
   empresa: { id: string | null; nome: string; setor: string | null; porte: string | null; cidade: string | null; website: string | null; cnpj: string | null; telefone: string | null; observacoes: string | null };
   leadScore: number;
   /** Empresa com serviço ativo na carteira: é o que define "Cliente". */
+  /** Classe do relacionamento (função única, `classificacao.ts`). */
+  classificacao: Classificacao;
   naCarteira: boolean;
   /** A empresa já teve serviço (ativo ou encerrado). Distingue ex-cliente de quem nunca comprou. */
   jaTeveServico: boolean;
@@ -2012,6 +2025,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
       telefone: l.emp_telefone, observacoes: l.emp_observacoes,
     },
     leadScore: l.lead_score ?? 0,
+    classificacao: (await classificarLeads(organizacaoId, [l.id])).get(l.id) ?? { classe: "contato", motivo: null, estagio: null },
     naCarteira: l.na_carteira,
     jaTeveServico: l.ja_teve_servico,
     fichaDeCliente: l.ficha_de_cliente,

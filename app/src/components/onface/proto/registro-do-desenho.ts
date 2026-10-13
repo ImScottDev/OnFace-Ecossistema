@@ -7,6 +7,7 @@
  * tentar encaixar `Empresa360` num molde que não é o dela.
  * ───────────────────────────────────────────────────────────────────────── */
 
+import { ROTULO_CLASSE } from "@/lib/vendas/classificacao";
 import { formatarTelefone } from "@/lib/telefone";
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import { qualDoDesenho } from "./qual-do-desenho";
@@ -77,19 +78,6 @@ export function rastreioDoLead(a: DetalheLead["atribuicao"], meta?: Record<strin
   return linhas;
 }
 
-/**
- * O relacionamento, derivado da etapa do lead.
- *
- * A ficha mostra "Cliente", "Lead", "Prospect" ou "Contato" — é o vocabulário
- * do diretório. A etapa de pré-vendas é o que o produto sabe hoje; quando uma
- * oportunidade é ganha, o lead sai do board e o cliente vive em outro lugar.
- */
-export function relacionamentoDaEtapa(etapa: string): string {
-  if (etapa === "oportunidade") return "Prospect";
-  if (etapa === "desqualificado") return "Contato";
-  return "Lead";
-}
-
 /** Quantos dias desde a data, ou 0 quando não há data. */
 function diasDesde(iso: string | null): number {
   if (!iso) return 0;
@@ -135,9 +123,7 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     /* Cliente = a empresa está na carteira (serviço ativo). Antes bastava
        qualquer oportunidade em "ganho", e quem ganhou e cancelou seguia como
        Cliente na ficha enquanto Contatos já dizia outra coisa (P12). */
-    rel: l.naCarteira
-      ? "Cliente"
-      : l.temProcesso ? relacionamentoDaEtapa(l.etapa) : "Contato",
+    rel: ROTULO_CLASSE[l.classificacao.classe],
     resp: l.responsavel.nome,
     origem: l.atribuicao.origem,
     campanha: l.atribuicao.campanha,

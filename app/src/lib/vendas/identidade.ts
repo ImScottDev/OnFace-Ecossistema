@@ -597,7 +597,8 @@ export async function derivarRelacionamento(
           AND n.etapa IN ('entrada','diagnostico','proposta','negociacao')) AS oportunidades_abertas,
       (SELECT count(*)::int FROM leads l
         WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.empresa_id = ${empresaId}::uuid
-          AND l.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')) AS leads_ativos
+          AND l.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')
+          AND NOT EXISTS (SELECT 1 FROM aquisicoes aq WHERE aq.lead_legado_id = l.id AND aq.closed_at IS NOT NULL)) AS leads_ativos
   `);
 
   if ((f?.servicos_ativos ?? 0) > 0) return "cliente";

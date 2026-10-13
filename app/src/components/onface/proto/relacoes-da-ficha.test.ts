@@ -93,19 +93,27 @@ describe("relações da ficha", () => {
     assert.deepEqual(vis, [`/clientes/${E}`, `/pre-vendas/${L}`]);
   });
 
-  it("a PESSOA vê TODAS as aquisições dela, em qualquer etapa em andamento", () => {
+  it("a PESSOA vê TODAS as aquisições ABERTAS dela; nutrição e desqualificada são história", () => {
     const duplicada = { ...lead, id: O2, etapa: "qualificacao", etapaRotulo: "Qualificação" };
     const nutri = { ...lead, id: "c1896da5-ae42-49ab-8f9a-cec69c54fced", etapa: "nutricao", etapaRotulo: "Nutrição" };
     const r = com({ leadId: null, aquisicoes: [lead, duplicada, nutri, { ...lead, id: "d1896da5-ae42-49ab-8f9a-cec69c54fced", etapa: "desqualificado", etapaRotulo: "Desqualificado" }] });
-    assert.deepEqual(r.itens.map((i) => i.id), [L, O2, "c1896da5-ae42-49ab-8f9a-cec69c54fced"], "desqualificada é história, não andamento");
+    assert.deepEqual(r.itens.map((i) => i.id), [L, O2], "nutrição e desqualificada são estágio/histórico com motivo, não andamento");
     assert.equal(r.vazio, false);
     assert.ok(r.itens.every((i) => i.href === `/pre-vendas/${i.id}`));
   });
 
-  it("nutrição é relação em andamento, com tom próprio", () => {
+  it("nutrição NÃO é andamento: sai do card e conta como histórico (não é vazio de verdade)", () => {
     const r = com({ aquisicoes: [{ ...lead, etapa: "nutricao", etapaRotulo: "Nutrição" }] });
-    assert.equal(r.itens[0].status, "Nutrição");
-    assert.equal(r.itens[0].tom, "azul");
+    assert.equal(r.itens.length, 0);
+    assert.equal(r.vazio, false);
+  });
+
+  it("aquisição encerrada (convertida no handoff) sai de andamento e fica só a oportunidade", () => {
+    const r = com({
+      aquisicoes: [{ ...lead, etapa: "novo", etapaRotulo: "Novo", encerrada: true }],
+      oportunidades: [{ id: O2, titulo: "teste scott — PABX", etapa: "entrada", etapaRotulo: "Entrada", familia: null }],
+    });
+    assert.deepEqual(r.itens.map((i) => i.k), ["opp"]);
   });
 });
 

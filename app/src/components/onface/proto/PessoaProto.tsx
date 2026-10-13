@@ -154,7 +154,7 @@ export function PessoaProto({ lead, timeline, cadencia, extras, daPessoa }: {
     empresaId: lead.empresa.id ?? "", leadId: null,
     aquisicoes: daPessoa.aquisicoes.map((a) => aquisicaoDaFicha({
       id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo, origem: a.origem, criadoEm: a.criadoEm,
-      responsavel: a.responsavel, nutricao: a.nutricao,
+      responsavel: a.responsavel, nutricao: a.nutricao, encerrada: a.encerrada,
     })),
     oportunidades: daPessoa.oportunidades,
     propostas: null,

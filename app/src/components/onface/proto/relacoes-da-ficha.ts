@@ -18,7 +18,7 @@ import { relacoesDoRegistro, type RelacaoDoRegistro, type VinculoDoRegistro } fr
 import { MOTIVOS_NUTRICAO } from "@/lib/vendas/dominio";
 import { dataBR } from "./lead-da-tela";
 
-export interface AquisicaoDaFicha { id: string; etapa: string; etapaRotulo: string; titulo: string; sub: string }
+export interface AquisicaoDaFicha { id: string; etapa: string; etapaRotulo: string; titulo: string; sub: string; /** Encerrada (convertida em oportunidade, nutrição ou desqualificada): não está em andamento. */ encerrada?: boolean }
 
 /** O que se sabe de uma aquisição, antes de virar linha do card. */
 export interface DadosDeAquisicao {
@@ -27,6 +27,7 @@ export interface DadosDeAquisicao {
   /** Nome do contato: a Empresa tem leads de várias pessoas; a Pessoa só dela. */
   pessoa?: string | null;
   nutricao?: { motivo: string | null; desde: string | null; retomarEm: string | null } | null;
+  encerrada?: boolean;
 }
 
 const MOTIVO_NUTRICAO = new Map<string, string>(MOTIVOS_NUTRICAO.map((m) => [m.chave, m.rotulo]));
@@ -45,7 +46,7 @@ export function aquisicaoDaFicha(a: DadosDeAquisicao): AquisicaoDaFicha {
     const n = a.nutricao;
     const motivo = n?.motivo && n.motivo !== "em_nutricao" ? (MOTIVO_NUTRICAO.get(n.motivo) ?? n.motivo) : "motivo não registrado";
     return {
-      id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo,
+      id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo, encerrada: a.encerrada,
       titulo: `Em nutrição: ${motivo}`,
       sub: [
         a.pessoa,
@@ -56,7 +57,7 @@ export function aquisicaoDaFicha(a: DadosDeAquisicao): AquisicaoDaFicha {
     };
   }
   return {
-    id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo,
+    id: a.id, etapa: a.etapa, etapaRotulo: a.etapaRotulo, encerrada: a.encerrada,
     titulo: a.pessoa ? `Lead de ${a.pessoa}` : "Lead em Pré-vendas",
     sub: [origem, a.responsavel, a.criadoEm ? `entrou em ${dataBR(a.criadoEm)}` : null].filter(Boolean).join(" · "),
   };
@@ -85,8 +86,10 @@ export interface FatosDasRelacoes {
 
 export interface RelacoesDaFicha { itens: RelacaoDoRegistro[]; perdidas: number; vazio: boolean; vazioTxt: string }
 
-/** Aquisição "em andamento". Oportunidade já aparece como opp; desqualificado é história. */
-const ETAPAS_ATIVAS = new Set(["novo", "em_contato", "qualificacao", "qualificado", "nutricao"]);
+/** Aquisição "em andamento" (regra: docs/produto/classificacao-relacionamento.md). Oportunidade já aparece
+ *  como opp (a aquisição convertida está encerrada); nutrição e desqualificado são estágio/histórico com
+ *  motivo, não "em andamento". */
+const ETAPAS_ATIVAS = new Set(["novo", "em_contato", "qualificacao", "qualificado"]);
 const PROPOSTA_ABERTA: Record<string, string> = {
   rascunho: "Rascunho", enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado",
 };
@@ -105,7 +108,7 @@ export function montarRelacoes(f: FatosDasRelacoes): RelacoesDaFicha {
       status: c.ativo ? "Cliente ativo" : "Ex-cliente", tom: c.ativo ? "verde" : "cinza",
     });
   }
-  for (const a of f.aquisicoes.filter((x) => ETAPAS_ATIVAS.has(x.etapa))) {
+  for (const a of f.aquisicoes.filter((x) => ETAPAS_ATIVAS.has(x.etapa) && !x.encerrada)) {
     v.push({
       ...base, id: a.id, leadId: a.id, k: "aquisicao", titulo: a.titulo, sub: a.sub, status: a.etapaRotulo,
       tom: a.etapa === "nutricao" ? "azul" : "coral",
@@ -127,7 +130,7 @@ export function montarRelacoes(f: FatosDasRelacoes): RelacoesDaFicha {
 
   const itens = relacoesDoRegistro(v, { empresaId: f.empresaId, leadId: f.leadId });
   const perdidas = f.oportunidades.filter((o) => o.etapa === "perdido").length;
-  const desqualificados = f.aquisicoes.filter((a) => a.etapa === "desqualificado").length;
+  const desqualificados = f.aquisicoes.filter((a) => a.etapa === "desqualificado" || a.etapa === "nutricao" || (a.encerrada && a.etapa !== "oportunidade")).length;
   const encerradas = (f.propostas?.length ?? 0) - (f.propostas ?? []).filter((x) => x.status in PROPOSTA_ABERTA).length;
   /* Com serviço mas sem a ficha 360 não há link a oferecer; ainda assim não é ausência. */
   const semFicha = (c.ativo || c.jaTeveServico) && !c.ficha;

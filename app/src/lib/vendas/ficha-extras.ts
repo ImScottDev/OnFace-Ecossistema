@@ -139,6 +139,7 @@ export interface AquisicaoDaPessoa {
   responsavel: string | null;
   pessoa: string;
   nutricao: { motivo: string | null; desde: string | null; retomarEm: string | null } | null;
+  encerrada: boolean;
 }
 export interface OportunidadeDaPessoa { id: string; titulo: string; etapa: string; etapaRotulo: string; familia: string | null }
 
@@ -171,7 +172,7 @@ export async function relacoesDaPessoa(organizacaoId: string, leadId: string): P
     id: string; nome: string; sobrenome: string | null; email: string | null; telefone: string | null; whatsapp: string | null;
     canonical: string | null; pessoa_id: string | null; etapa: string; origem: string | null; criado_em: string;
     responsavel: string | null; nutricao_motivo: string | null; nutrido_em: string | null; retomar_em: string | null;
-    tem_processo: boolean;
+    tem_processo: boolean; encerrada: boolean;
   };
   const identidade = (c: Candidato): IdentidadeDoLead => ({
     id: c.id, pessoaId: c.pessoa_id, canonicalLeadId: c.canonical, nome: c.nome, email: c.email, telefones: [c.telefone, c.whatsapp],
@@ -194,6 +195,7 @@ export async function relacoesDaPessoa(organizacaoId: string, leadId: string): P
              CASE WHEN l.estagio_pre_vendas = 'qualificacao' THEN 'qualificacao'
                   ELSE COALESCE(pe.codigo, l.estagio_pre_vendas, 'novo') END AS etapa,
              (a.id IS NOT NULL OR l.estagio_pre_vendas IS NOT NULL) AS tem_processo,
+             COALESCE(a.closed_at IS NOT NULL, false) AS encerrada,
              COALESCE(a.origem, l.origem) AS origem, l.created_at::text AS criado_em, u.nome AS responsavel,
              COALESCE(NULLIF(a.nutricao_status, 'em_nutricao'), l.nutricao_motivo) AS nutricao_motivo,
              COALESCE(l.nutrido_em, (SELECT max(sc.created_at) FROM status_changes sc
@@ -227,6 +229,7 @@ export async function relacoesDaPessoa(organizacaoId: string, leadId: string): P
     origem: c.origem, criadoEm: c.criado_em, responsavel: c.responsavel,
     pessoa: [c.nome, c.sobrenome].filter(Boolean).join(" "),
     nutricao: c.etapa === "nutricao" ? { motivo: c.nutricao_motivo, desde: c.nutrido_em, retomarEm: c.retomar_em } : null,
+    encerrada: c.encerrada,
   }));
 
   const ids = meus.map((c) => c.id);

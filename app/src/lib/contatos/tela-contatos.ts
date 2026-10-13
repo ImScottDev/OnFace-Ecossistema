@@ -172,7 +172,8 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
            (SELECT json_agg(json_build_object('titulo', n.titulo, 'etapa', n.etapa))
               FROM negocios n WHERE n.empresa_id = b.empresa_id AND n.etapa IN ${ETAPAS_ABERTAS}) AS emp_negocios,
            EXISTS (SELECT 1 FROM leads l2 WHERE l2.empresa_id = b.empresa_id
-                    AND l2.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')) AS emp_lead_ativo,
+                    AND l2.estagio_pre_vendas IN ('novo','em_contato','qualificacao','qualificado')
+                    AND NOT EXISTS (SELECT 1 FROM aquisicoes a2 WHERE a2.lead_legado_id = l2.id AND a2.closed_at IS NOT NULL)) AS emp_lead_ativo,
            b.prospeccao_estado,
            COALESCE(b.desqualificacao_motivo, b.nutricao_motivo,
              (SELECT n.motivo_perda FROM negocios n

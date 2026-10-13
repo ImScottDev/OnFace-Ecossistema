@@ -88,11 +88,11 @@ export const FATOS_DO_LEAD_SQL = sql.raw(`
   COALESCE(l.desqualificacao_motivo, l.nutricao_motivo,
     (SELECT n.motivo_perda FROM negocios n WHERE n.lead_id = l.id AND n.etapa = 'perdido' ORDER BY n.updated_at DESC LIMIT 1)) AS motivo`);
 
-export interface LinhaDeFatos {
+export type LinhaDeFatos = {
   etapa_pv: string | null; aquisicao_aberta: boolean | null; nutricao: boolean | null; desqualificado: boolean | null;
   opp_aberta: boolean | null; perdido: boolean | null; serv_ativo: boolean | null;
   prospeccao_estado: string | null; motivo: string | null;
-}
+};
 
 export function fatosDaLinha(r: LinhaDeFatos): FatosDeClassificacao {
   return {
