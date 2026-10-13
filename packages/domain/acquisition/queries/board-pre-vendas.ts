@@ -180,7 +180,8 @@ function expressaoDeEtapa(sql: SqlTag): unknown {
  * Depende do alias `lg` (a tabela `leads`) estar no FROM de quem chama.
  */
 export function somenteDePreVendas(sql: SqlTag): unknown {
-  return sql`(lg.prospeccao_estado IS NULL OR lg.prospeccao_estado = 'pre_qualificado')`;
+  // `canonical_lead_id` preenchido = o lead foi mesclado em outro; quem conta é o canônico.
+  return sql`((lg.prospeccao_estado IS NULL OR lg.prospeccao_estado = 'pre_qualificado') AND lg.canonical_lead_id IS NULL)`;
 }
 
 /**
