@@ -23,7 +23,7 @@
 --   filtro      predicado SQL sobre o alias s (linhas que entram)
 --   sobrescreve {coluna: 'expressao sql sobre s'} troca ou cria o valor da coluna
 -- Devolve quantas linhas foram inseridas ou realmente mudadas.
-CREATE FUNCTION pg_temp.mz_carga(tabela text, filtro text DEFAULT 'true', sobrescreve jsonb DEFAULT '{}') RETURNS bigint
+CREATE FUNCTION pg_temp.mz_carga(tabela text, filtro text DEFAULT 'true', sobrescreve jsonb DEFAULT '{}', chave text DEFAULT 'id') RETURNS bigint
 LANGUAGE plpgsql AS $f$
 DECLARE cols text[]; sel text; lista text; atualiza text; velho text; novo text; n bigint;
 BEGIN
@@ -41,8 +41,8 @@ BEGIN
     INTO atualiza, velho, novo FROM unnest(cols) c WHERE c <> 'id';
   EXECUTE format(
     'INSERT INTO public.%1$I AS t (%2$s) SELECT %3$s FROM legado.%1$I s WHERE %4$s
-       ON CONFLICT (id) DO UPDATE SET %5$s WHERE (%6$s) IS DISTINCT FROM (%7$s)',
-    tabela, lista, sel, filtro, atualiza, velho, novo);
+       ON CONFLICT (%8$s) DO UPDATE SET %5$s WHERE (%6$s) IS DISTINCT FROM (%7$s)',
+    tabela, lista, sel, filtro, atualiza, velho, novo, chave);
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
 END $f$;
@@ -65,21 +65,31 @@ SELECT 'assinaturas' AS tabela, pg_temp.mz_carga('assinaturas', 'true', jsonb_bu
       (SELECT l.empresa_id FROM public.leads l WHERE l.id = s.lead_id),
       (SELECT b.empresa_id FROM public.billing_identities b
         WHERE b.external_customer_id = s.stripe_customer_id AND b.empresa_id IS NOT NULL LIMIT 1)))$$,
-  'contrato_id', '(SELECT c.id FROM public.contratos c WHERE c.id = s.contrato_id)')) AS linhas;
+  'contrato_id', '(SELECT c.id FROM public.contratos c WHERE c.id = s.contrato_id)'),
+  -- aditivo: o alvo pode ter a mesma assinatura Stripe com outro id; vale a chave natural, o id do alvo fica
+  'stripe_subscription_id') AS linhas;
+
+-- aditivo: id da assinatura/fatura NO ALVO para um id de prod (casa pela chave natural; sem casar, o proprio id)
+CREATE FUNCTION pg_temp.ass_alvo(i uuid) RETURNS uuid LANGUAGE sql STABLE AS
+$$ SELECT coalesce((SELECT a.id FROM public.assinaturas a JOIN legado.assinaturas l ON l.stripe_subscription_id = a.stripe_subscription_id WHERE l.id = i), i) $$;
+CREATE FUNCTION pg_temp.fat_alvo(i uuid) RETURNS uuid LANGUAGE sql STABLE AS
+$$ SELECT coalesce((SELECT a.id FROM public.faturas a JOIN legado.faturas l ON l.origem = a.origem AND l.external_id = a.external_id WHERE l.id = i), i) $$;
 
 -- ─── 3. Faturas e itens ────────────────────────────────────────────────────
 -- empresa_id por COALESCE(fatura, assinatura, lead, identidade Stripe da assinatura).
 SELECT 'faturas' AS tabela, pg_temp.mz_carga('faturas', 'true', jsonb_build_object(
+  'assinatura_id', 'pg_temp.ass_alvo(s.assinatura_id)',
   'empresa_id', $$pg_temp.emp_ok(coalesce(s.empresa_id,
       (SELECT a.empresa_id FROM public.assinaturas a WHERE a.id = s.assinatura_id),
       (SELECT l.empresa_id FROM public.leads l WHERE l.id = s.lead_id),
       (SELECT b.empresa_id FROM public.assinaturas a
          JOIN public.billing_identities b ON b.external_customer_id = a.stripe_customer_id AND b.empresa_id IS NOT NULL
         WHERE a.id = s.assinatura_id LIMIT 1)))$$,
-  'contrato_id', '(SELECT c.id FROM public.contratos c WHERE c.id = s.contrato_id)')) AS linhas;
+  'contrato_id', '(SELECT c.id FROM public.contratos c WHERE c.id = s.contrato_id)'),
+  'origem, external_id') AS linhas;
 -- servico_catalogo_id so se o catalogo (passo 2) tem o id; senao NULL em vez de
 -- derrubar a carga. O check 07 conta quantos itens perderam o vinculo.
-SELECT 'fatura_itens' AS tabela, pg_temp.mz_carga('fatura_itens', 'true', jsonb_build_object(
+SELECT 'fatura_itens' AS tabela, pg_temp.mz_carga('fatura_itens', $$ pg_temp.fat_alvo(s.fatura_id) = s.fatura_id AND (s.zoho_id IS NULL OR NOT EXISTS (SELECT 1 FROM public.fatura_itens x WHERE x.zoho_id = s.zoho_id AND x.id <> s.id)) $$, jsonb_build_object(
   'servico_catalogo_id', '(SELECT c.id FROM public.servicos_catalogo c WHERE c.id = s.servico_catalogo_id)')) AS linhas;
 
 -- ─── 4. Pagamentos (derivado) ──────────────────────────────────────────────
@@ -97,7 +107,8 @@ SELECT md5('mz-pagamento:' || f.id)::uuid, f.organizacao_id, f.id, f.empresa_id,
 ON CONFLICT DO NOTHING;
 
 -- ─── 5. MRR movimentos, ledger, webhooks ───────────────────────────────────
-SELECT 'mrr_movimentos' AS tabela, pg_temp.mz_carga('mrr_movimentos', 'true', jsonb_build_object(
+SELECT 'mrr_movimentos' AS tabela, pg_temp.mz_carga('mrr_movimentos', $$ s.evento_comercial_id IS NULL OR NOT EXISTS (SELECT 1 FROM public.mrr_movimentos x WHERE x.evento_comercial_id = s.evento_comercial_id AND x.id <> s.id) $$, jsonb_build_object(
+  'assinatura_id', 'pg_temp.ass_alvo(s.assinatura_id)',
   'contrato_id', '(SELECT c.id FROM public.contratos c WHERE c.id = s.contrato_id)')) AS linhas;
 SELECT 'service_ledger_batches' AS tabela, pg_temp.mz_carga('service_ledger_batches') AS linhas;
 SELECT 'service_ledger_entries' AS tabela, pg_temp.mz_carga('service_ledger_entries') AS linhas;
@@ -108,4 +119,4 @@ SELECT 'stripe_webhook_events' AS tabela, pg_temp.mz_carga('stripe_webhook_event
   'event_id',       's.stripe_event_id',
   'organizacao_id', '(SELECT id FROM public.organizacoes)',
   'created_at',     's.received_at',
-  'updated_at',     'coalesce(s.processed_at, s.received_at)')) AS linhas;
+  'updated_at',     'coalesce(s.processed_at, s.received_at)'), 'event_id') AS linhas;

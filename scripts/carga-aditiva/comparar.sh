@@ -12,7 +12,7 @@
 set -euo pipefail
 ALVO="${1:?uso: $0 <alvo> <antes> [--colunas]}"; ANTES="${2:?}"; COLS="${3:-}"
 PSQL="${PSQL:-psql}"; export PGOPTIONS="${PGOPTIONS:-} -c client_min_messages=warning"
-H="${PGHOST:-localhost}"; P="${PGPORT:-5432}"; U="${PGUSER:-$(id -un)}"
+H="${ANTES_HOST:-${PGHOST:-localhost}}"; P="${ANTES_PORT:-${PGPORT:-5432}}"; U="${PGUSER:-$(id -un)}"
 q() { "$PSQL" -X -q -d "$ALVO" -v ON_ERROR_STOP=1 "$@"; }
 q -c "CREATE EXTENSION IF NOT EXISTS postgres_fdw" >/dev/null
 q <<SQL

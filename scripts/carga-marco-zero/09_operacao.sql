@@ -40,7 +40,7 @@ BEGIN
          string_agg('t.' || quote_ident(c), ', '), string_agg('EXCLUDED.' || quote_ident(c), ', ')
     INTO atualiza, velho, novo FROM unnest(cols) c WHERE c <> 'id';
   IF so_novos THEN  -- aditivo: tokens/sessoes ja existentes no alvo nao sao sobrescritos
-    EXECUTE format('INSERT INTO public.%1$I AS t (%2$s) SELECT %3$s FROM legado.%1$I s WHERE %4$s ON CONFLICT (id) DO NOTHING',
+    EXECUTE format('INSERT INTO public.%1$I AS t (%2$s) SELECT %3$s FROM legado.%1$I s WHERE %4$s ON CONFLICT DO NOTHING',
                    tabela, lista, sel, filtro);
   ELSE
   EXECUTE format(
@@ -115,9 +115,24 @@ SELECT 'email_contas' AS tabela, pg_temp.mz_carga('email_contas',
 -- Sessoes com api_token (os webhooks sao apontados para o wuzapi de prod fora do banco).
 SELECT 'whatsapp_sessao' AS tabela, pg_temp.mz_carga('whatsapp_sessao', 'true', '{}', true) AS linhas;
 -- contatos: status 'open' (default da tabela), snoozed/closed NULL.
-SELECT 'contatos' AS tabela, pg_temp.mz_carga('contatos', 'true', jsonb_build_object('conta_id', :'remapeia_conta')) AS linhas;
+-- aditivo: sessao do alvo com o mesmo session_name e outro id fica; contatos/mensagens de prod apontam para ela.
+CREATE TEMP TABLE _m_sessao AS
+SELECT l.id AS legado_id, w.id AS alvo_id FROM legado.whatsapp_sessao l JOIN public.whatsapp_sessao w ON w.session_name = l.session_name;
+CREATE UNIQUE INDEX ON _m_sessao (legado_id);
+CREATE FUNCTION pg_temp.sessao_alvo(i uuid) RETURNS uuid LANGUAGE sql STABLE AS
+$$ SELECT coalesce((SELECT alvo_id FROM _m_sessao WHERE legado_id = i), i) $$;
+-- aditivo: contato do alvo com o mesmo (sessao, telefone) e outro id fica; as mensagens de prod passam a apontar para ele.
+SELECT 'contatos' AS tabela, pg_temp.mz_carga('contatos',
+  $$ NOT EXISTS (SELECT 1 FROM public.contatos x WHERE x.sessao_id = pg_temp.sessao_alvo(s.sessao_id) AND x.telefone = s.telefone AND x.id <> s.id) $$,
+  jsonb_build_object('conta_id', :'remapeia_conta', 'sessao_id', 'pg_temp.sessao_alvo(s.sessao_id)')) AS linhas;
+CREATE TEMP TABLE _m_contato AS
+SELECT l.id AS legado_id, c.id AS alvo_id FROM legado.contatos l
+  JOIN public.contatos c ON c.sessao_id = pg_temp.sessao_alvo(l.sessao_id) AND c.telefone = l.telefone;
+CREATE UNIQUE INDEX ON _m_contato (legado_id);
+CREATE FUNCTION pg_temp.contato_alvo(i uuid) RETURNS uuid LANGUAGE sql STABLE AS
+$$ SELECT coalesce((SELECT alvo_id FROM _m_contato WHERE legado_id = i), i) $$;
 -- Midia legada (4.301) nao abre nem em prod: copia a URL, a tela mostra "midia indisponivel".
-SELECT 'whatsapp_mensagens' AS tabela, pg_temp.mz_carga('whatsapp_mensagens') AS linhas;
+SELECT 'whatsapp_mensagens' AS tabela, pg_temp.mz_carga('whatsapp_mensagens', $$ s.uazapi_message_id IS NULL OR NOT EXISTS (SELECT 1 FROM public.whatsapp_mensagens x WHERE x.uazapi_message_id = s.uazapi_message_id AND x.id <> s.id) $$, jsonb_build_object('contato_id', 'pg_temp.contato_alvo(s.contato_id)', 'sessao_id', 'pg_temp.sessao_alvo(s.sessao_id)')) AS linhas;
 
 -- contato_labels: prod nao tem a tabela. Deriva do lead do contato (contatos.lead_id,
 -- ou o unico lead dono do telefone/e-mail), pelas labels que o lead ja tem no destino.
@@ -148,7 +163,7 @@ SELECT 'emails' AS tabela, pg_temp.mz_carga('emails', 'true', jsonb_build_object
 -- lead (273) e zerado. contatos.nao_lidas (493) segue como veio: e o contador da
 -- conversa no Atendimento, nao do sino (decisao pendente do Scott, ver retorno).
 SELECT 'notificacoes' AS tabela, pg_temp.mz_carga('notificacoes', 'true', jsonb_build_object('lida', 'true')) AS linhas;
-SELECT 'lead_user_unread' AS tabela, pg_temp.mz_carga('lead_user_unread', 'true',
+SELECT 'lead_user_unread' AS tabela, pg_temp.mz_carga('lead_user_unread', $$ NOT EXISTS (SELECT 1 FROM public.lead_user_unread x WHERE x.lead_id = s.lead_id AND x.usuario_id = s.usuario_id AND x.id <> s.id) $$,
   jsonb_build_object('whatsapp_nao_lidas', '0', 'email_nao_lidos', '0')) AS linhas;
 
 -- ─── Resto (direto) ────────────────────────────────────────────────────────
