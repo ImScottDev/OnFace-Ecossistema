@@ -12,6 +12,8 @@
  *     --env-file=.env src/scripts/smoke-stripe-sandbox.ts
  */
 
+export {}; // módulo próprio: sem isto o `main` cai no escopo global e colide com o de outro script.
+
 const API = "https://api.stripe.com/v1";
 const PREFIX = "ONFACE-SANDBOX-SMOKE";
 

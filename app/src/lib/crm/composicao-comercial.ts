@@ -14,8 +14,9 @@
  */
 import { db } from "@/lib/db";
 import { eq, and, inArray, notInArray } from "drizzle-orm";
-import { propostas, propostaItens, servicosCatalogo, oportunidades, oportunidadeItens, negocios } from "@/lib/db/schema";
+import { propostas, propostaItens, servicosCatalogo, catalogoPrecos, oportunidades, oportunidadeItens, negocios } from "@/lib/db/schema";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { familiaDoItem } from "@/lib/crm/gravar-familia";
 
 export type ServiceFamily = "PABX" | "CALLFACE_AI" | "WHITE_LABEL" | "UNKNOWN";
 export type RevenueNature = "MRR" | "SETUP" | "PROJECT" | "ONE_TIME" | "USAGE" | "HARDWARE" | "UNKNOWN";
@@ -112,9 +113,24 @@ export async function syncOportunidadeItensFromProposta(propostaId: string): Pro
       for (const r of rows) familyMap.set(r.id, (r.serviceFamily as ServiceFamily) || "UNKNOWN");
     }
 
+    // Família do preço escolhido (catalogo_precos -> servicos_catalogo): é ela que o item herda quando o próprio item não traz.
+    const precoIds = [...new Set(itens.map((i) => i.catalogoPrecoId).filter((id): id is string => !!id))];
+    const familiaDoPreco = new Map<string, string>();
+    if (precoIds.length > 0) {
+      const precos = await db
+        .select({ id: catalogoPrecos.id, familia: servicosCatalogo.serviceFamily })
+        .from(catalogoPrecos)
+        .innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
+        .where(inArray(catalogoPrecos.id, precoIds));
+      for (const r of precos) familiaDoPreco.set(r.id, r.familia);
+    }
+
     for (const item of itens) {
-      const serviceFamily: ServiceFamily =
-        (item.serviceFamily as ServiceFamily) || (item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) : undefined) || "UNKNOWN";
+      const serviceFamily: ServiceFamily = familiaDoItem({
+        familiaDoItem: item.serviceFamily,
+        familiaDoPreco: item.catalogoPrecoId ? familiaDoPreco.get(item.catalogoPrecoId) : null,
+        familiaDoServico: item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) : null,
+      });
       const revenueNature: RevenueNature = (item.revenueNature as RevenueNature) || mapTipoParaRevenueNature(item.tipo);
 
       const valores = {

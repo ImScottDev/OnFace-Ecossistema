@@ -346,6 +346,11 @@ export async function aplicarEfeitosPosGanho(opts: {
   const familiaHint = opts.familiaHint ?? null;
   const negocioId = negocio.id;
 
+  // A família fica GRAVADA no negócio e na oportunidade no momento do Ganho (UNKNOWN quando nada diz),
+  // em vez de cada leitor adivinhar depois. Não bloqueia nem desfaz o Ganho.
+  const { gravarFamiliaDoGanho } = await import("@/lib/crm/gravar-familia");
+  await gravarFamiliaDoGanho({ negocioId, organizacaoId, familiaHint });
+
   // CUTOVER (fase 16): o mesmo Ganho no modelo canônico — marca a
   // oportunidade, publica o evento de domínio e cria serviço e jornadas pela
   // oferta. Best-effort: o legado já fechou a venda.
