@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, pipelines, propostaGrupoComercial, propostaGrupoComercialItens, checkouts } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, pipelines, propostaGrupoComercial, propostaGrupoComercialItens, checkouts, servicosCatalogo, catalogoPrecos } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -26,6 +26,7 @@ import {
   assinarContratoPublico,
 } from "@/lib/crm/proposta-publica";
 import { criarPropostaComItens, inserirItensDaProposta, prepararItensDaProposta } from "@/lib/crm/proposta-criacao";
+import { descricaoDoItemSql } from "@/lib/catalogo/descricao-do-item";
 import { validarDataValidade, validarMoeda } from "@/lib/crm/proposta-regras";
 import { agruparItensPorLinhaComercial, organizarVendaMultiLinha } from "@/lib/crm/oportunidade-bundle";
 import { appUrl } from "@/lib/app-url";
@@ -462,8 +463,13 @@ app.get("/propostas/:id/pdf", async (c) => {
   if (!p) return c.json({ error: "Proposta não encontrada" }, 404);
 
   const itens = await db
-    .select()
+    .select({
+      nome: propostaItens.nome, descricao: descricaoDoItemSql, tipo: propostaItens.tipo, periodo: catalogoPrecos.periodo,
+      quantidade: propostaItens.quantidade, valorUnitario: propostaItens.valorUnitario, subtotal: propostaItens.subtotal,
+    })
     .from(propostaItens)
+    .leftJoin(servicosCatalogo, eq(servicosCatalogo.id, propostaItens.servicoCatalogoId))
+    .leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
     .where(eq(propostaItens.propostaId, id))
     .orderBy(asc(propostaItens.ordem));
 
@@ -473,6 +479,7 @@ app.get("/propostas/:id/pdf", async (c) => {
       itens: itens.map((i) => ({
         nome: i.nome,
         descricao: i.descricao,
+        periodo: i.periodo,
         tipo: i.tipo,
         quantidade: i.quantidade,
         valorUnitario: i.valorUnitario,
@@ -519,11 +526,14 @@ app.get("/propostas/:id/publica", async (c) => {
 
   const itens = await db
     .select({
-      id: propostaItens.id, nome: propostaItens.nome, descricao: propostaItens.descricao, tipo: propostaItens.tipo,
+      id: propostaItens.id, nome: propostaItens.nome, descricao: descricaoDoItemSql, tipo: propostaItens.tipo,
+      periodo: catalogoPrecos.periodo,
       quantidade: propostaItens.quantidade, valorUnitario: propostaItens.valorUnitario, subtotal: propostaItens.subtotal,
       servicoCatalogoId: propostaItens.servicoCatalogoId, commercialModel: propostaItens.commercialModel,
     })
     .from(propostaItens)
+    .leftJoin(servicosCatalogo, eq(servicosCatalogo.id, propostaItens.servicoCatalogoId))
+    .leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
     .where(eq(propostaItens.propostaId, id))
     .orderBy(asc(propostaItens.ordem));
 

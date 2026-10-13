@@ -1419,7 +1419,10 @@ export const servicosCatalogo = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
     nome: text("nome").notNull(),
-    descricao: text("descricao"),
+    descricao: text("descricao"), // description do Stripe (a sincronização sobrescreve)
+    // Texto de venda do ONFACE (migration 0109): ganha da description do Stripe
+    // em toda tela; a sincronização nunca o toca. Ver lib/catalogo/rotulos.ts.
+    descricaoComercial: text("descricao_comercial"),
     tipo: text("tipo").notNull(), // recorrente, avulso, setup
     moeda: text("moeda").default("BRL").notNull(), // BRL, USD, EUR, CAD
     valorSugerido: decimal("valor_sugerido", { precision: 12, scale: 2 }),

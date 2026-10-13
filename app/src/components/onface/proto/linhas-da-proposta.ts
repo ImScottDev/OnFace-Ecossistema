@@ -96,6 +96,7 @@ export function itensParaCriar(itens: any[]): {
       catalogoPrecoId: legado ? "" : String(it.preco),
       itemExistenteId: legado ? String(it.preco).slice(5) : null,
       nome: String(it.nome ?? "").trim(),
+      descricao: String(it.desc ?? "").trim() || null,
       tipo: tipoDoItem(String(it.natureza ?? "")),
       quantidade: Number(it.qtd) || 1,
       valorUnitario: Number(it.valor) || 0,

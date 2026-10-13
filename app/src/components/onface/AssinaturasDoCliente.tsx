@@ -23,8 +23,9 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { variacaoAmigavel } from "@/lib/catalogo/rotulos";
 
-interface ItemAss { itemId: string; priceId: string | null; produto: string | null; quantidade: number; precoUnitario: number | null; intervalo: string | null }
+interface ItemAss { itemId: string; priceId: string | null; produto: string | null; variacao?: string | null; quantidade: number; precoUnitario: number | null; intervalo: string | null }
 interface Ass { id: string; stripeSubscriptionId: string; status: string; mrr: number | null; renovaEm: string | null; cancelaNoFimDoPeriodo: boolean; itens: ItemAss[] }
 interface Preco { stripePriceId: string; variacao: string; valor: string; recorrente: boolean; periodo: string | null }
 interface Produto { id: string; nome: string; precos: Preco[] }
@@ -118,7 +119,7 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
             <ul className="flex flex-col divide-y">
               {a.itens.map((i) => (
                 <li key={i.itemId} className="flex flex-wrap items-center gap-2 py-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">{i.quantidade} × {i.produto ?? i.priceId}</span>
+                  <span className="min-w-0 flex-1 truncate">{i.quantidade} × {i.produto ?? "Item sem produto no catálogo"}{i.variacao ? ` · ${i.variacao}` : ""}</span>
                   <span className="text-muted-foreground">{brl(i.precoUnitario)}{i.intervalo === "year" ? "/ano" : i.intervalo === "month" ? "/mês" : ""}</span>
                   <Button size="xs" variant="outline" onClick={() => setAlvo({ ass: a, modo: "alterar_quantidade", item: i })}>Alterar quantidade</Button>
                   <Button size="xs" variant="outline" onClick={() => setAlvo({ ass: a, modo: "trocar_price", item: i })}>Trocar plano</Button>
@@ -235,7 +236,7 @@ function DialogoDeAlteracao({ alvo, base, catalogo, origem, fechar, aplicado }: 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{TITULO[modo]}</DialogTitle>
-          <DialogDescription>{ass.stripeSubscriptionId}{item ? ` · ${item.produto ?? item.priceId}` : ""}</DialogDescription>
+          <DialogDescription>{ass.stripeSubscriptionId}{item ? ` · ${item.produto ?? "Item sem produto no catálogo"}${item.variacao ? ` · ${item.variacao}` : ""}` : ""}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
@@ -252,7 +253,7 @@ function DialogoDeAlteracao({ alvo, base, catalogo, origem, fechar, aplicado }: 
                 <Label htmlFor="as-variacao">Variação</Label>
                 <NativeSelect id="as-variacao" className="w-full" disabled={!produto} value={priceId} onChange={(e) => setPriceId(e.target.value)}>
                   <NativeSelectOption value="">Escolha…</NativeSelectOption>
-                  {produto?.precos.map((p) => <NativeSelectOption key={p.stripePriceId} value={p.stripePriceId}>{p.variacao} · {brl(Number(p.valor))}</NativeSelectOption>)}
+                  {produto?.precos.map((p) => <NativeSelectOption key={p.stripePriceId} value={p.stripePriceId}>{variacaoAmigavel(produto.nome, p.variacao) || p.variacao} · {brl(Number(p.valor))}{p.periodo === "anual" ? "/ano" : "/mês"}</NativeSelectOption>)}
                 </NativeSelect>
               </div>
             </>

@@ -27,6 +27,8 @@ export interface PropostaPdfItem {
   nome: string;
   descricao?: string | null;
   tipo: string; // recorrente | avulso | setup
+  /** mensal | anual | unico, do Price: anual não se escreve "Mensal". */
+  periodo?: string | null;
   quantidade: string | number;
   valorUnitario: string | number;
   subtotal: string | number;
@@ -71,8 +73,8 @@ function dataBR(v: unknown): string {
   if (isNaN(d.getTime())) return String(v);
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 }
-function recorrenciaLabel(tipo: string): string {
-  if (tipo === "recorrente") return "Mensal";
+function recorrenciaLabel(tipo: string, periodo?: string | null): string {
+  if (tipo === "recorrente") return periodo === "anual" ? "Anual" : "Mensal";
   if (tipo === "setup") return "Setup";
   return "Avulso";
 }
@@ -92,7 +94,7 @@ function itensTabela(itens: PropostaPdfItem[], moeda: string, titulo: string, to
         .join("");
       return `<tr>
         <td class="it-nome"><strong>${esc(it.nome)}</strong>${desc}</td>
-        <td class="ctr">${recorrenciaLabel(it.tipo)}</td>
+        <td class="ctr">${recorrenciaLabel(it.tipo, it.periodo)}</td>
         <td class="ctr">${qtd(it.quantidade)}</td>
         <td class="rgt">${money(it.valorUnitario, moeda)}</td>
         <td class="rgt">${money(it.subtotal, moeda)}</td>

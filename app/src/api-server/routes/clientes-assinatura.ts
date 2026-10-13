@@ -13,7 +13,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assinaturaItens, assinaturas, auditLog, empresas, negocios, propostas } from "@/lib/db/schema";
+import { assinaturaItens, assinaturas, auditLog, catalogoPrecos, empresas, negocios, propostas, servicosCatalogo } from "@/lib/db/schema";
+import { variacaoAmigavel } from "@/lib/catalogo/rotulos";
 import { exigirCtx } from "../compat.js";
 import {
   aplicarAlteracao, ErroDeAlteracao, planejarAlteracao, previaDaAlteracao, type AcaoDeAssinatura, type OrigemDaAlteracao,
@@ -88,6 +89,13 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
   const itens = subs.length
     ? await db.select().from(assinaturaItens).where(inArray(assinaturaItens.assinaturaId, subs.map((s) => s.id)))
     : [];
+  /* Nome e variação do item pelo espelho do catálogo (o mesmo da proposta), nunca o id do Price. */
+  const priceIds = [...new Set(itens.map((i) => i.stripePriceId).filter((x): x is string => !!x))];
+  const doCatalogo = new Map((priceIds.length ? await db
+    .select({ priceId: catalogoPrecos.stripePriceId, produto: servicosCatalogo.nome, variacao: catalogoPrecos.variacao })
+    .from(catalogoPrecos).innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
+    .where(and(eq(catalogoPrecos.organizacaoId, ctx.organizacaoId), inArray(catalogoPrecos.stripePriceId, priceIds)))
+    : []).map((r) => [r.priceId, { produto: r.produto, variacao: variacaoAmigavel(r.produto, r.variacao) }]));
 
   return c.json({
     assinaturas: subs.map((s) => ({
@@ -99,7 +107,9 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
       renovaEm: s.currentPeriodEnd,
       cancelaNoFimDoPeriodo: (s.raw as { cancel_at_period_end?: boolean } | null)?.cancel_at_period_end === true,
       itens: itens.filter((i) => i.assinaturaId === s.id && i.status !== "inactive" && i.stripeSubscriptionItemId).map((i) => ({
-        itemId: i.stripeSubscriptionItemId, priceId: i.stripePriceId, produto: i.produto,
+        itemId: i.stripeSubscriptionItemId, priceId: i.stripePriceId,
+        produto: (i.stripePriceId && doCatalogo.get(i.stripePriceId)?.produto) || i.produto,
+        variacao: (i.stripePriceId && doCatalogo.get(i.stripePriceId)?.variacao) || null,
         quantidade: i.quantidade, precoUnitario: i.precoUnitario ? Number(i.precoUnitario) : null, intervalo: i.recurringInterval,
       })),
     })),

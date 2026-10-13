@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Clock, FileSignature, CreditCard, CheckCircle2, AlertTriangle, Download, ShieldCheck, Loader2 } from "lucide-react";
+import { rotuloDaRecorrencia, sufixoDoValor } from "@/lib/catalogo/rotulos";
 import "./publico.css";
 
 /**
@@ -21,7 +22,7 @@ import "./publico.css";
  * porque assinatura e pagamento confirmam por webhook a qualquer momento.
  */
 
-interface Item { id: string; nome: string; descricao: string | null; tipo: string; quantidade: string; valorUnitario: string; subtotal: string; commercialModel: string }
+interface Item { id: string; nome: string; descricao: string | null; tipo: string; periodo?: string | null; quantidade: string; valorUnitario: string; subtotal: string; commercialModel: string }
 interface Grupo {
   id: string;
   commercialModel: string;
@@ -157,7 +158,7 @@ function SecaoTitulo({ n, children }: { n: string; children: React.ReactNode }) 
 }
 
 function ItemLinha({ item }: { item: Item }) {
-  const mensal = item.tipo === "recorrente";
+  const suf = sufixoDoValor(item.tipo, item.periodo);
   const qtd = Number(item.quantidade || 1);
   return (
     <div className="pp-item">
@@ -166,8 +167,8 @@ function ItemLinha({ item }: { item: Item }) {
         {item.descricao ? <small>{item.descricao}</small> : null}
       </div>
       <div className="pp-item-valor">
-        <strong>{brl(item.subtotal)}{mensal ? "/mês" : ""}</strong>
-        <small>{qtd.toLocaleString("pt-BR")} × {brl(item.valorUnitario)}</small>
+        <strong>{brl(item.subtotal)}{suf}</strong>
+        <small>{qtd.toLocaleString("pt-BR")} × {brl(item.valorUnitario)} · {rotuloDaRecorrencia(item.tipo, item.periodo)}</small>
       </div>
     </div>
   );

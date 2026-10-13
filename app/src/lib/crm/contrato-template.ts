@@ -14,8 +14,9 @@ import { db } from "@/lib/db";
 import { eq, and, asc } from "drizzle-orm";
 import {
   contratoTemplates, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens,
-  propostas, leads, empresas, contratos,
+  propostas, leads, empresas, contratos, servicosCatalogo,
 } from "@/lib/db/schema";
+import { descricaoDoItemSql } from "@/lib/catalogo/descricao-do-item";
 import { getSignatureProvider } from "@/lib/crm/signature";
 import { determinarProdutoProposta } from "@/lib/crm/proposta-fluxo";
 import { calcularFamiliaDoGrupo } from "@/lib/crm/politica-familia";
@@ -185,7 +186,7 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
   const itensDoGrupo = await db
     .select({
       nome: propostaItens.nome,
-      descricao: propostaItens.descricao,
+      descricao: descricaoDoItemSql,
       tipo: propostaItens.tipo,
       quantidade: propostaItens.quantidade,
       valorUnitario: propostaItens.valorUnitario,
@@ -194,6 +195,7 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
     })
     .from(propostaGrupoComercialItens)
     .innerJoin(propostaItens, eq(propostaGrupoComercialItens.propostaItemId, propostaItens.id))
+    .leftJoin(servicosCatalogo, eq(servicosCatalogo.id, propostaItens.servicoCatalogoId))
     .where(eq(propostaGrupoComercialItens.grupoId, grupoId))
     .orderBy(asc(propostaItens.ordem));
 

@@ -12,6 +12,7 @@ import { syncOportunidadeItensFromProposta, resolverServiceFamiliesPorCatalogoId
 import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem } from "@/lib/crm/commercial-model";
 import { ehFamiliaValida, RegraDeNegocio } from "@/lib/vendas/dominio";
 import { calcularItens, validarDataValidade, validarMoeda } from "@/lib/crm/proposta-regras";
+import { descricaoDoProduto, variacaoAmigavel } from "@/lib/catalogo/rotulos";
 
 export interface ItemEntrada {
   servicoCatalogoId?: string | null;
@@ -45,6 +46,7 @@ async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
   if (unicos.length === 0) return new Map<string, {
     id: string; servicoCatalogoId: string; stripePriceId: string; stripeProductId: string | null; sku: string | null;
     variacao: string; valor: string; serviceFamily: string; revenueNature: string; exigeContrato: boolean;
+    descricaoProduto: string;
   }>();
   const rows = await db
     .select({
@@ -58,11 +60,15 @@ async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
       exigeContrato: catalogoPrecos.exigeContrato,
       stripeProductId: servicosCatalogo.stripeProductId,
       serviceFamily: servicosCatalogo.serviceFamily,
+      descricaoComercial: servicosCatalogo.descricaoComercial,
+      descricaoStripe: servicosCatalogo.descricao,
     })
     .from(catalogoPrecos)
     .innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
     .where(inArray(catalogoPrecos.id, unicos));
-  return new Map(rows.map((r) => [r.id, r]));
+  return new Map(rows.map(({ descricaoComercial, descricaoStripe, ...r }) => [r.id, {
+    ...r, descricaoProduto: descricaoDoProduto({ comercial: descricaoComercial, stripe: descricaoStripe }),
+  }]));
 }
 
 /**
@@ -121,7 +127,7 @@ export async function padronizarItensPeloCatalogo<T extends ItemEntrada & { item
     if (ehFamiliaValida(opts.familia) && r.service_family !== opts.familia) {
       throw new RegraDeNegocio("item_de_outra_familia", "Há item de outra família. Use só o catálogo da família desta oportunidade.");
     }
-    return { ...i, tipo: r.tipo as ItemEntrada["tipo"], nome: i.nome?.trim() ? i.nome : `${r.produto} · ${r.variacao}` };
+    return { ...i, tipo: r.tipo as ItemEntrada["tipo"], nome: i.nome?.trim() ? i.nome : [r.produto, variacaoAmigavel(r.produto, r.variacao)].filter(Boolean).join(" · ") };
   });
 }
 
@@ -189,7 +195,9 @@ export async function inserirItensDaProposta(tx: Tx, propostaId: string, moeda: 
         propostaId,
         servicoCatalogoId: servicoCatalogoId || undefined,
         nome: item.nome,
-        descricao: item.descricao,
+        // A linha guarda a descrição do produto no momento da proposta (a comercial do ONFACE, senão a
+        // do Stripe): é o que o cliente leu e aceitou, e não muda se o catálogo mudar depois.
+        descricao: item.descricao?.trim() || preco.descricaoProduto || null,
         tipo: item.tipo,
         moeda,
         quantidade: item.quantidade.toString(),

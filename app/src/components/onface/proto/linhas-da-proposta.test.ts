@@ -114,3 +114,13 @@ describe("itensParaCriar", () => {
     assert.equal(itens[0].catalogoPrecoId, "");
   });
 });
+
+describe("itensParaCriar: descrição da linha", () => {
+  it("leva a descrição editada; vazia vai null para o servidor usar a do catálogo", () => {
+    const { itens } = itensParaCriar([
+      { preco: "p1", nome: "PABX - Canais · 04 Canais", desc: "  Texto do vendedor ", natureza: "MRR", valor: "103", qtd: "1" },
+      { preco: "p2", nome: "PABX - Ramal", desc: "", natureza: "MRR", valor: "5", qtd: "1" },
+    ]);
+    assert.deepEqual(itens.map((i) => i.descricao), ["Texto do vendedor", null]);
+  });
+});

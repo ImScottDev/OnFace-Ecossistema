@@ -61,6 +61,8 @@ export interface MudancaDoContrato {
 export interface ItemParaCriar {
   catalogoPrecoId: string;
   nome: string;
+  /** O texto que o cliente lê sob o nome. Vazio = a descrição do catálogo. */
+  descricao?: string | null;
   tipo: "recorrente" | "avulso" | "setup";
   quantidade: number;
   valorUnitario: number;

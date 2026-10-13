@@ -39,7 +39,7 @@ export interface ItemCatalogo {
   naturezaReceita: NaturezaReceita | "UNKNOWN";
   familia: string | null;
   exigeContrato: boolean;
-  /** Descrição do produto no Stripe (texto de venda, não o sku/lookup_key). */
+  /** Descrição do produto: a comercial do ONFACE, senão a do Stripe (nunca o sku/lookup_key). */
   descricao?: string | null;
   /** mensal | anual | unico — a recorrência real do Price. */
   periodo?: string | null;
@@ -69,7 +69,7 @@ export async function catalogoDaFamilia(organizacaoId: string, familia: Familia)
     SELECT cp.id::text AS catalogo_preco_id, sc.id::text AS servico_catalogo_id,
            sc.nome, cp.variacao, cp.sku, cp.valor::text,
            cp.revenue_nature, sc.service_family, cp.exige_contrato,
-           sc.descricao, cp.periodo, cp.lookup_key
+           COALESCE(NULLIF(btrim(sc.descricao_comercial), ''), sc.descricao) AS descricao, cp.periodo, cp.lookup_key
       FROM catalogo_precos cp
       JOIN servicos_catalogo sc ON sc.id = cp.servico_catalogo_id
      WHERE sc.organizacao_id = ${organizacaoId}::uuid
