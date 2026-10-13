@@ -283,6 +283,8 @@ SELECT md5('pessoa:' || a.id)::uuid AS id, a.organizacao_id, a.empresa_id,
    -- lead de teste do dev (origem 'qa', nunca existiu em prod) ja tem pessoa criada pelo app, com id
    -- proprio: gerar a deterministica bateria em idx_pessoas_lead_legado. Mesma regra do usuarios qa.%.
    AND a.origem IS DISTINCT FROM 'qa'
+   -- aditivo: lead que ja tem pessoa propria no alvo (id nao deterministico, criada pelo app) nao ganha segunda
+   AND NOT EXISTS (SELECT 1 FROM pessoas px WHERE px.lead_id_legado = a.id AND px.id <> md5('pessoa:' || a.id)::uuid)
  GROUP BY a.id, a.organizacao_id, a.empresa_id, a.nome, a.sobrenome, a.email,
           a.telefone, a.whatsapp, a.cargo;
 SELECT 'pessoas' AS tabela, pg_temp.mz_carga('pessoas', '_pessoa') AS linhas;

@@ -10,11 +10,11 @@ BEGIN;
 \ir _lib.sql
 
 -- Organizacao: direto, inclusive apollo_api_key. O id e o mesmo da seed das migrations.
-SELECT 'organizacoes' AS tabela, pg_temp.mz_carga('organizacoes', 'legado.organizacoes') AS linhas;
+SELECT 'organizacoes' AS tabela, pg_temp.mz_carga('organizacoes', 'legado.organizacoes', 'true', '{}', 'id', ARRAY['*']) AS linhas;
 
 -- Usuarios: direto. team_id fica NULL (prod tem 0 times); a coluna so existe no destino.
 SELECT 'usuarios' AS tabela,
-       pg_temp.mz_carga('usuarios', 'legado.usuarios', $$ s.email NOT LIKE 'qa.%' $$) AS linhas;
+       pg_temp.mz_carga('usuarios', 'legado.usuarios', $$ s.email NOT LIKE 'qa.%' $$, '{}', 'id', ARRAY['*']) AS linhas;
 
 -- Papel RBAC: mesma regra da migration 0070 (vendedor vira closer, super_admin vira
 -- admin, desconhecido vira closer). So cria quem ainda nao tem papel: reexecutar nao

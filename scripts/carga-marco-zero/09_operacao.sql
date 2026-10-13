@@ -23,7 +23,7 @@ BEGIN;
 --   filtro      predicado SQL sobre o alias s (linhas que entram)
 --   sobrescreve {coluna: 'expressao sql sobre s'} troca ou cria o valor da coluna
 -- Devolve quantas linhas foram inseridas ou realmente mudadas.
-CREATE FUNCTION pg_temp.mz_carga(tabela text, filtro text DEFAULT 'true', sobrescreve jsonb DEFAULT '{}') RETURNS bigint
+CREATE FUNCTION pg_temp.mz_carga(tabela text, filtro text DEFAULT 'true', sobrescreve jsonb DEFAULT '{}', so_novos boolean DEFAULT false) RETURNS bigint
 LANGUAGE plpgsql AS $f$
 DECLARE cols text[]; sel text; lista text; atualiza text; velho text; novo text; n bigint;
 BEGIN
@@ -39,10 +39,15 @@ BEGIN
   SELECT string_agg(quote_ident(c) || ' = EXCLUDED.' || quote_ident(c), ', '),
          string_agg('t.' || quote_ident(c), ', '), string_agg('EXCLUDED.' || quote_ident(c), ', ')
     INTO atualiza, velho, novo FROM unnest(cols) c WHERE c <> 'id';
+  IF so_novos THEN  -- aditivo: tokens/sessoes ja existentes no alvo nao sao sobrescritos
+    EXECUTE format('INSERT INTO public.%1$I AS t (%2$s) SELECT %3$s FROM legado.%1$I s WHERE %4$s ON CONFLICT (id) DO NOTHING',
+                   tabela, lista, sel, filtro);
+  ELSE
   EXECUTE format(
     'INSERT INTO public.%1$I AS t (%2$s) SELECT %3$s FROM legado.%1$I s WHERE %4$s
        ON CONFLICT (id) DO UPDATE SET %5$s WHERE (%6$s) IS DISTINCT FROM (%7$s)',
     tabela, lista, sel, filtro, atualiza, velho, novo);
+  END IF;
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
 END $f$;
@@ -104,11 +109,11 @@ SELECT 'ligacoes' AS tabela, pg_temp.mz_carga('ligacoes', 'true', jsonb_build_ob
 
 SELECT 'email_contas' AS tabela, pg_temp.mz_carga('email_contas',
   's.id NOT IN (' || :'conta_morta_kaua' || '::uuid, ' || :'conta_morta_jen' || '::uuid)',
-  jsonb_build_object('usuario_id', 'coalesce((SELECT u.id FROM public.usuarios u WHERE lower(u.email) = lower(s.email)), s.usuario_id)')) AS linhas;
+  jsonb_build_object('usuario_id', 'coalesce((SELECT u.id FROM public.usuarios u WHERE lower(u.email) = lower(s.email)), s.usuario_id)'), true) AS linhas;
 
 -- ─── WhatsApp ──────────────────────────────────────────────────────────────
 -- Sessoes com api_token (os webhooks sao apontados para o wuzapi de prod fora do banco).
-SELECT 'whatsapp_sessao' AS tabela, pg_temp.mz_carga('whatsapp_sessao') AS linhas;
+SELECT 'whatsapp_sessao' AS tabela, pg_temp.mz_carga('whatsapp_sessao', 'true', '{}', true) AS linhas;
 -- contatos: status 'open' (default da tabela), snoozed/closed NULL.
 SELECT 'contatos' AS tabela, pg_temp.mz_carga('contatos', 'true', jsonb_build_object('conta_id', :'remapeia_conta')) AS linhas;
 -- Midia legada (4.301) nao abre nem em prod: copia a URL, a tela mostra "midia indisponivel".

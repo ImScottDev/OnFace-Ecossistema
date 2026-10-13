@@ -37,7 +37,9 @@ SELECT md5('aq:' || l.id)::uuid AS id, l.organizacao_id, l.empresa_id, md5('pess
        l.created_at, l.updated_at, e.closed_at, l.id AS lead_legado_id
   FROM leads l
   JOIN _mz_lead_estado e ON e.lead_id = l.id
-  CROSS JOIN LATERAL (SELECT trim(translate(lower(coalesce(l.origem, '')), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')) AS k) o;
+  CROSS JOIN LATERAL (SELECT trim(translate(lower(coalesce(l.origem, '')), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')) AS k) o
+ -- aditivo: lead que ja tem aquisicao propria no alvo (criada pelo app, id nao deterministico) fica como esta
+ WHERE NOT EXISTS (SELECT 1 FROM aquisicoes ax WHERE ax.lead_legado_id = l.id AND ax.id <> md5('aq:' || l.id)::uuid);
 SELECT 'aquisicoes' AS tabela, pg_temp.mz_carga('aquisicoes', '_aq', 'true', '{}', 'id', ARRAY['responsavel_id']) AS linhas;
 
 -- Ponto de contato: 1 first-touch por aquisicao. tipo_origem segue a regra que o
@@ -57,7 +59,9 @@ SELECT md5('pc:' || l.id)::uuid AS id, l.organizacao_id, md5('pessoa:' || coales
        jsonb_build_object('leadIdLegado', l.id, 'origemLegado', l.origem) AS raw,
        l.created_at, l.id AS lead_id_legado, md5('aq:' || l.id)::uuid AS aquisicao_id,
        l.gclid, l.fbclid, l.fbc, l.fbp, l.meta_adset_id AS adset_id, l.meta_ad_id AS ad_id, l.origem AS provider
-  FROM leads l WHERE l.origem IS DISTINCT FROM 'qa';  -- lead de teste do dev nao ganha ponto de contato de carga
+  FROM leads l WHERE l.origem IS DISTINCT FROM 'qa'
+   AND EXISTS (SELECT 1 FROM aquisicoes aq WHERE aq.id = md5('aq:' || l.id)::uuid)
+   AND NOT EXISTS (SELECT 1 FROM pontos_contato px WHERE px.lead_id_legado = l.id AND px.id <> md5('pc:' || l.id)::uuid);  -- lead de teste do dev nao ganha ponto de contato de carga
 SELECT 'pontos_contato' AS tabela, pg_temp.mz_carga('pontos_contato', '_pc') AS linhas;
 
 -- Historico de toques da cadencia SDR. sessao_id aponta para whatsapp_sessao, que so
