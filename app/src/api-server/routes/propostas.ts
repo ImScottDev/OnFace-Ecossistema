@@ -1133,8 +1133,21 @@ app.post("/propostas/:id/gerar-parcelamento", async (c) => {
   const totalParcelas = proposta.parcelas || 1;
   if (totalParcelas < 2) return c.json({ error: "Proposta com menos de 2 parcelas — nada a gerar" }, 400);
 
-  const [lead] = await db.select({ stripeCustomerId: leads.stripeCustomerId }).from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
-  if (!lead?.stripeCustomerId) {
+  const [lead] = await db.select({ nome: leads.nome, email: leads.email, empresa: leads.empresa, empresaId: leads.empresaId, empresaCnpj: leads.empresaCnpj })
+    .from(leads).where(and(eq(leads.id, proposta.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
+  // Customer canônico da empresa (nunca cria; nunca o do SaaS Callface).
+  const { localizarCustomerDaEmpresa } = await import("@/lib/integrations/stripe-customer");
+  const { metadataStripe } = await import("@/lib/crm/metadata-comercial");
+  let cliente: Awaited<ReturnType<typeof localizarCustomerDaEmpresa>>;
+  try {
+    cliente = await localizarCustomerDaEmpresa({
+      organizacaoId: ctx.organizacaoId, empresaId: lead?.empresaId ?? null, leadId: proposta.leadId,
+      nome: lead?.empresa || lead?.nome || "Cliente", email: lead?.email, cnpj: lead?.empresaCnpj,
+    });
+  } catch (err) {
+    return c.json({ error: `Falha ao localizar o cliente no Stripe: ${String(err)}` }, 502);
+  }
+  if (!cliente) {
     return c.json({ error: "Este cliente ainda não tem um customer no Stripe — a 1ª parcela (checkout) precisa ser paga antes de gerar as demais." }, 400);
   }
 
@@ -1147,13 +1160,16 @@ app.post("/propostas/:id/gerar-parcelamento", async (c) => {
   let resultados: { invoiceId: string; hostedInvoiceUrl: string | null; status: string }[];
   try {
     resultados = await criarPlanoDeParcelas({
-      stripeCustomerId: lead.stripeCustomerId,
+      stripeCustomerId: cliente.id,
       descricaoBase: `Proposta #${proposta.numero} — ${proposta.moeda}`,
       valorParcela,
       moeda: proposta.moeda,
       quantidade: quantidadeRestante,
       diasVencimento: proposta.vencimentoDias || 3,
-      metadata: { propostaId: proposta.id, negocioId: proposta.negocioId || "", organizacaoId: ctx.organizacaoId, origem: "callface-crm-parcelamento" },
+      metadata: {
+        ...metadataStripe({ organizacaoId: ctx.organizacaoId, empresaId: lead?.empresaId ?? null, negocioId: proposta.negocioId, propostaId: proposta.id, leadId: proposta.leadId, cnpj: lead?.empresaCnpj }),
+        origem: "callface-crm-parcelamento",
+      },
     });
   } catch (err) {
     return c.json({ error: `Falha ao gerar parcelas no Stripe: ${String(err)}` }, 502);

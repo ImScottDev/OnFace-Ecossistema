@@ -1699,37 +1699,29 @@ app.post("/clientes/:empresaId/portal-stripe", async (c) => {
   if (!UUID_RE.test(empresaId)) return c.json({ error: "empresaId inválido" }, 400);
 
   const [empresa] = await db
-    .select({ id: empresas.id, nome: empresas.nome, stripeCustomerId: empresas.stripeCustomerId })
+    .select({ id: empresas.id, nome: empresas.nome, cnpj: empresas.cnpj })
     .from(empresas)
     .where(and(eq(empresas.id, empresaId), eq(empresas.organizacaoId, ctx.organizacaoId)))
     .limit(1);
   if (!empresa) return c.json({ error: "Empresa não encontrada" }, 404);
 
-  // A coluna da empresa é a fonte preferida, mas ela é opcional e nem todo
-  // cliente a tem preenchida — quem veio por import ou teve a assinatura criada
-  // fora do CRM só aparece no espelho de assinaturas. Sem este fallback o botão
-  // falharia exatamente para a base antiga, que é quem ainda está no boleto. A
-  // assinatura mais recente vence: é a que carrega a cobrança viva.
-  let stripeCustomerId = empresa.stripeCustomerId;
-  if (!stripeCustomerId) {
-    const [assinatura] = await db
-      .select({ stripeCustomerId: assinaturas.stripeCustomerId })
-      .from(assinaturas)
-      .where(and(
-        eq(assinaturas.empresaId, empresaId),
-        eq(assinaturas.organizacaoId, ctx.organizacaoId),
-        isNotNull(assinaturas.stripeCustomerId),
-      ))
-      .orderBy(desc(assinaturas.createdAt))
-      .limit(1);
-    stripeCustomerId = assinatura?.stripeCustomerId ?? null;
+  // O Customer vem do resolver canônico (empresa → identidade → espelho de
+  // assinaturas → metadata/CNPJ/e-mail no Stripe), que descarta apagado e do SaaS
+  // Callface. Nunca cria: portal é de quem já é cliente.
+  const { localizarCustomerDaEmpresa } = await import("@/lib/integrations/stripe-customer");
+  let cliente: Awaited<ReturnType<typeof localizarCustomerDaEmpresa>>;
+  try {
+    cliente = await localizarCustomerDaEmpresa({ organizacaoId: ctx.organizacaoId, empresaId, nome: empresa.nome, cnpj: empresa.cnpj });
+  } catch (erro) {
+    return c.json({ error: `Falha ao localizar o cliente no Stripe: ${erro instanceof Error ? erro.message : String(erro)}` }, 502);
   }
-  if (!stripeCustomerId) {
+  if (!cliente) {
     // 409, não 500: a conta existe e a requisição está correta — é o cadastro
     // que não tem cliente no Stripe, e quem recebe precisa saber exatamente
     // isso para ir criar/vincular.
     return c.json({ error: `${empresa.nome} não tem cliente no Stripe vinculado. Sem isso não há portal para abrir.` }, 409);
   }
+  const stripeCustomerId = cliente.id;
 
   const base = appUrl();
   try {

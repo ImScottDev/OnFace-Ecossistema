@@ -78,7 +78,13 @@ async function stripeGet<T>(path: string): Promise<T> {
 }
 
 export interface StripeCustomerParams {
+  /** Ignorado: o Customer vem do banco/Stripe pelo resolver canônico, nunca de um id solto do chamador. */
   customerId?: string | null;
+  /** Organização, empresa e contato; quando ausentes saem da metadata (`crm_organization_id`, `crm_company_id`, `crm_lead_id`). */
+  organizacaoId?: string | null;
+  empresaId?: string | null;
+  leadId?: string | null;
+  cnpj?: string | null;
   name: string;
   email?: string | null;
   phone?: string | null;
@@ -87,63 +93,35 @@ export interface StripeCustomerParams {
 }
 
 /**
- * Procura um Customer que já exista no Stripe para este e-mail.
+ * O Customer do Stripe para cobrar esta empresa.
  *
- * Por que `customers?email=` e NÃO `customers/search`: o list é consistente na
- * hora, e o search tem indexação atrasada — normalmente menos de um minuto, mas
- * a própria documentação avisa que em incidente pode ficar até uma hora para
- * trás. Num fluxo que acabou de criar o cliente, o search devolveria vazio e a
- * gente criaria a duplicata que ele deveria evitar.
+ * Não resolve nada sozinho: delega a `garantirCustomerDaEmpresa`
+ * (stripe-customer.ts), o ÚNICO resolver — vínculo no banco, depois metadata,
+ * CNPJ e e-mail no Stripe (sem nunca pegar Customer do SaaS Callface, que divide
+ * esta conta), e só então cria, sob trava por empresa. Antes esta função
+ * buscava só por e-mail e podia cobrar um Customer do SaaS ou duplicar o da
+ * empresa (37 empresas com mais de um Customer).
  *
- * O filtro é exato e sensível a maiúscula, então o e-mail é normalizado antes.
- * Devolve `null` quando não acha, quando não há e-mail, ou quando a busca
- * falha — nunca derruba o checkout por causa disto.
+ * O import é dinâmico de propósito: stripe-customer.ts importa deste arquivo
+ * (`getStripeCheckoutMode`) e o banco não deve entrar em quem só quer o modo.
  */
-async function acharCustomerPorEmail(email: string | null | undefined): Promise<string | null> {
-  const alvo = email?.trim().toLowerCase();
-  if (!alvo) return null;
-  try {
-    const r = await stripeGet<{ data: { id: string; email: string | null; deleted?: boolean }[] }>(
-      `customers?limit=100&email=${encodeURIComponent(alvo)}`,
-    );
-    /* Mais de um resultado significa que a duplicata já existe. Pega o primeiro
-       não apagado, que é o mais antigo — assim duas rodadas convergem para o
-       MESMO cliente em vez de alternarem. */
-    const achado = (r.data ?? []).filter((c) => !c.deleted).at(-1);
-    return achado?.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export async function createStripeCustomer(params: StripeCustomerParams): Promise<{ id: string; mocked: boolean }> {
-  const mode = getStripeCheckoutMode();
-  if (params.customerId) return { id: params.customerId, mocked: mode === "mock" };
-  if (mode === "mock") {
-    return { id: `cus_mock_${params.metadata.crm_company_id || params.metadata.crm_lead_id || "billing"}`.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 80), mocked: true };
-  }
-
-  /* Antes de criar, procura. O CRM já tenta reaproveitar o id que tem gravado
-     (lib/crm/checkout.ts), mas isso só cobre quem o CRM criou: cliente que já
-     existia no Stripe antes, ou criado por outro caminho, passava direto e
-     virava duplicata. A chave de idempotência não cobre esse caso porque o
-     Stripe só a guarda por 24 h — a segunda proposta no dia seguinte criava
-     outro cliente. Medido em 01/10: 30 empresas com mais de um customer. */
-  const existente = await acharCustomerPorEmail(params.email);
-  if (existente) return { id: existente, mocked: false };
-
-  const form = new URLSearchParams();
-  form.append("name", params.name.slice(0, 250));
-  if (params.email) form.append("email", params.email);
-  if (params.phone) form.append("phone", params.phone);
-  if (params.address?.line1) form.append("address[line1]", params.address.line1);
-  if (params.address?.city) form.append("address[city]", params.address.city);
-  if (params.address?.state) form.append("address[state]", params.address.state);
-  if (params.address?.postalCode) form.append("address[postal_code]", params.address.postalCode);
-  if (params.address?.country) form.append("address[country]", params.address.country);
-  for (const [key, value] of Object.entries(params.metadata)) form.append(`metadata[${key}]`, value.slice(0, 500));
-  const customer = await stripePost<{ id: string }>("customers", form, { idempotencyKey: stableIdempotencyKey(`crm-customer-${params.metadata.crm_company_id || params.metadata.crm_lead_id || "billing"}`) });
-  return { id: customer.id, mocked: false };
+  const organizacaoId = params.organizacaoId || params.metadata.crm_organization_id || params.metadata.organizacaoId;
+  if (!organizacaoId) throw new Error("Customer do Stripe sem organização: o vínculo é sempre por organização.");
+  const { garantirCustomerDaEmpresa } = await import("./stripe-customer");
+  const r = await garantirCustomerDaEmpresa({
+    organizacaoId,
+    empresaId: params.empresaId || params.metadata.crm_company_id || params.metadata.empresaId || null,
+    leadId: params.leadId || params.metadata.crm_lead_id || null,
+    nome: params.name,
+    email: params.email,
+    cnpj: params.cnpj,
+    telefone: params.phone,
+    endereco: params.address,
+    metadata: params.metadata,
+  });
+  for (const aviso of r.avisos) console.warn(`[stripe-customer] ${aviso}`);
+  return { id: r.id, mocked: r.mocked };
 }
 
 export interface CheckoutItem {
@@ -278,13 +256,23 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
   if (allItems.some((item) => item.moeda.toUpperCase() !== params.moeda.toUpperCase())) throw new Error("A moeda de um Price oficial não coincide com a moeda da proposta.");
 
   const stripeMode = recorrentes.length > 0 ? "subscription" : "payment";
-  const metadata = {
+  const negocioId = params.metadata.crm_negocio_id || params.metadata.negocioId || params.negocioId || "";
+  const empresaId = params.metadata.crm_company_id || params.metadata.empresaId || "";
+  /* Metadata de identidade nas DUAS grafias (definição §13): `organizacaoId`,
+     `empresaId`, `negocioId`, `propostaId` e os `crm_*` que a reconciliação já lê.
+     Chave sem valor não entra — string vazia APAGA a chave no Stripe. */
+  const metadata: Record<string, string> = {
     ...params.metadata,
     crm_proposal_id: params.propostaId,
     crm_group_id: params.grupoComercialId,
-    // `crm_opportunity_id` é o ID da oportunidade v2 quando o helper já o
-    // resolveu. O negócio legado só é fallback, nunca substituição silenciosa.
+    organizacaoId: params.organizacaoId,
+    propostaId: params.propostaId,
+    // O sync de MRR lê `crm_negocio_id`; antes só `crm_opportunity_id` ia (com o
+    // negócio dentro quando não havia oportunidade). Emite os dois: a oportunidade
+    // v2 quando existe, o negócio legado como fallback, e o negócio na sua chave.
     crm_opportunity_id: params.metadata.crm_opportunity_id || params.negocioId || "",
+    ...(negocioId ? { crm_negocio_id: negocioId, negocioId } : {}),
+    ...(empresaId ? { empresaId } : {}),
   };
   const discount = discountTotal(allItems);
 

@@ -932,15 +932,31 @@ app.post("/negocios/:id/cobranca-avulsa", async (c) => {
   if (!parsed.success) return c.json({ error: "Dados inválidos", details: parsed.error.flatten() }, 400);
 
   const [negocio] = await db
-    .select({ id: negocios.id, leadId: negocios.leadId })
+    .select({ id: negocios.id, leadId: negocios.leadId, empresaId: negocios.empresaId })
     .from(negocios)
     .where(and(eq(negocios.id, id), eq(negocios.organizacaoId, ctx.organizacaoId)))
     .limit(1);
   if (!negocio) return c.json({ error: "Negócio não encontrado" }, 404);
   if (!negocio.leadId) return c.json({ error: "Negócio sem contato vinculado" }, 400);
 
-  const [lead] = await db.select({ stripeCustomerId: leads.stripeCustomerId }).from(leads).where(eq(leads.id, negocio.leadId)).limit(1);
-  if (!lead?.stripeCustomerId) {
+  const [lead] = await db.select({ nome: leads.nome, email: leads.email, empresa: leads.empresa, empresaId: leads.empresaId, empresaCnpj: leads.empresaCnpj })
+    .from(leads).where(and(eq(leads.id, negocio.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
+  // O Customer da EMPRESA (resolver canônico), não o que o contato por acaso tem
+  // gravado: nunca cria (cobrança avulsa só existe para quem já é cliente no
+  // Stripe) e nunca devolve Customer do SaaS Callface.
+  const empresaIdCobranca = negocio.empresaId ?? lead?.empresaId ?? null;
+  const { localizarCustomerDaEmpresa } = await import("@/lib/integrations/stripe-customer");
+  const { metadataStripe } = await import("@/lib/crm/metadata-comercial");
+  let cliente: Awaited<ReturnType<typeof localizarCustomerDaEmpresa>>;
+  try {
+    cliente = await localizarCustomerDaEmpresa({
+      organizacaoId: ctx.organizacaoId, empresaId: empresaIdCobranca, leadId: negocio.leadId,
+      nome: lead?.empresa || lead?.nome || "Cliente", email: lead?.email, cnpj: lead?.empresaCnpj,
+    });
+  } catch (err) {
+    return c.json({ error: `Falha ao localizar o cliente no Stripe: ${String(err)}` }, 502);
+  }
+  if (!cliente) {
     return c.json({ error: "Este cliente ainda não tem um customer no Stripe (nenhum pagamento processado até agora) — sem isso não há pra quem cobrar." }, 400);
   }
 
@@ -948,12 +964,15 @@ app.post("/negocios/:id/cobranca-avulsa", async (c) => {
   let resultado: { invoiceId: string; hostedInvoiceUrl: string | null; status: string };
   try {
     resultado = await criarCobrancaAvulsa({
-      stripeCustomerId: lead.stripeCustomerId,
+      stripeCustomerId: cliente.id,
       descricao: parsed.data.descricao,
       valor: parsed.data.valor,
       moeda: parsed.data.moeda,
       diasVencimento: parsed.data.diasVencimento,
-      metadata: { negocioId: id, organizacaoId: ctx.organizacaoId, origem: "callface-crm-cobranca-avulsa" },
+      metadata: {
+        ...metadataStripe({ organizacaoId: ctx.organizacaoId, empresaId: empresaIdCobranca, negocioId: id, leadId: negocio.leadId, cnpj: lead?.empresaCnpj }),
+        origem: "callface-crm-cobranca-avulsa",
+      },
     });
   } catch (err) {
     return c.json({ error: `Falha ao gerar cobrança no Stripe: ${String(err)}` }, 502);

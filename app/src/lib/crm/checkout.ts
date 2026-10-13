@@ -112,26 +112,25 @@ export async function criarCheckoutParaGrupo(opts: {
       .from(empresas).where(eq(empresas.id, lead.empresaId)).limit(1)
     : [undefined];
 
-  let modoStripe: ReturnType<typeof getStripeCheckoutMode>;
   try {
-    modoStripe = getStripeCheckoutMode();
+    getStripeCheckoutMode();
   } catch (err) {
     return { ok: false, error: String(err) };
   }
-  const customerIdsBrutos = [empresa?.stripeCustomerId, lead?.stripeCustomerId].filter((id): id is string => !!id);
-  const customerIds = customerIdsBrutos.filter((id) => {
-    if (modoStripe === "mock") return id.startsWith("cus_mock_");
-    if (modoStripe === "test") return id.startsWith("cus_test_");
-    return !id.startsWith("cus_test_") && !id.startsWith("cus_mock_");
-  });
-  if (new Set(customerIds).size > 1) return { ok: false, error: "Empresa e contato possuem Stripe Customers diferentes. Resolva o vínculo manualmente antes de cobrar." };
-
   const metadata = await montarMetadataComercial(opts.grupoId);
   if (!metadata) return { ok: false, error: "Não foi possível montar a metadata comercial do grupo." };
+  /* O Customer vem do resolver canônico (stripe-customer.ts): vínculo da empresa
+     no banco → metadata/CNPJ/e-mail no Stripe (nunca Customer do SaaS) → cria sob
+     trava. Ele também grava de volta em empresas, leads e billing_identities, e
+     é por isso que não há mais "Empresa e contato possuem Customers diferentes"
+     aqui: o da empresa vence e o resto vira aviso no log. */
   let customerId: string;
   try {
     const customer = await createStripeCustomer({
-      customerId: customerIds[0] || null,
+      organizacaoId: proposta.organizacaoId,
+      empresaId: empresa?.id ?? lead?.empresaId ?? null,
+      leadId: lead?.id ?? null,
+      cnpj: empresa?.cnpj ?? lead?.empresaCnpj ?? null,
       name: empresa?.nome || [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.empresa || "Cliente Callface",
       email: lead?.email,
       phone: empresa?.telefone || lead?.telefone,
@@ -145,8 +144,6 @@ export async function criarCheckoutParaGrupo(opts: {
       metadata,
     });
     customerId = customer.id;
-    if (!empresa?.stripeCustomerId && empresa?.id) await db.update(empresas).set({ stripeCustomerId: customerId, updatedAt: new Date() }).where(eq(empresas.id, empresa.id));
-    if (!lead?.stripeCustomerId && lead?.id) await db.update(leads).set({ stripeCustomerId: customerId, updatedAt: new Date() }).where(eq(leads.id, lead.id));
   } catch (err) {
     return { ok: false, error: `Falha ao preparar Stripe Customer: ${String(err)}` };
   }

@@ -25,6 +25,7 @@ import { db } from "../db";
 import { assinaturaItens, assinaturas, clientes, contratos, faturas, leads, mrrMovimentos, organizacoes, notificacoes, servicosCanonicos, usuarios } from "../db/schema";
 import { eq, gt, sql, and, inArray, isNotNull } from "drizzle-orm";
 import { resolveBillingCustomer, type BillingResolution } from "./billing-identity";
+import { negocioDaMetadataStripe } from "../crm/metadata-comercial";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 
@@ -422,9 +423,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
           /* `crm_negocio_id` só existe quando a alteração passou pelo CRM
              (lib/integrations/stripe-assinatura.ts). Alteração feita à mão no
              Dashboard do Stripe chega aqui sem dono. */
-          const donoDaAlteracao = typeof s.metadata?.crm_negocio_id === "string" && s.metadata.crm_negocio_id
-            ? s.metadata.crm_negocio_id
-            : null;
+          const donoDaAlteracao = await negocioDaMetadataStripe(tx, org.id, s.metadata);
           await registrarMovimento(mrr > mrrAntes ? "expansao" : "contracao", mrr - mrrAntes, mrrAntes, mrr, existing.id, existing.contratoId, existing.leadId, new Date(), donoDaAlteracao);
         }
 
