@@ -326,8 +326,10 @@ export async function construirContexto(e: EntradaContexto): Promise<ContextoMon
         JOIN ai_knowledge_versions v ON v.id = c.version_id AND v.status = 'published'
         JOIN ai_knowledge_sources ks ON ks.id = v.source_id AND ks.governanca = 'aprovado' AND ks.status = 'ready'
        WHERE c.organizacao_id = ${org}::uuid AND c.busca @@ onface_query_busca(${consulta})
-         AND (${categorias === null} OR ks.categoria = ANY(${categorias ?? []}::text[]))
-       ORDER BY score DESC LIMIT ${Math.min(8, Math.max(1, conhecimentoCfg.max ?? 4))}`).catch(() => [] as Row[]);
+         AND (${categorias === null} OR ks.categoria = ANY(${`{${(categorias ?? []).join(",")}}`}::text[]))
+       ORDER BY score DESC LIMIT ${Math.min(8, Math.max(1, conhecimentoCfg.max ?? 4))}`)
+      // Engolir a falha deixa o agente responder sem o conhecimento e sem ninguém saber.
+      .catch((err) => { console.error("[contexto] busca de conhecimento falhou:", err); return [] as Row[]; });
     m.add("conhecimento", "Conhecimento aprovado relevante (use só isto como verdade comercial)", trechos.map((t) => `- [${s(t.fonte)}] ${corta(s(t.trecho).replace(/\s+/g, " "), 650)}`), 3200);
     for (const t of trechos) m.fontes.push({ tipo: "conhecimento", ref: s(t.id), rotulo: s(t.fonte) });
   }
