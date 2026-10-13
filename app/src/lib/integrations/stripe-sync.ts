@@ -28,6 +28,7 @@ import { resolveBillingCustomer, type BillingResolution } from "./billing-identi
 import { negocioDaMetadataStripe } from "../crm/metadata-comercial";
 import { resumoDeCancelamento } from "./stripe-portal-retorno";
 import { periodoCorrente } from "./stripe-financeiro";
+import { ehDoSaas, origemDaAssinatura, origemDaFatura } from "./stripe-origem";
 import { MARCA_AUTOMATICA, produtoDaSubscriptionDoSync } from "./stripe-produto-do-servico";
 
 const seg = (n: number | null | undefined) => (n ? new Date(n * 1000) : null);
@@ -136,7 +137,9 @@ function custEmail(c: StripeSubscription["customer"]): string | null {
 
 interface StripeInvoice {
   id: string;
-  customer: string;
+  /** Objeto quando buscado com `expand[]=customer` (para ler a metadata); `fatura()` devolve ao id. */
+  customer: string | { id: string; metadata?: Record<string, string> | null };
+  metadata?: Record<string, string> | null;
   status: string;
   amount_due: number;
   created: number;
@@ -145,7 +148,7 @@ interface StripeInvoice {
   period_start?: number;
   attempt_count?: number;
   status_transitions?: { paid_at?: number | null };
-  parent?: { subscription_details?: { subscription?: string } };
+  parent?: { subscription_details?: { subscription?: string; metadata?: Record<string, string> | null } };
   subscription?: string | { id: string };
 }
 
@@ -186,7 +189,14 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
   // como fallback pra achar o lead quando o customer_id ainda não foi vinculado
   // (achado real 04/08: 47 assinaturas ativas, R$15.9k/mês, ficavam de fora do
   // espelho local pra sempre porque só existia o match por stripeCustomerId).
-  const subs = await paginate<StripeSubscription>("subscriptions", { status: "all", "expand[]": "data.customer" });
+  /* A conta Stripe é COMPARTILHADA com o SaaS Callface: `subscriptions` e `invoices` trazem os objetos dos
+     dois. Só o que não é do SaaS entra no espelho (regra e marcas em stripe-origem.ts). É o único filtro: tudo
+     abaixo (lead, MRR, faturas, heal) trabalha sobre `subs` e `invoiceMap` já filtrados. Sem marca ou com marca
+     dos dois lados FICA (e é contado no log), nunca é descartado em silêncio. */
+  const subsDoStripe = await paginate<StripeSubscription>("subscriptions", { status: "all", "expand[]": "data.customer" });
+  const subs = subsDoStripe.filter((s) => !ehDoSaas(origemDaAssinatura(s)));
+  const subsDoSaas = subsDoStripe.length - subs.length;
+  const subsSemMarca = subs.filter((s) => origemDaAssinatura(s).origem !== "crm").length;
 
   // Catálogo price.product -> nome do plano (1 fetch, habilita LTV por plano)
   const products = await paginate<{ id: string; name?: string }>("products", {});
@@ -195,9 +205,10 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
   // Faturas: janela de 60d (novas + retries) + TODAS open/uncollectible (sem janela)
   const since = Math.floor(Date.now() / 1000) - 60 * 24 * 3600;
   const invoiceMap = new Map<string, StripeInvoice>();
-  for (const inv of await paginate<StripeInvoice>("invoices", { "created[gte]": String(since) })) invoiceMap.set(inv.id, inv);
+  const fatura = (inv: StripeInvoice) => { if (!ehDoSaas(origemDaFatura(inv))) invoiceMap.set(inv.id, { ...inv, customer: typeof inv.customer === "string" ? inv.customer : inv.customer.id }); };
+  for (const inv of await paginate<StripeInvoice>("invoices", { "created[gte]": String(since), "expand[]": "data.customer" })) fatura(inv);
   for (const st of ["open", "uncollectible"]) {
-    for (const inv of await paginate<StripeInvoice>("invoices", { status: st })) invoiceMap.set(inv.id, inv);
+    for (const inv of await paginate<StripeInvoice>("invoices", { status: st, "expand[]": "data.customer" })) fatura(inv);
   }
 
   // Heal: fatura aberta/uncollectible no CRM que não veio em nenhum fetch mudou de
@@ -210,9 +221,9 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
   for (const row of abertasNoCrm) {
     const extId = row.externalId;
     if (!extId || invoiceMap.has(extId)) continue;
-    const inv = await stripeGetOne<StripeInvoice>(`invoices/${extId}`);
+    const inv = await stripeGetOne<StripeInvoice>(`invoices/${extId}?expand[]=customer`);
     if (inv) {
-      invoiceMap.set(inv.id, inv);
+      fatura(inv);
       healed++;
     }
   }
@@ -588,7 +599,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
 
     // Faturas (upsert por origem+external_id)
     for (const inv of invoiceMap.values()) {
-      const lead = leadByCustomer.get(inv.customer);
+      const lead = leadByCustomer.get(inv.customer as string);
       if (!lead) continue;
       const subId =
         inv.parent?.subscription_details?.subscription ||
@@ -665,7 +676,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
   }
 
   console.log(
-    `[StripeSync] ${subs.length} assinaturas, ${nFat} faturas (${healed} healed), ${churns} churns, ${movimentos} movimentos de MRR, ${semLead.length} sem lead`,
+    `[StripeSync] ${subs.length} assinaturas (${subsDoSaas} do SaaS ignoradas, ${subsSemMarca} sem marca do CRM mantidas), ${nFat} faturas (${healed} healed), ${churns} churns, ${movimentos} movimentos de MRR, ${semLead.length} sem lead`,
   );
   return { subs: subs.length, faturas: nFat, churns, movimentos, semLead: semLead.length };
 }
