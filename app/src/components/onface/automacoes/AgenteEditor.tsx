@@ -852,6 +852,9 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
 }) {
   const [nome, setNome] = React.useState("");
   const [conteudo, setConteudo] = React.useState("");
+  const [enderecoFonte, setEnderecoFonte] = React.useState("");
+  const [arquivoFonte, setArquivoFonte] = React.useState<File | null>(null);
+  const [tipoFonte, setTipoFonte] = React.useState<"texto" | "site" | "arquivo">("texto");
   const [memoria, setMemoria] = React.useState<string | null>(null);
   const [enviando, setEnviando] = React.useState(false);
   const [ocupada, setOcupada] = React.useState<string | null>(null);
@@ -872,12 +875,27 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
 
   async function adicionar(e: React.FormEvent) {
     e.preventDefault();
-    if (!nome.trim() || !conteudo.trim()) return;
+    if (tipoFonte === "texto" && (!nome.trim() || !conteudo.trim())) return;
+    if (tipoFonte === "site" && (!nome.trim() || !enderecoFonte.trim())) return;
+    if (tipoFonte === "arquivo" && !arquivoFonte) return;
     setEnviando(true);
     try {
-      await api("/api/automacoes/ai/knowledge", { method: "POST", body: JSON.stringify({ nome: nome.trim(), sourceType: "text", content: conteudo.trim() }) });
-      toast.success("Fonte indexada. Confira a governança: só aprovado vale para o agente.");
-      setNome(""); setConteudo(""); apoio.recarregar(); onMudou();
+      if (tipoFonte === "arquivo") {
+        const dados = new FormData();
+        dados.append("arquivo", arquivoFonte!);
+        if (nome.trim()) dados.append("nome", nome.trim());
+        await api("/api/automacoes/ai/knowledge/upload", { method: "POST", body: dados });
+      } else {
+        await api("/api/automacoes/ai/knowledge", {
+          method: "POST",
+          body: JSON.stringify(tipoFonte === "site"
+            ? { nome: nome.trim(), sourceType: "url", sourceUri: enderecoFonte.trim() }
+            : { nome: nome.trim(), sourceType: "text", content: conteudo.trim() }),
+        });
+      }
+      toast.success("Fonte importada em rascunho. Revise e selecione Aprovado para disponibilizar ao agente.");
+      setNome(""); setConteudo(""); setEnderecoFonte(""); setArquivoFonte(null);
+      apoio.recarregar(); onMudou();
     } catch (err) { toast.error(err instanceof Error ? err.message : "Não foi possível adicionar a fonte."); }
     finally { setEnviando(false); }
   }
@@ -930,9 +948,32 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
         ) : null}
         {!travado ? (
           <form className="age-form age-nova-fonte" onSubmit={adicionar}>
-            <label>Nome da fonte<input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Tabela de planos 2026" maxLength={120} /></label>
-            <label>Conteúdo<textarea value={conteudo} onChange={(e) => setConteudo(e.target.value)} rows={5} placeholder="Cole o texto que o agente pode consultar." /></label>
-            <div><button type="submit" className="agn-secundario" disabled={enviando || !nome.trim() || !conteudo.trim()}>{enviando ? <Loader2 size={13} className="age-gira" /> : <Plus size={13} />} Adicionar fonte</button></div>
+            <strong>Adicionar conhecimento</strong>
+            <span className="age-texto-fraco">A fonte entra em rascunho e só passa a orientar o agente quando você aprová-la.</span>
+            <div className="age-linha-acoes" role="group" aria-label="Tipo de fonte">
+              {(["texto", "site", "arquivo"] as const).map((tipo) => (
+                <button key={tipo} type="button" className={tipoFonte === tipo ? "agn-primario" : "agn-secundario"} aria-pressed={tipoFonte === tipo} onClick={() => setTipoFonte(tipo)} disabled={enviando}>
+                  {tipo === "texto" ? "Colar texto" : tipo === "site" ? "Importar site" : "Enviar arquivo"}
+                </button>
+              ))}
+            </div>
+            <label>Nome da fonte
+              <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder={tipoFonte === "arquivo" ? "Opcional: nome de exibição" : "Ex.: FAQ comercial 2026"} maxLength={150} />
+            </label>
+            {tipoFonte === "texto" ? <label>Conteúdo
+              <textarea value={conteudo} onChange={(e) => setConteudo(e.target.value)} rows={5} placeholder="Cole informações comerciais oficiais, FAQ ou políticas aprovadas." />
+            </label> : null}
+            {tipoFonte === "site" ? <label>Endereço HTTPS público
+              <input type="url" value={enderecoFonte} onChange={(e) => setEnderecoFonte(e.target.value)} placeholder="https://suaempresa.com.br/solucoes" />
+              <span className="age-texto-fraco">Importa o texto de uma página pública. Não acessa áreas logadas nem coleta sites inteiros automaticamente.</span>
+            </label> : null}
+            {tipoFonte === "arquivo" ? <label>Documento para extrair e indexar
+              <input type="file" accept=".pdf,.docx,.txt,.md,.markdown,.csv,.json,.html,.htm" onChange={(e) => setArquivoFonte(e.currentTarget.files?.[0] ?? null)} />
+              <span className="age-texto-fraco">PDF, DOCX, TXT, MD, CSV, JSON e HTML · até 6 MB. PDFs digitalizados sem texto exigem OCR fora desta tela.</span>
+            </label> : null}
+            <div><button type="submit" className="agn-secundario" disabled={enviando || (tipoFonte === "texto" ? !nome.trim() || !conteudo.trim() : tipoFonte === "site" ? !nome.trim() || !enderecoFonte.trim() : !arquivoFonte)}>
+              {enviando ? <Loader2 size={13} className="age-gira" /> : <Plus size={13} />} {enviando ? "Importando…" : "Importar em rascunho"}
+            </button></div>
           </form>
         ) : null}
       </Secao>

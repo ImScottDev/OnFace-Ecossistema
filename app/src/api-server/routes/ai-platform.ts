@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { indexarConhecimento } from "@/lib/ai-platform/conhecimento/indexar";
+import { extrairArquivo, importarSite, textoDoDocumento, FonteRecusada } from "@/lib/ai-platform/conhecimento/importar";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -165,23 +166,78 @@ app.get("/automacoes/ai/knowledge", async (c) => {
   const ctx = await getCtx(c); return c.json({ sources: await db.select().from(aiKnowledgeSources).where(eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiKnowledgeSources.updatedAt)) });
 });
 
+/**
+ * Fontes do Studio são compartilhadas por organização, mas começam em RASCUNHO.
+ * Nenhum texto enviado pelo usuário passa a orientar o SDR sem aprovação humana.
+ */
+const falhaFonte = (e: unknown) => e instanceof FonteRecusada ? e.message : "Não foi possível importar esta fonte.";
 app.post("/automacoes/ai/knowledge", async (c) => {
-  const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ nome: z.string().min(1), sourceType: z.enum(["text", "url", "file", "faq"]), sourceUri: z.string().nullable().optional(), content: z.string().min(1).optional() }).safeParse(await c.req.json());
-  if (!parsed.success) return c.json({ error: "Fonte invalida", details: parsed.error.flatten() }, 400);
-  const [source] = await db.insert(aiKnowledgeSources).values({ organizacaoId: ctx.organizacaoId, nome: parsed.data.nome, sourceType: parsed.data.sourceType, sourceUri: parsed.data.sourceUri ?? null, status: parsed.data.content ? "indexing" : "pending", createdById: ctx.userId }).returning();
-  if (parsed.data.content) await indexKnowledge(ctx.organizacaoId, source.id, parsed.data.content);
-  return c.json({ source }, 201);
+  const ctx = await exigirCtx(c, "ai.configure");
+  const parsed = z.object({
+    nome: z.string().trim().min(1).max(150),
+    sourceType: z.enum(["text", "url", "faq"]),
+    sourceUri: z.string().optional(),
+    content: z.string().optional(),
+  }).safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Dados da fonte inválidos.", details: parsed.error.flatten() }, 400);
+  try {
+    const { nome, sourceType, sourceUri } = parsed.data;
+    const importado = sourceType === "url"
+      ? await importarSite(sourceUri ?? "")
+      : { conteudo: textoDoDocumento(parsed.data.content ?? ""), urlFinal: null };
+    const [source] = await db.insert(aiKnowledgeSources).values({
+      organizacaoId: ctx.organizacaoId, nome, sourceType,
+      sourceUri: importado.urlFinal,
+      governanca: "rascunho", status: "indexing", createdById: ctx.userId,
+    }).returning();
+    await indexarConhecimento(ctx.organizacaoId, source.id, importado.conteudo);
+    return c.json({ source: { ...source, status: "ready" }, mensagem: "Fonte indexada em rascunho. Aprove após conferir." }, 201);
+  } catch (err) { return c.json({ error: falhaFonte(err) }, err instanceof FonteRecusada ? 422 : 500); }
+});
+
+/** Upload com extração real de texto (PDF, DOCX e arquivos textuais). */
+app.post("/automacoes/ai/knowledge/upload", async (c) => {
+  const ctx = await exigirCtx(c, "ai.configure");
+  try {
+    const form = await c.req.raw.formData();
+    const arquivo = form.get("arquivo");
+    const nome = String(form.get("nome") ?? "").trim().slice(0, 150);
+    if (!(arquivo instanceof File)) return c.json({ error: "Selecione um arquivo." }, 400);
+    const extraido = await extrairArquivo(arquivo);
+    const [source] = await db.insert(aiKnowledgeSources).values({
+      organizacaoId: ctx.organizacaoId, nome: nome || extraido.nome,
+      sourceType: "file", sourceUri: null, mimeType: extraido.mimeType,
+      metadata: { nomeArquivo: extraido.nome, tamanhoBytes: arquivo.size },
+      governanca: "rascunho", status: "indexing", createdById: ctx.userId,
+    }).returning();
+    await indexarConhecimento(ctx.organizacaoId, source.id, extraido.conteudo);
+    return c.json({ source: { ...source, status: "ready" }, mensagem: "Arquivo indexado em rascunho. Confira e aprove." }, 201);
+  } catch (err) { return c.json({ error: falhaFonte(err) }, err instanceof FonteRecusada ? 422 : 500); }
 });
 
 const indexKnowledge = indexarConhecimento;
 
 app.post("/automacoes/ai/knowledge/:id/reindex", async (c) => {
-  const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ content: z.string().min(1).optional() }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Conteudo invalido" }, 400);
-  const [source] = await db.select().from(aiKnowledgeSources).where(and(eq(aiKnowledgeSources.id, c.req.param("id")), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId))).limit(1); if (!source) return c.json({ error: "Fonte nao encontrada" }, 404);
-  let content = parsed.data.content;
-  if (!content && source.sourceType === "url" && source.sourceUri) { const response = await fetch(source.sourceUri); if (!response.ok) return c.json({ error: `URL respondeu ${response.status}` }, 422); content = await response.text(); }
-  if (!content) return c.json({ error: "Envie content para reindexar" }, 400);
-  return c.json({ version: await indexKnowledge(ctx.organizacaoId, source.id, content) });
+  const ctx = await exigirCtx(c, "ai.configure");
+  const parsed = z.object({ content: z.string().optional() }).safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Conteúdo inválido" }, 400);
+  const [source] = await db.select().from(aiKnowledgeSources).where(and(
+    eq(aiKnowledgeSources.id, c.req.param("id")), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId)
+  )).limit(1);
+  if (!source) return c.json({ error: "Fonte não encontrada" }, 404);
+  try {
+    const content = parsed.data.content
+      ? textoDoDocumento(parsed.data.content)
+      : source.sourceType === "url" && source.sourceUri
+        ? (await importarSite(source.sourceUri)).conteudo
+        : null;
+    if (!content) return c.json({ error: "Envie conteúdo para reindexar esta fonte." }, 400);
+    // Mudança de conteúdo exige revisão humana mesmo que a versão antiga fosse aprovada.
+    await db.update(aiKnowledgeSources).set({ governanca: "rascunho", status: "indexing", updatedAt: new Date() })
+      .where(and(eq(aiKnowledgeSources.id, source.id), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId)));
+    const version = await indexKnowledge(ctx.organizacaoId, source.id, content);
+    return c.json({ version });
+  } catch (err) { return c.json({ error: falhaFonte(err) }, err instanceof FonteRecusada ? 422 : 500); }
 });
 
 app.get("/automacoes/ai/memory", async (c) => {

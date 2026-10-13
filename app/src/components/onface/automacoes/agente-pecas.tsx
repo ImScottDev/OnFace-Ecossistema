@@ -11,7 +11,7 @@ export const TZ = "America/Sao_Paulo";
 export const num = (n: number) => n.toLocaleString("pt-BR");
 
 export async function api(url: string, init?: RequestInit) {
-  const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
+  const r = await fetch(url, { ...init, headers: init?.body instanceof FormData ? init?.headers : { "Content-Type": "application/json", ...init?.headers } });
   const json = await r.json().catch(() => null);
   if (!r.ok) {
     // Corpo que não é JSON: o servidor caiu ou demorou demais (proxy), não é recusa de regra.
