@@ -302,7 +302,7 @@ class ClienteLigada extends ClienteLiga {
     const abrirAnexo = (a: typeof R.anexos[number] | undefined) => {
       if (!a) return avisa("Este contrato não tem documento anexado.");
       if (!a.disponivel) return avisa("O arquivo de " + a.nome + " não está disponível neste ambiente.");
-      abrirUrl(a.origem === "upload" && a.url ? a.url : "/api/anexos-legado/" + a.id + "/download");
+      abrirUrl(a.origem !== "legado" && a.url ? a.url : "/api/anexos-legado/" + a.id + "/download");
     };
     const ativos = R.contratos.filter((c) => c.status === "ativo");
     /* Próxima renovação = o que vem primeiro entre o vencimento de contrato e a próxima fatura de assinatura
@@ -312,31 +312,32 @@ class ClienteLigada extends ClienteLiga {
     const proxRen = [...ativos.map((c) => ({ c, d: dt(c.vencimento), mensal: false })), ...(proxCob ? [{ c: null, d: proxCob.d, mensal: proxCob.a.periodo === "mensal" }] : [])]
       .filter((x) => x.d && x.d >= h0).sort((a, b) => a.d!.getTime() - b.d!.getTime())[0] ?? null;
     const diasAte = (d: Date) => Math.round((d.getTime() - hoje.getTime()) / 864e5);
-    const ROT_TIPO: Record<string, string> = { assinatura: "Assinatura", servico: "Serviço", legado_zoho: "Contrato legado (Zoho)" };
+    const ROT_TIPO: Record<string, string> = { documenso: "Contrato assinado", legado: "Contrato legado (Zoho)" };
+    /* Contrato = assinado no Documenso ou do legado. Assinatura do Stripe NÃO
+       entra aqui (fica em `R.assinaturas` e no botão "Assinaturas"). */
     const ctr = R.contratos.map((c) => {
       const ini0 = dt(c.inicio), fim = dt(c.vencimento), ativo = c.status === "ativo";
       const pct = ini0 && fim && fim > ini0 ? Math.min(100, Math.max(0, (hoje.getTime() - ini0.getTime()) / (fim.getTime() - ini0.getTime()) * 100)) : 0;
       const dias = fim ? diasAte(fim) : null;
       const urg = ativo && dias != null && dias <= 45;
-      const an = R.anexos.find((a) => a.origem === "legado" && a.entidadeTipo === "contrato" && a.entidadeId === c.id);
+      const an = R.anexos.find((a) => a.origem === "documenso" && a.entidadeId === c.id)
+        ?? R.anexos.find((a) => a.origem === "legado" && a.entidadeTipo === "contrato" && a.entidadeId === c.id && a.categoria === "documento_assinado")
+        ?? R.anexos.find((a) => a.origem === "legado" && a.entidadeTipo === "contrato" && a.entidadeId === c.id);
       const rotulo = c.familia ? fam(c.familia).l : c.produto === "ai" ? "Callface AI" : c.produto ?? (c.itens[0]?.nome ?? "Contrato");
-      const sv = R.servicos.find((x) => x.contratoId === c.id && x.assinaturaStatus);
-      const assC = R.assinaturas.find((a) => a.stripeSubscriptionId === c.stripeSubscriptionId);
-      const stAss = assC?.statusFin ?? sv?.assinaturaStatus ?? null;
-      const st = !ativo ? "Encerrado" : stAss === "vencida" || stAss === "inadimplente" ? ROTULO_STATUS_ASSINATURA[stAss] : "Ativo";
-      const prodStripe = assC?.produtoReal ?? sv?.produtoReal ?? null;
+      const st = ativo ? "Ativo" : "Encerrado";
       return {
-        nome: (prodStripe ?? rotulo) + " · " + (ROT_TIPO[c.tipo] ?? c.tipo),
-        cod: (c.codigo ?? c.stripeSubscriptionId ?? "sem código") + (c.mrr != null ? " · " + brl(c.mrr) + "/mês" : ""),
+        nome: rotulo + " · " + ROT_TIPO[c.origem],
+        cod: (c.codigo ?? "sem código") + (c.mrr != null ? " · " + brl(c.mrr) + "/mês" : ""),
         st, stStyle: pill(tomDoStatus(st)),
         barra: "display:block;height:100%;border-radius:9999px;background:" + (urg ? "var(--of-coral-marca)" : "var(--of-tinta-forte)") + ";transform-origin:left;transition:transform 1s cubic-bezier(.16,1,.3,1);transform:scaleX(" + (S.pronto ? pct : 0) / 100 + ")",
         iniTxt: "Início " + dmy(ini0),
         renTxt: !ativo ? "Encerrado" : fim ? "Vence " + dmy(fim) + " · " + dias + "d" : "Sem data de vencimento",
         renStyle: urg ? "color:var(--of-coral-acao-hover);font-weight:600" : "",
         // Sem arquivo disponível o botão PDF não existe (ClienteDesenho esconde
-        // quando `arq` é vazio): botão que só avisa "indisponível" é botão que
-        // falha. A assinatura mora em Documentos/Cobrança, não no contrato.
-        arq: an?.disponivel ? an.nome : "", assin: an?.disponivel ? "Anexo" : "", abrirDoc: () => abrirAnexo(an),
+        // quando `arq` é vazio): botão que só avisa "indisponível" é botão que falha.
+        arq: an?.disponivel ? an.nome : "",
+        assin: an?.disponivel ? (c.origem === "documenso" ? "Assinado" + (c.assinadoEm ? " em " + dmy(dt(c.assinadoEm)) : "") : "Anexo") : "",
+        abrirDoc: () => abrirAnexo(an),
       };
     });
 
@@ -401,7 +402,7 @@ class ClienteLigada extends ClienteLiga {
      * protótipo GERAVA — contrato com cláusula e assinatura, proposta,
      * kickoff, "Notas fiscais (N)" — saem: eram texto fabricado com CNPJ e
      * signatário inventados. */
-    const catDoc = (a: typeof R.anexos[number]) => a.origem === "upload" ? "Outros" : a.entidadeTipo === "contrato" ? "Contratos" : a.entidadeTipo === "negocio" ? "Propostas" : "Outros";
+    const catDoc = (a: typeof R.anexos[number]) => a.origem === "upload" ? "Outros" : a.origem === "documenso" ? "Contratos" : a.entidadeTipo === "contrato" ? "Contratos" : a.entidadeTipo === "negocio" ? "Propostas" : "Outros";
     const docsTodos = R.anexos.map((a) => {
       const ext = (a.nome.split(".").pop() || "ARQ").slice(0, 4).toUpperCase();
       return { a, cat: catDoc(a), ext };
@@ -416,7 +417,8 @@ class ClienteLigada extends ClienteLiga {
     const push = (d: Date | null, t: string, meta: string, cat: string, dPath: string, tom = "neutro") => { if (d) ev.push({ d, t, meta, cat, dPath, tom }); };
     const desde = dt(R.clienteDesde);
     push(desde, "Virou cliente", R.closer ? "Fechado por " + R.closer : "", "comercial", I.check, "coral");
-    R.contratos.forEach((c) => push(dt(c.inicio), "Contrato iniciado · " + (ROT_TIPO[c.tipo] ?? c.tipo), [c.codigo ?? c.stripeSubscriptionId, c.mrr != null ? brl2(c.mrr) + "/mês" : null].filter(Boolean).join(" · "), "comercial", I.doc, "coral"));
+    R.contratos.forEach((c) => push(dt(c.inicio), "Contrato iniciado · " + ROT_TIPO[c.origem], [c.codigo, c.mrr != null ? brl2(c.mrr) + "/mês" : null].filter(Boolean).join(" · "), "comercial", I.doc, "coral"));
+    R.iniciosDeAssinatura.forEach((a) => push(dt(a.inicio), "Assinatura iniciada no Stripe", [a.codigo, a.mrr != null ? brl2(a.mrr) + "/mês" : null].filter(Boolean).join(" · "), "comercial", I.doc, "coral"));
     fats.forEach((f) => {
       if (f.st === "Pago") push(f.pagoEm, "Fatura " + f.rot + " paga", brl2(f.v) + (f.ext ? " · " + f.ext : ""), "financeiro", I.check, "ok");
       if (f.st === "Vencida" && f.venc) push(f.venc, "Fatura " + f.rot + " venceu sem pagamento", brl2(f.v) + (f.ext ? " · " + f.ext : ""), "financeiro", I.alert, "erro");
@@ -705,7 +707,7 @@ class ClienteLigada extends ClienteLiga {
         // Desconto não é registrado: diferença entre itens e serviço não é
         // "desconto negociado", é só dado de origens diferentes.
         temDesc: false, desc: "",
-        contratoTxt: f.contratos.map((id) => { const c = contratoPorId.get(id); return c ? (c.codigo ?? c.stripeSubscriptionId ?? "contrato") + (c.vencimento ? " · vence " + dmy(dt(c.vencimento)) : "") : null; }).filter(Boolean).join(" · ") || "Sem contrato vinculado",
+        contratoTxt: f.contratos.map((id) => { const c = contratoPorId.get(id); return c ? (c.codigo ?? "contrato") + (c.vencimento ? " · vence " + dmy(dt(c.vencimento)) : "") : null; }).filter(Boolean).join(" · ") || "Sem contrato vinculado",
         upsell: () => abrirOpp("expansao", f.k), upgrade: () => abrirOpp("upgrade", f.k),
         itens: f.itens.map((x) => ({
           qn: x.qtd + " × " + x.nome, nome: x.nome, sku: "", tipo: x.tipo, qtd: String(x.qtd),
@@ -789,7 +791,7 @@ class ClienteLigada extends ClienteLiga {
 /* ── O seed no formato do protótipo ─────────────────────────────────────── */
 
 function clienteDoSeed(R: ClienteDoDesenho) {
-  const desde = dt(R.clienteDesde) ?? dt(R.contratos.map((c) => c.inicio).filter(Boolean).sort()[0]) ?? new Date();
+  const desde = dt(R.clienteDesde) ?? dt([...R.contratos.map((c) => c.inicio), ...R.iniciosDeAssinatura.map((a) => a.inicio)].filter(Boolean).sort()[0]) ?? new Date();
   const porFam = new Map<string, number>();
   for (const s of R.servicos) porFam.set(s.familia, (porFam.get(s.familia) ?? 0) + s.valor);
   // O Liga exige `produto` numa das três famílias (lê FAM[produto].l). A

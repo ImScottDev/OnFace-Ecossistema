@@ -13,7 +13,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assinaturaItens, assinaturas, auditLog, catalogoPrecos, empresas, negocios, propostas, servicosCatalogo } from "@/lib/db/schema";
+import { assinaturaItens, assinaturas, auditLog, catalogoPrecos, empresas, faturas, negocios, propostas, servicosCatalogo } from "@/lib/db/schema";
 import { variacaoAmigavel } from "@/lib/catalogo/rotulos";
 import { exigirCtx } from "../compat.js";
 import {
@@ -89,6 +89,14 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
   const itens = subs.length
     ? await db.select().from(assinaturaItens).where(inArray(assinaturaItens.assinaturaId, subs.map((s) => s.id)))
     : [];
+  /* Pagamentos de cada assinatura: o caminho da assinatura até a fatura/pagamento no Stripe. */
+  const faturasDasAssinaturas = subs.length
+    ? await db.select({
+        id: faturas.id, assinaturaId: faturas.assinaturaId, valor: faturas.valor, status: faturas.status,
+        emitidaEm: faturas.emitidaEm, vencimento: faturas.vencimento, pagaEm: faturas.pagaEm, hostedInvoiceUrl: faturas.hostedInvoiceUrl,
+      }).from(faturas).where(and(eq(faturas.organizacaoId, ctx.organizacaoId), inArray(faturas.assinaturaId, subs.map((s) => s.id))))
+      .orderBy(desc(faturas.emitidaEm))
+    : [];
   /* Nome e variação do item pelo espelho do catálogo (o mesmo da proposta), nunca o id do Price. */
   const priceIds = [...new Set(itens.map((i) => i.stripePriceId).filter((x): x is string => !!x))];
   const doCatalogo = new Map((priceIds.length ? await db
@@ -106,6 +114,9 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
       mrr: s.mrr ? Number(s.mrr) : null,
       renovaEm: s.currentPeriodEnd,
       cancelaNoFimDoPeriodo: (() => { const r = s.raw as { cancel_at_period_end?: boolean; cancela_no_fim?: boolean } | null; return r?.cancela_no_fim === true || r?.cancel_at_period_end === true; })(),
+      faturas: faturasDasAssinaturas.filter((f) => f.assinaturaId === s.id).slice(0, 6).map((f) => ({
+        id: f.id, valor: Number(f.valor), status: f.status, emitidaEm: f.emitidaEm, vencimento: f.vencimento, pagaEm: f.pagaEm, url: f.hostedInvoiceUrl,
+      })),
       itens: itens.filter((i) => i.assinaturaId === s.id && i.status !== "inactive" && i.stripeSubscriptionItemId).map((i) => ({
         itemId: i.stripeSubscriptionItemId, priceId: i.stripePriceId,
         produto: (i.stripePriceId && doCatalogo.get(i.stripePriceId)?.produto) || i.produto,

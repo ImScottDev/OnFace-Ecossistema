@@ -39,8 +39,29 @@ export interface ServicoDoCliente {
 /** A assinatura como o Cliente 360 a mostra: o mesmo objeto que `billingDaConta` monta. */
 export type AssinaturaDoCliente = Omit<NonNullable<BillingDoServico["assinatura"]>, "mrr"> & { mrr: number | null };
 
+/**
+ * Contrato de verdade = o que foi ASSINADO pelo Documenso ou o contrato do
+ * legado (Zoho). Assinatura do Stripe (`sub_...`, valor por mês) é cobrança,
+ * mora em `assinaturas`, e NUNCA entra em `contratos`. Regra única: toda tela
+ * que lista contrato de uma conta passa por `origemDoContrato`.
+ */
+export type OrigemDoContrato = "documenso" | "legado" | "assinatura_stripe" | "proposta";
+
+export function origemDoContrato(c: {
+  signature_provider: string | null; codigo: string | null; tipo: string; stripe_subscription_id: string | null;
+}): OrigemDoContrato {
+  if (c.signature_provider === "documenso") return "documenso";
+  if (c.codigo || c.tipo === "legado_zoho") return "legado";
+  if (c.stripe_subscription_id) return "assinatura_stripe";
+  return "proposta"; // gerado da proposta, sem assinatura nem legado: ainda não é contrato
+}
+
 export interface ContratoDoCliente {
   id: string;
+  origem: "documenso" | "legado";
+  /** Documenso: assinado e com o PDF final baixável em /api/contratos/:id/pdf-final. */
+  pdfFinal: boolean;
+  assinadoEm: string | null;
   tipo: string;
   status: string;
   mrr: number | null;
@@ -55,9 +76,9 @@ export interface ContratoDoCliente {
 
 export interface AnexoDoCliente {
   id: string;
-  /** `upload` = enviado pelo 360 (acervo canônico, removível); `legado` = anexo do Zoho. */
-  origem: "legado" | "upload";
-  /** Endereço de entrega do arquivo; só o upload tem. */
+  /** `upload` = enviado pelo 360 (acervo canônico, removível); `legado` = anexo do Zoho; `documenso` = PDF do contrato assinado. */
+  origem: "legado" | "upload" | "documenso";
+  /** Endereço de entrega do arquivo; só o upload e o Documenso têm. */
   url: string | null;
   entidadeTipo: string;
   entidadeId: string;
@@ -98,7 +119,10 @@ export interface ClienteDoDesenho {
   equipeIds: Array<{ id: string; nome: string }>;
   clienteDesde: string | null;
   servicos: ServicoDoCliente[];
+  /** Só contrato de verdade (Documenso assinado + legado). Ver `origemDoContrato`. */
   contratos: ContratoDoCliente[];
+  /** Início das assinaturas do Stripe (histórico); não são contratos. */
+  iniciosDeAssinatura: Array<{ inicio: string; codigo: string; mrr: number | null }>;
   faturas: FaturaResumo[];
   stripeCustomerId: string | null;
   assinaturas: AssinaturaDoCliente[];
@@ -196,10 +220,11 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
      negócio/lead por COALESCE — a regra da rota Hono, que respeita o cliente
      final numa revenda — e o contrato do serviço canônico) viram UNIÃO de ids
      numa CTE. Nunca OR na condição de JOIN: isso já travou este Postgres. */
-  const contratos = await db.execute<{
+  const contratosTodos = await db.execute<{
     id: string; tipo: string; status: string; mrr: string | null; inicio: string | null;
     vencimento: string | null; codigo: string | null; stripe_subscription_id: string | null;
-    familia: string | null; produto: string | null;
+    familia: string | null; produto: string | null; signature_provider: string | null;
+    assinatura_status: string; assinado_em: string | null; tem_pdf: boolean;
   }>(sql`
     WITH ids AS (
       SELECT id FROM contratos WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
@@ -214,10 +239,13 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     )
     SELECT c.id::text, c.tipo, c.status, c.mrr::text, c.inicio::text, c.vencimento::text,
            COALESCE(c.codigo_legado, c.zoho_id) AS codigo, c.stripe_subscription_id,
-           c.service_family AS familia, c.produto
+           c.service_family AS familia, c.produto, c.signature_provider, c.assinatura_status,
+           c.assinado_em::text, (c.assinatura_status = 'assinado' AND c.signature_provider_ref IS NOT NULL) AS tem_pdf
       FROM contratos c JOIN ids ON ids.id = c.id
      ORDER BY c.inicio DESC NULLS LAST, c.created_at DESC`);
 
+  const origemDe = (c: typeof contratosTodos[number]) => origemDoContrato(c);
+  const contratos = contratosTodos.filter((c) => { const o = origemDe(c); return o === "documenso" || o === "legado"; });
   const idsContrato = contratos.map((c) => c.id);
   const itens = idsContrato.length ? await db.execute<{
     contrato_id: string; nome: string; quantidade: string; valor_unitario: string; subtotal: string;
@@ -251,7 +279,9 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
   /* Anexos do Zoho ligados à empresa, aos contratos e aos negócios dela. O
      binário só existe onde `resolveLocalPath` acha — `disponivel` é a mesma
      regra da rota de download, então o botão não promete o que a rota recusa. */
-  const alvosAnexo = [empresaId, ...idsContrato, ...negocioIds];
+  const leadIdsDaEmpresa = (await db.execute<{ id: string }>(sql`
+    SELECT id::text FROM leads WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid`)).map((r) => r.id);
+  const alvosAnexo = [empresaId, ...idsContrato, ...negocioIds, ...leadIdsDaEmpresa];
   const anexosLegado = await db.execute<{
     id: string; entidade_tipo: string; entidade_id: string; categoria: string | null; nome_arquivo: string;
     tamanho_bytes: number | null; criado_em: string | null; storage_path: string | null;
@@ -368,7 +398,10 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
       assinaturaStatus: assinaturaDoServico.get(s.id)?.statusFin ?? null,
       produtoReal: assinaturaDoServico.get(s.id)?.produtoReal ?? null,
     })),
+    iniciosDeAssinatura: contratosTodos.filter((c) => origemDe(c) === "assinatura_stripe" && c.inicio)
+      .map((c) => ({ inicio: c.inicio!, codigo: c.stripe_subscription_id!, mrr: c.mrr === null ? null : Number(c.mrr) })),
     contratos: contratos.map((c) => ({
+      origem: origemDe(c) as "documenso" | "legado", pdfFinal: c.tem_pdf, assinadoEm: c.assinado_em,
       id: c.id, tipo: c.tipo, status: c.status, mrr: c.mrr === null ? null : Number(c.mrr),
       inicio: c.inicio, vencimento: c.vencimento, codigo: c.codigo,
       stripeSubscriptionId: c.stripe_subscription_id, familia: c.familia, produto: c.produto,
@@ -386,6 +419,11 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     faturamento,
     fulfillmentAberto: (fulfill?.n ?? 0) > 0,
     anexos: [
+      ...contratos.filter((c) => c.tem_pdf).map((c): AnexoDoCliente => ({
+        id: c.id, origem: "documenso", url: "/api/contratos/" + c.id + "/pdf-final", entidadeTipo: "contrato", entidadeId: c.id,
+        categoria: "documento_assinado", nome: "Contrato assinado · " + (c.produto ?? c.familia ?? c.tipo) + ".pdf",
+        tamanhoBytes: null, criadoEm: c.assinado_em, disponivel: true,
+      })),
       ...uploads.map((u): AnexoDoCliente => ({
         id: u.id, origem: "upload", url: "/api/arquivos/" + u.file_id, entidadeTipo: "empresa", entidadeId: empresaId,
         categoria: null, nome: u.nome, tamanhoBytes: u.tamanho === null ? null : Number(u.tamanho), criadoEm: u.criado_em, disponivel: true,

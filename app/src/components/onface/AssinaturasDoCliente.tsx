@@ -26,7 +26,8 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { variacaoAmigavel } from "@/lib/catalogo/rotulos";
 
 interface ItemAss { itemId: string; priceId: string | null; produto: string | null; variacao?: string | null; quantidade: number; precoUnitario: number | null; intervalo: string | null }
-interface Ass { id: string; stripeSubscriptionId: string; status: string; mrr: number | null; renovaEm: string | null; cancelaNoFimDoPeriodo: boolean; itens: ItemAss[] }
+interface FaturaAss { id: string; valor: number; status: string; emitidaEm: string | null; vencimento: string | null; pagaEm: string | null; url: string | null }
+interface Ass { faturas: FaturaAss[]; id: string; stripeSubscriptionId: string; status: string; mrr: number | null; renovaEm: string | null; cancelaNoFimDoPeriodo: boolean; itens: ItemAss[] }
 interface Preco { stripePriceId: string; variacao: string; valor: string; recorrente: boolean; periodo: string | null }
 interface Produto { id: string; nome: string; precos: Preco[] }
 interface Previa { direcao: "upgrade" | "downgrade" | "neutra"; efeito: Efeito; efeitoPadrao: Efeito; mrrAntes: number; mrrDepois: number; previa: { totalAgora: number; linhas: { descricao: string; valor: number }[] } | null }
@@ -42,6 +43,7 @@ const TITULO: Record<Modo, string> = {
   adicionar_item: "Adicionar produto", alterar_quantidade: "Alterar quantidade", remover_item: "Remover produto",
   trocar_price: "Trocar plano", cancelar: "Cancelar assinatura", reativar: "Reativar assinatura",
 };
+const ROTULO_FATURA: Record<string, string> = { paga: "Paga", aberta: "Em aberto", falhou: "Falhou", void: "Anulada", uncollectible: "Incobrável" };
 const ROTULO_STATUS: Record<string, string> = { active: "Ativa", trialing: "Em teste", past_due: "Em atraso" };
 
 export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
@@ -127,6 +129,22 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
                 </li>
               ))}
             </ul>
+            {a.faturas.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-muted-foreground">Pagamentos</span>
+                <ul className="flex flex-col divide-y">
+                  {a.faturas.map((f) => (
+                    <li key={f.id} className="flex flex-wrap items-center gap-2 py-1.5 text-sm">
+                      <span className="flex-1">{dia(f.pagaEm ?? f.vencimento ?? f.emitidaEm)} · {brl(f.valor)}</span>
+                      <Badge variant={f.status === "paga" ? "success" : f.status === "falhou" ? "danger" : "warning"}>{ROTULO_FATURA[f.status] ?? f.status}</Badge>
+                      {f.url
+                        ? <Button size="xs" variant="outline" asChild><a href={f.url} target="_blank" rel="noreferrer">Ver fatura</a></Button>
+                        : <span className="text-xs text-muted-foreground">sem link</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => setAlvo({ ass: a, modo: "adicionar_item" })}>Adicionar produto</Button>
               {a.cancelaNoFimDoPeriodo
