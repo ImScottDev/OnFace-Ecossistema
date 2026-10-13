@@ -852,6 +852,9 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
 }) {
   const [nome, setNome] = React.useState("");
   const [conteudo, setConteudo] = React.useState("");
+  const [tipoFonte, setTipoFonte] = React.useState<"text" | "url" | "file">("text");
+  const [urlFonte, setUrlFonte] = React.useState("");
+  const [arquivoFonte, setArquivoFonte] = React.useState<File | null>(null);
   const [memoria, setMemoria] = React.useState<string | null>(null);
   const [enviando, setEnviando] = React.useState(false);
   const [ocupada, setOcupada] = React.useState<string | null>(null);
@@ -872,12 +875,34 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
 
   async function adicionar(e: React.FormEvent) {
     e.preventDefault();
-    if (!nome.trim() || !conteudo.trim()) return;
+    if (!nome.trim()) return;
+    if (tipoFonte === "url" && !urlFonte.trim()) return;
+    if (tipoFonte === "file" && !arquivoFonte) return;
+    if (tipoFonte === "text" && !conteudo.trim()) return;
     setEnviando(true);
     try {
-      await api("/api/automacoes/ai/knowledge", { method: "POST", body: JSON.stringify({ nome: nome.trim(), sourceType: "text", content: conteudo.trim() }) });
-      toast.success("Fonte indexada. Confira a governança: só aprovado vale para o agente.");
-      setNome(""); setConteudo(""); apoio.recarregar(); onMudou();
+      let texto = conteudo.trim();
+      if (tipoFonte === "file") {
+        if (!arquivoFonte || arquivoFonte.size > 500_000) throw new Error("Arquivo muito grande. O limite é 500 KB para documentos textuais.");
+        if (!/\.(txt|md|csv|json|html|htm|xml|yaml|yml)$/i.test(arquivoFonte.name)) {
+          throw new Error("Formato ainda não suportado. Use TXT, Markdown, CSV, JSON ou HTML. PDFs e DOCX exigem extração específica.");
+        }
+        texto = await arquivoFonte.text();
+        if (/<(script|iframe|object)\b/i.test(texto) && /\.(html|htm)$/i.test(arquivoFonte.name)) {
+          texto = texto.replace(/<(script|iframe|object)\b[^>]*>[\s\S]*?<\/\1>/gi, "");
+        }
+      }
+      if (tipoFonte !== "url" && (!texto.trim() || texto.length > 200_000)) throw new Error("A fonte deve conter texto com até 200 mil caracteres.");
+      await api("/api/automacoes/ai/knowledge", {
+        method: "POST",
+        body: JSON.stringify({
+          nome: nome.trim(), sourceType: tipoFonte,
+          sourceUri: tipoFonte === "url" ? urlFonte.trim() : tipoFonte === "file" ? arquivoFonte?.name ?? null : null,
+          ...(tipoFonte !== "url" ? { content: texto } : {}),
+        }),
+      });
+      toast.success("Fonte indexada. Revise e marque como Aprovado para disponibilizar aos agentes.");
+      setNome(""); setConteudo(""); setUrlFonte(""); setArquivoFonte(null); apoio.recarregar(); onMudou();
     } catch (err) { toast.error(err instanceof Error ? err.message : "Não foi possível adicionar a fonte."); }
     finally { setEnviando(false); }
   }
@@ -893,8 +918,18 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
     finally { setEnviando(false); }
   }
 
+  const capacidadesDeMemoria = ["memory.remember", "followup.schedule", "memory.read", "knowledge.search"];
+  const faltaMemoriaSdr = form.finalidade === "pre_vendas" && capacidadesDeMemoria.some((id) => !form.tools.includes(id));
+
   return (
     <>
+      {faltaMemoriaSdr ? (
+        <div className="age-form" role="note">
+          <strong>SDR · Memória e retomadas</strong>
+          <p className="age-texto-fraco">Este agente ainda não tem todas as capacidades de memória e continuidade da conversa. A atualização cria ou altera um rascunho; a versão publicada não muda até você revisar e publicar.</p>
+          {!travado ? <div><button type="button" className="agn-secundario" onClick={() => set({ tools: [...new Set([...form.tools, ...capacidadesDeMemoria])] })}><Plus size={13} /> Habilitar memória e retomadas</button></div> : null}
+        </div>
+      ) : null}
       <Secao titulo="Fontes e governança" ajuda="Fontes da organização, compartilhadas por todos os agentes que têm Buscar conhecimento ligado. Só conhecimento aprovado vale: rascunho e histórico ficam guardados, mas nunca entram na resposta."
         direita={<label className="age-liga">Este agente consulta<Interruptor ligado={busca} rotulo="Buscar conhecimento" desligado={travado} onChange={(v) => alternar("knowledge.search", v)} /></label>}>
         {apoio.carregando ? <Aviso><Loader2 size={13} className="age-gira" /> Carregando fontes…</Aviso> : null}
@@ -930,9 +965,22 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
         ) : null}
         {!travado ? (
           <form className="age-form age-nova-fonte" onSubmit={adicionar}>
-            <label>Nome da fonte<input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Tabela de planos 2026" maxLength={120} /></label>
-            <label>Conteúdo<textarea value={conteudo} onChange={(e) => setConteudo(e.target.value)} rows={5} placeholder="Cole o texto que o agente pode consultar." /></label>
-            <div><button type="submit" className="agn-secundario" disabled={enviando || !nome.trim() || !conteudo.trim()}>{enviando ? <Loader2 size={13} className="age-gira" /> : <Plus size={13} />} Adicionar fonte</button></div>
+            <label>Como quer enriquecer o conhecimento?
+              <select value={tipoFonte} onChange={(e) => setTipoFonte(e.target.value as "text" | "url" | "file")} aria-label="Tipo da fonte">
+                <option value="text">Texto ou playbook</option>
+                <option value="url">Página de um site público</option>
+                <option value="file">Arquivo textual</option>
+              </select>
+            </label>
+            <label>Nome da fonte<input value={nome} onChange={(e) => setNome(e.target.value)} placeholder={tipoFonte === "url" ? "Ex.: Site institucional Callface" : "Ex.: Playbook comercial 2026"} maxLength={140} /></label>
+            {tipoFonte === "text" ? <label>Conteúdo<textarea value={conteudo} onChange={(e) => setConteudo(e.target.value)} rows={5} placeholder="Cole o conhecimento que o agente pode consultar." /></label> : null}
+            {tipoFonte === "url" ? <label>Endereço do site (página pública)<input type="url" value={urlFonte} onChange={(e) => setUrlFonte(e.target.value)} placeholder="https://callface.io/solucoes" maxLength={2048} /><small>Somente páginas HTML/TXT públicas. O sistema lê o texto e indexa uma versão, sem rastrear todo o site automaticamente.</small></label> : null}
+            {tipoFonte === "file" ? <label>Arquivo para consulta
+              <input type="file" accept=".txt,.md,.csv,.json,.html,.htm,.xml,.yaml,.yml,text/plain,text/markdown,text/csv,application/json,text/html" onChange={(e) => setArquivoFonte(e.target.files?.[0] ?? null)} />
+              <small>TXT, MD, CSV, JSON, HTML e XML/YAML, até 500 KB. PDFs e DOCX ainda não são importados neste fluxo; não envie conteúdo confidencial sem aprovação.</small>
+            </label> : null}
+            <div><button type="submit" className="agn-secundario" disabled={enviando || !nome.trim() || (tipoFonte === "text" && !conteudo.trim()) || (tipoFonte === "url" && !urlFonte.trim()) || (tipoFonte === "file" && !arquivoFonte)}>{enviando ? <Loader2 size={13} className="age-gira" /> : <Plus size={13} />} {tipoFonte === "url" ? "Ler e indexar site" : tipoFonte === "file" ? "Importar arquivo" : "Adicionar fonte"}</button></div>
+            <p className="age-texto-fraco">Uma fonte nova só passa a orientar respostas depois de aprovada. Rascunhos e histórico não são verdade comercial.</p>
           </form>
         ) : null}
       </Secao>

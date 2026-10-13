@@ -126,10 +126,13 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     id: "context.read_conversation", name: "context_read_conversation", description: "Consulta as mensagens recentes da conversa atual.", category: "context", mutates: false,
     parameters: objectSchema({ limit: { type: "integer", minimum: 1, maximum: 50 } }),
     execute: async (ctx, input) => {
-      if (!ctx.contatoId) return { ok: false, error: "contato ausente" };
+      // Uma referência de contato no input nunca autoriza atravessar tenant:
+      // valida vínculo da organização ANTES de consultar o histórico.
+      const contact = await contactContext(ctx);
+      if (!contact) return { ok: false, error: "contato ausente nesta organização" };
       const limit = Math.min(50, Math.max(1, Number(input.limit ?? 20)));
       const rows = await db.select({ direcao: whatsappMensagens.direcao, tipo: whatsappMensagens.tipo, conteudo: whatsappMensagens.conteudo, createdAt: whatsappMensagens.createdAt })
-        .from(whatsappMensagens).where(eq(whatsappMensagens.contatoId, ctx.contatoId)).orderBy(desc(whatsappMensagens.createdAt)).limit(limit);
+        .from(whatsappMensagens).where(eq(whatsappMensagens.contatoId, contact.id)).orderBy(desc(whatsappMensagens.createdAt)).limit(limit);
       return { ok: true, data: rows.reverse() };
     },
   },

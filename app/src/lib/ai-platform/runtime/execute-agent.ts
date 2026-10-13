@@ -3,7 +3,7 @@ import { compilarPrompt } from "@/lib/ai/agente-escopo";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
-  aiAgentRuns, aiAgentRunSteps, aiAgentVersions, aiAgents, aiAlerts, aiCases, aiModels, aiProviderCredentials, aiSendLedger, aiUsageBudgets,
+  aiAgentRuns, aiAgentRunSteps, aiAgentVersions, aiAgents, aiAgentAtribuicoes, aiAlerts, aiCases, aiModels, aiProviderCredentials, aiSendLedger, aiUsageBudgets,
   contatos, whatsappMensagens,
 } from "@/lib/db/schema";
 import { whatsappOutgoingQueue } from "@/lib/queue";
@@ -16,6 +16,7 @@ import { versaoAtendeSessao } from "@/lib/atendimento/ia-conversa";
 import { construirContexto, type ContextoMontado } from "../contexto/builder";
 import { autonomiaDaFerramenta, lerAutonomiaPorAcao, type ModoAutonomia } from "../tools/politica";
 import { avaliarEnvio } from "../operacao/politica-canal";
+import { humanoRespondeuDesde } from "../operacao/atribuicoes";
 
 export type ExecuteAgentInput = {
   organizacaoId: string;
@@ -402,8 +403,39 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     }
 
     let outgoing = responseMessages(finalText, prepared);
+    let bloqueadoPorIntervencaoHumana = false;
+    // O modelo pode demorar. Se uma pessoa assumiu DURANTE a execução, a IA
+    // perde o direito de responder: não basta a checagem feita antes da chamada.
+    if (input.mode === "live" && input.atribuicaoId && input.contatoId) {
+      const [atual] = await db.select({
+        status: aiAgentAtribuicoes.status, agentId: aiAgentAtribuicoes.agentId,
+      }).from(aiAgentAtribuicoes).where(and(
+        eq(aiAgentAtribuicoes.id, input.atribuicaoId),
+        eq(aiAgentAtribuicoes.organizacaoId, input.organizacaoId),
+      )).limit(1);
+      const humanoNoIntervalo = atual?.status === "ativa" && await humanoRespondeuDesde(input.contatoId, run.startedAt);
+      if (!atual || atual.status !== "ativa" || atual.agentId !== selected.agent.id || humanoNoIntervalo) {
+        outgoing = []; handoff = true; bloqueadoPorIntervencaoHumana = true;
+        trace.push({ type: "egress_blocked", motivo: humanoNoIntervalo ? "humano_respondeu_durante_run" : "atribuicao_nao_ativa" });
+      }
+    }
+    // Não deixar um lead que falou com a empresa ficar no vácuo caso o modelo
+    // conclua sem resposta, handoff ou mensagem preparada. Vai para revisão
+    // humana, sem inventar comunicação nem mandar uma mensagem não aprovada.
+    if (input.mode === "live" && input.contatoId && input.eventType === "conversation.message_received" &&
+        !input.somenteAnalise && !input.suppressEgress && !handoff && !outgoing.length) {
+      await db.insert(aiCases).values({
+        organizacaoId: input.organizacaoId, contatoId: input.contatoId,
+        leadId: input.leadId ?? null, agentId: selected.agent.id, runId: run.id,
+        title: "Agente não produziu resposta", summary: "Mensagem recebida sem resposta segura. Revisar conversa e decidir próximo passo.",
+        blocker: "sem_resposta", source: "runtime_empty_response",
+        contextSnapshot: { kind: "sem_resposta", sourceMessageId: input.sourceMessageId ?? null },
+      });
+      handoff = true;
+      trace.push({ type: "human_review", motivo: "resposta_vazia" });
+    }
     // Handoff: se o agente não escreveu nada, o contato recebe a mensagem de transição configurada (não fica no vácuo).
-    if (handoff && !outgoing.length && transicao) outgoing = [sanitizeResponse(transicao)];
+    if (handoff && !bloqueadoPorIntervencaoHumana && !outgoing.length && transicao) outgoing = [sanitizeResponse(transicao)];
     await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "guardrail", name: "before_send", status: "completed", input: { count: outgoing.length }, output: { sanitized: true } });
     // Mensagem ao contato segue a autonomia da classe "mensagens": copiloto só sugere, "sob aprovação" abre caso para uma pessoa aprovar.
     if (input.mode === "live" && !input.suppressEgress && autonomiaMensagens === "approval" && outgoing.length && input.contatoId) {
