@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { detalheLead } from "@/lib/vendas/consultas";
 import { lerLinhaDoTempo } from "@/lib/vendas/eventos";
-import { cadenciaDoLead, notasDoLead, tarefasDoLead } from "@/lib/vendas/ficha-extras";
+import { cadenciaDoLead, notasDoLead, reunioesDoLead, tarefasDoLead } from "@/lib/vendas/ficha-extras";
 /* A tela é o desenho da Oportunidade adaptado ao lead (LeadDesenho), ligada pelo
    mesmo caminho das outras: Desenho (markup), Liga (lógica), Proto (adaptador). */
 import { LeadProto } from "@/components/onface/proto/LeadProto";
@@ -33,10 +33,11 @@ export default async function LeadPorId({ params }: { params: Promise<{ id: stri
   const lead = await detalheLead(ctx.organizacaoId, id);
   if (!lead) notFound();
 
-  const [timeline, cadencia, tarefas, notas, equipe] = await Promise.all([
+  const [timeline, cadencia, tarefas, reunioes, notas, equipe] = await Promise.all([
     lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, leadId: id, limite: 40 }),
     cadenciaDoLead(ctx.organizacaoId, id),
     tarefasDoLead(ctx.organizacaoId, id),
+    reunioesDoLead(ctx.organizacaoId, id),
     notasDoLead(ctx.organizacaoId, id),
     db.execute<{ id: string; nome: string }>(sql`
       SELECT id::text, nome FROM usuarios
@@ -45,7 +46,7 @@ export default async function LeadPorId({ params }: { params: Promise<{ id: stri
 
   return (
     <LeadProto
-      lead={lead} timeline={timeline} cadencia={cadencia} tarefas={tarefas} notas={notas}
+      lead={lead} timeline={timeline} cadencia={cadencia} tarefas={tarefas} reunioes={reunioes} notas={notas}
       equipe={[...equipe].map((u) => ({ id: u.id, nome: u.nome }))}
       agora={new Date().toISOString()}
       modulo={MODULO_PRE_VENDAS}

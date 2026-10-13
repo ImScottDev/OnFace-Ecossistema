@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { analisarConversaDoAtendimento, abrirNexo } from "@/lib/nexo/cliente";
@@ -885,11 +886,12 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
   /* A equipe é de NOMES (o desenho compara por nome). `EQUIPE[0]` é o "EU" do
      protótipo — quem assume ao responder, quem assina template — então quem
      está logado vem primeiro. */
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
-    EQUIPE: [dados.eu.nome, ...dados.equipe.map((u) => u.nome).filter((n) => n !== dados.eu.nome)].filter(Boolean),
+    EQUIPE: ordenarEquipe([dados.eu.nome, ...dados.equipe.map((u) => u.nome).filter((n) => n !== dados.eu.nome)].filter(Boolean)),
     ETAPAS: Object.fromEntries(Object.entries(ROTULO_ETAPA_PRE_VENDAS).map(([k, label]) => [k, { label }])),
     LEADS: [], CONVERSAS: [],
-  }), [dados.eu.nome, dados.equipe]);
+  }), [dados.eu.nome, dados.equipe, ordenarEquipe]);
 
   /* ── Thread da conversa aberta ── */
   /* Última "impressão digital" da thread por conversa: a consulta de fundo (a cada 3 s) só

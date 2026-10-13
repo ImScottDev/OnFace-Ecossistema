@@ -19,7 +19,7 @@ import { toast } from "sonner";
 
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
-import type { CadenciaDoLead, NotaDoLead, TarefaDoLead } from "@/lib/vendas/ficha-extras";
+import type { CadenciaDoLead, NotaDoLead, ReuniaoDoLead, TarefaDoLead } from "@/lib/vendas/ficha-extras";
 import { rotuloDeEvento } from "@/lib/vendas/rotulos-evento";
 import { urlLigarCallface, abrirUrlExterna } from "@/lib/callface-ligar";
 import { montarRelacoes } from "./relacoes-da-ficha";
@@ -42,8 +42,9 @@ const ETAPAS_ATIVAS = new Set(["novo", "em_contato", "qualificacao", "qualificad
 export function leadDaTela(p: {
   lead: DetalheLead; timeline: LinhaDoTempo[]; cadencia: CadenciaDoLead | null;
   tarefas: TarefaDoLead[]; notas: NotaDoLead[]; equipe: string[]; modulo: ModuloDoLead; agora: Date;
+  reunioes?: ReuniaoDoLead[];
 }): LeadDaTela {
-  const { lead, timeline, cadencia, tarefas, notas, equipe, modulo, agora } = p;
+  const { lead, timeline, cadencia, tarefas, notas, equipe, modulo, agora, reunioes = [] } = p;
   const temEmpresa = !!lead.empresa.id;
   const rel = montarRelacoes({
     empresaId: lead.empresa.id ?? "", leadId: lead.id,
@@ -96,17 +97,24 @@ export function leadDaTela(p: {
         autor: t.responsavel ?? "Sem responsável", quando: t.venceEm ? quandoBR(t.venceEm, agora) : "Sem prazo",
         situacao: situacaoDoBanco(t.status), feita,
       };
-    }),
+    }).concat(reunioes.map((r) => ({
+      /* Reunião é atividade; a situação vem do status real. Abre a peça única de Reunião, por id. */
+      id: r.id, reuniaoId: r.id, tarefaId: "", tipo: "Reunião", titulo: r.titulo, desc: "",
+      autor: lead.responsavel.nome ?? "Sem responsável", quando: quandoBR(r.data, agora),
+      situacao: r.status === "realizada" ? "Feita" : r.status === "agendada" ? "A fazer" : "Declinada",
+      feita: r.status !== "agendada",
+    }))),
     notas: notas.map((n) => ({ id: n.id, autor: n.autor ?? "Sistema", texto: n.texto, quando: quandoBR(n.em, agora), sistema: !n.autor })),
     eventos: timeline.map((e) => ({ t: e.titulo || rotuloDeEvento(e.tipo), quando: quandoBR(e.ocorridoEm, agora), autor: e.usuarioNome ?? "Sistema" })),
   };
 }
 
-export function LeadProto({ lead, timeline, cadencia, tarefas, notas, equipe, agora, modulo = MODULO_PRE_VENDAS }: {
+export function LeadProto({ lead, timeline, cadencia, tarefas, reunioes = [], notas, equipe, agora, modulo = MODULO_PRE_VENDAS }: {
   lead: DetalheLead;
   timeline: LinhaDoTempo[];
   cadencia: CadenciaDoLead | null;
   tarefas: TarefaDoLead[];
+  reunioes?: ReuniaoDoLead[];
   notas: NotaDoLead[];
   /** Equipe real da organização (id + nome). */
   equipe: Array<{ id: string; nome: string }>;
@@ -118,8 +126,8 @@ export function LeadProto({ lead, timeline, cadencia, tarefas, notas, equipe, ag
   const { abrir: abrirPeca } = usePecas();
 
   const l = React.useMemo(
-    () => leadDaTela({ lead, timeline, cadencia, tarefas, notas, equipe: equipe.map((e) => e.nome), modulo, agora: new Date(agora) }),
-    [lead, timeline, cadencia, tarefas, notas, equipe, modulo, agora],
+    () => leadDaTela({ lead, timeline, cadencia, tarefas, reunioes, notas, equipe: equipe.map((e) => e.nome), modulo, agora: new Date(agora) }),
+    [lead, timeline, cadencia, tarefas, reunioes, notas, equipe, modulo, agora],
   );
 
   const acoes = React.useMemo<AcoesDoLead>(() => {

@@ -37,6 +37,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -406,9 +407,10 @@ export function CsProto({ dados, eu, euId, abaInicial, viewInicial }: {
   const equipe = React.useMemo(() => dados.equipe.map((u) => u.nome), [dados.equipe]);
   const idDoUsuario = React.useCallback((nome?: string | null) => dados.equipe.find((u) => u.nome === nome)?.id ?? null, [dados.equipe]);
 
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
     ClientesSeed: clientes,
-    EQUIPE: equipe,
+    EQUIPE: ordenarEquipe(equipe),
     /* A mesma tarefa chega pela Agenda; semear AtividadesSeed também a
        contaria duas vezes. HistoricoSeed fica vazio: "Atividades recentes" já
        se alimenta das interações reais em clientes360 e das tarefas feitas. */
@@ -437,7 +439,7 @@ export function CsProto({ dados, eu, euId, abaInicial, viewInicial }: {
           .finally(() => router.refresh());
       },
     },
-  }), [clientes, equipe, dados.tarefas, router]);
+  }), [clientes, equipe, dados.tarefas, router, ordenarEquipe]);
 
   const dadosDoLiga = React.useMemo(() => {
     const agora = Date.now();

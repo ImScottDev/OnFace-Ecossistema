@@ -24,6 +24,7 @@
 
 import { urlLigarCallface } from "@/lib/callface-ligar";
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -376,19 +377,20 @@ export function ContatosProto({ linhas, empresasSemPessoas, totais, porRelaciona
      `SEGMENTOS` cobre toda empresa carregada; sem ele o painel da pessoa cai
      no `|| "Serviços"` do desenho. `CONVERSAS` vazio: a última interação já
      vem calculada da tabela `atividades`. */
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => {
     const segmentos: Record<string, string> = {};
     for (const c of linhas) if (c.empresa) segmentos[c.empresa] = c.empresaSetor || "Sem segmento";
     return {
       LEADS: linhas.map(paraODesenho),
-      EQUIPE: responsaveis.map((r) => r.nome),
+      EQUIPE: ordenarEquipe(responsaveis.map((r) => r.nome)),
       SEGMENTOS: segmentos,
       CONVERSAS: [],
       CADENCIAS: [],
       slug,
       iniciais,
     };
-  }, [linhas, responsaveis]);
+  }, [linhas, responsaveis, ordenarEquipe]);
 
   const porId = React.useMemo(() => new Map(linhas.map((c) => [c.id, c])), [linhas]);
   const idDoResponsavel = React.useCallback(

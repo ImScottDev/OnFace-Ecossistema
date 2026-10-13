@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Pencil, Plus, Trash2 } from "lucide-react";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
+import { OpcoesDePessoa } from "@/components/onface/OpcoesDePessoa";
 
 type Regra = {
   id: string; nome: string; etapa: string; alvoTipo: "usuario" | "rodizio"; alvoUsuarioId: string | null; rodizioUsuarioIds: string[];
@@ -91,8 +92,7 @@ export function DistribuicaoLeads() {
 
   const opcoesAlvo = (
     <>
-      <optgroup label="Pessoas">{pessoas.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</optgroup>
-      {agentes.length > 0 && <optgroup label="Agentes de IA">{agentes.map((u) => <option key={u.id} value={u.id}>{u.nome} (IA)</option>)}</optgroup>}
+      <OpcoesDePessoa itens={usuarios} />
     </>
   );
 

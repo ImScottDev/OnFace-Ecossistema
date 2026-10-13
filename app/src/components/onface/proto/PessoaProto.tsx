@@ -8,6 +8,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -24,7 +25,7 @@ import { acaoAtribuir, acaoRemoverDaCadencia, acaoResponsaveis, acaoSalvarContat
 import {
   acaoBuscarEmpresas, acaoDesvincularEmpresaExtra, acaoExcluirContato, acaoPausarCadenciaDoLead, acaoVincularEmpresaExtra,
 } from "@/app/(produto)/contatos/actions";
-import type { AquisicaoDaPessoa, CadenciaDoLead, EmpresaExtraDaPessoa, OportunidadeDaPessoa } from "@/lib/vendas/ficha-extras";
+import type { AquisicaoDaPessoa, CadenciaDoLead, EmpresaExtraDaPessoa, OportunidadeDaPessoa, ReuniaoDoLead } from "@/lib/vendas/ficha-extras";
 
 /**
  * Corrige, na saída do protótipo, os campos que ele INVENTA.
@@ -119,7 +120,7 @@ class PessoaLigada extends PessoaLiga {
   }
 }
 
-export function PessoaProto({ lead, timeline, cadencia, extras, daPessoa }: {
+export function PessoaProto({ lead, timeline, cadencia, extras, daPessoa, reunioes = [] }: {
   lead: DetalheLead;
   timeline: LinhaDoTempo[];
   /** A inscrição viva do lead numa cadência (ou null). */
@@ -128,6 +129,8 @@ export function PessoaProto({ lead, timeline, cadencia, extras, daPessoa }: {
   extras: EmpresaExtraDaPessoa[];
   /** TODAS as aquisições e oportunidades da pessoa (`relacoesDaPessoa`): a mesma pessoa pode ter mais de um lead. */
   daPessoa: { aquisicoes: AquisicaoDaPessoa[]; oportunidades: OportunidadeDaPessoa[] };
+  /** As reuniões do lead: listadas em Atividades e abertas na peça única de Reunião. */
+  reunioes?: ReuniaoDoLead[];
 }) {
   const router = useRouter();
 
@@ -165,8 +168,9 @@ export function PessoaProto({ lead, timeline, cadencia, extras, daPessoa }: {
     vazioPrefixo: `Nenhuma aquisição ativa ou oportunidade registrada para ${lead.pessoa.nome}.`,
   }), [lead, daPessoa]);
 
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
-    EQUIPE: equipe.length ? equipe.map((e) => e.nome) : (lead.responsavel.nome ? [lead.responsavel.nome] : []),
+    EQUIPE: ordenarEquipe(equipe.length ? equipe.map((e) => e.nome) : (lead.responsavel.nome ? [lead.responsavel.nome] : [])),
     /* `ETAPAS` é o que dá o chip de etapa no cabeçalho — sem ele a ficha
        mostrava "—" no lugar de "Em contato". */
     ETAPAS: Object.fromEntries(
@@ -177,7 +181,7 @@ export function PessoaProto({ lead, timeline, cadencia, extras, daPessoa }: {
        oportunidade, venda ganha, Cliente ativo x 360) mora em
        `relacoes-da-ficha.ts`; o vazio só vale com as fontes lidas. */
     Relacoes: () => paraALiga(relacoes, (rota) => router.push(rota)),
-  }), [lead.responsavel.nome, relacoes, router, equipe]);
+  }), [lead.responsavel.nome, relacoes, router, equipe, ordenarEquipe]);
 
   const oportunidades = React.useMemo(
     () => daPessoa.oportunidades.map((o) => ({
@@ -323,6 +327,7 @@ export function PessoaProto({ lead, timeline, cadencia, extras, daPessoa }: {
         catalogo={catalogo}
         relacoes={relacoes}
         oportunidades={oportunidades}
+        reunioes={reunioes}
         abrir={abrir}
         gravar={gravar}
         persistir={persistir}

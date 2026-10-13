@@ -16,7 +16,8 @@ import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturam
 import { sql } from "drizzle-orm";
 import { empresa360, type Empresa360 } from "@/lib/vendas/consultas";
 import type { Classificacao } from "@/lib/vendas/classificacao-rotulos";
-import { billingDaConta, type FaturaResumo } from "@/lib/cs/billing";
+import { billingDaConta, type FaturaResumo, type BillingDoServico } from "@/lib/cs/billing";
+import type { StatusAssinatura } from "@/lib/clientes/financeiro-regras";
 import { healthDaEmpresa } from "@/lib/cs/health";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { resolveLocalPath } from "@/lib/storage/legacy-attachment-storage";
@@ -29,7 +30,14 @@ export interface ServicoDoCliente {
   billingStatus: string | null;
   lifecycle: string | null;
   contratoId: string | null;
+  /** Status REAL da assinatura do serviço no Stripe (vencida, cancelamento agendado...). null = sem assinatura. */
+  assinaturaStatus: StatusAssinatura | null;
+  /** Nome do produto como o Stripe o nomeia; a família não é nome de produto. */
+  produtoReal: string | null;
 }
+
+/** A assinatura como o Cliente 360 a mostra: o mesmo objeto que `billingDaConta` monta. */
+export type AssinaturaDoCliente = Omit<NonNullable<BillingDoServico["assinatura"]>, "mrr"> & { mrr: number | null };
 
 export interface ContratoDoCliente {
   id: string;
@@ -93,7 +101,7 @@ export interface ClienteDoDesenho {
   contratos: ContratoDoCliente[];
   faturas: FaturaResumo[];
   stripeCustomerId: string | null;
-  assinaturas: Array<{ stripeSubscriptionId: string; status: string; mrr: number | null }>;
+  assinaturas: AssinaturaDoCliente[];
   health: Awaited<ReturnType<typeof healthDaEmpresa>>;
   closer: string | null;
   /** CSM = COALESCE(responsavel_cs_id, responsavel_id) de `clientes` (E8). */
@@ -314,7 +322,8 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
   }
   const assinaturas = [...billing.porServico, ...(billing.naoAtribuido ? [billing.naoAtribuido] : [])]
     .map((b) => b.assinatura).filter((a): a is NonNullable<typeof a> => !!a)
-    .map((a) => ({ stripeSubscriptionId: a.stripeSubscriptionId, status: a.status, mrr: a.mrr === null ? null : Number(a.mrr) }));
+    .map((a) => ({ ...a, mrr: a.mrr === null ? null : Number(a.mrr) }));
+  const assinaturaDoServico = new Map(billing.porServico.filter((b) => b.servicoId && b.assinatura).map((b) => [b.servicoId!, b.assinatura!]));
 
   /* Cliente que fechou DEPOIS do último fechamento (a planilha vai até set/26 e
    * hoje é outubro) não tem competência nem serviço de portfólio ainda: o 360
@@ -341,6 +350,7 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
       id: "assinatura:" + a.stripeSubscriptionId, familia, produto: b.produtoCanonico ?? a.produto,
       valor: a.mrr, billing_status: a.status, lifecycle: null, contrato_id: null,
     });
+    assinaturaDoServico.set("assinatura:" + a.stripeSubscriptionId, a);
   }
 
   return {
@@ -355,6 +365,8 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     servicos: servicos.map((s) => ({
       id: s.id, familia: s.familia, produto: s.produto, valor: Number(s.valor ?? 0),
       billingStatus: s.billing_status, lifecycle: s.lifecycle, contratoId: s.contrato_id,
+      assinaturaStatus: assinaturaDoServico.get(s.id)?.statusFin ?? null,
+      produtoReal: assinaturaDoServico.get(s.id)?.produtoReal ?? null,
     })),
     contratos: contratos.map((c) => ({
       id: c.id, tipo: c.tipo, status: c.status, mrr: c.mrr === null ? null : Number(c.mrr),

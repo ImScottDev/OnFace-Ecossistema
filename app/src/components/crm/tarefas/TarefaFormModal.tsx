@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X, Search, UserRound, Building2 } from "lucide-react";
 import { useOrgUsuarios, initialsOf } from "@/components/crm/BoardFilters";
+import { OpcoesDePessoa } from "@/components/onface/OpcoesDePessoa";
 
 export const TIPO_TAREFA_OPTIONS: { value: string; label: string }[] = [
   { value: "geral", label: "Geral" },
@@ -379,9 +380,7 @@ export function TarefaFormModal({
         </div>
 
         <select value={responsavelId ?? ""} onChange={(e) => setResponsavelId(e.target.value || null)} className={inputCls}>
-          {usuarios.map((u) => (
-            <option key={u.id} value={u.id}>{u.id === currentUserId ? `${u.nome} (eu)` : u.nome}</option>
-          ))}
+          <OpcoesDePessoa itens={usuarios} rotulo={(u) => (u.id === currentUserId ? `${u.nome} (eu)` : u.nome)} />
         </select>
 
         <div className="flex justify-end gap-1.5 pt-1">

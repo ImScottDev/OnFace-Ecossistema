@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import type { OrgUsuario } from "@/components/crm/BoardFilters";
+import { OpcoesDePessoa } from "@/components/onface/OpcoesDePessoa";
 
 /**
  * AssignOwner (19/08, correção de escopo) — ação central de troca de
@@ -67,9 +68,7 @@ export function AssignOwnerControl({
       style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-primary)", border: "1px solid var(--cf2-border-default)" }}
     >
       <option value="">Sem responsável</option>
-      {usuarios.map((u) => (
-        <option key={u.id} value={u.id}>{u.nome}</option>
-      ))}
+      <OpcoesDePessoa itens={usuarios} />
     </select>
   );
 }

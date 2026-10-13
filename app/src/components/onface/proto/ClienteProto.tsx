@@ -18,6 +18,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
@@ -30,6 +31,7 @@ import { textoDaClasse } from "@/lib/vendas/classificacao-rotulos";
 import { toast } from "sonner";
 
 import type { ClienteDoDesenho } from "@/lib/clientes/cliente-para-o-desenho";
+import { ROTULO_STATUS_ASSINATURA } from "@/lib/clientes/financeiro-regras";
 import { geometriaFaturamento } from "@/lib/clientes/evolucao-geometria";
 import { ClienteLiga } from "./ClienteLiga";
 import { levarParametros } from "./rota-do-desenho";
@@ -69,6 +71,8 @@ const FAM: Record<string, { l: string; cor: string; d: string; tile: [string, st
   UNKNOWN: { l: "Não classificado", cor: "var(--of-tinta-4)", d: I.layers, tile: ["var(--of-calha)", "var(--of-tinta-2)"] },
 };
 const PK = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
+/** Cor do selo de status: pagamento vencido é erro, nunca o verde de "Ativo". */
+const tomDoStatus = (st: string) => st === "Ativo" ? "ok" : st === "Em implantação" ? "coral" : st === "Vencida" || st === "Inadimplente" ? "erro" : "neutro";
 const fam = (k: string | null | undefined) => FAM[k ?? "UNKNOWN"] ?? FAM.UNKNOWN;
 
 const MES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -208,10 +212,12 @@ class ClienteLigada extends ClienteLiga {
     const fats = R.faturas
       .filter((f) => f.status === "paga" || f.status === "aberta")
       .map((f) => {
-        const comp = dt(f.competencia), venc = dt(f.vencimento), pagoEm = dt(f.pagaEm);
-        const st = f.status === "paga" ? "Pago" : (f.diasAtraso ?? 0) > 0 ? "Vencida" : "Em aberto";
-        return { id: f.id, comp, venc, pagoEm, st, v: Number(f.valor), ext: f.externalId, hosted: f.hostedInvoiceUrl, atraso: f.diasAtraso,
-          rot: comp ? MESL[comp.getMonth()] + "/" + comp.getFullYear() : "Sem competência", ordem: (comp ?? pagoEm ?? venc)?.getTime() ?? 0 };
+        const comp = dt(f.competencia), cobr = dt(f.dataCobranca), pagoEm = dt(f.pagaEm);
+        const st = f.status === "paga" ? "Pago" : f.estado === "vencida" ? "Vencida" : "Em aberto";
+        // Mês e dia de cobrança: o dia em que o Stripe cobra (vencimento, ou emissão no cartão), nunca o início do ciclo.
+        return { id: f.id, comp, venc: cobr, pagoEm, st, v: Number(f.valor), ext: f.externalId, hosted: f.hostedInvoiceUrl, atraso: f.diasAtraso,
+          falhou: st !== "Pago" && f.pagamentoFalhou, tentativas: f.tentativas,
+          rot: f.rotuloMes, ordem: (cobr ?? pagoEm ?? comp)?.getTime() ?? 0 };
       })
       .sort((a, b) => b.ordem - a.ordem);
     const abertas = fats.filter((f) => f.st !== "Pago");
@@ -232,10 +238,11 @@ class ClienteLigada extends ClienteLiga {
        REAL do Stripe; sem ele, nenhuma ação. */
     const fatRow = (f: typeof fats[number]) => ({
       comp: f.rot, ids: f.ext ?? "—", venc: dmy(f.venc),
-      vencTxt: f.st === "Pago" ? "Pago em " + dmy(f.pagoEm) : f.venc ? "Vence " + dmy(f.venc) : "Sem vencimento",
+      vencTxt: f.st === "Pago" ? "Pago em " + dmy(f.pagoEm) : f.venc ? (f.st === "Vencida" ? "Venceu " : "Vence ") + dmy(f.venc) : "Sem vencimento",
       valor: brl2(f.v), pago: f.st === "Pago" ? dmy(f.pagoEm) : "—",
-      via: f.st === "Vencida" && f.atraso ? f.atraso + " dias em atraso" : f.st === "Pago" ? "Stripe" : "",
-      st: f.st, stStyle: pill(FST[f.st]), dot: dotS(FST[f.st]),
+      via: f.falhou ? "Pagamento falhou" + (f.tentativas > 1 ? " · " + f.tentativas + " tentativas" : "") + (f.st === "Vencida" && f.atraso ? " · " + f.atraso + " d em atraso" : "")
+        : f.st === "Vencida" && f.atraso ? f.atraso + " dias em atraso" : f.st === "Pago" ? "Stripe" : "",
+      st: f.falhou ? "Falhou" : f.st, stStyle: pill(f.falhou ? "erro" : FST[f.st]), dot: dotS(f.falhou ? "erro" : FST[f.st]),
       acoes: !f.hosted ? [] : f.st === "Pago"
         ? [{ l: "Stripe", d: I.ext, dica: "Ver fatura no Stripe", onClick: () => abrirUrl(f.hosted!), style: btnA }]
         : [{ l: "Link", d: I.link, dica: "Copiar link de pagamento", onClick: () => copiar(f.hosted!, "Link de cobrança"), style: btnA }],
@@ -272,10 +279,12 @@ class ClienteLigada extends ClienteLiga {
         const ct = s.contratoId ? contratoPorId.get(s.contratoId) : undefined;
         const desde = dt(ct?.inicio);
         if (ct && ct.itens.length) return ct.itens.map((i) => ({ nome: i.nome, qtd: i.quantidade, preco: i.valorUnitario, sub: i.subtotal, tipo: i.natureza ?? "Item", desde }));
-        return [{ nome: s.produto ?? F.l, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : "Serviço", desde }];
+        return [{ nome: s.produtoReal ?? s.produto ?? F.l, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.assinaturaStatus === "vencida" || s.assinaturaStatus === "inadimplente" ? "Assinatura " + ROTULO_STATUS_ASSINATURA[s.assinaturaStatus].toLowerCase() : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : "Serviço", desde }];
       });
       const cancelado = svs.every((s) => s.billingStatus === "CANCELED");
-      const st = cancelado ? "Encerrado" : R.fulfillmentAberto ? "Em implantação" : "Ativo";
+      // Pagamento vencido ganha de "Ativo": a assinatura existe, mas o Stripe diz que a cobrança não passou.
+      const pendente = svs.find((s) => s.assinaturaStatus === "vencida" || s.assinaturaStatus === "inadimplente");
+      const st = cancelado ? "Encerrado" : pendente ? ROTULO_STATUS_ASSINATURA[pendente.assinaturaStatus!] : R.fulfillmentAberto ? "Em implantação" : "Ativo";
       return { k, F, mrr, start, itens, st, contratos: svs.map((s) => s.contratoId).filter(Boolean) as string[] };
     }).sort((a, b) => b.mrr - a.mrr);
     const mrr = fams.reduce((a, f) => a + f.mrr, 0);
@@ -296,7 +305,12 @@ class ClienteLigada extends ClienteLiga {
       abrirUrl(a.origem === "upload" && a.url ? a.url : "/api/anexos-legado/" + a.id + "/download");
     };
     const ativos = R.contratos.filter((c) => c.status === "ativo");
-    const proxRen = ativos.map((c) => ({ c, d: dt(c.vencimento) })).filter((x) => x.d && x.d >= h0).sort((a, b) => a.d!.getTime() - b.d!.getTime())[0] ?? null;
+    /* Próxima renovação = o que vem primeiro entre o vencimento de contrato e a próxima fatura de assinatura
+       que ainda cobra (Stripe). Sem isto, quem paga por assinatura mensal nunca teve data. */
+    const proxCob = R.assinaturas.filter((a) => a.proximaCobranca).map((a) => ({ a, d: dt(a.proximaCobranca!.data) }))
+      .filter((x) => x.d && x.d >= h0).sort((x, y) => x.d!.getTime() - y.d!.getTime())[0] ?? null;
+    const proxRen = [...ativos.map((c) => ({ c, d: dt(c.vencimento), mensal: false })), ...(proxCob ? [{ c: null, d: proxCob.d, mensal: proxCob.a.periodo === "mensal" }] : [])]
+      .filter((x) => x.d && x.d >= h0).sort((a, b) => a.d!.getTime() - b.d!.getTime())[0] ?? null;
     const diasAte = (d: Date) => Math.round((d.getTime() - hoje.getTime()) / 864e5);
     const ROT_TIPO: Record<string, string> = { assinatura: "Assinatura", servico: "Serviço", legado_zoho: "Contrato legado (Zoho)" };
     const ctr = R.contratos.map((c) => {
@@ -306,11 +320,15 @@ class ClienteLigada extends ClienteLiga {
       const urg = ativo && dias != null && dias <= 45;
       const an = R.anexos.find((a) => a.origem === "legado" && a.entidadeTipo === "contrato" && a.entidadeId === c.id);
       const rotulo = c.familia ? fam(c.familia).l : c.produto === "ai" ? "Callface AI" : c.produto ?? (c.itens[0]?.nome ?? "Contrato");
-      const st = ativo ? "Ativo" : "Encerrado";
+      const sv = R.servicos.find((x) => x.contratoId === c.id && x.assinaturaStatus);
+      const assC = R.assinaturas.find((a) => a.stripeSubscriptionId === c.stripeSubscriptionId);
+      const stAss = assC?.statusFin ?? sv?.assinaturaStatus ?? null;
+      const st = !ativo ? "Encerrado" : stAss === "vencida" || stAss === "inadimplente" ? ROTULO_STATUS_ASSINATURA[stAss] : "Ativo";
+      const prodStripe = assC?.produtoReal ?? sv?.produtoReal ?? null;
       return {
-        nome: rotulo + " · " + (ROT_TIPO[c.tipo] ?? c.tipo),
+        nome: (prodStripe ?? rotulo) + " · " + (ROT_TIPO[c.tipo] ?? c.tipo),
         cod: (c.codigo ?? c.stripeSubscriptionId ?? "sem código") + (c.mrr != null ? " · " + brl(c.mrr) + "/mês" : ""),
-        st, stStyle: pill(ativo ? "ok" : "neutro"),
+        st, stStyle: pill(tomDoStatus(st)),
         barra: "display:block;height:100%;border-radius:9999px;background:" + (urg ? "var(--of-coral-marca)" : "var(--of-tinta-forte)") + ";transform-origin:left;transition:transform 1s cubic-bezier(.16,1,.3,1);transform:scaleX(" + (S.pronto ? pct : 0) / 100 + ")",
         iniTxt: "Início " + dmy(ini0),
         renTxt: !ativo ? "Encerrado" : fim ? "Vence " + dmy(fim) + " · " + dias + "d" : "Sem data de vencimento",
@@ -503,8 +521,6 @@ class ClienteLigada extends ClienteLiga {
      * do protótipo sai. Portal do cliente não tem integração → aviso. */
     const cus = R.stripeCustomerId;
     const subsAtivas = R.assinaturas.filter((a) => a.status === "active" || a.status === "trialing");
-    // Status do Stripe dito como o Stripe diz: "unpaid" não é "Cancelada".
-    const ROT_SUB: Record<string, string> = { canceled: "Cancelada", unpaid: "Inadimplente", past_due: "Pagamento em atraso", incomplete: "Incompleta", incomplete_expired: "Expirada", paused: "Pausada" };
     const abrirStripe = () => cus ? abrirUrl(STRIPE_CUSTOMER(cus)) : avisa("Esta conta não tem cliente Stripe vinculado.");
 
     /* Portal do cliente: a sessão é efêmera (o Stripe a expira em minutos), por
@@ -543,13 +559,13 @@ class ClienteLigada extends ClienteLiga {
       },
       fatos: [
         { l: "Método", v: "—" },
-        { l: "Próxima cobrança", v: proxF ? dmy(proxF.venc) : "—" },
+        { l: "Próxima cobrança", v: proxCob ? dmy(proxCob.d) : proxF ? dmy(proxF.venc) : "—" },
         /* Conta com assinatura ativa E uma em atraso só dizia "Ativa": o estado
            ruim sumia atrás do bom. Agora cada status presente aparece, contado. */
         { l: "Assinatura", v: R.assinaturas.length
-            ? [...R.assinaturas.reduce((m, a) => m.set(a.status, (m.get(a.status) ?? 0) + 1), new Map<string, number>())]
-                .sort((x, y) => (x[0] === "active" ? -1 : y[0] === "active" ? 1 : 0))
-                .map(([st, n]) => (st === "active" ? "Ativa" : st === "trialing" ? "Em teste" : (ROT_SUB[st] ?? st)) + (n > 1 ? " · " + n : ""))
+            ? [...R.assinaturas.reduce((m, a) => m.set(a.statusRotulo, (m.get(a.statusRotulo) ?? 0) + 1), new Map<string, number>())]
+                .sort((x, y) => (x[0] === "Ativa" ? -1 : y[0] === "Ativa" ? 1 : 0))
+                .map(([st, n]) => st + (n > 1 ? " · " + n : ""))
                 .join(" · ")
             : "Sem assinatura" },
       ],
@@ -598,7 +614,7 @@ class ClienteLigada extends ClienteLiga {
         ] : []),
         tile("Receita acumulada", brlK(pagoTotal), primeiroPago ? "faturas pagas desde " + MES[primeiroPago.getMonth()].toLowerCase() + "/" + primeiroPago.getFullYear() : pagoTotal > 0 ? "faturas pagas (sem data de pagamento)" : "nenhuma fatura paga", "var(--of-papel)", irAba("financeiro")),
         tile("Em aberto", brl(emAberto), vencidas.length ? brl(vencido) + " vencido" : proxF?.venc ? "vence " + dm(proxF.venc) : "nada pendente", vencidas.length ? "var(--of-coral-no-escuro)" : "var(--of-papel)", irAba("financeiro")),
-        tile("Próxima renovação", proxRen ? dmy(proxRen.d) : "—", proxRen ? "em " + diasAte(proxRen.d!) + " dias" : "sem data de vencimento", proxRen && diasAte(proxRen.d!) <= 45 ? "var(--of-coral-no-escuro)" : "var(--of-papel)", () => proxRen && abrirOpp("renovacao")),
+        tile("Próxima renovação", proxRen ? dmy(proxRen.d) : "—", proxRen ? (proxRen.c ? "" : "próxima fatura · ") + "em " + diasAte(proxRen.d!) + " dias" : "sem data de vencimento", proxRen && !proxRen.mensal && diasAte(proxRen.d!) <= 45 ? "var(--of-coral-no-escuro)" : "var(--of-papel)", () => proxRen && abrirOpp("renovacao")),
       ],
     };
 
@@ -623,7 +639,8 @@ class ClienteLigada extends ClienteLiga {
       vazia: !fatFil.length, linhas: fatFil.map(fatRow), exportar,
     };
 
-    const statusC = fams.length && fams.every((f) => f.st === "Encerrado") ? ["Cobrança encerrada", "neutro"] : R.fulfillmentAberto ? ["Em implantação", "coral"]
+    const vencida = R.assinaturas.find((a) => a.statusFin === "vencida" || a.statusFin === "inadimplente");
+    const statusC = fams.length && fams.every((f) => f.st === "Encerrado") ? ["Cobrança encerrada", "neutro"] : vencida ? ["Assinatura " + vencida.statusRotulo.toLowerCase(), "erro"] : R.fulfillmentAberto ? ["Em implantação", "coral"]
       /* "Cliente ativo" é uma afirmação de CLASSE: só sai quando a função única diz Cliente.
          Fora disso (ex.: ficou sem serviço ativo) a etiqueta é a classe real, com o estágio. */
       : R.classificacao.classe === "cliente" ? ["Cliente ativo", "ok"] : [textoDaClasse(R.classificacao), "neutro"];
@@ -680,7 +697,7 @@ class ClienteLigada extends ClienteLiga {
       hero, g,
       prodSub: nItens + (nItens === 1 ? " item" : " itens") + " · " + brl(mrr) + "/mês",
       fams: fams.map((f) => ({
-        l: f.F.l, d: f.F.d, st: f.st, stStyle: pill(f.st === "Ativo" ? "ok" : f.st === "Em implantação" ? "coral" : "neutro"),
+        l: f.F.l, d: f.F.d, st: f.st, stStyle: pill(tomDoStatus(f.st)),
         tile: "flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:" + f.F.tile[0] + ";color:" + f.F.tile[1],
         tileG: "flex:0 0 auto;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:" + f.F.tile[0] + ";color:" + f.F.tile[1],
         sub: f.itens.length + (f.itens.length > 1 ? " itens" : " item") + (f.start ? " · desde " + dmy(f.start) : ""),
@@ -794,6 +811,7 @@ export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDes
   const raiz = React.useRef<HTMLDivElement>(null);
   const seed = React.useMemo(() => clienteDoSeed(cliente), [cliente]);
 
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
     ClientesSeed: [seed],
     // Pessoas reais como "lead" da empresa: é o que faz o principal interno
@@ -801,7 +819,7 @@ export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDes
     LEADS: cliente.empresa.pessoas.map((p) => ({ id: p.id, empresa: cliente.empresa.nome, pessoa: p.nome, cargo: p.cargo ?? "", email: p.email, tel: p.telefone })),
     OPORTUNIDADES: [],
     HistoricoSeed: [],
-    EQUIPE: cliente.equipe,
+    EQUIPE: ordenarEquipe(cliente.equipe),
     // Obrigatórios com ESTA forma: o Liga faz `(Agenda ?? []).itens()` e
     // `(Relacoes ?? [])({...})` — `[]` é truthy e a tela cairia com TypeError.
     Agenda: { itens: () => [] },
@@ -817,7 +835,7 @@ export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDes
         })),
       ],
     }),
-  }), [seed, cliente, router]);
+  }), [seed, cliente, router, ordenarEquipe]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();

@@ -44,12 +44,13 @@ const r = (centavos: number) => centavos / 100;
 // ─── Assinatura ──────────────────────────────────────────────────────────────
 
 export type StatusAssinatura =
-  | "ativa" | "em_teste" | "inadimplente" | "cancelamento_agendado"
+  | "ativa" | "em_teste" | "vencida" | "inadimplente" | "cancelamento_agendado"
   | "cancelada" | "aguardando_pagamento" | "nao_concluida" | "pausada" | "desconhecido";
 
 export const ROTULO_STATUS_ASSINATURA: Record<StatusAssinatura, string> = {
   ativa: "Ativa",
   em_teste: "Em teste",
+  vencida: "Vencida",
   inadimplente: "Inadimplente",
   cancelamento_agendado: "Cancelamento agendado",
   cancelada: "Cancelada",
@@ -68,7 +69,9 @@ export function statusDaAssinatura(status: string, cancelaNoFim: boolean): Statu
   switch (status) {
     case "active": return cancelaNoFim ? "cancelamento_agendado" : "ativa";
     case "trialing": return cancelaNoFim ? "cancelamento_agendado" : "em_teste";
-    case "past_due": case "unpaid": return "inadimplente";
+    // past_due é o "Vencida" do Stripe (ainda tenta cobrar); unpaid é quando ele desistiu.
+    case "past_due": return "vencida";
+    case "unpaid": return "inadimplente";
     case "canceled": return "cancelada";
     case "incomplete": return "aguardando_pagamento";
     case "incomplete_expired": return "nao_concluida";

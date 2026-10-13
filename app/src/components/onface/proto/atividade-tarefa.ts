@@ -193,17 +193,17 @@ export function itemDaTarefa(t: Record<string, any>, doLead = false, agora = new
     vincTipo: pessoa ? "pessoa" : t.empresaNome ? "empresa" : "nenhum",
     leadId: t.leadId ?? null, empresaId: t.empresaId ?? null,
     oppId: t.negocioId ?? null, oppRot: t.negocioTitulo ?? null,
-    criadoPor: t.criadoPor ?? null,
+    criadoPor: t.criadoPor ?? null, criadoPorEhAgente: !!t.criadoPorEhAgente,
     area: JORNADA_POR_ORIGEM[t.origem] ?? (t.origem === "NEXO" ? "NEXO" : "Manual"),
     origem: t.origem === "NEXO" ? "nexo" : null, nexoMotivo: t.motivo ?? "",
     fimD, fimH, iniD: "", iniH: "",
     sub: (t.subtarefas ?? []).map((s: any) => ({ id: s.id, t: s.titulo, desc: s.descricao ?? "", feita: !!s.concluida, resp: s.responsavelNome ?? null, fimD: s.venceEm ?? "" })),
     comentarios: (t.comentarios ?? []).map((c: any) => ({
-      id: c.id, autor: c.autorNome ?? "Alguém", texto: c.corpo ?? "", quando: quandoTxt(c.criadoEm, agora) + (c.editadoEm ? " · editado" : ""),
+      id: c.id, autor: c.autorNome ?? "Alguém", ehAgente: !!c.autorEhAgente, texto: c.corpo ?? "", quando: quandoTxt(c.criadoEm, agora) + (c.editadoEm ? " · editado" : ""),
       anexos: (c.anexos ?? []).map((a: any) => ({ id: a.id, nome: a.nome, url: img(a) })),
     })),
     anexos: (t.anexos ?? []).map((a: any) => ({ id: a.id, nome: a.nome, url: a.url, tipo: a.mime })),
-    log: (t.log ?? []).map((l: any) => ({ autor: l.autor ?? "Sistema", texto: l.texto, quando: quandoTxt(l.em, agora) })),
+    log: (t.log ?? []).map((l: any) => ({ autor: l.autor ?? "Sistema", ehAgente: !!l.autorEhAgente, texto: l.texto, quando: quandoTxt(l.em, agora) })),
     origemTxt: doLead ? "Próxima ação do lead" : t.negocioTitulo ? "Da oportunidade " + t.negocioTitulo : "Atividade",
   };
 }

@@ -10,6 +10,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -203,11 +204,12 @@ export function PropostasProto({ linhas, responsaveis }: {
     pessoa: c.pessoa, cargo: c.cargo, email: c.email,
   })), [base]);
 
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
-    EQUIPE: base?.equipe.map((u) => u.nome) ?? responsaveis,
+    EQUIPE: ordenarEquipe(base?.equipe.map((u) => u.nome) ?? responsaveis),
     OPORTUNIDADES: [],
     LEADS: [],
-  }), [responsaveis, base]);
+  }), [responsaveis, base, ordenarEquipe]);
 
   /**
    * "Criar" do assistente, de verdade. Devolve a mensagem de erro, ou null

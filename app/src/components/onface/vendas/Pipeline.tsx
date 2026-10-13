@@ -184,7 +184,7 @@ export function Pipeline({ dados, filtro, loop = false, loops = null, selecaoIni
         <select className="ov-select" value={filtro.responsavelId ?? ""} aria-label="Filtrar por responsável"
           onChange={(e) => navegar({ responsavel: e.target.value || null })}>
           <option value="">Todos os responsáveis</option>
-          {dados.filtros.responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+          <OpcoesDePessoa itens={dados.filtros.responsaveis} />
         </select>
         {/* CTA primário no fim da barra de controles (§47). `margin-inline-start:
             auto` em vez de uma linha só para ele: o botão estava quebrando para
@@ -697,7 +697,7 @@ function DialogoReuniao({ aberto, temNoShow, pendente, bloqueio, aoFechar, aoCon
 
 function DialogoNovaOportunidade({ aberto, responsaveis, pendente, bloqueio, buscarEmpresas, aoFechar, aoConfirmar }: {
   aberto: boolean;
-  responsaveis: Array<{ id: string; nome: string }>;
+  responsaveis: Array<{ id: string; nome: string; ehAgente?: boolean }>;
   pendente: boolean;
   bloqueio: { mensagem: string } | null;
   buscarEmpresas: (termo: string) => Promise<Array<{ id: string; nome: string; apoio: string | null }>>;
@@ -766,7 +766,7 @@ function DialogoNovaOportunidade({ aberto, responsaveis, pendente, bloqueio, bus
             <span>Responsável comercial</span>
             <select value={responsavelId} onChange={(e) => setResponsavelId(e.target.value)}>
               <option value="">Escolha</option>
-              {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+              <OpcoesDePessoa itens={responsaveis} />
             </select>
           </label>
           <label><span>Valor estimado</span><input type="number" value={valor} onChange={(e) => setValor(e.target.value)} /></label>
@@ -798,6 +798,7 @@ function DialogoNovaOportunidade({ aberto, responsaveis, pendente, bloqueio, bus
  * deixou de aparecer em tela para o próximo valor inesperado não vazar também.
  */
 import { rotuloProcesso } from "@/lib/vendas/rotulos-evento";
+import { OpcoesDePessoa } from "@/components/onface/OpcoesDePessoa";
 export { rotuloProcesso };
 
 function rotuloPerda(chave: string): string {

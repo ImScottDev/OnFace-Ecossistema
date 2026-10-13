@@ -13,6 +13,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -131,14 +132,15 @@ export function AtividadesProto({ dados, reunioes = [] }: { dados: DadosAtividad
   React.useEffect(() => { acaoResponsaveis().then(setEquipe, () => {}); }, []);
   const idDoResponsavel = React.useCallback((nome: string) => equipe.find((r) => r.nome === nome)?.id, [equipe]);
 
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
     /* "Para outra pessoa" lista TODOS os usuários ativos da org. Antes vinha de
        `filtrosResponsavel`, que só tem quem já tem atividade (e trazia os
        rótulos "Todos os responsáveis" e "Sem responsável" como se fossem gente).
        Sem a equipe carregada ainda, cai nos responsáveis que a tela já conhece. */
-    EQUIPE: equipe.length
+    EQUIPE: ordenarEquipe(equipe.length
       ? equipe.map((r) => r.nome)
-      : dados.filtrosResponsavel.filter((f) => f.valor !== "todos" && f.valor !== "sem-dono").map((f) => f.label),
+      : dados.filtrosResponsavel.filter((f) => f.valor !== "todos" && f.valor !== "sem-dono").map((f) => f.label)),
     // As outras duas fontes do desenho ficam vazias: no produto as três são a
     // mesma tabela, e agregar de novo contaria a tarefa duas vezes.
     /* Reunião real (`reunioes`), a mesma do Calendário; a Liga só a soma a "Reuniões hoje". */
@@ -157,7 +159,7 @@ export function AtividadesProto({ dados, reunioes = [] }: { dados: DadosAtividad
     AtividadesSeed: [],
     ProjetosSeed: [],
     Projetos: [],
-  }), [dados.filtrosResponsavel, equipe, reunioes]);
+  }), [dados.filtrosResponsavel, equipe, reunioes, ordenarEquipe]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();

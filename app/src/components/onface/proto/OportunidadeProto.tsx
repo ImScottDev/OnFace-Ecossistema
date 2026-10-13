@@ -11,6 +11,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { DelegarAgenteHost } from "./DelegarAgenteHost";
@@ -177,6 +178,7 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], 
     [oportunidade, timeline],
   );
 
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => {
     // Equipe real da organização, vinda do banco. Garante que o responsável
     // atual esteja na lista mesmo se, por algum motivo, não vier na query.
@@ -185,11 +187,11 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], 
       nomes.unshift(oportunidade.responsavel.nome);
     }
     return {
-      EQUIPE: nomes,
+      EQUIPE: ordenarEquipe(nomes),
       OPORTUNIDADES: [],
       LEADS: [],
     };
-  }, [equipe, oportunidade.responsavel.nome]);
+  }, [equipe, oportunidade.responsavel.nome, ordenarEquipe]);
 
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();

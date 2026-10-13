@@ -17,6 +17,7 @@
 import { and, asc, eq, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { tarefas, tarefaSubtarefas, tarefaComentarios, usuarios, notificacoes, fileLinks, fileObjects, anexos } from "@/lib/db/schema";
+import { ehAgenteUsuario, SQL_EH_AGENTE } from "@/lib/agentes/eh-agente";
 import { isAdminView } from "@/lib/auth/roles";
 import { RegraDeNegocio } from "@/lib/vendas/dominio";
 import { guardarNoAcervo, removerDoAcervo } from "@/lib/arquivos/servico";
@@ -320,10 +321,12 @@ export function textoDoFato(tipo: string, p: Record<string, any>, nomeDe: (id: u
 
 export interface DetalheDaTarefa {
   criadoPor: string | null;
+  /** O autor da atividade é um agente de IA (selo em toda superfície que mostra o autor). */
+  criadoPorEhAgente: boolean;
   subtarefas: Array<{ id: string; titulo: string; descricao: string | null; concluida: boolean; responsavelId: string | null; responsavelNome: string | null; venceEm: string | null; ordem: number }>;
-  comentarios: Array<{ id: string; autorId: string | null; autorNome: string | null; corpo: string; criadoEm: string; editadoEm: string | null; anexos: Array<{ id: string; nome: string; mime: string; url: string }> }>;
+  comentarios: Array<{ id: string; autorId: string | null; autorNome: string | null; autorEhAgente: boolean; corpo: string; criadoEm: string; editadoEm: string | null; anexos: Array<{ id: string; nome: string; mime: string; url: string }> }>;
   anexos: Array<{ id: string; nome: string; mime: string; url: string; autorNome: string | null; criadoEm: string }>;
-  log: Array<{ autor: string | null; texto: string; em: string }>;
+  log: Array<{ autor: string | null; autorEhAgente: boolean; texto: string; em: string }>;
 }
 
 const iso = (v: Date | string | null) => (v ? new Date(v).toISOString() : null);
@@ -335,7 +338,7 @@ export async function carregarDetalhe(a: Ator, tarefaId: string): Promise<Detalh
       .leftJoin(usuarios, eq(usuarios.id, tarefaSubtarefas.responsavelId))
       .where(and(eq(tarefaSubtarefas.tarefaId, t.id), eq(tarefaSubtarefas.organizacaoId, a.organizacaoId)))
       .orderBy(asc(tarefaSubtarefas.ordem), asc(tarefaSubtarefas.createdAt)),
-    db.select({ c: tarefaComentarios, autorNome: usuarios.nome }).from(tarefaComentarios)
+    db.select({ c: tarefaComentarios, autorNome: usuarios.nome, autorTipo: usuarios.tipo, autorAgenteId: usuarios.agenteId }).from(tarefaComentarios)
       .leftJoin(usuarios, eq(usuarios.id, tarefaComentarios.autorId))
       .where(and(eq(tarefaComentarios.tarefaId, t.id), eq(tarefaComentarios.organizacaoId, a.organizacaoId)))
       .orderBy(asc(tarefaComentarios.createdAt)),
@@ -349,8 +352,8 @@ export async function carregarDetalhe(a: Ator, tarefaId: string): Promise<Detalh
          AND (fl.entity_type = 'tarefa' AND fl.entity_id = ${t.id}::uuid
               OR fl.entity_type = 'tarefa_comentario' AND fl.entity_id IN (SELECT id FROM tarefa_comentarios WHERE tarefa_id = ${t.id}::uuid))
        ORDER BY fl.created_at`),
-    db.execute<{ event_type: string; payload: Record<string, any>; autor: string | null; em: string }>(sql`
-      SELECT de.event_type, de.payload, u.nome AS autor, de.created_at::text AS em
+    db.execute<{ event_type: string; payload: Record<string, any>; autor: string | null; autor_ia: boolean | null; em: string }>(sql`
+      SELECT de.event_type, de.payload, u.nome AS autor, ${sql.raw(SQL_EH_AGENTE("u"))} AS autor_ia, de.created_at::text AS em
         FROM domain_events de
         LEFT JOIN usuarios u ON u.id = de.actor_id
        WHERE de.organizacao_id = ${a.organizacaoId}::uuid AND de.aggregate_type = 'tarefa' AND de.aggregate_id = ${t.id}::uuid
@@ -363,18 +366,19 @@ export async function carregarDetalhe(a: Ator, tarefaId: string): Promise<Detalh
   const daAtividade = arqs.filter((x) => x.entity_type === "tarefa");
   return {
     criadoPor: fatos.find((f) => f.event_type === "TaskCreated")?.autor ?? null,
+    criadoPorEhAgente: !!fatos.find((f) => f.event_type === "TaskCreated")?.autor_ia,
     subtarefas: subs.map(({ s, responsavelNome }) => ({
       id: s.id, titulo: s.titulo, descricao: s.descricao, concluida: s.concluida,
       responsavelId: s.responsavelId, responsavelNome, venceEm: s.venceEm, ordem: s.ordem,
     })),
-    comentarios: coms.map(({ c, autorNome }) => ({
-      id: c.id, autorId: c.autorId, autorNome, corpo: c.corpo, criadoEm: iso(c.createdAt)!, editadoEm: iso(c.editadoEm),
+    comentarios: coms.map(({ c, autorNome, autorTipo, autorAgenteId }) => ({
+      id: c.id, autorId: c.autorId, autorNome, autorEhAgente: ehAgenteUsuario({ tipo: autorTipo, agenteId: autorAgenteId }), corpo: c.corpo, criadoEm: iso(c.createdAt)!, editadoEm: iso(c.editadoEm),
       anexos: arqs.filter((x) => x.entity_type === "tarefa_comentario" && x.entity_id === c.id).map((x) => ({ id: x.id, nome: x.nome, mime: x.mime, url: url(x.id) })),
     })),
     anexos: daAtividade.map((x) => ({ id: x.id, nome: x.nome, mime: x.mime, url: url(x.id), autorNome: x.autor, criadoEm: iso(x.criado_em)! })),
     log: fatos.flatMap((f) => {
       const texto = textoDoFato(f.event_type, f.payload ?? {}, nomeDe);
-      return texto ? [{ autor: f.autor, texto, em: iso(f.em)! }] : [];
+      return texto ? [{ autor: f.autor, autorEhAgente: !!f.autor_ia, texto, em: iso(f.em)! }] : [];
     }),
   };
 }

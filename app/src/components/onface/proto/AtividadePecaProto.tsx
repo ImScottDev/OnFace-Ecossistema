@@ -17,6 +17,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { toast } from "sonner";
 
 import { acaoDetalhe, acaoResponsaveis } from "@/app/(produto)/pre-vendas/actions";
@@ -162,11 +163,12 @@ function DetalheDaAtividade({ inicial, equipe, doLead, abrir, fechar, gravou }: 
 
   /* O editor reconstrói o vínculo procurando a oportunidade no catálogo: sem a
      da atividade ali, salvar o editor "desligaria" a oportunidade. */
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
-    EQUIPE: equipe.map((r) => r.nome),
+    EQUIPE: ordenarEquipe(equipe.map((r) => r.nome)),
     OPORTUNIDADES: inicial.oppId ? [{ id: inicial.oppId, empresa: inicial.empresa, pessoa: inicial.pessoa, etapa: "" }] : [],
     REUNIOES: [], LEADS: [], AtividadesSeed: [], ProjetosSeed: [], Projetos: [],
-  }), [equipe, inicial.oppId, inicial.empresa, inicial.pessoa]);
+  }), [equipe, inicial.oppId, inicial.empresa, inicial.pessoa, ordenarEquipe]);
 
   return (
     <AtividadeDetalheLiga
@@ -272,8 +274,9 @@ export default function AtividadePecaProto({ peca, id, contexto, fechar, gravou 
     return null;
   }, [carga, idDoResponsavel, gravou]);
 
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
-    EQUIPE: carga?.equipe.map((r) => r.nome) ?? [],
+    EQUIPE: ordenarEquipe(carga?.equipe.map((r) => r.nome) ?? []),
     LEADS: carga?.leads ?? [],
     Agenda: {
       itens: () => [],
@@ -281,7 +284,7 @@ export default function AtividadePecaProto({ peca, id, contexto, fechar, gravou 
       iso: (d: Date | null) => (d ? `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}` : ""),
       hm: (d: (Date & { _h?: boolean }) | null) => (d && d._h ? `${p2(d.getHours())}:${p2(d.getMinutes())}` : ""),
     },
-  }), [carga]);
+  }), [carga, ordenarEquipe]);
 
   if (!carga) return null;
 

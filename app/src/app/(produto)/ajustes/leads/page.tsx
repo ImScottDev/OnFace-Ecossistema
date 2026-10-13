@@ -6,6 +6,7 @@ import { EditableList } from "@/components/crm2/ajustes/EditableList";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { Save, RotateCcw } from "lucide-react";
 import { DistribuicaoLeads } from "./DistribuicaoLeads";
+import { OpcoesDePessoa } from "@/components/onface/OpcoesDePessoa";
 
 export default function LeadsConfigPage() {
   const { config, isLoading, mutate } = usePipelineConfig();
@@ -177,7 +178,7 @@ export default function LeadsConfigPage() {
             style={{ background: "var(--cf2-bg-page)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}
           >
             <option value="">Sem responsável padrão</option>
-            {usuarios.map((usuario) => <option key={usuario.id} value={usuario.id}>{usuario.nome}{usuario.tipo === "agente" ? " (IA)" : ""}</option>)}
+            <OpcoesDePessoa itens={usuarios} />
           </select>
           <button
             onClick={salvarRoteamentoInbound}

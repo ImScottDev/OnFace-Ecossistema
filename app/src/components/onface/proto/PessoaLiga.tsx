@@ -381,6 +381,18 @@ class Logica extends React.Component<any, any> {
             onClick: () => this.E && this.E.abrir("atividade-ver", L.id)
           });
         }
+        /* Reuniões reais do lead: abrem a peça ÚNICA de Reunião, por id (nunca o cartão de leitura). */
+        const sitReu = (st) => st === "realizada" ? "Feita" : st === "agendada" ? "A fazer" : "Declinada";
+        (this.props.reunioes || []).forEach(r => {
+          const sit = sitReu(r.status);
+          const d = new Date(r.data);
+          itens.push({
+            titulo: r.titulo, tipo: "Reunião", meta: "Reunião · " + (L.resp || "—"), situacao: sit,
+            quando: isNaN(d.getTime()) ? "Sem data" : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+            aberta: r.status === "agendada", vinc: "contato",
+            onClick: () => this.E && this.E.abrir("reuniao", { id: r.id, leadId: L.id })
+          });
+        });
         const ov = S.atvEstado || {};
         const resp = L.resp || "—";
         (L.registro ? [] : [

@@ -130,13 +130,21 @@ export function formatarData(segundos: number | null | undefined): string | null
     .format(new Date(segundos * 1000));
 }
 
-/** Fim do período corrente: no basil mudou de lugar (passou para o item), então olha os dois. */
-function fimDoPeriodo(o: Obj): number | null {
-  const direto = asNum(o.current_period_end);
-  if (direto != null) return direto;
+/**
+ * Início e fim do período corrente (epoch, segundos). Na API basil (2025-06-30, a da conta
+ * live) `current_period_*` saiu da assinatura e passou para cada item: ler só o topo deixava
+ * o espelho inteiro sem "próxima cobrança". Topo se existir; senão o fim mais próximo dos itens.
+ */
+export function periodoCorrente(o: Obj): { inicio: number | null; fim: number | null } {
   const itens = asObj(o.items)?.data;
-  return Array.isArray(itens) ? asNum(asObj(itens[0])?.current_period_end) : null;
+  const nosItens = (k: string) => (Array.isArray(itens) ? itens.map((i) => asNum(asObj(i)?.[k])).filter((n): n is number => n != null) : []);
+  const fins = nosItens("current_period_end"), inicios = nosItens("current_period_start");
+  return {
+    inicio: asNum(o.current_period_start) ?? (inicios.length ? Math.max(...inicios) : null),
+    fim: asNum(o.current_period_end) ?? (fins.length ? Math.min(...fins) : null),
+  };
 }
+const fimDoPeriodo = (o: Obj): number | null => periodoCorrente(o).fim;
 
 const INTERVALO: Record<string, string> = { month: "mês", year: "ano", week: "semana", day: "dia" };
 

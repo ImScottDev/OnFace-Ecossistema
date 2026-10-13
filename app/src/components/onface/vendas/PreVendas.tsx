@@ -62,6 +62,7 @@ import {
   Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle,
 } from "@/components/ui/empty";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { OpcoesDePessoa } from "@/components/onface/OpcoesDePessoa";
 
 type Aba = "ativos" | "nutricao" | "desqualificados";
 
@@ -679,7 +680,7 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
   timeline: LinhaDoTempo[];
   pendente: boolean;
   bloqueio: { mensagem: string; acao?: { rotulo: string; tipo: string } } | null;
-  responsaveis: Array<{ id: string; nome: string }>;
+  responsaveis: Array<{ id: string; nome: string; ehAgente?: boolean }>;
   aoFechar: () => void;
   aoAgir: (tipo: string) => void;
   acoes: {
@@ -1243,7 +1244,7 @@ function DialogoNovoLead({ aberto, responsaveis, pendente, bloqueio, aoFechar, a
           <span>Responsável</span>
           <select {...campo("responsavelId")}>
             <option value="">Sem responsável</option>
-            {responsaveis.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+            <OpcoesDePessoa itens={responsaveis} />
           </select>
         </label>
         <p className="ov-nota">

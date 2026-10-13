@@ -29,7 +29,7 @@ import {
 /* ── O que a Liga recebe ───────────────────────────────────────────────── */
 
 export interface AtividadeDaTela {
-  id: string; tarefaId: string; tipo: string; titulo: string; desc: string;
+  id: string; tarefaId: string; reuniaoId?: string; tipo: string; titulo: string; desc: string;
   autor: string; quando: string; situacao: string; feita: boolean;
 }
 export interface NotaDaTela { id: string; autor: string; texto: string; quando: string; sistema: boolean }
@@ -302,7 +302,7 @@ export function LeadLiga({ l, acoes }: Props) {
     const atvs = filtradas.map((a, n) => ({
       titulo: a.titulo, meta: [a.tipo, a.autor, a.desc].filter(Boolean).join(" · "), quando: a.quando, situacao: a.situacao,
       d: ICONE.tarefa,
-      ver: () => abrirPeca("verAtividade", `p:${a.tarefaId}`),
+      ver: () => (a.reuniaoId ? abrirPeca("reuniao", a.reuniaoId, { leadId: l.id }) : abrirPeca("verAtividade", `p:${a.tarefaId}`)),
       seloStyle: "flex:0 0 auto;display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:700;white-space:nowrap;" + (a.situacao === "Feita" ? "background:#e6f4ee;color:#1f7256" : a.situacao === "Declinada" ? "background:#eeeff3;color:#67787c" : a.situacao === "Em andamento" ? "background:#e8f0fb;color:#2c5f9e" : "background:#fff6f4;color:#9c3210"),
       marca: "flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;" + (a.feita ? "background:#eeeff3;color:#4a5560" : "background:#fff6f4;color:#c2330f"),
       linhaStyle: "display:flex;align-items:center;gap:11px;width:100%;padding:10px 8px;border:0;background:transparent;cursor:pointer;text-align:left;border-radius:8px;" + (n ? "border-top:1px solid #f3f5f5" : ""),

@@ -14,6 +14,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -149,10 +150,11 @@ export default function IniciarRelacaoPecaProto({ contexto, fechar, gravou }: Pe
     };
   }, [carga, contexto]);
 
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
-    EQUIPE: carga?.equipe.map((r) => r.nome) ?? [],
+    EQUIPE: ordenarEquipe(carga?.equipe.map((r) => r.nome) ?? []),
     CADENCIAS: carga?.cadencias.map((c) => c.nome) ?? [],
-  }), [carga]);
+  }), [carga, ordenarEquipe]);
 
   const concluir = React.useCallback(async (cam: "pv" | "opp", f: Formulario) => {
     if (!carga || !empresaId) return;

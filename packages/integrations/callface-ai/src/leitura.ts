@@ -358,6 +358,8 @@ export async function lerDetalhe(sql: Sql, organizationIds: string[]): Promise<D
   const userIds = [...new Set(usu.map((u) => String(u.user_id)))];
   const atividade = new Map<string, { ultima: Date | null; c7: number; c30: number }>();
   if (userIds.length) {
+    // Literal de array em UM parâmetro: a conexão tem fetch_types:false, então
+    // sql.array() não tem serializador e mandaria "a,b,c" sem as chaves.
     const linhas = await sql<Array<Record<string, unknown>>>`
       SELECT uid AS user_id,
              (SELECT c.created_at AT TIME ZONE 'UTC' FROM calls c WHERE c.user_id = uid
@@ -366,7 +368,7 @@ export async function lerDetalhe(sql: Sql, organizationIds: string[]): Promise<D
                 AND c.created_at >= (now() AT TIME ZONE 'UTC') - interval '7 days')::int AS c7,
              (SELECT count(*) FROM calls c WHERE c.user_id = uid
                 AND c.created_at >= (now() AT TIME ZONE 'UTC') - interval '30 days')::int AS c30
-        FROM unnest(${sql.array(userIds)}::text[]) AS uid`;
+        FROM unnest(${`{${userIds.join(",")}}`}::text[]) AS uid`;
     for (const l of linhas) atividade.set(String(l.user_id), { ultima: (l.ultima as Date) ?? null, c7: Number(l.c7), c30: Number(l.c30) });
   }
 

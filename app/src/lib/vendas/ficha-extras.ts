@@ -88,6 +88,20 @@ export async function enriquecimentoDaEmpresa(organizacaoId: string, empresaId: 
   return e ?? { funcionarios: null, faturamento: null, linkedin: null, tecnologias: null, deApollo: false };
 }
 
+export interface ReuniaoDoLead { id: string; titulo: string; data: string; status: string }
+
+/**
+ * As reuniões do lead (tabela `reunioes`, a mesma que a peça de Reunião abre por id).
+ * Lead e Pessoa listam por aqui: o clique abre a peça única, sem cartão próprio.
+ */
+export async function reunioesDoLead(organizacaoId: string, leadId: string): Promise<ReuniaoDoLead[]> {
+  const linhas = await db.execute<{ id: string; titulo: string; data: string; status: string }>(sql`
+    SELECT id::text, titulo, data::text, status FROM reunioes
+     WHERE lead_id = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid
+     ORDER BY data DESC LIMIT 50`);
+  return linhas.map((r) => ({ id: r.id, titulo: r.titulo, data: r.data, status: r.status }));
+}
+
 export interface TarefaDoLead {
   id: string; titulo: string; tipo: string | null; status: string;
   descricao: string | null; venceEm: string | null; responsavel: string | null;

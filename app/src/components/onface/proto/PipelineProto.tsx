@@ -14,6 +14,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { useOrdemDaEquipe } from "./equipe-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -242,11 +243,12 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
 
      `LEADS` e `OPORTUNIDADES` ficam vazios de propósito: eram o mock, e o dado
      real entra por `dados`, logo abaixo. */
+  const ordenarEquipe = useOrdemDaEquipe();
   const catalogo = React.useMemo(() => ({
-    EQUIPE: dados.filtros.responsaveis.map((r) => r.nome),
+    EQUIPE: ordenarEquipe(dados.filtros.responsaveis.map((r) => r.nome)),
     LEADS: [],
     OPORTUNIDADES: [],
-  }), [dados.filtros.responsaveis]);
+  }), [dados.filtros.responsaveis, ordenarEquipe]);
 
   const opps = React.useMemo(
     () => dados.colunas.flatMap((col) => col.cards).map(paraODesenho),
