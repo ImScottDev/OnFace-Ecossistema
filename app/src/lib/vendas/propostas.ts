@@ -465,19 +465,47 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
   const validade = new Date();
   validade.setDate(validade.getDate() + envio.validadeDias);
 
-  await db.execute(sql`
-    UPDATE propostas SET
-      status = 'enviada',
-      modo_fechamento = ${envio.modoFechamento},
-      validade_dias = ${envio.validadeDias},
-      data_validade = ${validade.toISOString().slice(0, 10)}::date,
-      enviada_em = now(),
-      tipo_contratual = ${envio.tipoContratual ?? null},
-      contrato_base_id = ${envio.contratoBaseId ?? null}::uuid,
-      service_family = COALESCE(service_family, ${proposta.familia_oportunidade ?? null}),
-      updated_at = now()
-     WHERE id = ${envio.propostaId}::uuid
-  `);
+  // Transição atômica: só envia quem ainda é rascunho (dois envios simultâneos não passam os dois) e,
+  // na mesma transação, a versão anterior vigente deixa de poder ser aceita: agora existe a que a substitui.
+  const substituidas = await db.transaction(async (tx) => {
+    const marcada = await tx.execute<{ original: string | null; versao: number }>(sql`
+      UPDATE propostas SET
+        status = 'enviada',
+        modo_fechamento = ${envio.modoFechamento},
+        validade_dias = ${envio.validadeDias},
+        data_validade = ${validade.toISOString().slice(0, 10)}::date,
+        enviada_em = now(),
+        tipo_contratual = ${envio.tipoContratual ?? null},
+        contrato_base_id = ${envio.contratoBaseId ?? null}::uuid,
+        service_family = COALESCE(service_family, ${proposta.familia_oportunidade ?? null}),
+        updated_at = now()
+       WHERE id = ${envio.propostaId}::uuid AND organizacao_id = ${envio.organizacaoId}::uuid AND status = 'rascunho'
+      RETURNING proposta_original_id::text AS original, versao
+    `);
+    if (marcada.length === 0) {
+      throw new RegraDeNegocio("proposta_ja_enviada", "Esta proposta já foi enviada. Para mudar a oferta, crie uma revisão.", { rotulo: "Criar revisão", tipo: "criar_revisao" });
+    }
+    const { original, versao } = marcada[0];
+    if (!original) return [];
+    return tx.execute<{ id: string; versao: number }>(sql`
+      UPDATE propostas SET status = 'substituida', substituida_em = now(), substituida_por_id = ${envio.propostaId}::uuid, updated_at = now()
+       WHERE organizacao_id = ${envio.organizacaoId}::uuid AND id <> ${envio.propostaId}::uuid
+         AND (id = ${original}::uuid OR proposta_original_id = ${original}::uuid)
+         AND versao < ${versao} AND status IN ('enviada', 'visualizada', 'ajuste_solicitado')
+      RETURNING id::text, versao
+    `);
+  });
+  for (const anterior of substituidas) {
+    await registrarEvento({
+      organizacaoId: envio.organizacaoId, tipo: "ProposalSuperseded", ator: envio.ator,
+      propostaId: anterior.id, negocioId: proposta.negocio_id,
+      contexto: { novaPropostaId: envio.propostaId, novaVersao: proposta.versao },
+      timeline: {
+        tipo: "nota", titulo: `Proposta #${proposta.numero} revisada`,
+        descricao: `v${anterior.versao} substituída pela v${proposta.versao}`,
+      },
+    });
+  }
 
   await registrarEvento({
     organizacaoId: envio.organizacaoId, tipo: "ProposalSent", ator: envio.ator,
@@ -611,86 +639,99 @@ export async function registrarRespostaDoCliente(params: {
 /**
  * Cria a revisão de uma proposta já enviada.
  *
- * A anterior vira `substituida` e deixa de poder ser aceita (§1 e §30); ela
- * continua no histórico, que é o ponto do versionamento. Editar em silêncio
- * uma proposta que o cliente já recebeu está entre as proibições.
+ * A anterior CONTINUA vigente (o cliente ainda pode abrir e aceitar o link dela)
+ * até a nova ser ENVIADA: só `enviarProposta` a marca `substituida`. Antes, a
+ * anterior era substituída aqui, e uma edição que falhasse depois deixava o
+ * cliente com um link morto e nenhuma versão enviada no lugar.
  *
- * Copia itens, condições e modo de fechamento — quem revisa quase sempre muda
- * um item ou um desconto, não recomeça do zero.
+ * Uma transação só, com a linha da proposta travada: duas revisões simultâneas
+ * não geram a mesma versão (o índice único também barra), e se já existe um
+ * rascunho de revisão desta proposta ele é devolvido em vez de criar outro.
+ * Copia itens, condições e modo de fechamento.
  */
 export async function criarRevisao(params: {
   organizacaoId: string;
   propostaId: string;
   ator: Ator;
 }): Promise<{ propostaId: string; versao: number }> {
-  const proposta = await carregarProposta(params.organizacaoId, params.propostaId);
+  const resultado = await db.transaction(async (tx) => {
+    const [proposta] = await tx.execute<{
+      id: string; negocio_id: string | null; numero: number; versao: number; status: string; original: string;
+    }>(sql`
+      SELECT id::text, negocio_id::text, numero, versao, status, COALESCE(proposta_original_id, id)::text AS original
+        FROM propostas
+       WHERE id = ${params.propostaId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid
+         FOR UPDATE`);
+    if (!proposta) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");
 
-  if (proposta.status === "rascunho") {
-    throw new RegraDeNegocio("proposta_em_rascunho", "Esta proposta ainda é rascunho: edite-a diretamente.");
-  }
-  if (proposta.status === "aceita") {
-    throw new RegraDeNegocio(
-      "proposta_aceita",
-      "A versão aceita é preservada. Uma renegociação posterior gera uma proposta nova.",
-    );
-  }
+    if (proposta.status === "rascunho") {
+      throw new RegraDeNegocio("proposta_em_rascunho", "Esta proposta ainda é rascunho: edite-a diretamente.");
+    }
+    if (proposta.status === "aceita") {
+      throw new RegraDeNegocio(
+        "proposta_aceita",
+        "A versão aceita é preservada. Uma renegociação posterior gera uma proposta nova.",
+      );
+    }
 
-  const [nova] = await db.execute<{ id: string; versao: number }>(sql`
-    INSERT INTO propostas (
-      organizacao_id, lead_id, negocio_id, numero, versao, proposta_original_id,
-      moeda, status, data_emissao, observacoes, condicoes_pagamento,
-      condicao_pagamento_tipo, parcelas, vencimento_dias, prazo_contrato_meses,
-      signatarios, editor, total_recorrente, total_avulso, total_geral, criado_por_id,
-      modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family
-    )
-    SELECT organizacao_id, lead_id, negocio_id, numero, versao + 1,
-           COALESCE(proposta_original_id, id),
-           moeda, 'rascunho', CURRENT_DATE, observacoes, condicoes_pagamento,
-           condicao_pagamento_tipo, parcelas, vencimento_dias, prazo_contrato_meses,
-           signatarios, editor, total_recorrente, total_avulso, total_geral,
-           ${params.ator.usuarioId ?? null}::uuid,
-           modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family
-      FROM propostas WHERE id = ${params.propostaId}::uuid
-    RETURNING id::text, versao
-  `);
+    // Trabalha sempre sobre a versão vigente: já existe uma mais nova desta proposta?
+    const [maisNova] = await tx.execute<{ id: string; versao: number; status: string }>(sql`
+      SELECT id::text, versao, status FROM propostas
+       WHERE organizacao_id = ${params.organizacaoId}::uuid AND id <> ${proposta.id}::uuid
+         AND COALESCE(proposta_original_id, id) = ${proposta.original}::uuid AND versao > ${proposta.versao}
+       ORDER BY versao DESC LIMIT 1`);
+    if (maisNova) {
+      if (maisNova.status === "rascunho") return { propostaId: maisNova.id, versao: maisNova.versao, nova: false };
+      throw new RegraDeNegocio("proposta_nao_e_a_vigente", `Esta é a v${proposta.versao}; já existe a v${maisNova.versao}. Revise a versão vigente.`);
+    }
 
-  await db.execute(sql`
-    INSERT INTO proposta_itens (
-      proposta_id, servico_catalogo_id, nome, descricao, tipo, moeda, quantidade,
-      valor_unitario, desconto, desconto_tipo, subtotal, ordem, commercial_model,
-      catalogo_preco_id, stripe_product_id, stripe_price_id, sku_preco, variacao,
-      valor_tabela, service_family, revenue_nature
-    )
-    SELECT ${nova.id}::uuid, servico_catalogo_id, nome, descricao, tipo, moeda, quantidade,
-           valor_unitario, desconto, desconto_tipo, subtotal, ordem, commercial_model,
-           catalogo_preco_id, stripe_product_id, stripe_price_id, sku_preco, variacao,
-           valor_tabela, service_family, revenue_nature
-      FROM proposta_itens WHERE proposta_id = ${params.propostaId}::uuid
-  `);
+    const [nova] = await tx.execute<{ id: string; versao: number }>(sql`
+      INSERT INTO propostas (
+        organizacao_id, lead_id, negocio_id, numero, versao, proposta_original_id,
+        moeda, status, data_emissao, observacoes, condicoes_pagamento,
+        condicao_pagamento_tipo, parcelas, vencimento_dias, prazo_contrato_meses,
+        signatarios, editor, total_recorrente, total_avulso, total_geral, criado_por_id,
+        modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family
+      )
+      SELECT organizacao_id, lead_id, negocio_id, numero, versao + 1,
+             COALESCE(proposta_original_id, id),
+             moeda, 'rascunho', CURRENT_DATE, observacoes, condicoes_pagamento,
+             condicao_pagamento_tipo, parcelas, vencimento_dias, prazo_contrato_meses,
+             signatarios, editor, total_recorrente, total_avulso, total_geral,
+             ${params.ator.usuarioId ?? null}::uuid,
+             modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family
+        FROM propostas WHERE id = ${proposta.id}::uuid
+      RETURNING id::text, versao
+    `);
 
-  await db.execute(sql`
-    UPDATE propostas SET
-      status = 'substituida', substituida_em = now(), substituida_por_id = ${nova.id}::uuid, updated_at = now()
-     WHERE id = ${params.propostaId}::uuid
-  `);
-
-  await registrarEvento({
-    organizacaoId: params.organizacaoId, tipo: "ProposalSuperseded", ator: params.ator,
-    propostaId: params.propostaId, negocioId: proposta.negocio_id,
-    contexto: { novaPropostaId: nova.id, novaVersao: nova.versao },
-    timeline: {
-      tipo: "nota", titulo: `Proposta #${proposta.numero} revisada`,
-      descricao: `v${proposta.versao} substituída pela v${nova.versao}`,
-    },
+    await tx.execute(sql`
+      INSERT INTO proposta_itens (
+        proposta_id, servico_catalogo_id, nome, descricao, tipo, moeda, quantidade,
+        valor_unitario, desconto, desconto_tipo, subtotal, ordem, commercial_model,
+        catalogo_preco_id, stripe_product_id, stripe_price_id, sku_preco, variacao,
+        valor_tabela, service_family, revenue_nature
+      )
+      SELECT ${nova.id}::uuid, servico_catalogo_id, nome, descricao, tipo, moeda, quantidade,
+             valor_unitario, desconto, desconto_tipo, subtotal, ordem, commercial_model,
+             catalogo_preco_id, stripe_product_id, stripe_price_id, sku_preco, variacao,
+             valor_tabela, service_family, revenue_nature
+        FROM proposta_itens WHERE proposta_id = ${proposta.id}::uuid
+    `);
+    return { propostaId: nova.id, versao: nova.versao, nova: true, deId: proposta.id, negocioId: proposta.negocio_id, numero: proposta.numero, deVersao: proposta.versao };
   });
 
-  await registrarEvento({
-    organizacaoId: params.organizacaoId, tipo: "ProposalCreated", ator: params.ator,
-    propostaId: nova.id, negocioId: proposta.negocio_id,
-    contexto: { versao: nova.versao, revisaoDe: params.propostaId },
-  });
-
-  return { propostaId: nova.id, versao: nova.versao };
+  if (resultado.nova) {
+    await registrarEvento({
+      organizacaoId: params.organizacaoId, tipo: "ProposalCreated", ator: params.ator,
+      propostaId: resultado.propostaId, negocioId: resultado.negocioId,
+      contexto: { versao: resultado.versao, revisaoDe: resultado.deId },
+      timeline: {
+        tipo: "nota", titulo: `Proposta #${resultado.numero} revisada`,
+        descricao: `v${resultado.versao} criada a partir da v${resultado.deVersao}; a anterior segue vigente até a nova ser enviada`,
+      },
+    });
+  }
+  return { propostaId: resultado.propostaId, versao: resultado.versao };
 }
 
 /**
