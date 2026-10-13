@@ -183,7 +183,12 @@ class ReuniaoLigada extends ReuniaoLiga {
     };
     if (edit) {
       const antes = this.p.reunioes.get(edit);
-      if (antes && RU.closer && RU.closer !== antes.responsavel) toast("O responsável não muda por aqui — o resto foi salvo.");
+      // Trocar o responsável move o evento do Outlook dele para o do novo (a rota faz e devolve o aviso).
+      if (antes && RU.closer && RU.closer !== antes.responsavel) {
+        const novo = this.p.equipe.find((m) => m.nome === RU.closer);
+        if (novo) corpo.responsavelId = novo.id;
+        else toast("Não achei esse responsável na equipe — o resto foi salvo.");
+      }
     } else {
       const lead = O?.leadId ? null : this.p.leads.find((l) => l.pessoa === pessoa && (!empresa || l.empresa === empresa));
       Object.assign(corpo, {
@@ -228,7 +233,7 @@ class ReuniaoLigada extends ReuniaoLiga {
       const membro = this.p.equipe.find((m) => m.nome === RU.closer);
       const antes = RU.ref?.id ? this.p.reunioes.get(RU.ref.id) : null;
       v.reu.linkTxt = antes
-        ? (antes.temEvento ? "Se mudar data, horário, título ou duração, o evento no Outlook é atualizado." : "Esta reunião não está no Outlook: as mudanças ficam no CRM.")
+        ? (antes.temEvento ? "Se mudar data, horário, título ou duração, o evento no Outlook é atualizado. Se trocar o responsável, o evento passa para o Outlook dele." : "Esta reunião não está no Outlook: as mudanças ficam no CRM.")
         : membro?.outlook
           ? "O link do Teams é gerado pelo Outlook quando você agendar."
           : (RU.closer || "O responsável") + " não tem Outlook conectado: a reunião fica só no CRM, sem link nem convite.";

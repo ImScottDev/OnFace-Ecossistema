@@ -22,6 +22,7 @@ import { sql } from "drizzle-orm";
 import { microsoftCalendar } from "./microsoft";
 import { googleCalendar } from "./google";
 import { FRASE_DA_FALHA, type CalendarProvider, type NomeProvider } from "./provider";
+import { moverEventoDeCalendario, cumprirRemocao, precisaMover, type PortaTroca, type RemocaoPendente, type ResultadoTroca } from "./troca-de-agenda";
 
 /** Microsoft primeiro por ser o que a operação usa hoje. */
 const PROVIDERS: CalendarProvider[] = [microsoftCalendar, googleCalendar];
@@ -73,6 +74,11 @@ interface LinhaReuniao extends Record<string, unknown> {
   calendar_provider: string | null;
   calendar_event_id: string | null;
   calendar_conta_id: string | null;
+  /** Dono (usuário) da conta vinculada: se não é o responsável, o evento está no calendário errado. */
+  dono_conta: string | null;
+  status: string | null;
+  calendar_sync_status: string | null;
+  calendar_remocao_pendente: RemocaoPendente | null;
   convidado_email: string | null;
   participantes: string[] | null;
 }
@@ -98,6 +104,8 @@ async function carregar(organizacaoId: string, reuniaoId: string): Promise<Linha
            COALESCE(r.calendar_provider, CASE WHEN r.outlook_event_id IS NOT NULL THEN 'microsoft' END) AS calendar_provider,
            COALESCE(r.calendar_event_id, r.outlook_event_id) AS calendar_event_id,
            r.calendar_conta_id::text AS calendar_conta_id,
+           (SELECT ec.usuario_id::text FROM email_contas ec WHERE ec.id = r.calendar_conta_id) AS dono_conta,
+           r.status, r.calendar_sync_status, r.calendar_remocao_pendente,
            -- O convidado é o contato do processo: pessoa canônica primeiro,
            -- lead legado como ponte enquanto ele existir.
            COALESCE(p.email, l.email) AS convidado_email,
@@ -150,6 +158,90 @@ async function escolher(
     if (contaId) return { provider: p, contaId };
   }
   return { erro: algumConfigurado ? "sem_conta" : "nao_configurado" };
+}
+
+// ─── Troca de responsável: o evento muda de calendário ──────────────────────
+
+function portaTroca(organizacaoId: string): PortaTroca {
+  return {
+    providerPorNome,
+    candidatos: (preferido) => {
+      const ativos = PROVIDERS.filter((p) => p.configurado());
+      return [...ativos.filter((p) => p.nome === preferido), ...ativos.filter((p) => p.nome !== preferido)];
+    },
+    async nomeDoUsuario(usuarioId) {
+      const [u] = await db.execute<{ nome: string }>(sql`SELECT nome FROM usuarios WHERE id = ${usuarioId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
+      return u?.nome ?? "outro usuário";
+    },
+    async emailDaConta(contaId) {
+      const [c] = await db.execute<{ email: string }>(sql`SELECT email FROM email_contas WHERE id = ${contaId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
+      return c?.email ?? null;
+    },
+    async reservar(reuniaoId) {
+      // Mesma reserva da criação: quem não ganha não troca. Vale 2 minutos (processo que morreu no meio não trava para sempre).
+      const [r] = await db.execute<{ id: string }>(sql`
+        UPDATE reunioes SET calendar_sync_status = 'pendente', calendar_sync_em = now()
+         WHERE id = ${reuniaoId}::uuid AND organizacao_id = ${organizacaoId}::uuid
+           AND (calendar_sync_status IS DISTINCT FROM 'pendente' OR calendar_sync_em IS NULL OR calendar_sync_em < now() - interval '2 minutes')
+        RETURNING id::text`);
+      return Boolean(r);
+    },
+    async gravarTroca(reuniaoId, de, para, pendente) {
+      // Compare-and-swap: só grava se o vínculo AINDA é o que a troca leu. Vínculo novo + pendência do antigo vão juntos.
+      const [r] = await db.execute<{ id: string }>(sql`
+        UPDATE reunioes SET
+          calendar_provider = ${para.provider},
+          calendar_event_id = ${para.eventId},
+          calendar_conta_id = ${para.contaId}::uuid,
+          outlook_event_id = ${para.provider === "microsoft" ? para.eventId : null},
+          link = ${para.link},
+          calendar_remocao_pendente = ${pendente ? JSON.stringify(pendente) : null}::jsonb,
+          calendar_sync_status = 'ok', calendar_sync_erro = NULL, calendar_sync_em = now(), updated_at = now()
+         WHERE id = ${reuniaoId}::uuid AND organizacao_id = ${organizacaoId}::uuid
+           AND COALESCE(calendar_event_id, outlook_event_id) = ${de.eventId}
+           AND calendar_conta_id IS NOT DISTINCT FROM ${de.contaId}::uuid
+        RETURNING id::text`);
+      return Boolean(r);
+    },
+    async falhar(reuniaoId, erro) {
+      await gravarEstado(reuniaoId, { status: "falhou", erro });
+    },
+    async remocaoConcluida(reuniaoId) {
+      await db.execute(sql`
+        UPDATE reunioes SET calendar_remocao_pendente = NULL, calendar_sync_status = 'ok', calendar_sync_erro = NULL, calendar_sync_em = now(), updated_at = now()
+         WHERE id = ${reuniaoId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
+    },
+    async remocaoFalhou(reuniaoId, erro) {
+      await gravarEstado(reuniaoId, { status: "falhou", erro });
+    },
+  };
+}
+
+function paraTroca(r: LinhaReuniao, anteriorId: string | null): Parameters<typeof moverEventoDeCalendario>[1] {
+  const inicio = new Date(r.data);
+  return {
+    id: r.id, titulo: r.titulo, inicioISO: inicio.toISOString(), fimISO: new Date(inicio.getTime() + (r.duracao || 30) * 60_000).toISOString(),
+    notas: r.notas, convidados: convidadosDe(r), responsavelId: r.responsavel_id!, anteriorId,
+    provider: r.calendar_provider, eventId: r.calendar_event_id!, contaId: r.calendar_conta_id, donoDaConta: r.dono_conta,
+    remocaoPendente: r.calendar_remocao_pendente,
+  };
+}
+
+/** O evento está no calendário de quem não é o responsável, ou sobrou evento antigo a retirar? */
+function pedeTroca(r: LinhaReuniao, anteriorId: string | null): boolean {
+  return r.status === "agendada" && Boolean(r.responsavel_id) && Boolean(r.calendar_event_id)
+    && (Boolean(r.calendar_remocao_pendente) || precisaMover({ donoDaConta: r.dono_conta, anteriorId, responsavelId: r.responsavel_id! }));
+}
+
+/** Cancela, sem mover nada, o evento que ficou para trás (reunião cancelada ou já realizada). */
+async function retirarEventoAntigo(organizacaoId: string, r: LinhaReuniao): Promise<{ ok: boolean; aviso: string | null }> {
+  if (!r.calendar_remocao_pendente) return { ok: true, aviso: null };
+  return cumprirRemocao(portaTroca(organizacaoId), r, r.calendar_remocao_pendente, "Reunião movida para outro calendário.");
+}
+
+/** Falha que escapou da sincronização: vira erro visível na reunião (peça), nunca só log. */
+export async function marcarFalhaDeSync(reuniaoId: string, erro: string): Promise<void> {
+  await gravarEstado(reuniaoId, { status: "falhou", erro: erro.slice(0, 300) });
 }
 
 export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): Promise<ResultadoSync> {
@@ -215,13 +307,33 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
 export async function atualizarNaAgenda(
   organizacaoId: string, reuniaoId: string,
   /** `convidados: true` quando os participantes mudaram: a lista do evento passa a ser a da reunião. */
-  opcoes: { convidados?: boolean } = {},
+  /** `anteriorResponsavelId`: quem era o responsável antes da troca (reunião sem `calendar_conta_id`, anterior à 0110). */
+  opcoes: { convidados?: boolean; anteriorResponsavelId?: string | null } = {},
 ): Promise<ResultadoSync> {
   const r = await carregar(organizacaoId, reuniaoId);
   if (!r) return { sincronizado: false, provider: null, aviso: "Reunião não encontrada." };
 
   // Nunca houve evento externo: não é atualização, é criação.
   if (!r.calendar_event_id) return criarNaAgenda(organizacaoId, reuniaoId);
+
+  // O responsável mudou: o evento vive no calendário de outra pessoa. Move (cria no novo, retira do antigo)
+  // com os dados atuais da reunião. Quando não dá para mover, segue atualizando o evento onde ele está
+  // e mantém o erro da troca visível em vez de marcar "ok".
+  let trocaPendente: ResultadoTroca | null = null;
+  if (pedeTroca(r, opcoes.anteriorResponsavelId ?? null)) {
+    const troca = await moverEventoDeCalendario(portaTroca(organizacaoId), paraTroca(r, opcoes.anteriorResponsavelId ?? null));
+    if (troca.estado === "movido") return { sincronizado: true, provider: troca.provider as NomeProvider, eventId: troca.eventId, link: troca.link, aviso: null, semConvidado: convidadosDe(r).length === 0 };
+    if (troca.estado === "em_andamento") return { sincronizado: false, provider: (r.calendar_provider as NomeProvider | null), aviso: troca.aviso };
+    if (troca.estado === "pendente" && troca.eventId) {
+      // Já está no calendário novo; só falta retirar o antigo (a pendência fica gravada e o worker repete).
+      return { sincronizado: true, provider: troca.provider as NomeProvider, eventId: troca.eventId, link: troca.link, aviso: troca.aviso, semConvidado: convidadosDe(r).length === 0 };
+    }
+    if (troca.estado === "pendente") {
+      // Sem a conta que criou o evento (anterior à 0110) não dá para atualizá-lo onde está sem arriscar uma recriação no calendário errado.
+      if (!r.calendar_conta_id) return { sincronizado: false, provider: (r.calendar_provider as NomeProvider | null), aviso: troca.aviso };
+      trocaPendente = troca;
+    }
+  }
 
   const escolha = await escolher(r);
   if ("erro" in escolha) {
@@ -247,6 +359,11 @@ export async function atualizarNaAgenda(
     await db.execute(sql`UPDATE reunioes SET calendar_event_id = NULL, outlook_event_id = NULL WHERE id = ${reuniaoId}::uuid`);
     return criarNaAgenda(organizacaoId, reuniaoId);
   }
+  if (trocaPendente) {
+    // O evento foi atualizado onde está, mas a troca de calendário não aconteceu: não vira "ok".
+    await gravarEstado(reuniaoId, { provider: escolha.provider.nome, status: "falhou", erro: trocaPendente.aviso });
+    return { sincronizado: false, provider: escolha.provider.nome, eventId: r.calendar_event_id, aviso: trocaPendente.aviso, semConvidado: convidados.length === 0 };
+  }
   await gravarEstado(reuniaoId, { provider: escolha.provider.nome, contaId: escolha.contaId, status: "ok" });
   return { sincronizado: true, provider: escolha.provider.nome, eventId: r.calendar_event_id, aviso: null, semConvidado: convidados.length === 0 };
 }
@@ -264,6 +381,11 @@ export async function cancelarNaAgenda(organizacaoId: string, reuniaoId: string,
     return { sincronizado: false, provider: escolha.provider.nome, aviso: FRASE_DA_FALHA[res.motivo] };
   }
   await gravarEstado(reuniaoId, { provider: escolha.provider.nome, status: "ok" });
+  // Sobrou evento num calendário antigo (troca de responsável incompleta): cancelar a reunião cancela os dois.
+  if (r.calendar_remocao_pendente) {
+    const dren = await retirarEventoAntigo(organizacaoId, r);
+    if (!dren.ok) return { sincronizado: false, provider: escolha.provider.nome, aviso: dren.aviso };
+  }
   return { sincronizado: true, provider: escolha.provider.nome, aviso: null };
 }
 
@@ -274,18 +396,31 @@ export async function cancelarNaAgenda(organizacaoId: string, reuniaoId: string,
 export async function reprocessarSyncPendente(
   organizacaoId: string, limite = 50,
 ): Promise<{ tentadas: number; resolvidas: number }> {
-  const pendentes = await db.execute<{ id: string; tem_evento: boolean }>(sql`
-    SELECT id::text, (COALESCE(calendar_event_id, outlook_event_id) IS NOT NULL) AS tem_evento
-      FROM reunioes
-     WHERE organizacao_id = ${organizacaoId}::uuid
-       AND calendar_sync_status = 'falhou'
-       AND status NOT IN ('cancelada')
-       AND data > now() - interval '7 days'
-     ORDER BY calendar_sync_em NULLS FIRST
+  const pendentes = await db.execute<{ id: string; tem_evento: boolean; status: string | null; tem_pendencia: boolean }>(sql`
+    SELECT r.id::text, (COALESCE(r.calendar_event_id, r.outlook_event_id) IS NOT NULL) AS tem_evento, r.status,
+           (r.calendar_remocao_pendente IS NOT NULL) AS tem_pendencia
+      FROM reunioes r
+      LEFT JOIN email_contas ec ON ec.id = r.calendar_conta_id
+     WHERE r.organizacao_id = ${organizacaoId}::uuid
+       AND (
+         (r.calendar_sync_status = 'falhou' AND r.status NOT IN ('cancelada') AND r.data > now() - interval '7 days')
+         -- Troca de responsável que não terminou: evento por retirar do calendário antigo, ou evento no
+         -- calendário de quem não é mais o responsável. Vale mesmo com a sincronização marcada "ok".
+         OR (r.calendar_remocao_pendente IS NOT NULL AND r.data > now() - interval '7 days')
+         OR (r.status = 'agendada' AND r.data > now() AND ec.usuario_id IS NOT NULL AND ec.usuario_id <> r.responsavel_id
+             AND COALESCE(r.calendar_event_id, r.outlook_event_id) IS NOT NULL)
+       )
+     ORDER BY r.calendar_sync_em NULLS FIRST
      LIMIT ${limite}`);
 
   let resolvidas = 0;
   for (const p of pendentes) {
+    if (p.status !== "agendada" && p.tem_pendencia) {
+      // Realizada/no-show/cancelada: não se atualiza evento, só se retira o que sobrou do calendário antigo.
+      const r = await carregar(organizacaoId, p.id);
+      if (r && (await retirarEventoAntigo(organizacaoId, r)).ok) resolvidas++;
+      continue;
+    }
     const r = p.tem_evento
       ? await atualizarNaAgenda(organizacaoId, p.id)
       : await criarNaAgenda(organizacaoId, p.id);

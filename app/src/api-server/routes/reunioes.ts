@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { criarNaAgenda, atualizarNaAgenda, cancelarNaAgenda, FRASE_SEM_CONVIDADO, type ResultadoSync } from "@/lib/calendario/sincronizar";
 import { registrarEvento, type TipoEventoVendas } from "@/lib/vendas/eventos";
+import { trocarResponsavelDaReuniao, validarResponsavel, ResponsavelInvalidoError, ReuniaoNaoEncontradaError } from "@/lib/calendario/trocar-responsavel";
 
 type OutlookResultado = { criado: boolean; motivo: string | null };
 
@@ -95,6 +96,8 @@ const updateSchema = z.object({
   notas: z.string().optional().nullable(),
   transcript: z.string().optional().nullable(),
   resumoTranscript: z.string().optional().nullable(),
+  /** Troca o responsável: o evento acompanha, saindo do calendário antigo e entrando no do novo (lib/calendario/trocar-responsavel). */
+  responsavelId: z.string().uuid().optional(),
 }).strict();
 
 // GET /api/reunioes
@@ -222,6 +225,9 @@ app.patch("/reunioes/:id", async (c) => {
     const body = await c.req.json();
     const data = updateSchema.parse(body);
 
+    // Valida antes de gravar qualquer campo: responsável inválido não pode deixar a edição pela metade.
+    if (data.responsavelId !== undefined) await validarResponsavel(ctx.organizacaoId, data.responsavelId);
+
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (data.titulo !== undefined) updates.titulo = data.titulo;
     if (data.data !== undefined) updates.data = new Date(data.data);
@@ -262,8 +268,28 @@ app.patch("/reunioes/:id", async (c) => {
       try { const r = await f(); return r.aviso ?? (r.sincronizado && r.semConvidado && data.participantes !== undefined ? FRASE_SEM_CONVIDADO : null); }
       catch (e) { console.error(`[Reunioes] sincronização da reunião ${id} falhou:`, e); return "Alteração salva no CRM, mas não consegui atualizar a agenda. Tente de novo."; }
     };
+    // Troca de responsável: grava, move o evento de calendário e registra na timeline. Como o evento novo
+    // nasce com os dados já salvos acima, esta chamada também cobre as outras edições do mesmo PATCH.
+    let trocaFeita = false;
+    if (data.responsavelId !== undefined) {
+      try {
+        const t = await trocarResponsavelDaReuniao({
+          organizacaoId: ctx.organizacaoId, reuniaoId: id, novoResponsavelId: data.responsavelId,
+          ator: { tipo: "HUMAN", usuarioId: ctx.userId }, convidados: data.participantes !== undefined,
+        });
+        trocaFeita = t.sincronizou;
+        avisoAgenda = t.aviso;
+      } catch (e) {
+        if (e instanceof ReuniaoNaoEncontradaError) return c.json({ error: e.message }, 404);
+        console.error(`[Reunioes] troca de responsável da reunião ${id} falhou:`, e);
+        avisoAgenda = "Alteração salva no CRM, mas não consegui trocar o responsável. Tente de novo.";
+      }
+    }
+
     if (data.status === "cancelada") {
       avisoAgenda = await porta(() => cancelarNaAgenda(ctx.organizacaoId, id));
+    } else if (trocaFeita) {
+      // já sincronizado pela troca de responsável
     } else if (updated.status === "agendada" && (data.data !== undefined || data.titulo !== undefined || data.duracao !== undefined || data.notas !== undefined || data.participantes !== undefined)) {
       // Participantes mudaram: a lista de convidados do evento passa a ser a da reunião (entra e sai gente).
       avisoAgenda = await porta(() => atualizarNaAgenda(ctx.organizacaoId, id, { convidados: data.participantes !== undefined }));
@@ -277,6 +303,7 @@ app.patch("/reunioes/:id", async (c) => {
     if (err instanceof z.ZodError) {
       return c.json({ error: err.issues[0].message }, 400);
     }
+    if (err instanceof ResponsavelInvalidoError) return c.json({ error: err.message }, 400);
     throw err;
   }
 });

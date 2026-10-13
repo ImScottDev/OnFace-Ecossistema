@@ -1962,6 +1962,8 @@ export const reunioes = pgTable(
     calendarSyncErro: text("calendar_sync_erro"),
     /** Conta (email_contas) em que o evento vive: atualizar/cancelar usam esta (migration 0110). */
     calendarContaId: uuid("calendar_conta_id"),
+    /** Evento que sobrou no calendário antigo após trocar o responsável: {provider, contaId, eventId, desde} (migration 0114). */
+    calendarRemocaoPendente: jsonb("calendar_remocao_pendente").$type<{ provider: string; contaId: string; eventId: string; desde: string }>(),
     /** Resposta de cada convidado lida do Outlook: {email: accepted|declined|tentativelyAccepted|none}. */
     participantesRespostas: jsonb("participantes_respostas").$type<Record<string, string>>().notNull().default({}),
     calendarSyncEm: timestamp("calendar_sync_em", { withTimezone: true }), // id do evento no Outlook do closer (Graph), pra permitir cancelar/atualizar depois

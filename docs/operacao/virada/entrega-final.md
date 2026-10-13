@@ -77,6 +77,7 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0110 | calendário: `reunioes.calendar_conta_id` (conta que criou o evento), `reunioes.participantes_respostas` (aceite por convidado) e `calendario_assinaturas` (assinatura Graph + cursor de delta por conta) — aditiva e idempotente |
 | 0111 | atividade: `tarefa_subtarefas` (checklist com responsável, prazo e ordem) e `tarefa_comentarios` (com `mencoes`); `file_links` aceita as entidades `tarefa` e `tarefa_comentario` (CHECK recriado com a lista anterior + as duas) — aditiva e idempotente |
 | 0113 | e-mail: índice único parcial `uq_email_contas_caixa` em `email_contas (organizacao_id, usuario_id, tipo, lower(email))` para contas não mescladas (uma caixa, uma conta; o callback OAuth passou a fazer UPSERT). Tolerante: se ainda houver caixa duplicada, avisa e não cria; `consolidar-email-contas.ts --aplicar` (backup em `_consolidacao_email_contas_20261013`) funde as duplicatas e cria o índice — idempotente |
+| 0114 | calendário: `reunioes.calendar_remocao_pendente` — o evento que ficou no calendário antigo quando o responsável da reunião muda (criado o novo, falta retirar o velho); o worker repete o cancelamento até dar certo — aditiva e idempotente |
 
 ## 3. AS-IS → TO-BE
 
