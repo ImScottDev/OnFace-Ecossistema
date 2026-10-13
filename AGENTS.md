@@ -17,6 +17,10 @@ gate é o navegador), a ordem de trabalho e a definição de pronto.
   a partir de um commit. Todo deploy vai para o time que está operando:
   typecheck e testes antes, e cuidado com envios reais (WhatsApp, e-mail,
   Stripe live, Documenso).
+- **Fluxo normal: homologação antes de produção.** `./deploy.sh homolog` publica em
+  `https://qa.crm.callface.io` (cópia sem efeito colateral); validado, promove-se o
+  mesmo sha com `./deploy.sh dev --versao <sha>`. Guia: `docs/operacao/homologacao.md`.
+  Não confundir com o `homolog.crm.callface.io` abaixo, que é o legado.
 - O CRM legado fica em `homolog.crm.callface.io`, só consulta, worker parado
   (`/opt/callface/crm`). Não religar nem escrever no banco dele. Volta da
   virada: `scripts/virada-dominio-voltar.sh 20261013-0408`.

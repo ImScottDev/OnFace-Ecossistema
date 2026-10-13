@@ -1,16 +1,17 @@
 #!/bin/bash
 # Deploy do ONFACE: imagem pronta do GHCR → servidor → ambiente → migrations → troca.
 #
-#   ./deploy.sh dev                    # publica o HEAD (tem que ser o origin/main)
-#   ./deploy.sh dev --seguir           # reata o acompanhamento de um deploy em curso
-#   ./deploy.sh dev --versao <sha>     # rollback: volta para a imagem de um commit antigo
+#   ./deploy.sh homolog [<sha>]        # publica em HOMOLOGAÇÃO (sem sha: o HEAD, que tem que ser o origin/main)
+#   ./deploy.sh dev --versao <sha>     # PROMOVE para produção o sha já validado em homologação (ou faz rollback)
+#   ./deploy.sh dev                    # publica o HEAD direto em produção (tem que ser o origin/main)
+#   ./deploy.sh <alvo> --seguir        # reata o acompanhamento de um deploy em curso
 #   ./deploy.sh dev --construir-aqui   # fallback: constrói na EC2 (lento; só se o GHCR cair)
 #
-# Alvos:
-#   dev  → /opt/callface/crm2-dev, compose `crm2-dev`. Desde a virada (13/10/2026) é a PRODUÇÃO: https://crm.callface.io (CRM_DOMAIN no .env do servidor)
-#
-# Produção não tem alvo aqui de propósito: a virada é um procedimento à parte
-# (docs/operacao/virada/) e só acontece com o OK do Kauã.
+# Alvos (mesma imagem, mesmo código; muda só onde roda):
+#   dev     → /opt/callface/crm2-dev, compose `crm2-dev`. Desde a virada (13/10/2026) é a PRODUÇÃO: https://crm.callface.io (CRM_DOMAIN no .env do servidor)
+#   homolog → /opt/callface/crm2-homolog, compose `crm2-homolog`. Cópia de produção com banco próprio
+#             e SEM efeito colateral (sem Stripe, e-mail, WhatsApp): https://qa.crm.callface.io
+#             Fluxo e preparo: docs/operacao/homologacao.md
 #
 # Regras que este script garante, e por quê:
 #   - **A imagem NÃO é construída na EC2.** O GitHub Actions
@@ -44,8 +45,14 @@ case "$ALVO" in
     CONTAINER_APP=callface-crm2-dev-app
     CONTAINER_WORKER=callface-crm2-dev-worker
     ;;
+  homolog)
+    DIR=/opt/callface/crm2-homolog
+    PROJETO=crm2-homolog
+    CONTAINER_APP=callface-crm2-homolog-app
+    CONTAINER_WORKER=callface-crm2-homolog-worker
+    ;;
   *)
-    echo "uso: ./deploy.sh dev [--seguir | --versao <sha> | --construir-aqui]" >&2
+    echo "uso: ./deploy.sh homolog [<sha>] | ./deploy.sh dev [--seguir | --versao <sha> | --construir-aqui]" >&2
     exit 1
     ;;
 esac
@@ -87,7 +94,13 @@ case "$MODO" in
     exit $?
     ;;
   --versao)
-    REV="$(git rev-parse --verify "${3:?informe o sha: ./deploy.sh dev --versao <sha>}^{commit}")"
+    REV="$(git rev-parse --verify "${3:?informe o sha: ./deploy.sh $ALVO --versao <sha>}^{commit}")"
+    ;;
+  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
+    # Atalho da homologação: ./deploy.sh homolog <sha>
+    [ "$ALVO" = homolog ] || { echo "✘ para produção use: ./deploy.sh dev --versao <sha>" >&2; exit 1; }
+    REV="$(git rev-parse --verify "$MODO^{commit}")"
+    MODO="--versao"
     ;;
   ""|--construir-aqui)
     if ! git diff --quiet || ! git diff --cached --quiet; then
@@ -113,9 +126,22 @@ esac
 
 echo "=== ONFACE → $ALVO ($REV) ==="
 
+# Promoção: produção deve receber o sha que a homologação já está rodando.
+# Só avisa (rollback também usa --versao, com sha antigo): não bloqueia.
+if [ "$ALVO" = dev ] && [ "$MODO" = "--versao" ]; then
+  VALIDADO="$("${SSH[@]}" "cat /opt/callface/crm2-homolog/.onface-release 2>/dev/null" 2>/dev/null || true)"
+  if [ "$VALIDADO" = "$REV" ]; then
+    echo "✓ é o mesmo sha que está validado em homologação."
+  else
+    echo "⚠ homologação está em: ${VALIDADO:-(nada publicado)}"
+    echo "  Se isto é uma promoção, o sha não passou pela homologação. Rollback: ignore. Ctrl+C em 10s para cancelar."
+    sleep 10
+  fi
+fi
+
 # ─── 1. Código e infra do commit, espelhados no servidor ────────────────────
 echo "[1/2] Enviando o commit..."
-STAGE="/tmp/onface-release-$REV"
+STAGE="/tmp/onface-release-$ALVO-$REV"
 git archive --format=tar "$REV" | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE && tar -x -C $STAGE"
 "${SSH[@]}" "sudo rsync -a --delete \
   --exclude=/.env --exclude=/.env.* \
@@ -179,6 +205,12 @@ else
   done
   etapa "[imagens] pull..."
   sudo docker compose -p $PROJETO pull -q worker api app
+fi
+
+if [ "$ALVO" = homolog ]; then
+  # Banco e Redis da homologação sobem aqui se ainda não estiverem de pé
+  # (no-op quando já estão). Em produção ficam como estão.
+  sudo docker compose -p $PROJETO up -d --no-recreate postgres redis
 fi
 
 etapa "[ambiente] conferindo variáveis obrigatórias..."
