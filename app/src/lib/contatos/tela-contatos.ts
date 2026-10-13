@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO, MOTIVOS_PERDA } from "@/lib/vendas/dominio";
+import { classificar, fatosDaLinha, FATOS_DO_LEAD_SQL, type Classe, type LinhaDeFatos } from "@/lib/vendas/classificacao";
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Contatos — a consulta da tela do handoff.
@@ -46,6 +47,8 @@ export interface LinhaContato {
   motivo: { chave: string; rotulo: string; detalhe: string | null } | null;
   /** cliente | lead | prospect | contato, derivado no banco. */
   relacionamento: Relacionamento;
+  /** Estágio que explica a classe (ex.: "Pré-vendas · Novo", "Nutrição"). */
+  estagioDaClasse: string | null;
   /** Negócios abertos ligados ao lead desta pessoa. */
   negocios: Array<{ titulo: string; etapa: string }>;
   /** Negócios abertos da EMPRESA inteira — é o que o painel de empresa lista. */
@@ -70,7 +73,7 @@ export interface TotaisContatos { pessoas: number; empresas: number }
 
 /** Contagem por relacionamento sobre a BASE INTEIRA, não sobre a página. */
 export type PorRelacionamento = Record<Relacionamento, number>;
-export type Relacionamento = "cliente" | "lead" | "prospect" | "contato";
+export type Relacionamento = Classe;
 
 const ETAPAS_ABERTAS = sql`('entrada','diagnostico','proposta','negociacao')`;
 
@@ -84,25 +87,8 @@ function rotuloDeMotivo(chave: string): string {
   return chave;
 }
 
-/* Relacionamento no vocabulário do Scott (06/10):
- *   cliente  — tem serviço ativo;
- *   prospect — está em PROSPECÇÃO e ainda não entrou em jornada comercial;
- *   lead     — está em jornada comercial, em Pré-vendas ou no Pipeline;
- *   contato  — só contato: perdido, desqualificado ou em nutrição.
- * A ordem importa: desqualificado/nutrição ganha de prospecção (quem foi
- * descartado não volta a ser prospect só porque a lista de outbound o cita), e
- * negócio aberto ganha de tudo que não seja serviço ativo.
- * `prospeccao_estado` já existe na base (78 leads); o código antigo dizia que
- * "Prospect não é derivável" e por isso o filtro mostrava zero. */
-const REL_SQL = sql`
-  CASE
-    WHEN serv_ativo THEN 'cliente'
-    WHEN estagio IN ('desqualificado','nutricao') THEN 'contato'
-    WHEN prospeccao_estado IS NOT NULL AND NOT tem_negocio_aberto THEN 'prospect'
-    WHEN tem_negocio_aberto
-      OR estagio IN ('novo','em_contato','qualificacao','qualificado','oportunidade') THEN 'lead'
-    ELSE 'contato'
-  END`;
+/* A classe (cliente, lead, prospect, contato) vem de `lib/vendas/classificacao.ts`,
+ * a função única da regra (docs/produto/classificacao-relacionamento.md). */
 
 export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: string | null; limite?: number } = {}): Promise<{
   linhas: LinhaContato[]; empresasSemPessoas: EmpresaSemPessoas[]; totais: TotaisContatos; porRelacionamento: PorRelacionamento;
@@ -124,10 +110,9 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
     origem: string | null; campanha: string | null; responsavel: string | null; estagio: string | null;
     ultima: string | null; criado_em: string | null; negocios: Array<{ titulo: string; etapa: string }> | null;
     emp_negocios: Array<{ titulo: string; etapa: string }> | null;
-    serv_ativo: boolean | null; serv_hist: boolean | null; emp_opps: number | null; emp_lead_ativo: boolean | null;
-    prospeccao_estado: string | null; tem_negocio_aberto: boolean | null; relacionamento: string;
+    serv_hist: boolean | null; emp_opps: number | null; emp_lead_ativo: boolean | null;
     motivo_chave: string | null; motivo_detalhe: string | null;
-  }>(sql`
+  } & LinhaDeFatos>(sql`
     WITH ident AS (
       SELECT p.id, 'pessoa'::text AS fonte, p.lead_id_legado AS lead_id,
              NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
@@ -156,11 +141,15 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
       SELECT i.*, COALESCE(e.nome, i.empresa_texto) AS empresa,
              e.setor, e.cidade, e.estado, e.dominio,
              l.origem, l.utm_campaign AS campanha, u.nome AS responsavel, l.estagio_pre_vendas AS estagio,
-             l.prospeccao_estado, l.desqualificacao_motivo, l.desqualificacao_detalhe,
-             l.nutricao_motivo, ul.ultima, ul.ts AS ultima_ts
+             l.desqualificacao_motivo, l.desqualificacao_detalhe,
+             l.nutricao_motivo, ul.ultima, ul.ts AS ultima_ts,
+             ${FATOS_DO_LEAD_SQL}
         FROM ident i
         LEFT JOIN empresas e ON e.id = i.empresa_id
+        LEFT JOIN empresas emp ON emp.id = i.empresa_id
         LEFT JOIN leads l ON l.id = i.lead_id
+        LEFT JOIN aquisicoes aq ON aq.lead_legado_id = l.id
+        LEFT JOIN pipeline_etapas pe ON pe.id = aq.etapa_id
         LEFT JOIN usuarios u ON u.id = l.responsavel_id
         LEFT JOIN ult ul ON ul.lead_id = i.lead_id
        WHERE ${busca}::text IS NULL
@@ -177,7 +166,7 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
            b.campanha, b.responsavel, b.estagio, b.ultima, b.criado::text AS criado_em, COALESCE(b.ultima_ts, b.criado) AS ordem_ts,
            (SELECT json_agg(json_build_object('titulo', n.titulo, 'etapa', n.etapa))
               FROM negocios n WHERE n.lead_id = b.lead_id AND n.etapa IN ${ETAPAS_ABERTAS}) AS negocios,
-           EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = b.empresa_id AND s.commercial_lifecycle = 'ACTIVE') AS serv_ativo,
+           b.etapa_pv, b.aquisicao_aberta, b.nutricao, b.desqualificado, b.opp_aberta, b.perdido, b.serv_ativo, b.motivo,
            EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = b.empresa_id) AS serv_hist,
            (SELECT count(*)::int FROM negocios n WHERE n.empresa_id = b.empresa_id AND n.etapa IN ${ETAPAS_ABERTAS}) AS emp_opps,
            (SELECT json_agg(json_build_object('titulo', n.titulo, 'etapa', n.etapa))
@@ -193,17 +182,17 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
              (SELECT n.motivo_perda_detalhe FROM negocios n
                WHERE n.lead_id = b.lead_id AND n.etapa = 'perdido'
                ORDER BY n.updated_at DESC LIMIT 1)) AS motivo_detalhe,
-           EXISTS (SELECT 1 FROM negocios n WHERE n.lead_id = b.lead_id AND n.etapa IN ${ETAPAS_ABERTAS}) AS tem_negocio_aberto
+           b.opp_aberta AS tem_negocio_aberto
       FROM base b
     )
-    SELECT linha.*, ${REL_SQL} AS relacionamento
+    SELECT linha.*
       FROM linha
      ORDER BY ordem_ts DESC, nome
   `);
 
   /* Contagem do FILTRO: sobre a base inteira, não sobre a página. Contar o
      array carregado dizia "Cliente 29" com 500 linhas na mão e 4.084 no banco. */
-  const contagens = await db.execute<{ relacionamento: string; n: number }>(sql`
+  const contagens = await db.execute<LinhaDeFatos & { n: number }>(sql`
     WITH ident AS (
       SELECT p.id, p.lead_id_legado AS lead_id, COALESCE(p.empresa_id, l.empresa_id) AS empresa_id
         FROM pessoas p LEFT JOIN leads l ON l.id = p.lead_id_legado
@@ -212,17 +201,18 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
       SELECT l.id, l.id, l.empresa_id FROM leads l
        WHERE l.organizacao_id = ${organizacaoId}::uuid
          AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
-    ), fatos AS (
-      SELECT EXISTS (SELECT 1 FROM servicos_canonicos s
-                      WHERE s.empresa_id = i.empresa_id AND s.commercial_lifecycle = 'ACTIVE') AS serv_ativo,
-             l.estagio_pre_vendas AS estagio, l.prospeccao_estado,
-             EXISTS (SELECT 1 FROM negocios n WHERE n.lead_id = i.lead_id AND n.etapa IN ${ETAPAS_ABERTAS}) AS tem_negocio_aberto
-        FROM ident i LEFT JOIN leads l ON l.id = i.lead_id
     )
-    SELECT ${REL_SQL} AS relacionamento, count(*)::int AS n FROM fatos GROUP BY 1`);
+    SELECT x.*, count(*)::int AS n FROM (
+      SELECT ${FATOS_DO_LEAD_SQL}
+        FROM ident i
+        LEFT JOIN leads l ON l.id = i.lead_id
+        LEFT JOIN empresas emp ON emp.id = i.empresa_id
+        LEFT JOIN aquisicoes aq ON aq.lead_legado_id = l.id
+        LEFT JOIN pipeline_etapas pe ON pe.id = aq.etapa_id
+    ) x GROUP BY 1,2,3,4,5,6,7,8,9`);
 
   const porRelacionamento: PorRelacionamento = { cliente: 0, lead: 0, prospect: 0, contato: 0 };
-  for (const c of contagens) porRelacionamento[c.relacionamento as Relacionamento] = c.n;
+  for (const c of contagens) porRelacionamento[classificar(fatosDaLinha(c)).classe] += c.n;
 
   const [totais] = await db.execute<{ pessoas: number; empresas: number }>(sql`
     SELECT (SELECT count(*)::int FROM pessoas WHERE organizacao_id = ${organizacaoId}::uuid)
@@ -290,7 +280,8 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
       campanha: l.campanha?.trim() || null,
       responsavel: l.responsavel,
       estagio: l.estagio,
-      relacionamento: l.relacionamento as Relacionamento,
+      relacionamento: classificar(fatosDaLinha(l)).classe,
+      estagioDaClasse: classificar(fatosDaLinha(l)).estagio,
       motivo: l.motivo_chave ? { chave: l.motivo_chave, rotulo: rotuloDeMotivo(l.motivo_chave), detalhe: l.motivo_detalhe } : null,
       ultimaInteracao: l.ultima,
       criadoEm: l.criado_em,
