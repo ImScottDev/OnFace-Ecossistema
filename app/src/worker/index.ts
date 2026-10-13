@@ -3147,8 +3147,8 @@ const slaWorker = new Worker(
       // travas no pacote de integração), então este job não escreve lá.
       //
       // Falha de conexão NÃO derruba o job: a resolução devolve `ok: false` em
-      // vez de lançar, e aqui isso vira log. O banco do SaaS fica atrás de um
-      // túnel que nem sempre está de pé, e um job que explode a cada 6 horas por
+      // vez de lançar, e aqui isso vira log. O banco do SaaS é um RDS externo
+      // que pode ficar indisponível, e um job que explode a cada 6 horas por
       // isso só produz ruído de alerta.
       const { sincronizarCallfaceAi } = await import("../lib/integrations/callface-ai/sincronizar");
       const { resolverIdentidades } = await import("../lib/integrations/callface-ai/identidade");
@@ -3163,7 +3163,7 @@ const slaWorker = new Worker(
             continue;
           }
           const r = await sincronizarCallfaceAi(org.id);
-          console.log(`[callface-ai-sync] ${org.slug}: ${ident.vinculadas} identidade(s) nova(s), ${r.tenants} tenant(s), ${r.snapshots} snapshot(s)${r.erro ? ` — erro: ${r.erro}` : ""}`);
+          console.log(`[callface-ai-sync] ${org.slug}: ${ident.vinculadas} identidade(s) nova(s), ${r.tenants} tenant(s), ${r.snapshots} snapshot(s), ${r.detalhes} detalhe(s), ${r.diasDeUso} dia(s) de uso${r.erro ? ` — erro: ${r.erro}` : ""}`);
         }
       } finally {
         await fecharConexao().catch(() => undefined);

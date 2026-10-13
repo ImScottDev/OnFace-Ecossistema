@@ -21,7 +21,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { lerComTransacao, lerTenants, lerUso, medirAmbiguidade } from "@onface/integrations-callface-ai";
+import { lerComTransacao, lerDetalhe, lerTenants, lerUso, lerUsoDiario, medirAmbiguidade, type UsoDiarioCallfaceAi } from "@onface/integrations-callface-ai";
 import { resolverIdentidades, tenantsVinculados } from "./identidade";
 
 export const PROVIDER = "callface_ai";
@@ -30,11 +30,23 @@ export const RECURSO_SNAPSHOT = "tenant_snapshot";
 /** 30 dias é a janela do snapshot principal; 7 entra junto para dar tendência. */
 export const JANELAS_PADRAO = [7, 30] as const;
 
+/** Dia civil de São Paulo (UTC-3 fixo), AAAA-MM-DD, deslocado por `dias`. */
+export function diaCivil(agora: Date, dias = 0): string {
+  return new Date(agora.getTime() - 3 * 3600_000 + dias * 86400_000).toISOString().slice(0, 10);
+}
+
+/** Série diária: 90 dias na primeira vez de cada vínculo, depois só os 4 últimos dias. */
+const DIAS_SERIE = 90;
+const DIAS_RELIDOS = 4;
+const FATIA_DIAS = 15;
+
 export interface ResultadoSync {
   ok: boolean;
   status: "ok" | "parcial" | "falhou" | "indisponivel" | "desabilitado";
   tenants: number;
   snapshots: number;
+  detalhes: number;
+  diasDeUso: number;
   identidadesNovas: number;
   ambiguidade: { chamadasAmbiguas: number; chamadasSemAtribuicao: number; chamadasTotal: number } | null;
   erro?: string;
@@ -90,7 +102,7 @@ export async function sincronizarCallfaceAi(
   const inicio = Date.now();
   const janelas = opts.janelas ?? JANELAS_PADRAO;
   const agora = instanteDoSnapshot(opts.agora ?? new Date());
-  const vazio = { ok: false, tenants: 0, snapshots: 0, identidadesNovas: 0, ambiguidade: null };
+  const vazio = { ok: false, tenants: 0, snapshots: 0, detalhes: 0, diasDeUso: 0, identidadesNovas: 0, ambiguidade: null };
 
   // 1. Identidade primeiro: sem vínculo não há o que sincronizar, e o vínculo
   //    novo já entra no snapshot desta mesma execução.
@@ -104,19 +116,32 @@ export async function sincronizarCallfaceAi(
   const vinculados = await tenantsVinculados(organizacaoId);
   if (!vinculados.length) {
     await gravarEstado(organizacaoId, RECURSO_SNAPSHOT, { status: "ok", itens: 0, duracaoMs: Date.now() - inicio, sucesso: true });
-    return { ok: true, status: "ok", tenants: 0, snapshots: 0, identidadesNovas: ident.vinculadas, ambiguidade: null, duracaoMs: Date.now() - inicio };
+    return { ok: true, status: "ok", tenants: 0, snapshots: 0, detalhes: 0, diasDeUso: 0, identidadesNovas: ident.vinculadas, ambiguidade: null, duracaoMs: Date.now() - inicio };
   }
 
   const orgIds = vinculados.map((v) => v.organizationId);
   const porOrg = new Map(vinculados.map((v) => [v.organizationId, v]));
 
+  // Quem já tem série diária só relê os últimos dias; quem não tem, busca 90.
+  const comSerie = new Set((await db.execute<{ org: string }>(sql`
+    SELECT DISTINCT i.external_id AS org FROM callface_ai_uso_diario d
+      JOIN callface_ai_external_identities i ON i.id = d.external_identity_id`)).map((r) => r.org));
+  const novos = orgIds.filter((o) => !comSerie.has(o));
+  
   // 2. Uma leitura só, para todas as janelas, dentro de UMA transação read-only.
   const leitura = await lerComTransacao(async (s) => {
     const tenants = await lerTenants(s, orgIds);
     const usoPorJanela = new Map<number, Awaited<ReturnType<typeof lerUso>>>();
     for (const j of janelas) usoPorJanela.set(j, await lerUso(s, j, orgIds));
     const ambiguidade = await medirAmbiguidade(s, Math.max(...janelas));
-    return { tenants, usoPorJanela, ambiguidade };
+    const detalhes = await lerDetalhe(s, orgIds);
+    const serie: UsoDiarioCallfaceAi[] = [];
+    const fim = diaCivil(new Date(), 1);
+    if (comSerie.size) serie.push(...await lerUsoDiario(s, orgIds.filter((o) => comSerie.has(o)), diaCivil(new Date(), -DIAS_RELIDOS + 1), fim));
+    for (let ini = DIAS_SERIE; novos.length && ini > 0; ini -= FATIA_DIAS) {
+      serie.push(...await lerUsoDiario(s, novos, diaCivil(new Date(), -(ini - 1)), diaCivil(new Date(), -(Math.max(ini - FATIA_DIAS, 0) - 1))));
+    }
+    return { tenants, usoPorJanela, ambiguidade, detalhes, serie };
   });
 
   if (!leitura.ok) {
@@ -125,7 +150,7 @@ export async function sincronizarCallfaceAi(
     return { ...vazio, status, erro: leitura.erro, identidadesNovas: ident.vinculadas, duracaoMs: Date.now() - inicio };
   }
 
-  const { tenants, usoPorJanela, ambiguidade } = leitura.dados;
+  const { tenants, usoPorJanela, ambiguidade, detalhes, serie } = leitura.dados;
   const tenantPorId = new Map(tenants.map((t) => [t.organizationId, t]));
   let snapshots = 0;
 
@@ -187,15 +212,73 @@ export async function sincronizarCallfaceAi(
     }
   }
 
+  // 4. Detalhe (plano, licenças, usuários, campanhas, agentes, integrações).
+  let nDetalhes = 0;
+  for (const d of detalhes) {
+    const v = porOrg.get(d.organizationId);
+    if (!v) continue;
+    const atrib = d.licencas.reduce((a, l) => a + l.atribuidas, 0);
+    const contratadas = d.licencas.reduce((a, l) => a + l.qtd, 0);
+    try {
+      await db.execute(sql`
+        INSERT INTO callface_ai_tenant_detalhe
+          (external_identity_id, org_nome, org_criada_em, org_desativada_em, licencas, usuarios, campanhas, agentes, integracoes, coletado_em)
+        VALUES (${v.identityId}::uuid, ${d.nome}, ${d.criadaEm ? d.criadaEm.toISOString() : null}::timestamptz,
+                ${d.desativadaEm ? d.desativadaEm.toISOString() : null}::timestamptz,
+                ${JSON.stringify({
+                  contratadas, atribuidas: atrib,
+                  minutosContratados: d.licencas.reduce((a, l) => a + l.minutos, 0),
+                  ilimitado: d.licencas.some((l) => l.semLimite),
+                  porPlano: d.licencas,
+                })}::jsonb,
+                ${JSON.stringify(d.usuarios)}::jsonb, ${JSON.stringify(d.campanhas)}::jsonb,
+                ${JSON.stringify(d.agentes)}::jsonb, ${JSON.stringify(d.integracoes)}::jsonb, now())
+        ON CONFLICT (external_identity_id) DO UPDATE SET
+          org_nome = EXCLUDED.org_nome, org_criada_em = EXCLUDED.org_criada_em,
+          org_desativada_em = EXCLUDED.org_desativada_em, licencas = EXCLUDED.licencas,
+          usuarios = EXCLUDED.usuarios, campanhas = EXCLUDED.campanhas, agentes = EXCLUDED.agentes,
+          integracoes = EXCLUDED.integracoes, coletado_em = EXCLUDED.coletado_em`);
+      await db.execute(sql`UPDATE callface_ai_external_identities SET org_nome = ${d.nome} WHERE id = ${v.identityId}::uuid AND org_nome IS DISTINCT FROM ${d.nome}`);
+      nDetalhes++;
+    } catch (e) {
+      falhas++;
+      console.error(`[CallfaceAI] detalhe de ${d.organizationId} falhou:`, e instanceof Error ? e.message : e);
+    }
+  }
+
+  // 5. Série diária: upsert por (vínculo, dia), em lotes (milhares de linhas no primeiro sync).
+  let diasDeUso = 0;
+  const linhasDia = serie.flatMap((u) => {
+    const v = porOrg.get(u.organizationId);
+    return v ? [{ id: v.identityId, dia: u.dia, ch: u.chamadas, fi: u.finalizadas, mi: u.minutos, ua: u.usuariosAtivos }] : [];
+  });
+  for (let i = 0; i < linhasDia.length; i += 500) {
+    const lote = linhasDia.slice(i, i + 500);
+    try {
+      await db.execute(sql`
+        INSERT INTO callface_ai_uso_diario (external_identity_id, dia, chamadas, finalizadas, minutos, usuarios_ativos, coletado_em)
+        SELECT r.id, r.dia, r.ch, r.fi, r.mi, r.ua, now()
+          FROM jsonb_to_recordset(${JSON.stringify(lote)}::jsonb)
+               AS r(id uuid, dia date, ch int, fi int, mi numeric, ua int)
+        ON CONFLICT (external_identity_id, dia) DO UPDATE SET
+          chamadas = EXCLUDED.chamadas, finalizadas = EXCLUDED.finalizadas, minutos = EXCLUDED.minutos,
+          usuarios_ativos = EXCLUDED.usuarios_ativos, coletado_em = EXCLUDED.coletado_em`);
+      diasDeUso += lote.length;
+    } catch (e) {
+      falhas++;
+      console.error(`[CallfaceAI] lote da série diária falhou:`, e instanceof Error ? e.message : e);
+    }
+  }
+
   const duracaoMs = Date.now() - inicio;
   const status = falhas === 0 ? "ok" : snapshots > 0 ? "parcial" : "falhou";
   await gravarEstado(organizacaoId, RECURSO_SNAPSHOT, {
-    status, itens: snapshots, duracaoMs, sucesso: falhas === 0,
+    status, itens: snapshots + nDetalhes + diasDeUso, duracaoMs, sucesso: falhas === 0,
     erro: falhas ? `${falhas} snapshot(s) falharam` : null,
   });
 
   return {
-    ok: falhas === 0, status, tenants: vinculados.length, snapshots,
+    ok: falhas === 0, status, tenants: vinculados.length, snapshots, detalhes: nDetalhes, diasDeUso,
     identidadesNovas: ident.vinculadas, ambiguidade, duracaoMs,
     erro: falhas ? `${falhas} snapshot(s) falharam` : undefined,
   };

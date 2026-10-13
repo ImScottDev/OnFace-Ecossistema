@@ -33,13 +33,13 @@ async function main() {
         continue;
       }
       console.log(`  avaliadas ${r.avaliadas} · vinculadas ${r.vinculadas} · já tinham ${r.jaVinculadas}`);
-      console.log(`  sem sinal determinístico ${r.semSinal} · disputadas ${r.disputadas} · contradições ${r.contradicoes}`);
+      console.log(`  sem sinal ${r.semSinal} · disputadas ${r.disputadas} · contradições ${r.contradicoes} · com pendência ${r.pendentes}`);
       if (r.erro) console.log(`  erro: ${r.erro}`);
       continue;
     }
     const r = await sincronizarCallfaceAi(org.id);
     console.log(`  status ${r.status} em ${r.duracaoMs}ms`);
-    console.log(`  tenants ${r.tenants} · snapshots ${r.snapshots} · identidades novas ${r.identidadesNovas}`);
+    console.log(`  tenants ${r.tenants} · snapshots ${r.snapshots} · detalhes ${r.detalhes} · dias de uso ${r.diasDeUso} · identidades novas ${r.identidadesNovas}`);
     if (r.ambiguidade) {
       const a = r.ambiguidade;
       const pct = (n: number) => a.chamadasTotal ? ((n / a.chamadasTotal) * 100).toFixed(2) : "0";
