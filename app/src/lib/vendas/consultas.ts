@@ -2126,6 +2126,8 @@ export interface DetalheOportunidade {
   tarefas: Array<{ id: string; titulo: string; tipo: string | null; status: string; descricao: string | null; venceEm: string | null; responsavel: string | null }>;
   /** Notas humanas do negócio. Separadas das atividades porque o 360 as mostra em trilhas diferentes. */
   notas: Array<{ id: string; texto: string; autor: string | null; em: string }>;
+  /** Anexos do negócio (`anexos`). */
+  arquivos: Array<{ id: string; nome: string; url: string; autor: string | null; em: string }>;
   /** Os outros contatos da empresa — o 360 lista o comitê, não só o contato principal. */
   contatos: Array<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null }>;
   /** Nomes das tags da oportunidade: `entity_labels` (canônica) ∪ `negocio_labels` (legada). */
@@ -2272,7 +2274,10 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
            a.created_at::text AS em
       FROM atividades a
       LEFT JOIN usuarios u ON u.id = a.usuario_id
-     WHERE a.negocio_id = ${negocioId}::uuid
+     -- Quem registra pela ficha do lead grava só lead_id; o negócio herda o que o lead
+     -- já tem e ninguém ligou a outro negócio (negocio_id nulo).
+     WHERE (a.negocio_id = ${negocioId}::uuid
+            OR (a.negocio_id IS NULL AND ${n.lead_id}::uuid IS NOT NULL AND a.lead_id = ${n.lead_id}::uuid))
        AND a.organizacao_id = ${organizacaoId}::uuid
        AND a.timeline_visible
        -- Eco de evento de domínio (troca de responsável, mudança de etapa...) já está na Timeline
@@ -2288,7 +2293,9 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     SELECT t.id::text, t.titulo, t.tipo, t.status, t.descricao,
            COALESCE(t.vence_em, t.data_vencimento)::text AS vence_em, u.nome AS responsavel
       FROM tarefas t LEFT JOIN usuarios u ON u.id = t.usuario_id
-     WHERE t.negocio_id = ${negocioId}::uuid AND t.organizacao_id = ${organizacaoId}::uuid
+     WHERE (t.negocio_id = ${negocioId}::uuid
+            OR (t.negocio_id IS NULL AND ${n.lead_id}::uuid IS NOT NULL AND t.lead_id = ${n.lead_id}::uuid))
+       AND t.organizacao_id = ${organizacaoId}::uuid
      ORDER BY (t.status IN ('concluida','declinada')), COALESCE(t.vence_em, t.data_vencimento) NULLS LAST, t.created_at DESC
      LIMIT 100
   `);
@@ -2299,10 +2306,18 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
            n.created_at::text AS em
       FROM notas n
       LEFT JOIN usuarios u ON u.id = n.autor_id
-     WHERE n.negocio_id = ${negocioId}::uuid
+     WHERE (n.negocio_id = ${negocioId}::uuid
+            OR (n.negocio_id IS NULL AND ${n.lead_id}::uuid IS NOT NULL AND n.lead_id = ${n.lead_id}::uuid))
        AND n.organizacao_id = ${organizacaoId}::uuid
      ORDER BY n.created_at DESC
      LIMIT 100
+  `);
+
+  const arquivos = await db.execute<{ id: string; nome: string; url: string; autor: string | null; em: string }>(sql`
+    SELECT a.id::text, a.nome_arquivo AS nome, a.url, u.nome AS autor, a.created_at::text AS em
+      FROM anexos a LEFT JOIN usuarios u ON u.id = a.criado_por_id
+     WHERE a.negocio_id = ${negocioId}::uuid AND a.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY a.created_at DESC LIMIT 100
   `);
 
   // Sem empresa não há comitê a listar — e `empresa_id IS NULL` casaria com
@@ -2406,6 +2421,7 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     notas: notas.map((x) => ({
       id: x.id, texto: textoSimples(x.texto) ?? "", autor: x.autor, em: x.em,
     })),
+    arquivos: arquivos.map((a) => ({ id: a.id, nome: a.nome, url: a.url, autor: a.autor, em: a.em })),
     contatos: contatos.map((c) => ({
       id: c.id, nome: c.nome, cargo: c.cargo, email: c.email, telefone: c.telefone,
     })),

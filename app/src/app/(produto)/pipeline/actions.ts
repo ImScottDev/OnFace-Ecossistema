@@ -212,16 +212,22 @@ export async function acaoCriarOportunidade(entrada: {
   });
 }
 
-export async function acaoDetalhe(negocioId: string): Promise<Resultado<{
+export async function acaoDetalhe(idDaRota: string): Promise<Resultado<{
   oportunidade: DetalheOportunidade | null; timeline: LinhaDoTempo[];
 }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("carregar detalhe", async () => {
-    const [oportunidade, timeline] = await Promise.all([
-      detalheOportunidade(ctx.organizacaoId, negocioId),
-      lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, negocioId, limite: 40 }),
-    ]);
+    // A rota aceita o id do negócio legado OU o da oportunidade canônica.
+    const [canonica] = await db.execute<{ negocio: string | null }>(sql`
+      SELECT negocio_id_legado::text AS negocio FROM oportunidades
+       WHERE id = ${idDaRota}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+    const negocioId = canonica?.negocio ?? idDaRota;
+    const oportunidade = await detalheOportunidade(ctx.organizacaoId, negocioId);
+    // Também pelo lead: a conversa e a aquisição de origem moram nele, não no negócio.
+    const timeline = await lerLinhaDoTempo({
+      organizacaoId: ctx.organizacaoId, negocioId, leadId: oportunidade?.leadId ?? undefined, limite: 40,
+    });
     return { oportunidade, timeline };
   });
 }

@@ -209,9 +209,7 @@ function paraODesenho(o: DetalheOportunidade, timeline: LinhaDoTempo[]) {
     })(),
     // Tags reais (entity_labels ∪ negocio_labels); a peça tagsopp grava.
     tags: o.tags ?? [],
-    // Sem fonte no domínio hoje. Vazio é honesto; inventar seria o mock
-    // fingindo produção.
-    arquivos: [],
+    arquivos: o.arquivos.map((a) => ({ nome: a.nome, quando: quando(a.em), autor: a.autor ?? "Sistema" })),
     itens: [],
     proposta: null,
     // O que o domínio diz que falta para fechar: a tela explica, não decide.
