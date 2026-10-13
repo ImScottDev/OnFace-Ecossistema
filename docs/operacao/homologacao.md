@@ -8,6 +8,7 @@ Dois ambientes, **o mesmo código e a mesma imagem**. Muda só onde ela roda.
 | Pasta no servidor | `/opt/callface/crm2-homolog` | `/opt/callface/crm2-dev` |
 | Banco | cópia própria de produção | o real |
 | Integrações (Microsoft, Stripe, Documenso, IA...) | **As mesmas de produção** (mesmo `.env`) | Sim |
+| WhatsApp (receber) | **Espelhado** de produção (ver seção WhatsApp) | O principal |
 | WhatsApp e e-mail para fora | **Travados**: só números e `@callface.ai` internos | Livres |
 
 A imagem de cada commit é montada pelo GitHub assim que o código entra na `main`.
@@ -117,7 +118,7 @@ e um teste aqui **age no mundo real**, salvo onde há trava.
 
 | Integração | Ligada? | O que um teste pode atingir |
 |---|---|---|
-| **WhatsApp** | Sim, com **trava** | Só números em `WHATSAPP_ALLOWLIST`. Mensagem para qualquer outro número falha antes de sair. Hoje a lista é `0000000000` (ninguém): passe os números do time com `scripts/homolog-servidor.sh env WHATSAPP_ALLOWLIST=5511...,5511...`. Mensagens **recebidas** continuam indo só para produção (o webhook do WhatsApp aponta para `crm.callface.io`). |
+| **WhatsApp** | Recebe igual a produção (espelho); **envia só com trava** | Mensagens **recebidas** chegam também aqui (relé espelhado, seção abaixo). Mensagem **enviada** só para números em `WHATSAPP_ALLOWLIST` (hoje `0000000000`, ninguém): passe os números do time com `scripts/homolog-servidor.sh env WHATSAPP_ALLOWLIST=5511...,5511...`. |
 | **E-mail** (Resend, Outlook, Gmail, SMTP), **convite de agenda** e **assinatura de contrato** | Sim, com **trava** | Só endereços `@callface.ai` (`EMAIL_ALLOWED_DOMAINS`). Proposta, contrato, convite de reunião para cliente real é bloqueado antes de sair; a tela mostra erro. |
 | **Stripe** | **Sim, em modo LIVE, sem trava** | **Dinheiro de verdade.** Checkout, fatura e cobrança criados aqui usam a conta real e os clientes reais da cópia. O Stripe pode mandar e-mail de fatura ao cliente por conta própria (fora da nossa trava). Não cobre nem emita fatura de cliente real em teste. Os avisos do Stripe (webhook) só chegam em produção, então o status de pagamento **não atualiza** aqui. |
 | **Documenso** (assinatura) | Sim, o **mesmo** de produção, com a trava de e-mail | Os envelopes criados aqui aparecem no Documenso real (mesmo painel), mas só para `@callface.ai`. A conclusão da assinatura não volta para a homologação (o aviso vai para produção, que ignora envelope desconhecido). |
@@ -157,6 +158,73 @@ O `dev.crm.callface.io` já é redirect URI cadastrado no app.
 com redirect `https://dev.crm.callface.io/api/...` (o mesmo caminho do de produção), e trocar `MICROSOFT_CLIENT_ID`
 e `MICROSOFT_CLIENT_SECRET` no `.env` de homologação (`scripts/homolog-servidor.sh env ...`). Aí os secrets deixam
 de ser compartilhados. Decisão sua; hoje está ligado com o app de produção.
+
+## WhatsApp em homologação: recebe igual, não responde
+
+Produção e homologação usam **o mesmo número de WhatsApp** (o mesmo wuzapi, `callface-crm-wuzapi`).
+Só existe um lugar que recebe o aviso do provedor: o **relé** (`callface-wa-relay`, nginx, config em
+`/opt/callface/wa-relay/nginx.conf` no servidor). Cada mensagem recebida entra no relé, que:
+
+1. entrega a **produção** (`callface-crm2-dev-api`): é a entrega **principal**, a que responde ao provedor;
+2. **copia** a mesma entrega para a **homologação** (`callface-crm2-homolog-api`) com o `mirror` do nginx.
+
+```
+cliente -> wuzapi -> relé ──(principal)──> produção  (crm.callface.io)
+                       └──(cópia, resposta descartada)──> homologação (dev.crm.callface.io)
+```
+
+**Por que a homologação não atrapalha a produção** (testado em 13/10/2026, não é suposição):
+a resposta da cópia é descartada pelo nginx e quem responde ao provedor é só a produção. Com a
+homologação parada, congelada (`docker pause`), recusando conexão, com nome inexistente ou devolvendo
+erro 500, o relé respondeu em ~0,1 s e a produção recebeu a mensagem normalmente. A cópia tem
+timeout de 1 s para conectar e 3 s para ler, justamente para nunca segurar a principal.
+Se a homologação cair, **ela** perde as mensagens desse período (não há reenvio; é cópia de teste).
+A produção não perde nada.
+
+**Como o cliente não recebe resposta em dobro.** A homologação recebe a mensagem e pode "querer"
+responder (IA/SDR, cadência, automação, resposta automática). Três camadas impedem que isso saia:
+
+1. **Rede.** A homologação nem enxerga o wuzapi: ele só está nas redes de produção (`crm2dev-network`),
+   e o nome `callface-crm-wuzapi` não resolve nos containers da homologação. Ela não consegue enviar,
+   marcar como lido, desconectar o número nem baixar mídia/foto, mesmo que o código tentasse.
+2. **Código** (`app/src/lib/whatsapp/client.ts`, `checarAllowlist`). Todo envio ao wuzapi, de qualquer
+   fluxo (tela, NEXO, IA, cadência, automação, campanha), passa por um funil só. Com
+   `WHATSAPP_ALLOWLIST` preenchida: mensagem, reação, "digitando", apagar e "lido" (tique azul) só
+   saem para número da lista; conectar/desconectar/parear número e a API de administração são
+   **bloqueados**; rota nova que ninguém classificou nasce **bloqueada**. Em produção a variável é
+   vazia e nada muda.
+3. **IA.** O SDR por IA nem roda para número fora da lista (não gasta crédito para uma resposta
+   que a trava barraria).
+
+O teste `app/src/lib/whatsapp/client-trava.test.ts` falha se alguém criar um caminho novo para o
+wuzapi sem a trava (rota não classificada, `fetch` direto ao wuzapi fora do `client.ts`).
+Se algum dia a homologação for ligada à rede do wuzapi, **a camada 2 passa a ser a única proteção**:
+mantenha a `WHATSAPP_ALLOWLIST` preenchida.
+
+Limite da cópia: sem acesso ao wuzapi, mensagens recebidas com **foto, áudio ou documento** aparecem
+na homologação sem o arquivo (o download passa pelo wuzapi). Texto vem completo.
+Cada mensagem recebida também dispara as automações da cópia (e-mails só para `@callface.ai`).
+
+### Operar o espelho
+
+```bash
+scripts/homolog-espelho-whatsapp.sh status      # LIGADO ou DESLIGADO
+scripts/homolog-espelho-whatsapp.sh desligar    # homologação deixa de receber; produção continua igual
+scripts/homolog-espelho-whatsapp.sh ligar
+```
+
+O script faz backup (`nginx.conf.bak-espelho-<data>`), valida com `nginx -t` antes do `reload` e não
+imprime o segredo. O `reload` é sem queda. Para voltar à mão: copie um backup por cima de
+`/opt/callface/wa-relay/nginx.conf` **com `cat backup > nginx.conf`** (não `mv`/`cp` trocando o arquivo:
+ele é montado no container como arquivo único, e trocar o arquivo deixa o container com a versão velha)
+e rode `docker exec callface-wa-relay nginx -t && docker exec callface-wa-relay nginx -s reload`.
+
+Confirmar que produção está recebendo: `docker logs --tail 20 callface-wa-relay` deve mostrar
+`status=200 antigo=200` (`antigo` é a resposta da produção). Se aparecer outra coisa, desligue o espelho primeiro
+e investigue depois.
+
+Se a **homologação for recriada** (novo nome de container/pilha), o nome `callface-crm2-homolog-api`
+dentro do arquivo do relé precisa acompanhar, e o segredo da cópia (`UAZAPI_WEBHOOK_SECRET`, o mesmo de produção) também.
 
 ## Montagem (uma vez só, já feita em 13/10/2026)
 

@@ -45,18 +45,32 @@ function nucleoDoNumero(phone: string): string {
   return phone.replace(/\D/g, "").slice(-8);
 }
 
-export function destinatarioPermitido(phone: string): boolean {
-  if (ALLOWLIST.length === 0) return true;
+export function destinatarioPermitido(phone: string, allowlist: string[] = ALLOWLIST): boolean {
+  if (allowlist.length === 0) return true;
   const alvo = nucleoDoNumero(phone);
-  return alvo.length >= 8 && ALLOWLIST.some(p => nucleoDoNumero(p) === alvo);
+  return alvo.length >= 8 && allowlist.some(p => nucleoDoNumero(p) === alvo);
 }
 
-/** Rotas do wuzapi que produzem efeito visível para o destinatário. */
-const ROTAS_DE_SAIDA = ["/chat/send/", "/chat/react", "/chat/presence", "/chat/delete"];
+/**
+ * Toda rota do wuzapi cai em UMA de três classes. Com WHATSAPP_ALLOWLIST preenchida
+ * (homologação), o que não está nas duas primeiras é BLOQUEADO: rota nova nasce travada
+ * e só abre se alguém a classificar aqui (o teste client-trava.test.ts cobra isso).
+ *
+ *  - SO_LEITURA: não aparece para ninguém do outro lado. Passa sempre.
+ *  - COM_DESTINO: o cliente vê (mensagem, reação, "digitando", apagar, "lido" azul).
+ *    Passa só para número da allowlist.
+ *  - o resto (conectar/desconectar sessão, parear, /admin): mexe no número COMPARTILHADO
+ *    com produção. Bloqueado em ambiente com allowlist.
+ */
+export const ROTAS_SO_LEITURA = ["/session/status", "/session/qr", "/user/check", "/user/avatar", "/chat/download"];
+export const ROTAS_COM_DESTINO = ["/chat/send/", "/chat/react", "/chat/presence", "/chat/delete", "/chat/markread"];
 
-function checarAllowlist(path: string, options: RequestInit): void {
-  if (ALLOWLIST.length === 0) return;
-  if (!ROTAS_DE_SAIDA.some(r => path.startsWith(r))) return;
+export function checarAllowlist(path: string, options: RequestInit, allowlist: string[] = ALLOWLIST): void {
+  if (allowlist.length === 0) return;
+  if (ROTAS_SO_LEITURA.some(r => path.startsWith(r))) return;
+  if (!ROTAS_COM_DESTINO.some(r => path.startsWith(r))) {
+    throw new Error(`WhatsApp bloqueado pela allowlist do ambiente: ${path} mexe no número compartilhado com produção`);
+  }
 
   let phone = "";
   try {
@@ -66,7 +80,7 @@ function checarAllowlist(path: string, options: RequestInit): void {
     // corpo ilegível em rota de saída: bloqueia, porque não dá para provar o destino
   }
 
-  if (!destinatarioPermitido(phone)) {
+  if (!destinatarioPermitido(phone, allowlist)) {
     throw new Error(
       `WhatsApp bloqueado pela allowlist do ambiente: ${phone || "destino desconhecido"} nao esta em WHATSAPP_ALLOWLIST`,
     );
@@ -735,6 +749,7 @@ const WUZAPI_ADMIN_TOKEN = process.env.WUZAPI_ADMIN_TOKEN || "";
 const WUZAPI_BASE_URL = process.env.UAZAPI_BASE_URL || "http://wuzapi:8080";
 
 async function wuzapiAdminFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  checarAllowlist(path, options);
   return fetch(`${WUZAPI_BASE_URL}${path}`, {
     ...options,
     headers: {

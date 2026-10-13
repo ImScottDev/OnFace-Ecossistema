@@ -2300,7 +2300,7 @@ const whatsappIncomingWorker = new Worker(
 
     const { normalizePhone, phoneLastDigits } = await import("../lib/whatsapp/phone-utils");
     const { contatos, leads, whatsappMensagens, atividades, notificacoes, usuarios, whatsappSessao: waSessao, pessoas: pessoasT, communications: commsT } = await import("../lib/db/schema");
-    const { downloadMedia: dlMedia, midiaBaixadaValida: midiaOk, saveBase64ToDisk: saveToDisk, sessionToConfig: toConfig } = await import("../lib/whatsapp/client");
+    const { downloadMedia: dlMedia, midiaBaixadaValida: midiaOk, saveBase64ToDisk: saveToDisk, sessionToConfig: toConfig, destinatarioPermitido } = await import("../lib/whatsapp/client");
 
     const normalized = normalizePhone(phone);
     const last8 = phoneLastDigits(phone);
@@ -2519,7 +2519,9 @@ const whatsappIncomingWorker = new Worker(
     // Respond to text messages and media with captions; for media without text,
     // describe the type so the AI can acknowledge it
     const aiSdrTypes = ["text", "image", "audio", "video", "document", "sticker", "location", "contact"];
-    if (!roteadoPorAutomacao && aiSdrTypes.includes(msgType)) {
+    // Homologação recebe a mesma mensagem que produção (espelho do relé): a IA só responde
+    // se o número estiver na WHATSAPP_ALLOWLIST. Sem isso ela gastaria crédito para uma resposta que a trava barra.
+    if (!roteadoPorAutomacao && aiSdrTypes.includes(msgType) && destinatarioPermitido(normalized)) {
       const tipoLabel: Record<string, string> = {
         image: "Imagem recebida", audio: "Audio recebido", video: "Video recebido",
         document: "Documento recebido", sticker: "Sticker recebido",
