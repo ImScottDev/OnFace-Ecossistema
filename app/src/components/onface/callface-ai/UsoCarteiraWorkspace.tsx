@@ -157,8 +157,8 @@ function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora
       <section className="flex flex-col items-start gap-3 rounded-card bg-superficie p-6 shadow-[inset_0_0_0_1px_var(--line-hairline)]">
         <p className="text-corpo font-semibold text-tinta">Nenhum cliente vinculado a uma organização da Callface AI ainda.</p>
         <p className="max-w-[68ch] text-apoio text-tinta-suave">
-          O uso aparece aqui quando o cliente do ONFACE está ligado à organização dele no SaaS. Vínculos com evidência forte (Stripe ou CNPJ iguais) entram
-          sozinhos; os outros esperam uma pessoa confirmar.
+          O uso aparece aqui quando o cliente do ONFACE está vinculado à organização dele na Callface AI. Quando a ligação é clara (Stripe ou CNPJ iguais) o vínculo é feito
+          sozinho; nos outros casos, uma pessoa precisa confirmar.
         </p>
         <p className="max-w-[68ch] text-apoio text-tinta-suave" suppressHydrationWarning>
           {!sincronizacao?.status || sincronizacao.status === "nunca_rodou"
@@ -166,7 +166,7 @@ function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora
             : sincronizacao.status === "desabilitado" ? "A conexão com o banco do Callface AI não está configurada neste ambiente."
             : sincronizacao.status === "indisponivel" ? `O banco do Callface AI não respondeu na última tentativa${sincronizacao.erro ? ` (${sincronizacao.erro})` : ""}.`
             : sincronizacao.status === "falhou" ? `A última rodada do sincronizador falhou${sincronizacao.erro ? `: ${sincronizacao.erro}` : ""}.`
-            : `O sincronizador rodou ${haQuanto(sincronizacao.ultimoSyncEm, agora)} e não encontrou cliente com evidência forte.`}
+            : `O sincronizador rodou ${haQuanto(sincronizacao.ultimoSyncEm, agora)} e ainda não vinculou nenhum cliente.`}
         </p>
         {pendentes > 0 ? <Button size="sm" onClick={irParaVinculos}><Link2 /> Revisar {pendentes} {pendentes === 1 ? "vínculo pendente" : "vínculos pendentes"}</Button> : null}
       </section>
@@ -363,8 +363,8 @@ function FilaDeVinculos({ pendentes, acoes, aoMudar }: { pendentes: VinculoPende
       <section className="rounded-card bg-superficie p-6 shadow-[inset_0_0_0_1px_var(--line-hairline)]">
         <p className="text-corpo font-semibold text-tinta">Todo cliente com Callface AI está vinculado.</p>
         <p className="mt-1 max-w-[68ch] text-apoio text-tinta-suave">
-          Quando entrar um cliente novo, ou o sincronizador achar uma organização parecida sem evidência forte o bastante
-          para vincular sozinho, ele aparece aqui com a razão.
+          Quando entrar um cliente novo, ou houver uma organização parecida que precise de confirmação,
+          ele aparece aqui.
         </p>
       </section>
     );

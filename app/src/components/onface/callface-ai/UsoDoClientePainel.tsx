@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -55,11 +56,13 @@ export type PropsUsoDoCliente = {
   erro?: string | null;
   acoes?: AcoesDeVinculo;
   aoMudar?: () => void;
+  /** e-mail (minúsculo) → rota da pessoa no CRM, para os usuários da organização que já existem aqui. */
+  pessoasDoCrm?: Record<string, string>;
   /** Só para o laboratório congelar o "hoje". */
   agora?: Date;
 };
 
-export function UsoDoClientePainel({ uso, erro, acoes, aoMudar, agora: agoraFixo }: PropsUsoDoCliente) {
+export function UsoDoClientePainel({ uso, erro, acoes, aoMudar, pessoasDoCrm, agora: agoraFixo }: PropsUsoDoCliente) {
   const agora = agoraFixo ?? new Date();
   if (erro || !uso) {
     return <ErroDeUso mensagem={erro ?? "A empresa não foi encontrada na leitura de uso desta organização."} aoTentar={aoMudar} />;
@@ -73,14 +76,14 @@ export function UsoDoClientePainel({ uso, erro, acoes, aoMudar, agora: agoraFixo
     <div className="flex flex-col gap-3">
       <FaixaDoVinculo uso={uso} agora={agora} acoes={acoes} aoMudar={aoMudar} />
       {temDado ? <FaixaDeSaude uso={uso} agora={agora} /> : null}
-      {temDado ? <Conteudo uso={uso as ComDado} agora={agora} /> : <AguardandoSync nomeOrg={v.nomeOrg} />}
+      {temDado ? <Conteudo uso={uso as ComDado} agora={agora} pessoasDoCrm={pessoasDoCrm} /> : <AguardandoSync nomeOrg={v.nomeOrg} />}
     </div>
   );
 }
 
 /* ── Conteúdo com dado ─────────────────────────────────────────────────── */
 
-function Conteudo({ uso, agora }: { uso: ComDado; agora: Date }) {
+function Conteudo({ uso, agora, pessoasDoCrm }: { uso: ComDado; agora: Date; pessoasDoCrm?: Record<string, string> }) {
   const serie = uso.ligacoes.serieDiaria90d;
   const soma = (de: number, ate: number) => serie.slice(serie.length - ate, serie.length - de).reduce((a, d) => a + d.chamadas, 0);
   const lic = uso.plano.licencas;
@@ -111,7 +114,7 @@ function Conteudo({ uso, agora }: { uso: ComDado; agora: Date }) {
         </section>
         <Sinais sinais={sinais} />
       </div>
-      <div className="grid gap-3 tablet:grid-cols-2 amplo:grid-cols-4">
+      <div className="grid gap-3 tablet:grid-cols-2 amplo:grid-cols-3">
         <ListaDeItens titulo="Campanhas" icone={<Megaphone aria-hidden />}
           resumo={uso.campanhas ? `${uso.campanhas.ativas} ativas · ${uso.campanhas.concluidas30d} concluídas em 30d` : "sem dado"}
           itens={(uso.campanhas?.recentes ?? []).map((c, i) => ({
@@ -127,8 +130,8 @@ function Conteudo({ uso, agora }: { uso: ComDado; agora: Date }) {
           resumo={uso.integracoes ? `${uso.integracoes.appsAtivos} apps · ${uso.integracoes.webhooksAtivos} webhooks ativos` : "sem dado"}
           itens={(uso.integracoes?.apps ?? []).map((a, i) => ({ chave: String(i), nome: a.nome, status: a.ativo ? "Ativo" : "Inativo", ativo: a.ativo, meta: null }))}
           vazio="Nenhuma integração conectada." />
-        <Usuarios uso={uso} agora={agora} />
       </div>
+      <Usuarios uso={uso} agora={agora} pessoasDoCrm={pessoasDoCrm} />
     </>
   );
 }
@@ -337,14 +340,16 @@ function ListaDeItens({ titulo, icone, resumo, itens, vazio }: {
   );
 }
 
-function Usuarios({ uso, agora }: { uso: ComDado; agora: Date }) {
+function Usuarios({ uso, agora, pessoasDoCrm }: { uso: ComDado; agora: Date; pessoasDoCrm?: Record<string, string> }) {
   const u = uso.usuarios;
-  /* Quem liga mais primeiro; quem nunca ligou no fim — é a lista de quem
-     treinar. */
-  const lista = [...u.lista].sort((a, b) => b.chamadas30d - a.chamadas30d).slice(0, 6);
+  const [todos, setTodos] = React.useState(false);
+  /* Quem liga mais primeiro; quem nunca ligou no fim — é a lista de quem treinar. */
+  const ordenada = [...u.lista].sort((a, b) => b.chamadas30d - a.chamadas30d);
+  const lista = todos ? ordenada : ordenada.slice(0, 8);
+  const noCrm = (x: (typeof u.lista)[number]) => (x.email ? pessoasDoCrm?.[x.email.toLowerCase()] ?? null : null);
   return (
-    <section className={`${CARTAO} flex flex-col p-4`} aria-label="Usuários">
-      <header className="flex items-center gap-2">
+    <section className={`${CARTAO} flex flex-col`} aria-label="Usuários">
+      <header className="flex items-center gap-2 px-4 pt-4 pb-2">
         <Users aria-hidden className="size-4 text-tinta-suave" />
         <h3 className="text-corpo font-semibold text-tinta">Usuários</h3>
         <span className="ml-auto truncate text-apoio tabular-nums text-tinta-suave">
@@ -352,26 +357,50 @@ function Usuarios({ uso, agora }: { uso: ComDado; agora: Date }) {
         </span>
       </header>
       {lista.length === 0 ? (
-        <p className="mt-3 text-apoio text-tinta-suave">Nenhum usuário na organização.</p>
+        <p className="px-4 pb-4 text-apoio text-tinta-suave">Nenhum usuário na organização.</p>
       ) : (
-        <ul className="mt-2 flex flex-col">
-          {lista.map((x, i) => (
-            <li key={x.email ?? i} className="flex items-center gap-2 border-t border-linha py-2 first:border-t-0">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-corpo text-tinta">{x.nome ?? x.email ?? "Sem nome"}</span>
-                <span className="block truncate text-micro text-tinta-suave">{x.papel}{x.ativo ? "" : " · inativo"}</span>
-              </span>
-              <span className="shrink-0 text-right text-micro tabular-nums">
-                <span className="block text-tinta">{inteiro(x.chamadas30d)} lig. 30d</span>
-                <span className={`block ${x.chamadas30d === 0 ? "text-[var(--onface-coral-texto)]" : "text-tinta-suave"}`} suppressHydrationWarning>
-                  {x.ultimaChamadaEm ? haQuanto(x.ultimaChamadaEm, agora) : "nunca ligou"}
-                </span>
-              </span>
-            </li>
-          ))}
-          {u.total > lista.length ? <li className="pt-2 text-micro text-tinta-suave">{u.total} usuários na organização</li> : null}
-        </ul>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="pl-4">Usuário</TableHead>
+              <TableHead>Papel</TableHead>
+              <TableHead className="text-right">Ligações 7d</TableHead>
+              <TableHead className="text-right">Ligações 30d</TableHead>
+              <TableHead>Última ligação</TableHead>
+              <TableHead className="pr-4 text-right">No CRM</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lista.map((x, i) => {
+              const href = noCrm(x);
+              return (
+                <TableRow key={x.email ?? i}>
+                  <TableCell className="pl-4">
+                    <span className="block max-w-[28ch] truncate text-corpo font-medium text-tinta" title={x.nome ?? x.email ?? undefined}>{x.nome ?? x.email ?? "Sem nome"}</span>
+                    {x.nome && x.email ? <span className="block max-w-[28ch] truncate text-micro text-tinta-suave">{x.email}</span> : null}
+                  </TableCell>
+                  <TableCell className="text-apoio text-tinta-suave">{x.papel}{x.ativo ? "" : " · inativo"}</TableCell>
+                  <TableCell className="text-right tabular-nums">{inteiro(x.chamadas7d)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{inteiro(x.chamadas30d)}</TableCell>
+                  <TableCell className={`text-apoio ${x.chamadas30d === 0 ? "text-[var(--onface-coral-texto)]" : "text-tinta-suave"}`} suppressHydrationWarning>
+                    {x.ultimaChamadaEm ? haQuanto(x.ultimaChamadaEm, agora) : "nunca ligou"}
+                  </TableCell>
+                  <TableCell className="pr-4 text-right">
+                    {href
+                      ? <Button size="xs" variant="outline" asChild><Link href={href}>Abrir pessoa</Link></Button>
+                      : <span className="text-micro text-tinta-suave">Não cadastrado</span>}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       )}
+      {ordenada.length > 8 ? (
+        <div className="border-t border-linha px-4 py-2">
+          <Button size="xs" variant="ghost" onClick={() => setTodos((v) => !v)}>{todos ? "Mostrar menos" : `Ver todos os ${u.total} usuários`}</Button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -379,15 +408,15 @@ function Usuarios({ uso, agora }: { uso: ComDado; agora: Date }) {
 /* ── Vínculo ───────────────────────────────────────────────────────────── */
 
 const ESTADO: Record<"auto" | "confirmado" | "manual", { rotulo: string; badge: "success" | "info" }> = {
-  auto: { rotulo: "Vinculado por evidência forte", badge: "info" },
-  confirmado: { rotulo: "Confirmado por pessoa", badge: "success" },
-  manual: { rotulo: "Escolhido por pessoa", badge: "success" },
+  auto: { rotulo: "Vinculado", badge: "success" },
+  confirmado: { rotulo: "Vinculado", badge: "success" },
+  manual: { rotulo: "Vinculado", badge: "success" },
 };
 
 /** Frase curta da evidência: regra + os sinais que bateram. */
 function resumoDaEvidencia(v: VinculoCallfaceAi): string {
   const e = v.evidencia;
-  if (!e) return "sem evidência registrada";
+  if (!e) return "sem detalhes registrados";
   const sinais = (e.sinais ?? []).map((s) => `${s.chave} igual (${s.valor})`);
   const motivo = typeof e.motivo === "string" ? `motivo: ${e.motivo}` : null;
   const sugestao = (e.sugestao as { razao?: string } | undefined)?.razao ?? null;
@@ -411,8 +440,7 @@ function FaixaDoVinculo({ uso, agora, acoes, aoMudar }: { uso: UsoDoCliente; ago
           <Badge variant={e.badge}>{e.rotulo}</Badge>
         </p>
         <p className="truncate text-apoio text-tinta-suave">
-          {resumoDaEvidencia(v)}
-          {v.decididoPor ? ` · por ${v.decididoPor}` : ""}
+          {v.decididoPor ? `Confirmado por ${v.decididoPor}` : "Vinculado automaticamente"}
           {v.vinculadoEm ? ` em ${new Date(v.vinculadoEm).toLocaleDateString("pt-BR")}` : ""}
         </p>
       </div>
@@ -427,7 +455,7 @@ function FaixaDoVinculo({ uso, agora, acoes, aoMudar }: { uso: UsoDoCliente; ago
           <Button size="icon-sm" variant="ghost" aria-label="Mais ações do vínculo"><MoreHorizontal /></Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => setEvidencia(true)}>Ver evidência</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setEvidencia(true)}>Detalhes do vínculo</DropdownMenuItem>
           {acoes ? (
             <>
               <DropdownMenuSeparator />
@@ -472,7 +500,6 @@ function DialogoEvidencia({ aberto, aoFechar, uso }: { aberto: boolean; aoFechar
         ) : (
           <p className="rounded-control bg-superficie-alt p-3 text-apoio text-tinta-suave">{resumoDaEvidencia(v)}</p>
         )}
-        {ev?.regra ? <p className="text-micro text-tinta-suave">Regra: {ev.regra.replace(/_/g, " ")}</p> : null}
       </DialogContent>
     </Dialog>
   );
@@ -571,7 +598,7 @@ function SemVinculo({ uso, acoes, aoMudar }: { uso: UsoDoCliente; acoes?: AcoesD
           </h3>
           <p className="mt-1 max-w-[72ch] text-corpo text-tinta-suave">
             {pendente
-              ? "O sincronizador achou organizações parecidas, mas sem evidência forte o bastante para vincular sozinho. Confirme a certa: a decisão fica registrada com seu nome e a razão. Até lá, nenhum número de uso é mostrado."
+              ? "O sincronizador achou organizações parecidas, mas não deu para vincular sozinho. Confirme a certa: a decisão fica registrada com seu nome e a razão. Até lá, nenhum número de uso é mostrado."
               : "Sem o vínculo, o ONFACE não sabe qual conta do SaaS é este cliente e não mostra uso, adoção nem risco. Nenhuma organização com CNPJ, domínio ou contato em comum foi encontrada."}
           </p>
         </div>

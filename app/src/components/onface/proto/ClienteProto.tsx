@@ -190,7 +190,12 @@ class ClienteLigada extends ClienteLiga {
       return <>{el}{this._alvoUso ? createPortal(ass, this._alvoUso) : ass}</>;
     }
     if (aba !== "uso" || !P.usoCallfaceAi) return el;
-    const painel = <UsoDoClientePainel {...P.usoCallfaceAi} aoMudar={P.refresh} />;
+    const pessoasDoCrm: Record<string, string> = {};
+    for (const p of P.real.empresa.pessoas) {
+      const lead = p.fonte === "lead" ? p.id : P.real.leadDaPessoa?.[p.id];
+      if (p.email && lead) pessoasDoCrm[String(p.email).toLowerCase()] = `/pessoas/${lead}`;
+    }
+    const painel = <UsoDoClientePainel {...P.usoCallfaceAi} pessoasDoCrm={pessoasDoCrm} aoMudar={P.refresh} />;
     /* Sem alvo a aba nunca fica em branco: o painel entra direto, sem portal. */
     return <>{el}{this._alvoUso ? createPortal(painel, this._alvoUso) : <div className="p-3.5">{painel}</div>}</>;
   }
@@ -287,7 +292,7 @@ class ClienteLigada extends ClienteLiga {
         const ct = s.contratoId ? contratoPorId.get(s.contratoId) : undefined;
         const desde = dt(ct?.inicio);
         if (ct && ct.itens.length) return ct.itens.map((i) => ({ nome: i.nome, qtd: i.quantidade, preco: i.valorUnitario, sub: i.subtotal, tipo: i.natureza ?? "Item", desde }));
-        return [{ nome: s.produtoReal ?? s.produto ?? F.l, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.assinaturaStatus === "vencida" || s.assinaturaStatus === "inadimplente" ? "Assinatura " + ROTULO_STATUS_ASSINATURA[s.assinaturaStatus].toLowerCase() : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : "Serviço", desde }];
+        return [{ nome: s.produtoReal ?? s.produto ?? `${F.l} (produto não identificado)`, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.assinaturaStatus === "vencida" || s.assinaturaStatus === "inadimplente" ? "Assinatura " + ROTULO_STATUS_ASSINATURA[s.assinaturaStatus].toLowerCase() : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : "Serviço", desde }];
       });
       const cancelado = svs.every((s) => s.billingStatus === "CANCELED");
       // Pagamento vencido ganha de "Ativo": a assinatura existe, mas o Stripe diz que a cobrança não passou.
@@ -718,7 +723,7 @@ class ClienteLigada extends ClienteLiga {
         contratoTxt: f.contratos.map((id) => { const c = contratoPorId.get(id); return c ? (c.codigo ?? "contrato") + (c.vencimento ? " · vence " + dmy(dt(c.vencimento)) : "") : null; }).filter(Boolean).join(" · ") || "Sem contrato vinculado",
         upsell: () => abrirOpp("expansao", f.k), upgrade: () => abrirOpp("upgrade", f.k),
         itens: f.itens.map((x) => ({
-          qn: x.qtd + " × " + x.nome, nome: x.nome, sku: "", tipo: x.tipo, qtd: String(x.qtd),
+          qn: <span title={x.qtd + " × " + x.nome} className="block truncate">{x.qtd + " × " + x.nome}</span>, nome: <span title={x.nome} className="block max-w-full truncate">{x.nome}</span>, sku: "", tipo: x.tipo, qtd: String(x.qtd),
           tipoTxt: x.tipo + " · " + brl2(x.preco), preco: brl2(x.preco), sub: brl(x.sub), desde: dmy(x.desde),
           usoTxt: "Ativo", barra: "display:block;height:100%;border-radius:9999px;background:var(--of-tinta-forte);transform-origin:left;transition:transform .9s cubic-bezier(.16,1,.3,1);transform:scaleX(" + (S.pronto ? 1 : 0) + ")",
         })),
