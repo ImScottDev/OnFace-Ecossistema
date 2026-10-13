@@ -212,6 +212,41 @@ export async function construirContexto(e: EntradaContexto): Promise<ContextoMon
   ], 5200);
   if (msgs.length) m.fontes.push({ tipo: "mensagens", ref: s(msgs.at(-1)!.id), rotulo: `${msgs.length} mensagens recentes` });
 
+  // Memória episódica: o buffer recente não basta para retomar a relação dois
+  // meses depois. Lê trechos históricos reais, com autoria e data.
+  // Filtro por contato e organização, limite de linhas e de caracteres.
+  if (ids.contatoId) {
+    const historico = await db.execute<Row>(sql`
+      SELECT m.id::text, m.direcao, m.conteudo, m.created_at,
+             m.enviado_por_id::text, m.dados->>'aiGenerated' AS ia
+        FROM whatsapp_mensagens m JOIN contatos c ON c.id = m.contato_id
+       WHERE (m.contato_id = ${ids.contatoId}::uuid
+         OR (${ids.leadId}::uuid IS NOT NULL AND c.lead_id = ${ids.leadId}::uuid))
+         AND c.organizacao_id = ${org}::uuid
+         AND m.created_at < ${new Date(agora.getTime() - 7 * 86_400_000).toISOString()}::timestamptz
+         AND m.created_at >= ${new Date(agora.getTime() - 730 * 86_400_000).toISOString()}::timestamptz
+         AND m.tipo = 'text' AND m.conteudo IS NOT NULL
+       ORDER BY m.created_at DESC LIMIT 350`);
+    const consulta = s(e.mensagemAtual).toLocaleLowerCase("pt-BR");
+    const palavras = [...new Set((consulta.match(/[a-zA-ZÀ-ÿ0-9]{4,}/g) ?? [])
+      .filter((w) => !["voce", "voces", "sobre", "poderia", "gostaria", "estamos", "preciso", "quero", "entao"].includes(w)))].slice(0, 8);
+    const marcadores = /\b(combin|promet|retorn|agend|reuni|contrat|licen|implant|pre[cç]o|or[cç]ament|decis|praz|interess|problema|precis|uso|trabalh|convers|volt|lembr|mes(?:es)?|semana)\w*/i;
+    const escolhidos = historico.map((r) => {
+      const texto = s(r.conteudo).toLocaleLowerCase("pt-BR");
+      const bate = palavras.reduce((n, w) => n + (texto.includes(w) ? 2 : 0), 0);
+      return { r, pontos: bate + (marcadores.test(texto) ? 1 : 0) + (r.direcao === "in" ? 1 : 0) };
+    }).filter((x) => x.pontos > 1).sort((a, b) => b.pontos - a.pontos).slice(0, 10)
+      .sort((a, b) => new Date(String(a.r.created_at)).getTime() - new Date(String(b.r.created_at)).getTime());
+    if (escolhidos.length) {
+      m.add("episodios", "Conversa antiga relevante (falas reais com data; confira se ainda valem)", escolhidos.map(({ r }) =>
+        "[" + dataHora(r.created_at) + "] " +
+        (r.direcao === "in" ? "Contato" : r.ia === "true" ? "Agente" : r.enviado_por_id ? "Pessoa do time" : "Equipe") +
+        ": " + corta(s(r.conteudo), 280)
+      ), 2900);
+      for (const { r } of escolhidos.slice(-5)) m.fontes.push({ tipo: "mensagem_historica", ref: s(r.id), rotulo: "Conversa anterior " + dia(r.created_at) });
+    }
+  }
+
   if (ids.leadId) {
     const notas = await db.execute<Row>(sql`
       SELECT tipo, titulo, descricao, created_at FROM atividades

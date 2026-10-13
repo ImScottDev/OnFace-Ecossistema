@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { indexarConhecimento } from "@/lib/ai-platform/conhecimento/indexar";
+import { importarSitePublico, LIMITE_CONHECIMENTO_CARACTERES } from "@/lib/ai-platform/conhecimento/importar-site";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -165,22 +166,59 @@ app.get("/automacoes/ai/knowledge", async (c) => {
   const ctx = await getCtx(c); return c.json({ sources: await db.select().from(aiKnowledgeSources).where(eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiKnowledgeSources.updatedAt)) });
 });
 
+const schemaFonteConhecimento = z.object({
+  nome: z.string().trim().min(2).max(140),
+  sourceType: z.enum(["text", "url", "file", "faq"]),
+  sourceUri: z.string().trim().max(2048).nullable().optional(),
+  content: z.string().min(1).max(LIMITE_CONHECIMENTO_CARACTERES).optional(),
+});
+
 app.post("/automacoes/ai/knowledge", async (c) => {
-  const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ nome: z.string().min(1), sourceType: z.enum(["text", "url", "file", "faq"]), sourceUri: z.string().nullable().optional(), content: z.string().min(1).optional() }).safeParse(await c.req.json());
-  if (!parsed.success) return c.json({ error: "Fonte invalida", details: parsed.error.flatten() }, 400);
-  const [source] = await db.insert(aiKnowledgeSources).values({ organizacaoId: ctx.organizacaoId, nome: parsed.data.nome, sourceType: parsed.data.sourceType, sourceUri: parsed.data.sourceUri ?? null, status: parsed.data.content ? "indexing" : "pending", createdById: ctx.userId }).returning();
-  if (parsed.data.content) await indexKnowledge(ctx.organizacaoId, source.id, parsed.data.content);
-  return c.json({ source }, 201);
+  const ctx = await exigirCtx(c, "ai.configure");
+  const parsed = schemaFonteConhecimento.safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Fonte inválida ou texto acima do limite de 200 mil caracteres.", details: parsed.error.flatten() }, 400);
+  const { nome, sourceType, sourceUri } = parsed.data;
+  let conteudo = parsed.data.content?.trim();
+  let origem = sourceUri ?? null;
+  if (sourceType === "url") {
+    if (!sourceUri) return c.json({ error: "Informe a URL pública da página." }, 400);
+    try {
+      const pagina = await importarSitePublico(sourceUri);
+      conteudo = pagina.texto;
+      origem = pagina.url;
+    } catch (error) { return c.json({ error: error instanceof Error ? error.message : "Não foi possível ler o site." }, 422); }
+  }
+  if (!conteudo) return c.json({ error: "Envie um texto, um arquivo textual ou a URL pública do site." }, 400);
+  const [source] = await db.insert(aiKnowledgeSources).values({
+    organizacaoId: ctx.organizacaoId, nome, sourceType, sourceUri: origem,
+    status: "indexing", governanca: "rascunho", createdById: ctx.userId,
+  }).returning();
+  try {
+    const version = await indexarConhecimento(ctx.organizacaoId, source.id, conteudo);
+    await audit(ctx, "ai.knowledge.import", "ai_knowledge_source", source.id, { sourceType, characters: conteudo.length });
+    return c.json({ source, version, requiresApproval: true }, 201);
+  } catch (error) {
+    await db.update(aiKnowledgeSources).set({ status: "failed", errorMessage: error instanceof Error ? error.message.slice(0, 500) : "Erro ao indexar." })
+      .where(and(eq(aiKnowledgeSources.id, source.id), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId)));
+    return c.json({ error: "Falha ao indexar a fonte. Ela foi registrada para diagnóstico." }, 500);
+  }
 });
 
 const indexKnowledge = indexarConhecimento;
 
 app.post("/automacoes/ai/knowledge/:id/reindex", async (c) => {
-  const ctx = await exigirCtx(c, "ai.configure"); const parsed = z.object({ content: z.string().min(1).optional() }).safeParse(await c.req.json()); if (!parsed.success) return c.json({ error: "Conteudo invalido" }, 400);
-  const [source] = await db.select().from(aiKnowledgeSources).where(and(eq(aiKnowledgeSources.id, c.req.param("id")), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId))).limit(1); if (!source) return c.json({ error: "Fonte nao encontrada" }, 404);
+  const ctx = await exigirCtx(c, "ai.configure");
+  const parsed = z.object({ content: z.string().min(1).max(LIMITE_CONHECIMENTO_CARACTERES).optional() }).safeParse(await c.req.json());
+  if (!parsed.success) return c.json({ error: "Conteúdo inválido ou acima do limite permitido." }, 400);
+  const [source] = await db.select().from(aiKnowledgeSources)
+    .where(and(eq(aiKnowledgeSources.id, c.req.param("id")), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!source) return c.json({ error: "Fonte não encontrada." }, 404);
   let content = parsed.data.content;
-  if (!content && source.sourceType === "url" && source.sourceUri) { const response = await fetch(source.sourceUri); if (!response.ok) return c.json({ error: `URL respondeu ${response.status}` }, 422); content = await response.text(); }
-  if (!content) return c.json({ error: "Envie content para reindexar" }, 400);
+  if (!content && source.sourceType === "url" && source.sourceUri) {
+    try { content = (await importarSitePublico(source.sourceUri)).texto; }
+    catch (error) { return c.json({ error: error instanceof Error ? error.message : "Site inacessível." }, 422); }
+  }
+  if (!content) return c.json({ error: "Envie o conteúdo para reindexar esta fonte." }, 400);
   return c.json({ version: await indexKnowledge(ctx.organizacaoId, source.id, content) });
 });
 

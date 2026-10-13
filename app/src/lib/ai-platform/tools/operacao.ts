@@ -75,10 +75,14 @@ export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
       }
       try {
         const { fato, mudou } = await lembrar({
-          organizacaoId: ctx.organizacaoId, escopo, contatoId: escopo === "empresa" ? null : ctx.contatoId ?? null, leadId: lead?.id ?? null,
+          organizacaoId: ctx.organizacaoId, escopo,
+          // Memória da pessoa deve sobreviver à troca de número e conversa.
+          // Empresa não fica subordinada ao lead: várias pessoas compartilham o mesmo fato.
+          contatoId: escopo === "empresa" || ((escopo === "pessoa" || escopo === "operacional") && lead?.id) ? null : ctx.contatoId ?? null,
+          leadId: escopo === "empresa" ? null : lead?.id ?? null,
           empresaId: escopo === "empresa" ? lead?.empresaId ?? null : null,
           tipo: input.tipo ? String(input.tipo) as "fato" : "fato", chave: String(input.chave), valor: String(input.valor),
-          fonte: "mensagem", fonteRef, confirmado: input.confirmado === true && Boolean(fonteRef), agentId: ctx.agentId, runId: ctx.runId,
+          fonte: "mensagem", fonteRef, confirmado: input.confirmado === true && Boolean(ctx.sourceMessageId), agentId: ctx.agentId, runId: ctx.runId,
         });
         return { ok: true, data: { id: fato.id, chave: fato.chave, confirmado: fato.confirmado, mudou, mantidoPorSerConfirmado: !mudou && fato.valor !== String(input.valor).trim() } };
       } catch (e) {

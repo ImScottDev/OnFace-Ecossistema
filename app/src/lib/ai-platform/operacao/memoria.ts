@@ -91,6 +91,11 @@ export async function recordar(q: ConsultaMemoria): Promise<Fato[]> {
   const alvos = [
     q.contatoId ? eq(aiMemoriaFatos.contatoId, q.contatoId) : null,
     q.leadId ? eq(aiMemoriaFatos.leadId, q.leadId) : null,
+    // Fatos legados ancorados no número antigo não desaparecem quando o mesmo
+    // lead retoma por outro contato/número: reconciliação por vínculo CRM canônico.
+    q.leadId ? sql`${aiMemoriaFatos.contatoId} IN (
+      SELECT id FROM contatos WHERE lead_id = ${q.leadId}::uuid AND organizacao_id = ${q.organizacaoId}::uuid
+    )` : null,
     q.empresaId ? eq(aiMemoriaFatos.empresaId, q.empresaId) : null,
   ].filter((x) => x !== null);
   if (!alvos.length) return [];
