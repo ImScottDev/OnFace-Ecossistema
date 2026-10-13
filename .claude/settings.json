@@ -10,8 +10,17 @@
       "Glob",
       "Read",
       "NotebookEdit",
+      "Agent",
+      "Task",
+      "TodoWrite",
       "mcp__notion",
-      "mcp__n8n"
+      "mcp__n8n",
+      "mcp__Notion",
+      "mcp__Remote_Desktop_Commander",
+      "mcp__github",
+      "mcp__Stripe",
+      "mcp__Miro",
+      "mcp__claude-code-remote"
     ]
   }
 }
