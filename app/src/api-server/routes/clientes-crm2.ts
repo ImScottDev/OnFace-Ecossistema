@@ -1725,7 +1725,9 @@ app.post("/clientes/:empresaId/portal-stripe", async (c) => {
 
   const base = appUrl();
   try {
-    const portal = await abrirPortal({ stripeCustomerId, returnUrl: `${base}/clientes/${empresaId}` });
+    // `organizacaoId` sai da SESSÃO (ctx), nunca do corpo: é ele que define o catálogo
+    // de onde saem os planos oferecidos na troca de plano dentro do portal.
+    const portal = await abrirPortal({ stripeCustomerId, organizacaoId: ctx.organizacaoId, returnUrl: `${base}/clientes/${empresaId}` });
     // Modo mock (dev sem chave): não há sessão, e dizer isso é melhor do que
     // devolver uma URL falsa que o usuário vai clicar.
     if (!portal.url) return c.json({ error: portal.motivo ?? "Portal indisponível neste ambiente." }, 503);

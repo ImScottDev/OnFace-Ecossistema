@@ -1,8 +1,9 @@
 /**
- * Customer Portal do Stripe — a página hospedada onde o PRÓPRIO cliente troca
- * a forma de pagamento.
+ * Customer Portal do Stripe — a página hospedada onde o PRÓPRIO cliente cuida da
+ * assinatura: forma de pagamento, faturas, dados de cobrança (inclusive CNPJ),
+ * troca de plano e cancelamento. O que está ligado e por quê: `stripe-portal-config.ts`.
  *
- * Por que existe: hoje quem paga por boleto e quer passar para cartão não tem
+ * Nasceu de uma dor: quem paga por boleto e quer passar para cartão não tinha
  * caminho nenhum. O CRM não guarda cartão (e não deve: entraria no escopo de
  * PCI por conta própria), e o dono do produto também não consegue trocar pelo
  * Dashboard — método de pagamento é dado do cliente, só ele informa. O portal é
@@ -24,7 +25,7 @@
 import { getStripeCheckoutMode } from "./stripe-checkout";
 import {
   MARCA_CONFIG, MENSAGEM_FALTAM_POLITICAS, PortalConfigError, decidirConfiguracao, ehRecusaPorPoliticas, formDaConfiguracao,
-  type ConfiguracaoDoStripe, type PoliticasPortal,
+  type ConfiguracaoDoStripe, type PlanoDoPortal, type PoliticasPortal,
 } from "./stripe-portal-config";
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -38,7 +39,7 @@ function chave(): string {
   return k;
 }
 
-async function stripe<T>(path: string, form?: URLSearchParams, idempotencyKey?: string): Promise<T> {
+export async function stripe<T>(path: string, form?: URLSearchParams, idempotencyKey?: string): Promise<T> {
   const res = await fetch(`${STRIPE_API}/${path}`, {
     method: form ? "POST" : "GET",
     headers: {
@@ -70,7 +71,7 @@ function politicasDoAmbiente(): PoliticasPortal {
 }
 
 /** Memo de processo, com validade: uma mudança feita à mão no Dashboard é percebida em minutos, sem listar a cada clique. */
-let memo: { id: string; ate: number } | null = null;
+let memo: { id: string; ate: number; chave: string } | null = null;
 const VALIDADE_MEMO_MS = 10 * 60 * 1000;
 
 export interface ConfiguracaoDoPortal {
@@ -79,6 +80,30 @@ export interface ConfiguracaoDoPortal {
   acao: "criada" | "atualizada" | "reusada" | "fixada" | "mock";
   /** Riscos de usar uma configuração que não é a do ONFACE (só no `fixada`). */
   riscos?: string[];
+}
+
+export interface OpcoesDaConfiguracao {
+  /**
+   * Organização cujo catálogo define os planos da troca de plano. Vem da SESSÃO no servidor
+   * (`getTenantContext`), nunca do cliente. Sem ela, a troca de plano não é tocada: a configuração
+   * é criada sem essa seção e uma existente não é comparada nela.
+   */
+  organizacaoId?: string | null;
+  /** Planos já resolvidos (o script de configuração resolve e mostra o porquê de cada exclusão). Vence `organizacaoId`. */
+  planos?: PlanoDoPortal[] | null;
+}
+
+/** Resolve os planos da troca de plano. Falha aqui NÃO derruba o portal: sem isso o cliente ainda troca o cartão. */
+async function planosDaOpcao(opcoes: OpcoesDaConfiguracao): Promise<PlanoDoPortal[] | null> {
+  if (opcoes.planos !== undefined) return opcoes.planos;
+  if (!opcoes.organizacaoId) return null;
+  try {
+    const { resolverPlanosParaOrganizacao } = await import("./stripe-portal-planos-db");
+    return (await resolverPlanosParaOrganizacao(opcoes.organizacaoId, <T,>(caminho: string) => stripe<T>(caminho))).planos;
+  } catch (erro) {
+    console.error("[StripePortal] planos do catálogo indisponíveis; o portal abre sem mexer na troca de plano:", erro instanceof Error ? erro.message : erro);
+    return null;
+  }
 }
 
 /**
@@ -91,7 +116,7 @@ export interface ConfiguracaoDoPortal {
  * recusar criar por falta de política/termos, lança `PortalConfigError` com o que
  * falta — a rota mostra a mensagem, não um 400 cru.
  */
-export async function configurarPortal(): Promise<ConfiguracaoDoPortal> {
+export async function configurarPortal(opcoes: OpcoesDaConfiguracao = {}): Promise<ConfiguracaoDoPortal> {
   if (getStripeCheckoutMode() === "mock") return { id: null, acao: "mock" };
 
   const fixadoId = process.env.STRIPE_PORTAL_CONFIGURATION_ID || null;
@@ -100,25 +125,28 @@ export async function configurarPortal(): Promise<ConfiguracaoDoPortal> {
     return { id: d.acao === "usar_fixada" ? d.id : fixadoId, acao: "fixada" };
   }
 
-  if (memo && memo.ate > Date.now()) return { id: memo.id, acao: "reusada" };
+  const chaveMemo = opcoes.planos !== undefined ? `planos:${JSON.stringify(opcoes.planos)}` : `org:${opcoes.organizacaoId ?? "-"}`;
+  if (memo && memo.chave === chaveMemo && memo.ate > Date.now()) return { id: memo.id, acao: "reusada" };
+  const lembrar = (id: string) => { memo = { id, ate: Date.now() + VALIDADE_MEMO_MS, chave: chaveMemo }; };
 
   const lista = (await stripe<{ data: ConfiguracaoDoStripe[] }>("billing_portal/configurations?limit=100&active=true")).data ?? [];
   const politicas = politicasDoAmbiente();
-  const d = decidirConfiguracao({ lista, politicas });
+  const planos = await planosDaOpcao(opcoes);
+  const d = decidirConfiguracao({ lista, politicas, planos });
 
-  if (d.acao === "reusar") { memo = { id: d.id, ate: Date.now() + VALIDADE_MEMO_MS }; return { id: d.id, acao: "reusada" }; }
+  if (d.acao === "reusar") { lembrar(d.id); return { id: d.id, acao: "reusada" }; }
   if (d.acao === "atualizar") {
     /* Update, não create: cada create deixa uma configuração órfã ativa na conta. */
-    await stripe(`billing_portal/configurations/${d.id}`, formDaConfiguracao(politicas));
-    memo = { id: d.id, ate: Date.now() + VALIDADE_MEMO_MS };
+    await stripe(`billing_portal/configurations/${d.id}`, formDaConfiguracao(politicas, planos));
+    lembrar(d.id);
     return { id: d.id, acao: "atualizada" };
   }
   if (d.acao !== "criar") throw new PortalConfigError("fixada_invalida", "Configuração do portal inválida.");
 
   try {
     /* Idempotency-Key com a marca da versão: duas réplicas subindo juntas não criam duas configurações. */
-    const r = await stripe<{ id: string }>("billing_portal/configurations", formDaConfiguracao(politicas), `portal-config-${MARCA_CONFIG}`);
-    memo = { id: r.id, ate: Date.now() + VALIDADE_MEMO_MS };
+    const r = await stripe<{ id: string }>("billing_portal/configurations", formDaConfiguracao(politicas, planos), `portal-config-${MARCA_CONFIG}`);
+    lembrar(r.id);
     return { id: r.id, acao: "criada" };
   } catch (erro) {
     if (ehRecusaPorPoliticas(erro)) throw new PortalConfigError("faltam_politicas", MENSAGEM_FALTAM_POLITICAS);
@@ -147,6 +175,8 @@ export interface PortalAberto {
  */
 export async function abrirPortal(params: {
   stripeCustomerId: string;
+  /** Organização da SESSÃO (servidor). Com ela o portal confere/atualiza os planos da troca de plano pelo catálogo dela. */
+  organizacaoId?: string | null;
   /** Para onde o botão "Voltar" do portal leva — o Cliente 360 de onde veio. */
   returnUrl: string;
 }): Promise<PortalAberto> {
@@ -158,7 +188,7 @@ export async function abrirPortal(params: {
     };
   }
 
-  const { id: configuration } = await configurarPortal();
+  const { id: configuration } = await configurarPortal({ organizacaoId: params.organizacaoId });
   const form = new URLSearchParams();
   form.append("customer", params.stripeCustomerId);
   form.append("return_url", params.returnUrl);
