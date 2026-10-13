@@ -196,12 +196,12 @@ export async function POST(req: NextRequest) {
         await db
           .update(leads)
           .set({
-            empresa: p.empresa,
+            empresa: sql`COALESCE(NULLIF(${leads.empresa}, ''), ${p.empresa ?? null})`,
             // Não rouba o vínculo já feito (inclusive o manual, no drawer): só preenche se estiver vazio.
             ...(empresaIdResolvida
               ? { empresaId: sql`COALESCE(${leads.empresaId}, ${empresaIdResolvida}::uuid)` }
               : {}),
-            cargo: p.cargo,
+            cargo: sql`COALESCE(NULLIF(${leads.cargo}, ''), ${p.cargo ?? null})`,
             origem: sql`COALESCE(NULLIF(${leads.origem}, ''), ${p.origem ?? null})`,
             utmSource: sql`COALESCE(NULLIF(${leads.utmSource}, ''), ${p.utmSource ?? null})`,
             utmMedium: sql`COALESCE(NULLIF(${leads.utmMedium}, ''), ${p.utmMedium ?? null})`,
