@@ -7,7 +7,7 @@
 #   ./deploy.sh dev --construir-aqui   # fallback: constrói na EC2 (lento; só se o GHCR cair)
 #
 # Alvos:
-#   dev  → /opt/callface/crm2-dev, compose `crm2-dev`, https://dev.crm.callface.io
+#   dev  → /opt/callface/crm2-dev, compose `crm2-dev`. Desde a virada (13/10/2026) é a PRODUÇÃO: https://crm.callface.io (CRM_DOMAIN no .env do servidor)
 #
 # Produção não tem alvo aqui de propósito: a virada é um procedimento à parte
 # (docs/operacao/virada/) e só acontece com o OK do Kauã.

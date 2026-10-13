@@ -12,10 +12,14 @@ gate é o navegador), a ordem de trabalho e a definição de pronto.
   `main`.** Não crie branch nem worktree para tarefa pontual.
 - `github.com/ImScottDev/callface-crm` é o CRM anterior. Não é fonte do ONFACE:
   não compare com ele, não traga código dele, não faça push nele.
-- Ambiente de validação: `https://dev.crm.callface.io`, publicado com
-  `./deploy.sh dev` a partir de um commit.
-- **Produção (`crm.callface.io`) só pela virada, com OK explícito do Kauã.**
-  Nenhum comando em `/opt/callface/crm` sem essa aprovação.
+- **Desde a virada de 13/10/2026 o ONFACE É a produção:** `https://crm.callface.io`,
+  pilha `crm2-dev` em `/opt/callface/crm2-dev`, publicado com `./deploy.sh dev`
+  a partir de um commit. Todo deploy vai para o time que está operando:
+  typecheck e testes antes, e cuidado com envios reais (WhatsApp, e-mail,
+  Stripe live, Documenso).
+- O CRM legado fica em `homolog.crm.callface.io`, só consulta, worker parado
+  (`/opt/callface/crm`). Não religar nem escrever no banco dele. Volta da
+  virada: `scripts/virada-dominio-voltar.sh 20261013-0408`.
 
 ## Commits
 
