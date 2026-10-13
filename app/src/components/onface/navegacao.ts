@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BarChart3, Bot, BriefcaseBusiness, Building2, CalendarDays, FileText, Headphones, Home,
+  Activity, BarChart3, Bot, BriefcaseBusiness, Building2, CalendarDays, FileText, Headphones, Home,
   LayoutDashboard, LifeBuoy, LineChart, ListChecks, PhoneCall,
   Repeat, Rocket, Sparkles, Users, Workflow, Zap,
 } from "lucide-react";
@@ -90,6 +90,7 @@ export const NAVEGACAO: AreaNav[] = [
       { label: "Visão Geral", href: "/clientes", icon: Building2 },
       { label: "Customer Success", href: "/clientes/cs", icon: Users },
       { label: "Risco / Churn", href: "/clientes/risco", icon: LineChart },
+      { label: "Uso da Callface AI", href: "/clientes/uso", icon: Activity },
     ],
   },
   {
@@ -135,6 +136,7 @@ export const APOIO_DO_DESTINO: Record<string, string> = {
   "/calendario": "Compromissos da equipe",
   "/clientes": "Contas ativas e saúde da base",
   "/clientes/cs": "Acompanhamento e retenção",
+  "/clientes/uso": "Adoção, inatividade e expansão pelo uso do SaaS",
   "/automacoes": "Fluxos, cadências e agentes",
   "/relatorios": "Números da operação",
   "/ajustes": "Organização, equipe e integrações",
