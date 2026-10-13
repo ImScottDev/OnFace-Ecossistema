@@ -98,6 +98,10 @@ export interface EntradaCadastro {
   etapaInicial?: "novo" | "em_contato";
   /** Só Pré-vendas: contato avulso não tem dono no domínio. */
   responsavelId?: string | null;
+  /** Só Pré-vendas: rótulos de serviço de interesse, como `servicos_interesse` guarda. */
+  servicosInteresse?: string[] | null;
+  /** "Criar lead" do Atendimento: a conversa chega sem empresa e o painel diz "associar depois". */
+  permitirSemEmpresa?: boolean;
 }
 
 export interface CadastroCriado {
@@ -153,7 +157,7 @@ export async function acaoCadastrarContato(entrada: EntradaCadastro): Promise<Re
 
     const contatoDoLead = donaDoCadastro ?? principalDaEmpresa;
     if (prevendas) {
-      if (!empresaNome) throw new RegraDeNegocio("sem_empresa", "Pré-vendas precisa de uma empresa: informe a empresa do contato.");
+      if (!empresaNome && !entrada.permitirSemEmpresa) throw new RegraDeNegocio("sem_empresa", "Pré-vendas precisa de uma empresa: informe a empresa do contato.");
       if (!contatoDoLead) throw new RegraDeNegocio("sem_contato", "Informe o contato principal do lead.");
       if (!contatoDoLead.email && !contatoDoLead.telefone) {
         throw new RegraDeNegocio("sem_identificador", `Informe e-mail ou telefone de ${contatoDoLead.nome}: sem eles não há como falar com o lead.`);
@@ -191,8 +195,9 @@ export async function acaoCadastrarContato(entrada: EntradaCadastro): Promise<Re
     if (prevendas) {
       const c = contatoDoLead!;
       const lead = await acaoCriarLead({
-        empresa: empresaNome!, empresaId, pessoaNome: c.nome, cargo: c.cargo, email: c.email, telefone: c.telefone,
+        empresa: empresaNome ?? "", empresaId, pessoaNome: c.nome, cargo: c.cargo, email: c.email, telefone: c.telefone,
         origem, responsavelId: entrada.responsavelId || null,
+        servicosInteresse: entrada.servicosInteresse ?? null, permitirSemEmpresa: entrada.permitirSemEmpresa,
       });
       if (!lead.ok) throw new RegraDeNegocio(lead.codigo ?? "lead", lead.erro);
       leadId = lead.dados!.leadId;

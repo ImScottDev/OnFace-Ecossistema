@@ -210,7 +210,11 @@ test("o worker NÃO cria pessoa ao criar contato de WhatsApp", () => {
   assert.equal(criaContato.length, 2, "esperava os dois pontos que criam contato de WhatsApp");
   for (const trecho of criaContato) assert.ok(!trecho.includes("identidadeCanonicaDeContato"), trecho);
   assert.ok(!ler("lib/atendimento/tela.ts").includes("FROM pessoas"), "o Atendimento lista de contatos, não de pessoas");
-  assert.match(ler("components/onface/proto/AtendimentoProto.tsx"), /acaoCriarLead/, "criar a pessoa é do atendente, pela porta de Pré-vendas");
+  // Criar a pessoa é do atendente, por uma porta canônica: o cadastro único de Contatos
+  // (que escolhe base × Pré-vendas) ou a de Pré-vendas. Nunca SQL direto.
+  const atendimento = ler("components/onface/proto/AtendimentoProto.tsx");
+  assert.match(atendimento, /acaoCadastrarContato|acaoCriarLead/, "criar a pessoa é do atendente, pela porta canônica");
+  assert.ok(!/INSERT INTO (pessoas|leads)|db\.insert\((pessoas|leads)\)/.test(atendimento), "o Atendimento não grava pessoa/lead por fora das portas");
 });
 
 test("a decisão de Ganho passa pela política da oferta, não pela família", () => {

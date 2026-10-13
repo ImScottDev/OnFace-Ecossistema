@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
 
 import { ContatosDesenho } from "./ContatosDesenho";
+import { cartoesDeDestino } from "./destino-do-cadastro";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
 interface Props {
@@ -584,10 +585,6 @@ class Logica extends React.Component<any, any> {
                   remover: () => this.setState(s => ({ form: Object.assign({}, s.form, { pessoas: (s.form.pessoas || []).filter((_, x) => x !== k) }) })) };
               }) };
       } else if (md === "pessoa" || md === "empresa") {
-        const DEST = [
-          ["base", "Só salvar na base", "Fica disponível para consultar e trabalhar depois. Sem processo aberto.", "Contato", "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8"],
-          ["prevendas", "Enviar para Pré-vendas", "Inbound: vira lead no quadro do Pré-vendas para qualificação.", "Lead", "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"]
-        ];
         /* Contato avulso: sem responsável (o dono mora no lead, e avulso não tem lead). A origem vira ponto de contato. */
         const nec = (k) => S.tentou && !(Fm[k] || "").trim() ? "Obrigatório" : "";
         const cfg = dest === "base"
@@ -605,15 +602,7 @@ class Logica extends React.Component<any, any> {
         m = { d: ehP ? ico.userPlus : ico.predio, titulo: ehP ? "Novo contato" : "Nova empresa", sub: "Passo 2 de 2 · Destino de " + ((Fm.nome || "").trim() || "—") + (!ehP && pz.length ? " + " + pz.length + (pz.length === 1 ? " pessoa" : " pessoas") : ""), ehImportar: false, passo2: true,
           salvarLabel: S.salvandoModal ? "Salvando…" : dest === "base" ? (ehP ? "Salvar contato" : "Salvar empresa") : "Salvar e enviar para Pré-vendas",
           temConfig: true, configTitulo: dest === "base" ? "Detalhes" : "Configurar pré-vendas",
-          destinos: DEST.map(([k, label, desc, rel, d]) => {
-            const on = dest === k;
-            return { label, desc, rel, d, on, relStyle: selo(rel),
-              onClick: () => this.setState({ destino: k, tentou: false }),
-              style: "display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:11px;border:0;cursor:pointer;text-align:left;background:" + (on ? "#fff7f5" : "#fff") + ";box-shadow:inset 0 0 0 " + (on ? "1.5px #fe4f2b" : "1px #e3e7e8"),
-              hover: on ? "" : "box-shadow:inset 0 0 0 1px #a9b1b4",
-              ico: "flex:0 0 auto;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;" + (on ? "background:#fe4f2b;color:#fff" : "background:#f6f6f3;color:#1f252c;box-shadow:inset 0 0 0 1px #eef1f1"),
-              radio: "flex:0 0 auto;width:18px;height:18px;border-radius:9999px;display:grid;place-items:center;" + (on ? "background:#fe4f2b" : "background:#fff;box-shadow:inset 0 0 0 1.5px #c8ccc9") };
-          }),
+          destinos: cartoesDeDestino(dest, (k) => this.setState({ destino: k, tentou: false }), selo),
           campos: cfg };
       } else {
         const imp = S.imp;
@@ -687,10 +676,6 @@ class Logica extends React.Component<any, any> {
         } else {
           const dest = S.destino || "base";
           const INB = ["Meta Ads", "Instagram", "Site", "Formulário", "WhatsApp", "Orgânica"];
-          const DEST = [
-            ["base", "Só salvar na base", "Entram como contatos, sem processo aberto.", "Contato", "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8"],
-            ["prevendas", "Enviar para Pré-vendas", "Inbound: cada linha vira lead no quadro do Pré-vendas.", "Lead", "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"]
-          ];
           const rs = S.impResps || [];
           const existentes = linhasM.filter(x => todos.some(t => t.nome.toLowerCase() === x.nome.toLowerCase() || (x.email && t.email === x.email))).length;
           const tagOps = [["", "Sem tag"]].concat(nomesTags);
@@ -700,12 +685,7 @@ class Logica extends React.Component<any, any> {
           const por = rs.length ? Math.floor(aceitas.filter(a => a.status === "novo").length / rs.length) : 0, sobra = rs.length ? aceitas.filter(a => a.status === "novo").length % rs.length : 0;
           m = Object.assign(base, { sub: "Passo 4 de 4 · Destino de " + aceitas.length + " contatos", passo2: true, temConfig: true, configTitulo: "Configurar lista",
             salvarLabel: dest === "base" ? "Importar " + aceitas.length : "Importar e enviar para Pré-vendas",
-            destinos: DEST.map(([k, label, desc, rel, d]) => { const on = dest === k; return { label, desc, rel, d, on, relStyle: relSelo(rel),
-              onClick: () => this.setState({ destino: k, tentou: false }),
-              style: "display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:11px;border:0;cursor:pointer;text-align:left;background:" + (on ? "#fff7f5" : "#fff") + ";box-shadow:inset 0 0 0 " + (on ? "1.5px #fe4f2b" : "1px #e3e7e8"),
-              hover: on ? "" : "box-shadow:inset 0 0 0 1px #a9b1b4",
-              ico: "flex:0 0 auto;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;" + (on ? "background:#fe4f2b;color:#fff" : "background:#f6f6f3;color:#1f252c;box-shadow:inset 0 0 0 1px #eef1f1"),
-              radio: "flex:0 0 auto;width:18px;height:18px;border-radius:9999px;display:grid;place-items:center;" + (on ? "background:#fe4f2b" : "background:#fff;box-shadow:inset 0 0 0 1.5px #c8ccc9") }; }),
+            destinos: cartoesDeDestino(dest, (k) => this.setState({ destino: k, tentou: false }), relSelo, "importacao"),
             campos: cfg,
             temResps: true, respsErro: S.tentou && !rs.length, respsNota: rs.length > 1 ? "Distribuídos igualmente entre " + rs.length + " pessoas" : "Selecione um ou mais — com vários, a lista é dividida igualmente",
             resps: equipe.map((n, k) => { const on = rs.indexOf(n) >= 0; const pos = rs.indexOf(n);

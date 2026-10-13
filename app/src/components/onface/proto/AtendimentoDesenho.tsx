@@ -14,6 +14,7 @@
 import { Fragment } from "react";
 import { estilo, foco, hover } from "./proto-runtime";
 import "./AtendimentoDesenho.css";
+import { CartoesDeDestino } from "./destino-do-cadastro";
 
 /**
  * O que o desenho consome.
@@ -1669,8 +1670,15 @@ Cancelar
 <div style={{ margin: "auto", width: "100%", maxWidth: "520px", maxHeight: "calc(100vh - 40px)", display: "flex", flexDirection: "column", background: "#fff", borderRadius: "16px", boxShadow: "0 24px 60px -12px rgba(18,23,29,.35),inset 0 0 0 1px #e3e7e8", overflow: "hidden", animation: "ofIn .18s ease both" }}>
 <div style={{ flex: "0 0 auto", display: "flex", alignItems: "flex-start", gap: "12px", padding: "18px 18px 12px" }}>
 <div style={{ flex: "1", minWidth: "0" }}>
+{/* ══ DIVERGÊNCIA DELIBERADA DO DESENHO — autorizada pelo Scott em 13/10/2026 ══
+    O desenho original só cria lead em Pré-vendas. Neste modal foram acrescentados, e SÓ eles:
+    (1) os cartões de destino "Só salvar na base" × "Enviar para Pré-vendas" (componente único
+    de destino-do-cadastro.tsx, o mesmo de Contatos & Empresas); (2) título e botão dinâmicos
+    (nl.titulo, nl.botao); (3) a faixa "Entra em Pré-vendas · Novo" condicional (nl.mostraEntra).
+    Ao regerar a tela, incorpore isto no Claude Design em vez de sobrescrever.
+    Registro: docs/design/divergencias-do-desenho.md ══ */}
 <div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "16px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d" }}>
-Criar lead
+{nl.titulo}
 </div>
 <div style={{ fontSize: "12.5px", color: "#67787c", marginTop: "3px" }}>
 {nl.sub}
@@ -1760,6 +1768,13 @@ Responsável
 ))}
 </div>
 </div>
+<div>
+<div style={{ fontSize: "12px", fontWeight: "600", color: "#1f252c", marginBottom: "7px" }}>
+Para onde vai?
+</div>
+<CartoesDeDestino itens={nl.destinos ?? []} />
+</div>
+{(nl.mostraEntra) ? (<>
 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px", borderRadius: "10px", background: "#fafafa", boxShadow: "inset 0 0 0 1px #eef1f1", fontSize: "12px", color: "#4a5560" }}>
 <span>
 Entra em
@@ -1774,13 +1789,14 @@ com origem
 {nl.origem}
 </span>
 </div>
+</>) : null}
 </div>
 <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "flex-end", gap: "8px", padding: "12px 18px", borderTop: "1px solid #eef1f1", background: "#fafafa" }}>
 <button onClick={nl.fechar} style={{ height: "36px", padding: "0 16px", borderRadius: "9999px", border: "0", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "13px", fontWeight: "500", color: "#1f252c", cursor: "pointer" }} className={[hover("background:#f6f6f3")].filter(Boolean).join(" ")}>
 Cancelar
 </button>
 <button onClick={nl.criar} style={estilo(nl.btnStyle)}>
-Criar lead e vincular
+{nl.botao}
 </button>
 </div>
 </div>

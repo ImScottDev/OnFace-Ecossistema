@@ -27,6 +27,7 @@ import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { AtendimentoDesenho } from "./AtendimentoDesenho";
+import { cartoesDeDestino, rotulosDoDestino, ESTILO_SELO_DESTINO, DESTINO_PADRAO_DO_ATENDIMENTO } from "./destino-do-cadastro";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
 /* Conversa sem nome carrega o número (ou o LID) como nome: no "Criar lead" o campo começa vazio, para quem atende digitar. */
@@ -1523,6 +1524,7 @@ class Logica extends React.Component<any, any> {
         const sugestoes = NL && qEmp ? empresas.filter(e => slug(e).indexOf(qEmp) >= 0 && e !== NL.empresa).slice(0, 4) : [];
         const existe = NL && NL.empresa && empresas.indexOf(NL.empresa.trim()) >= 0;
         const okNL = !!(NL && (NL.nome || "").trim());
+        const destinoNL = (NL && NL.destino) || DESTINO_PADRAO_DO_ATENDIMENTO;
         const nl = {
           aberto: !!NL,
           abrir: () => this.setState({ nl: { id: C.id, nome: nomeSemNumero(C.contato && C.contato.nome), cargo: "", tel: (C.contato && C.contato.tel) || "", email: (C.contato && C.contato.email) || "", empresa: "", interesse: "Não identificado", resp: C.resp || EU } }),
@@ -1540,15 +1542,18 @@ class Logica extends React.Component<any, any> {
           resps: EQUIPE.map(n => ({ label: n + (n === EU ? " (você)" : ""), titulo: n, style: ESTILO_PILL(NL && NL.resp === n), onClick: () => setNL({ resp: n }) })),
           origem: C.canal === "E-mail" ? "Formulário" : "WhatsApp",
           btnStyle: "height:36px;padding:0 16px;border-radius:9999px;border:0;font-size:13px;font-weight:600;white-space:nowrap;" + (okNL ? "background:#fe4f2b;color:#fff;cursor:pointer" : "background:#e3e7e8;color:#a3a8a4;cursor:not-allowed"),
+          destinos: cartoesDeDestino(destinoNL, (k) => setNL({ destino: k }), ESTILO_SELO_DESTINO),
+          titulo: rotulosDoDestino(destinoNL).titulo, botao: rotulosDoDestino(destinoNL).botao,
+          mostraEntra: destinoNL === "prevendas",
           criar: () => {
             if (!okNL || !E) return;
             const id = "l" + Date.now();
-            const novo = { id, etapa: "novo", empresa: (NL.empresa || "").trim() || null, pessoa: NL.nome.trim(), cargo: (NL.cargo || "").trim(), origem: C.canal === "E-mail" ? "Formulário" : "WhatsApp", interesse: NL.interesse, resp: NL.resp, acao: null, dias: 0, tel: NL.tel, email: NL.email };
+            const novo = { id, etapa: "novo", empresa: (NL.empresa || "").trim() || null, pessoa: NL.nome.trim(), cargo: (NL.cargo || "").trim(), origem: C.canal === "E-mail" ? "Formulário" : "WhatsApp", interesse: NL.interesse, resp: NL.resp, acao: null, dias: 0, tel: NL.tel, email: NL.email, destino: destinoNL };
             E.gravar({ leads: [novo].concat(leadsArr) });
             vincularA(C.id, id);
             gravarC(C.id, c => ({ resp: c.resp || NL.resp }));
             this.setState({ nl: null });
-            diz("Lead " + novo.pessoa + " criado em Pré-vendas", "ok");
+            diz(destinoNL === "base" ? novo.pessoa + " salvo em Contatos & Empresas" : "Lead " + novo.pessoa + " criado em Pré-vendas", "ok");
           }
         };
         return { nova, vinc, nl };

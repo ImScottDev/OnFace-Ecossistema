@@ -36,7 +36,8 @@ import { AtendimentoLiga } from "./AtendimentoLiga";
 import { PainelAgenteConversa } from "@/components/onface/atendimento/PainelAgenteConversa";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
-import { acaoCriarLead } from "@/app/(produto)/pre-vendas/actions";
+import { acaoCadastrarContato } from "@/app/(produto)/contatos/actions";
+import { DESTINO_PADRAO_DO_ATENDIMENTO, type DestinoDoCadastro } from "./destino-do-cadastro";
 
 /* ── Utilidades de tradução ────────────────────────────────────────────── */
 
@@ -1239,14 +1240,18 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
   }, [templates, chamar, router]);
 
   /* "Criar lead" do painel da conversa: o desenho manda o lead novo com id local.
-     Vira acaoCriarLead (a mesma porta de Pré-vendas, com origem WhatsApp); o id real
+     Vira acaoCadastrarContato (a mesma porta de Contatos & Empresas, com origem WhatsApp); o id real
      é entregue a quem for vincular a conversa. */
   const criarLeadsNovos = React.useCallback((lista: any[]) => {
     for (const l of lista) {
       if (!l?.id || leadsPorId.has(l.id) || leadsCriadosRef.current.has(l.id)) continue;
       const eu = dados.eu.id;
-      leadsCriadosRef.current.set(l.id, acaoCriarLead({
-        empresa: String(l.empresa ?? "").trim(), pessoaNome: String(l.pessoa ?? "").trim(),
+      /* O destino vem da escolha da tela (cartões de destino-do-cadastro). Sem escolha, é o
+         que o Atendimento sempre fez: lead em Pré-vendas. */
+      const destino: DestinoDoCadastro = l.destino === "base" ? "base" : DESTINO_PADRAO_DO_ATENDIMENTO;
+      leadsCriadosRef.current.set(l.id, acaoCadastrarContato({
+        tipo: "pessoa", destino, nome: String(l.pessoa ?? "").trim(),
+        empresa: String(l.empresa ?? "").trim() || null,
         cargo: l.cargo || null, email: l.email || null,
         /* Só dígitos: o campo traz a máscara "+55 (11) 90000-0088" e o contato da conversa
            guarda "5511900000088". */
@@ -1256,8 +1261,8 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
         responsavelId: (l.resp && idPorNome.get(l.resp)) || eu,
         servicosInteresse: l.interesse && l.interesse !== "Não identificado" ? [l.interesse] : null,
       }).then((r) => {
-        if (!r.ok) { toast.error(r.erro ?? "Não consegui criar o lead."); return null; }
-        toast.success("Lead criado em Pré-vendas");
+        if (!r.ok) { toast.error(r.erro ?? (destino === "base" ? "Não consegui salvar o contato." : "Não consegui criar o lead.")); return null; }
+        toast.success(destino === "base" ? "Contato salvo em Contatos & Empresas" : "Lead criado em Pré-vendas");
         return r.dados?.leadId ?? null;
       }));
     }
