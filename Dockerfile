@@ -6,7 +6,7 @@
 #   --target backend  API Hono e worker BullMQ: a MESMA imagem; o compose
 #                     escolhe o processo pelo `command`
 #
-# Quem constrói é o GitHub Actions (.github/workflows/imagens.yml), que publica
+# Quem constrói é o GitHub Actions (.github/workflows/portao.yml, job liberar-imagem), que publica
 # no GHCR com a tag do commit; a VPS só baixa e troca. `./deploy.sh dev
 # --construir-aqui` usa este mesmo arquivo como fallback no servidor.
 #

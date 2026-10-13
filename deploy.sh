@@ -14,8 +14,9 @@
 #
 # Regras que este script garante, e por quê:
 #   - **A imagem NÃO é construída na EC2.** O GitHub Actions
-#     (.github/workflows/imagens.yml) publica `ghcr.io/imscottdev/onface-{app,
-#     backend}:<sha>` a cada push na `main`; aqui só se faz pull. Construindo na
+#     (.github/workflows/portao.yml) publica `ghcr.io/imscottdev/onface-{app,
+#     backend}:<sha>` a cada push na `main`, SÓ se o portão (typecheck +
+#     travas de arquitetura) passar; aqui só se faz pull. Construindo na
 #     EC2 (2 vCPU, dividida com produção, build preso a 1 CPU) o deploy levava
 #     ~48 min (12/10/2026).
 #   - Publica exatamente um commit: a imagem é a do sha, e o compose e a infra
@@ -161,7 +162,7 @@ else
        sudo docker manifest inspect $REGISTRO/onface-backend:$REV >/dev/null 2>&1; then
       break
     fi
-    [ \$i = 120 ] && { echo "✘ imagens não apareceram no GHCR em 20 min (veja o workflow 'imagens' no GitHub)" >&2; exit 1; }
+    [ \$i = 120 ] && { echo "✘ imagens não apareceram no GHCR em 20 min (portão vermelho ou build falhou: veja o workflow 'portão' no GitHub)" >&2; exit 1; }
     sleep 10
   done
   etapa "[imagens] pull..."

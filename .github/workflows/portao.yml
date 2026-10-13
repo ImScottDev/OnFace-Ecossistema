@@ -61,3 +61,67 @@ jobs:
         if: always()
         working-directory: app
         run: pnpm exec tsx --test "src/lib/arquitetura/*.test.ts"
+
+  # ─── Imagens de deploy (só push na main) ───────────────────────────────────
+  # Até 12/10/2026 a imagem era construída NA EC2: ~48 min por deploy. Agora o
+  # build roda aqui, EM PARALELO ao portão acima, e publica uma imagem
+  # CANDIDATA. Só quando o portão passa ela ganha a tag do commit, que é a
+  # única que o `./deploy.sh dev` aceita:
+  #
+  #   ghcr.io/imscottdev/onface-app:<sha>       e  :main
+  #   ghcr.io/imscottdev/onface-backend:<sha>   e  :main   (API + worker)
+  #
+  # Portão vermelho = nenhuma tag <sha> = o deploy espera e não publica nada.
+  # Tag por commit é imutável: dá o rollback (`./deploy.sh dev --versao <sha>`)
+  # e permite promover a mesma imagem para produção na virada.
+  construir-imagem:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        alvo: [app, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Cache de camadas no próprio GitHub: mudança só de código não refaz o
+      # install, só o build do Next/esbuild.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.alvo }}
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ghcr.io/imscottdev/onface-${{ matrix.alvo }}:candidata-${{ github.sha }}
+          cache-from: type=gha,scope=onface-${{ matrix.alvo }}
+          cache-to: type=gha,scope=onface-${{ matrix.alvo }},mode=max
+
+  liberar-imagem:
+    needs: [tipos-e-arquitetura, construir-imagem]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Re-tag sem rebuild: a imagem liberada é byte a byte a que foi testada.
+      - run: |
+          for alvo in app backend; do
+            img=ghcr.io/imscottdev/onface-$alvo
+            docker buildx imagetools create -t $img:${{ github.sha }} -t $img:main $img:candidata-${{ github.sha }}
+          done
