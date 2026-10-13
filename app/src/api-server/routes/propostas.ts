@@ -880,7 +880,7 @@ app.patch("/propostas/:id", async (c) => {
   if (parsed.data.signatarios !== undefined) updateData.signatarios = parsed.data.signatarios;
 
   // Replace items if provided
-  let itensNovos: ReturnType<typeof calcularItens>["itens"] | null = null;
+  let itensNovos: Awaited<ReturnType<typeof prepararItensDaProposta>>["itens"] | null = null;
   if (parsed.data.itens) {
     // Commercial Core v3 (ADR-EXEC-022): editar uma proposta já vinculada a
     // UM negócio nunca pode introduzir uma SEGUNDA linha comercial nele —
