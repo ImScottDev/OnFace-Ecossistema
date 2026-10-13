@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { contagensDasTarefas } from "@/lib/tarefas/detalhe";
+import { JORNADA_POR_ORIGEM } from "@/components/onface/atividades/types";
 import type {
   Atividade, ColunaKanban, DadosAtividades, GrupoPrazo, GrupoTabela, OpcaoFiltro,
   PrioridadeAtividade, ResumoAtividades, StatusAtividade, VinculoAtividade,
@@ -29,17 +31,6 @@ import type {
  * que ainda não aparecem no banco de dev (hoje só MANUAL, PLAYBOOK e BILLING),
  * porque o filtro monta a lista a partir do que existe e não do mapa.
  */
-const JORNADA_POR_ORIGEM: Record<string, string> = {
-  MANUAL: "Manual",
-  PLAYBOOK: "Playbook",
-  BILLING: "Financeiro",
-  ONBOARDING: "Onboarding",
-  IMPLANTACAO: "Implantação",
-  RENOVACAO: "CS",
-  RISCO: "CS",
-  EXPANSAO: "Expansão",
-  AUTOMACAO: "Automação",
-};
 
 const PRIORIDADE: Record<string, PrioridadeAtividade> = {
   alta: "alta",
@@ -215,6 +206,7 @@ export async function montarAtividades(
     `),
   ]);
 
+  const contagens = await contagensDasTarefas(orgId, linhas.map((l) => l.id));
   const atividades: Atividade[] = linhas.map((l) => {
     const venc = l.vence_em ? new Date(l.vence_em) : l.data_vencimento ? new Date(`${l.data_vencimento}T12:00:00`) : null;
     const prazo = textoPrazo(venc, hoje, l.concluida);
@@ -243,6 +235,10 @@ export async function montarAtividades(
       concluidaEm: l.concluida_em ? dataLonga(new Date(l.concluida_em)) : null,
       // `origem` conta se a atividade nasceu da mão de alguém ou de uma régua.
       automatica: l.origem !== "MANUAL",
+      subtarefas: contagens.get(l.id)?.subtarefas ?? 0,
+      subtarefasFeitas: contagens.get(l.id)?.feitas ?? 0,
+      comentarios: contagens.get(l.id)?.comentarios ?? 0,
+      anexos: contagens.get(l.id)?.anexos ?? 0,
     };
   });
 

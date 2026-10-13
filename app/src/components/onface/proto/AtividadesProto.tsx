@@ -106,8 +106,11 @@ function paraODesenho(a: Atividade) {
     iniD: null,
     iniH: null,
     quando: a.vencimentoTexto,
-    sub: [],
-    comentarios: [],
+    /* Só a contagem: o cartão e a linha mostram "feitas/total" e o número de
+       comentários. O conteúdo é da gaveta (a peça), que lê a atividade por id. */
+    sub: Array.from({ length: a.subtarefas ?? 0 }, (_, i) => ({ t: "", feita: i < (a.subtarefasFeitas ?? 0) })),
+    comentarios: Array.from({ length: a.comentarios ?? 0 }, () => ({})),
+    anexos: Array.from({ length: a.anexos ?? 0 }, () => ({})),
     reuniao: null,
     href: a.vinculo?.href ?? null,
   };
@@ -178,7 +181,8 @@ export function AtividadesProto({ dados, reunioes = [] }: { dados: DadosAtividad
   /**
    * A lista inteira que a Liga devolve, comparada com a anterior: o que é novo
    * vira POST, o que mudou vira PATCH (`/api/tarefas`, org + dono/gestor).
-   * Subtarefa, comentário, anexo e fila não existem no domínio — avisa e relê.
+   * Subtarefa, comentário e anexo são gravados pela gaveta (a peça), não por
+   * aqui; fila e seguidores não existem no domínio — avisa e relê.
    */
   const gravar = React.useCallback(async (patch: { atividadesV2?: any[] }) => {
     const lista = patch?.atividadesV2;
