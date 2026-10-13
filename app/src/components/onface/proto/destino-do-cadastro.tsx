@@ -45,7 +45,7 @@ export const DESTINOS_DO_CADASTRO: Array<{ chave: DestinoDoCadastro; label: stri
 type EstiloDoSelo = (rel: string) => string;
 
 /** O selo padrão (o mesmo de relSelo em ContatosLiga). */
-export const ESTILO_SELO_DESTINO: EstiloDoSelo = () => "display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:9999px;font-size:11.5px;font-weight:500;white-space:nowrap;background:#fafafa;box-shadow:inset 0 0 0 1px #eef1f1;";
+export const ESTILO_SELO_DESTINO: EstiloDoSelo = () => "display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:9999px;font-size:11.5px;font-weight:500;white-space:nowrap;background:var(--of-papel-alterno);box-shadow:inset 0 0 0 1px var(--of-fio);";
 
 /**
  * Os cartões como o desenho os consome (`destinos` do modal). O markup é do
@@ -62,10 +62,10 @@ export function cartoesDeDestino(
     return {
       label, desc: DESCRICAO[contexto][chave], rel, d, on, relStyle: estiloDoSelo(rel),
       onClick: () => escolher(chave),
-      style: "display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:11px;border:0;cursor:pointer;text-align:left;background:" + (on ? "#fff7f5" : "#fff") + ";box-shadow:inset 0 0 0 " + (on ? "1.5px #fe4f2b" : "1px #e3e7e8"),
-      hover: on ? "" : "box-shadow:inset 0 0 0 1px #a9b1b4",
-      ico: "flex:0 0 auto;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;" + (on ? "background:#fe4f2b;color:#fff" : "background:#f6f6f3;color:#1f252c;box-shadow:inset 0 0 0 1px #eef1f1"),
-      radio: "flex:0 0 auto;width:18px;height:18px;border-radius:9999px;display:grid;place-items:center;" + (on ? "background:#fe4f2b" : "background:#fff;box-shadow:inset 0 0 0 1.5px #c8ccc9"),
+      style: "display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:11px;border:0;cursor:pointer;text-align:left;background:" + (on ? "var(--of-selecionado)" : "var(--of-papel)") + ";box-shadow:inset 0 0 0 " + (on ? "1.5px var(--of-coral-marca)" : "1px var(--of-linha)"),
+      hover: on ? "" : "box-shadow:inset 0 0 0 1px var(--of-linha-ponteiro)",
+      ico: "flex:0 0 auto;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;" + (on ? "background:var(--of-coral-marca);color:var(--of-papel)" : "background:var(--of-papel-tela);color:var(--of-tinta);box-shadow:inset 0 0 0 1px var(--of-fio)"),
+      radio: "flex:0 0 auto;width:18px;height:18px;border-radius:9999px;display:grid;place-items:center;" + (on ? "background:var(--of-coral-marca)" : "background:var(--of-papel);box-shadow:inset 0 0 0 1.5px var(--of-linha-convite)"),
     };
   });
 }
@@ -89,13 +89,13 @@ export function CartoesDeDestino({ itens }: { itens: ReturnType<typeof cartoesDe
             </span>
             <span style={{ flex: "1", minWidth: "0", textAlign: "left" }}>
               <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "#12171d" }}>{dt.label}</span>
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--of-tinta-forte)" }}>{dt.label}</span>
                 <span style={estilo(dt.relStyle)}>{dt.rel}</span>
               </span>
-              <span style={{ display: "block", fontSize: "12px", color: "#4a5560", marginTop: "2px", textWrap: "pretty" }}>{dt.desc}</span>
+              <span style={{ display: "block", fontSize: "12px", color: "var(--of-tinta-2)", marginTop: "2px", textWrap: "pretty" }}>{dt.desc}</span>
             </span>
             <span style={estilo(dt.radio)}>
-              {dt.on ? <span style={{ width: "8px", height: "8px", borderRadius: "9999px", background: "#fff" }} /> : null}
+              {dt.on ? <span style={{ width: "8px", height: "8px", borderRadius: "9999px", background: "var(--of-papel)" }} /> : null}
             </span>
           </button>
         </Fragment>

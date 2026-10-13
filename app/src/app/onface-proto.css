@@ -91,6 +91,8 @@
   --of-fio-tenue: #f3f5f5;
   /** Tracejado de "adicionar": borda que convida em vez de fechar. */
   --of-linha-convite: #c8ccc9;
+  /** Borda sob o ponteiro: a linha escurece para dizer que o alvo é clicável. */
+  --of-linha-ponteiro: #a9b1b4;
   /** Polegar da barra de rolagem. */
   --of-rolagem: #d2d5d5;
 
