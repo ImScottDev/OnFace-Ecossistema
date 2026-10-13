@@ -24,6 +24,7 @@ import { levarParametros } from "./rota-do-desenho";
 import { persistirEtapa, type CommandsDeEtapa } from "./persistencia";
 import { usePecas } from "./pecas-host";
 import { DelegarAgenteHost } from "./DelegarAgenteHost";
+import { quandoBR } from "@/lib/datas-br";
 import { oportunidadeParaODesenho } from "./oportunidade-para-o-desenho";
 import type { DetalheOportunidade } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
@@ -114,7 +115,7 @@ function paraODesenho(card: CardPipeline) {
       codigo: String(p.numero),
       versao: p.versao,
       status: p.status,
-      enviadaEm: p.enviadaEm,
+      enviadaEm: p.enviadaEm ? quandoBR(p.enviadaEm) : null,
       total: p.total,
       /* `somas()` no desenho percorre `proposta.itens` — é daí que saem o
          "R$ 1.950/mês" do cartão e o total no cabeçalho da coluna. Com a
@@ -180,7 +181,7 @@ class PipelineLigado extends PipelineLiga {
     void Promise.resolve(carregar(id)).then((r: any) => {
       if (r?.ok && r.dados?.oportunidade) {
         const d = oportunidadeParaODesenho(r.dados.oportunidade, r.dados.timeline ?? []);
-        this.detalhes[id] = { atvs: d.atvs, notas: d.notas, eventos: d.eventos, arquivos: d.arquivos, pessoas: d.pessoas };
+        this.detalhes[id] = { propostas: d.propostas, atvs: d.atvs, notas: d.notas, eventos: d.eventos, arquivos: d.arquivos, pessoas: d.pessoas };
       } else delete this.detalhes[id];
       this.forceUpdate();
     }).catch(() => { delete this.detalhes[id]; this.forceUpdate(); });

@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { arquivosDaOpp } from "./arquivos-da-opp";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -279,9 +280,9 @@ class Logica extends React.Component<any, any> {
       const Es3 = this.E;
       if (x && Es3 && O.leadId && x.tipo === "Ligação" && /^Liga[cç][aã]o/i.test(x.titulo || "")) return Es3.abrir("relatorio", { leadId: O.leadId, audioUrl: x.audioUrl || "" });
       if (x && x.tarefaId && Es3) return Es3.abrir("verAtividade", "p:" + x.tarefaId);
-      return abrirModal({ k: "atvver", i });
       /* Reunião: a peça ÚNICA de Reunião (reagendar, cancelar, participantes, link, situação, notas). Nunca o cartão de leitura. */
       if (x && x.reuniaoId && Es3) return Es3.abrir("reuniao", x.reuniaoId, { oppId: O.id, leadId: O.leadId || null });
+      return abrirModal({ k: "atvver", i });
     };
     const novaProposta = () => ir("/onface-preview/proposta", "Proposta", { opp: O.id, ver: "" });
     const novaPropostaModal = () => abrirModal({ k: "proposta" }, { modo: P ? P.modo : "CONTRACT", validade: String(P && P.validade ? P.validade : 14), itens: (P && P.itens && P.itens.length ? P.itens : [{ nome: "", natureza: "MRR", valor: "", qtd: 1 }]).map(x => Object.assign({}, x, { valor: String(x.valor), qtd: String(x.qtd || 1) })) });
@@ -322,8 +323,7 @@ class Logica extends React.Component<any, any> {
     const RC = O.resumoCampos || {};
     if (!RC.dor && S.qual !== undefined) {}
 
-    const arqs = props.map(p => ({ nome: "Proposta #" + p.codigo + "-v" + (p.versao || 1) + ".pdf", meta: (PROP[p.status] || "") + (p.enviadaEm ? " · enviada " + p.enviadaEm : "") }))
-      .concat((O.arquivos || []).map(n => ({ nome: n.nome, meta: "Anexado " + (n.quando || "hoje") + " · " + (n.autor || O.resp) })));
+    const arqs = arquivosDaOpp(props, O.arquivos || [], PROP, O.resp);
     const statusSelo = (st) => "flex:0 0 auto;display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:9999px;font-size:11.5px;font-weight:600;white-space:nowrap;"
       + ({ rascunho: "background:#eeeff3;color:#4a5560", enviada: "background:#e8f0fb;color:#2c5f9e", visualizada: "background:#f7edd8;color:#6e5420", ajuste_solicitado: "background:#fff6f4;color:#9c3210", aceita: "background:#e6f4ee;color:#1f7256", recusada: "background:#fdeeea;color:#c2330f" }[st] || "background:#eeeff3;color:#8b949e");
     const somaP = (p) => (p.itens || []).reduce((a, it) => { const v = (+it.valor || 0) * (+it.qtd || 1); return it.natureza === "MRR" ? { mrr: a.mrr + v, un: a.un } : { mrr: a.mrr, un: a.un + v }; }, { mrr: 0, un: 0 });

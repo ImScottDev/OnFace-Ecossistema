@@ -11,6 +11,7 @@
  *   - **Contador de resumo nunca sai de lista truncada**: os totais vêm de
  *     `count()` sobre a tabela inteira, não do array que a página carregou.
  */
+import { proximoCompromisso, temCompromissoAberto } from "./proxima-acao";
 import { origemCanonica } from "./origem-canonica";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -179,13 +180,7 @@ async function contadoresDeViews(
         -- prospects de outbound que coluna nenhuma mostra.
         LEFT JOIN leads lg ON lg.id = a.lead_legado_id
         LEFT JOIN LATERAL (
-          SELECT COALESCE(t.vence_em, t.data_vencimento::timestamptz) AS vence_em
-            FROM tarefas t
-           WHERE t.lead_id = a.lead_legado_id
-             AND t.organizacao_id = a.organizacao_id
-             AND t.status NOT IN ('concluida', 'declinada')
-           ORDER BY COALESCE(t.vence_em, t.data_vencimento::timestamptz) ASC NULLS LAST
-           LIMIT 1
+          ${proximoCompromisso("lead_id", sql.raw("a.lead_legado_id"))}
         ) px ON TRUE
        WHERE a.organizacao_id = ${organizacaoId}::uuid
          AND ${somenteDePreVendas(sql)}
@@ -469,12 +464,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       -- tarefa em aberto. O join é pelo lead legado, igual ao resto do arquivo.
       count(*) FILTER (
         WHERE a.closed_at IS NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM tarefas t
-             WHERE t.lead_id = a.lead_legado_id
-               AND t.organizacao_id = a.organizacao_id
-               AND t.status NOT IN ('concluida', 'declinada')
-          )
+          AND NOT ${temCompromissoAberto("lead_id", sql.raw("a.lead_legado_id"))}
       )::int AS sem_proxima_acao,
       count(*) FILTER (
         WHERE a.qualificado_em >= date_trunc('month', now())
@@ -681,10 +671,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
                     ORDER BY lb.nome)) AS tags
         FROM negocios n
         LEFT JOIN LATERAL (
-          SELECT titulo, COALESCE(vence_em, data_vencimento) AS vence_em
-            FROM tarefas
-           WHERE negocio_id = n.id AND status IN ('a_fazer','em_andamento','aguardando')
-           ORDER BY COALESCE(vence_em, data_vencimento) NULLS LAST LIMIT 1
+          ${proximoCompromisso("negocio_id", sql.raw("n.id"))}
         ) t ON TRUE
         LEFT JOIN LATERAL (
           SELECT max(data) AS faltou_em FROM reunioes
@@ -789,11 +776,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       -- instante em que alguem definisse uma proxima acao por tarefa.
       count(*) FILTER (WHERE o.etapa IN ('entrada','diagnostico','proposta','negociacao')
                          AND n.proxima_acao IS NULL
-                         AND NOT EXISTS (
-                           SELECT 1 FROM tarefas t
-                            WHERE t.negocio_id = n.id
-                              AND t.status IN ('a_fazer','em_andamento','aguardando')
-                         ))::int AS sem_proxima,
+                         AND NOT ${temCompromissoAberto("negocio_id", sql.raw("n.id"))})::int AS sem_proxima,
       COALESCE(SUM(o.valor) FILTER (WHERE o.etapa IN ('entrada','diagnostico','proposta','negociacao')), 0)::text AS valor_aberto
       FROM oportunidades o
       LEFT JOIN negocios n ON n.id = o.negocio_id_legado
@@ -2003,9 +1986,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
     /* MESMA regra do card do board (proximaAcaoLateral): tarefa aberta (status fora de concluída/declinada), a de prazo mais
        próximo, com a data do dia quando só ela existe. Antes a gaveta ignorava
        data_vencimento e mostrava outra "próxima ação" que o cartão. */
-    SELECT titulo, COALESCE(vence_em, data_vencimento::timestamptz)::text AS vence_em FROM tarefas
-     WHERE lead_id = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid AND status NOT IN ('concluida', 'declinada')
-     ORDER BY COALESCE(vence_em, data_vencimento::timestamptz) ASC NULLS LAST LIMIT 1
+    SELECT titulo, vence_em::text AS vence_em FROM (${proximoCompromisso("lead_id", sql`${leadId}::uuid`)}) p
   `);
 
   /* A etapa que o BOARD mostra: a gravada na aquisição manda; o legado só refina
@@ -2234,12 +2215,9 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
   // próxima ação" aparecer em todo card aberto, inclusive nos que tinham
   // compromisso marcado. A coluna segue como fallback para o que for escrito
   // por caminho ainda não migrado.
+  // Reunião agendada também é compromisso (ver proxima-acao.ts).
   const [tarefaAberta] = await db.execute<{ titulo: string; vence_em: string | null }>(sql`
-    SELECT titulo, COALESCE(vence_em, data_vencimento)::text AS vence_em
-      FROM tarefas
-     WHERE negocio_id = ${negocioId}::uuid
-       AND status IN ('a_fazer','em_andamento','aguardando')
-     ORDER BY COALESCE(vence_em, data_vencimento) NULLS LAST LIMIT 1
+    SELECT titulo, vence_em::text AS vence_em FROM (${proximoCompromisso("negocio_id", sql`${negocioId}::uuid`)}) p
   `);
 
   const reunioes = await db.execute<{ id: string; titulo: string; data: string; status: string }>(sql`
@@ -2318,6 +2296,14 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
       FROM anexos a LEFT JOIN usuarios u ON u.id = a.criado_por_id
      WHERE a.negocio_id = ${negocioId}::uuid AND a.organizacao_id = ${organizacaoId}::uuid
      ORDER BY a.created_at DESC LIMIT 100
+  `);
+  // Anexos do histórico Zoho: o arquivo sai pela rota autenticada de legado.
+  const arquivosLegado = await db.execute<{ id: string; nome: string; em: string | null }>(sql`
+    SELECT id::text, nome_arquivo AS nome, criado_em_original::text AS em
+      FROM anexos_legado
+     WHERE entidade_tipo = 'negocio' AND entidade_id = ${negocioId}::uuid
+       AND organizacao_id = ${organizacaoId}::uuid
+     ORDER BY criado_em_original DESC NULLS LAST LIMIT 100
   `);
 
   // Sem empresa não há comitê a listar — e `empresa_id IS NULL` casaria com
@@ -2421,7 +2407,9 @@ export async function detalheOportunidade(organizacaoId: string, negocioId: stri
     notas: notas.map((x) => ({
       id: x.id, texto: textoSimples(x.texto) ?? "", autor: x.autor, em: x.em,
     })),
-    arquivos: arquivos.map((a) => ({ id: a.id, nome: a.nome, url: a.url, autor: a.autor, em: a.em })),
+    arquivos: arquivos.map((a) => ({ id: a.id, nome: a.nome, url: a.url, autor: a.autor, em: a.em })).concat(
+      arquivosLegado.map((a) => ({ id: a.id, nome: a.nome, url: `/api/anexos-legado/${a.id}/download`, autor: "Zoho (histórico)", em: a.em as string })),
+    ),
     contatos: contatos.map((c) => ({
       id: c.id, nome: c.nome, cargo: c.cargo, email: c.email, telefone: c.telefone,
     })),

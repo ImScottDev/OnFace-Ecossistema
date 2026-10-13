@@ -18,6 +18,7 @@
  * ninguém fez. A fila mostra; quem resolve é o dono, por
  * `definirProximaAcao`, que continua sendo a porta única.
  */
+import { temCompromissoAberto } from "./proxima-acao";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 
@@ -109,7 +110,7 @@ export async function filaDeLoops(f: FiltrosLoop): Promise<ItemLoop[]> {
   if (quer("SEM_PROXIMA_ACAO")) {
     const linhas = await db.execute<Linha>(sql`
       ${SELECAO}, extract(day FROM now() - o.updated_at)::int AS dias, NULL::text AS detalhe
-      ${baseAberta(f)} AND n.proxima_acao IS NULL
+      ${baseAberta(f)} AND n.proxima_acao IS NULL AND NOT ${temCompromissoAberto("negocio_id", sql.raw("n.id"))}
       ORDER BY o.valor DESC NULLS LAST`);
     for (const l of linhas) {
       itens.push(monta(l, "SEM_PROXIMA_ACAO", "Sem próxima ação",

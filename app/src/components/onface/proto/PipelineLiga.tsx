@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { arquivosDaOpp } from "./arquivos-da-opp";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -515,8 +516,7 @@ class Logica extends React.Component<any, any> {
           const filtradas = ordenadas.filter(o => !ui.atvF || ui.atvF === "todas" || (ui.atvF === "abertas" ? !o.x.feita : o.x.feita));
           const nAtv = filtradas.length;
           const lim = ui.atvTudo ? nAtv : 4;
-          const arqs = props.map(p => ({ nome: "Proposta #" + p.codigo + "-v" + (p.versao || 1) + ".pdf", meta: (PROPX[p.status] || "") + (p.enviadaEm ? " · enviada " + p.enviadaEm : "") }))
-            .concat((O.arquivos || []).map(n => ({ nome: n.nome, meta: "Anexado " + (n.quando || "hoje") + " · " + (n.autor || O.resp) })));
+          const arqs = arquivosDaOpp(props, O.arquivos || [], PROPX, O.resp);
           const itensV = (P && P.itens) || O.itens || [];
           const tot = itensV.reduce((acc, it) => { const v = (+it.valor || 0) * (+it.qtd || 1); return it.natureza === "MRR" ? { mrr: acc.mrr + v, un: acc.un } : { mrr: acc.mrr, un: acc.un + v }; }, { mrr: 0, un: 0 });
           const aba = ui.aba === "prop" ? "prop" : "arq";

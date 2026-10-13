@@ -38,7 +38,23 @@ export interface LegacyAttachmentStorage {
 }
 
 const LEGACY_PREFIX = "legado-zoho/";
-const BASE_DIR = path.resolve(path.join(os.homedir(), "Downloads", "Attachments"));
+
+/**
+ * Onde a pasta `legado-zoho/` vive. Em dev/homolog/produção ela está em
+ * `public/uploads/legado-zoho` (volume montado no container: 1.980 arquivos), e
+ * era essa pasta que ninguém procurava, então todo anexo legado respondia
+ * "arquivo não disponível". `ANEXOS_LEGADO_DIR` manda; senão a pasta de uploads;
+ * por último a cópia pessoal do Mac, só para dev local.
+ */
+function baseDir(): string {
+  const uploads = process.env.UPLOADS_DIR || path.join(process.cwd(), "public", "uploads");
+  const candidatos = [
+    process.env.ANEXOS_LEGADO_DIR,
+    fs.existsSync(path.join(uploads, "legado-zoho")) ? path.join(uploads, "legado-zoho") : null,
+    path.join(os.homedir(), "Downloads", "Attachments"),
+  ].filter((x): x is string => !!x);
+  return path.resolve(candidatos.find((c) => fs.existsSync(c)) ?? candidatos[0]);
+}
 
 /**
  * Implementação DEV-ONLY: lê da pasta pessoal `~/Downloads/Attachments`.
@@ -51,6 +67,7 @@ export const localDownloadsStorage: LegacyAttachmentStorage = {
     const relative = storagePath.slice(LEGACY_PREFIX.length);
     if (!relative) return null;
 
+    const BASE_DIR = baseDir();
     const resolved = path.resolve(BASE_DIR, relative);
 
     // Guarda contra path traversal: o path final resolvido tem que estar

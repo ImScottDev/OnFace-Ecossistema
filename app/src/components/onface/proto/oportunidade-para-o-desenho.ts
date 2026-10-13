@@ -1,5 +1,6 @@
 /* Domínio → desenho da oportunidade: UM mapeamento só, usado pela página
    /pipeline/[id] e pelo drawer do quadro. */
+import { quandoBR } from "@/lib/datas-br";
 import type { DetalheOportunidade } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { rotuloDeEvento, rotuloProcesso, tituloLegivel } from "@/lib/vendas/rotulos-evento";
@@ -10,16 +11,7 @@ import { prazoDoBanco, situacaoDoBanco, tipoDoBanco } from "./atividade-tarefa";
 
 /** "Hoje, 14:30", "Ontem, 09:00", "23/09, 11:41" — o vocabulário do desenho. */
 export function quando(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const hora = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  const dia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const dias = Math.round((dia(d) - dia(new Date())) / 86_400_000);
-  if (dias === 0) return `Hoje, ${hora}`;
-  if (dias === -1) return `Ontem, ${hora}`;
-  if (dias === 1) return `Amanhã, ${hora}`;
-  return `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}, ${hora}`;
+  return quandoBR(iso);
 }
 
 /**
@@ -162,7 +154,7 @@ export function oportunidadeParaODesenho(o: DetalheOportunidade, timeline: Linha
     })(),
     // Tags reais (entity_labels ∪ negocio_labels); a peça tagsopp grava.
     tags: o.tags ?? [],
-    arquivos: o.arquivos.map((a) => ({ nome: a.nome, quando: quando(a.em), autor: a.autor ?? "Sistema" })),
+    arquivos: o.arquivos.map((a) => ({ nome: a.nome, url: a.url, quando: quando(a.em), autor: a.autor ?? "Sistema" })),
     itens: [],
     proposta: null,
     // O que o domínio diz que falta para fechar: a tela explica, não decide.
