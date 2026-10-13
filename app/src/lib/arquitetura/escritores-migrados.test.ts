@@ -39,8 +39,6 @@ const MIGRADOS = [
   "api-server/routes/contatos-unified.ts",
 ];
 
-/** Caminhos que criam CONTATO (identidade sem processo de aquisição). */
-const IDENTIDADE_SEM_AQUISICAO = ["worker/index.ts"];
 
 /**
  * Semente do banco de desenvolvimento: popula a base do zero, fora de qualquer
@@ -202,14 +200,17 @@ test("a porta canônica nunca é chamada com await que bloqueie a resposta", () 
   assert.deepEqual(comAwaitDireto, [], `sem chamada reconhecível da porta:\n${comAwaitDireto.join("\n")}`);
 });
 
-test("o worker resolve identidade canônica ao criar contato", () => {
-  // Contato de WhatsApp não abre aquisição — 25.363 mensagens virariam 25.363
-  // processos que ninguém vendeu. Mas a PESSOA tem que existir no canônico,
-  // senão a conversa não liga na timeline (SPEC §6, §22).
-  const faltando = IDENTIDADE_SEM_AQUISICAO.filter(
-    (p) => !ler(p).includes("garantirPessoaDeContato"),
-  );
-  assert.deepEqual(faltando, [], `criam contato sem resolver identidade:\n${faltando.join("\n")}`);
+test("o worker NÃO cria pessoa ao criar contato de WhatsApp", () => {
+  // Regra do Scott (13/10): mensagem de número desconhecido não vira pessoa.
+  // A conversa vive em `contatos` (o Atendimento lista de lá); quem atende
+  // decide, pelo "Criar lead", se vira cadastro. Os LIDs do WhatsApp viravam
+  // pessoas chamadas pelo próprio número.
+  const src = ler("worker/index.ts");
+  const criaContato = src.match(/db\.insert\(contatos\)[\s\S]{0,900}?(?=\n  \/\/ Fire-and-forget|\n  \/\/ Dedup)/g) ?? [];
+  assert.equal(criaContato.length, 2, "esperava os dois pontos que criam contato de WhatsApp");
+  for (const trecho of criaContato) assert.ok(!trecho.includes("identidadeCanonicaDeContato"), trecho);
+  assert.ok(!ler("lib/atendimento/tela.ts").includes("FROM pessoas"), "o Atendimento lista de contatos, não de pessoas");
+  assert.match(ler("components/onface/proto/AtendimentoProto.tsx"), /acaoCriarLead/, "criar a pessoa é do atendente, pela porta de Pré-vendas");
 });
 
 test("a decisão de Ganho passa pela política da oferta, não pela família", () => {

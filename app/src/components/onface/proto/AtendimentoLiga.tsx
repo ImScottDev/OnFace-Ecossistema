@@ -29,6 +29,9 @@ import { toast } from "sonner";
 import { AtendimentoDesenho } from "./AtendimentoDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
+/* Conversa sem nome carrega o número (ou o LID) como nome: no "Criar lead" o campo começa vazio, para quem atende digitar. */
+const nomeSemNumero = (n) => (n && !/^[\d+\s()-]+$/.test(n) ? n : "");
+
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
   dados?: Record<string, any>;
@@ -465,7 +468,7 @@ class Logica extends React.Component<any, any> {
       if (t === "template") return { titulo: "MAIS USADOS", w: 340, itens: TPLS.slice(0, 4).map(tp => ({ label: tp.nome, nota: preencher(tp.texto), fn: () => this.setState({ texto: preencher(tp.texto) }) }))
         .concat([{ label: "Ver todos os templates · " + TPLS.length, nota: "Por time e categoria · criar novo", rodape: true, fn: () => this.setState({ lib: { time: "Todos", cat: null, busca: "", sel: null, form: null } }) }]) };
       if (t === "mais" && L.desconhecido) return { titulo: "CONTATO NOVO", w: 230, itens: [
-        { label: "Criar lead", fn: () => this.setState({ nl: { id: C.id, nome: (C.contato && C.contato.nome) || "", cargo: "", tel: (C.contato && C.contato.tel) || "", email: (C.contato && C.contato.email) || "", empresa: "", interesse: "Não identificado", resp: C.resp || EU } }) },
+        { label: "Criar lead", fn: () => this.setState({ nl: { id: C.id, nome: nomeSemNumero(C.contato && C.contato.nome), cargo: "", tel: (C.contato && C.contato.tel) || "", email: (C.contato && C.contato.email) || "", empresa: "", interesse: "Não identificado", resp: C.resp || EU } }) },
         { label: "Vincular a lead existente", fn: () => this.setState({ pop: { tipo: "vincular", r: S.pop.r } }) },
         { label: "Marcar como não lida", fn: () => { gravarC(C.id, c => ({ naoLidas: Math.max(1, c.naoLidas || 0) })); diz("Marcada como não lida", "ok"); } }
       ] };
@@ -1522,7 +1525,7 @@ class Logica extends React.Component<any, any> {
         const okNL = !!(NL && (NL.nome || "").trim());
         const nl = {
           aberto: !!NL,
-          abrir: () => this.setState({ nl: { id: C.id, nome: (C.contato && C.contato.nome) || "", cargo: "", tel: (C.contato && C.contato.tel) || "", email: (C.contato && C.contato.email) || "", empresa: "", interesse: "Não identificado", resp: C.resp || EU } }),
+          abrir: () => this.setState({ nl: { id: C.id, nome: nomeSemNumero(C.contato && C.contato.nome), cargo: "", tel: (C.contato && C.contato.tel) || "", email: (C.contato && C.contato.email) || "", empresa: "", interesse: "Não identificado", resp: C.resp || EU } }),
           fechar: () => this.setState({ nl: null }),
           sub: "A partir da conversa · " + (C.canal || ""),
           nome: (NL && NL.nome) || "", setNome: (e) => setNL({ nome: e.target.value }),

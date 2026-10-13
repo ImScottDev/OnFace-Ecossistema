@@ -291,7 +291,9 @@ async function findOrCreateContato(data: {
 
   console.log(`[WA] Created contato ${newContato.id} (${contatoName}) responsavel=${responsavelId || 'unassigned'}`);
 
-  identidadeCanonicaDeContato(organizacaoId, { nome: contatoName, telefone: normalized });
+  /* Número desconhecido NÃO vira pessoa: a conversa vive em `contatos` (é de lá que o Atendimento lista)
+     e quem atende decide, pelo "Criar lead" do Atendimento, se vira cadastro. Sem isto, todo LID
+     do WhatsApp virava uma pessoa chamada pelo próprio número. */
 
   // Fire-and-forget: download WhatsApp avatar for new contato
   if (sessaoId) {
@@ -381,9 +383,6 @@ async function crossSaveInterSession(opts: {
     contatoId = newContato.id;
     contatoLeadId = newContato.leadId;
     console.log(`[WA-CrossSave] Created contato ${contatoId} on session ${recipientSession.id} for ${senderPhone}`);
-    identidadeCanonicaDeContato(organizacaoId, {
-      nome: sanitizePushName(message.pushName) || senderPhone, telefone: senderPhone,
-    });
   }
 
   // Dedup: check if this message was already saved (by uazapiMessageId)
