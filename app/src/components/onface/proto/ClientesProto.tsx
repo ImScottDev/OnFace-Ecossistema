@@ -19,6 +19,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ClientesLiga } from "./ClientesLiga";
 import { abrirNexo } from "@/lib/nexo/cliente";
 import { rotaDoDesenho } from "./rota-do-desenho";
+import type { FlagUso } from "@/components/onface/callface-ai/tipos";
+
+type FlagDeUso = FlagUso["codigo"];
 import { usePecas } from "./pecas-host";
 
 const brlC = (n: number) => "R$ " + Math.round(n).toLocaleString("pt-BR");
@@ -230,11 +233,33 @@ class ClientesLigada extends ClientesLiga {
     /* E3: reatribuição em massa do responsável (seleção da tabela). */
     const ids = Object.keys(s.sel ?? {}).filter((k) => s.sel[k]);
     if (saida.tab && ids.length) saida.tab.reatribuir = () => p.onReatribuir?.(ids, () => (this as any).setState({ sel: {} }));
+    /* Saúde de uso da Callface AI, discreta: só quem tem sinal ganha a nota na
+       linha de apoio (abaixo do nome). Sem sinal, a linha continua igual —
+       a carteira não vira uma parede de etiquetas.
+       ponytail: a linha gerada não carrega id; casa pelo nome, como o drawer
+       já faz. Homônimos (5 "LUMEN EDUCACAO LTDA") recebem a nota do primeiro. */
+    const uso: Record<string, FlagDeUso[]> | undefined = p.usoPorEmpresa;
+    if (uso && saida.tab?.linhas) {
+      const idPorNome = new Map<string, string>();
+      for (const c of p.carteira.clientes as ClienteDoDesenho[]) if (!idPorNome.has(c.nome)) idPorNome.set(c.nome, c.id);
+      for (const l of saida.tab.linhas) {
+        const flags = uso[idPorNome.get(l.nome) ?? ""];
+        if (flags?.length) l.segmento = (l.segmento && l.segmento !== "—" ? l.segmento + " · " : "") + "Callface AI: " + rotuloDeFlags(flags);
+      }
+    }
     return saida;
   }
 }
 
-export function ClientesProto({ carteira }: { carteira: CarteiraDoDesenho }) {
+const ROTULO_FLAG: Record<FlagDeUso, string> = { sem_uso_desde_a_contratacao: "nunca usou", inativo_14d: "inativo há +14 dias", queda_40: "uso em queda", perto_do_limite: "perto do limite do plano" };
+const ORDEM_FLAG: FlagDeUso[] = ["sem_uso_desde_a_contratacao", "inativo_14d", "queda_40", "perto_do_limite"];
+const rotuloDeFlags = (f: FlagDeUso[]) => ORDEM_FLAG.filter((x) => f.includes(x)).map((x) => ROTULO_FLAG[x]).join(", ");
+
+export function ClientesProto({ carteira, usoPorEmpresa }: {
+  carteira: CarteiraDoDesenho;
+  /** empresaId → flags de uso da Callface AI (só clientes vinculados). */
+  usoPorEmpresa?: Record<string, FlagDeUso[]>;
+}) {
   const router = useRouter();
   const [atribuir, setAtribuir] = React.useState<{ ids: string[]; limpar: () => void } | null>(null);
   const [gravando, setGravando] = React.useState(false);
@@ -321,6 +346,7 @@ export function ClientesProto({ carteira }: { carteira: CarteiraDoDesenho }) {
         dados={{ atividadesV2: carteira.atividades }}
         catalogo={catalogo}
         carteira={carteira}
+        usoPorEmpresa={usoPorEmpresa}
         abrir={abrir}
         gravar={gravar}
         onReatribuir={(ids: string[], limpar: () => void) => setAtribuir({ ids, limpar })}
