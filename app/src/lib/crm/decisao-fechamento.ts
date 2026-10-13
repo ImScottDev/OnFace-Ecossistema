@@ -14,7 +14,7 @@
  *   2. proposta em modo CONTRATO e a linha é Callface AI (Callface AI também se
  *      vende por contrato — o modo foi escolhido ANTES do envio);
  *   3. o PRICE declara se exige contrato (`catalogo_precos.exige_contrato`),
- *      inclusive para dizer que NÃO (White Label licença isolada);
+ *      mas só para ENDURECER: a família manda o piso, o price nunca o rebaixa;
  *   4. sem Price (linha legada): o piso da família (PABX e White Label exigem).
  *
  * Depois agrupa as linhas que seguem o mesmo caminho, com o mesmo modelo e a
@@ -51,8 +51,14 @@ const MODELOS_COM_CONTRATO = ["CONTRATO_OBRIGATORIO", "CONTRATO_FIDELIDADE_OPCIO
 export function caminhoDoItem(item: ItemParaDecisao, ctx: ContextoDaDecisao): { caminho: CaminhoDeFechamento; motivo: MotivoDoCaminho } {
   if (MODELOS_COM_CONTRATO.includes(item.commercialModel)) return { caminho: "contrato", motivo: "modelo_comercial" };
   if (ctx.modoFechamento === "CONTRACT" && item.familia === "CALLFACE_AI") return { caminho: "contrato", motivo: "modo_da_proposta" };
-  if (item.exigeContratoDoPreco !== null) return { caminho: item.exigeContratoDoPreco ? "contrato" : "pagamento", motivo: "preco" };
-  return { caminho: ctx.familiaExigeContrato(item.familia) ? "contrato" : "pagamento", motivo: "familia" };
+  // Regra de negócio: a FAMÍLIA manda o piso (PABX e White Label exigem contrato); o PRICE só endurece.
+  // `exigeContratoDoPreco === false` NÃO rebaixa uma família que exige: a licença White Label sozinha
+  // ia para pagamento, o contrato nunca existia e a política WHITE_LABEL (contrato assinado) impedia o Ganho.
+  // Família que não exige + price que exige = contrato.
+  const piso = ctx.familiaExigeContrato(item.familia);
+  if (item.exigeContratoDoPreco === true) return { caminho: "contrato", motivo: "preco" };
+  if (piso) return { caminho: "contrato", motivo: "familia" };
+  return { caminho: "pagamento", motivo: item.exigeContratoDoPreco === false ? "preco" : "familia" };
 }
 
 export interface GrupoDeFechamento {

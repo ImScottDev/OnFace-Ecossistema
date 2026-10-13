@@ -21,12 +21,16 @@ describe("caminhoDoItem", () => {
   it("modelo comercial com contrato vence o Price", () => {
     assert.deepEqual(caminhoDoItem(item({ id: "1", commercialModel: "CONTRATO_OBRIGATORIO" }), ctx()), { caminho: "contrato", motivo: "modelo_comercial" });
   });
-  it("modo CONTRATO leva a Callface AI para contrato, mas não muda o White Label licença que o Price dispensa", () => {
+  it("modo CONTRATO leva a Callface AI para contrato; o White Label licença já ia por contrato (piso da família)", () => {
     assert.equal(caminhoDoItem(item({ id: "1" }), ctx({ modoFechamento: "CONTRACT" })).caminho, "contrato");
-    assert.equal(caminhoDoItem(item({ id: "2", familia: "WHITE_LABEL", exigeContratoDoPreco: false }), ctx({ modoFechamento: "CONTRACT" })).caminho, "pagamento");
+    assert.equal(caminhoDoItem(item({ id: "2", familia: "WHITE_LABEL", exigeContratoDoPreco: false }), ctx({ modoFechamento: "CONTRACT" })).caminho, "contrato");
   });
-  it("o Price pode dizer que NÃO exige, mesmo para a família que exige (WL licença isolada)", () => {
-    assert.equal(caminhoDoItem(item({ id: "1", familia: "WHITE_LABEL", exigeContratoDoPreco: false }), ctx()).caminho, "pagamento");
+  it("família que exige contrato NÃO é rebaixada pelo Price (WL licença isolada vai por contrato)", () => {
+    assert.deepEqual(caminhoDoItem(item({ id: "1", familia: "WHITE_LABEL", exigeContratoDoPreco: false }), ctx()), { caminho: "contrato", motivo: "familia" });
+    assert.equal(caminhoDoItem(item({ id: "2", familia: "PABX", exigeContratoDoPreco: false }), ctx()).caminho, "contrato");
+  });
+  it("o Price pode ELEVAR uma família que não exige contrato", () => {
+    assert.deepEqual(caminhoDoItem(item({ id: "1", familia: "CALLFACE_AI", exigeContratoDoPreco: true }), ctx()), { caminho: "contrato", motivo: "preco" });
   });
   it("linha legada, sem Price: vale o piso da família", () => {
     assert.deepEqual(caminhoDoItem(item({ id: "1", familia: "PABX", exigeContratoDoPreco: null }), ctx()), { caminho: "contrato", motivo: "familia" });
@@ -35,7 +39,7 @@ describe("caminhoDoItem", () => {
 });
 
 describe("decidirGrupos", () => {
-  it("Callface AI + PABX + White Label na mesma proposta: três grupos, cada um no seu caminho", () => {
+  it("Callface AI + PABX + White Label na mesma proposta: três grupos; licença e setup do WL ficam no MESMO contrato", () => {
     const g = decidirGrupos([
       item({ id: "ai", familia: "CALLFACE_AI", exigeContratoDoPreco: false }),
       item({ id: "px", familia: "PABX", exigeContratoDoPreco: true }),
@@ -45,8 +49,7 @@ describe("decidirGrupos", () => {
     assert.deepEqual(g.map((x) => [x.caminho, x.familia, x.itensIds]), [
       ["pagamento", "CALLFACE_AI", ["ai"]],
       ["contrato", "PABX", ["px"]],
-      ["pagamento", "WHITE_LABEL", ["wl-lic"]],
-      ["contrato", "WHITE_LABEL", ["wl-setup"]],
+      ["contrato", "WHITE_LABEL", ["wl-lic", "wl-setup"]],
     ]);
   });
 

@@ -55,7 +55,7 @@ export const VARIAVEIS_CONTRATO: VariavelContrato[] = [
   { chave: "itens_recorrentes_html", rotulo: "Itens recorrentes: uma linha de tabela por item", exemplo: "<tr><td>Callface AI - Plano Business</td><td>Licença mensal</td><td>10</td><td>R$ 179,90</td><td>R$ 1.799,00</td></tr>", grupo: "Itens e valores", zoho: "Itens Solicitados.Itens" },
   { chave: "itens_licencas_html", rotulo: "Itens com recorrência: uma linha de tabela por item (6 colunas)", exemplo: "<tr><td>Licença White Label Callface</td><td>Licença reservada para ativação e revenda</td><td>Mensal, por licença ativa</td><td>10</td><td>R$ 179,90</td><td>R$ 1.799,00</td></tr>", grupo: "Itens e valores" },
   { chave: "itens_setup", rotulo: "Itens de setup (texto)", exemplo: "Setup de implantação | Configuração inicial | Qtd. 1 | R$ 2.500,00 | R$ 2.500,00", grupo: "Itens e valores" },
-  { chave: "itens_setup_html", rotulo: "Itens de setup: uma linha de tabela por item", exemplo: "<tr><td>Setup de implantação</td><td>Configuração inicial</td><td>1</td><td>R$ 2.500,00</td><td>R$ 2.500,00</td></tr>", grupo: "Itens e valores" },
+  { chave: "itens_setup_html", rotulo: "Itens de setup: uma linha de tabela por item", exemplo: "<tr><td>Setup de implantação</td><td>Configuração inicial</td><td>1</td><td>R$ 2.500,00</td><td>R$ 2.500,00</td></tr>", grupo: "Itens e valores", opcional: true },
   { chave: "valor_total", rotulo: "Valor total", exemplo: "R$ 4.299,00", grupo: "Itens e valores", zoho: "Contratos.Total Geral" },
   { chave: "mrr_total", rotulo: "Total mensal recorrente", exemplo: "R$ 1.799,00", grupo: "Itens e valores", zoho: "Contratos.Total Recorrente" },
   { chave: "setup_total", rotulo: "Total de setup", exemplo: "R$ 2.500,00", grupo: "Itens e valores", zoho: "Contratos.Total Setup" },

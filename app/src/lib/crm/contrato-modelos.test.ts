@@ -54,3 +54,23 @@ test("PDF: paginado, âncoras de assinatura na última página dentro da folha",
   for (const k of Object.values(a)) { assert.ok(k.x >= 0 && k.x + k.largura <= 100 && k.y >= 0 && k.y + k.altura <= 100); }
   assert.ok(!pdf.toString("latin1").includes("Aguardando"), "sem selo de status");
 });
+
+for (const arquivo of ["pabx.html", "callface-ai.html", "pabx-aditivo.html"]) {
+  test(`${arquivo}: venda sem setup gera contrato (itens_setup_html vazio não bloqueia nem deixa tabela órfã)`, () => {
+    const corpo = lerModelo(arquivo);
+    const itens = [{ nome: "PABX Plano Pro", descricao: "Ramais", tipo: "recorrente", quantidade: 5, valorUnitario: 90, subtotal: 450 }];
+    const v = {
+      ...variaveisDeExemplo("PABX"),
+      itens_recorrentes_html: linhasDeItens(itens, ["recorrente"], { comRecorrencia: false }),
+      itens_setup_html: linhasDeItens(itens, ["setup"], { comRecorrencia: false }),
+      setup_total: "R$ 0,00",
+    };
+    assert.equal(v.itens_setup_html, "");
+    assert.deepEqual(variaveisFaltando(corpo, v), []);
+    const html = renderizarCorpo(corpo, v);
+    assert.ok(!/\{\{\w+\}\}/.test(html));
+    assert.ok(!/<tr>\s*<\/tr>/.test(html), "linha de tabela vazia");
+    assert.equal((html.match(/<table/g) ?? []).length, (html.match(/<\/table>/g) ?? []).length);
+    assert.match(html, /PABX Plano Pro/);
+  });
+}
