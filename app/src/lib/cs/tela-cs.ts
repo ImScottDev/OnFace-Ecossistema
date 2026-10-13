@@ -10,6 +10,7 @@
  */
 import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
+import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 import { sql } from "drizzle-orm";
 import { nomeEmpresaSql } from "@/lib/vendas/texto";
 import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
@@ -112,19 +113,13 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
          mrr_atual e da Carteira). servicos_canonicos.current_recurring_value é o contratado e
          dava R$ 385 mil aqui contra R$ 476 mil no resto do produto. Quem assinou DEPOIS do
          fechamento entra pela assinatura ativa, na família do serviço dele. */
+      -- A conta é a OFICIAL (lib/metricas/mrr-oficial.ts), restrita às contas desta tela.
+      mrr_of AS (${mrrOficialLinhas(organizacaoId, { empresas: sql`SELECT empresa_id FROM conta` })}),
       fat AS (
-        SELECT r.empresa_id, r.service_family AS f, SUM(r.valor)::float AS v
-          FROM cliente_receita_mensal r
-         WHERE r.organizacao_id = ${organizacaoId} AND r.revenue_nature = 'MRR' AND r.empresa_id IN (SELECT empresa_id FROM conta)
-           AND r.competencia = (SELECT max(competencia) FROM cliente_receita_mensal WHERE organizacao_id = ${organizacaoId})
-         GROUP BY 1, 2
+        SELECT empresa_id, familia AS f, SUM(valor)::float AS v FROM mrr_of WHERE origem = 'fechamento' GROUP BY 1, 2
       ),
       pos_fechamento AS (
-        SELECT a.empresa_id, SUM(a.mrr)::float AS v
-          FROM assinaturas a
-         WHERE a.organizacao_id = ${organizacaoId} AND ${doCrm("a")} AND a.status = 'active' AND a.empresa_id IN (SELECT empresa_id FROM conta)
-           AND NOT EXISTS (SELECT 1 FROM fat WHERE fat.empresa_id = a.empresa_id)
-         GROUP BY 1
+        SELECT empresa_id, SUM(valor)::float AS v FROM mrr_of WHERE origem = 'assinatura' GROUP BY 1
       )
       SELECT c.empresa_id AS id, c.nome, c.setor, c.principal, c.resp,
              to_char(c.inicio, 'YYYY-MM') AS inicio, c.cs_sem_evidencia,

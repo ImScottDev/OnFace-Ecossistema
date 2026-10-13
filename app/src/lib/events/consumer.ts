@@ -123,7 +123,22 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
         console.error(`[outbox] entrega à Meta falhou para ${evento.eventType} (best-effort):`, e);
         erroCapiReprocessavel = e instanceof Error ? e : new Error(String(e));
       }
+
+      // BARRAMENTO DO N8N. Em try próprio, como a Meta: n8n fora do ar não pode
+      // travar automações, timeline nem o fato comercial. O erro é guardado e
+      // relançado no fim, o que devolve a linha a `pending` (retry do sweep,
+      // dead-letter em 5). O id_evento é o id da linha, então o reenvio é
+      // ignorado pelo n8n.
+      let erroBarramento: Error | null = null;
+      try {
+        const { publicarNoBarramento } = await import("./barramento");
+        await publicarNoBarramento(evento);
+      } catch (e) {
+        console.error(`[outbox] publicação no barramento falhou para ${evento.eventType} (${evento.id}):`, e);
+        erroBarramento = e instanceof Error ? e : new Error(String(e));
+      }
       if (erroCapiReprocessavel) throw erroCapiReprocessavel;
+      if (erroBarramento) throw erroBarramento;
       await db
         .update(eventOutbox)
         .set({ status: "processed", processedAt: new Date(), processingStartedAt: null })

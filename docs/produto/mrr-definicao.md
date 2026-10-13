@@ -246,3 +246,13 @@ conta viram uma só.
   espelho e não foi consultada.
 - Stripe: apenas contagens (126 ativas; 92 sem `plan_id`). Valor ao vivo não apurado.
 - O código lido é o do `HEAD` local (`7f2da67`); presumo que produção rode o mesmo commit.
+
+## Fase 3 (13/10/2026): uma consulta, nomes distintos
+
+- A conta oficial mora em `app/src/lib/metricas/mrr-oficial.ts` (`mrrOficialLinhas`). Catálogo
+  (`mrr_atual`), Financeiro, Carteira, tela de CS, carteira em risco e Cliente 360 só a embrulham,
+  com recorte por família, empresa ou conjunto de empresas.
+- Métricas novas no catálogo: `mrr_contratado` (servicos_canonicos), `mrr_faturavel` (fechamento da
+  planilha), `receita_setup`, `receita_avulsa` (ONE_TIME), `receita_uso` (USAGE). `mrr_atual` segue sendo o MRR oficial.
+- Setup nunca entra no MRR. A única soma com setup é a meta/placar (`lib/metas.ts`, `relatorios/performance.ts`),
+  de propósito: mede venda total do vendedor.

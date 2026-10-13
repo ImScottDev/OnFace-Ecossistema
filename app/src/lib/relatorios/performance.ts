@@ -130,6 +130,8 @@ export async function getPerformance(
        GROUP BY sc.usuario_id
     ),
     gn AS (
+      -- mrr_fechado + valor_setup DE PROPÓSITO (Fase 3.3): o placar mede venda total (mensalidade +
+      -- implantação), igual a lib/metas.ts. Não é o MRR do produto (`mrr_atual`), onde setup nunca entra.
       SELECT responsavel_id AS id, count(*) AS qtd,
              COALESCE(sum(COALESCE(mrr_fechado,0)::numeric + COALESCE(valor_setup,0)::numeric), 0) AS valor
         FROM negocios

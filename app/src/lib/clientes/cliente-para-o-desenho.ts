@@ -13,6 +13,7 @@
 
 import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
+import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
 import { sql } from "drizzle-orm";
 import { empresa360, type Empresa360 } from "@/lib/vendas/consultas";
@@ -208,11 +209,9 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
    * fonte da carteira: o MRR faturado no último mês, por família. Só entra a
    * família que o portfólio não cobre — não mexe em quem já tem serviço. */
   const faturadoMrr = await db.execute<{ familia: string; valor: string }>(sql`
-    SELECT r.service_family AS familia, SUM(r.valor)::text AS valor
-      FROM cliente_receita_mensal r
-     WHERE r.organizacao_id = ${organizacaoId}::uuid AND r.empresa_id = ${empresaId}::uuid
-       AND r.revenue_nature = 'MRR' AND r.service_family <> 'UNKNOWN'
-       AND r.competencia = (SELECT max(competencia) FROM cliente_receita_mensal WHERE organizacao_id = ${organizacaoId}::uuid)
+    SELECT familia, SUM(valor)::text AS valor
+      FROM (${mrrOficialLinhas(organizacaoId, { empresaId, incluirTestes: true })}) m
+     WHERE origem = 'fechamento' AND familia <> 'UNKNOWN'
      GROUP BY 1`);
   for (const f of faturadoMrr) {
     if (servicos.some((x) => x.familia === f.familia)) continue;

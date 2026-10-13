@@ -17,6 +17,12 @@ export type { MetaTipo } from "@/lib/metas-shared";
  *
  * `valor_projeto` fica de fora de propósito: é cópia literal de `valor_setup`
  * (175 de 175 linhas idênticas) — somar os dois contaria o setup duas vezes.
+ *
+ * SETUP DENTRO DESTA SOMA É DE PROPÓSITO (Fase 3.3): meta e placar medem VENDA
+ * TOTAL do vendedor (mensalidade + implantação), não MRR. Não é o MRR do produto
+ * (esse é `mrr_atual`, e setup nunca entra nele). Não "corrija" tirando o setup:
+ * o placar deixaria de bater com o que o time vendeu. Mesmo caso:
+ * `relatorios/performance.ts` (CTE `gn`).
  */
 const VALOR_FECHADO = sql<string>`COALESCE(SUM(COALESCE(mrr_fechado,0)::numeric + COALESCE(valor_setup,0)::numeric), 0)`;
 

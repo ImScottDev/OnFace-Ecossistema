@@ -19,6 +19,7 @@
 import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -93,23 +94,11 @@ export interface MrrAtual {
  * R$ 385 mil enquanto Início e Carteira mostravam R$ 476 mil.
  */
 function mrrOficialPorFamilia(orgId: string) {
+  // A conta mora em lib/metricas/mrr-oficial.ts (uma só para as seis telas).
+  // Aqui ela só é agrupada por família; `contratos` = empresas distintas.
   return db.execute<{ familia: string | null; mrr: string; contratos: string }>(sql`
-    WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${orgId}),
-    linhas AS (
-      SELECT r.service_family AS familia, r.valor AS mrr, r.empresa_id
-        FROM cliente_receita_mensal r, uc
-       WHERE r.organizacao_id = ${orgId} AND r.revenue_nature = 'MRR' AND r.competencia = uc.c
-      UNION ALL
-      SELECT NULL, a.mrr, a.empresa_id
-        FROM assinaturas a
-       WHERE a.organizacao_id = ${orgId} AND ${doCrm("a")} AND a.status = 'active' AND a.empresa_id IS NOT NULL
-         AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${orgId})
-         AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc
-                          WHERE r2.organizacao_id = ${orgId} AND r2.empresa_id = a.empresa_id
-                            AND r2.competencia = uc.c AND r2.revenue_nature = 'MRR')
-    )
-    SELECT familia, COALESCE(SUM(mrr), 0)::text AS mrr, COUNT(DISTINCT empresa_id)::text AS contratos
-      FROM linhas GROUP BY 1 ORDER BY 2 DESC`);
+    SELECT familia, COALESCE(SUM(valor), 0)::text AS mrr, COUNT(DISTINCT empresa_id)::text AS contratos
+      FROM (${mrrOficialLinhas(orgId)}) m GROUP BY 1 ORDER BY 2 DESC`);
 }
 
 export async function getMrrAtual(orgId: string): Promise<MrrAtual> {

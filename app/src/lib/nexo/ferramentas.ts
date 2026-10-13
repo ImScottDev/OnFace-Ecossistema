@@ -292,7 +292,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
     async (ctx, u, i) => {
       if (u.pessoal) return { ok: false, error: "as métricas do catálogo são da organização inteira; o papel do usuário vê só o que é dele (use atividades, leads e pipeline)." };
       if (!i.codigo) return { ok: true, data: { metricas: CATALOGO.map((m) => ({ codigo: m.codigo, nome: m.nome, unidade: m.unidade, descricao: m.descricao })) } };
-      const financeira = ["mrr_atual", "booking_ganho", "faturado", "recebido"].includes(String(i.codigo));
+      const financeira = ["mrr_atual", "mrr_contratado", "mrr_faturavel", "receita_setup", "receita_avulsa", "receita_uso", "booking_ganho", "faturado", "recebido"].includes(String(i.codigo));
       const negado = falta(ctx, financeira ? "finance.read" : "sales.read");
       if (negado) return negado;
       try { return { ok: true, data: await medir(ctx.organizacaoId, String(i.codigo), { de: i.de ? new Date(String(i.de)) : null, ate: i.ate ? new Date(String(i.ate)) : null }) }; }

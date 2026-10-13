@@ -26,6 +26,7 @@ import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql, type SQL } from "drizzle-orm";
 import { janelaDoPeriodo } from "@/lib/metricas/janela";
+import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 import { daFamilia, nomeDeTeste, semTestes, type Familia } from "@/lib/metricas/recorte";
 
 export type TipoMetrica = "EVENT" | "SNAPSHOT" | "COHORT";
@@ -126,6 +127,140 @@ function janela(p: Periodo): { de: string; ate: string } {
   return { de: (p.de ?? padrao.de).toISOString(), ate: (p.ate ?? padrao.ate).toISOString() };
 }
 
+/**
+ * Receita faturada de UMA natureza numa janela de competências (Fase 3.2). Setup, pontual e uso
+ * saem da mesma tabela do MRR (`cliente_receita_mensal`) e nunca se misturam com ele: a natureza é
+ * o que separa. O recorte é o mesmo de `faturamento_competencia`, só com a natureza fixa.
+ */
+function recorteDaNatureza(natureza: "SETUP" | "ONE_TIME" | "USAGE") {
+  return (org: string, p: Periodo): SQL => {
+    const { de, ate } = janela(p);
+    return sql`
+      SELECT r.id::text AS id, r.empresa_id::text AS empresa_id, COALESCE(e.nome, r.cliente_nome) AS empresa,
+             r.documento, r.competencia, COALESCE(NULLIF(r.service_family, ''), 'UNKNOWN') AS familia,
+             r.confidence AS confianca, r.source AS fonte, r.valor::numeric AS valor
+        FROM cliente_receita_mensal r
+        LEFT JOIN empresas e ON e.id = r.empresa_id
+       WHERE r.organizacao_id = ${org}::uuid AND r.revenue_nature = ${natureza}
+         AND r.competencia >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+         AND r.competencia <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+         AND ${daFamilia("COALESCE(NULLIF(r.service_family, ''), 'UNKNOWN')", p.familia)}
+         AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, r.cliente_nome, '')"))}`;
+  };
+}
+
+const EXPLORAR_RECEITA_POR_NATUREZA: DefinicaoMetrica["explorar"] = {
+  dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "confianca", rotulo: "Confiança da classificação" }, { chave: "fonte", rotulo: "Fonte do dado" }],
+  campoData: "competencia", campoDataTipo: "data", periodoPadrao: "12m", piso: new Date("2021-03-01T00:00:00-03:00"),
+  busca: ["empresa", "documento"],
+  ordenaveis: ["valor", "empresa", "competencia", "familia"],
+};
+
+/**
+ * Fase 3.2: nomes distintos para conceitos distintos. `mrr_atual` continua sendo o MRR oficial do
+ * produto (e mantém o código exato que a trava exige); estas cinco abrem o que ele mistura ou exclui.
+ */
+const METRICAS_DE_RECEITA: DefinicaoMetrica[] = [
+  definir({
+    codigo: "mrr_contratado",
+    nome: "MRR contratado",
+    tipo: "SNAPSHOT",
+    unidade: "BRL",
+    descricao:
+      "O que o CONTRATO diz: valor recorrente dos serviços ativos da carteira. Responde quanto a " +
+      "Callface deveria faturar por mês se cada contrato rodasse exatamente como assinado.",
+    fonte: "servicos_canonicos.current_recurring_value com portfolio_included, natureza MRR e ciclo comercial ACTIVE.",
+    naoInclui:
+      "o que de fato foi faturado (consumo variável do PABX, serviço sem cadastro canônico e White Label ainda " +
+      "sem serviço canônico ficam de fora: medido em set/2026, R$ 388 mil contratado contra R$ 479 mil faturado), " +
+      "setup, avulso e uso. Não substitui o MRR oficial (mrr_atual).",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.valor DESC NULLS LAST",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], busca: ["empresa"], ordenaveis: ["valor", "empresa", "familia"] },
+    recorte: (org, p) => sql`
+      SELECT s.empresa_id::text || '|' || COALESCE(s.service_family, 'UNKNOWN') AS id, s.empresa_id::text AS empresa_id,
+             e.nome AS empresa, COALESCE(s.service_family, 'UNKNOWN') AS familia,
+             sum(s.current_recurring_value)::numeric AS valor
+        FROM servicos_canonicos s
+        JOIN empresas e ON e.id = s.empresa_id
+       WHERE s.organizacao_id = ${org}::uuid AND s.portfolio_included = true
+         AND s.revenue_nature = 'MRR' AND s.commercial_lifecycle = 'ACTIVE'
+         AND ${daFamilia("COALESCE(s.service_family, 'UNKNOWN')", p.familia)}
+         AND ${semTestes(p.incluirTestes, nomeDeTeste("e.nome"))}
+       GROUP BY s.empresa_id, e.nome, COALESCE(s.service_family, 'UNKNOWN')`,
+  }),
+  definir({
+    codigo: "mrr_faturavel",
+    nome: "MRR faturável",
+    tipo: "SNAPSHOT",
+    unidade: "BRL",
+    descricao:
+      "O que de fato é FATURADO como recorrente: natureza MRR na última competência fechada da planilha " +
+      "de faturamento. É a parte de 'fechamento' do MRR oficial, sem as assinaturas vendidas depois dele.",
+    fonte: "cliente_receita_mensal na maior competência, revenue_nature = MRR (mrr-oficial.ts, origem fechamento).",
+    naoInclui:
+      "assinatura vendida depois do fechamento e ainda sem linha na planilha (essa entra só no mrr_atual), " +
+      "o valor contratado em si (mrr_contratado), setup, avulso, uso e débito recuperado.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.valor DESC NULLS LAST",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], busca: ["empresa"], ordenaveis: ["valor", "empresa", "familia"] },
+    recorte: (org, p) => sql`
+      SELECT m.empresa_id::text || '|' || m.familia AS id, m.empresa_id::text AS empresa_id, m.empresa, m.familia, m.valor
+        FROM (${mrrOficialLinhas(org, { familia: p.familia, incluirTestes: p.incluirTestes })}) m
+       WHERE m.origem = 'fechamento'`,
+  }),
+  definir({
+    codigo: "receita_setup",
+    nome: "Receita de setup",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao: "Implantação: cobrança ÚNICA de ativar o cliente, faturada na competência. Não se repete e não é MRR.",
+    fonte: "cliente_receita_mensal, revenue_nature = SETUP, pela competência.",
+    naoInclui:
+      "mensalidade (MRR), venda avulsa e pontual (receita_avulsa), consumo variável (receita_uso) e débito recuperado. " +
+      "O setup do negócio ganho que ainda não foi faturado também fica de fora: aqui é faturamento, não booking.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.competencia DESC, t.valor DESC",
+    explorar: EXPLORAR_RECEITA_POR_NATUREZA,
+    recorte: recorteDaNatureza("SETUP"),
+  }),
+  definir({
+    codigo: "receita_avulsa",
+    nome: "Receita avulsa",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao: "Venda avulsa e pontual (natureza ONE_TIME): hardware, projeto, serviço cobrado uma vez. Faturada na competência.",
+    fonte: "cliente_receita_mensal, revenue_nature = ONE_TIME, pela competência.",
+    naoInclui:
+      "setup de implantação (receita_setup), consumo variável (receita_uso), mensalidade (MRR) e débito recuperado. " +
+      "O balde 'Avulso' dos gráficos de faturamento soma setup + pontual + uso; esta métrica é só a parte pontual.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.competencia DESC, t.valor DESC",
+    explorar: EXPLORAR_RECEITA_POR_NATUREZA,
+    recorte: recorteDaNatureza("ONE_TIME"),
+  }),
+  definir({
+    codigo: "receita_uso",
+    nome: "Receita de uso",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao: "Consumo variável (natureza USAGE): minutos, mensagens e franquia excedente cobrados conforme o uso do mês.",
+    fonte: "cliente_receita_mensal, revenue_nature = USAGE, pela competência.",
+    naoInclui:
+      "mensalidade fixa (MRR), setup, venda avulsa e débito recuperado. Uso NÃO é MRR: varia de um mês para o outro. " +
+      "O PABX com consumo que a planilha lança como MRR continua dentro do MRR oficial, pela natureza que a planilha deu.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.competencia DESC, t.valor DESC",
+    explorar: EXPLORAR_RECEITA_POR_NATUREZA,
+    recorte: recorteDaNatureza("USAGE"),
+  }),
+];
+
 export const CATALOGO: DefinicaoMetrica[] = [
   definir({
     codigo: "mrr_atual",
@@ -152,32 +287,10 @@ export const CATALOGO: DefinicaoMetrica[] = [
     // `fechamento` (competência fechada) ou `assinatura` (vendida depois do fechamento).
     // O card soma ESTAS linhas; é por isso que a lista explica o total inteiro.
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "origem", rotulo: "Origem da linha" }], busca: ["empresa"], ordenaveis: ["valor", "empresa", "familia", "origem"] },
+    // A consulta mora em mrr-oficial.ts e é a MESMA das outras cinco telas que somam MRR.
     recorte: (org, p) => sql`
-      WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${org}::uuid)
-      SELECT r.empresa_id::text AS id, e.nome AS empresa,
-             COALESCE(r.service_family, 'UNKNOWN') AS familia,
-             'fechamento'::text AS origem, sum(r.valor)::numeric AS valor
-        FROM cliente_receita_mensal r
-        JOIN uc ON r.competencia = uc.c
-        LEFT JOIN empresas e ON e.id = r.empresa_id
-       WHERE r.organizacao_id = ${org}::uuid AND r.revenue_nature = 'MRR'
-         AND ${daFamilia("r.service_family", p.familia)}
-         AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}
-       GROUP BY r.empresa_id, e.nome, COALESCE(r.service_family, 'UNKNOWN')
-      UNION ALL
-      SELECT a.empresa_id::text, e.nome,
-             COALESCE(sc.service_family, 'UNKNOWN'), 'assinatura'::text, sum(a.mrr)::numeric
-        FROM assinaturas a
-        JOIN empresas e ON e.id = a.empresa_id
-        LEFT JOIN servicos_canonicos sc ON sc.id = a.servico_id
-       WHERE a.organizacao_id = ${org}::uuid AND ${doCrm("a")} AND a.status = 'active' AND a.empresa_id IS NOT NULL
-         AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${org}::uuid)
-         AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc
-                          WHERE r2.organizacao_id = ${org}::uuid AND r2.empresa_id = a.empresa_id
-                            AND r2.competencia = uc.c AND r2.revenue_nature = 'MRR')
-         AND ${daFamilia("COALESCE(sc.service_family, 'UNKNOWN')", p.familia)}
-         AND ${semTestes(p.incluirTestes, nomeDeTeste("e.nome"))}
-       GROUP BY a.empresa_id, e.nome, COALESCE(sc.service_family, 'UNKNOWN')`,
+      SELECT m.empresa_id::text AS id, m.empresa, m.familia, m.origem, m.valor
+        FROM (${mrrOficialLinhas(org, { familia: p.familia, incluirTestes: p.incluirTestes })}) m`,
   }),
   definir({
     codigo: "booking_ganho",
@@ -445,6 +558,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
          GROUP BY f.empresa_id, e.nome, m.mes`;
     },
   }),
+  ...METRICAS_DE_RECEITA,
 ];
 
 const POR_CODIGO = new Map(CATALOGO.map((m) => [m.codigo, m]));

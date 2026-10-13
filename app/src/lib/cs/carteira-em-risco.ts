@@ -21,7 +21,7 @@
  * é o que faz o time atacar 249 "sem próxima ação" e não ver as 15 contas
  * prestes a cair por cartão recusado.
  */
-import { doCrm } from "@/lib/financeiro/espelho-crm";
+import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { nomeEmpresaSql } from "@/lib/vendas/texto";
@@ -93,21 +93,15 @@ export async function carteiraEmRisco(organizacaoId: string, responsavelId?: str
            -- MRR da conta = o oficial (mrr_atual): MRR faturado no último fechamento; sem linha no
            -- fechamento (cliente novo), a assinatura ativa. Era servicos_canonicos (contratado),
            -- que dava R$ 385 mil contra os R$ 476 mil do resto do produto.
-           ((SELECT COALESCE(sum(f.valor), 0) FROM cliente_receita_mensal f
-              WHERE f.empresa_id = r.empresa_id AND f.revenue_nature = 'MRR'
-                AND f.competencia = (SELECT max(competencia) FROM cliente_receita_mensal
-                                      WHERE organizacao_id = ${organizacaoId}::uuid))
-             + CASE WHEN EXISTS (SELECT 1 FROM cliente_receita_mensal f2
-                                  WHERE f2.empresa_id = r.empresa_id AND f2.revenue_nature = 'MRR'
-                                    AND f2.competencia = (SELECT max(competencia) FROM cliente_receita_mensal
-                                                           WHERE organizacao_id = ${organizacaoId}::uuid))
-                    THEN 0
-                    ELSE (SELECT COALESCE(sum(a.mrr), 0) FROM assinaturas a
-                           WHERE a.empresa_id = r.empresa_id AND a.status = 'active' AND ${doCrm("a")}) END)::text AS mrr,
+           COALESCE(m.mrr, 0)::text AS mrr,
            r.responsavel_id::text, u.nome AS responsavel_nome
       FROM cs_riscos r
       LEFT JOIN empresas e ON e.id = r.empresa_id
       LEFT JOIN usuarios u ON u.id = r.responsavel_id
+      LEFT JOIN (SELECT empresa_id, sum(valor) AS mrr
+                   FROM (${mrrOficialLinhas(organizacaoId, {
+                     empresas: sql`SELECT empresa_id FROM cs_riscos WHERE organizacao_id = ${organizacaoId}::uuid AND resolvido_em IS NULL`,
+                   })}) o GROUP BY 1) m ON m.empresa_id = r.empresa_id
      WHERE r.organizacao_id = ${organizacaoId}::uuid
        AND r.resolvido_em IS NULL
        ${responsavelId ? sql`AND r.responsavel_id = ${responsavelId}::uuid` : sql``}

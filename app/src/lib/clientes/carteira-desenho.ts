@@ -2,6 +2,7 @@ import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { sql } from "drizzle-orm";
 import { nomeEmpresaSql } from "@/lib/vendas/texto";
 import { db } from "@/lib/db";
+import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
 import { ROTULO_ETAPA_PIPELINE, type EtapaPipeline } from "@/lib/vendas/dominio";
 
@@ -156,34 +157,13 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
       SELECT max(competencia) AS competencia FROM cliente_receita_mensal
        WHERE organizacao_id = ${organizacaoId}
     ),
+    -- MRR por empresa = a consulta OFICIAL, a mesma do catálogo, Financeiro, CS e Cliente 360
+    -- (lib/metricas/mrr-oficial.ts). Só natureza MRR (setup/débito/avulso/uso ficam de fora:
+    -- somar tudo fazia "Por produto" fechar em R$ 503,1 mil contra R$ 476,4 mil no topo).
+    -- Regra do Scott (06/10): faturado no fechamento + assinatura ativa de quem assinou depois.
     servicos_agg AS (
-      SELECT r.empresa_id, SUM(r.valor) AS mrr
-        FROM cliente_receita_mensal r, ultima_competencia uc
-       WHERE r.organizacao_id = ${organizacaoId}
-         AND r.competencia = uc.competencia
-         AND r.empresa_id IS NOT NULL
-         -- Só natureza MRR: é a mesma regra do MRR do topo da tela. Somar tudo
-         -- (setup 29.990 + débito recuperado 6.000) fazia "Por produto" fechar
-         -- em R$ 503,1 mil contra R$ 476,4 mil de MRR no topo, e jogava o setup
-         -- White Label da Helbor na conta de Callface AI.
-         AND r.revenue_nature = 'MRR'
-       GROUP BY 1
-      UNION ALL
-      -- Regra do Scott (06/10): cliente = faturado no fechamento + venda nova
-      -- DEPOIS dele. Quem assinou depois do fechamento ainda não tem linha no
-      -- faturamento e aparecia na carteira com MRR R$ 0 (5 clientes, R$ 1.599
-      -- no dia da virada). Até a próxima competência fechar, o MRR dele é o da
-      -- assinatura ativa. A mesma regra está em mrr_atual (lib/metricas/catalogo.ts).
-      SELECT a.empresa_id, SUM(a.mrr)
-        FROM assinaturas a
-       WHERE a.organizacao_id = ${organizacaoId} AND ${doCrm("a")}
-         AND a.status = 'active' AND a.empresa_id IS NOT NULL
-         AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${organizacaoId})
-         AND NOT EXISTS (
-           SELECT 1 FROM cliente_receita_mensal r2, ultima_competencia uc2
-            WHERE r2.organizacao_id = ${organizacaoId} AND r2.empresa_id = a.empresa_id
-              AND r2.competencia = uc2.competencia AND r2.revenue_nature = 'MRR')
-       GROUP BY 1
+      SELECT empresa_id, SUM(valor) AS mrr FROM (${mrrOficialLinhas(organizacaoId)}) m
+       WHERE empresa_id IS NOT NULL GROUP BY 1
     ),
     -- O desenho tem UM produto por cliente; a família de maior MRR. Só 2
     -- empresas têm mais de uma família, então o modelo não distorce.
