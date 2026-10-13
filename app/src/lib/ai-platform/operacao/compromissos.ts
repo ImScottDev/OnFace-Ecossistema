@@ -189,3 +189,25 @@ export async function processarCompromissosVencidos(p: { agora?: Date; limite?: 
   }
   return out;
 }
+
+/**
+ * Regra de retomada do handoff (handoff_config.retomada = "automatica"): atendimento que ficou com uma pessoa e
+ * ficou parado devolve ao agente. Parado = o contato escreveu e nenhuma pessoa respondeu em `retomadaHoras`
+ * (padrão 24). Com "somente_humano" (padrão) só uma pessoa devolve.
+ */
+export async function retomarAtribuicoesParadas(): Promise<number> {
+  const paradas = await db.execute<{ id: string; organizacao_id: string }>(sql`
+    SELECT a.id::text, a.organizacao_id::text
+      FROM ai_agent_atribuicoes a
+      JOIN ai_agents ag ON ag.id = a.agent_id AND ag.status = 'published'
+      JOIN ai_agent_versions v ON v.id = ag.published_version_id
+     WHERE a.status = 'humano' AND a.contato_id IS NOT NULL AND v.handoff_config->>'retomada' = 'automatica'
+       AND EXISTS (SELECT 1 FROM whatsapp_mensagens i WHERE i.contato_id = a.contato_id AND i.direcao = 'in'
+                     AND i.created_at < now() - (coalesce((v.handoff_config->>'retomadaHoras')::int, 24)) * interval '1 hour'
+                     AND i.created_at > coalesce((SELECT max(o.created_at) FROM whatsapp_mensagens o WHERE o.contato_id = a.contato_id AND o.direcao = 'out'), 'epoch'))
+     LIMIT 20`);
+  const { retomarAtribuicao } = await import("./atribuicoes");
+  let n = 0;
+  for (const p of paradas) { try { await retomarAtribuicao({ organizacaoId: p.organizacao_id, atribuicaoId: p.id }); n++; } catch (e) { console.error("[retomadas] devolver ao agente:", e); } }
+  return n;
+}

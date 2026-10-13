@@ -18,7 +18,7 @@ import { fecharFilas, whatsappOutgoingQueue } from "@/lib/queue";
 import { sincronizarUsuariosDosAgentes } from "@/lib/agentes/usuario-do-agente";
 import { acionarAgente, EVENTO_MENSAGEM } from "./acionar";
 import { atribuirAgente, atribuicaoViva, AtribuicaoRecusada, pausarAtribuicao, retomarAtribuicao, transferirParaHumano, encerrarAtribuicao } from "./atribuicoes";
-import { criarCompromisso, processarCompromissosVencidos } from "./compromissos";
+import { criarCompromisso, processarCompromissosVencidos, retomarAtribuicoesParadas } from "./compromissos";
 import { lembrar, recordar, corrigirFato } from "./memoria";
 import { construirContexto } from "../contexto/builder";
 import { resolverCloser, familiaDoTexto } from "@/lib/crm/roteamento-closer";
@@ -488,6 +488,20 @@ test("pausar e retomar o agente, trocar e encerrar", opts, async () => {
   await encerrarAtribuicao({ organizacaoId: org, atribuicaoId: atribuicao.id, motivo: "concluído" });
   assert.equal((await q<{ status: string }>(sql`SELECT status FROM ai_agent_compromissos WHERE id = ${c.id}::uuid`))[0].status, "cancelado");
   assert.equal(await atribuicaoViva(org, { contatoId }), null);
+});
+
+test("regra de retomada do handoff: com 'automatica' o atendimento parado volta ao agente; com 'somente_humano' não", opts, async () => {
+  const auto = await novoAgente({ nome: "Lia RA", handoff: { retomada: "automatica", retomadaHoras: 24 } });
+  const manual = await novoAgente({ nome: "Lia RM", handoff: { retomada: "somente_humano" } });
+  const a = await novoLead({ nome: "RetAuto" }); const b = await novoLead({ nome: "RetMan" });
+  for (const [ag, l] of [[auto, a], [manual, b]] as const) {
+    const { atribuicao } = await atribuirAgente({ organizacaoId: org, agentId: ag.id, contatoId: l.contatoId, leadId: l.leadId, origem: "atendimento" });
+    await transferirParaHumano({ organizacaoId: org, atribuicaoId: atribuicao.id, motivo: "pessoa assumiu" });
+    await db.execute(sql`INSERT INTO whatsapp_mensagens (contato_id, lead_id, sessao_id, telefone, direcao, tipo, conteudo, status, created_at) VALUES (${l.contatoId}::uuid, ${l.leadId}::uuid, ${sessaoId}::uuid, '5500000', 'in', 'text', 'alguém aí?', 'received', now() - interval '30 hours')`);
+  }
+  assert.ok(await retomarAtribuicoesParadas() >= 1);
+  assert.equal((await atribuicaoViva(org, { contatoId: a.contatoId }))!.status, "ativa");
+  assert.equal((await atribuicaoViva(org, { contatoId: b.contatoId }))!.status, "humano");
 });
 
 test("pedido de parar: handover imediato sem chamar o modelo, opt-out lembrado e retomadas barradas", opts, async () => {

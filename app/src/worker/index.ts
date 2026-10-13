@@ -2842,7 +2842,9 @@ const slaWorker = new Worker(
       // Retomadas que os próprios agentes agendaram ("me chama quinta"). Sem cadência: no horário o
       // contexto é reconstruído e o agente decide; humano que assumiu bloqueia e o motivo fica registrado.
       try {
-        const { processarCompromissosVencidos } = await import("../lib/ai-platform/operacao/compromissos");
+        const { processarCompromissosVencidos, retomarAtribuicoesParadas } = await import("../lib/ai-platform/operacao/compromissos");
+        const devolvidas = await retomarAtribuicoesParadas();
+        if (devolvidas) console.log(`[Retomadas] ${devolvidas} atendimento(s) parado(s) devolvido(s) ao agente (regra de retomada do handoff)`);
         const r = await processarCompromissosVencidos();
         if (r.concluidos || r.bloqueados || r.falhas || r.expirados || r.cancelados) console.log(`[Retomadas] ok:${r.concluidos} bloqueadas:${r.bloqueados} adiadas:${r.adiados} falhas:${r.falhas} expiradas:${r.expirados}`);
       } catch (e) {
