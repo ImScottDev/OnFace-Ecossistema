@@ -46,6 +46,14 @@ gate é o navegador), a ordem de trabalho e a definição de pronto.
   semântica de produto → variante dentro do componente, nunca componente
   paralelo; cor por token, nunca hex. Laboratório vivo em `/design`.
 - Não rode `pnpm build` com o `next dev` de pé (sobrescreve `.next`).
+- **Padrão único:** cada coisa (reunião, atividade, arquivo, proposta, data,
+  vínculo) tem UM componente, UM ponto de entrada e UMA fonte de dado
+  carregada por id, usados em TODAS as superfícies (página, drawer,
+  Pré-vendas, fichas, Cliente 360, calendário, Início, NEXO). Bug apontado
+  numa tela se corrige na causa compartilhada, para todas.
+- **Nunca substituir** uma peça ou fluxo existente (ex.: peça de atividade com
+  subatividades e painel lateral, peça de reunião) por versão simplificada ou
+  paralela. Mudança visível de comportamento exige OK explícito do Scott.
 
 ## `.env` de desenvolvimento local
 
