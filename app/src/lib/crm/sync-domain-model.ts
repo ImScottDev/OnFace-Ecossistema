@@ -11,6 +11,8 @@
  * (loga e segue); o legado continua sendo a fonte de verdade até a F8.
  */
 import { db } from "@/lib/db";
+import { chaveTelefone } from "@/lib/telefone";
+import { telefoneChaveSql } from "@/lib/vendas/identidade";
 import { eq, and, sql, desc } from "drizzle-orm";
 import {
   leads,
@@ -104,7 +106,18 @@ export async function syncPessoaFromLead(leadId: string): Promise<string | null>
         [pessoaExistente] = await db
           .select({ id: pessoas.id })
           .from(pessoas)
-          .where(and(eq(pessoas.organizacaoId, lead.organizacaoId), sql`lower(${pessoas.email}) = ${emailNorm}`))
+          .where(and(eq(pessoas.organizacaoId, lead.organizacaoId), sql`lower(trim(${pessoas.email})) = ${emailNorm}`))
+          .limit(1);
+      }
+
+      // Mesmo contato com e-mail diferente/ausente casa pelo telefone (mesma chave de resolverPessoa).
+      const chave = chaveTelefone(lead.telefone) ?? chaveTelefone(lead.whatsapp);
+      if (!pessoaExistente && chave) {
+        [pessoaExistente] = await db
+          .select({ id: pessoas.id })
+          .from(pessoas)
+          .where(and(eq(pessoas.organizacaoId, lead.organizacaoId),
+            sql`(${telefoneChaveSql("telefone")} = ${chave} OR ${telefoneChaveSql("whatsapp")} = ${chave})`))
           .limit(1);
       }
 

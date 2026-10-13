@@ -10,7 +10,7 @@ import {
   normalizarLeadAds, chaveDeIdempotencia, buscarLeadNaGraph, combinar, camposRastreioMeta,
   credenciaisLeadAds, type LeadAdsBruto,
 } from "@onface/integrations-meta";
-import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
+import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "@/lib/vendas/ponte-canonica";
 
 /**
  * Entrada DIRETA de Lead Ads da Meta (SPEC §20).
@@ -147,6 +147,8 @@ export async function POST(req: NextRequest) {
        *
        * Falha aqui não derruba a captação: sem `leadId` a ponte ainda garante
        * o canônico, e o backfill reconcilia o vínculo. */
+      const soltar = await travarEntrada(org.id, n.email, n.telefone);
+      try {
       let leadId: string | null = null;
       try {
         const [primeiro, ...resto] = (n.nome ?? "").trim().split(/\s+/).filter(Boolean);
@@ -155,15 +157,7 @@ export async function POST(req: NextRequest) {
         const respostas = { ...(n.respostas ?? {}), ...camposRastreioMeta(bruto) };
         const a = n.atribuicao;
 
-        let existing: { id: string; tipo: string; camposCustom: unknown; responsavelId: string | null; empresaId: string | null } | undefined;
-        const cols = { id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom, responsavelId: leads.responsavelId, empresaId: leads.empresaId };
-        for (const [coluna, valor] of [[leads.email, n.email], [leads.telefone, n.telefone]] as const) {
-          if (existing || !valor) continue;
-          [existing] = await db.select(cols).from(leads)
-            .where(and(eq(leads.organizacaoId, org.id), eq(coluna, valor)))
-            .orderBy(sql`case when ${leads.tipo} = 'cliente' then 1 else 0 end`)
-            .limit(1);
-        }
+        const existing = await acharLeadPorContato(org.id, n.email, n.telefone);
 
         const empresaIdResolvida = await resolverEmpresaId({
           organizacaoId: org.id, nome: n.empresa, website: dominioCorporativo(n.email),
@@ -205,7 +199,7 @@ export async function POST(req: NextRequest) {
             utmTerm: a.utmTerm, utmContent: a.utmContent,
             metaAdId: a.adId, metaAdsetId: a.adsetId, metaCampaignId: a.campaignId,
             camposCustom: respostas,
-            tipo: "lead", status: "novo", sdrStatus: "pending",
+            tipo: "lead", status: "novo", sdrStatus: "pending", estagioPreVendas: "novo",
             responsavelId: responsavelInboundId,
           }).returning({ id: leads.id });
           leadId = novo.id;
@@ -254,6 +248,7 @@ export async function POST(req: NextRequest) {
 
       resultados.push({ metaLeadId: n.metaLeadId, ok: r.ok, motivo: r.erro });
       if (!r.ok) console.error(`[MetaLeads] lead ${n.metaLeadId} não entrou: ${r.erro}`);
+      } finally { soltar(); }
     }
   }
 

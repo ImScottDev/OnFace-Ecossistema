@@ -24,6 +24,8 @@ function repoFake(over: Partial<RepositorioAquisicao> = {}) {
     criarAquisicao: async () => { chamadas.criouAquisicao++; return "aquisicao-nova"; },
     registrarTouchpoint: async () => { chamadas.touchpoints++; },
     registrarChave: async () => { chamadas.chaves++; },
+    travarIdentidade: async () => {},
+    enriquecerAquisicao: async () => {},
     donoDaFilaInbound: async () => null,
     ...over,
   };

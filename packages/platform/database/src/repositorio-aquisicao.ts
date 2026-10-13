@@ -119,17 +119,56 @@ export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): Repositori
                        AND pessoa_id = ${pessoaId}::uuid
                      ORDER BY created_at DESC LIMIT 1`);
     },
+    async travarIdentidade(organizacaoId, email, telefone) {
+      // Ordem fixa das chaves: duas entradas que compartilham as duas nunca
+      // seguram uma cada e se esperam (deadlock).
+      const chaves = [
+        email ? `${organizacaoId}:e:${email}` : null,
+        telefone ? `${organizacaoId}:t:${telefone.replace(/\D/g, "").slice(-10)}` : null,
+      ].filter((k): k is string => !!k).sort();
+      for (const k of chaves) await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${k}, 0))`);
+    },
     async criarAquisicao(e) {
+      // Nasce na etapa inicial do pipeline de aquisição ("novo") e com canal: sem isso o
+      // card entrava no board sem coluna e só ganhava etapa quando outra porta tocava nele.
       const r = await um<{ id: string }>(sql`
-        INSERT INTO aquisicoes (organizacao_id, empresa_id, pessoa_id, tipo, origem, source_provider,
-                                responsavel_id, lead_legado_id, first_touch_at, last_touch_at)
+        INSERT INTO aquisicoes (organizacao_id, empresa_id, pessoa_id, tipo, origem, canal, source_provider,
+                                responsavel_id, lead_legado_id, pipeline_id, etapa_id, first_touch_at, last_touch_at)
         VALUES (${e.organizacaoId}::uuid, ${e.empresaId}::uuid, ${e.pessoaId}::uuid,
-                ${e.tipo}, ${e.origem ?? null}, ${e.provider ?? null}, ${e.responsavelId ?? null}::uuid,
+                ${e.tipo}, ${e.origem ?? null}, ${e.provider ?? e.origem ?? null}, ${e.provider ?? null}, ${e.responsavelId ?? null}::uuid,
                 ${e.leadLegadoId ?? null}::uuid,
+                (SELECT p.id FROM pipelines p WHERE p.organizacao_id = ${e.organizacaoId}::uuid AND p.slug = 'aquisicao'),
+                (SELECT pe.id FROM pipeline_etapas pe JOIN pipelines p ON p.id = pe.pipeline_id
+                  WHERE p.organizacao_id = ${e.organizacaoId}::uuid AND p.slug = 'aquisicao' AND pe.codigo = 'novo'),
                 coalesce(${instante(e.ocorridoEm)}::timestamptz, now()),
                 coalesce(${instante(e.ocorridoEm)}::timestamptz, now()))
         RETURNING id`);
       return r!.id;
+    },
+    async enriquecerAquisicao(aquisicaoId, e) {
+      // Só PREENCHE: COALESCE em tudo. O vínculo com o lead só entra se aquele lead ainda não
+      // tem aquisição (índice único em lead_legado_id).
+      await db.execute(sql`
+        UPDATE aquisicoes a SET
+          origem = COALESCE(NULLIF(a.origem, ''), ${e.origem ?? null}),
+          canal = COALESCE(NULLIF(a.canal, ''), ${e.provider ?? e.origem ?? null}),
+          source_provider = COALESCE(NULLIF(a.source_provider, ''), ${e.provider ?? null}),
+          empresa_id = COALESCE(a.empresa_id, ${e.empresaId}::uuid),
+          lead_legado_id = COALESCE(a.lead_legado_id, (
+            SELECT ${e.leadLegadoId ?? null}::uuid WHERE NOT EXISTS (
+              SELECT 1 FROM aquisicoes o WHERE o.lead_legado_id = ${e.leadLegadoId ?? null}::uuid))),
+          pipeline_id = CASE WHEN a.etapa_id IS NULL AND NOT a.qualificado AND a.desqualificado_em IS NULL
+                              AND COALESCE(a.nutricao_status, '') = '' THEN COALESCE(a.pipeline_id, np.pid) ELSE a.pipeline_id END,
+          -- só dá etapa inicial a quem ainda é "novo": qualificada, desqualificada ou em nutrição
+          -- sem etapa gravada tem estado derivado, e forçar "novo" o devolveria ao início.
+          etapa_id = CASE WHEN a.etapa_id IS NULL AND NOT a.qualificado AND a.desqualificado_em IS NULL
+                           AND COALESCE(a.nutricao_status, '') = '' THEN np.eid ELSE a.etapa_id END,
+          updated_at = now()
+        FROM (SELECT
+                (SELECT p.id FROM pipelines p WHERE p.organizacao_id = ${e.organizacaoId}::uuid AND p.slug = 'aquisicao') AS pid,
+                (SELECT pe.id FROM pipeline_etapas pe JOIN pipelines p ON p.id = pe.pipeline_id
+                  WHERE p.organizacao_id = ${e.organizacaoId}::uuid AND p.slug = 'aquisicao' AND pe.codigo = 'novo') AS eid) np
+        WHERE a.id = ${aquisicaoId}::uuid AND a.organizacao_id = ${e.organizacaoId}::uuid`);
     },
     async registrarChave(aquisicaoId, e) {
       if (!e.idempotencyKey) return;

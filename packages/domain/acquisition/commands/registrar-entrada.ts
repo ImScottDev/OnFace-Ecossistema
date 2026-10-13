@@ -73,6 +73,21 @@ export interface RepositorioAquisicao extends RepositorioIdentidade {
    * não recebe 200 rápido.
    */
   registrarChave(aquisicaoId: string, entrada: EntradaAquisicao): Promise<void>;
+  /**
+   * Trava transacional por identidade (e-mail e telefone normalizados).
+   *
+   * Dois webhooks quase simultâneos do mesmo lead (Meta direta + RD, por
+   * exemplo) liam "não existe pessoa/aquisição aberta" ao mesmo tempo e cada um
+   * criava a sua. A trava serializa as entradas da mesma identidade até o fim
+   * da transação; quem espera já enxerga o que o primeiro criou.
+   */
+  travarIdentidade(organizacaoId: string, email: string | null, telefone: string | null): Promise<void>;
+  /**
+   * Completa a aquisição já aberta com o que a nova entrada trouxe (etapa
+   * inicial, canal, origem, provider, empresa, vínculo com o lead legado),
+   * SEM sobrescrever o que já existe.
+   */
+  enriquecerAquisicao(aquisicaoId: string, entrada: EntradaAquisicao & { pessoaId: string | null; empresaId: string | null }): Promise<void>;
   registrarTouchpoint(aquisicaoId: string, entrada: EntradaAquisicao & { pessoaId: string | null; empresaId: string | null }): Promise<void>;
   /** Política de dono da fila de inbound. Devolve null quando não configurada,
    *  e aí a aquisição nasce sem dono, o que é um fato a reportar, não um erro
@@ -106,6 +121,8 @@ export async function registrarEntrada(
     return { ok: false, erro: "informe e-mail ou telefone", codigo: "SEM_IDENTIFICADOR" };
   }
 
+  await repo.travarIdentidade(entrada.organizacaoId, email, telefone);
+
   // Reentrega do mesmo fato externo devolve o que já existe.
   if (entrada.idempotencyKey) {
     const ja = await repo.acharAquisicaoPorChave(entrada.organizacaoId, entrada.idempotencyKey);
@@ -130,6 +147,7 @@ export async function registrarEntrada(
   //    chegando de novo, não um processo novo. Outra pessoa da mesma empresa abre a sua.
   const aberta = await repo.acharAquisicaoAberta(entrada.organizacaoId, pessoaId);
   if (aberta) {
+    await repo.enriquecerAquisicao(aberta.id, { ...entrada, pessoaId, empresaId });
     await repo.registrarTouchpoint(aberta.id, { ...entrada, pessoaId, empresaId });
     if (entrada.idempotencyKey) await repo.registrarChave(aberta.id, entrada);
     return { ok: true, aquisicaoId: aberta.id, pessoaId, empresaId, criada: false, semDono: false };

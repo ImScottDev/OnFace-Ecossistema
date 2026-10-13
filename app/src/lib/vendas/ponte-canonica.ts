@@ -16,6 +16,8 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { telefoneChaveSql } from "./identidade";
+import { chaveTelefone } from "@/lib/telefone";
 import { registrarEntrada, type EntradaAquisicao } from "@onface/acquisition";
 import { resolverPessoa } from "@onface/identity";
 import { criarRepositorioAquisicao } from "@onface/platform-database";
@@ -152,4 +154,57 @@ export async function garantirPessoaDeContato(
     console.error("[ponte-canonica] identidade de contato falhou; a mensagem seguiu:", e);
     return { ok: false, erro: String(e) };
   }
+}
+
+/**
+ * Serializa TODA a entrada de uma identidade (lead legado + pessoa + aquisição).
+ *
+ * A trava de `registrarEntrada` só cobre o canônico; o lead legado e a pessoa do
+ * `syncPessoaFromLead` nascem antes dela. Duas portas (Meta direta + RD) para o
+ * mesmo contato liam "não existe" ao mesmo tempo e cada uma criava o seu. Chave
+ * em espaço próprio ("entrada:"), diferente da do canônico, para a porta externa
+ * segurar uma e a ponte pegar a outra sem deadlock. Devolve a função que solta.
+ * Sempre soltar em `finally`.
+ */
+export async function travarEntrada(
+  organizacaoId: string, email?: string | null, telefone?: string | null,
+): Promise<() => void> {
+  const e = email?.trim().toLowerCase();
+  const t = telefone?.replace(/\D/g, "").slice(-10);
+  const chaves = [e ? `entrada:${organizacaoId}:e:${e}` : null, t && t.length >= 10 ? `entrada:${organizacaoId}:t:${t}` : null]
+    .filter((k): k is string => !!k).sort();
+  if (chaves.length === 0) return () => {};
+  let soltar!: () => void;
+  let adquirida!: () => void;
+  const seguro = new Promise<void>((r) => { soltar = r; });
+  const pronto = new Promise<void>((r) => { adquirida = r; });
+  db.transaction(async (tx) => {
+    for (const k of chaves) await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${k}, 0))`);
+    adquirida();
+    await seguro;
+  }).catch((err) => { console.error("[travarEntrada] falhou; seguindo sem trava:", err); }).finally(adquirida);
+  await pronto;
+  return soltar;
+}
+
+/**
+ * Lead legado da mesma pessoa, por e-mail (sem caixa/espaço) e telefone na
+ * MESMA chave de `resolverPessoa` (+55, máscara e 9º dígito não separam). Antes as
+ * portas comparavam texto cru, e o mesmo contato com "+5527..." de um lado e
+ * "27..." do outro virava um segundo lead e uma segunda pessoa.
+ */
+export async function acharLeadPorContato(
+  organizacaoId: string, email?: string | null, telefone?: string | null,
+): Promise<{ id: string; tipo: string; camposCustom: unknown; responsavelId: string | null; empresaId: string | null } | undefined> {
+  const e = email?.trim().toLowerCase() || null;
+  const chave = chaveTelefone(telefone);
+  if (!e && !chave) return undefined;
+  const [r] = await db.execute<{ id: string; tipo: string; campos_custom: unknown; responsavel_id: string | null; empresa_id: string | null }>(sql`
+    SELECT id::text, tipo, campos_custom, responsavel_id::text, empresa_id::text FROM leads
+     WHERE organizacao_id = ${organizacaoId}::uuid
+       AND (${e}::text IS NOT NULL AND lower(trim(email)) = ${e}
+            OR ${chave}::text IS NOT NULL AND (${telefoneChaveSql("telefone")} = ${chave} OR ${telefoneChaveSql("whatsapp")} = ${chave}))
+     ORDER BY (tipo = 'cliente'), created_at
+     LIMIT 1`);
+  return r && { id: r.id, tipo: r.tipo, camposCustom: r.campos_custom, responsavelId: r.responsavel_id, empresaId: r.empresa_id };
 }

@@ -10,7 +10,7 @@ import {
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
-import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
+import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "@/lib/vendas/ponte-canonica";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 
 /**
@@ -134,6 +134,7 @@ export async function POST(req: NextRequest) {
   const results: Array<{ status: string; leadId?: string; email?: string }> = [];
 
   for (const rd of rdLeads) {
+    let soltar: () => void = () => {};
     try {
       if (!isCallfaceLead(rd)) {
         results.push({ status: "skipped:not-callface", email: rd.email });
@@ -142,6 +143,7 @@ export async function POST(req: NextRequest) {
 
       const p: ParsedRdLead = parseRdLead(rd);
       const metaIds = await buscarMetaIdsStaging(p.email, p.telefone);
+      soltar = await travarEntrada(org.id, p.email, p.telefone ?? metaIds?.telefone);
 
       // Telefone: a fonte boa é a Meta, não o RD. A ponte Meta→RD lê o campo do
       // formulário pelo nome e, quando o form usa outro nome, grava lixo na
@@ -171,34 +173,7 @@ export async function POST(req: NextRequest) {
       const temFormData = !!(p.tipoNegocio || p.tamanhoBase || p.empresa);
 
       // Dedup por email (depois telefone) dentro da org
-      let existing:
-        | { id: string; tipo: string; camposCustom: unknown; responsavelId: string | null; empresaId: string | null }
-        | undefined;
-      if (p.email) {
-        [existing] = await db
-          .select({ id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
-          .from(leads)
-          .where(
-            and(eq(leads.organizacaoId, org.id), eq(leads.email, p.email))
-          )
-          // Prefere o lead do pipeline sobre o registro de cliente, pra uma
-          // reconversão de cliente atualizar o lead em vez de empilhar duplicata.
-          .orderBy(sql`case when ${leads.tipo} = 'cliente' then 1 else 0 end`)
-          .limit(1);
-      }
-      if (!existing && p.telefone) {
-        [existing] = await db
-          .select({ id: leads.id, tipo: leads.tipo, camposCustom: leads.camposCustom, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
-          .from(leads)
-          .where(
-            and(
-              eq(leads.organizacaoId, org.id),
-              eq(leads.telefone, p.telefone)
-            )
-          )
-          .orderBy(sql`case when ${leads.tipo} = 'cliente' then 1 else 0 end`)
-          .limit(1);
-      }
+      const existing = await acharLeadPorContato(org.id, p.email, p.telefone);
 
       // Empresa como entidade, não só texto: sem isso o lead cai no drawer como
       // "Sem cadastro — clique pra criar e vincular" e alguém tem que vincular à mão.
@@ -293,6 +268,7 @@ export async function POST(req: NextRequest) {
           tipo: "lead",
           status: "novo",
           sdrStatus: "pending",
+          estagioPreVendas: "novo",
           responsavelId: responsavelInboundId,
         })
         .returning({ id: leads.id });
@@ -355,6 +331,8 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       console.error("rd-lead webhook error for lead:", err);
       results.push({ status: "error:" + String(err), email: rd.email });
+    } finally {
+      soltar();
     }
   }
 
