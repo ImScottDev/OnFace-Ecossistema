@@ -209,7 +209,7 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], 
    * O que não tem command NÃO grava em silêncio: avisa e desfaz. Tela que
    * parece que gravou e não gravou é o defeito mais caro, porque não dá erro.
    */
-  const derivar = React.useCallback(async (f: { familia: any; resp: string; pessoa: string; motivo: string }) => {
+  const derivar = React.useCallback(async (f: { familia: any; resp: string; pessoa: string; etapa?: string; motivo: string }) => {
     if (!acoes.criarOportunidade) { toast.error("Derivar oportunidade ainda não é gravado por esta tela."); return; }
     if (!oportunidade.empresa.id || !oportunidade.responsavel.id || f.resp !== oportunidade.responsavel.nome) {
       toast.error("Só é possível derivar para o responsável atual desta oportunidade (a lista de equipe ainda não vem do banco).");
@@ -220,8 +220,34 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], 
       titulo: null, leadId: oportunidade.leadId,
     });
     if (!r.ok) { toast.error(r.erro); return; }
-    toast.success("Oportunidade criada.");
     const novo = r.dados?.ids?.[0];
+
+    /* A nota interna é obrigatória no modal: ela é o contexto para quem vai
+       tocar a nova oportunidade. Gravar pela mesma rota que a ficha usa, para
+       a nota nascer igual às outras. Falhar aqui não desfaz a oportunidade,
+       mas NÃO pode passar em silêncio — o modal pediu a nota. */
+    const nota = (f.motivo ?? "").trim();
+    let notaGravou = true;
+    if (novo && nota) {
+      const rn = await fetch("/api/notas", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conteudo: nota, negocioId: novo }),
+      }).catch(() => null);
+      notaGravou = !!rn?.ok;
+    }
+
+    /* O modal ainda pergunta a etapa inicial, e criarOportunidade não recebe
+       etapa: a nova nasce sempre na primeira. Avisar em vez de fingir.
+       (O contato principal do modal também não chega aqui com id — a lista do
+       desenho só carrega nome —, então a derivada herda o lead da origem.) */
+    const naoGravou = [
+      f.etapa && f.etapa !== "entrada" ? "a etapa inicial" : null,
+      !notaGravou && nota ? "a nota interna" : null,
+    ].filter(Boolean) as string[];
+
+    if (naoGravou.length) toast.warning(`Oportunidade criada, mas não gravei ${naoGravou.join(" nem ")}.`);
+    else toast.success("Oportunidade criada.");
+
     if (novo) router.push(`/pipeline/${novo}`); else router.refresh();
   }, [acoes, oportunidade, router]);
 

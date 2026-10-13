@@ -30,6 +30,7 @@ import { PropostaDesenho } from "./PropostaDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 import { nomeAposTrocarVariante, nomeDaLinha, precoDaNovaLinha } from "./linhas-da-proposta";
 import { SeletorCatalogo } from "./SeletorCatalogo";
+import { comIdGravado, idAoAbrir, semIdNoEditor } from "./proposta-id-no-estado";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -206,13 +207,13 @@ class Logica extends React.Component<any, any> {
       fechamento: O.familia === "PABX" || O.familia === "WHITE_LABEL" ? "contrato" : "checkout", minuta: O.familia === "WHITE_LABEL" ? "revenda" : O.familia === "PABX" ? "locacao" : "saas", sigs: [{ nome: O.pessoa || "", email }], testemunhas: false,
       forma: "cliente", auto: true, canais: ["email"].concat((LD && (LD.tel || LD.telefone)) || (PP && PP.telefone) ? ["whatsapp"] : []), cc: [], assunto: "", intro: "", msgWa: "", wa: (LD && (LD.tel || LD.telefone)) || (PP && PP.telefone) || "", repCf: this.eu, vendAssina: true, prazoData: "", destinatarios: [O.pessoa].filter(Boolean), extras: [], teste: false, testeDias: "7", setupForma: "vista", canal: "email", para: email, msg: ""
     };
-    const deProp = (p) => Object.assign({}, base, p.editor || {}, {
+    const deProp = (p) => Object.assign({}, base, semIdNoEditor(p.editor || {}), {
       titulo: (p.editor && p.editor.titulo) || base.titulo, validade: p.validade || 30, fechamento: p.modo === "PREPAID" ? "checkout" : ((p.editor && p.editor.fechamento) || "contrato"),
       itens: (p.itens || []).map(it => ({ prod: it.prod, preco: it.preco, nome: it.nome, desc: it.desc || "", natureza: it.natureza || "MRR", valor: String(it.valor).replace(".", ","), qtd: String(it.qtd || 1), descTipo: it.descTipo || "pct", descVal: it.descVal || "" }))
     });
     const Es = this.E, pv = Es && Es.parametro ? Es.parametro("ver") : null;
-    if (pv != null && pv !== "" && props[+pv]) { const pp = props[+pv]; return this.setState({ d: Object.assign(deProp(pp), { codigo: pp.codigo, versao: pp.versao || 1 }), idx: +pv, modo: "ver", expandido: true, sujo: false, verVig: pp === vig }); }
-    if (vig && vig.status === "rascunho") return this.setState({ d: Object.assign(deProp(vig), { codigo: vig.codigo, versao: vig.versao || 1 }), idx: vi, modo: "editar", baseInfo: null, salvoEm: "" });
+    if (pv != null && pv !== "" && props[+pv]) { const pp = props[+pv]; return this.setState({ d: Object.assign(deProp(pp), { id: idAoAbrir("ver", pp), codigo: pp.codigo, versao: pp.versao || 1 }), idx: +pv, modo: "ver", expandido: true, sujo: false, verVig: pp === vig }); }
+    if (vig && vig.status === "rascunho") return this.setState({ d: Object.assign(deProp(vig), { id: idAoAbrir("editar", vig), codigo: vig.codigo, versao: vig.versao || 1 }), idx: vi, modo: "editar", baseInfo: null, salvoEm: "" });
     if (vig) return this.setState({ d: Object.assign(deProp(vig), { codigo: vig.codigo, versao: (vig.versao || 1) + 1 }), idx: null, modo: "versao", baseIdx: vi, baseInfo: "Nova versão da v" + (vig.versao || 1) + " · " + ({ enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado", aceita: "Aceita" }[vig.status] || vig.status), sujo: true });
     this.setState({ d: Object.assign(base, { codigo: "nova", versao: 1 }), idx: null, modo: "novo", sujo: true });
   }
@@ -291,7 +292,7 @@ class Logica extends React.Component<any, any> {
     return Object.assign({ codigo: d.codigo, versao: d.versao, status, modo: d.fechamento === "checkout" ? "PREPAID" : "CONTRACT", validade: d.validade,
       signatarios: d.fechamento === "contrato" ? this.signatariosDe(d) : [],
       itens: d.itens.filter(it => (it.nome || "").trim()).map(it => ({ prod: it.prod, preco: it.preco, nome: it.nome.trim(), desc: it.desc || "", natureza: it.natureza, valor: n(it.valor), qtd: n(it.qtd) || 1, descTipo: it.descTipo || "pct", descVal: it.descVal || "", liq: n(it.valor) * (n(it.qtd) || 1) - this.descItem(it, n(it.valor) * (n(it.qtd) || 1)) })),
-      editor: JSON.parse(JSON.stringify(Object.assign({}, d, { itens: undefined, ct }))) }, extra || {});
+      editor: JSON.parse(JSON.stringify(Object.assign({}, semIdNoEditor(d), { itens: undefined, ct }))) }, extra || {});
   }
 
   renderVals() {

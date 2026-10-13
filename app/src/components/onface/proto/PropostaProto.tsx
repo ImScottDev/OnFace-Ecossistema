@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import type { ItemCatalogo } from "@/lib/vendas/propostas";
 import type { Resultado } from "@/lib/vendas/resultado";
 import { PropostaLiga } from "./PropostaLiga";
+import { comIdGravado } from "./proposta-id-no-estado";
 import { levarParametros } from "./rota-do-desenho";
 import { catalogoDoDesenho } from "./catalogo-do-desenho";
 import { usePecas } from "./pecas-host";
@@ -189,7 +190,10 @@ class PropostaLigada extends PropostaLiga {
     const alvo = st.modo === "editar" && st.idx != null ? props[st.idx] : null;
     const base = st.modo === "versao" && st.baseIdx != null ? props[st.baseIdx] : null;
     const r = super.gravar(propPatch, oppPatch, evento);
-    (this as any).props.persistir?.(propPatch, evento, { alvoId: alvo?.id ?? null, baseId: base?.id ?? null });
+    /* O id da proposta gravada volta para o estado: o link público (/p/<id>) só existe a partir dele,
+       e na NOVA VERSÃO (revisão) o id nasce agora, no servidor. */
+    const aoGravar = (id: string) => (this as any).setState((s: any) => ({ d: comIdGravado(s.d, id) }));
+    (this as any).props.persistir?.(propPatch, evento, { alvoId: alvo?.id ?? null, baseId: base?.id ?? null, aoGravar });
     return r;
   }
 }
@@ -254,7 +258,7 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
    * o e-mail. São dois passos porque são dois fatos: criar um rascunho não
    * avisa ninguém, enviar avisa o cliente.
    */
-  const persistir = React.useCallback(async (proposta: any, evento: string | null, alvo?: { alvoId: string | null; baseId: string | null }) => {
+  const persistir = React.useCallback(async (proposta: any, evento: string | null, alvo?: { alvoId: string | null; baseId: string | null; aoGravar?: (id: string) => void }) => {
     const { itens, semPreco } = itensParaCriar(proposta?.itens);
 
     if (semPreco.length) {
@@ -327,6 +331,7 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
 
     if (!criada.ok) { toast.error(criada.erro); return; }
     const id = criada.dados?.propostaId;
+    if (id) alvo?.aoGravar?.(id);
 
     /* O desenho marca `status: "enviada"` quando o usuário conclui o fluxo de
        envio. Criar sempre nasce rascunho no domínio, então o envio é um
