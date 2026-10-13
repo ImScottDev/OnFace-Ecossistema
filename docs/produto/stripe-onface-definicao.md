@@ -98,3 +98,12 @@ Para cada item, comparar o que existe no repositório e na conta Stripe real e r
 - reconciliação;
 - permissões;
 - logs e reprocessamento.
+
+## Estado em 13/10/2026 (auditoria) e lotes
+- Conta Stripe COMPARTILHADA com o SaaS (87/405 assinaturas com metadata do SaaS). Não tocar em objetos do SaaS.
+- Lote 1 catálogo (15 Products de test mode no espelho; espelho só pega 3 prefixos) — em andamento.
+- Lote 2 metadata + Customer único (1/404 Customers com metadata CRM; 37 empresas com >1 Customer) — pendente.
+- Lote 3 alteração de assinatura no Cliente 360 (funções existem sem chamador) — em andamento.
+- Lote 4 webhooks faltantes (invoice.created/overdue, customer.updated, payment_method.*, trial_will_end, payment_action_required), fila de reprocesso sem produtor, 1 invoice.paid PENDING desde 14/09 — pendente.
+- Lote 5 timeline financeira (0 eventos) + pagamentos FAILED/REFUNDED + receivable_state — pendente.
+- Lote 6 Portal do ONFACE (config crm-cliente-360-v1 não existe na conta) + reconciliação com relatório (billing_audit_runs = 0; teto de 50 páginas no sync) — pendente.
