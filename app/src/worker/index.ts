@@ -2815,6 +2815,12 @@ async function enfileirarSyncCallfaceAiSeAtrasado(): Promise<void> {
     await callfaceAiQueue.add("callface-ai-sync", { origem: "subida" }, {
       jobId: `callface-ai-sync-subida-${Math.floor(Date.now() / 3_600_000)}`,
       delay: 60_000, // deixa o worker terminar de subir antes de pegar o RDS
+      // O job sai da fila assim que termina. Sem isto, uma rodada que terminou
+      // SEM sucesso deixava o `jobId` da hora ocupado e o `add` do próximo
+      // deploy virava no-op silencioso — foi o que prendeu o sync em 13/10,
+      // já com a correção publicada. Empilhar não é risco: a guarda das 5,5 h
+      // acima só deixa enfileirar enquanto não houve sucesso.
+      removeOnComplete: true, removeOnFail: true,
     });
     console.log(`[Worker] callface-ai-sync enfileirado na subida (último sucesso: ${idade === null ? "nunca" : `${idade.toFixed(1)} h`})`);
   } catch (err) {
