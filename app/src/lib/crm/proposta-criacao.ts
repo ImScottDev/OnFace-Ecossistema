@@ -11,6 +11,7 @@ import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores"
 import { syncOportunidadeItensFromProposta, resolverServiceFamiliesPorCatalogoIds, mapTipoParaRevenueNature } from "@/lib/crm/composicao-comercial";
 import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem } from "@/lib/crm/commercial-model";
 import { ehFamiliaValida, RegraDeNegocio } from "@/lib/vendas/dominio";
+import { calcularItens } from "@/lib/crm/proposta-regras";
 
 export interface ItemEntrada {
   servicoCatalogoId?: string | null;
@@ -62,11 +63,6 @@ async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
     .innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
     .where(inArray(catalogoPrecos.id, unicos));
   return new Map(rows.map((r) => [r.id, r]));
-}
-
-function calcSubtotal(qty: number, unit: number, desc: number, descTipo: string = "percentual") {
-  if (descTipo === "valor") return Math.round((qty * unit - desc) * 100) / 100;
-  return Math.round(qty * unit * (1 - desc / 100) * 100) / 100;
 }
 
 type ItemCalculado = ItemEntrada & { subtotal: number; ordem: number };
@@ -176,12 +172,7 @@ export async function criarPropostaComItens(opts: {
     .where(eq(propostas.organizacaoId, opts.organizacaoId));
   const numero = (maxNum || 0) + 1;
 
-  let totalRecorrente = 0, totalAvulso = 0;
-  const itensWithCalc = opts.itens.map((item, idx) => {
-    const subtotal = calcSubtotal(item.quantidade, item.valorUnitario, item.desconto, item.descontoTipo);
-    if (item.tipo === "recorrente") totalRecorrente += subtotal; else totalAvulso += subtotal;
-    return { ...item, subtotal, ordem: item.ordem ?? idx };
-  });
+  const { itens: itensWithCalc, totalRecorrente, totalAvulso } = calcularItens(opts.itens);
 
   const today = new Date().toISOString().split("T")[0];
   const [proposta] = await db.insert(propostas).values({
@@ -241,10 +232,7 @@ export async function atualizarItensDoRascunho(opts: {
   }
   if (opts.itens.length === 0) throw new RegraDeNegocio("proposta_sem_itens", "A proposta precisa de pelo menos um item.");
 
-  const calc = opts.itens.map((item, idx) => ({
-    ...item, ordem: idx,
-    subtotal: calcSubtotal(item.quantidade, item.valorUnitario, item.desconto, item.descontoTipo),
-  }));
+  const calc = calcularItens(opts.itens.map((item, idx) => ({ ...item, ordem: idx }))).itens;
   const mantidos = calc.filter((i) => i.itemExistenteId);
   const novos = calc.filter((i) => !i.itemExistenteId);
 

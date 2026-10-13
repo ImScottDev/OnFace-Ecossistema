@@ -29,6 +29,7 @@ import {
   assinarContratoPublico,
 } from "@/lib/crm/proposta-publica";
 import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
+import { calcularItens } from "@/lib/crm/proposta-regras";
 import { agruparItensPorLinhaComercial, organizarVendaMultiLinha } from "@/lib/crm/oportunidade-bundle";
 import { appUrl } from "@/lib/app-url";
 import { isDocumensoConfigured } from "@/lib/crm/signature/documenso-provider";
@@ -129,11 +130,6 @@ const aceitarBodySchema = z.object({
 const recusarBodySchema = z.object({
   motivo: z.string().optional(),
 });
-
-function calcSubtotal(qty: number, unit: number, desc: number, descTipo: string = "percentual") {
-  if (descTipo === "valor") return Math.round((qty * unit - desc) * 100) / 100;
-  return Math.round(qty * unit * (1 - desc / 100) * 100) / 100;
-}
 
 // GET /propostas
 // Extraído 25/08 (achado do Kauã: filtrar a lista não refletia nos KPIs/
@@ -930,6 +926,10 @@ app.patch("/propostas/:id", async (c) => {
       }, 400);
     }
 
+    // Valida e calcula ANTES de apagar qualquer coisa: item inválido não pode deixar a proposta sem linhas.
+    const moeda = (parsed.data.moeda || "BRL") as string;
+    const { itens: itensWithCalc, totalRecorrente, totalAvulso } = calcularItens(parsed.data.itens);
+
     // Commercial Core (ADR-EXEC-020): oportunidade_itens.proposta_item_id_legado
     // é FK (RESTRICT) pra proposta_itens — sem limpar antes, o DELETE abaixo quebra.
     if (existing.negocioId) {
@@ -939,15 +939,6 @@ app.patch("/propostas/:id", async (c) => {
     // Delete existing items
     await db.delete(propostaItens).where(eq(propostaItens.propostaId, id));
 
-    let totalRecorrente = 0;
-    let totalAvulso = 0;
-    const moeda = (parsed.data.moeda || "BRL") as string;
-    const itensWithCalc = parsed.data.itens.map((item, idx) => {
-      const subtotal = calcSubtotal(item.quantidade, item.valorUnitario, item.desconto, item.descontoTipo);
-      if (item.tipo === "recorrente") totalRecorrente += subtotal;
-      else totalAvulso += subtotal;
-      return { ...item, subtotal, ordem: item.ordem ?? idx };
-    });
 
     const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
     const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
