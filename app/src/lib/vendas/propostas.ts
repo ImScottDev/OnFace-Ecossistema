@@ -39,6 +39,12 @@ export interface ItemCatalogo {
   naturezaReceita: NaturezaReceita | "UNKNOWN";
   familia: string | null;
   exigeContrato: boolean;
+  /** Descrição do produto no Stripe (texto de venda, não o sku/lookup_key). */
+  descricao?: string | null;
+  /** mensal | anual | unico — a recorrência real do Price. */
+  periodo?: string | null;
+  /** lookup_key do Price: só para detectar variação que é o próprio lookup_key; nunca vai para a tela. */
+  lookupKey?: string | null;
 }
 
 /**
@@ -58,16 +64,18 @@ export async function catalogoDaFamilia(organizacaoId: string, familia: Familia)
     catalogo_preco_id: string; servico_catalogo_id: string; nome: string;
     variacao: string | null; sku: string | null; valor: string;
     revenue_nature: string; service_family: string | null; exige_contrato: boolean;
+    descricao: string | null; periodo: string | null; lookup_key: string | null;
   }>(sql`
     SELECT cp.id::text AS catalogo_preco_id, sc.id::text AS servico_catalogo_id,
            sc.nome, cp.variacao, cp.sku, cp.valor::text,
-           cp.revenue_nature, sc.service_family, cp.exige_contrato
+           cp.revenue_nature, sc.service_family, cp.exige_contrato,
+           sc.descricao, cp.periodo, cp.lookup_key
       FROM catalogo_precos cp
       JOIN servicos_catalogo sc ON sc.id = cp.servico_catalogo_id
      WHERE sc.organizacao_id = ${organizacaoId}::uuid
        AND sc.service_family = ${familia}
        AND COALESCE(cp.ativo, true) = true
-     ORDER BY sc.nome, cp.variacao
+     ORDER BY sc.categoria NULLS LAST, sc.nome, cp.ordem, cp.valor, cp.variacao
   `);
 
   return linhas.map((l) => ({
@@ -80,6 +88,9 @@ export async function catalogoDaFamilia(organizacaoId: string, familia: Familia)
     naturezaReceita: (l.revenue_nature as NaturezaReceita) ?? "UNKNOWN",
     familia: l.service_family,
     exigeContrato: l.exige_contrato,
+    descricao: l.descricao,
+    periodo: l.periodo,
+    lookupKey: l.lookup_key,
   }));
 }
 

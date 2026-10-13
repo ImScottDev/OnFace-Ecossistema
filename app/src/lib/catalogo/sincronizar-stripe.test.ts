@@ -83,7 +83,7 @@ test("preço sem apelido não aparece em branco na tela", () => {
   // 8 dos 55 preços vivos não têm apelido nem lookup_key. Campo vazio numa
   // lista de escolha é pior que um rótulo genérico: ninguém sabe o que clicar.
   assert.equal(variacaoDoPreco(preco({ apelido: "Mensal recorrente" })), "Mensal recorrente");
-  assert.equal(variacaoDoPreco(preco({ apelido: null, lookupKey: "pabx_canais_08_canais" })), "pabx canais 08 canais");
+  assert.equal(variacaoDoPreco(preco({ apelido: null, lookupKey: "pabx_canais_08_canais", recorrente: true, intervalo: "month" })), "Mensal");
   assert.equal(variacaoDoPreco(preco({ apelido: null, lookupKey: null, recorrente: true, intervalo: "month" })), "Mensal");
   assert.equal(variacaoDoPreco(preco({ apelido: null, lookupKey: null, recorrente: false, intervalo: null })), "Avulso");
 });

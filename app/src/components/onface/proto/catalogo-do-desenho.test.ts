@@ -95,3 +95,32 @@ describe("catalogoDoDesenho", () => {
     assert.equal(c.CALLFACE_AI[0].precos[0].v, 1799.9);
   });
 });
+
+describe("variações com nome amigável", () => {
+  it("a descrição do produto vai no cartão; o sku/lookup_key nunca", () => {
+    const c = catalogoDoDesenho({ PABX: [item({ sku: "pabx_canais_32_canais", descricao: "Canais simultâneos" })] });
+    assert.equal(c.PABX[0].desc, "Canais simultâneos");
+    assert.equal(catalogoDoDesenho({ PABX: [item({ sku: "pabx_x" })] }).PABX[0].desc, "");
+  });
+
+  it("variação que é o lookup_key cru vira o período", () => {
+    const c = catalogoDoDesenho({ PABX: [item({ variacao: "pabx canais 08 canais", lookupKey: "pabx_canais_08_canais", periodo: "mensal" })] });
+    assert.equal(c.PABX[0].precos[0].d, "Mensal");
+  });
+
+  it("deixa a recorrência explícita e usa o período do Price", () => {
+    const c = catalogoDoDesenho({ PABX: [
+      item({ nome: "PABX - Canais", variacao: "PABX - Canais — 32 Canais", periodo: "anual" }),
+      item({ catalogoPrecoId: "p2", nome: "PABX - Canais", variacao: "PABX - Canais — 16 Canais", periodo: "mensal" }),
+    ] });
+    assert.deepEqual(c.PABX[0].precos.map((x) => [x.d, x.int]), [["32 Canais · anual", "ano"], ["16 Canais · mensal", "mes"]]);
+  });
+
+  it("Prices indistinguíveis viram uma escolha só", () => {
+    const c = catalogoDoDesenho({ PABX: [
+      item({ catalogoPrecoId: "a", naturezaReceita: "ONE_TIME", variacao: "Avulso" }),
+      item({ catalogoPrecoId: "b", naturezaReceita: "ONE_TIME", variacao: "Avulso" }),
+    ] });
+    assert.equal(c.PABX[0].precos.length, 1);
+  });
+});

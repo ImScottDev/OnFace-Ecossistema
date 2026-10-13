@@ -48,6 +48,8 @@ function intervaloDe(item: ItemCatalogo): PrecoDoDesenho["int"] {
   // `MRR` é a ÚNICA natureza recorrente do domínio (`NATUREZAS_RECEITA`): o
   // anual também é MRR, e o que o distingue é a variação, não a natureza.
   if (item.naturezaReceita !== "MRR") return "avulso";
+  if (item.periodo === "anual") return "ano";
+  if (item.periodo === "mensal") return "mes";
   return /anual|\bano\b/i.test(item.variacao ?? "") ? "ano" : "mes";
 }
 
@@ -66,13 +68,21 @@ function tipoDe(natureza: ItemCatalogo["naturezaReceita"]): ProdutoDoDesenho["ti
  * ("Callface AI - Full — Mensal"). Dentro do cartão do produto, que já mostra
  * o nome, isso vira ruído — fica só o que distingue um preço do outro.
  */
-function rotuloDoPreco(item: ItemCatalogo): string {
+export function rotuloDoPreco(item: ItemCatalogo): string {
   const bruto = (item.variacao ?? "").trim();
-  if (!bruto) return "Padrão";
+  const chave = (item.lookupKey ?? "").replace(/_/g, " ").trim().toLowerCase();
+  // Variação que é o lookup_key cru nunca vai para a tela: o período diz o que ela é.
+  if (!bruto || (chave && bruto.toLowerCase() === chave)) {
+    return item.periodo === "anual" ? "Anual" : item.periodo === "mensal" ? "Mensal" : item.periodo === "unico" ? "Avulso" : "Padrão";
+  }
   const semONome = bruto.startsWith(item.nome)
     ? bruto.slice(item.nome.length).replace(/^\s*[—–-]\s*/, "").trim()
     : bruto;
-  return semONome || bruto;
+  const rotulo = semONome || bruto;
+  // Recorrente vs avulso sempre visível: setup/one-time não é MRR.
+  if (/mensal|anual|avulso|\bano\b|\bm[eê]s\b/i.test(rotulo)) return rotulo;
+  const int = intervaloDe(item);
+  return `${rotulo} · ${int === "mes" ? "mensal" : int === "ano" ? "anual" : "avulso"}`;
 }
 
 /**
@@ -96,7 +106,7 @@ export function catalogoDoDesenho(
         p = {
           id: item.servicoCatalogoId,
           nome: item.nome,
-          desc: item.sku ?? "",
+          desc: item.descricao?.trim() ?? "",
           tipo: tipoDe(item.naturezaReceita),
           unidade: "un.",
           qtd: 1,
@@ -109,15 +119,18 @@ export function catalogoDoDesenho(
       // linha vista tenha sido a avulsa.
       if (p.tipo === "pacote" && tipoDe(item.naturezaReceita) === "plano") p.tipo = "plano";
 
-      p.precos.push({
+      const novo = {
         id: item.catalogoPrecoId,
         v: Number(item.valor),
         int: intervaloDe(item),
         d: rotuloDoPreco(item),
-        padrao: 0,
+        padrao: 0 as const,
         min: null,
         max: null,
-      });
+      };
+      // Dois Prices que o vendedor não distingue (mesmo rótulo, valor e recorrência) viram uma escolha só.
+      if (p.precos.some((x) => x.d === novo.d && x.v === novo.v && x.int === novo.int)) continue;
+      p.precos.push(novo);
     }
 
     for (const p of porServico.values()) {

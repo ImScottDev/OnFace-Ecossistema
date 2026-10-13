@@ -87,12 +87,11 @@ export function tipoDoPreco(preco: PrecoStripe, categoria: string | null): strin
  * Como o preço aparece para quem monta a proposta.
  *
  * O apelido do Stripe é a primeira escolha porque foi escrito para humano. Sem
- * ele, o lookup_key legível serve. Sem os dois, o período é melhor que campo
+ * ele, o período (nunca o lookup_key cru, que é nome técnico) é melhor que campo
  * vazio numa lista de escolha.
  */
 export function variacaoDoPreco(preco: PrecoStripe): string {
   if (preco.apelido?.trim()) return preco.apelido.trim();
-  if (preco.lookupKey?.trim()) return preco.lookupKey.trim().replace(/_/g, " ");
   return periodoDoPreco(preco) === "unico" ? "Avulso" : periodoDoPreco(preco) === "anual" ? "Anual" : "Mensal";
 }
 

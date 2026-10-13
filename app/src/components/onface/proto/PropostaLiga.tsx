@@ -501,8 +501,8 @@ class Logica extends React.Component<any, any> {
         const varios = p.precos.length > 1;
         const ints = p.precos.map(x => IL[x.int]).filter((x, k, a) => a.indexOf(x) === k);
         return { nome: p.nome, desc: p.desc, nPrecos: p.precos.length + (varios ? " preços" : " preço"),
-          preco: (varios ? "a partir de " : "") + brlP(p, menor),
-          precoSub: ja ? nLinhas + (nLinhas > 1 ? " linhas" : " linha") + " na proposta" : tier ? p.precos.length + " faixas por quantidade" : varios ? ints.join(" ou ") : ints[0],
+          preco: varios ? p.precos.length + " variações" : brlP(p, menor),
+          precoSub: ja ? nLinhas + (nLinhas > 1 ? " itens" : " item") + " na proposta · troque a variação no item" : tier ? p.precos.length + " faixas por quantidade" : varios ? ints.join(" · ") : ints[0],
           dica: ja ? "Adicionar mais uma linha deste produto (outra variante, quantidade ou valor)" : "Adicionar à proposta",
           addD: "M12 5v14M5 12h14",
           add: () => { addPr(null); this.diz(p.nome + (ja ? ": mais uma linha adicionada" : " adicionado"), "ok"); },
