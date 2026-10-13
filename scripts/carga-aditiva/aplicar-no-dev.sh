@@ -8,7 +8,7 @@ K="$HOME/.ssh/infra_callface.pem"; H="ubuntu@34.204.200.52"; PG=callface-crm2-de
 TS=$(date +%Y%m%d-%H%M); SCR="callface_freshprod_$TS"; D="$HOME/callface-virada"
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"; PLAN="${PLANILHA:-$HOME/Downloads/Faturamento callface 09-2026-(Planilha1).csv}"
 export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"; mkdir -p "$D"
-sh() { ssh -i "$K" "$H" "$@"; }; dpsql() { sh "docker exec -i $PG psql -U callface -X -q -v ON_ERROR_STOP=1 $*"; }
+sh() { ssh -i "$K" "$H" "$@"; }; dpsql() { sh "docker exec -i $PG psql -U callface -X -q -v ON_ERROR_STOP=1 $(printf '%q ' "$@")"; }
 
 echo "[1] disco e migrations"; sh "df -h / | tail -1"
 [ "$(dpsql -d $DB -At -c "select count(*) from _migracoes_aplicadas where nome like '0103%' or nome like '0104%'")" = 2 ] || { echo "0103/0104 ainda nao aplicadas: espere o deploy" >&2; exit 1; }
