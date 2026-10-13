@@ -100,7 +100,11 @@ export function classificarProduto(p: ProdutoStripe): {
 } {
   const faltando: string[] = [];
   const familia = FAMILIA_DA_METADATA[p.metadata.familia ?? ""] ?? familiaPeloNome(p.nome);
-  if (!p.metadata.familia) faltando.push("metadata.familia (deduzida do prefixo do nome)");
+  if (!p.metadata.familia) {
+    faltando.push(familia
+      ? "metadata.familia (deduzida do prefixo do nome)"
+      : "metadata.familia (sem prefixo conhecido: espelhado como UNKNOWN, fora do construtor de proposta)");
+  }
 
   // A categoria não tem regra de nome. Sem metadata, fica pendente de verdade.
   const categoria = p.metadata.categoria_crm?.trim() || null;
@@ -140,7 +144,7 @@ export async function sincronizarCatalogoStripe(
         requer_contrato, ativo, origem_catalogo, catalogo_sincronizado_em, tipo, moeda
       ) VALUES (
         ${organizacaoId}::uuid, ${p.id}, ${p.nome}, ${p.descricao}, ${p.descricaoExtrato},
-        ${p.etiquetaUnidade}, ${familia}, ${categoria}, ${p.metadata.sku_interno ?? null},
+        ${p.etiquetaUnidade}, ${familia ?? "UNKNOWN"}, ${categoria}, ${p.metadata.sku_interno ?? null},
         ${p.metadata.destino_pos_venda ?? null}, ${exigeContrato}, ${p.ativo},
         'oficial_stripe', now(), 'recorrente', 'BRL'
       )

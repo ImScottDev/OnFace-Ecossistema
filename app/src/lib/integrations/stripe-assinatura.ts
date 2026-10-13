@@ -30,13 +30,14 @@ function chave(): string {
   return k;
 }
 
-async function stripe<T>(
+export async function stripe<T>(
   path: string,
   form?: URLSearchParams,
   idempotencyKey?: string,
+  metodo?: "DELETE",
 ): Promise<T> {
   const res = await fetch(`${STRIPE_API}/${path}`, {
-    method: form ? "POST" : "GET",
+    method: metodo ?? (form ? "POST" : "GET"),
     headers: {
       Authorization: `Bearer ${chave()}`,
       "Stripe-Version": STRIPE_API_VERSION,
@@ -153,11 +154,13 @@ export async function previaDeAlteracao(params: {
   stripeCustomerId: string;
   /** Itens no formato do Stripe: `{ id?, price, quantity, deleted? }`. */
   itens: { id?: string; price?: string; quantity?: number; deleted?: boolean }[];
+  /** `none` = vale no próximo ciclo (downgrade). Padrão: cobra a proração agora. */
+  prorationBehavior?: "always_invoice" | "none";
 }): Promise<PreviaDeAlteracao> {
   const form = new URLSearchParams();
   form.append("customer", params.stripeCustomerId);
   form.append("subscription", params.stripeSubscriptionId);
-  form.append("subscription_details[proration_behavior]", "always_invoice");
+  form.append("subscription_details[proration_behavior]", params.prorationBehavior ?? "always_invoice");
   params.itens.forEach((it, i) => {
     if (it.id) form.append(`subscription_details[items][${i}][id]`, it.id);
     if (it.price) form.append(`subscription_details[items][${i}][price]`, it.price);
@@ -192,7 +195,7 @@ export interface ResultadoAlteracao {
 }
 
 /** O MRR da assinatura, calculado do objeto do Stripe (mensalizado). */
-function mrrDaAssinatura(sub: {
+export function mrrDaAssinatura(sub: {
   items?: { data: { quantity?: number; price?: { unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number } | null } }[] };
 }): number {
   let total = 0;

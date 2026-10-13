@@ -36,11 +36,11 @@ test("White Label é classificado antes de Callface AI", () => {
   assert.equal(familiaPeloNome("PABX - Ramal"), "PABX");
 });
 
-test("produto fora dos prefixos não entra no catálogo", () => {
+test("produto fora dos prefixos é espelhado sem família (UNKNOWN), não no construtor", () => {
   // O Stripe tem 56 produtos ativos e a maioria é histórica: cobrança pontual,
   // contrato antigo, negociação específica. Elas faturam e não são catálogo.
   for (const n of ["SETUP", "CALLFACE AI", "COLD CALLING - 2025", "PARCEIRO G30 - MENSALIDADE"]) {
-    assert.equal(familiaPeloNome(n), null, `"${n}" não é produto de catálogo`);
+    assert.equal(familiaPeloNome(n), null, `"${n}" não tem família pelo nome`);
   }
 });
 
@@ -106,4 +106,10 @@ test("o importador de snapshot está desarmado", () => {
     path.join(import.meta.dirname, "..", "..", "scripts", "importar-catalogo-oficial.ts"), "utf8");
   assert.match(src, /APOSENTADO/, "o script tem que dizer que está aposentado");
   assert.match(src, /process\.exit\(1\)/, "e recusar rodar, não só avisar");
+});
+
+test("produto sem metadata nem prefixo é nomeado como espelhado fora do construtor", () => {
+  const c = classificarProduto(produto({ nome: "SETUP", metadata: {} }));
+  assert.equal(c.familia, null);
+  assert.ok(c.faltando.some((f) => f.includes("UNKNOWN")));
 });

@@ -117,13 +117,19 @@ async function listarTudo<T extends BrutoStripe>(
   throw new Error(`Stripe ${caminho}: mais de 40 páginas, provavelmente filtro errado`);
 }
 
-/** Um produto é de catálogo quando o nome começa por um dos prefixos combinados. */
+/** Prefixo do catálogo NOVO: só decide a família quando a metadata não diz; não filtra mais o espelho. */
 export function ehProdutoDeCatalogo(nome: string): boolean {
   return PREFIXOS_CATALOGO.some((p) => nome.startsWith(p));
 }
 
 /**
- * Lê o catálogo vendável do Stripe.
+ * Lê o catálogo do Stripe: TODOS os Products com ao menos um Price.
+ *
+ * Antes só os 3 prefixos de nome entravam, e os Products que faturam fora
+ * deles (SETUP, CALLFACE AI, AGENTE DE IA...) ficavam invisíveis ao ONFACE.
+ * Sem `metadata.familia` nem prefixo, o produto é espelhado com família
+ * UNKNOWN: aparece no financeiro, mas fora do construtor de proposta (que só
+ * oferece famílias classificadas) até alguém preencher a metadata no Stripe.
  *
  * Inclui INATIVOS de propósito: preço desativado lá precisa ser desativado
  * aqui, e para isso a sincronização tem que enxergá-lo. Sumir da lista e sumir
@@ -132,7 +138,6 @@ export function ehProdutoDeCatalogo(nome: string): boolean {
 export async function lerCatalogoDoStripe(): Promise<CatalogoStripe> {
   const brutosProduto = await listarTudo<BrutoStripe>("products", {});
   const produtos: ProdutoStripe[] = brutosProduto
-    .filter((p) => ehProdutoDeCatalogo(String(p.name ?? "")))
     .map((p) => ({
       id: String(p.id),
       nome: String(p.name ?? ""),
@@ -143,8 +148,9 @@ export async function lerCatalogoDoStripe(): Promise<CatalogoStripe> {
       metadata: (p.metadata as Record<string, string>) ?? {},
     }));
 
-  const idsProduto = new Set(produtos.map((p) => p.id));
   const brutosPreco = await listarTudo<BrutoStripe>("prices", {});
+  const comPreco = new Set(brutosPreco.map((p) => String(p.product)));
+  const idsProduto = new Set(produtos.filter((p) => comPreco.has(p.id)).map((p) => p.id));
   const precos: PrecoStripe[] = brutosPreco
     .filter((p) => idsProduto.has(String(p.product)))
     .map((p) => {
@@ -166,5 +172,6 @@ export async function lerCatalogoDoStripe(): Promise<CatalogoStripe> {
       };
     });
 
-  return { produtos, precos, lidoEm: new Date() };
+  // Produto sem nenhum Price não fatura nem se vende: não polui o espelho.
+  return { produtos: produtos.filter((p) => idsProduto.has(p.id)), precos, lidoEm: new Date() };
 }
