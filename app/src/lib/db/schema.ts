@@ -3209,6 +3209,13 @@ export const fulfillments = pgTable(
     // coluna que existe no banco e não no Drizzle é invisível para o código.
     dueAt: timestamp("due_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    // Migration 0125 — uma entrega por VENDA. `servicoCanonicoId` acima é o serviço
+    // PRINCIPAL; os demais da mesma venda estão em `fulfillment_servicos`.
+    oportunidadeId: uuid("oportunidade_id").references(() => oportunidades.id),
+    // Upgrade: a entrega anterior (mesmo cliente, mesma família) cujas etapas cumpridas não se repetem.
+    // Sem .references() no Drizzle: autorreferência quebra a inferência de tipo; a FK existe na migration.
+    fulfillmentAnteriorId: uuid("fulfillment_anterior_id"),
+    etapasHerdadas: jsonb("etapas_herdadas"),
   },
   (table) => [
     // NÃO é único desde a migration 0068: a exclusividade por serviço sozinho
@@ -3218,6 +3225,9 @@ export const fulfillments = pgTable(
     uniqueIndex("uq_fulfillment_ciclo")
       .on(table.servicoCanonicoId, table.tipo, table.cycleNumber)
       .where(sql`servico_canonico_id IS NOT NULL`),
+    uniqueIndex("uq_fulfillment_venda")
+      .on(table.oportunidadeId, table.serviceFamily, table.tipo, table.cycleNumber)
+      .where(sql`oportunidade_id IS NOT NULL`),
     uniqueIndex("idx_fulfillments_public_token").on(table.publicToken),
     index("idx_fulfillments_org").on(table.organizacaoId),
     index("idx_fulfillments_status").on(table.organizacaoId, table.status),
@@ -3248,6 +3258,21 @@ export const fulfillmentFormularios = pgTable(
   (table) => [
     index("idx_fulfillment_formularios_fulfillment").on(table.fulfillmentId),
     index("idx_fulfillment_formularios_org").on(table.organizacaoId),
+  ]
+);
+
+// Migration 0125 — serviços canônicos que uma entrega cobre (uma venda, uma entrega, vários itens).
+export const fulfillmentServicos = pgTable(
+  "fulfillment_servicos",
+  {
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "cascade" }).notNull(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.fulfillmentId, table.servicoCanonicoId] }),
+    index("idx_fulfillment_servicos_servico").on(table.servicoCanonicoId),
   ]
 );
 

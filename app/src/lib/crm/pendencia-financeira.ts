@@ -14,17 +14,22 @@
  * a pendência ali faz ela aparecer nessas telas sem UI nova e sem uma segunda
  * definição de "está devendo".
  *
- * Idempotência: `external_id = 'CRM2:<grupoId>'` com o índice único
+ * Uma linha por natureza (mensalidade × implantação, esta parcelável): ver
+ * `pendencia-linhas.ts`. A linha legada `CRM2:<grupoId>` (mistura das duas)
+ * continua válida e não é recriada.
+ *
+ * Idempotência: `external_id` começa com `CRM2:<grupoId>` com o índice único
  * (origem, external_id) que já existia. Reprocessar assinatura/webhook nunca
  * duplica a pendência.
  */
 import { db } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, like, sql } from "drizzle-orm";
 import {
-  faturas, negocios, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens,
+  faturas, negocios, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, propostas,
 } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
 import { resolverVencimentoDoGrupo } from "@/lib/crm/politica-familia";
+import { linhasDoRecebivel } from "@/lib/crm/pendencia-linhas";
 
 const ORIGEM_CRM2 = "crm2_comercial";
 
@@ -51,29 +56,42 @@ export async function registrarPendenciaFinanceira(opts: {
     if (!grupo) return null;
     if (grupo.pagamentoStatus === "confirmado") return null;
 
-    const externalId = `CRM2:${grupo.id}`;
-    const [existente] = await db
+    // Idempotência: qualquer linha já gravada para o grupo (a legada mista
+    // `CRM2:<grupo>` ou as separadas `CRM2:<grupo>:<natureza>`) vale como "já existe".
+    const base = `CRM2:${grupo.id}`;
+    const existentes = await db
       .select({ id: faturas.id, valor: faturas.valor, vencimento: faturas.vencimento })
       .from(faturas)
-      .where(and(eq(faturas.origem, ORIGEM_CRM2), eq(faturas.externalId, externalId)))
-      .limit(1);
-    if (existente) {
-      return { faturaId: existente.id, valor: parseFloat(existente.valor) || 0, vencimento: existente.vencimento, jaExistia: true };
+      .where(and(
+        eq(faturas.organizacaoId, grupo.organizacaoId), eq(faturas.origem, ORIGEM_CRM2),
+        or(eq(faturas.externalId, base), like(faturas.externalId, `${base}:%`)),
+      ));
+    if (existentes.length > 0) {
+      const datas = existentes.map((e) => e.vencimento).filter((d): d is Date => !!d).sort((x, y) => x.getTime() - y.getTime());
+      return {
+        faturaId: existentes[0].id,
+        valor: existentes.reduce((acc, e) => acc + (parseFloat(e.valor) || 0), 0),
+        vencimento: datas[0] ?? null,
+        jaExistia: true,
+      };
     }
 
-    // Valor da pendência = soma real dos itens DO GRUPO (não da proposta
-    // inteira: numa venda mista o grupo Callface AI pode já estar pago).
+    // Itens DO GRUPO (não da proposta inteira: numa venda mista o grupo
+    // Callface AI pode já estar pago), com a natureza de cada um.
     const itens = await db
-      .select({ subtotal: propostaItens.subtotal })
+      .select({ subtotal: propostaItens.subtotal, tipo: propostaItens.tipo, revenueNature: propostaItens.revenueNature })
       .from(propostaGrupoComercialItens)
       .innerJoin(propostaItens, eq(propostaGrupoComercialItens.propostaItemId, propostaItens.id))
       .where(eq(propostaGrupoComercialItens.grupoId, grupo.id));
     if (itens.length === 0) return null;
-    const valor = itens.reduce((acc, i) => acc + (parseFloat(i.subtotal || "0") || 0), 0);
-    if (valor <= 0) return null;
 
     const agora = new Date();
     const vencimento = grupo.pagamentoVenceEm ?? (await resolverVencimentoDoGrupo(grupo.id, agora));
+    const [prop] = await db.select({ parcelas: propostas.parcelas, condicao: propostas.condicaoPagamentoTipo }).from(propostas).where(eq(propostas.id, grupo.propostaId)).limit(1);
+
+    const linhas = linhasDoRecebivel(itens, { vencimento, parcelas: prop?.parcelas });
+    if (linhas.length === 0) return null;
+    const valor = linhas.reduce((acc, l) => acc + l.valor, 0);
 
     let empresaId: string | null = null;
     let leadId: string | null = null;
@@ -83,7 +101,7 @@ export async function registrarPendenciaFinanceira(opts: {
       leadId = neg?.leadId ?? null;
     }
 
-    const [fatura] = await db.insert(faturas).values({
+    const criadas = await db.insert(faturas).values(linhas.map((l) => ({
       organizacaoId: grupo.organizacaoId,
       leadId,
       empresaId,
@@ -91,13 +109,17 @@ export async function registrarPendenciaFinanceira(opts: {
       negocioId: grupo.negocioId,
       grupoComercialId: grupo.id,
       origem: ORIGEM_CRM2,
-      externalId,
-      valor: valor.toFixed(2),
+      externalId: `${base}:${l.sufixo}`,
+      valor: l.valor.toFixed(2),
       status: "aberta",
       emitidaEm: agora,
-      vencimento,
+      vencimento: l.vencimento,
       raw: {
         motivo: opts.motivo,
+        natureza: l.natureza,
+        parcela: l.parcela,
+        totalParcelas: l.totalParcelas,
+        condicaoPagamentoTipo: prop?.condicao ?? null,
         propostaId: grupo.propostaId,
         negocioId: grupo.negocioId,
         grupoComercialId: grupo.id,
@@ -106,9 +128,9 @@ export async function registrarPendenciaFinanceira(opts: {
         // Sem vencimento definido na condição de pagamento da proposta a
         // pendência nasce sem data — registrado explicitamente pra ninguém
         // ler `vencimento: null` como bug de gravação.
-        vencimentoIndefinido: !vencimento,
+        vencimentoIndefinido: !l.vencimento,
       },
-    }).returning({ id: faturas.id });
+    }))).returning({ id: faturas.id });
 
     await db.update(propostaGrupoComercial).set({
       pagamentoStatus: "pendente",
@@ -122,13 +144,14 @@ export async function registrarPendenciaFinanceira(opts: {
       aggregateType: "grupo_comercial",
       aggregateId: grupo.id,
       payload: {
-        faturaId: fatura.id, negocioId: grupo.negocioId, propostaId: grupo.propostaId, contratoId: grupo.contratoId,
+        faturaId: criadas[0].id, faturaIds: criadas.map((c) => c.id), negocioId: grupo.negocioId, propostaId: grupo.propostaId, contratoId: grupo.contratoId,
         serviceFamily: grupo.serviceFamily, valor: valor.toFixed(2), vencimento: vencimento?.toISOString() ?? null, motivo: opts.motivo,
+        linhas: linhas.map((l) => ({ natureza: l.natureza, valor: l.valor.toFixed(2), vencimento: l.vencimento?.toISOString() ?? null })),
       },
       idempotencyKey: `payment-pending:${grupo.id}`,
     });
 
-    return { faturaId: fatura.id, valor, vencimento, jaExistia: false };
+    return { faturaId: criadas[0].id, valor, vencimento, jaExistia: false };
   } catch (err) {
     console.error(`[pendencia-financeira] falha ao registrar pendência do grupo ${opts.grupoId} (best-effort):`, err);
     return null;
@@ -145,7 +168,7 @@ export async function quitarPendenciaFinanceira(grupoId: string, pagoEm: Date): 
     const atualizadas = await db
       .update(faturas)
       .set({ status: "paga", pagaEm: pagoEm, updatedAt: new Date() })
-      .where(and(eq(faturas.origem, ORIGEM_CRM2), eq(faturas.externalId, `CRM2:${grupoId}`), eq(faturas.status, "aberta")))
+      .where(and(eq(faturas.origem, ORIGEM_CRM2), or(eq(faturas.externalId, `CRM2:${grupoId}`), like(faturas.externalId, `CRM2:${grupoId}:%`)), eq(faturas.status, "aberta")))
       .returning({ id: faturas.id });
     return { quitadas: atualizadas.length };
   } catch (err) {
@@ -159,7 +182,7 @@ export async function listarPendenciasDoNegocio(negocioId: string) {
   return db
     .select({
       id: faturas.id, valor: faturas.valor, status: faturas.status, vencimento: faturas.vencimento,
-      emitidaEm: faturas.emitidaEm, grupoComercialId: faturas.grupoComercialId, contratoId: faturas.contratoId,
+      emitidaEm: faturas.emitidaEm, natureza: sql<string | null>`${faturas.raw}->>'natureza'`, grupoComercialId: faturas.grupoComercialId, contratoId: faturas.contratoId,
     })
     .from(faturas)
     .where(and(eq(faturas.negocioId, negocioId), eq(faturas.origem, ORIGEM_CRM2)));

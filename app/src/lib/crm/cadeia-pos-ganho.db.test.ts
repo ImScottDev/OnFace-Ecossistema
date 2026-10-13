@@ -135,12 +135,15 @@ test("cadeia pós-ganho: pagamento no Stripe até o Cliente 360, com o dinheiro 
   const mrr = await um<{ total: string }>(sql`SELECT COALESCE(SUM(current_recurring_value), 0)::text AS total FROM servicos_canonicos WHERE empresa_id = ${empresa}::uuid AND commercial_lifecycle = 'ACTIVE'`);
   assert.equal(Number(mrr.total), 534.7, "MRR da empresa bate com mrr_fechado do negócio");
 
-  // Implantação/onboarding: um fulfillment por serviço, com checklist da família.
-  const ful = await rows<{ tipo: string; itens: number }>(sql`
-    SELECT f.tipo, (SELECT count(*)::int FROM fulfillment_itens i WHERE i.fulfillment_id = f.id) AS itens
-      FROM fulfillments f WHERE f.servico_canonico_id = ANY(${sql.raw(`ARRAY['${servicoIds.join("','")}']::uuid[]`)})`);
-  assert.equal(ful.length, 3);
-  assert.ok(ful.every((f) => f.tipo === "ONBOARDING" && f.itens > 0), "Callface AI -> onboarding com checklist");
+  // Uma venda, uma entrega: os três itens viram UM onboarding, com o checklist da família, ligado aos três serviços.
+  const ful = await rows<{ tipo: string; itens: number; servicos: number }>(sql`
+    SELECT f.tipo, (SELECT count(*)::int FROM fulfillment_itens i WHERE i.fulfillment_id = f.id) AS itens,
+           (SELECT count(*)::int FROM fulfillment_servicos fs WHERE fs.fulfillment_id = f.id) AS servicos
+      FROM fulfillments f WHERE f.servico_canonico_id = ANY(${sql.raw(`ARRAY['${servicoIds.join("','")}']::uuid[]`)})
+         OR f.id IN (SELECT fulfillment_id FROM fulfillment_servicos WHERE servico_canonico_id = ANY(${sql.raw(`ARRAY['${servicoIds.join("','")}']::uuid[]`)}))`);
+  assert.equal(ful.length, 1, "uma venda de três itens é um único onboarding");
+  assert.ok(ful[0].tipo === "ONBOARDING" && ful[0].itens > 0, "Callface AI -> onboarding com checklist");
+  assert.equal(ful[0].servicos, 3, "a entrega cobre os três serviços");
 
   // CS enxerga o cliente novo.
   const cli = await um<{ n: number }>(sql`SELECT count(*)::int AS n FROM clientes WHERE organizacao_id = ${org}::uuid AND empresa_id = ${empresa}::uuid`);

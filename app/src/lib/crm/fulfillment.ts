@@ -29,8 +29,9 @@
  *    NEGÓCIO, sem depender de grupo comercial (que não existe naquele banco).
  */
 import { db } from "@/lib/db";
-import { eq, sql } from "drizzle-orm";
-import { fulfillments, fulfillmentItens, servicosCanonicos, tarefas } from "@/lib/db/schema";
+import { sql } from "drizzle-orm";
+import { fulfillments, fulfillmentItens, fulfillmentServicos, tarefas } from "@/lib/db/schema";
+import { agruparServicosPorVenda, complementoDoUpgrade, uniaoChecklists, type ServicoDaVenda } from "@/lib/crm/entrega-da-venda";
 import { notificarFulfillmentOnboardingCriado } from "@/lib/crm/notificar";
 import { regraDaFamilia, FAMILIAS_POR_TRILHA } from "@/lib/crm/politica-familia";
 import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, type ChecklistSeed } from "@/lib/crm/pos-venda-checklists";
@@ -90,9 +91,21 @@ export const FAMILIAS_IMPLANTACAO_PABX: string[] = FAMILIAS_POR_TRILHA.implantac
 export const FAMILIAS_IMPLANTACAO_WHITE_LABEL: string[] = FAMILIAS_POR_TRILHA.implantacao_white_label;
 
 /**
- * Cria o Fulfillment + checklist inicial pra cada serviço canônico
- * informado, se ainda não existir (idempotente via UNIQUE em
- * fulfillments.servico_canonico_id). Best-effort — nunca deve derrubar o
+ * UMA entrega por VENDA (decisão do dono: "uma venda, uma oportunidade, é uma
+ * venda, e é um board"). Os serviços informados são agrupados pela oportunidade
+ * (sem ela, pelo contrato) e pela família; cada grupo vira um Fulfillment com a
+ * UNIÃO dos checklists, ligado a todos os serviços em `fulfillment_servicos`
+ * (o primeiro é o `servico_canonico_id` principal). Venda com famílias
+ * diferentes gera uma entrega por família: cada família tem fases, checklist e
+ * tela próprios. Serviço que chega depois, para uma venda que já tem entrega,
+ * é anexado a ela.
+ *
+ * Upgrade/upsell: se o mesmo cliente (empresa, ou lead) já tem entrega da mesma
+ * família com etapas DONE, o checklist novo traz só o complemento; as etapas
+ * herdadas ficam em `etapas_herdadas` e a ligação em `fulfillment_anterior_id`.
+ *
+ * Idempotente (serviço já coberto por uma entrega é ignorado; UNIQUE por
+ * venda/família e por serviço/tipo/ciclo). Best-effort — nunca deve derrubar o
  * fluxo de Won que a chamou.
  *
  * Pra famílias de Onboarding (CALLFACE_AI/WHITE_LABEL — 25/08, spec do
@@ -110,23 +123,67 @@ export const FAMILIAS_IMPLANTACAO_WHITE_LABEL: string[] = FAMILIAS_POR_TRILHA.im
  * aqui — Implantação continua com o fluxo que já tinha.
  */
 export async function criarFulfillmentsParaServicos(servicoIds: string[], organizacaoId: string): Promise<void> {
-  for (const servicoId of servicoIds) {
-    try {
-      const [existente] = await db.select({ id: fulfillments.id }).from(fulfillments).where(eq(fulfillments.servicoCanonicoId, servicoId)).limit(1);
-      if (existente) continue;
+  if (servicoIds.length === 0) return;
+  let servicos: (ServicoDaVenda & { leadId: string | null; empresaId: string | null })[];
+  try {
+    const ids = sql.join(servicoIds.map((id) => sql`${id}::uuid`), sql`, `);
+    const linhas = await db.execute<{ id: string; service_family: string; contrato_id: string | null; lead_id: string | null; empresa_id: string | null; oportunidade_id: string | null }>(sql`
+      SELECT s.id::text AS id, s.service_family, s.contrato_id::text AS contrato_id, s.lead_id::text AS lead_id,
+             s.empresa_id::text AS empresa_id,
+             COALESCE((SELECT oi.oportunidade_id FROM oportunidade_itens oi WHERE oi.servico_canonico_id = s.id LIMIT 1),
+                      s.oportunidade_origem_id)::text AS oportunidade_id
+        FROM servicos_canonicos s
+       WHERE s.organizacao_id = ${organizacaoId}::uuid AND s.id IN (${ids})`);
+    const porId = new Map(linhas.map((l) => [l.id, l]));
+    // Mantém a ordem recebida: o primeiro serviço da venda é o principal da entrega.
+    servicos = servicoIds.flatMap((id) => {
+      const l = porId.get(id);
+      return l ? [{ id, serviceFamily: l.service_family, contratoId: l.contrato_id, oportunidadeId: l.oportunidade_id, leadId: l.lead_id, empresaId: l.empresa_id }] : [];
+    });
+  } catch (err) {
+    console.error(`[fulfillment] falha ao ler os serviços ${servicoIds.join(",")} (best-effort):`, err);
+    return;
+  }
+  const porServico = new Map(servicos.map((s) => [s.id, s]));
 
-      const [servico] = await db.select({ serviceFamily: servicosCanonicos.serviceFamily, contratoId: servicosCanonicos.contratoId, leadId: servicosCanonicos.leadId, empresaId: servicosCanonicos.empresaId })
-        .from(servicosCanonicos).where(eq(servicosCanonicos.id, servicoId)).limit(1);
-      if (!servico) continue;
+  for (const grupo of agruparServicosPorVenda(servicos)) {
+    try {
+      // Serviço já coberto por alguma entrega (principal ou ligado) não entra de novo.
+      const cobertosIds = sql.join(grupo.servicoIds.map((id) => sql`${id}::uuid`), sql`, `);
+      const cobertos = await db.execute<{ servico_id: string }>(sql`
+        SELECT servico_canonico_id::text AS servico_id FROM fulfillments
+         WHERE organizacao_id = ${organizacaoId}::uuid AND servico_canonico_id IN (${cobertosIds})
+        UNION
+        SELECT servico_canonico_id::text FROM fulfillment_servicos
+         WHERE organizacao_id = ${organizacaoId}::uuid AND servico_canonico_id IN (${cobertosIds})`);
+      const jaCobertos = new Set(cobertos.map((c) => c.servico_id));
+      const novos = grupo.servicoIds.filter((id) => !jaCobertos.has(id));
+      if (novos.length === 0) continue;
+      const principalId = novos[0];
+      const principal = porServico.get(principalId)!;
+
+      const regra = regraDaFamilia(grupo.serviceFamily);
+      const ehOnboarding = regra.automacaoInicial;
+      const tipo = ehOnboarding ? "ONBOARDING" : "IMPLEMENTATION";
+
+      // Venda que já tem entrega desta família (serviço chegou depois): anexa, não abre outro board.
+      if (grupo.oportunidadeId) {
+        const [daVenda] = await db.execute<{ id: string }>(sql`
+          SELECT id::text AS id FROM fulfillments
+           WHERE organizacao_id = ${organizacaoId}::uuid AND oportunidade_id = ${grupo.oportunidadeId}::uuid
+             AND service_family = ${grupo.serviceFamily} AND tipo = ${tipo} AND cancelled_at IS NULL
+           ORDER BY cycle_number DESC LIMIT 1`);
+        if (daVenda) {
+          await db.insert(fulfillmentServicos).values(novos.map((id) => ({ fulfillmentId: daVenda.id, servicoCanonicoId: id, organizacaoId }))).onConflictDoNothing();
+          continue;
+        }
+      }
 
       // Frente 2C.1 — a automação inicial (responsável + 1ª tarefa +
       // notificação) é uma propriedade da FAMÍLIA, não do rótulo "onboarding".
       // PABX segue sem ela de propósito: Implantação PABX já tem o fluxo
       // próprio (formulário de implantação) e não deve ganhar uma tarefa
       // genérica de reunião em cima.
-      const regra = regraDaFamilia(servico.serviceFamily);
-      const ehOnboarding = regra.automacaoInicial;
-
       let responsavelId: string | null = null;
       if (ehOnboarding) {
         // A cadeia vai do canônico para o legado, nesta ordem, e cada elo
@@ -145,43 +202,75 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
           SELECT COALESCE(
             (SELECT o.responsavel_id FROM oportunidade_itens oi
                JOIN oportunidades o ON o.id = oi.oportunidade_id
-              WHERE oi.servico_canonico_id = ${servicoId}::uuid AND o.responsavel_id IS NOT NULL
+              WHERE oi.servico_canonico_id = ${principalId}::uuid AND o.responsavel_id IS NOT NULL
               LIMIT 1),
             (SELECT o.responsavel_id FROM contratos c
                JOIN oportunidades o ON o.id = c.oportunidade_id
-              WHERE c.id = ${servico.contratoId ?? null}::uuid AND o.responsavel_id IS NOT NULL
+              WHERE c.id = ${principal.contratoId ?? null}::uuid AND o.responsavel_id IS NOT NULL
               LIMIT 1),
             (SELECT n.responsavel_id FROM contratos c
                JOIN negocios n ON n.id = c.negocio_id
-              WHERE c.id = ${servico.contratoId ?? null}::uuid AND n.responsavel_id IS NOT NULL
+              WHERE c.id = ${principal.contratoId ?? null}::uuid AND n.responsavel_id IS NOT NULL
               LIMIT 1),
             (SELECT a.responsavel_id FROM contratos c
                JOIN aquisicoes a ON a.lead_legado_id = c.lead_id
-              WHERE c.id = ${servico.contratoId ?? null}::uuid AND a.responsavel_id IS NOT NULL
+              WHERE c.id = ${principal.contratoId ?? null}::uuid AND a.responsavel_id IS NOT NULL
               LIMIT 1)
           )::text AS responsavel_id`);
         responsavelId = donos[0]?.responsavel_id ?? null;
       }
 
-      const checklist = checklistParaFamilia(servico.serviceFamily);
+      // União dos checklists do que foi vendido (um por família do grupo, sem repetir etapa).
+      const checklistCompleto = uniaoChecklists([checklistParaFamilia(grupo.serviceFamily)]);
+
+      // Upgrade: o que este cliente já cumpriu desta família numa entrega de OUTRA venda não volta.
+      let anteriorId: string | null = null;
+      let concluidas: { workstream: string; titulo: string }[] = [];
+      if (principal.empresaId || principal.leadId) {
+        const anteriores = await db.execute<{ id: string; workstream: string | null; titulo: string | null }>(sql`
+          SELECT f.id::text AS id, fi.workstream, fi.titulo
+            FROM fulfillments f
+            JOIN servicos_canonicos s ON s.id = f.servico_canonico_id
+            LEFT JOIN fulfillment_itens fi ON fi.fulfillment_id = f.id AND fi.status = 'DONE'
+           WHERE f.organizacao_id = ${organizacaoId}::uuid
+             AND f.service_family = ${grupo.serviceFamily} AND f.tipo = ${tipo}
+             AND f.status <> 'CANCELED' AND f.cancelled_at IS NULL
+             AND f.oportunidade_id IS DISTINCT FROM ${grupo.oportunidadeId ?? null}::uuid
+             AND NOT EXISTS (SELECT 1 FROM oportunidade_itens oi
+                              WHERE oi.servico_canonico_id = f.servico_canonico_id
+                                AND oi.oportunidade_id = ${grupo.oportunidadeId ?? null}::uuid)
+             AND ((${principal.empresaId ?? null}::uuid IS NOT NULL AND s.empresa_id = ${principal.empresaId ?? null}::uuid)
+               OR (${principal.empresaId ?? null}::uuid IS NULL AND s.lead_id = ${principal.leadId ?? null}::uuid))
+           ORDER BY f.created_at DESC`);
+        anteriorId = anteriores[0]?.id ?? null;
+        concluidas = anteriores.flatMap((a) => (a.workstream && a.titulo ? [{ workstream: a.workstream, titulo: a.titulo }] : []));
+      }
+      const { pendentes: checklist, herdadas } = complementoDoUpgrade(checklistCompleto, concluidas);
+      // Upgrade que não traz nada novo (tudo já cumprido): a entrega nasce concluída, só para registrar a venda.
+      const nadaAFazer = checklistCompleto.length > 0 && checklist.length === 0;
+
       // `tipo` e `cycleNumber` são obrigatórios desde a migration 0066: a
       // unicidade é (servico, tipo, ciclo). Com `tipo` NULO o índice não
       // colide nunca — NULL não é igual a NULL — e este caminho passaria a
-      // criar jornada duplicada em silêncio a cada execução.
+      // criar jornada duplicada em silêncio a cada execução. Sem alvo no
+      // conflito: vale também a unicidade por venda (`uq_fulfillment_venda`).
       const [fulfillment] = await db.insert(fulfillments).values({
         organizacaoId,
-        servicoCanonicoId: servicoId,
-        serviceFamily: servico.serviceFamily,
-        tipo: ehOnboarding ? "ONBOARDING" : "IMPLEMENTATION",
+        servicoCanonicoId: principalId,
+        serviceFamily: grupo.serviceFamily,
+        tipo,
         cycleNumber: 1,
-        status: "NOT_STARTED",
+        status: nadaAFazer ? "COMPLETED" : "NOT_STARTED",
         startedAt: new Date(),
+        completedAt: nadaAFazer ? new Date() : null,
         responsavelId,
-      }).onConflictDoNothing({
-        target: [fulfillments.servicoCanonicoId, fulfillments.tipo, fulfillments.cycleNumber],
-        where: sql`servico_canonico_id IS NOT NULL`,
-      }).returning({ id: fulfillments.id });
-      if (!fulfillment) continue; // jornada já existia para este serviço e ciclo
+        oportunidadeId: grupo.oportunidadeId,
+        fulfillmentAnteriorId: anteriorId,
+        etapasHerdadas: herdadas.length > 0 ? herdadas : null,
+      }).onConflictDoNothing().returning({ id: fulfillments.id });
+      if (!fulfillment) continue; // jornada já existia para esta venda/serviço e ciclo
+
+      await db.insert(fulfillmentServicos).values(novos.map((id) => ({ fulfillmentId: fulfillment.id, servicoCanonicoId: id, organizacaoId }))).onConflictDoNothing();
 
       if (checklist.length > 0) {
         await db.insert(fulfillmentItens).values(
@@ -196,15 +285,15 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
         );
       }
 
-      if (ehOnboarding) {
-        if (servico.leadId) {
+      if (ehOnboarding && !nadaAFazer) {
+        if (principal.leadId) {
           await db.insert(tarefas).values({
             organizacaoId,
-            leadId: servico.leadId,
+            leadId: principal.leadId,
             // QA pós-venda 06/10: empresa/serviço/origem para a tarefa aparecer
             // na agenda e na fila do CS (que juntam por empresa_id), como as da carga.
-            empresaId: servico.empresaId,
-            servicoCanonicoId: servicoId,
+            empresaId: principal.empresaId,
+            servicoCanonicoId: principalId,
             origem: "ONBOARDING",
             usuarioId: responsavelId,
             titulo: regra.tarefaInicial ?? "Agendar reunião de kickoff com o cliente",
@@ -216,7 +305,7 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
         await notificarFulfillmentOnboardingCriado(fulfillment.id);
       }
     } catch (err) {
-      console.error(`[fulfillment] falha ao criar fulfillment do serviço ${servicoId} (best-effort):`, err);
+      console.error(`[fulfillment] falha ao criar a entrega da venda (serviços ${grupo.servicoIds.join(",")}) (best-effort):`, err);
     }
   }
 }
