@@ -7,7 +7,8 @@ import { sql } from "drizzle-orm";
 import { PropostaProto } from "@/components/onface/proto/PropostaProto";
 import { acaoAtualizarRascunho, acaoCatalogo, acaoCriar, acaoCriarRevisao, acaoEnviar, acaoSalvarDadosDoContrato } from "../actions";
 import { politicaContratual } from "@/lib/crm/contrato-politica";
-import { lerDadosDoContrato, lerPropostasDoNegocio } from "@/lib/vendas/propostas";
+import { lerContatoDoLead, lerDadosDoContrato, lerPropostasDoNegocio } from "@/lib/vendas/propostas";
+import { destinatarioDe } from "@/components/onface/proto/envio-da-proposta";
 import { editorDeSignatarios } from "@/lib/crm/proposta-signatarios";
 import { PropostasPage } from "../page";
 import type { Familia } from "@/lib/vendas/dominio";
@@ -67,6 +68,11 @@ export default async function NovaPropostaPage({ searchParams }: {
   // O comitê da empresa: é dele que sai quem recebe a proposta.
   const { empresaDados, contatos } = await lerDadosDoContrato(ctx.organizacaoId, negocio.empresa_id);
 
+  /* O destinatário (e-mail e telefone) vem do contato do NEGÓCIO pela chave `lead_id`, nunca pelo nome:
+     é o que o passo 5 e o signatário do passo 3 mostram. A pessoa vale antes do lead. */
+  const contatoDoLead = await lerContatoDoLead(ctx.organizacaoId, negocio.lead_id);
+  const contato = destinatarioDe(contatoDoLead.pessoa, contatoDoLead.lead);
+
   const pol = await politicaContratual(ctx.organizacaoId);
   const repPadrao = pol.representanteNome && pol.representanteEmail ? { nome: pol.representanteNome, email: pol.representanteEmail } : null;
 
@@ -95,11 +101,12 @@ export default async function NovaPropostaPage({ searchParams }: {
         resp: negocio.responsavel,
         respEmail: negocio.responsavel_email,
         empresaDados,
+        contato,
         leadId: negocio.lead_id,
         origem: negocio.source_process,
         pessoas: contatos.map((c) => ({
           id: c.id, nome: c.nome, papel: c.cargo ?? "Contato",
-          email: c.email, telefone: c.telefone, cpf: c.cpf, leadId: c.leadId,
+          email: c.email, telefone: c.telefone, whatsapp: c.whatsapp, cpf: c.cpf, leadId: c.leadId,
         })),
         propostas: propostas.map((p) => ({
           id: p.id, codigo: String(p.numero), versao: p.versao, status: p.status,

@@ -13,14 +13,14 @@ import { atualizarItensDoRascunho, criarPropostaComItens, resolverContatoDaPropo
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { lerAlteracoesDaProposta } from "@/lib/vendas/auditoria-comercial-registro";
 import type { RegistroDeAlteracao } from "@/lib/vendas/auditoria-comercial";
-import { avisarClienteDaPropostaEnviada, type ResultadoEmail } from "@/lib/crm/enviar-proposta";
+import { avisarClienteDaPropostaEnviada, type ResultadoEmail, type ResultadoWhatsapp, type ViaEmail } from "@/lib/crm/enviar-proposta";
 
 const ROTA = "/propostas";
 
 async function contexto() {
   const ctx = await getTenantContext();
   if (!ctx) return null;
-  return { organizacaoId: ctx.organizacaoId, usuarioId: ctx.userId, ator: atorHumano(ctx.userId) };
+  return { organizacaoId: ctx.organizacaoId, usuarioId: ctx.userId, usuarioNome: ctx.userName ?? null, ator: atorHumano(ctx.userId) };
 }
 
 /* ── Leitura ───────────────────────────────────────────────────────────── */
@@ -531,6 +531,19 @@ export async function acaoAtualizarRascunho(entrada: {
   });
 }
 
+/** O que REALMENTE saiu no envio: a tela e o registro dizem isto, não o que estava marcado. */
+export interface AvisoDoEnvio {
+  link: string;
+  email: ResultadoEmail;
+  destinatario: string | null;
+  /** "conta" = caixa de quem enviou; "resend" = e-mail do sistema (sem caixa conectada). */
+  emailVia: ViaEmail | null;
+  emailDe: string | null;
+  avisoEmail: string | null;
+  whatsapp: ResultadoWhatsapp;
+  whatsappErro: string | null;
+}
+
 export async function acaoEnviar(entrada: {
   propostaId: string;
   modoFechamento: ModoFechamento;
@@ -541,7 +554,11 @@ export async function acaoEnviar(entrada: {
   enviarEmail: boolean;
   /** E-mail escolhido no fluxo; só vale com `enviarEmail`. Vazio = e-mail do contato. */
   destinatarioEmail?: string | null;
-}): Promise<Resultado<{ link: string; email: ResultadoEmail; destinatario: string | null }>> {
+  /** Escolha explícita, como o e-mail: sai pelo número de WhatsApp de QUEM clica em enviar. */
+  enviarWhatsapp?: boolean;
+  telefoneWhatsapp?: string | null;
+  mensagemWhatsapp?: string | null;
+}): Promise<Resultado<AvisoDoEnvio>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("enviar proposta", async () => {
@@ -557,11 +574,17 @@ export async function acaoEnviar(entrada: {
     // O envio já aconteceu (status, validade, evento). Agora o link chega ao cliente.
     const aviso = await avisarClienteDaPropostaEnviada({
       propostaId: entrada.propostaId, organizacaoId: ctx.organizacaoId, userId: ctx.usuarioId,
+      userName: ctx.usuarioNome,
       enviarEmail: entrada.enviarEmail === true, destinatarioEmail: entrada.destinatarioEmail ?? null,
+      enviarWhatsapp: entrada.enviarWhatsapp === true, telefoneWhatsapp: entrada.telefoneWhatsapp ?? null, mensagemWhatsapp: entrada.mensagemWhatsapp ?? null,
     });
     revalidatePath(ROTA);
     revalidatePath("/pipeline");
-    return { link: aviso.link, email: aviso.email, destinatario: aviso.destinatario };
+    return {
+      link: aviso.link, email: aviso.email, destinatario: aviso.destinatario,
+      emailVia: aviso.emailVia, emailDe: aviso.emailDe, avisoEmail: aviso.avisoEmail,
+      whatsapp: aviso.whatsapp, whatsappErro: aviso.whatsappErro,
+    };
   });
 }
 

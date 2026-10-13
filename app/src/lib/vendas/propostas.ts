@@ -278,15 +278,15 @@ export async function salvarDadosDoContrato(params: {
 export async function lerDadosDoContrato(organizacaoId: string, empresaId: string | null): Promise<{
   empresaDados: Record<string, string> | undefined;
   /** `leadId` é o contato como a proposta o guarda (`propostas.lead_id`); null = a pessoa não tem lead e não pode receber proposta. */
-  contatos: Array<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; cpf: string | null; leadId: string | null }>;
+  contatos: Array<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; cpf: string | null; leadId: string | null }>;
 }> {
   if (!empresaId) return { empresaDados: undefined, contatos: [] };
   const [emp] = await db.execute<Record<string, string | null>>(sql`
     SELECT razao_social, nome, cnpj, logradouro, numero, complemento, bairro, cep, cidade, estado
       FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
   `);
-  const contatos = await db.execute<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; cpf: string | null; leadId: string | null }>(sql`
-    SELECT id::text, trim(COALESCE(nome, 'Sem nome') || ' ' || COALESCE(sobrenome, '')) AS nome, cargo, email, telefone,
+  const contatos = await db.execute<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; whatsapp: string | null; cpf: string | null; leadId: string | null }>(sql`
+    SELECT id::text, trim(COALESCE(nome, 'Sem nome') || ' ' || COALESCE(sobrenome, '')) AS nome, cargo, email, telefone, whatsapp,
            metadata->>'cpf' AS cpf, lead_id_legado::text AS "leadId"
       FROM pessoas
      WHERE empresa_id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
@@ -298,6 +298,23 @@ export async function lerDadosDoContrato(organizacaoId: string, empresaId: strin
     bairro: emp.bairro ?? "", cep: emp.cep ?? "", cidadeCob: emp.cidade ?? "", uf: emp.estado ?? "",
   } : undefined;
   return { empresaDados, contatos: [...contatos] };
+}
+
+/**
+ * O e-mail e o telefone do contato de um negócio, pela CHAVE (`negocios.lead_id`): a pessoa com
+ * `pessoas.lead_id_legado` = esse lead e, como reserva, o próprio lead. Nunca pelo nome. Só traz o dado;
+ * quem escolhe é `destinatarioDe` (components/onface/proto/envio-da-proposta.ts), a mesma regra da tela.
+ */
+export async function lerContatoDoLead(organizacaoId: string, leadId: string | null): Promise<{
+  pessoa: { email: string | null; telefone: string | null; whatsapp: string | null } | null;
+  lead: { email: string | null; telefone: string | null; whatsapp: string | null } | null;
+}> {
+  if (!leadId) return { pessoa: null, lead: null };
+  const [lead] = await db.execute<{ email: string | null; telefone: string | null; whatsapp: string | null }>(sql`
+    SELECT email, telefone, whatsapp FROM leads WHERE id = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
+  const [pessoa] = await db.execute<{ email: string | null; telefone: string | null; whatsapp: string | null }>(sql`
+    SELECT email, telefone, whatsapp FROM pessoas WHERE lead_id_legado = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid LIMIT 1`);
+  return { pessoa: pessoa ?? null, lead: lead ?? null };
 }
 
 /** As propostas da oportunidade COM os itens, o editor e os signatários: o que o Builder abre. */

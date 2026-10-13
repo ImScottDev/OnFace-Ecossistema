@@ -23,6 +23,7 @@ import type { ItemCatalogo } from "@/lib/vendas/propostas";
 import type { Resultado } from "@/lib/vendas/resultado";
 import { PropostaLiga } from "./PropostaLiga";
 import { comIdGravado } from "./proposta-id-no-estado";
+import { resumoDoEnvio, type AvisoDoEnvio } from "./envio-da-proposta";
 import { levarParametros } from "./rota-do-desenho";
 import { catalogoDoDesenho } from "./catalogo-do-desenho";
 import { usePecas } from "./pecas-host";
@@ -45,8 +46,10 @@ export interface OportunidadeDaProposta {
   origem: string | null;
   /** Dados do contrato já gravados na Empresa, no formato do modal "Dados do contrato". */
   empresaDados?: Record<string, string>;
+  /** E-mail e telefone do contato do negócio, resolvidos no servidor pela chave `lead_id` (nunca pelo nome). */
+  contato?: { email: string; telefone: string };
   /** `leadId` é o que a proposta guarda como destinatário; null = a pessoa não tem cadastro de lead e não pode recebê-la. */
-  pessoas: Array<{ id: string; nome: string; papel: string; email: string | null; telefone: string | null; cpf?: string | null; leadId?: string | null }>;
+  pessoas: Array<{ id: string; nome: string; papel: string; email: string | null; telefone: string | null; whatsapp?: string | null; cpf?: string | null; leadId?: string | null }>;
   /** As propostas da oportunidade, com as linhas: o builder abre o rascunho com elas. */
   propostas: Array<{
     id: string; codigo: string; versao: number; status: string; modo?: string | null; validade?: number;
@@ -107,12 +110,21 @@ export interface AcoesProposta {
     tipoContratual?: "NOVO_CONTRATO" | "ADITIVO" | "UPGRADE" | "DOWNGRADE" | null;
     enviarEmail: boolean;
     destinatarioEmail?: string | null;
-  }) => Promise<Resultado<{ link: string; email: "enviado" | "nao_solicitado" | "sem_destinatario" | "sem_provedor" | "falhou"; destinatario: string | null }>>;
+    /** Sai pelo número de WhatsApp de QUEM clica em enviar; sem número conectado dele, não sai por outro. */
+    enviarWhatsapp?: boolean;
+    telefoneWhatsapp?: string | null;
+    mensagemWhatsapp?: string | null;
+  }) => Promise<Resultado<AvisoDoEnvio & { link: string }>>;
 }
 
 /* A conversão das linhas do desenho para o command (`itensParaCriar`) mora em linhas-da-proposta.ts: é conta pura e tem teste. */
 import { itensParaCriar } from "./linhas-da-proposta";
 export { itensParaCriar };
+
+/** O que `persistir` devolve à tela: ela só mostra "enviada" com `ok` e `enviado`. */
+export type ResultadoDaPersistencia =
+  | { ok: true; id: string | null; enviado: boolean; aviso?: AvisoDoEnvio | null }
+  | { ok: false; erro: string; id?: string | null; etapa?: "gravar" | "enviar" };
 
 /* ── O Builder, ligado ─────────────────────────────────────────────────── */
 
@@ -177,8 +189,14 @@ class PropostaLigada extends PropostaLiga {
     else toast.success(t);
   }
 
-  /** O ponto único de saída: rascunho e envio passam por aqui. */
-  gravar(propPatch: any, oppPatch: any, evento: string | null) {
+  /**
+   * O ponto único de saída: rascunho e envio passam por aqui, e a tela ESPERA a resposta do servidor.
+   *
+   * Grava no estado local (otimista, é o que o Builder lê) e persiste. Quando o servidor devolve o id,
+   * a tela passa a EDITAR essa proposta (`modo: "editar"` + `id`): o segundo clique vira `atualizar`,
+   * não uma proposta duplicada. Falha no envio deixa o rascunho gravado e a tela no passo 5, com o motivo.
+   */
+  async persistirAgora(propPatch: any, oppPatch: any, evento: string | null) {
     this.calar = true;
     setTimeout(() => { this.calar = false; }, 0);
     /* Antes de `super.gravar`, que mexe no índice: qual proposta REAL este
@@ -189,12 +207,22 @@ class PropostaLigada extends PropostaLiga {
     const props: any[] = O?.propostas ?? [];
     const alvo = st.modo === "editar" && st.idx != null ? props[st.idx] : null;
     const base = st.modo === "versao" && st.baseIdx != null ? props[st.baseIdx] : null;
-    const r = super.gravar(propPatch, oppPatch, evento);
+    super.gravar(propPatch, oppPatch, evento);
+    /* `super.gravar` troca a entrada local pelo patch, que não tem id: sem devolver o id, uma falha aqui faria o próximo clique CRIAR outra proposta. */
+    if (alvo?.id) (this as any).adotarGravada(alvo.id, false);
     /* O id da proposta gravada volta para o estado: o link público (/p/<id>) só existe a partir dele,
        e na NOVA VERSÃO (revisão) o id nasce agora, no servidor. */
     const aoGravar = (id: string) => (this as any).setState((s: any) => ({ d: comIdGravado(s.d, id) }));
-    (this as any).props.persistir?.(propPatch, evento, { alvoId: alvo?.id ?? null, baseId: base?.id ?? null, aoGravar });
+    const r: ResultadoDaPersistencia = await (this as any).props.persistir?.(propPatch, evento, { alvoId: alvo?.id ?? null, baseId: base?.id ?? null, aoGravar })
+      ?? { ok: false, erro: "A tela não está ligada ao servidor." };
+    if (r.id) (this as any).adotarGravada(r.id, r.ok && r.enviado);
     return r;
+  }
+
+  /** Mantida para quem ainda chama `gravar` direto: mesma gravação, sem esperar. */
+  gravar(propPatch: any, oppPatch: any, evento: string | null) {
+    void this.persistirAgora(propPatch, oppPatch, evento);
+    return (this as any).opp?.() ?? null;
   }
 }
 
@@ -258,18 +286,19 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
    * o e-mail. São dois passos porque são dois fatos: criar um rascunho não
    * avisa ninguém, enviar avisa o cliente.
    */
-  const persistir = React.useCallback(async (proposta: any, evento: string | null, alvo?: { alvoId: string | null; baseId: string | null; aoGravar?: (id: string) => void }) => {
+  const persistir = React.useCallback(async (proposta: any, evento: string | null, alvo?: { alvoId: string | null; baseId: string | null; aoGravar?: (id: string) => void }): Promise<ResultadoDaPersistencia> => {
     const { itens, semPreco } = itensParaCriar(proposta?.itens);
 
+    /* Todo `return` abaixo devolve o motivo à tela (passo 5 mostra e não some); o toast é só reforço. */
+    const recusa = (erro: string, extra: { id?: string | null; etapa?: "gravar" | "enviar" } = {}): ResultadoDaPersistencia => {
+      toast.error(erro);
+      return { ok: false, erro, ...extra };
+    };
     if (semPreco.length) {
-      toast.error(
-        `Estes itens não vieram do catálogo e não podem ser gravados: ${semPreco.join(", ")}.`,
-      );
-      return;
+      return recusa(`Estes itens não vieram do catálogo e não podem ser gravados: ${semPreco.join(", ")}.`, { etapa: "gravar" });
     }
     if (!itens.length) {
-      toast.error("Escolha ao menos um item do catálogo.");
-      return;
+      return recusa("Escolha ao menos um item do catálogo.", { etapa: "gravar" });
     }
 
     await esvaziar();
@@ -285,8 +314,7 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
       else {
         const pessoa = oportunidade.pessoas.find((p) => p.nome === nomeContato);
         if (pessoa && !pessoa.leadId) {
-          toast.error(`${nomeContato} não tem cadastro de contato (lead) e não pode receber a proposta. Escolha outro contato ou cadastre este.`);
-          return;
+          return recusa(`${nomeContato} não tem cadastro de contato (lead) e não pode receber a proposta. Escolha outro contato ou cadastre este.`, { etapa: "gravar" });
         }
         leadEscolhido = pessoa?.leadId ?? null;
       }
@@ -318,7 +346,7 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
     } else if (alvo?.baseId) {
       // Versão nova de proposta já enviada: a revisão copia as linhas (e o contato), e o que mudou entra por cima.
       const rev = await acoes.revisar(alvo.baseId);
-      if (!rev.ok) { toast.error(rev.erro); return; }
+      if (!rev.ok) return recusa(rev.erro, { etapa: "gravar" });
       criada = await acoes.atualizar({ propostaId: rev.dados!.propostaId, itens, motivo, ...(leadEscolhido ? { leadId: leadEscolhido } : {}), ...condicoes });
     } else {
       criada = await acoes.criar({
@@ -329,42 +357,51 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
       });
     }
 
-    if (!criada.ok) { toast.error(criada.erro); return; }
-    const id = criada.dados?.propostaId;
+    if (!criada.ok) return recusa(criada.erro, { etapa: "gravar" });
+    const id = criada.dados?.propostaId ?? null;
     if (id) alvo?.aoGravar?.(id);
 
     /* O desenho marca `status: "enviada"` quando o usuário conclui o fluxo de
        envio. Criar sempre nasce rascunho no domínio, então o envio é um
        segundo passo — e é ele que manda o e-mail ao cliente. */
+    let enviado = false;
+    let aviso: AvisoDoEnvio | null = null;
     if (proposta?.status === "enviada" && id) {
       /* O modo e a validade saem da proposta montada: o desenho já pergunta
          os dois no passo de fechamento, e reperguntar seria desfazer o fluxo. */
+      const canais: string[] = proposta.editor?.canais ?? [];
       const enviada = await acoes.enviar({
         propostaId: id,
         modoFechamento: proposta.modo === "PREPAID" ? "PREPAID" : "CONTRACT",
         validadeDias: Number(proposta.validade) || 14,
         tipoContratual: proposta.modo === "PREPAID" ? null : "NOVO_CONTRATO",
         /* Só dispara e-mail se o canal "e-mail" ficou marcado no fluxo; "só o link" não manda nada. */
-        enviarEmail: (proposta.editor?.canais ?? []).includes("email"),
+        enviarEmail: canais.includes("email"),
         destinatarioEmail: proposta.editor?.para || null,
+        /* WhatsApp: sai pela sessão de quem clicou (o servidor resolve; não há como escolher a de outro). */
+        enviarWhatsapp: canais.includes("whatsapp"),
+        telefoneWhatsapp: proposta.editor?.wa || null,
+        mensagemWhatsapp: proposta.editor?.msgWa || null,
       });
       if (!enviada.ok) {
-        toast.error(`Proposta criada, mas não enviada: ${enviada.erro}`, {
+        /* O rascunho ficou gravado (id devolvido): a tela continua no passo 5, com o motivo, e o próximo clique edita esta mesma proposta. */
+        toast.error(`Proposta salva como rascunho, mas não enviada: ${enviada.erro}`, {
           action: { label: "Abrir proposta", onClick: () => router.push(`/propostas/${id}`) },
         });
-        return;
+        return { ok: false, erro: enviada.erro, id, etapa: "enviar" };
       }
-      const mail = enviada.dados?.email;
-      if (mail === "enviado") toast.success(`E-mail enviado para ${enviada.dados?.destinatario}.`);
-      else if (mail === "nao_solicitado") toast.info("Nenhum e-mail enviado: só o link. Copie o link na página da proposta.");
-      else if (mail) toast.warning("Proposta enviada, mas o e-mail não saiu. Copie o link na página da proposta e mande ao cliente.");
+      enviado = true;
+      aviso = enviada.dados ?? null;
     }
 
-    /* "#nova-v1" é o código provisório do desenho; o número real nasce no banco. */
-    toast.success(evento?.replace(/ #nova-v\d+/g, "") ?? "Proposta gravada.", id ? {
-      action: { label: "Abrir proposta", onClick: () => router.push(`/propostas/${id}`) },
-    } : undefined);
+    /* O registro e o aviso dizem o que REALMENTE saiu, não o que estava marcado na tela. */
+    const resumo = enviado ? resumoDoEnvio(aviso) : null;
+    const base = enviado ? `Proposta enviada. ${resumo!.linhas.join(" ")}` : (evento?.replace(/ #nova-v\d+/g, "") ?? "Proposta gravada.");
+    const acao = id ? { action: { label: "Abrir proposta", onClick: () => router.push(`/propostas/${id}`) } } : undefined;
+    if (enviado && resumo!.falhou) toast.warning(base, { ...acao, duration: 12000 });
+    else toast.success(base, acao);
     if (id) router.push(`/propostas/${id}`);
+    return { ok: true, id, enviado, aviso };
   }, [acoes, oportunidade.id, router, esvaziar]);
 
   return (

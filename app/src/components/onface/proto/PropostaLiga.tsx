@@ -31,6 +31,7 @@ import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 import { nomeAposTrocarVariante, nomeDaLinha, precoDaNovaLinha } from "./linhas-da-proposta";
 import { SeletorCatalogo } from "./SeletorCatalogo";
 import { comIdGravado, idAoAbrir, semIdNoEditor } from "./proposta-id-no-estado";
+import { comDestinatario, destinatarioDe, destinatarioDoLead, enviarConfirmando, resumoDoEnvio } from "./envio-da-proposta";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -105,7 +106,7 @@ class Logica extends React.Component<any, any> {
 
   esqRef = React.createRef();
   ctRef = React.createRef();
-  state = { opps: null, leads: null, passo: 0, tentou: {}, d: null, idx: null, modo: "novo", sujo: false, salvoEm: null, catFam: null, cliente: false, expandido: false, enviado: null, troca: null, novoDest: "" };
+  state = { opps: null, leads: null, passo: 0, tentou: {}, d: null, idx: null, modo: "novo", sujo: false, salvoEm: null, enviando: false, erroEnvio: null, catFam: null, cliente: false, expandido: false, enviado: null, troca: null, novoDest: "" };
 
   constructor(props: any) {
     super(props);
@@ -187,6 +188,38 @@ class Logica extends React.Component<any, any> {
   novoItem(p, pr, qtd) { return { prod: p.id, preco: pr.id, nome: nomeDaLinha(p, pr), desc: p.desc, natureza: this.natDe(p, pr), valor: String(pr.v).replace(".", ","), qtd: String(qtd || p.qtd || 1), descTipo: "pct", descVal: "" }; }
   descItem(it, b) { const v = this.num(it.descVal); if (!v) return 0; return it.descTipo === "valor" ? Math.min(b, v) : b * Math.min(100, v) / 100; }
 
+  /** Trava de reentrada do salvar/enviar: o segundo clique, ou o clique duplo, não grava de novo. */
+  _trava = { ocupado: false };
+
+  /**
+   * E-mail e telefone de um contato da oportunidade. O contato da oportunidade vem do servidor pela chave
+   * `lead_id` (`O.contato`); os demais, da lista de pessoas. NUNCA se acha a pessoa só pelo nome do lead:
+   * o lead "Scott" e a pessoa "Scott Fulano" não casavam e a tela abria sem e-mail nem número.
+   */
+  destinatarioDe(nome) {
+    const O = this.opp() || {};
+    const pessoas = O.pessoas || [];
+    const doLead = destinatarioDoLead(O.leadId, pessoas, O.contato);
+    if (!nome || nome === O.pessoa) return destinatarioDe(O.contato, doLead);
+    return destinatarioDe(pessoas.find(p => p.nome === nome));
+  }
+
+  /** O servidor devolveu o id: a tela passa a EDITAR esta proposta, e o próximo salvar/enviar é `atualizar`, não `criar`. */
+  adotarGravada(id, enviada) {
+    this.setState(s => {
+      const opps = (s.opps || []).map(o => {
+        if (!(o.id === this.oppId || o.id === (this.opp() || {}).id) || s.idx == null || !(o.propostas || [])[s.idx]) return o;
+        const propostas = o.propostas.slice();
+        propostas[s.idx] = Object.assign({}, propostas[s.idx], { id, status: enviada ? "enviada" : "rascunho" });
+        return Object.assign({}, o, { propostas });
+      });
+      return { opps, modo: "editar", baseIdx: null, d: comIdGravado(s.d, id) };
+    });
+  }
+
+  /** Grava e ESPERA o servidor. A subclasse ligada ao servidor sobrescreve; aqui (sem servidor) a gravação é local. */
+  async persistirAgora(propPatch, oppPatch, evento): Promise<any> { this.gravar(propPatch, oppPatch, evento); return { ok: true, id: null, enviado: propPatch && propPatch.status === "enviada" }; }
+
   iniciar(O) {
     const props = O.propostas || [];
     const MORTAS = ["recusada", "expirada", "substituida"];
@@ -195,8 +228,8 @@ class Logica extends React.Component<any, any> {
     const D = this.dadosDoProto || {};
     const LD = O.leadId ? (this.state.leads || D.LEADS || []).find(l => l.id === O.leadId) : null;
     /* E-mail REAL do contato (lead, ou a pessoa da oportunidade); nunca montado a partir do nome. */
-    const PP = (O.pessoas || []).find(x => x.principal) || (O.pessoas || []).find(x => x.nome === O.pessoa) || null;
-    const email = (LD && LD.email) || (PP && PP.email) || "";
+    const DEST = destinatarioDe(O.contato, destinatarioDoLead(O.leadId, O.pessoas || [], LD));
+    const email = DEST.email;
     const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const cat = this.catalogo()[O.familia || "CALLFACE_AI"] || [];
     const base = {
@@ -205,12 +238,13 @@ class Logica extends React.Component<any, any> {
       desc: { tipo: "pct", valor: "", alvo: "mrr", meses: "sempre", justif: "" },
       prazo: "0", parcelas: "1", dia: "10", inicio: "assinatura", dataInicio: "", fidelidade: "12", reajuste: "IPCA", obs: "",
       fechamento: O.familia === "PABX" || O.familia === "WHITE_LABEL" ? "contrato" : "checkout", minuta: O.familia === "WHITE_LABEL" ? "revenda" : O.familia === "PABX" ? "locacao" : "saas", sigs: [{ nome: O.pessoa || "", email }], testemunhas: false,
-      forma: "cliente", auto: true, canais: ["email"].concat((LD && (LD.tel || LD.telefone)) || (PP && PP.telefone) ? ["whatsapp"] : []), cc: [], assunto: "", intro: "", msgWa: "", wa: (LD && (LD.tel || LD.telefone)) || (PP && PP.telefone) || "", repCf: this.eu, vendAssina: true, prazoData: "", destinatarios: [O.pessoa].filter(Boolean), extras: [], teste: false, testeDias: "7", setupForma: "vista", canal: "email", para: email, msg: ""
+      forma: "cliente", auto: true, canais: ["email"].concat(DEST.telefone ? ["whatsapp"] : []), cc: [], assunto: "", intro: "", msgWa: "", wa: DEST.telefone, repCf: this.eu, vendAssina: true, prazoData: "", destinatarios: [O.pessoa].filter(Boolean), extras: [], teste: false, testeDias: "7", setupForma: "vista", canal: "email", para: email, msg: ""
     };
-    const deProp = (p) => Object.assign({}, base, semIdNoEditor(p.editor || {}), {
+    /* gravado || contato: um rascunho que guardou `para`/`wa` vazios não esconde o contato real (vale para propostas e versões que já existem). */
+    const deProp = (p) => { const r = Object.assign({}, base, semIdNoEditor(p.editor || {}), {
       titulo: (p.editor && p.editor.titulo) || base.titulo, validade: p.validade || 30, fechamento: p.modo === "PREPAID" ? "checkout" : ((p.editor && p.editor.fechamento) || "contrato"),
       itens: (p.itens || []).map(it => ({ prod: it.prod, preco: it.preco, nome: it.nome, desc: it.desc || "", natureza: it.natureza || "MRR", valor: String(it.valor).replace(".", ","), qtd: String(it.qtd || 1), descTipo: it.descTipo || "pct", descVal: it.descVal || "" }))
-    });
+    }); return comDestinatario(r, this.destinatarioDe(r.contato)); };
     const Es = this.E, pv = Es && Es.parametro ? Es.parametro("ver") : null;
     if (pv != null && pv !== "" && props[+pv]) { const pp = props[+pv]; return this.setState({ d: Object.assign(deProp(pp), { id: idAoAbrir("ver", pp), codigo: pp.codigo, versao: pp.versao || 1 }), idx: +pv, modo: "ver", expandido: true, sujo: false, verVig: pp === vig }); }
     if (vig && vig.status === "rascunho") return this.setState({ d: Object.assign(deProp(vig), { id: idAoAbrir("editar", vig), codigo: vig.codigo, versao: vig.versao || 1 }), idx: vi, modo: "editar", baseInfo: null, salvoEm: "" });
@@ -371,7 +405,7 @@ class Logica extends React.Component<any, any> {
       statusStyle: "display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:9999px;font-size:11.5px;font-weight:600;" + (S.enviado ? "background:#e8f0fb;color:#2c5f9e" : "background:#eeeff3;color:#4a5560"),
       statusDot: "width:6px;height:6px;border-radius:9999px;background:" + (S.enviado ? "#2c5f9e" : "#8b949e"),
       temBase: !!S.baseInfo, base: S.baseInfo || "",
-      salvo: S.enviado ? "Versão final gerada" : S.sujo ? "Alterações não salvas" : "Rascunho salvo " + (S.salvoEm || ""),
+      salvo: S.enviando ? "Enviando…" : S.erroEnvio ? "Não enviada: veja o passo 5" : S.enviado ? "Versão final gerada" : S.sujo ? "Alterações não salvas" : "Rascunho salvo " + (S.salvoEm || ""),
       salvoD: S.sujo && !S.enviado ? "M12 8v4M12 16h.01M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z" : "M20 6 9 17l-5-5",
       salvoStyle: "display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;white-space:nowrap;color:" + (S.sujo && !S.enviado ? "#9c7a2e" : "#1f7256") + (S.modo === "ver" ? ";display:none" : ""),
       meta: [
@@ -401,7 +435,7 @@ class Logica extends React.Component<any, any> {
       ["Origem", LD ? (LD.origem || "—") : (O.origem || "Criada manualmente"), (LD && LD.campanha) || "—"]
     ].map(([label, valor, sub], i) => ({ label, valor, sub, style: "min-width:0;padding:11px 13px;" + (i % 2 ? "box-shadow:inset 1px 0 0 #eef1f1;" : "") + (i > 1 ? "border-top:1px solid #eef1f1" : "") }));
     const dests = d.destinatarios.filter(x => pessoas.indexOf(x) >= 0 || x === d.contato);
-    const setPrincipal = (v) => this.setState(s => { const ds = (s.d.destinatarios || [s.d.contato]).filter(Boolean); return { d: Object.assign({}, s.d, { contato: v, destinatarios: ds.indexOf(v) >= 0 ? ds : ds.concat(v), sigs: s.d.sigs.length ? [Object.assign({}, s.d.sigs[0], { nome: v })].concat(s.d.sigs.slice(1)) : [{ nome: v, email: "" }] }), sujo: true }; });
+    const setPrincipal = (v) => this.setState(s => { const ds = (s.d.destinatarios || [s.d.contato]).filter(Boolean); const DV = this.destinatarioDe(v); return { d: Object.assign({}, s.d, { contato: v, para: DV.email, wa: DV.telefone, destinatarios: ds.indexOf(v) >= 0 ? ds : ds.concat(v), sigs: s.d.sigs.length ? [Object.assign({}, s.d.sigs[0], { nome: v, email: DV.email })].concat(s.d.sigs.slice(1)) : [{ nome: v, email: DV.email }] }), sujo: true }; });
     const papelDe = (nm) => nm === O.pessoa ? (O.cargo || "Contato da oportunidade") : (((O.pessoas || []).find(p => p.nome === nm) || {}).papel || "Contato");
     const novoTxt = (S.novoDest || "").trim();
     const addNovo = () => {
@@ -691,7 +725,7 @@ class Logica extends React.Component<any, any> {
     const sig0 = (d.sigs && d.sigs[0]) || {};
     const sigNome = ctD.sigNome != null ? ctD.sigNome : (sig0.nome || d.contato || "");
     const pSig = (O.pessoas || []).find(p => p.nome === sigNome) || {};
-    const SD = { sigNome, sigCargo: pessoas.indexOf(sigNome) >= 0 ? papelDe(sigNome) : "", sigEmail: sig0.nome === sigNome ? (sig0.email || "") : (pSig.email || ""), sigTel: pSig.telefone || (sigNome === O.pessoa && LD ? (LD.tel || LD.telefone || "") : ""), sigCpf: pSig.cpf || "",
+    const SD = { sigNome, sigCargo: pessoas.indexOf(sigNome) >= 0 ? papelDe(sigNome) : "", sigEmail: (sig0.nome === sigNome ? (sig0.email || "") : (pSig.email || "")) || this.destinatarioDe(sigNome).email, sigTel: pSig.telefone || this.destinatarioDe(sigNome).telefone, sigCpf: pSig.cpf || "",
       prazo: n(d.fidelidade) ? String(n(d.fidelidade)) : "", renov: "auto", aviso: "30", multa: "", dataBase: "Aniversário do contrato",
       prazoImpl: { CALLFACE_AI: "7", PABX: "15", WHITE_LABEL: "30" }[d.familia], inicioImpl: "assinatura", sla: "",
       escopo: { CALLFACE_AI: "Configuração da conta, agentes de IA, números e integrações padrão.", PABX: "Provisionamento de ramais, URA, filas, portabilidade de números e treinamento da equipe.", WHITE_LABEL: "Ambiente com marca própria, domínio, identidade visual, painel do parceiro e treinamento inicial." }[d.familia],
@@ -801,7 +835,7 @@ class Logica extends React.Component<any, any> {
           const val = e.target.value;
           if (k === "sigQuem") {
             if (val === "__outro") return setCt("sigNome", "");
-            this.setState(s => { const ctn = Object.assign({}, s.d.ct || {}, { sigNome: val, sigCargo: papelDe(val), sigEmail: val === (sig0.nome || "") ? (sig0.email || "") : "", sigTel: val === O.pessoa && LD ? (LD.tel || LD.telefone || "") : "", sigCpf: "" });
+            this.setState(s => { const ctn = Object.assign({}, s.d.ct || {}, { sigNome: val, sigCargo: papelDe(val), sigEmail: (val === (sig0.nome || "") ? (sig0.email || "") : "") || this.destinatarioDe(val).email, sigTel: this.destinatarioDe(val).telefone, sigCpf: "" });
               const x2 = (s.d.sigs || []).slice(); x2[0] = Object.assign({}, x2[0] || {}, { nome: val, email: ctn.sigEmail }); return { d: Object.assign({}, s.d, { ct: ctn, sigs: x2 }), sujo: true }; });
             return;
           }
@@ -877,7 +911,7 @@ class Logica extends React.Component<any, any> {
     const PROP = { rascunho: "Rascunho", enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado", aceita: "Aceita", recusada: "Recusada", expirada: "Expirada", substituida: "Substituída" };
     const selo = (st) => "flex:0 0 auto;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap;" + ({ rascunho: "background:#eeeff3;color:#4a5560", enviada: "background:#e8f0fb;color:#2c5f9e", visualizada: "background:#f7edd8;color:#6e5420", ajuste_solicitado: "background:#fff6f4;color:#9c3210", aceita: "background:#e6f4ee;color:#1f7256", recusada: "background:#fdeeea;color:#c2330f" }[st] || "background:#eeeff3;color:#8b949e");
     const pn = (d.contato || "").replace(/^Dr\.?\s+/, "").split(" ")[0] || "";
-    const telCad = (LD && (LD.tel || LD.telefone)) || "";
+    const telCad = this.destinatarioDe(d.contato).telefone;
     // ANTES: "propostas.callface.ai/p/<codigo>-v<versao>", endereço inexistente (rota real: /p/<id>). Sem id gravado, não há link.
     const linkP = d.id && typeof window !== "undefined" ? window.location.host + "/p/" + d.id : "";
     // Link que SAI da tela (copiar e WhatsApp) é a URL inteira, com o esquema: sem ele o app de mensagem não vira link clicável e, em localhost, "https://" apontava para um endereço que não existe.
@@ -896,7 +930,7 @@ class Logica extends React.Component<any, any> {
         [v2, "Condições comerciais", precisaAprov ? (v2 ? "Desconto de " + c.pctEf.toFixed(1).replace(".", ",") + "% · vai para aprovação" : "Desconto acima de 15% sem justificativa") : ((c.dm + c.du) ? "Desconto de " + c.pctEf.toFixed(1).replace(".", ",") + "%" : "Sem desconto") + " · fidelidade " + (c.fid ? c.fid + " meses" : "sem"), 2],
         [v3, "Contrato e pagamento", v3 ? MODELOS.find(x => x[0] === d.fechamento)[1] + " · " + FORMAS.find(x => x[0] === d.forma)[1] : "Signatário sem nome ou e-mail válido", 3],
         ...(precisaCt ? [[!ctPend.length, "Dados do contrato", ctPend.length ? ctPend.length + " pendências: " + ctPend.slice(0, 3).map(p => p.l.toLowerCase()).join(", ") + (ctPend.length > 3 ? "…" : "") : "Pronto para gerar no aceite · " + ctReq + " campos obrigatórios", "ct"]] : []),
-        [v4, "Envio", v4 ? (canaisSel.length ? canaisSel.map(x => x === "email" ? d.para + ((d.cc || []).length ? " + " + d.cc.length + " em cópia" : "") : "WhatsApp " + d.wa).join(" · ") : "Só o link") : "Confira o e-mail e o WhatsApp do contato", 4]
+        [v4 && !S.erroEnvio, "Envio", S.erroEnvio ? "Não enviada: " + S.erroEnvio : v4 ? (canaisSel.length ? canaisSel.map(x => x === "email" ? d.para + ((d.cc || []).length ? " + " + d.cc.length + " em cópia" : "") : "WhatsApp " + d.wa).join(" · ") : "Só o link") : "Confira o e-mail e o WhatsApp do contato", 4]
       ].map(([ok, t, s, k], i) => ({ t, s, onClick: () => k === "ct" ? abrirCt(false) : irPasso(k), d: ok ? "M20 6 9 17l-5-5" : "M12 8v5M12 17h.01",
         bola: "flex:0 0 auto;width:22px;height:22px;border-radius:9999px;display:grid;place-items:center;" + (ok ? "background:#e6f4ee;color:#1f7256" : "background:#fdeeea;color:#c2330f"),
         subStyle: "display:block;font-size:11.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:" + (ok ? "#67787c" : "#c2330f"),
@@ -905,7 +939,7 @@ class Logica extends React.Component<any, any> {
         style: "display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px 10px 10px;border-radius:11px;border:0;cursor:pointer;text-align:left;background:#fff;box-shadow:inset 0 0 0 " + (on ? "1.5px #12171d" : "1px #dbdede"),
         ico: "flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;" + (on ? "background:#12171d;color:#fff" : "background:#eeeff3;color:#4a5560"),
         check: "flex:0 0 auto;width:18px;height:18px;border-radius:5px;display:grid;place-items:center;" + (on ? "background:#12171d;color:#fff" : "box-shadow:inset 0 0 0 1.5px #cfd4d6;color:transparent"),
-        onClick: () => up({ canais: on ? canaisSel.filter(x => x !== v) : canaisSel.concat(v), para: v === "email" && !d.para ? email : d.para }) }; }),
+        onClick: () => up({ canais: on ? canaisSel.filter(x => x !== v) : canaisSel.concat(v), para: v === "email" && !d.para ? this.destinatarioDe(d.contato).email : d.para, wa: v === "whatsapp" && !d.wa ? this.destinatarioDe(d.contato).telefone : d.wa }) }; }),
       temEmail: canaisSel.indexOf("email") >= 0, temWa: canaisSel.indexOf("whatsapp") >= 0, soLink: !canaisSel.length,
       link: linkP, linkRot: canaisSel.length ? "Link da proposta · vai junto na mensagem" : "Link da proposta · envie por onde preferir",
       copiar: () => { if (!linkAbs) return this.diz("Ainda não há link público para esta proposta", "info"); try { navigator.clipboard.writeText(linkAbs); } catch (e) {} this.diz("Link copiado", "ok"); },
@@ -1055,13 +1089,18 @@ class Logica extends React.Component<any, any> {
     };
 
     // ações
+    /* Salvar e enviar ESPERAM o servidor (`persistirAgora`), com trava de reentrada: clique duplo não grava duas vezes,
+       e a tela só vira "Proposta enviada" depois que o servidor confirmou. Erro fica no passo 5 (linha "Envio"). */
     const salvarRascunho = () => {
       const P = this.paraProposta(d, "rascunho");
-      this.gravar(P, null, S.idx == null ? "Rascunho da proposta #" + d.codigo + "-v" + d.versao + " criado" : null);
-      const h = new Date();
-      this.setState({ sujo: false, salvoEm: "agora", salvoPop: { hora: String(h.getHours()).padStart(2, "0") + ":" + String(h.getMinutes()).padStart(2, "0") } });
+      enviarConfirmando(this._trava, () => this.persistirAgora(P, null, S.idx == null ? "Rascunho da proposta #" + d.codigo + "-v" + d.versao + " criado" : null), {
+        inicio: () => this.setState({ enviando: true, erroEnvio: null }),
+        sucesso: () => { const h = new Date(); this.setState({ enviando: false, sujo: false, salvoEm: "agora", salvoPop: { hora: String(h.getHours()).padStart(2, "0") + ":" + String(h.getMinutes()).padStart(2, "0") } }); },
+        erro: (m) => this.setState({ enviando: false, erroEnvio: m })
+      });
     };
     const enviar = () => {
+      if (this._trava.ocupado) return;
       const bad = oks.findIndex(x => !x);
       if (bad >= 0) { this.setState({ tentou: { 0: true, 1: true, 2: true, 3: true, 4: true }, passo: bad }); return this.diz("Revise " + ROTS[bad][0].toLowerCase() + " antes de enviar", "erro"); }
       if (precisaCt && ctPend.length) return this.setState({ ctModal: true });
@@ -1074,9 +1113,13 @@ class Logica extends React.Component<any, any> {
         P.contrato = { status: "aguardando_aceite", modelo: d.minuta, aditivoDe: ehAdt && adtO ? adtO.id : undefined, vigencia: ehAdt ? adtVig : undefined, versao: d.versao, congeladoEm: this.agora ? this.agora() : "Hoje", dados };
       }
       const mover = !precisaAprov && (O.etapa === "entrada" || O.etapa === "diagnostico") ? { etapa: "proposta", dias: 0 } : null;
-      this.gravar(P, mover, precisaAprov ? "Proposta #" + d.codigo + "-v" + d.versao + " enviada para aprovação do desconto" : "Proposta #" + d.codigo + "-v" + d.versao + " enviada" + (canaisSel.length ? " por " + canaisSel.map(x => x === "email" ? "e-mail" : "WhatsApp").join(" e ") : " por link") + (precisaCt ? " · contrato preparado com os dados desta versão" : "") + (mover ? " · movido para Proposta" : ""));
-      this.setState({ sujo: false, enviado: { aprov: precisaAprov, mover: !!mover } });
-      this.diz(precisaAprov ? "Salva como rascunho: desconto acima de 15% exige aprovação, e o fluxo de aprovação ainda não existe. Nada foi enviado ao cliente" : "Proposta enviada para " + (canaisSel.length ? (d.contato || "o contato") : "o link"), "ok");
+      /* O evento fica neutro: o que saiu de verdade (e-mail, WhatsApp) é dito pelo servidor, não pelo que estava marcado. */
+      const evento = precisaAprov ? "Proposta #" + d.codigo + "-v" + d.versao + " enviada para aprovação do desconto" : "Proposta #" + d.codigo + "-v" + d.versao + " enviada" + (precisaCt ? " · contrato preparado com os dados desta versão" : "") + (mover ? " · movido para Proposta" : "");
+      enviarConfirmando(this._trava, () => this.persistirAgora(P, mover, evento), {
+        inicio: () => this.setState({ enviando: true, erroEnvio: null }),
+        sucesso: (r) => this.setState({ enviando: false, sujo: false, enviado: { aprov: precisaAprov, mover: !!mover, aviso: r.aviso || null } }),
+        erro: (m) => { this._marcarBase = null; this.setState({ enviando: false, erroEnvio: m, passo: 4 }); }
+      });
     };
     if (this._enviarJa) { this._enviarJa = false; setTimeout(() => enviar(), 0); }
     const avancar = () => {
@@ -1090,7 +1133,7 @@ class Logica extends React.Component<any, any> {
     const fim = {
       titulo: E2.aprov ? "Salva como rascunho" : "Proposta enviada",
       sub: E2.aprov ? "O desconto de " + c.pctEf.toFixed(1).replace(".", ",") + "% exige aprovação do gestor, mas o fluxo de aprovação ainda não existe. A proposta #" + d.codigo + "-v" + d.versao + " ficou como rascunho e não foi enviada."
-        : "#" + d.codigo + "-v" + d.versao + " foi para " + (d.canal === "link" ? "o link público" : d.para) + ". Ela fica vinculada à oportunidade e o status atualiza sozinho." + (E2.mover ? " A oportunidade foi para a etapa Proposta." : ""),
+        : "#" + d.codigo + "-v" + d.versao + " foi gravada. " + resumoDoEnvio(E2.aviso).linhas.join(" ") + " Ela fica vinculada à oportunidade e o status atualiza sozinho." + (E2.mover ? " A oportunidade foi para a etapa Proposta." : ""),
       trilha: (E2.aprov ? ["Rascunho", "Aprovação", "Enviada", "Aceita"] : ["Rascunho", "Enviada", "Visualizada", "Aceita"]).map((l, i, a) => { const done = i <= 1; return { label: l,
         bola: "flex:0 0 auto;width:14px;height:14px;border-radius:9999px;box-sizing:border-box;" + (done ? "background:#12171d" : "background:#fff;border:1.5px solid #d2d5d5"),
         linhaE: "flex:1;height:2px;background:" + (i === 0 ? "transparent" : i <= 1 ? "#12171d" : "#e3e7e8"), linhaD: "flex:1;height:2px;background:" + (i === a.length - 1 ? "transparent" : i < 1 ? "#12171d" : "#e3e7e8"),
@@ -1136,9 +1179,9 @@ class Logica extends React.Component<any, any> {
       esqRef: this.esqRef,
       voltar: () => this.setState(s => ({ passo: Math.max(0, s.passo - 1) })),
       avancar, salvarRascunho,
-      avancarLabel: ultimo ? (precisaAprov ? "Enviar para aprovação" : "Gerar e enviar") : "Próximo: " + ROTS[S.passo + 1][0],
+      avancarLabel: S.enviando ? "Enviando…" : ultimo ? (precisaAprov ? "Enviar para aprovação" : "Gerar e enviar") : "Próximo: " + ROTS[S.passo + 1][0],
       avancarD: ultimo ? "M22 2 11 13M22 2l-7 20-4-9-9-4z" : "M5 12h14M13 6l6 6-6 6",
-      avancarStyle: "display:flex;align-items:center;gap:8px;height:38px;padding:0 16px;border-radius:9px;border:0;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;color:#fff;" + (ultimo ? "background:linear-gradient(180deg,#ff6241 0%,#fe4f2b 55%,#ef4522 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 6px 16px -6px rgba(254,79,43,.65)" : "background:#12171d"),
+      avancarStyle: "display:flex;align-items:center;gap:8px;height:38px;padding:0 16px;border-radius:9px;border:0;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;color:#fff;" + (ultimo ? "background:linear-gradient(180deg,#ff6241 0%,#fe4f2b 55%,#ef4522 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 6px 16px -6px rgba(254,79,43,.65)" : "background:#12171d") + (S.enviando ? ";opacity:.6;pointer-events:none;cursor:progress" : ""),
       irOportunidade: () => ir("/onface-preview/oportunidade", O.empresa, { opp: O.id, aba: "prop" }),
       salvoPop: !!S.salvoPop,
       salvoTxt: "Proposta #" + d.codigo + "-v" + d.versao + " salva como rascunho em " + (FAM[O.familia] || "") + " · " + O.empresa + (S.salvoPop ? ", às " + S.salvoPop.hora : "") + ". Você pode continuar de onde parou quando quiser.",

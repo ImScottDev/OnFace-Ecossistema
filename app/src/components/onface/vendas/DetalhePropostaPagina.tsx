@@ -1,5 +1,6 @@
 "use client";
 
+import { resumoDoEnvio } from "@/components/onface/proto/envio-da-proposta";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -94,6 +95,8 @@ function EnviarDialog({ proposta, aberto, fechar, completarJuridicos }: {
   const [erro, setErro] = React.useState<{ texto: string; juridicos: boolean } | null>(null);
   const emailDoContato = proposta.contato?.email ?? null;
   const [porEmail, setPorEmail] = React.useState(!!emailDoContato);
+  const telefoneDoContato = proposta.contato?.telefone ?? null;
+  const [porWhatsapp, setPorWhatsapp] = React.useState(false);
 
   const enviar = async () => {
     setSalvando(true); setErro(null);
@@ -101,16 +104,15 @@ function EnviarDialog({ proposta, aberto, fechar, completarJuridicos }: {
       propostaId: proposta.id, modoFechamento: modo, validadeDias: Number(validade),
       tipoContratual: modo === "CONTRACT" ? "NOVO_CONTRATO" : null,
       enviarEmail: porEmail, destinatarioEmail: porEmail ? emailDoContato : null,
+      // Pelo número de WhatsApp de QUEM clica em enviar (o do Atendimento); sem número conectado, não sai por outro.
+      enviarWhatsapp: porWhatsapp, telefoneWhatsapp: porWhatsapp ? telefoneDoContato : null,
     });
     setSalvando(false);
     if (!r.ok) { setErro({ texto: r.erro, juridicos: r.acao?.tipo === "completar_dados_empresa" }); return; }
-    // Diz o que de fato aconteceu com o e-mail: prometer "avisa o cliente" sem avisar era o defeito.
-    const email = r.dados?.email;
-    if (email === "enviado") toast.success(`Proposta #${proposta.numero} enviada por e-mail para ${r.dados?.destinatario}.`);
-    else if (email === "nao_solicitado") toast.success(`Proposta #${proposta.numero} enviada. Nenhum e-mail foi enviado: copie o link na lateral e mande ao cliente.`);
-    else toast.warning(`Proposta #${proposta.numero} enviada, mas o e-mail não saiu (${
-      email === "sem_destinatario" ? "o contato não tem e-mail" : email === "sem_provedor" ? "provedor de e-mail não configurado" : "falha no envio"
-    }). Copie o link na lateral e mande ao cliente.`);
+    // Diz o que de fato saiu (e-mail e WhatsApp), não o que estava marcado: prometer "avisa o cliente" sem avisar era o defeito.
+    const resumo = resumoDoEnvio(r.dados);
+    const texto = `Proposta #${proposta.numero} enviada. ${resumo.linhas.join(" ")}`;
+    if (resumo.falhou) toast.warning(texto, { duration: 12000 }); else toast.success(texto);
     fechar();
     router.refresh();
   };
@@ -139,6 +141,10 @@ function EnviarDialog({ proposta, aberto, fechar, completarJuridicos }: {
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={porEmail} disabled={!emailDoContato} onCheckedChange={(v) => setPorEmail(v === true)} />
             {emailDoContato ? `Enviar o link por e-mail para ${emailDoContato}` : "O contato não tem e-mail: só o link será gerado"}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={porWhatsapp} disabled={!telefoneDoContato} onCheckedChange={(v) => setPorWhatsapp(v === true)} />
+            {telefoneDoContato ? `Enviar o link por WhatsApp para ${telefoneDoContato}, pelo seu número do Atendimento` : "O contato não tem número de WhatsApp"}
           </label>
           {erro ? (
             <div role="alert" className="rounded-md border border-destructive/40 p-3 text-sm">

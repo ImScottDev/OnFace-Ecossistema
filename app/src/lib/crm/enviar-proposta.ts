@@ -10,9 +10,11 @@
  * Compartilhado entre a rota Next (local) e a rota Hono (prod) pra manter paridade.
  */
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, atividades, catalogoPrecos } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, atividades, catalogoPrecos, usuarios } from "@/lib/db/schema";
 import { eq, asc, and } from "drizzle-orm";
 import { sendResendEmail, type ResendResult } from "@/lib/email/resend";
+import { enviarPelaCaixaDoUsuario } from "@/lib/email/enviar-como-usuario";
+import { enviarTextoParaLead } from "@/lib/whatsapp/enviar";
 import { buildPropostaEmail } from "@/lib/email/proposta-email";
 import { publicarEvento } from "@/lib/events/outbox";
 import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
@@ -25,11 +27,26 @@ import { dataValidadePadrao } from "@/lib/crm/proposta-regras";
 type PropostaRow = typeof propostas.$inferSelect;
 
 
+/** Por onde o e-mail saiu: a caixa do usuário (Outlook/Google/IMAP) ou o Resend do sistema. */
+export type ViaEmail = "conta" | "resend";
+export type ResultadoEmailEnviado = ResendResult & { via: ViaEmail; de?: string | null; avisoConta?: string | null };
+
 /**
  * O e-mail que leva o link público ao cliente. Uma porta só: o envio legado
  * (Hono /propostas/:id/enviar) e o envio do módulo Vendas (`acaoEnviar`) usam
  * esta função. O envio novo só gravava `status = enviada` e a tela dizia "avisa
  * o cliente por e-mail": ninguém recebia o link.
+ *
+ * Com `usuario`, sai da CAIXA de quem clicou em enviar (Outlook, Google ou
+ * IMAP; registrado em `emails`). Sem caixa conectada, ou se ela falhar, cai no
+ * Resend sem travar o fluxo, e o resultado diz `via: "resend"`. No Resend o
+ * `replyTo` é o e-mail de quem enviou: o e-mail pede "responda este e-mail" e
+ * a resposta não pode morrer num no-reply.
+ *
+ * PENDÊNCIA CONHECIDA (decisão do dono, 13/10/2026): o texto do e-mail é o
+ * template fixo de `buildPropostaEmail`. O assunto, a introdução e o CC
+ * editados no passo 5 do Builder continuam sendo descartados; o template será
+ * refeito à parte (variáveis, viés comercial). Não corrigir aqui.
  */
 export async function dispararEmailDaProposta(p: {
   para: string; clienteNome: string; empresa?: string | null;
@@ -38,16 +55,36 @@ export async function dispararEmailDaProposta(p: {
   itens: Array<{ nome: string; tipo: string; subtotal: number; periodo?: string | null }>;
   totalRecorrente: number; totalAvulso: number; linkPublico: string;
   validade?: string | null; remetenteNome?: string | null;
-}) {
+  /** Quem clicou em enviar. Sem isto, sai pelo Resend (sistema). */
+  usuario?: { organizacaoId: string; userId: string; leadId?: string | null };
+}): Promise<ResultadoEmailEnviado> {
   const { subject, html } = buildPropostaEmail({
     clienteNome: p.clienteNome, empresa: p.empresa, numero: p.proposta.numero, versao: p.proposta.versao,
     moeda: p.proposta.moeda || "BRL", itens: p.itens, totalRecorrente: p.totalRecorrente, totalAvulso: p.totalAvulso,
     checkoutUrl: p.linkPublico, validade: p.validade, remetenteNome: p.remetenteNome ?? null,
   });
-  return sendResendEmail({ to: p.para, subject, html });
+  let avisoConta: string | null = null;
+  let replyTo: string | undefined;
+  if (p.usuario) {
+    const pela = await enviarPelaCaixaDoUsuario({ ...p.usuario, para: p.para, assunto: subject, html });
+    if (pela?.enviado) return { sent: true, via: "conta", de: pela.de };
+    if (pela && !pela.enviado) avisoConta = `A caixa ${pela.de} falhou (${pela.erro}); enviado pelo e-mail do sistema.`;
+    const [u] = await db.select({ email: usuarios.email }).from(usuarios)
+      .where(and(eq(usuarios.id, p.usuario.userId), eq(usuarios.organizacaoId, p.usuario.organizacaoId))).limit(1);
+    replyTo = u?.email || undefined;
+  }
+  try {
+    const r = await sendResendEmail({ to: p.para, subject, html, ...(replyTo ? { replyTo } : {}) });
+    return { ...r, via: "resend", de: null, avisoConta };
+  } catch (e) {
+    // A trava de destino do ambiente lança; vira "falhou" com o motivo, sem derrubar o envio da proposta.
+    return { sent: false, error: e instanceof Error ? e.message : String(e), via: "resend", de: null, avisoConta };
+  }
 }
 
 export type ResultadoEmail = "enviado" | "nao_solicitado" | "sem_destinatario" | "sem_provedor" | "falhou";
+/** O que aconteceu com o WhatsApp. Só `enviado` é "saiu pelo número de quem clicou". */
+export type ResultadoWhatsapp = "enviado" | "nao_solicitado" | "sem_sessao" | "desconectada" | "sem_telefone" | "falhou";
 
 /**
  * Quem recebe o e-mail. `enviarEmail=false` é "só o link": nunca há destino, nem
@@ -59,55 +96,99 @@ export function decidirDestinoEmail(o: { enviarEmail: boolean; destinatarioEmail
   return (o.destinatarioEmail || o.emailDoLead || "").trim();
 }
 
+/** Texto do WhatsApp com o link SEMPRE dentro: o vendedor pode ter apagado o link ao editar. */
+export function textoWhatsappDaProposta(o: { mensagem?: string | null; link: string; nome?: string | null; numero: number; versao: number }): string {
+  const m = (o.mensagem || "").trim();
+  if (m) return m.includes(o.link) ? m : `${m}\n\n${o.link}`;
+  const primeiro = (o.nome || "").trim().split(/\s+/)[0];
+  return `${primeiro ? `Olá, ${primeiro}!` : "Olá!"} Segue a proposta P-${String(o.numero).padStart(3, "0")}-v${o.versao} da Callface:\n${o.link}`;
+}
+
 /**
  * Depois de `lib/vendas/propostas.enviarProposta` marcar a proposta como
- * enviada: manda o e-mail com o link e registra na timeline o que de fato
- * aconteceu (enviado, sem provedor de e-mail configurado, falhou, sem
- * destinatário). Nunca lança: o envio da proposta já aconteceu.
+ * enviada: manda o e-mail e o WhatsApp com o link e registra na timeline o que
+ * de fato aconteceu. Nunca lança: o envio da proposta já aconteceu.
+ *
+ * E-mail: caixa de quem enviou, senão Resend (ver `dispararEmailDaProposta`).
+ * WhatsApp: SÓ pelo número de quem enviou; sem número conectado devolve
+ * `sem_sessao`/`desconectada` e não sai por outro número.
  */
 export async function avisarClienteDaPropostaEnviada(opts: {
   propostaId: string; organizacaoId: string; userId: string; userName?: string | null;
   /** Obrigatório: o vendedor escolheu e-mail ou só o link. Não há valor padrão. */
   enviarEmail: boolean; destinatarioEmail?: string | null;
-}): Promise<{ link: string; email: ResultadoEmail; erro: string | null; destinatario: string | null }> {
+  /** Escolha explícita, como o e-mail. Padrão: não envia. */
+  enviarWhatsapp?: boolean; telefoneWhatsapp?: string | null; mensagemWhatsapp?: string | null;
+}): Promise<{
+  link: string; email: ResultadoEmail; erro: string | null; destinatario: string | null;
+  emailVia: ViaEmail | null; emailDe: string | null; avisoEmail: string | null;
+  whatsapp: ResultadoWhatsapp; whatsappErro: string | null; whatsappPara: string | null;
+}> {
   const link = `${appUrl()}/p/${opts.propostaId}`;
+  const falha = (erro: string) => ({
+    link, email: "falhou" as ResultadoEmail, erro, destinatario: null, emailVia: null, emailDe: null, avisoEmail: null,
+    whatsapp: "falhou" as ResultadoWhatsapp, whatsappErro: erro, whatsappPara: null,
+  });
   try {
     const [proposta] = await db.select().from(propostas)
       .where(and(eq(propostas.id, opts.propostaId), eq(propostas.organizacaoId, opts.organizacaoId))).limit(1);
-    if (!proposta) return { link, email: "falhou", erro: "Proposta não encontrada", destinatario: null };
+    if (!proposta) return falha("Proposta não encontrada");
     const [lead] = await db.select({ nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email })
       .from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
     const destino = decidirDestinoEmail({ enviarEmail: opts.enviarEmail, destinatarioEmail: opts.destinatarioEmail, emailDoLead: lead?.email });
     const itens = await db.select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, periodo: catalogoPrecos.periodo })
       .from(propostaItens).leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
       .where(eq(propostaItens.propostaId, opts.propostaId)).orderBy(asc(propostaItens.ordem));
+    const clienteNome = [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "";
 
     let email: ResultadoEmail = opts.enviarEmail ? "sem_destinatario" : "nao_solicitado";
     let erro: string | null = null;
+    let emailVia: ViaEmail | null = null, emailDe: string | null = null, avisoEmail: string | null = null;
     if (destino) {
       const r = await dispararEmailDaProposta({
-        para: destino, clienteNome: [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "", empresa: lead?.empresa,
+        para: destino, clienteNome, empresa: lead?.empresa,
         proposta, itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0"), periodo: i.periodo })),
         totalRecorrente: parseFloat(proposta.totalRecorrente || "0"), totalAvulso: parseFloat(proposta.totalAvulso || "0"),
         linkPublico: link, validade: proposta.dataValidade, remetenteNome: opts.userName ?? null,
+        usuario: { organizacaoId: opts.organizacaoId, userId: opts.userId, leadId: proposta.leadId },
       });
       email = r.sent ? "enviado" : r.skipped ? "sem_provedor" : "falhou";
       erro = r.error ?? null;
+      if (r.sent) { emailVia = r.via; emailDe = r.de ?? null; }
+      avisoEmail = r.avisoConta ?? null;
     }
+
+    let whatsapp: ResultadoWhatsapp = "nao_solicitado";
+    let whatsappErro: string | null = null;
+    let whatsappPara: string | null = null;
+    if (opts.enviarWhatsapp) {
+      const r = await enviarTextoParaLead({
+        organizacaoId: opts.organizacaoId, userId: opts.userId, leadId: proposta.leadId,
+        telefone: opts.telefoneWhatsapp,
+        conteudo: textoWhatsappDaProposta({ mensagem: opts.mensagemWhatsapp, link, nome: clienteNome, numero: proposta.numero, versao: proposta.versao }),
+      });
+      if (r.ok) { whatsapp = "enviado"; whatsappPara = opts.telefoneWhatsapp ?? null; }
+      else { whatsapp = r.motivo; whatsappErro = r.erro; }
+    }
+
+    const numero = `#P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`;
+    const parteEmail = email === "enviado" ? `e-mail enviado para ${destino}${emailVia === "conta" ? ` pela caixa ${emailDe}` : " pelo e-mail do sistema"}`
+      : email === "sem_provedor" ? "e-mail não disparado (provedor de e-mail não configurado)"
+      : email === "falhou" ? "falha ao enviar o e-mail" : email === "nao_solicitado" ? "nenhum e-mail enviado"
+      : "sem e-mail do contato, envie o link manualmente";
+    const parteWa = whatsapp === "enviado" ? "WhatsApp enviado pelo número de quem enviou"
+      : whatsapp === "nao_solicitado" ? "WhatsApp não solicitado" : `WhatsApp NÃO enviado (${whatsappErro})`;
     await db.insert(atividades).values({
       organizacaoId: opts.organizacaoId, leadId: proposta.leadId, negocioId: proposta.negocioId, usuarioId: opts.userId,
       tipo: "proposta_enviada",
-      titulo: `Link da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}: ${
-        email === "enviado" ? `e-mail enviado para ${destino}` : email === "sem_provedor" ? "e-mail não disparado (provedor de e-mail não configurado)"
-        : email === "falhou" ? "falha ao enviar o e-mail" : email === "nao_solicitado" ? "somente o link, nenhum e-mail enviado"
-        : "sem e-mail do contato, envie o link manualmente"}`,
-      descricao: erro ?? link,
-      dados: { propostaId: proposta.id, linkPublico: link, email, para: destino || null },
+      titulo: `Link da proposta ${numero}: ${parteEmail}; ${parteWa}`,
+      descricao: [erro, avisoEmail, whatsappErro].filter(Boolean).join(" | ") || link,
+      dados: { propostaId: proposta.id, linkPublico: link, email, para: destino || null, emailVia, emailDe, whatsapp, whatsappPara },
     });
-    return { link, email, erro, destinatario: destino || null };
+    return { link, email, erro, destinatario: destino || null, emailVia, emailDe, avisoEmail, whatsapp, whatsappErro, whatsappPara };
   } catch (e) {
     console.error("[enviar-proposta] aviso ao cliente falhou:", e);
-    return { link, email: "falhou", erro: e instanceof Error ? e.message : String(e), destinatario: null };
+    return falha(e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -211,6 +292,7 @@ export async function enviarPropostaComCheckout(opts: {
         para: lead.email, clienteNome, empresa: lead.empresa, proposta,
         itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0"), periodo: i.periodo })),
         totalRecorrente, totalAvulso, linkPublico, validade: dataValidadeEfetiva, remetenteNome: userName ?? null,
+        usuario: { organizacaoId, userId, leadId: proposta.leadId },
       })
     : ({ sent: false, skipped: true } satisfies ResendResult);
 
