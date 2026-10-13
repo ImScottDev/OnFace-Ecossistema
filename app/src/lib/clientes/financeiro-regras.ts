@@ -85,6 +85,17 @@ export function assinaturaCobra(status: string): boolean {
   return status === "active" || status === "trialing" || status === "past_due";
 }
 
+/** Cor do selo (variantes do Badge do DS, por token) de cada estado: ativa, vencida, cancelada, pausada... */
+export function varianteDoStatusAssinatura(status: StatusAssinatura): "success" | "danger" | "warning" | "info" | "secondary" {
+  switch (status) {
+    case "ativa": return "success";
+    case "em_teste": return "info";
+    case "vencida": case "inadimplente": return "danger";
+    case "cancelamento_agendado": case "aguardando_pagamento": case "pausada": return "warning";
+    default: return "secondary"; // cancelada, não concluída, desconhecido
+  }
+}
+
 export type PeriodoAssinatura = "mensal" | "anual" | null;
 
 /** `catalogo_precos.periodo` (fonte do período, ver periodo-cobranca.ts); sem ele, o intervalo do próprio Stripe. */

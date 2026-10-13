@@ -26,10 +26,11 @@ import { ChevronRight, ExternalLink, MoreHorizontal } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { variacaoAmigavel } from "@/lib/catalogo/rotulos";
+import { ROTULO_STATUS_ASSINATURA, varianteDoStatusAssinatura, type StatusAssinatura } from "@/lib/clientes/financeiro-regras";
 
 interface ItemAss { itemId: string; priceId: string | null; produto: string | null; variacao?: string | null; quantidade: number; precoUnitario: number | null; intervalo: string | null }
 interface FaturaAss { id: string; valor: number; status: string; emitidaEm: string | null; vencimento: string | null; pagaEm: string | null; url: string | null }
-interface Ass { faturas: FaturaAss[]; id: string; stripeSubscriptionId: string; status: string; mrr: number | null; renovaEm: string | null; cancelaNoFimDoPeriodo: boolean; itens: ItemAss[] }
+interface Ass { faturas: FaturaAss[]; id: string; stripeSubscriptionId: string; status: string; viva: boolean; estado: StatusAssinatura; mrr: number | null; renovaEm: string | null; cancelaNoFimDoPeriodo: boolean; itens: ItemAss[] }
 interface Preco { stripePriceId: string; variacao: string; valor: string; recorrente: boolean; periodo: string | null }
 interface Produto { id: string; nome: string; precos: Preco[] }
 interface Previa { direcao: "upgrade" | "downgrade" | "neutra"; efeito: Efeito; efeitoPadrao: Efeito; mrrAntes: number; mrrDepois: number; previa: { totalAgora: number; linhas: { descricao: string; valor: number }[] } | null }
@@ -47,7 +48,6 @@ const TITULO: Record<Modo, string> = {
 };
 const ROTULO_FATURA: Record<string, string> = { paga: "Paga", aberta: "Em aberto", falhou: "Falhou", void: "Anulada", uncollectible: "Incobrável" };
 const SEM_PERMISSAO = "Seu perfil não tem a permissão financeira para ver ou abrir o portal do cliente no Stripe. Peça ao administrador do ONFACE.";
-const ROTULO_STATUS: Record<string, string> = { active: "Ativa", trialing: "Em teste", past_due: "Em atraso" };
 
 export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
   const [lista, setLista] = React.useState<Ass[] | null>(null);
@@ -80,25 +80,26 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
 
   const abrirPrimeira = !!lista?.length && typeof window !== "undefined" && !!new URLSearchParams(window.location.search).get("alterar-assinatura");
   React.useEffect(() => {
-    if (abrirPrimeira && lista) setAlvo((a) => a ?? { ass: lista[0], modo: "adicionar_item" });
+    const viva = lista?.find((x) => x.viva);
+    if (abrirPrimeira && viva) setAlvo((a) => a ?? { ass: viva, modo: "adicionar_item" });
   }, [lista, abrirPrimeira]);
 
   return (
     <>
     <section aria-label="Assinaturas no Stripe" className="flex flex-col gap-2">
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Assinaturas{lista && <span className="font-normal text-muted-foreground"> · {lista.length}</span>}</h2>
+        <h2 className="text-sm font-semibold">Assinaturas{lista && <span className="font-normal text-muted-foreground"> · {lista.length}{resumoDosEstados(lista)}</span>}</h2>
         {/* Uso interno: abre o cliente no dashboard do Stripe. Ter o id basta; o portal do cliente é outro botão. */}
         {customerId
           ? <Button size="sm" variant="outline" asChild><a href={`https://dashboard.stripe.com/customers/${customerId}`} target="_blank" rel="noreferrer"><ExternalLink /> Gerenciar no Stripe</a></Button>
           : <Button size="sm" variant="outline" onClick={() => toast.error("Esta empresa ainda não tem cliente no Stripe. Ele nasce na primeira cobrança.")}><ExternalLink /> Gerenciar no Stripe</Button>}
       </header>
       {erro && <p className="text-sm text-muted-foreground">{erro}</p>}
-      {lista && !lista.length && <p className="text-sm text-muted-foreground">Nenhuma assinatura ativa no Stripe. O portal ainda mostra faturas e a forma de pagamento, se o cliente já tiver cadastro de cobrança.</p>}
+      {lista && !lista.length && <p className="text-sm text-muted-foreground">Nenhuma assinatura, ativa ou cancelada, no Stripe. O portal ainda mostra faturas e a forma de pagamento, se o cliente já tiver cadastro de cobrança.</p>}
       {!!lista?.length && (
         <Card className="gap-0 overflow-hidden py-0">
           <ul className="divide-y">
-            {lista.map((a, n) => <LinhaDeAssinatura key={a.id} a={a} abertaDeInicio={abrirPrimeira && n === 0} setAlvo={setAlvo} />)}
+            {lista.map((a) => <LinhaDeAssinatura key={a.id} a={a} abertaDeInicio={abrirPrimeira && a.viva && a === lista.find((x) => x.viva)} setAlvo={setAlvo} />)}
           </ul>
         </Card>
       )}
@@ -111,6 +112,13 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
       )}
     </>
   );
+}
+
+/** " (1 ativa, 2 canceladas)": quantas há de cada estado, para o histórico não virar um balaio. */
+function resumoDosEstados(lista: Ass[]) {
+  const n = new Map<StatusAssinatura, number>();
+  for (const a of lista) n.set(a.estado, (n.get(a.estado) ?? 0) + 1);
+  return lista.length ? ` (${[...n].map(([e, q]) => `${q} ${ROTULO_STATUS_ASSINATURA[e].toLowerCase()}`).join(", ")})` : "";
 }
 
 function LinhaDeAssinatura({ a, abertaDeInicio, setAlvo }: { a: Ass; abertaDeInicio: boolean; setAlvo: (x: Alvo) => void }) {
@@ -129,13 +137,13 @@ function LinhaDeAssinatura({ a, abertaDeInicio, setAlvo }: { a: Ass; abertaDeIni
                 <span className="text-base font-semibold tabular-nums">{brl(a.mrr)}</span>
                 <span className="text-xs text-muted-foreground">MRR</span>
               </span>
-              <Badge variant={a.status === "past_due" ? "danger" : "success"}>{ROTULO_STATUS[a.status] ?? a.status}</Badge>
-              {a.cancelaNoFimDoPeriodo && <Badge variant="warning">cancela em {dia(a.renovaEm)}</Badge>}
+              <Badge variant={varianteDoStatusAssinatura(a.estado)}>{ROTULO_STATUS_ASSINATURA[a.estado]}</Badge>
+              {a.viva && a.cancelaNoFimDoPeriodo && <Badge variant="warning">cancela em {dia(a.renovaEm)}</Badge>}
               <span className="hidden min-w-0 flex-1 truncate text-sm text-muted-foreground md:block">{resumo}</span>
-              <span className="hidden shrink-0 text-xs text-muted-foreground lg:block">renova em {dia(a.renovaEm)}</span>
+              <span className="hidden shrink-0 text-xs text-muted-foreground lg:block">{a.viva ? `renova em ${dia(a.renovaEm)}` : a.estado === "cancelada" ? `encerrada em ${dia(a.renovaEm)}` : ""}</span>
             </button>
           </CollapsibleTrigger>
-          <DropdownMenu>
+          {a.viva && <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="icon-sm" variant="ghost" aria-label="Ações da assinatura"><MoreHorizontal /></Button>
             </DropdownMenuTrigger>
@@ -146,7 +154,7 @@ function LinhaDeAssinatura({ a, abertaDeInicio, setAlvo }: { a: Ass; abertaDeIni
                 ? <DropdownMenuItem onSelect={() => setAlvo({ ass: a, modo: "reativar" })}>Reativar</DropdownMenuItem>
                 : <DropdownMenuItem variant="destructive" onSelect={() => setAlvo({ ass: a, modo: "cancelar" })}>Cancelar assinatura</DropdownMenuItem>}
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
         </div>
         <CollapsibleContent>
           <div className="flex flex-col gap-4 border-t bg-muted/30 px-4 py-3">

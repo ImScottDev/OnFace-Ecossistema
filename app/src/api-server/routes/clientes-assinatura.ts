@@ -13,6 +13,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { assinaturaCobra, statusDaAssinatura } from "@/lib/clientes/financeiro-regras";
 import { assinaturaItens, assinaturas, auditLog, catalogoPrecos, empresas, faturas, negocios, propostas, servicosCatalogo } from "@/lib/db/schema";
 import { variacaoAmigavel } from "@/lib/catalogo/rotulos";
 import { exigirCtx } from "../compat.js";
@@ -84,8 +85,7 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
 
   const subs = await db.select().from(assinaturas).where(and(
     eq(assinaturas.empresaId, empresaId), eq(assinaturas.organizacaoId, ctx.organizacaoId),
-    inArray(assinaturas.status, ["active", "trialing", "past_due"]),
-  )).orderBy(desc(assinaturas.createdAt));
+  )).orderBy(desc(assinaturas.createdAt)); // histórico inteiro: canceladas, vencidas e pausadas também aparecem
   const itens = subs.length
     ? await db.select().from(assinaturaItens).where(inArray(assinaturaItens.assinaturaId, subs.map((s) => s.id)))
     : [];
@@ -106,16 +106,20 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
     : []).map((r) => [r.priceId, { produto: r.produto, variacao: variacaoAmigavel(r.produto, r.variacao) }]));
 
   const { customerIdLocalDaEmpresa } = await import("@/lib/integrations/stripe-customer");
+  const cancelaNoFim = (s: { raw: unknown }) => { const r = s.raw as { cancel_at_period_end?: boolean; cancela_no_fim?: boolean } | null; return r?.cancela_no_fim === true || r?.cancel_at_period_end === true; };
   return c.json({
     stripeCustomerId: await customerIdLocalDaEmpresa(ctx.organizacaoId, empresaId).catch(() => null),
     assinaturas: subs.map((s) => ({
       id: s.id,
       stripeSubscriptionId: s.stripeSubscriptionId,
       status: s.status,
+      /* Só a que ainda cobra aceita alteração; a cancelada é histórico, leitura. */
+      viva: assinaturaCobra(s.status),
+      estado: statusDaAssinatura(s.status, cancelaNoFim(s)),
       moeda: s.moeda,
       mrr: s.mrr ? Number(s.mrr) : null,
       renovaEm: s.currentPeriodEnd,
-      cancelaNoFimDoPeriodo: (() => { const r = s.raw as { cancel_at_period_end?: boolean; cancela_no_fim?: boolean } | null; return r?.cancela_no_fim === true || r?.cancel_at_period_end === true; })(),
+      cancelaNoFimDoPeriodo: cancelaNoFim(s),
       faturas: faturasDasAssinaturas.filter((f) => f.assinaturaId === s.id).slice(0, 6).map((f) => ({
         id: f.id, valor: Number(f.valor), status: f.status, emitidaEm: f.emitidaEm, vencimento: f.vencimento, pagaEm: f.pagaEm, url: f.hostedInvoiceUrl,
       })),
