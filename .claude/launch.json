@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "./app", "exec", "next", "dev", "-p", "3100"],
       "port": 3100
+    },
+    {
+      "name": "onface-api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "./app", "exec", "tsx", "watch", "--env-file=.env", "src/api-server/index.ts"],
+      "port": 3012
     }
   ]
 }
