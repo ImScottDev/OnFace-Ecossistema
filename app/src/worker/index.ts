@@ -2793,6 +2793,11 @@ const callfaceAiWorker = new Worker(
             const { sincronizarParceirosCallfaceAi } = await import("../lib/integrations/callface-ai/parceiros-sincronizar");
             const p = await sincronizarParceirosCallfaceAi(org.id);
             console.log(`[callface-ai-sync] ${org.slug} parceiros: ${p.status} em ${p.duracaoMs}ms — ${p.parceiros} parceiro(s), ${p.licencasAtivas}/${p.licencas} licença(s) ativa(s), ${p.faturas} fatura(s), ${p.pendenciasAbertas} pendência(s) (${p.pendenciasAltas} alta(s), ${p.faturasVencidas} fatura(s) vencida(s))${p.limites.length ? ` — não conferido: ${p.limites.join(" | ")}` : ""}${p.erro ? ` — ${p.erro}` : ""}`);
+            // Retrato do cliente na plataforma (plano, Stripe, licenças, usuários, equipes, receptivos).
+            // Estado próprio (recurso 'retrato'); bloco que não pôde ser lido vira erro no estado, não vazio.
+            const { sincronizarRetratoCallfaceAi } = await import("../lib/integrations/callface-ai/retrato-sincronizar");
+            const rt = await sincronizarRetratoCallfaceAi(org.id);
+            console.log(`[callface-ai-sync] ${org.slug} retrato: ${rt.status} em ${rt.duracaoMs}ms — ${rt.organizacoes} organização(ões), ${rt.planos} plano(s), ${rt.licencas} licença(s), ${rt.usuarios} vínculo(s) de usuário, ${rt.equipes} equipe(s)/workspace(s), ${rt.receptivos} receptivo(s)${rt.avisos.length ? ` — conferir: ${rt.avisos.join(" | ")}` : ""}${rt.erro ? ` — ${rt.erro}` : ""}`);
           }
         } catch (e) {
           console.error(`[callface-ai-sync] ${org.slug}: falhou:`, e instanceof Error ? e.message : e);

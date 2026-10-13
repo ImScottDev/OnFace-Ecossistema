@@ -143,13 +143,13 @@ export async function sincronizarRetratoCallfaceAi(organizacaoId: string): Promi
       }
 
       if (b.usuarios.ok) {
-        const lote = b.usuarios.dados.map((u) => ({ id: u.vinculoId, org: u.organizationId, papel: u.papel, ac: u.aceite, cv: u.convite, des: iso(u.desativadoEm), at: u.usuarioAtivo, crm: u.crmUserId }));
+        const lote = b.usuarios.dados.map((u) => ({ id: u.vinculoId, org: u.organizationId, papel: u.papel, ac: u.aceite, cv: u.convite, des: iso(u.desativadoEm), ativo: u.usuarioAtivo, crm: u.crmUserId }));
         for (const l of emLotes(lote)) {
           await tx.execute(sql`
             INSERT INTO callface_ai_usuarios (organizacao_id, vinculo_id, external_organization_id, papel, aceite, convite, desativado_em, usuario_ativo, crm_user_id, coletado_em)
-            SELECT ${org}, r.id, r.org, r.papel, r.ac, r.cv, r.des, r.at, r.crm, now()
+            SELECT ${org}, r.id, r.org, r.papel, r.ac, r.cv, r.des, r.ativo, r.crm, now()
               FROM jsonb_to_recordset(${JSON.stringify(l)}::jsonb)
-                   AS r(id text, org text, papel text, ac text, cv text, des timestamptz, at boolean, crm text)
+                   AS r(id text, org text, papel text, ac text, cv text, des timestamptz, ativo boolean, crm text)
             ON CONFLICT (organizacao_id, vinculo_id) DO UPDATE SET
               external_organization_id = EXCLUDED.external_organization_id, papel = EXCLUDED.papel, aceite = EXCLUDED.aceite,
               convite = EXCLUDED.convite, desativado_em = EXCLUDED.desativado_em, usuario_ativo = EXCLUDED.usuario_ativo,
