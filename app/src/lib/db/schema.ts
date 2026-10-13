@@ -1541,6 +1541,12 @@ export const catalogoPrecos = pgTable("catalogo_precos", {
   index("idx_catalogo_precos_lookup").on(table.organizacaoId, table.lookupKey),
 ]);
 
+/** Contador de número de proposta por organização (migration 0107). Só `lib/crm/proposta-criacao.ts` escreve aqui. */
+export const propostaSequencias = pgTable("proposta_sequencias", {
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).primaryKey(),
+  ultimoNumero: integer("ultimo_numero").notNull(),
+});
+
 export const propostas = pgTable(
   "propostas",
   {
@@ -1623,6 +1629,8 @@ export const propostas = pgTable(
     tipoContratual: text("tipo_contratual"), // NOVO_CONTRATO | ADITIVO | UPGRADE | DOWNGRADE
     contratoBaseId: uuid("contrato_base_id").references(() => contratos.id),
     serviceFamily: text("service_family"),
+    /** Duplicata anterior à numeração atômica (migration 0107): fica fora do índice único. */
+    numeroDuplicadoLegado: boolean("numero_duplicado_legado").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     // Vínculo canônico (migrations 0063 a 0066). Declarado aqui porque
@@ -1636,6 +1644,7 @@ export const propostas = pgTable(
     index("idx_propostas_lead").on(table.leadId),
     index("idx_propostas_status").on(table.organizacaoId, table.status),
     index("idx_propostas_numero").on(table.organizacaoId, table.numero),
+    uniqueIndex("uq_propostas_org_numero_versao").on(table.organizacaoId, table.numero, table.versao).where(sql`NOT numero_duplicado_legado`),
   ]
 );
 

@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, pipelines, propostaGrupoComercial, propostaGrupoComercialItens, checkouts, catalogoPrecos, servicosCatalogo } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, negocios, usuarios, contratos, atividades, statusChanges, pipelines, propostaGrupoComercial, propostaGrupoComercialItens, checkouts } from "@/lib/db/schema";
 import { eq, and, or, desc, asc, sql, ilike, inArray, count, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -15,12 +15,9 @@ import { verificarPropostaExigeEmpresa } from "@/lib/vendas/proposta-exige-empre
 import { publicarEvento } from "@/lib/events/outbox";
 import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 import {
-  resolverServiceFamiliesPorCatalogoIds,
-  mapTipoParaRevenueNature,
   syncOportunidadeItensFromProposta,
   limparOportunidadeItensDeOrigemProposta,
 } from "@/lib/crm/composicao-comercial";
-import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem } from "@/lib/crm/commercial-model";
 import {
   registrarVisualizacao,
   aceitarPropostaPublica,
@@ -28,7 +25,7 @@ import {
   solicitarAjustePropostaPublica,
   assinarContratoPublico,
 } from "@/lib/crm/proposta-publica";
-import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
+import { criarPropostaComItens, inserirItensDaProposta } from "@/lib/crm/proposta-criacao";
 import { calcularItens } from "@/lib/crm/proposta-regras";
 import { agruparItensPorLinhaComercial, organizarVendaMultiLinha } from "@/lib/crm/oportunidade-bundle";
 import { appUrl } from "@/lib/app-url";
@@ -56,35 +53,6 @@ const itemSchema = z.object({
   // não tem como injetar esses valores.
   catalogoPrecoId: z.string().uuid().optional().nullable(),
 });
-
-/**
- * Catálogo Oficial Stripe (02/09) — lê os prices oficiais escolhidos. Mesma
- * função de `proposta-criacao.ts`, duplicada aqui de propósito: a rota tem o
- * próprio caminho de escrita (PATCH regrava itens) e importar de lá criaria
- * dependência circular entre a rota e o núcleo de criação.
- */
-async function carregarPrecosOficiaisDaRota(ids: (string | null | undefined)[]) {
-  const unicos = [...new Set(ids.filter((v): v is string => !!v))];
-  if (unicos.length === 0) return new Map<string, {
-    id: string; stripePriceId: string; stripeProductId: string | null; sku: string | null;
-    variacao: string; valor: string; serviceFamily: string; revenueNature: string;
-  }>();
-  const rows = await db
-    .select({
-      id: catalogoPrecos.id,
-      stripePriceId: catalogoPrecos.stripePriceId,
-      sku: catalogoPrecos.sku,
-      variacao: catalogoPrecos.variacao,
-      valor: catalogoPrecos.valor,
-      revenueNature: catalogoPrecos.revenueNature,
-      stripeProductId: servicosCatalogo.stripeProductId,
-      serviceFamily: servicosCatalogo.serviceFamily,
-    })
-    .from(catalogoPrecos)
-    .innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
-    .where(inArray(catalogoPrecos.id, unicos));
-  return new Map(rows.map((r) => [r.id, r]));
-}
 
 const createSchema = z.object({
   leadId: z.string().uuid().optional(),
@@ -884,7 +852,7 @@ app.patch("/propostas/:id", async (c) => {
   const id = c.req.param("id");
 
   const [existing] = await db
-    .select({ status: propostas.status, negocioId: propostas.negocioId })
+    .select({ status: propostas.status, negocioId: propostas.negocioId, moeda: propostas.moeda })
     .from(propostas)
     .where(and(eq(propostas.id, id), eq(propostas.organizacaoId, ctx.organizacaoId)))
     .limit(1);
@@ -912,6 +880,7 @@ app.patch("/propostas/:id", async (c) => {
   if (parsed.data.signatarios !== undefined) updateData.signatarios = parsed.data.signatarios;
 
   // Replace items if provided
+  let itensNovos: ReturnType<typeof calcularItens>["itens"] | null = null;
   if (parsed.data.itens) {
     // Commercial Core v3 (ADR-EXEC-022): editar uma proposta já vinculada a
     // UM negócio nunca pode introduzir uma SEGUNDA linha comercial nele —
@@ -925,66 +894,27 @@ app.patch("/propostas/:id", async (c) => {
         error: `Esta edição mistura ${gruposEdicao.size} linhas comerciais (${[...gruposEdicao.keys()].join(", ")}) num negócio que já é de uma linha só. Crie uma proposta separada para a outra linha (ela vira uma oportunidade relacionada, não duplicada) em vez de editar esta.`,
       }, 400);
     }
-
     // Valida e calcula ANTES de apagar qualquer coisa: item inválido não pode deixar a proposta sem linhas.
-    const moeda = (parsed.data.moeda || "BRL") as string;
-    const { itens: itensWithCalc, totalRecorrente, totalAvulso } = calcularItens(parsed.data.itens);
-
-    // Commercial Core (ADR-EXEC-020): oportunidade_itens.proposta_item_id_legado
-    // é FK (RESTRICT) pra proposta_itens — sem limpar antes, o DELETE abaixo quebra.
-    if (existing.negocioId) {
-      await limparOportunidadeItensDeOrigemProposta(existing.negocioId);
-    }
-
-    // Delete existing items
-    await db.delete(propostaItens).where(eq(propostaItens.propostaId, id));
-
-
-    const familyMap = await resolverServiceFamiliesPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
-    const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(itensWithCalc.map((i) => i.servicoCatalogoId));
-    // Catálogo Oficial Stripe (02/09) — editar a proposta (inclusive aplicar
-    // desconto) não pode perder o vínculo com o price oficial. Os campos
-    // oficiais são relidos do banco pelo id do price, nunca do payload.
-    const precosOficiais = await carregarPrecosOficiaisDaRota(itensWithCalc.map((i) => i.catalogoPrecoId));
-    await db.insert(propostaItens).values(
-      itensWithCalc.map((item) => {
-        const preco = item.catalogoPrecoId ? precosOficiais.get(item.catalogoPrecoId) : undefined;
-        return {
-          propostaId: id,
-          servicoCatalogoId: item.servicoCatalogoId || undefined,
-          nome: item.nome,
-          descricao: item.descricao,
-          tipo: item.tipo,
-          moeda,
-          quantidade: item.quantidade.toString(),
-          valorUnitario: item.valorUnitario.toFixed(2),
-          desconto: item.desconto.toFixed(2),
-          descontoTipo: item.descontoTipo,
-          subtotal: item.subtotal.toFixed(2),
-          ordem: item.ordem,
-          serviceFamily: preco?.serviceFamily || (item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN"),
-          revenueNature: preco?.revenueNature || mapTipoParaRevenueNature(item.tipo),
-          commercialModel: resolverCommercialModelDoItem({ overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: commercialModelMap }),
-          catalogoPrecoId: preco?.id,
-          stripeProductId: preco?.stripeProductId,
-          stripePriceId: preco?.stripePriceId,
-          skuPreco: preco?.sku,
-          variacao: preco?.variacao,
-          valorTabela: preco?.valor,
-        };
-      })
-    );
-
-    updateData.totalRecorrente = totalRecorrente.toFixed(2);
-    updateData.totalAvulso = totalAvulso.toFixed(2);
-    updateData.totalGeral = (totalRecorrente + totalAvulso).toFixed(2);
+    const calculo = calcularItens(parsed.data.itens);
+    itensNovos = calculo.itens;
+    updateData.totalRecorrente = calculo.totalRecorrente.toFixed(2);
+    updateData.totalAvulso = calculo.totalAvulso.toFixed(2);
+    updateData.totalGeral = calculo.totalGeral.toFixed(2);
   }
 
-  const [updated] = await db
-    .update(propostas)
-    .set(updateData)
-    .where(eq(propostas.id, id))
-    .returning();
+  // Linhas, totais e cabeçalho na mesma transação; a sincronização derivada só depois do commit.
+  const updated = await db.transaction(async (tx) => {
+    if (itensNovos) {
+      // Commercial Core (ADR-EXEC-020): oportunidade_itens.proposta_item_id_legado
+      // é FK (RESTRICT) pra proposta_itens — sem limpar antes, o DELETE abaixo quebra.
+      if (existing.negocioId) await limparOportunidadeItensDeOrigemProposta(existing.negocioId, tx);
+      await tx.delete(propostaItens).where(eq(propostaItens.propostaId, id));
+      // Mesma porta de escrita da criação: os campos oficiais saem do banco pelo id do price, nunca do payload.
+      await inserirItensDaProposta(tx, id, parsed.data.moeda || existing.moeda, itensNovos);
+    }
+    const [linha] = await tx.update(propostas).set(updateData).where(eq(propostas.id, id)).returning();
+    return linha;
+  });
 
   // Sync negocio values from propostas
   if (existing.negocioId) {

@@ -66,9 +66,34 @@ async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
 }
 
 type ItemCalculado = ItemEntrada & { subtotal: number; ordem: number };
+export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Próximo número da organização: contador atômico (a linha fica travada até o
+ * commit, então dois criadores simultâneos nunca recebem o mesmo número).
+ * Sem linha ainda, parte do maior número existente. Chamar DENTRO da transação.
+ */
+export async function proximoNumeroDeProposta(tx: Tx, organizacaoId: string): Promise<number> {
+  const [r] = await tx.execute<{ ultimo_numero: number }>(sql`
+    INSERT INTO proposta_sequencias (organizacao_id, ultimo_numero)
+    VALUES (${organizacaoId}::uuid, COALESCE((SELECT max(numero) FROM propostas WHERE organizacao_id = ${organizacaoId}::uuid), 0) + 1)
+    ON CONFLICT (organizacao_id) DO UPDATE SET ultimo_numero = proposta_sequencias.ultimo_numero + 1
+    RETURNING ultimo_numero`);
+  return Number(r.ultimo_numero);
+}
+
+/** Efeitos derivados (valor do negócio, itens da oportunidade): recomputáveis, rodam só depois do commit e falha deles não desfaz a proposta já gravada. */
+async function sincronizarDepoisDoCommit(negocioId: string | null, propostaId: string) {
+  try {
+    if (negocioId) await syncNegocioValoresFromPropostas(negocioId);
+    await syncOportunidadeItensFromProposta(propostaId);
+  } catch (e) {
+    console.error(`[proposta-criacao] proposta ${propostaId} gravada, mas a sincronização derivada falhou (recomputável):`, e);
+  }
+}
 
 /** Grava as linhas da proposta amarradas ao catálogo oficial. Uma porta só: criar e editar rascunho. */
-async function inserirItensDaProposta(propostaId: string, moeda: string, itensWithCalc: ItemCalculado[]) {
+export async function inserirItensDaProposta(tx: Tx, propostaId: string, moeda: string, itensWithCalc: ItemCalculado[]) {
   if (itensWithCalc.length === 0) return;
   // Catálogo Oficial Stripe (02/09) — carrega os prices escolhidos DO BANCO.
   // Nunca confia no que o cliente mandou pra família/natureza/preço de
@@ -83,7 +108,7 @@ async function inserirItensDaProposta(propostaId: string, moeda: string, itensWi
   );
   const familyMap = await resolverServiceFamiliesPorCatalogoIds(servicosCatalogoIds);
   const commercialModelMap = await resolverCommercialModelPadraoPorCatalogoIds(servicosCatalogoIds);
-  await db.insert(propostaItens).values(
+  await tx.insert(propostaItens).values(
     itensWithCalc.map((item) => {
       const preco = item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId) : undefined;
       const servicoCatalogoId = preco?.servicoCatalogoId ?? item.servicoCatalogoId;
@@ -166,45 +191,42 @@ export async function criarPropostaComItens(opts: {
     );
   }
 
-  const [{ maxNum }] = await db
-    .select({ maxNum: sql<number>`COALESCE(MAX(${propostas.numero}), 0)` })
-    .from(propostas)
-    .where(eq(propostas.organizacaoId, opts.organizacaoId));
-  const numero = (maxNum || 0) + 1;
-
   const { itens: itensWithCalc, totalRecorrente, totalAvulso } = calcularItens(opts.itens);
-
   const today = new Date().toISOString().split("T")[0];
-  const [proposta] = await db.insert(propostas).values({
-    organizacaoId: opts.organizacaoId,
-    leadId: opts.leadId,
-    negocioId: opts.negocioId,
-    numero,
-    versao: 1,
-    moeda: opts.moeda,
-    status: "rascunho",
-    dataEmissao: today,
-    dataValidade: opts.dataValidade || undefined,
-    observacoes: opts.observacoes,
-    condicoesPagamento: opts.condicoesPagamento,
-    condicaoPagamentoTipo: opts.condicaoPagamentoTipo,
-    parcelas: opts.parcelas ?? 1,
-    vencimentoDias: opts.vencimentoDias,
-    prazoContratoMeses: opts.prazoContratoMeses ?? undefined,
-    trialDias: opts.trialDias ?? null,
-    signatarios: opts.signatarios,
-    totalRecorrente: totalRecorrente.toFixed(2),
-    totalAvulso: totalAvulso.toFixed(2),
-    totalGeral: (totalRecorrente + totalAvulso).toFixed(2),
-    criadoPorId: opts.criadoPorId,
-  }).returning();
 
-  await inserirItensDaProposta(proposta.id, opts.moeda, itensWithCalc);
+  // Proposta, número e linhas na MESMA transação: ou grava tudo ou nada.
+  const proposta = await db.transaction(async (tx) => {
+    const numero = await proximoNumeroDeProposta(tx, opts.organizacaoId);
+    const [criada] = await tx.insert(propostas).values({
+      organizacaoId: opts.organizacaoId,
+      leadId: opts.leadId,
+      negocioId: opts.negocioId,
+      numero,
+      versao: 1,
+      moeda: opts.moeda,
+      status: "rascunho",
+      dataEmissao: today,
+      dataValidade: opts.dataValidade || undefined,
+      observacoes: opts.observacoes,
+      condicoesPagamento: opts.condicoesPagamento,
+      condicaoPagamentoTipo: opts.condicaoPagamentoTipo,
+      parcelas: opts.parcelas ?? 1,
+      vencimentoDias: opts.vencimentoDias,
+      prazoContratoMeses: opts.prazoContratoMeses ?? undefined,
+      trialDias: opts.trialDias ?? null,
+      signatarios: opts.signatarios,
+      totalRecorrente: totalRecorrente.toFixed(2),
+      totalAvulso: totalAvulso.toFixed(2),
+      totalGeral: (totalRecorrente + totalAvulso).toFixed(2),
+      criadoPorId: opts.criadoPorId,
+    }).returning();
+    await inserirItensDaProposta(tx, criada.id, opts.moeda, itensWithCalc);
+    return criada;
+  });
 
-  await syncNegocioValoresFromPropostas(opts.negocioId);
-  await syncOportunidadeItensFromProposta(proposta.id);
+  await sincronizarDepoisDoCommit(opts.negocioId, proposta.id);
 
-  return { ...proposta, numeroFormatado: `#P-${String(numero).padStart(3, "0")}-v1` };
+  return { ...proposta, numeroFormatado: `#P-${String(proposta.numero).padStart(3, "0")}-v1` };
 }
 
 
@@ -223,46 +245,50 @@ export async function atualizarItensDoRascunho(opts: {
   prazoContratoMeses?: number | null;
   parcelas?: number | null;
 }) {
-  const [p] = await db.execute<{ status: string; negocio_id: string | null; moeda: string }>(sql`
-    SELECT status, negocio_id::text, moeda FROM propostas
-     WHERE id = ${opts.propostaId}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid`);
-  if (!p) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");
-  if (p.status !== "rascunho") {
-    throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se edita. Para mudar uma proposta enviada, crie uma revisão.");
-  }
   if (opts.itens.length === 0) throw new RegraDeNegocio("proposta_sem_itens", "A proposta precisa de pelo menos um item.");
-
+  // Valida tudo ANTES de abrir a transação ou apagar qualquer linha.
   const calc = calcularItens(opts.itens.map((item, idx) => ({ ...item, ordem: idx }))).itens;
   const mantidos = calc.filter((i) => i.itemExistenteId);
   const novos = calc.filter((i) => !i.itemExistenteId);
 
-  // oportunidade_itens aponta para proposta_itens (FK RESTRICT): soltar antes de apagar.
-  if (p.negocio_id) {
-    const { limparOportunidadeItensDeOrigemProposta } = await import("@/lib/crm/composicao-comercial");
-    await limparOportunidadeItensDeOrigemProposta(p.negocio_id);
-  }
-  const ids = mantidos.map((i) => i.itemExistenteId as string);
-  const fora = ids.length ? sql`AND id NOT IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})` : sql``;
-  await db.execute(sql`DELETE FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid ${fora}`);
-  for (const i of mantidos) {
-    await db.execute(sql`
-      UPDATE proposta_itens SET quantidade = ${i.quantidade}, valor_unitario = ${i.valorUnitario},
-             desconto = ${i.desconto}, desconto_tipo = ${i.descontoTipo}, subtotal = ${i.subtotal}, ordem = ${i.ordem}
-       WHERE id = ${i.itemExistenteId}::uuid AND proposta_id = ${opts.propostaId}::uuid`);
-  }
-  await inserirItensDaProposta(opts.propostaId, p.moeda, novos);
+  const negocioId = await db.transaction(async (tx) => {
+    // FOR UPDATE: um envio simultâneo espera esta edição terminar (e vice-versa).
+    const [p] = await tx.execute<{ status: string; negocio_id: string | null; moeda: string }>(sql`
+      SELECT status, negocio_id::text, moeda FROM propostas
+       WHERE id = ${opts.propostaId}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid FOR UPDATE`);
+    if (!p) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");
+    if (p.status !== "rascunho") {
+      throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se edita. Para mudar uma proposta enviada, crie uma revisão.");
+    }
 
-  await db.execute(sql`
-    UPDATE propostas SET
-      total_recorrente = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid AND tipo = 'recorrente'), 0),
-      total_avulso = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid AND tipo <> 'recorrente'), 0),
-      total_geral = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid), 0),
-      observacoes = COALESCE(${opts.observacoes ?? null}, observacoes),
-      prazo_contrato_meses = COALESCE(${opts.prazoContratoMeses ?? null}::int, prazo_contrato_meses),
-      parcelas = COALESCE(${opts.parcelas ?? null}::int, parcelas),
-      updated_at = now()
-     WHERE id = ${opts.propostaId}::uuid`);
+    // oportunidade_itens aponta para proposta_itens (FK RESTRICT): soltar antes de apagar.
+    if (p.negocio_id) {
+      const { limparOportunidadeItensDeOrigemProposta } = await import("@/lib/crm/composicao-comercial");
+      await limparOportunidadeItensDeOrigemProposta(p.negocio_id, tx);
+    }
+    const ids = mantidos.map((i) => i.itemExistenteId as string);
+    const fora = ids.length ? sql`AND id NOT IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})` : sql``;
+    await tx.execute(sql`DELETE FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid ${fora}`);
+    for (const i of mantidos) {
+      await tx.execute(sql`
+        UPDATE proposta_itens SET quantidade = ${i.quantidade}, valor_unitario = ${i.valorUnitario},
+               desconto = ${i.desconto}, desconto_tipo = ${i.descontoTipo}, subtotal = ${i.subtotal}, ordem = ${i.ordem}
+         WHERE id = ${i.itemExistenteId}::uuid AND proposta_id = ${opts.propostaId}::uuid`);
+    }
+    await inserirItensDaProposta(tx, opts.propostaId, p.moeda, novos);
 
-  if (p.negocio_id) await syncNegocioValoresFromPropostas(p.negocio_id);
-  await syncOportunidadeItensFromProposta(opts.propostaId);
+    await tx.execute(sql`
+      UPDATE propostas SET
+        total_recorrente = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid AND tipo = 'recorrente'), 0),
+        total_avulso = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid AND tipo <> 'recorrente'), 0),
+        total_geral = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid), 0),
+        observacoes = COALESCE(${opts.observacoes ?? null}, observacoes),
+        prazo_contrato_meses = COALESCE(${opts.prazoContratoMeses ?? null}::int, prazo_contrato_meses),
+        parcelas = COALESCE(${opts.parcelas ?? null}::int, parcelas),
+        updated_at = now()
+       WHERE id = ${opts.propostaId}::uuid`);
+    return p.negocio_id;
+  });
+
+  await sincronizarDepoisDoCommit(negocioId, opts.propostaId);
 }

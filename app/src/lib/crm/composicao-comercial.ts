@@ -229,11 +229,11 @@ export async function garantirItemComercialManual(negocioId: string): Promise<vo
  * proposta_itens: sem isso, o DELETE FROM proposta_itens do
  * PATCH /propostas/:id falha com violação de FK.
  */
-export async function limparOportunidadeItensDeOrigemProposta(negocioId: string): Promise<void> {
+export async function limparOportunidadeItensDeOrigemProposta(negocioId: string, exec: Pick<typeof db, "select" | "delete"> = db): Promise<void> {
   try {
-    const [oportunidade] = await db.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, negocioId)).limit(1);
+    const [oportunidade] = await exec.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, negocioId)).limit(1);
     if (!oportunidade) return;
-    await db
+    await exec
       .delete(oportunidadeItens)
       .where(and(eq(oportunidadeItens.oportunidadeId, oportunidade.id), eq(oportunidadeItens.origemLegado, "proposta_item")));
   } catch (err) {
