@@ -177,6 +177,15 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
          ORDER BY r.data LIMIT ${lim(i.limite, 20, 40)}`);
       return { ok: true, data: { reunioes: rows } };
     }),
+  leitura("disponibilidade", "Horários LIVRES da equipe comercial para marcar reunião: grade de trabalho de cada closer menos reuniões e o ocupado real do Outlook (getSchedule), em America/Sao_Paulo, com antecedência mínima. Cada horário traz a closer da vez no rodízio. Só ofereça horários devolvidos aqui; closer sem Outlook verificado não aparece.",
+    { duracao: { type: "integer", minimum: 15, maximum: 120 }, dias: { type: "integer", minimum: 1, maximum: 14 }, closer_id: str("uuid: só esta closer") }, [],
+    async (ctx, _u, i) => {
+      const closerId = i.closer_id ? String(i.closer_id) : null;
+      if (closerId && !UUID.test(closerId)) return { ok: false, error: "closer_id inválido" };
+      const { horariosLivresEquipe } = await import("@/lib/calendario/disponibilidade");
+      const d = await horariosLivresEquipe({ organizacaoId: ctx.organizacaoId, closerIds: closerId ? [closerId] : undefined, duracaoMin: Number(i.duracao ?? 30), dias: Number(i.dias ?? 7), maxSlots: 10 });
+      return { ok: true, data: d };
+    }),
   leitura("leads", "Leads de Pré-vendas (cards). etapa: novo, em_contato, qualificacao, qualificado, nutricao, desqualificado. sem_proxima_acao=true só os sem tarefa aberta.",
     { etapa: str("etapa de pré-vendas"), sem_proxima_acao: { type: "boolean" }, termo: str("parte do nome/empresa"), limite: { type: "integer" } }, [],
     async (ctx, u, i) => {

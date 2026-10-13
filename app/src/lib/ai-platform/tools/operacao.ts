@@ -15,7 +15,8 @@ import { lembrar, MemoriaRecusada } from "../operacao/memoria";
 // compromissos.ts importa o runtime (que importa este arquivo): carregado sob demanda para não fechar o ciclo.
 const compromissos = () => import("../operacao/compromissos");
 import { resolverCloser, sinaisDoLead } from "@/lib/crm/roteamento-closer";
-import { agendarReuniao, cancelarReuniaoDoAgente, horariosLivres, reagendarReuniao } from "@/lib/calendario/agendar-agente";
+import { horariosLivresEquipe } from "@/lib/calendario/disponibilidade";
+import { agendarReuniao, cancelarReuniaoDoAgente, reagendarReuniao } from "@/lib/calendario/agendar-agente";
 
 const objectSchema = (properties: Record<string, unknown> = {}, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
 const str = (description: string) => ({ type: "string", description });
@@ -33,12 +34,20 @@ async function leadDoContexto(ctx: AgentToolContext) {
 
 const exigirOutlook = (ctx: AgentToolContext) => ctx.guardrails?.agendaExigirOutlook !== false;
 
-async function closerDaRegra(ctx: AgentToolContext) {
+/**
+ * Quem pode receber a reunião, pela regra comercial: regra que fixa o closer restringe a ele; rodízio abre
+ * para a equipe (com a closer da vez na frente); sem closer pela regra, fila humana.
+ */
+async function equipeDaRegra(ctx: AgentToolContext) {
   if (!ctx.leadId) return { erro: "lead ausente" as const };
   const sinais = await sinaisDoLead(ctx.organizacaoId, ctx.leadId);
   const r = await resolverCloser({ organizacaoId: ctx.organizacaoId, familia: sinais.familia, campanha: sinais.campanha });
   if (r.tipo === "fila_humana") return { erro: `sem closer disponível pela regra: ${r.motivo}`, filaHumana: true as const };
-  return { closer: { id: r.usuarioId, nome: r.nome }, regra: r.regra?.nome ?? null, familia: sinais.familia };
+  return {
+    closer: { id: r.usuarioId, nome: r.nome }, regra: r.regra?.nome ?? null, familia: sinais.familia,
+    /** undefined = toda a equipe no rodízio. */
+    closerIds: r.tipo === "usuario" ? [r.usuarioId] : undefined,
+  };
 }
 
 export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
@@ -126,14 +135,14 @@ export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
   },
   {
     id: "agenda.slots", name: "agenda_slots", category: "operation", mutates: false,
-    description: "Consulta horários livres REAIS (agenda do CRM + Outlook) da closer definida pela regra comercial. Só ofereça ao contato horários devolvidos aqui. Se `verificado` vier false ou houver erro, não ofereça horário: avise que vai confirmar e peça uma pessoa.",
+    description: "Consulta horários livres REAIS (agenda do CRM + Outlook) da equipe comercial, já na regra de roteamento e no rodízio: cada horário traz a closer (`closer_id`). Só ofereça ao contato horários devolvidos aqui. Se `verificado` vier false ou houver erro, não ofereça horário: avise que vai confirmar e peça uma pessoa.",
     parameters: objectSchema({ duracao: { type: "integer", minimum: 15, maximum: 120 } }),
     execute: async (ctx, input) => {
-      const alvo = await closerDaRegra(ctx);
+      const alvo = await equipeDaRegra(ctx);
       if ("erro" in alvo) return { ok: false, error: alvo.erro, data: { filaHumana: Boolean(alvo.filaHumana) } };
-      const d = await horariosLivres({ organizacaoId: ctx.organizacaoId, closerId: alvo.closer.id, duracaoMin: Number(input.duracao ?? 30), exigirOutlook: exigirOutlook(ctx) });
-      if (!d.verificado && exigirOutlook(ctx)) return { ok: false, error: `agenda não verificada: ${d.motivoNaoVerificado ?? "Outlook indisponível"}`, data: { verificado: false } };
-      return { ok: true, data: { closer: alvo.closer.nome, regra: alvo.regra, verificado: d.verificado, fonte: d.fonte, fuso: "America/Sao_Paulo", slots: d.slots } };
+      const d = await horariosLivresEquipe({ organizacaoId: ctx.organizacaoId, closerIds: alvo.closerIds, preferidoId: alvo.closer.id, duracaoMin: Number(input.duracao ?? 30), exigirOutlook: exigirOutlook(ctx) });
+      if (!d.verificado && exigirOutlook(ctx)) return { ok: false, error: `agenda não verificada: ${d.closers.find((c) => c.motivo)?.motivo ?? "Outlook indisponível"}`, data: { verificado: false } };
+      return { ok: true, data: { regra: alvo.regra, verificado: d.verificado, fuso: d.fuso, slots: d.slots.map((s) => ({ inicioISO: s.inicioISO, fimISO: s.fimISO, label: s.label, closer_id: s.closerId, closer: s.closerNome })) } };
     },
   },
   {
@@ -141,15 +150,19 @@ export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
     description: "Confirma uma reunião no horário escolhido pelo contato: revalida a agenda, cria o evento no Outlook, a reunião e a oportunidade, e avisa a closer. Use apenas um `inicio` devolvido por agenda_slots. Só declare a reunião confirmada se esta ferramenta devolver ok.",
     parameters: objectSchema({
       inicio: str("Início ISO exatamente como devolvido por agenda_slots"), duracao: { type: "integer", minimum: 15, maximum: 120 },
+      closer_id: str("`closer_id` do horário escolhido, como devolvido por agenda_slots"),
       titulo: str("Título opcional"), resumo_para_closer: str("Resumo útil: contexto, dor, volume, decisor, objeções, o que o contato espera da reunião"),
     }, ["inicio", "resumo_para_closer"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "meeting.schedule", input); if (simulated) return simulated;
       if (!ctx.leadId) return { ok: false, error: "lead ausente" };
-      const alvo = await closerDaRegra(ctx);
+      const alvo = await equipeDaRegra(ctx);
       if ("erro" in alvo) return { ok: false, error: alvo.erro };
+      // Regra que fixa o closer manda; no rodízio vale a closer do horário escolhido.
+      const escolhida = input.closer_id ? String(input.closer_id) : null;
+      if (escolhida && alvo.closerIds && !alvo.closerIds.includes(escolhida)) return { ok: false, error: "esse horário não é de uma closer que a regra comercial permite para este lead" };
       const r = await agendarReuniao({
-        organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, closerId: alvo.closer.id, inicioISO: String(input.inicio), duracaoMin: Number(input.duracao ?? 30),
+        organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, closerId: escolhida ?? alvo.closer.id, inicioISO: String(input.inicio), duracaoMin: Number(input.duracao ?? 30),
         titulo: input.titulo ? String(input.titulo) : undefined, resumoParaCloser: String(input.resumo_para_closer), exigirOutlook: exigirOutlook(ctx), usuarioId: ctx.agenteUsuarioId ?? null,
       });
       return r.ok ? { ok: true, data: r } : { ok: false, error: r.erro, data: { codigo: r.codigo } };
