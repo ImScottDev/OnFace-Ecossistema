@@ -1,135 +1,126 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  acaoDelegarAAgente, acaoDevolverDelegacao, acaoPrepararDelegacao, type PreparoDelegacao,
+  acaoDevolverDelegacao, acaoPrepararDelegacao, type PreparoDelegacao,
 } from "@/app/(produto)/pipeline/delegacao-actions";
+import {
+  AO, AUTONOMIAS, FormDelegar, SeloEstadoAgente, api, enviar, linkExecucao, quando,
+  type AtribuicaoOp,
+} from "@/components/onface/atendimento/agente-operacao";
 
 /** Evento que o menu "Mais ações" (oportunidade e card) dispara para abrir o diálogo. */
 export const EVENTO_DELEGAR_AGENTE = "onface:delegar-agente";
 export const pedirDelegacaoAgente = (alvo: { negocioId?: string | null; leadId?: string | null }) =>
   window.dispatchEvent(new CustomEvent(EVENTO_DELEGAR_AGENTE, { detail: alvo }));
 
-const campo: React.CSSProperties = { width: "100%", padding: "9px 10px", borderRadius: 9, border: "1px solid var(--of-linha-controle)", background: "var(--of-papel)", color: "var(--of-tinta-forte)", font: "inherit", fontSize: 13.5 };
-const rotulo: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 4, fontSize: 12, fontWeight: 600, color: "var(--of-tinta)" };
+type Alvo = { negocioId?: string | null; leadId?: string | null };
 
 /**
- * "Delegar a um agente": atribui a oportunidade (ou lead) a uma agente de IA para ela fazer o
- * follow-up, com motivo e cadência, e permite devolver à pessoa. Montado nas telas que têm o menu.
+ * "Delegar a um agente": o agente assume contexto e objetivo e conduz sozinho, sem cadência de toques.
+ * Escolhe agente + objetivo (+ autonomia) e atribui; com atribuição em curso, mostra o estado e deixa
+ * pausar, retomar, transferir para uma pessoa ou encerrar. Montado nas telas que têm o menu.
  */
 export function DelegarAgenteHost() {
   const router = useRouter();
-  const [alvo, setAlvo] = React.useState<{ negocioId?: string | null; leadId?: string | null } | null>(null);
-  const [preparo, setPreparo] = React.useState<PreparoDelegacao | null>(null);
-  const [salvando, setSalvando] = React.useState(false);
-  const [agente, setAgente] = React.useState("");
+  const [alvo, setAlvo] = React.useState<Alvo | null>(null);
+  const [atrib, setAtrib] = React.useState<AtribuicaoOp | null | undefined>(undefined);
+  /* Delegação do modelo antigo (cadência de toques) que ainda esteja em curso: só dá para devolver. */
+  const [legado, setLegado] = React.useState<PreparoDelegacao["ativa"]>(null);
+  const [ocupado, setOcupado] = React.useState(false);
   const [motivo, setMotivo] = React.useState("");
-  const [dias, setDias] = React.useState(2);
-  const [intervalo, setIntervalo] = React.useState(2);
-  const [maxToques, setMaxToques] = React.useState(4);
+
+  const carregar = React.useCallback(async (a: Alvo) => {
+    try {
+      const q = new URLSearchParams();
+      if (a.negocioId) q.set("negocioId", a.negocioId);
+      if (a.leadId) q.set("leadId", a.leadId);
+      const j = await api<{ atribuicao: AtribuicaoOp | null }>(`${AO}/atribuicoes/alvo?${q}`);
+      setAtrib(j.atribuicao && j.atribuicao.status !== "encerrada" ? j.atribuicao : null);
+    } catch (e) { toast.error((e as Error).message); setAtrib(null); }
+    acaoPrepararDelegacao(a).then((p) => setLegado(p?.ativa ?? null)).catch(() => setLegado(null));
+  }, []);
 
   React.useEffect(() => {
     const abrir = (e: Event) => {
-      const a = (e as CustomEvent).detail as { negocioId?: string | null; leadId?: string | null };
-      setAlvo(a); setPreparo(null); setMotivo("");
-      acaoPrepararDelegacao(a).then((p) => { setPreparo(p); setAgente(p?.agentes[0]?.usuarioId ?? ""); });
+      const a = (e as CustomEvent).detail as Alvo;
+      setAlvo(a); setAtrib(undefined); setLegado(null); setMotivo("");
+      void carregar(a);
     };
     window.addEventListener(EVENTO_DELEGAR_AGENTE, abrir);
     return () => window.removeEventListener(EVENTO_DELEGAR_AGENTE, abrir);
-  }, []);
+  }, [carregar]);
 
-  if (!alvo) return null;
-  const fechar = () => { if (!salvando) setAlvo(null); };
-
-  const delegar = async () => {
-    setSalvando(true);
-    const r = await acaoDelegarAAgente({ ...alvo, agenteUsuarioId: agente, motivo, diasSemResposta: dias, intervaloDias: intervalo, maxToques });
-    setSalvando(false);
-    if (!r.ok) { toast.error(r.erro); return; }
-    toast.success("Follow-up delegado ao agente.");
-    setAlvo(null); router.refresh();
-  };
-  const devolver = async () => {
-    if (!preparo?.ativa) return;
-    setSalvando(true);
-    const r = await acaoDevolverDelegacao(preparo.ativa.id, motivo);
-    setSalvando(false);
-    if (!r.ok) { toast.error(r.erro); return; }
-    toast.success("Devolvido à pessoa responsável.");
-    setAlvo(null); router.refresh();
+  const fechar = () => { if (!ocupado) setAlvo(null); };
+  const rodar = async (fazer: () => Promise<unknown>, ok: string, fecha = false) => {
+    setOcupado(true);
+    try {
+      await fazer(); toast.success(ok);
+      if (fecha) setAlvo(null); else if (alvo) await carregar(alvo);
+      router.refresh();
+    } catch (e) { toast.error((e as Error).message); } finally { setOcupado(false); }
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Delegar a um agente" onClick={fechar}
-      style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(18,23,29,.45)", display: "grid", placeItems: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(460px, 100%)", maxHeight: "92vh", overflow: "auto", background: "var(--of-papel)", borderRadius: 18, padding: 22 }}>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "var(--of-tinta-forte)", letterSpacing: "-.02em" }}>
-          {preparo?.ativa ? "Follow-up delegado" : "Delegar a um agente"}
-        </h2>
-        {!preparo ? (
-          <p style={{ margin: "12px 0 0", fontSize: 13, color: "var(--of-tinta)" }}>Carregando…</p>
-        ) : preparo.ativa ? (
-          <>
-            <p style={{ margin: "6px 0 14px", fontSize: 13, color: "var(--of-tinta)" }}>
-              <strong>{preparo.ativa.agente}</strong> está responsável desde {new Date(preparo.ativa.desde).toLocaleDateString("pt-BR")}.
-              Toques feitos: {preparo.ativa.toques} de {preparo.ativa.maxToques}.
-              {preparo.ativa.proximoToqueEm ? ` Próximo toque em ${new Date(preparo.ativa.proximoToqueEm).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}.` : ""}
+    <Dialog open={!!alvo} onOpenChange={(o) => { if (!o) fechar(); }}>
+      <DialogContent className="agp max-h-[92vh] overflow-y-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{atrib ? "Agente nesta oportunidade" : "Delegar a um agente"}</DialogTitle>
+          <DialogDescription>
+            {atrib ? "Quem conduz o atendimento agora e o que você pode fazer." : "O agente lê o histórico, conduz sozinho e agenda as próprias retomadas. Você pode assumir quando quiser."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {atrib === undefined ? (
+          <p className="text-corpo text-tinta-suave">Carregando…</p>
+        ) : atrib ? (
+          <div className="flex flex-col gap-3" data-testid="delegar-atribuicao">
+            <div className="flex flex-wrap items-center gap-2">
+              <SeloEstadoAgente estado={atrib.status} />
+              <strong className="text-corpo text-tinta">{atrib.agente}</strong>
+            </div>
+            {atrib.objetivo && <p className="text-corpo text-tinta"><span className="font-medium">Objetivo:</span> {atrib.objetivo}</p>}
+            {atrib.autonomia && <p className="text-micro text-tinta-suave">Autonomia: {AUTONOMIAS[atrib.autonomia] ?? atrib.autonomia}</p>}
+            {atrib.motivoEstado && <p className="text-corpo text-tinta-suave">{atrib.motivoEstado}</p>}
+            {atrib.status === "humano" && atrib.resumoHandoff && (
+              <p className="whitespace-pre-wrap rounded-lg bg-superficie-alt p-3 text-corpo text-tinta">{atrib.resumoHandoff}</p>
+            )}
+            <p className="text-micro text-tinta-suave">
+              Desde {quando(atrib.createdAt)}.{" "}
+              {atrib.ultimaExecucaoEm && <>Última execução em {quando(atrib.ultimaExecucaoEm)}. <Link className="underline" href={linkExecucao(atrib.ultimoRunId)}>Ver execução</Link></>}
             </p>
-            <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--of-tinta)" }}>Motivo: {preparo.ativa.motivo}</p>
-            <label style={rotulo}>Motivo da devolução{preparo.ativa.devolverPara ? ` (volta para ${preparo.ativa.devolverPara})` : ""}
-              <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={2} placeholder="Ex.: cliente pediu para falar comigo" style={campo} />
-            </label>
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <button type="button" disabled={salvando} onClick={devolver} style={{ flex: 1, padding: 11, borderRadius: 10, border: 0, background: "var(--of-coral-acao)", color: "var(--of-papel)", font: "inherit", fontWeight: 600, cursor: "pointer" }}>
-                {salvando ? "Devolvendo…" : "Devolver à pessoa"}
-              </button>
-              <button type="button" onClick={fechar} style={{ padding: "11px 16px", borderRadius: 10, border: 0, background: "transparent", color: "var(--of-tinta)", font: "inherit", fontWeight: 600, cursor: "pointer" }}>Fechar</button>
+            <div className="flex flex-wrap gap-2">
+              {atrib.status === "humano" && <Button size="sm" disabled={ocupado} onClick={() => rodar(() => enviar(`${AO}/atribuicoes/${atrib.id}/retomar`, "POST"), "Agente voltou a conduzir.")}>Devolver ao agente</Button>}
+              {["pausada", "falha"].includes(atrib.status) && <Button size="sm" disabled={ocupado} onClick={() => rodar(() => enviar(`${AO}/atribuicoes/${atrib.id}/retomar`, "POST"), "Agente retomado.")}>Retomar</Button>}
+              {["ativa", "aguardando_aprovacao"].includes(atrib.status) && <Button size="sm" variant="outline" disabled={ocupado} onClick={() => rodar(() => enviar(`${AO}/atribuicoes/${atrib.id}/pausar`, "POST", { motivo: "Pausado por uma pessoa" }), "Agente pausado.")}>Pausar</Button>}
+              {atrib.status !== "humano" && <Button size="sm" variant="outline" disabled={ocupado} onClick={() => rodar(() => enviar(`${AO}/atribuicoes/${atrib.id}/transferir`, "POST", { motivo: "Pessoa assumiu o atendimento" }), "Você assumiu o atendimento.")}>Assumir (transferir para mim)</Button>}
+              <Button size="sm" variant="ghost" disabled={ocupado} onClick={() => rodar(() => enviar(`${AO}/atribuicoes/${atrib.id}/encerrar`, "POST", { motivo: "Encerrado por uma pessoa" }), "Atuação do agente encerrada.", true)}>Encerrar</Button>
             </div>
-          </>
-        ) : preparo.agentes.length === 0 ? (
-          <>
-            <p style={{ margin: "8px 0 14px", fontSize: 13, color: "var(--of-tinta)" }}>Nenhum agente de atendimento publicado. Publique um agente em Automações, Agentes (com a ferramenta de preparar mensagem) para poder delegar.</p>
-            <button type="button" onClick={fechar} style={{ width: "100%", padding: 11, borderRadius: 10, border: 0, background: "var(--of-neutro)", color: "var(--of-tinta-forte)", font: "inherit", fontWeight: 600, cursor: "pointer" }}>Fechar</button>
-          </>
-        ) : (
-          <>
-            <p style={{ margin: "6px 0 14px", fontSize: 13, color: "var(--of-tinta)" }}>
-              O agente passa a ser o responsável e faz o follow-up pelo WhatsApp. Você pode pedir de volta quando quiser.
+          </div>
+        ) : legado ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-corpo text-tinta">
+              <strong>{legado.agente}</strong> está com um follow-up por toques desde {new Date(legado.desde).toLocaleDateString("pt-BR")} ({legado.toques} de {legado.maxToques}). Motivo: {legado.motivo}
             </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <label style={rotulo}>Agente
-                <select value={agente} onChange={(e) => setAgente(e.target.value)} style={campo}>
-                  {preparo.agentes.map((a) => <option key={a.usuarioId} value={a.usuarioId}>{a.nome} (IA)</option>)}
-                </select>
-              </label>
-              <label style={rotulo}>Motivo (obrigatório)
-                <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} placeholder="Ex.: enviei a proposta, acompanhar se o cliente viu e tirar dúvidas" style={campo} />
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                <label style={rotulo}>1º toque após (dias)
-                  <input type="number" min={0} max={60} value={dias} onChange={(e) => setDias(Number(e.target.value))} style={campo} />
-                </label>
-                <label style={rotulo}>A cada (dias)
-                  <input type="number" min={1} max={30} value={intervalo} onChange={(e) => setIntervalo(Number(e.target.value))} style={campo} />
-                </label>
-                <label style={rotulo}>Máx. toques
-                  <input type="number" min={1} max={10} value={maxToques} onChange={(e) => setMaxToques(Number(e.target.value))} style={campo} />
-                </label>
-              </div>
-              <p style={{ margin: 0, fontSize: 12, color: "var(--of-tinta)" }}>Sem resposta depois do último toque, volta para você. Se o cliente pedir uma pessoa, também.</p>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <button type="button" disabled={salvando || !motivo.trim() || !agente} onClick={delegar}
-                style={{ flex: 1, padding: 11, borderRadius: 10, border: 0, background: "var(--of-coral-acao)", color: "var(--of-papel)", font: "inherit", fontWeight: 600, cursor: "pointer", opacity: salvando || !motivo.trim() ? 0.5 : 1 }}>
-                {salvando ? "Delegando…" : "Delegar"}
-              </button>
-              <button type="button" onClick={fechar} style={{ padding: "11px 16px", borderRadius: 10, border: 0, background: "transparent", color: "var(--of-tinta)", font: "inherit", fontWeight: 600, cursor: "pointer" }}>Cancelar</button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+            <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={2} placeholder="Motivo da devolução" aria-label="Motivo da devolução" />
+            <Button disabled={ocupado} onClick={async () => {
+              setOcupado(true);
+              const r = await acaoDevolverDelegacao(legado.id, motivo);
+              setOcupado(false);
+              if (!r.ok) { toast.error(r.erro); return; }
+              toast.success("Devolvido à pessoa responsável."); setAlvo(null); router.refresh();
+            }}>Devolver à pessoa</Button>
+          </div>
+        ) : alvo ? (
+          <FormDelegar alvo={alvo} aoConcluir={() => { void carregar(alvo); router.refresh(); }} />
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }

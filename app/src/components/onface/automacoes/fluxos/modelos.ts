@@ -97,4 +97,25 @@ export const MODELOS: ModeloFluxo[] = [
       ["n6", "criar_tarefa", { titulo: "Responder a dúvida de {{ contato.nome }}", prioridade: "alta", prazoMinutos: 120 }, 2, 1.2],
     ], [["n1", "ok", "n2"], ["n2", "interessado", "n3"], ["n3", "ok", "n4"], ["n2", "sem_interesse", "n5"], ["n2", "duvida", "n6"]]),
   },
+  {
+    id: "tag-oportunidade-agente",
+    nome: "Tag na oportunidade aciona o agente",
+    descricao: "Quando uma tag é aplicada em uma oportunidade, o agente retoma o atendimento com o objetivo que você definir. Sem cadência.",
+    icone: "Sparkles",
+    grafo: () => montar([
+      ["n1", "gatilho", { modo: "evento", evento: "tag.adicionada", entidadeAlvo: "oportunidade" }, 0, 0],
+      ["n2", "agente_acionar", { objetivo: "Retomar a negociação desta oportunidade e conduzir ao próximo passo.", modo: "conduzir" }, 1, 0],
+    ], [["n1", "ok", "n2"]]),
+  },
+  {
+    id: "lead-novo-agente",
+    nome: "Lead novo atendido por um agente",
+    descricao: "Quando o lead chega, um agente assume o atendimento e já é acionado para o primeiro contato. Ele planeja as próprias retomadas.",
+    icone: "UserCheck",
+    grafo: () => montar([
+      ["n1", "gatilho", { modo: "evento", evento: "lead.criado" }, 0, 0],
+      ["n2", "agente_atribuir", { objetivo: "Qualificar o lead e agendar uma conversa com o time comercial.", trocar: false }, 1, 0],
+      ["n3", "agente_acionar", { objetivo: "Fazer o primeiro contato com o lead.", modo: "conduzir" }, 2, 0],
+    ], [["n1", "ok", "n2"], ["n2", "ok", "n3"]]),
+  },
 ];

@@ -92,6 +92,9 @@ export function resumoNo(no: NoFluxo, opcoes?: OpcoesInspetor, max = 2): { rotul
     const linhas: { rotulo: string; valor: string }[] = [];
     if (c.modo === "agendado" && c.alvo && c.alvo !== "nenhuma") linhas.push({ rotulo: "Para cada", valor: ROTULO_ENTIDADE[c.alvo as TipoEntidade] ?? String(c.alvo) });
     if (c.modo === "manual" && c.entidade && c.entidade !== "nenhuma") linhas.push({ rotulo: "Roda sobre", valor: ROTULO_ENTIDADE[c.entidade as TipoEntidade] ?? String(c.entidade) });
+    if (c.modo === "evento" && c.entidadeAlvo && visivel(meta.campos.find((x) => x.chave === "entidadeAlvo")!, c, meta.campos)) {
+      linhas.push({ rotulo: "Só para", valor: valorTexto(meta.campos.find((x) => x.chave === "entidadeAlvo")!, c.entidadeAlvo) });
+    }
     if (c.modo === "evento" && Array.isArray(c.filtros) && c.filtros.length) {
       linhas.push({ rotulo: "Só quando", valor: valorTexto(meta.campos.find((x) => x.chave === "filtros")!, c.filtros) });
     }

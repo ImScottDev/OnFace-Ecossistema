@@ -104,6 +104,24 @@ app.get(`${AO}/atribuicoes`, async (c) => {
   return c.json({ atribuicoes: linhas.map((l) => ({ ...l.a, agente: l.agente, lead: l.lead, contato: l.contato })) });
 });
 
+/** Atribuição viva de uma oportunidade ou lead (Pipeline): resolve o lead da oportunidade, pois a atribuição pode ter nascido na conversa. */
+app.get(`${AO}/atribuicoes/alvo`, async (c) => {
+  const ctx = await getCtx(c);
+  const negocioId = c.req.query("negocioId"); const queryLead = c.req.query("leadId");
+  if (negocioId && !uuid.safeParse(negocioId).success) throw new HTTPException(400, { message: "Oportunidade inválida" });
+  if (queryLead && !uuid.safeParse(queryLead).success) throw new HTTPException(400, { message: "Lead inválido" });
+  let leadId = queryLead ?? null;
+  if (negocioId) {
+    const [n] = await db.execute<{ lead_id: string | null }>(sql`SELECT lead_id::text FROM negocios WHERE id = ${negocioId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+    if (!n) throw new HTTPException(404, { message: "Oportunidade não encontrada" });
+    leadId = n.lead_id ?? leadId;
+  }
+  const a = leadId ? await atribuicaoViva(ctx.organizacaoId, { leadId }) : null;
+  if (!a) return c.json({ atribuicao: null });
+  const [ag] = await db.select({ nome: aiAgents.nome }).from(aiAgents).where(eq(aiAgents.id, a.agentId)).limit(1);
+  return c.json({ atribuicao: { ...a, agente: ag?.nome ?? null } });
+});
+
 app.get(`${AO}/atribuicoes/conversa/:contatoId`, async (c) => {
   const ctx = await getCtx(c);
   await exigirContato(ctx, c.req.param("contatoId"));

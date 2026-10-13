@@ -32,6 +32,7 @@ import type { CadenciaDoLead } from "@/lib/atendimento/cadencias";
 import { ETAPAS_PIPELINE, ROTULO_ETAPA_PIPELINE, ROTULO_FAMILIA, ROTULO_ETAPA_PRE_VENDAS } from "@/lib/vendas/dominio";
 import { nomeExibicao } from "@/components/crm2/atendimento/types";
 import { AtendimentoLiga } from "./AtendimentoLiga";
+import { PainelAgenteConversa } from "@/components/onface/atendimento/PainelAgenteConversa";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
 import { acaoCriarLead } from "@/app/(produto)/pre-vendas/actions";
@@ -501,19 +502,22 @@ class AtendimentoLigado extends AtendimentoLiga {
       const est = C.id ? (P.iaEstados ?? {})[C.id] : undefined;
       const ativaIa = est?.estado === "ativa";
       v.ia.ativa = ativaIa;
-      v.ia.btnLabel = !est ? "IA" : ativaIa ? "IA ativa" : est.estado === "pausada" ? "IA pausada" : est.estado === "desligada" ? "Ligar IA" : "Sem agente";
+      const comAgente = !!est?.atribuicao;
+      v.ia.btnLabel = !est ? "IA" : ({
+        ativa: comAgente ? "Agente ativo" : "IA ativa", pausada: comAgente ? "Agente pausado" : "IA pausada", aguardando_aprovacao: "Aguardando aprovação",
+        humano: "Com uma pessoa", falha: "Falha do agente", desligada: "Agente", sem_agente: "Sem agente",
+      } as Record<string, string>)[est.estado] ?? "Agente";
       v.ia.btnTitulo = est ? [est.motivo, est.aviso, est.semResposta].filter(Boolean).join(" ") : "Verificando a IA desta conversa";
       v.ia.btnStyle = "display:flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 8px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;"
         + (ativaIa ? "background:var(--of-tinta-forte);color:var(--of-papel)" : "background:var(--of-papel);color:var(--of-tinta);box-shadow:inset 0 0 0 1px var(--of-linha-controle)");
       v.ia.btnClick = () => {
         if (!C.id) return;
         if (!est) return toast("Verificando a IA desta conversa. Tente de novo em instantes.");
-        if (est.estado === "sem_agente") return toast(est.motivo, { description: "Abra Automações > Agentes para ligar um agente a este número." });
-        P.alternarIa?.(C.id, est.estado === "pausada" || est.estado === "desligada");
+        P.abrirPainelIa?.(C.id);
       };
       v.ia.resumo = est ? [est.agente?.nome, est.aviso ?? est.semResposta].filter(Boolean).join(" · ") || est.motivo : "";
       v.ia.editar = () => (est?.agente?.id ? P.abrirAgente?.(est.agente.id) : toast("Esta resposta vem da configuração clássica do SDR, em Automações > Agentes."));
-      v.ia.assumir = () => { if (C.id) P.alternarIa?.(C.id, false); };
+      v.ia.assumir = () => { if (!C.id) return; if (est?.atribuicao) P.abrirPainelIa?.(C.id, "assumir"); else P.alternarIa?.(C.id, false); };
     }
 
     /* 5. Números (caixas). Os cinco do protótipo — (11) 97700-4410,
@@ -963,6 +967,8 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
       setIaEstados((e) => ({ ...e, [id]: j }));
     } catch { /* sem estado: o botão fica em "IA" e diz que está verificando */ }
   }, [chamar]);
+  /* Gaveta do agente da conversa (delegar, assumir, pausar, trocar, contexto e memória). */
+  const [painelIa, setPainelIa] = React.useState<{ id: string; modo: "assumir" | null } | null>(null);
   const alternarIa = React.useCallback(async (id: string, ativa: boolean) => {
     try {
       const j = await chamar(`/api/atendimento/conversas/${id}/ia`, { method: "POST", body: JSON.stringify({ ativa }) }, "Não consegui alterar a IA.");
@@ -1388,6 +1394,7 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
         cadReais={cadencias}
         iaEstados={iaEstados}
         alternarIa={alternarIa}
+        abrirPainelIa={(id: string, modo?: "assumir") => setPainelIa({ id, modo: modo ?? null })}
         abrirAgente={(id: string) => router.push(`/automacoes/agentes/${id}`)}
         aoSelecionar={(id: string) => { selecionadaRef.current = id; void carregarThread(id); void carregarIa(id); }}
         buscarLeads={buscarLeadsRemoto}
@@ -1395,6 +1402,15 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
         abrir={abrir}
         abrirExterno={(url: string) => window.open(url, "_blank", "noopener")}
         ir={ir}
+      />
+      <PainelAgenteConversa
+        contatoId={painelIa?.id ?? null}
+        aberto={!!painelIa}
+        modoInicial={painelIa?.modo ?? null}
+        aoFechar={() => setPainelIa(null)}
+        estado={painelIa ? iaEstados[painelIa.id] : undefined}
+        aoMudar={() => { if (painelIa) void carregarIa(painelIa.id); }}
+        alternarLegado={(ativa) => { if (painelIa) void alternarIa(painelIa.id, ativa); }}
       />
     </div>
   );

@@ -40,10 +40,10 @@ test("trocarNo descarta ligação de saída que deixou de existir", () => {
   assert.equal(duplicar(g, "n1"), null);
 });
 
-test("modelos só pendem do que depende da conta (tag, etapa)", () => {
+test("modelos só pendem do que depende da conta (tag, etapa, agente)", () => {
   for (const m of MODELOS) {
     const pend = validarGrafo(m.grafo());
-    const outras = pend.filter((p) => !["tagId", "etapa"].includes(p.campo ?? ""));
+    const outras = pend.filter((p) => !["tagId", "etapa", "agenteId"].includes(p.campo ?? ""));
     assert.deepEqual(outras, [], `${m.id}: ${JSON.stringify(outras)}`);
   }
 });
