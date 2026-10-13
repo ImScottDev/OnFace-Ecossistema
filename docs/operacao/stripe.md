@@ -57,6 +57,8 @@ existia no Stripe antes do CRM = cliente novo. É a causa dos 30 casos medidos.
 que atrasa até 1 h e tem limite de 20 leituras/s.
 
 ### D2 — Upsell em quem já paga: bloqueado, e sem saída
+> **Resolvido (lote 3):** a alteração existe em `lib/integrations/stripe-assinatura-acoes.ts`, exposta por `api-server/routes/clientes-assinatura.ts` e usada no Cliente 360 (`components/onface/AssinaturasDoCliente.tsx`). O texto abaixo é o diagnóstico original.
+
 `lib/crm/checkout.ts:41-47` barra o checkout de expansão com a mensagem "conclua
 pela alteração de assinatura aprovada". **Essa alteração não existe em runtime.**
 Não há uma chamada de `subscription_items` fora de script manual. O próprio

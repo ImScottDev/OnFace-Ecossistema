@@ -33,6 +33,7 @@ import { geometriaFaturamento } from "@/lib/clientes/evolucao-geometria";
 import { ClienteLiga } from "./ClienteLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
+import { AssinaturasDoCliente } from "../AssinaturasDoCliente";
 import { UsoDoClientePainel, type PropsUsoDoCliente } from "@/components/onface/callface-ai/UsoDoClientePainel";
 
 /** Leitura da Callface AI que a página entrega pronta (Server Component). */
@@ -898,6 +899,9 @@ export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDes
         abrirExterno={(u: string) => window.open(u, "_blank", "noopener")}
         ir={ir}
       />
+      {/* Alterar a assinatura (adicionar, quantidade, trocar plano, cancelar,
+          reativar) com prévia do Stripe — o desenho não tem lugar para isso. */}
+      <AssinaturasDoCliente empresaId={cliente.empresa.id} />
     </div>
   );
 }
