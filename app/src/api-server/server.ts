@@ -61,6 +61,7 @@ import { buscaGlobalRoutes } from "./routes/busca-global.js";
 import { clientesCrm2Routes } from "./routes/clientes-crm2.js";
 import { csRoutes } from "./routes/cs.js";
 import { clientesFinanceiroRoutes } from "./routes/clientes-financeiro.js";
+import { clientesAssinaturaRoutes } from "./routes/clientes-assinatura.js";
 import { scriptsAtendimentoRoutes } from "./routes/scripts-atendimento.js";
 import { documentosAtendimentoRoutes } from "./routes/documentos-atendimento.js";
 import { automacoesCadenciasRoutes } from "./routes/automacoes-cadencias.js";
@@ -129,6 +130,7 @@ app.route("/api", cadenciaRoutes);
 app.route("/api", clientesCrm2Routes);
 app.route("/api", csRoutes);
 app.route("/api", clientesFinanceiroRoutes);
+app.route("/api", clientesAssinaturaRoutes);
 app.route("/api", scriptsAtendimentoRoutes);
 app.route("/api", documentosAtendimentoRoutes);
 // Antes de /api/automacoes: aquele tem "/:id" e engoliria /automacoes/fluxos.

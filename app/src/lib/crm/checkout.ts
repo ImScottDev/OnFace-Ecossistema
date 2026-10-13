@@ -31,7 +31,7 @@ import { appUrl } from "@/lib/app-url";
 
 export type CriarCheckoutResult =
   | { ok: true; checkoutId: string; url: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; /** Para onde ir resolver: a alteração da assinatura no Cliente 360. */ alterarAssinaturaUrl?: string };
 
 /**
  * Checkout em modo subscription sempre cria uma assinatura nova no Stripe.
@@ -42,9 +42,12 @@ export type CriarCheckoutResult =
 export function bloqueioNovoCheckoutDeAssinatura(
   commercialMotion: string | null | undefined,
   temItemRecorrente: boolean,
+  /** Link da ação no Cliente 360; entra na mensagem para ela ter saída. */
+  caminhoDaAlteracao?: string,
 ): string | null {
   if (!temItemRecorrente || !commercialMotion || commercialMotion === "NEW_BUSINESS") return null;
-  return "Esta venda altera uma assinatura existente. O checkout de nova assinatura foi bloqueado para evitar cobrança duplicada; conclua pela alteração de assinatura aprovada.";
+  return "Esta venda altera uma assinatura existente, então não gera checkout novo (cobraria em duplicidade). Conclua em Cliente 360 › Assinaturas › Adicionar produto / Trocar plano"
+    + (caminhoDaAlteracao ? `: ${caminhoDaAlteracao}` : ".");
 }
 
 /**
@@ -66,7 +69,7 @@ export async function criarCheckoutParaGrupo(opts: {
   const [proposta] = await db.select().from(propostas).where(eq(propostas.id, grupo.propostaId)).limit(1);
   if (!proposta) return { ok: false, error: "Proposta não encontrada" };
   const [negocio] = proposta.negocioId
-    ? await db.select({ commercialMotion: negocios.commercialMotion }).from(negocios).where(eq(negocios.id, proposta.negocioId)).limit(1)
+    ? await db.select({ commercialMotion: negocios.commercialMotion, empresaId: negocios.empresaId }).from(negocios).where(eq(negocios.id, proposta.negocioId)).limit(1)
     : [undefined];
 
   const itensDoGrupo = await db
@@ -90,11 +93,15 @@ export async function criarCheckoutParaGrupo(opts: {
     .orderBy(asc(propostaItens.ordem));
 
   if (itensDoGrupo.length === 0) return { ok: false, error: "Grupo comercial sem itens" };
+  const caminho = negocio?.empresaId && proposta.negocioId
+    ? `${appUrl()}/clientes/${negocio.empresaId}?alterar-assinatura=1&negocio=${proposta.negocioId}&proposta=${proposta.id}`
+    : undefined;
   const bloqueioAssinatura = bloqueioNovoCheckoutDeAssinatura(
     negocio?.commercialMotion,
     itensDoGrupo.some((item) => item.tipo === "recorrente"),
+    caminho,
   );
-  if (bloqueioAssinatura) return { ok: false, error: bloqueioAssinatura };
+  if (bloqueioAssinatura) return { ok: false, error: bloqueioAssinatura, alterarAssinaturaUrl: caminho };
 
   const [lead] = await db.select({
     id: leads.id, nome: leads.nome, sobrenome: leads.sobrenome, email: leads.email, telefone: leads.telefone,
