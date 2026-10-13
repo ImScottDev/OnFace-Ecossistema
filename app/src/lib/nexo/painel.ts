@@ -500,7 +500,7 @@ export async function perguntar(q: Quem, entrada: { conversaId?: string | null; 
   const { agente } = prep;
 
   const r = await retrato(q);
-  const loops = await filaDeLoops({ organizacaoId: q.organizacaoId, responsavelId: escopo(q), limite: 10 });
+  const loops = await filaDeLoops({ organizacaoId: q.organizacaoId, responsavelId: escopo(q), limite: 6 });
   const ent = entidadeDaRota(entrada.rota);
   // O id vem da rota que o cliente manda: só lê o uso se a empresa é DESTA
   // organização (lerUsoCallfaceAi não filtra tenant).
@@ -523,7 +523,9 @@ export async function perguntar(q: Quem, entrada: { conversaId?: string | null; 
     loopsAbertos: loops.map((l) => ({ titulo: l.titulo, empresa: l.empresaNome, motivo: l.rotulo, detalhe: l.detalhe, valor: l.valor, responsavel: l.responsavelNome })),
     usoCallfaceAi: uso,
   };
-  const historico = anteriores.slice(-12).map((m) => `${m.de === "eu" ? "Usuário" : "NEXO"}: ${m.texto}`).join("\n");
+  // Janela de uso da assinatura: histórico curto e cada fala cortada (resposta antiga com tabela pesa mais que a pergunta nova).
+  const clip = (t: string) => (t.length > 500 ? `${t.slice(0, 500)}…` : t);
+  const historico = anteriores.slice(-8).map((m) => `${m.de === "eu" ? "Usuário" : "NEXO"}: ${clip(m.texto)}`).join("\n");
   const mensagem = [
     `Você é o NEXO, o harness de inteligência do ONFACE, não um agente comercial configurável. Está conversando com ${q.userName} (${q.userRole}); suas ações são limitadas pelo papel e pela política vigente. Para uma pergunta sobre leads que chegaram num período/campanha, chame nexo_entradas; sobre pico de chegada por dia/hora, chame nexo_horarios_entrada; sobre clientes ou leads que escreveram e não receberam resposta, chame nexo_nao_respondidas. Use nexo_leads para o estado atual do board, não como substituto da entrada histórica. Responda em português, diretamente, informando período, escopo, fonte e cobertura do dado. Formato: markdown simples (## título curto, **negrito**, listas com -, tabela | a | b | quando houver mais de 3 linhas comparáveis, > citação para fonte/escopo). SEM emojis, sem HTML, sem link externo. Campanha nula é "sem campanha identificada", nunca inferida. A classe de uma pessoa ou empresa (Cliente, Lead, Prospect ou Contato) vem PRONTA nos dados (campos classe/classeRotulo/estagio/motivo, e tela.classificacao para o registro aberto): repita-a como está e nunca a deduza da etapa, do cadastro ou de estar na carteira; nutrição e desqualificado são Contato, e aquisição encerrada não é mais Lead. Ao listar registros, use o href real de cada item como [Abrir](/rota).`,
     MAPA_ONFACE,
