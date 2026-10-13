@@ -13,8 +13,8 @@
  * (service_family), não por item.
  */
 import { db } from "@/lib/db";
-import { eq } from "drizzle-orm";
-import { negocios, leads, oportunidadeBundle } from "@/lib/db/schema";
+import { eq, inArray } from "drizzle-orm";
+import { negocios, leads, oportunidadeBundle, catalogoPrecos, servicosCatalogo } from "@/lib/db/schema";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { criarPropostaComItens, type ItemEntrada } from "@/lib/crm/proposta-criacao";
 import { resolverServiceFamiliesPorCatalogoIds } from "@/lib/crm/composicao-comercial";
@@ -23,10 +23,20 @@ export const FAMILY_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI"
 
 /** Agrupa um carrinho de itens por linha comercial (service_family do catálogo). */
 export async function agruparItensPorLinhaComercial(itens: ItemEntrada[]): Promise<Map<string, ItemEntrada[]>> {
+  // O Price oficial é quem declara a família (a proposta só aceita linha com Price); o produto avulso fica de reserva.
+  const precoIds = [...new Set(itens.map((i) => i.catalogoPrecoId).filter((v): v is string => !!v))];
+  const familiaDoPreco = new Map<string, string>();
+  if (precoIds.length) {
+    const rows = await db.select({ id: catalogoPrecos.id, familia: servicosCatalogo.serviceFamily })
+      .from(catalogoPrecos).innerJoin(servicosCatalogo, eq(servicosCatalogo.id, catalogoPrecos.servicoCatalogoId))
+      .where(inArray(catalogoPrecos.id, precoIds));
+    for (const r of rows) familiaDoPreco.set(r.id, r.familia);
+  }
   const familyMap = await resolverServiceFamiliesPorCatalogoIds(itens.map((i) => i.servicoCatalogoId));
   const grupos = new Map<string, ItemEntrada[]>();
   for (const item of itens) {
-    const familia = item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) || "UNKNOWN" : "UNKNOWN";
+    const familia = (item.catalogoPrecoId && familiaDoPreco.get(item.catalogoPrecoId))
+      || (item.servicoCatalogoId ? familyMap.get(item.servicoCatalogoId) : null) || "UNKNOWN";
     const lista = grupos.get(familia) || [];
     lista.push(item);
     grupos.set(familia, lista);
