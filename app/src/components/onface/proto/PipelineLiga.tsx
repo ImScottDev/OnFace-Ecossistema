@@ -124,19 +124,12 @@ class Logica extends React.Component<any, any> {
   }
 
   abrirReuniao(O, i) {
-    /* Reunião nova: a peça ÚNICA de Reunião (`/api/reunioes`, evento e agenda). O modal local
-       daqui só mexia no estado e o servidor nunca soube da reunião. */
-    if (i == null && this.E) return this.E.abrir("novaReuniao", { oppId: O.id, leadId: O.leadId || null, empresaId: O.empresaId || null, empresa: O.empresa, pessoa: O.pessoa });
-    const A = i != null ? (O.atvs || [])[i] : null, RE = A && A.reuniao;
-    if (A) {
-      const iso = RE && RE.data ? RE.data : (() => { const m = String(A.quando || "").match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? m[3] + "-" + m[2] + "-" + m[1] : ""; })();
-      const hr = RE && RE.hora ? RE.hora : ((String(A.quando || "").match(/(\d{1,2}:\d{2})/) || [])[1] || "14:00");
-      const parts = (RE && RE.participantes) || [];
-      return this.setState({ modal: null, reu: { id: O.id, i, data: iso, hora: hr, dur: (RE && RE.duracao) || 30, tipo: (RE && RE.formato) || "Vídeo", closer: (RE && RE.closer) || A.autor || O.resp, titulo: A.titulo || "", pauta: A.desc || "", conv: parts.slice(1), novoConv: null, tentou: false, local: (RE && RE.local) || "" } });
-    }
-    const d = new Date(); d.setDate(d.getDate() + 1);
-    const iso = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-    this.setState({ reu: { id: O.id, data: iso, hora: "14:00", dur: 30, tipo: "Vídeo", closer: O.resp, titulo: O.empresa + " x Callface", pauta: "", conv: [], novoConv: null, tentou: false, local: "" } });
+    /* A peça ÚNICA de Reunião (`/api/reunioes`, evento e agenda), para criar E para ver/editar: ela
+       relê a reunião por id a cada abertura. Não existe mais modal de reunião aqui dentro. */
+    const ctx = { oppId: O.id, leadId: O.leadId || null, empresaId: O.empresaId || null };
+    if (i == null) return this.E.abrir("novaReuniao", { ...ctx, empresa: O.empresa, pessoa: O.pessoa });
+    const A = (O.atvs || [])[i] || {};
+    this.E.abrir("reuniao", { id: A.reuniaoId || null, ...ctx });
   }
 
   componentDidMount() {
@@ -493,7 +486,7 @@ class Logica extends React.Component<any, any> {
           };
           const via = O.via || ((O.atvs || []).some(x => x.tipo === "Reunião") ? "reuniao" : (O.atvs || []).some(x => x.tipo === "E-mail") ? "email" : (O.atvs || []).some(x => x.tipo === "Ligação") ? "ligacao" : "outro");
           const abrirNa = (tipo) => { setUi({ menu: null }); if (tipo === "Reunião") return this.abrirReuniao(O); this.abrirAtv(O, null, tipo); };
-          const verAtv = (i) => { setUi({ menu: null }); const A = (O.atvs || [])[i] || {}; if (A.tipo === "Reunião") return this.setState({ reuVer: { id: O.id, i } }); if (Es) return Es.abrir("verAtividade", "o:" + O.id + ":" + i); this.setState({ av: { id: O.id, i, modo: "ver" } }); };
+          const verAtv = (i) => { setUi({ menu: null }); const A = (O.atvs || [])[i] || {}; if (A.tipo === "Reunião") return this.abrirReuniao(O, i); if (Es) return Es.abrir("verAtividade", "o:" + O.id + ":" + i); this.setState({ av: { id: O.id, i, modo: "ver" } }); };
           const tel = (LD && (LD.tel || LD.telefone)) || "";
           const irAt = (canal) => lead && Es ? Es.irPara("/atendimento", "Atendimento", { lead, canal }) : this.diz(O.pessoa + " ainda não tem conversa no Atendimento", "aviso");
           const canais = [
@@ -635,9 +628,7 @@ class Logica extends React.Component<any, any> {
     // modal
     let m = { grupos: [], campos: [], resumo: [], itens: [] };
     const md0 = S.modal, MO0 = md0 ? todas.find(o => o.id === md0.id) : null;
-    const ehReu = md0 && MO0 && md0.k === "atvver" && ((MO0.atvs || [])[md0.i] || {}).tipo === "Reunião";
-    const rvSrc = S.reuVer || (ehReu ? { id: md0.id, i: md0.i } : null);
-    const md = ehReu ? null : md0, MO = ehReu ? null : MO0;
+    const md = md0, MO = MO0;
     const av = (() => {
       const AV = S.av, AO = AV ? todas.find(o => o.id === AV.id) : null;
       if (!AV || !AO) return { aberto: false, situacoes: [], tipos: [], equipe: [] };
@@ -681,55 +672,7 @@ class Logica extends React.Component<any, any> {
           this.diz(AV.novo ? "Atividade criada" : "Atividade salva", "ok");
         } };
     })();
-    const rv = (() => {
-      const RO = rvSrc ? todas.find(o => o.id === rvSrc.id) : null, A = RO ? (RO.atvs || [])[rvSrc.i] : null;
-      if (!A) return { aberto: false, part: [], sits: [] };
-      const RE = A.reuniao || {};
-      const fechar = () => this.setState({ reuVer: null, modal: null });
-      const LD = RO.leadId ? ((Es && Es.ler("leads", null)) || D.LEADS || []).find(l => l.id === RO.leadId) : null;
-      const sem = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      /* Sem e-mail cadastrado, NÃO se fabrica um (nome@empresa.com.br): o convite iria para o endereço errado. */
-      const emailC = (LD && LD.email) || "";
-      const parts = RE.participantes && RE.participantes.length ? RE.participantes : (emailC ? [emailC] : []);
-      const rsvp = RE.rsvp || parts.reduce((a, p, k) => (a[p] = k === 0 ? "aceitou" : "aguardando", a), {});
-      const formato = RE.formato || "Vídeo", closer = RE.closer || A.autor || RO.resp;
-      const seed = (RO.id + (A.quando || "")).split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
-      const link = RE.link || (formato === "Vídeo" ? "https://teams.microsoft.com/l/meetup-join/19%3ameeting_" + seed + "%40thread.v2" : null);
-      const dataTxt = RE.data ? (() => { const dt = new Date(RE.data + "T12:00:00"); return dt.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }); })() : (A.quando || "Sem data");
-      const dur = RE.duracao || 30, hr = RE.hora || ((String(A.quando || "").match(/(\d{1,2}:\d{2})/) || [])[1] || "");
-      const fim = hr ? (() => { const [h, m] = hr.split(":").map(Number); const t = h * 60 + m + dur; return String(Math.floor(t / 60) % 24).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0"); })() : "";
-      const RS = { aceitou: ["Aceitou", "#e6f4ee", "#1f7256", "M20 6 9 17l-5-5"], talvez: ["Talvez", "#f7edd8", "#6e5420", "M12 16h.01M12 8a2.5 2.5 0 0 1 1 4.8V14"], recusou: ["Recusou", "#fdeeea", "#c2330f", "M18 6 6 18M6 6l12 12"], aguardando: ["Aguardando", "#eeeff3", "#67787c", "M12 6v6l4 2"] };
-      const nomeDe = (p) => p === emailC ? RO.pessoa : p.split("@")[0].split(/[._-]/).map(s => s ? s[0].toUpperCase() + s.slice(1) : "").join(" ");
-      const contRS = parts.reduce((a, p) => (a[rsvp[p] || "aguardando"]++, a), { aceitou: 0, talvez: 0, recusou: 0, aguardando: 0 });
-      const gravar = (patchR, patchA, msg) => { const atvs = (RO.atvs || []).slice(); atvs[rvSrc.i] = Object.assign({}, A, patchA || {}, { reuniao: Object.assign({}, RE, { participantes: parts, rsvp, link, formato, closer }, patchR || {}) }); this.gravarOpp(Object.assign({}, RO, { atvs }), msg); };
-      const sit = A.situacao || (A.feita ? "Feita" : "A fazer");
-      const SIT = [["A fazer", "Agendada"], ["Feita", "Realizada"], ["Não compareceu", "Não compareceu"], ["Declinada", "Cancelada"]];
-      const add = S.rvAdd;
-      const mailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || "").trim());
-      const confirmaAdd = () => { const v = (add || "").trim(); if (!mailOk(v)) return this.setState({ rvAddErro: true }); if (parts.indexOf(v) >= 0) return this.setState({ rvAdd: "", rvAddErro: false });
-        const r2 = Object.assign({}, rsvp, { [v]: "aguardando" }); gravar({ participantes: parts.concat(v), rsvp: r2 }, null, "Participante adicionado · " + v); this.setState({ rvAdd: null, rvAddErro: false }); this.diz("Convite enviado para " + v + " pelo Outlook", "ok"); };
-      return { aberto: true, fechar, parar: (e) => e.stopPropagation(),
-        titulo: A.titulo || "Reunião", sub: RO.empresa + " · " + RO.pessoa,
-        dataTxt: dataTxt.charAt(0).toUpperCase() + dataTxt.slice(1), horaTxt: hr ? hr + " – " + fim + " · " + (dur === 60 ? "1 h" : dur + " min") : "",
-        formato, formatoD: { Vídeo: "m22 8-6 4 6 4V8zM2 6h14v12H2z", Ligação: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", Presencial: "M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" }[formato],
-        sync: "Sincronizado com o Outlook de " + closer.split(" ")[0] + (RE.sincronizado ? " · " + RE.sincronizado : " · há 2 min"),
-        temLink: !!link, link: link || "", linkCurto: link ? "teams.microsoft.com/l/meetup-join/…" + seed.slice(-6) : "",
-        copiar: () => { try { navigator.clipboard.writeText(link); } catch (e) {} this.diz("Link da reunião copiado", "ok"); },
-        entrar: () => Es && Es.abrirExterno ? Es.abrirExterno(link) : window.open(link, "_blank"),
-        temLocal: formato !== "Vídeo", localL: formato === "Presencial" ? "Local" : "Ligação", localV: formato === "Presencial" ? (RE.local || "Local não informado") : "Callface liga para " + RO.pessoa + (LD && (LD.tel || LD.telefone) ? " · " + (LD.tel || LD.telefone) : ""),
-        rsResumo: [contRS.aceitou ? contRS.aceitou + " aceitou" : null, contRS.talvez ? contRS.talvez + " talvez" : null, contRS.recusou ? contRS.recusou + " recusou" : null, contRS.aguardando ? contRS.aguardando + " aguardando" : null].filter(Boolean).join(" · "),
-        organizador: closer, orgIni: ini(closer),
-        part: parts.map(p => { const st = RS[rsvp[p] || "aguardando"]; const nm = nomeDe(p); return { nome: nm, email: p, ini: ini(nm), principal: p === emailC, st: st[0], d: st[3],
-          stStyle: "display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:600;white-space:nowrap;background:" + st[1] + ";color:" + st[2],
-          removivel: p !== emailC, remover: () => { const r2 = Object.assign({}, rsvp); delete r2[p]; gravar({ participantes: parts.filter(x => x !== p), rsvp: r2 }, null, "Participante removido · " + p); this.diz(p + " removido do convite", "ok"); } }; }),
-        addAberto: add != null, abrirAdd: () => this.setState({ rvAdd: "", rvAddErro: false }), add: add || "", setAdd: (e) => this.setState({ rvAdd: e.target.value, rvAddErro: false }),
-        teclaAdd: (e) => { if (e.key === "Enter") { e.preventDefault(); confirmaAdd(); } else if (e.key === "Escape") this.setState({ rvAdd: null }); }, confirmaAdd,
-        addErro: !!S.rvAddErro, addInp: "flex:1;min-width:0;height:38px;padding:0 12px;border-radius:9px;border:0;outline:0;background:#fff;font-size:13px;color:#12171d;box-shadow:inset 0 0 0 1px " + (S.rvAddErro ? "#d93c1a" : "#dbdede"),
-        temPauta: !!(A.desc || "").trim(), pauta: A.desc || "",
-        sits: SIT.map(([v, l]) => ({ label: l, onClick: () => { if (v === sit) return; gravar(null, { situacao: v, feita: v !== "A fazer" }, "Reunião · " + l.toLowerCase()); this.diz("Reunião marcada como " + l.toLowerCase(), v === "Feita" ? "ok" : "aviso"); if (v === "Não compareceu") this.setState({ reuVer: null, modal: { k: "noshow", id: RO.id }, form: {}, tentou: false }); },
-          style: "height:32px;padding:0 12px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;" + (sit === v ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede") })),
-        editar: () => { this.setState({ reuVer: null }); this.abrirReuniao(RO, rvSrc.i); } };
-    })();
+    const rv = { aberto: false, part: [], sits: [] }; // reunião: só a peça única (pecas-host)
     if (md && MO) {
       const Fm = S.form, s = somas(MO);
       const setF = (k, v) => this.setState(st => ({ form: Object.assign({}, st.form, { [k]: v }) }));
@@ -883,63 +826,7 @@ class Logica extends React.Component<any, any> {
       naturezas: Object.keys(NAT).map(k => ({ v: k, l: NAT[k] })),
       papeis: ["Contato principal", "Decisor", "Influenciador", "Financeiro", "Técnico", "Usuário", "Outro"],
       tiposAtv: ["Ligação", "Reunião", "E-mail", "Mensagem", "Tarefa", "Follow up"],
-      reu: (() => {
-        const RU = S.reu, RO = RU ? todas.find(o => o.id === RU.id) : null;
-        if (!RU || !RO) return { aberto: false, conv: [], duracoes: [], tipos: [], equipe: [] };
-        const up = (p) => this.setState(s => ({ reu: Object.assign({}, s.reu, p) }));
-        const LD = RO.leadId ? ((Es && Es.ler("leads", null)) || D.LEADS || []).find(l => l.id === RO.leadId) : null;
-        const sem = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const email = (LD && LD.email) || "";
-        const mailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || "").trim());
-        const falta = { data: !RU.data, hora: !RU.hora, titulo: !(RU.titulo || "").trim(), conv: RU.novoConv != null && RU.novoConv.trim() !== "" && !mailOk(RU.novoConv) };
-        const ok = !falta.data && !falta.hora && !falta.titulo && !falta.conv;
-        const fmtData = RU.data ? RU.data.split("-").reverse().join("/") : "";
-        const inp = (bad) => "width:100%;height:42px;padding:0 12px;border-radius:10px;border:0;outline:0;background:#fff;font-size:14px;color:#12171d;box-shadow:inset 0 0 0 1px " + (RU.tentou && bad ? "#d93c1a" : "#dbdede");
-        const chipS = (on) => "flex:1;display:flex;align-items:center;justify-content:center;gap:8px;height:42px;border-radius:10px;border:0;cursor:pointer;font-size:13.5px;font-weight:600;white-space:nowrap;" + (on ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede");
-        const TIPOS = [["Vídeo", "m22 8-6 4 6 4V8zM2 6h14v12H2z"], ["Ligação", "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"], ["Presencial", "M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"]];
-        const fechar = () => this.setState({ reu: null });
-        return { aberto: true, fechar, parar: (e) => e.stopPropagation(),
-          empresa: RO.empresa, sub: RO.pessoa + (RO.cargo ? " · " + RO.cargo : ""), iniE: ini(RO.empresa), familia: FAM[RO.familia] || "",
-          pessoa: RO.pessoa, email, iniP: ini(RO.pessoa),
-          conv: (RU.conv || []).map((c, i) => ({ email: c, remover: () => up({ conv: RU.conv.filter((_, k) => k !== i) }) })), temConv: (RU.conv || []).length > 0,
-          addAberto: RU.novoConv != null, abrirAdd: () => up({ novoConv: "" }), novoConv: RU.novoConv || "", setNovo: (e) => up({ novoConv: e.target.value }),
-          addConv: () => { const v = (RU.novoConv || "").trim(); if (!mailOk(v)) return up({ tentou: true }); up({ conv: (RU.conv || []).concat(v), novoConv: "" }); },
-          teclaConv: (e) => { if (e.key === "Enter") { e.preventDefault(); const v = (RU.novoConv || "").trim(); if (mailOk(v)) up({ conv: (RU.conv || []).concat(v), novoConv: "" }); } else if (e.key === "Escape") up({ novoConv: null }); },
-          convErro: RU.tentou && falta.conv, convInp: inp(falta.conv),
-          data: RU.data, setData: (e) => up({ data: e.target.value }), dataInp: inp(falta.data),
-          hora: RU.hora, setHora: (e) => up({ hora: e.target.value }), horaInp: inp(falta.hora),
-          duracoes: [[30, "30 min"], [45, "45 min"], [60, "1 h"]].map(([v, l]) => ({ label: l, style: chipS(RU.dur === v), onClick: () => up({ dur: v }) })),
-          closer: RU.closer, setCloser: (e) => up({ closer: e.target.value }), equipe: equipe.map(p => ({ v: p, l: p })),
-          tipos: TIPOS.map(([l, d]) => ({ label: l, d, style: chipS(RU.tipo === l), onClick: () => up({ tipo: l }) })),
-          titulo: RU.titulo, setTitulo: (e) => up({ titulo: e.target.value }), tituloInp: inp(falta.titulo),
-          pauta: RU.pauta, setPauta: (e) => up({ pauta: e.target.value }),
-          tituloModal: RU.i != null ? "Editar reunião" : "Agendar reunião", salvarTxt: RU.i != null ? "Salvar e atualizar convite" : "Agendar reunião",
-          ehPresencial: RU.tipo === "Presencial", ehVideo: RU.tipo === "Vídeo", local: RU.local || "", setLocal: (e) => up({ local: e.target.value }),
-          linkTxt: RU.i != null ? "O link do Teams é mantido. Se mudar data ou horário, o convite é atualizado e os aceites voltam a aguardando." : "O link do Teams é gerado pelo Outlook quando você agendar.",
-          resumo: fmtData ? fmtData + " às " + RU.hora + " · " + (RU.dur === 60 ? "1 h" : RU.dur + " min") + " · " + RU.tipo : "Escolha a data",
-          salvarStyle: "height:42px;padding:0 20px;border-radius:10px;border:0;font-size:13.5px;font-weight:700;white-space:nowrap;cursor:pointer;color:#fff;background:" + (ok ? "#1f7256" : "#8fb8a8"),
-          salvar: () => {
-            if (!ok) return up({ tentou: true });
-            const quando = fmtData + " · " + RU.hora;
-            const edit = RU.i != null, ant = edit ? (RO.atvs || [])[RU.i] || {} : {}, antR = ant.reuniao || {};
-            const participantes = [email].concat(RU.conv || []);
-            const rsvp = Object.assign({}, antR.rsvp || {});
-            participantes.forEach(p => { if (!rsvp[p]) rsvp[p] = "aguardando"; });
-            Object.keys(rsvp).forEach(p => { if (participantes.indexOf(p) < 0) delete rsvp[p]; });
-            const mudouHora = edit && (antR.data !== RU.data || antR.hora !== RU.hora);
-            if (mudouHora) participantes.forEach(p => { rsvp[p] = "aguardando"; });
-            const seed = (RO.id + RU.data + RU.hora).split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
-            const link = RU.tipo === "Vídeo" ? (antR.link && !mudouHora ? antR.link : "https://teams.microsoft.com/l/meetup-join/19%3ameeting_" + seed + "%40thread.v2") : null;
-            const atv = Object.assign({}, ant, { titulo: RU.titulo.trim(), tipo: "Reunião", quando, feita: ant.feita || false, situacao: ant.situacao || "A fazer", autor: RU.closer, desc: (RU.pauta || "").trim(),
-              reuniao: { data: RU.data, hora: RU.hora, duracao: RU.dur, formato: RU.tipo, closer: RU.closer, participantes, rsvp, link, local: RU.local || "", calendario: "Outlook", sincronizado: "agora" } });
-            const evs = [{ t: (edit ? (mudouHora ? "Reunião reagendada · " : "Reunião atualizada · ") : "Reunião agendada · ") + quando + " · " + RU.tipo + " com " + RO.pessoa, quando: "Hoje", autor: RU.closer }].concat(RO.eventos || []);
-            const atvs = (RO.atvs || []).slice();
-            if (edit) atvs[RU.i] = atv; else atvs.unshift(atv);
-            this.gravarOpp(Object.assign({}, RO, { atvs, via: "reuniao", eventos: evs }), (edit ? "Reunião atualizada · " : "Reunião agendada · ") + quando);
-            this.setState({ reu: null, reuVer: edit ? { id: RO.id, i: RU.i } : null });
-            this.diz(edit ? (mudouHora ? "Reunião reagendada. Convite atualizado no Outlook." : "Reunião atualizada no Outlook.") : "Reunião agendada para " + quando + ". Convite enviado pelo Outlook a " + participantes.length + (participantes.length > 1 ? " pessoas" : " pessoa"), "ok");
-          } };
-      })(),
+      reu: { aberto: false, conv: [], duracoes: [], tipos: [], equipe: [] }, // idem
       av, rv, temModal: !!(md && MO), m, fecharModal: () => this.setState({ modal: null, form: {}, tentou: false }), parar: (e) => e.stopPropagation()
     };
   }

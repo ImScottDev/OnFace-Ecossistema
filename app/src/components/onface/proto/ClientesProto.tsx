@@ -320,12 +320,8 @@ export function ClientesProto({ carteira, usoPorEmpresa }: {
   /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
   const { abrir: abrirPeca } = usePecas();
   const abrir = React.useCallback((peca: string, ref?: any) => {
-    if (peca === "reuniao" && ref?.id) {
-      const r = carteira.agenda.find((x) => x.id === ref.id);
-      if (r?.negocioId) { router.push(`/pipeline/${r.negocioId}`); return; }
-    }
     abrirPeca(peca, ref, { tela: "clientes" });
-  }, [router, carteira, abrirPeca]);
+  }, [abrirPeca]);
 
   /* Não há command para criar cliente na carteira nem atividade a partir de
      insight. Avisar e reler, nunca fingir que gravou. */

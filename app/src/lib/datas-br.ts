@@ -59,3 +59,18 @@ export function haQuanto(iso: string | null | undefined, agora = new Date()): st
   return horas >= 1 ? `há ${horas} h` : "há poucos minutos";
 }
 
+
+/**
+ * O instante como RELÓGIO de São Paulo: um Date cujos getDate()/getHours() locais são o dia e a hora
+ * de lá. Telas que agrupam por getDate()/getHours() (Calendário) usam isto e o dia não muda com o
+ * fuso do navegador (17:00Z é 14:00 em São Paulo, no dia 13, aqui e em qualquer lugar).
+ * Só para ler campos locais: não serve para somar/subtrair instantes através de uma virada de horário.
+ */
+export function relogioBR(iso: string): Date {
+  const d = instante(iso);
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", { timeZone: FUSO, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      .formatToParts(d).map((x) => [x.type, x.value]),
+  );
+  return new Date(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+}

@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import type { ReuniaoDaAgenda, TarefaDaAgenda } from "@/lib/calendario/agenda-do-calendario";
 import { CalendarioLiga } from "./CalendarioLiga";
+import { relogioBR } from "@/lib/datas-br";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
 import { alterarTarefa, prazoDoBanco, prioridadeDoBanco, situacaoDoBanco, tipoDoBanco } from "./atividade-tarefa";
@@ -52,7 +53,7 @@ const ROTULO_STATUS: Record<string, string> = {
 
 /** Uma reunião no formato de item que `itens()` do protótipo devolvia. */
 function paraItem(r: ReuniaoDaAgenda) {
-  const ini: any = new Date(r.data);
+  const ini: any = relogioBR(r.data); // dia/hora de São Paulo, qualquer que seja o fuso do navegador
   ini._h = true; // toda reunião tem hora; sem o marcador ela vira "Dia todo"
   // Duração nula → 30 min, o mesmo default do protótipo (`RE.duracao || 30`).
   const fim: any = new Date(ini.getTime() + (r.duracao || 30) * 6e4);
@@ -203,8 +204,6 @@ export function CalendarioProto({ reunioes, tarefas = [], equipe, visaoInicial, 
 }) {
   const router = useRouter();
 
-  const porId = React.useMemo(() => new Map(reunioes.map((r) => [r.id, r])), [reunioes]);
-
   /**
    * Concluir / Reabrir no popover → PATCH /api/reunioes/:id (command real).
    *
@@ -258,18 +257,10 @@ export function CalendarioProto({ reunioes, tarefas = [], equipe, visaoInicial, 
     };
   }, [reunioes, tarefas, equipe, situacao, router]);
 
-  /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. */
+  /* Peça do protótipo: abre por cima desta tela pelo hospedeiro global. Reunião abre a MESMA peça
+     de todas as telas (relê por id); nada de navegar para a oportunidade em vez dela. */
   const { abrir: abrirPeca } = usePecas();
-  const abrir = React.useCallback((peca: string, ref?: any) => {
-    if (peca === "reuniao" && ref?.id) {
-      const r = porId.get(ref.id);
-      if (r?.negocioId) { router.push(`/pipeline/${r.negocioId}`); return; }
-      // 13 de 305 reuniões não têm negócio: a peça de reunião mostra o que há.
-      abrirPeca(peca, ref, { tela: "calendario" });
-      return;
-    }
-    abrirPeca(peca, ref, { tela: "calendario" });
-  }, [porId, router, abrirPeca]);
+  const abrir = React.useCallback((peca: string, ref?: any) => abrirPeca(peca, ref, { tela: "calendario" }), [abrirPeca]);
 
   /* Mesmo mapa do CascaProto, replicado aqui para não tocar arquivo
      compartilhado: "Nova atividade" do desenho aponta para o preview. */
@@ -284,11 +275,11 @@ export function CalendarioProto({ reunioes, tarefas = [], equipe, visaoInicial, 
   React.useEffect(() => {
     const h = new Date();
     const temNoMes = reunioes.some((r) => {
-      const d = new Date(r.data);
+      const d = relogioBR(r.data);
       return d.getMonth() === h.getMonth() && d.getFullYear() === h.getFullYear();
     });
     if (temNoMes || !reunioes.length) return;
-    const ultima = new Date(reunioes[reunioes.length - 1].data);
+    const ultima = relogioBR(reunioes[reunioes.length - 1].data);
     toast(`Nenhuma reunião neste mês. A última foi em ${ultima.toLocaleDateString("pt-BR")}.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
