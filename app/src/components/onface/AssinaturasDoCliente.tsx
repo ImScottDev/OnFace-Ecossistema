@@ -46,6 +46,7 @@ const TITULO: Record<Modo, string> = {
   trocar_price: "Trocar plano", cancelar: "Cancelar assinatura", reativar: "Reativar assinatura",
 };
 const ROTULO_FATURA: Record<string, string> = { paga: "Paga", aberta: "Em aberto", falhou: "Falhou", void: "Anulada", uncollectible: "Incobrável" };
+const SEM_PERMISSAO = "Seu perfil não tem a permissão financeira para ver ou abrir o portal do cliente no Stripe. Peça ao administrador do ONFACE.";
 const ROTULO_STATUS: Record<string, string> = { active: "Ativa", trialing: "Em teste", past_due: "Em atraso" };
 
 export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
@@ -55,13 +56,15 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
   const [catalogo, setCatalogo] = React.useState<Produto[]>([]);
   // Quando o checkout de expansão manda para cá, a venda de origem vem na URL.
   const [origem, setOrigem] = React.useState<{ negocioId?: string; propostaId?: string }>({});
+  const [avisoPortal, setAvisoPortal] = React.useState<string | null>(null);
+  const [abrindo, setAbrindo] = React.useState(false);
   const base = `/api/clientes/${empresaId}/assinaturas-stripe`;
 
   const carregar = React.useCallback(async () => {
     try {
       const r = await fetch(base);
-      const d = await r.json();
-      if (!r.ok) throw new Error(d?.error || "Não deu para ler as assinaturas");
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(r.status === 403 ? SEM_PERMISSAO : d?.error || "Não deu para ler as assinaturas");
       setLista(d.assinaturas); setErro(null);
     } catch (e) { setErro(e instanceof Error ? e.message : "Falha ao ler as assinaturas"); }
   }, [base]);
@@ -81,33 +84,45 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
     if (abrirPrimeira && lista) setAlvo((a) => a ?? { ass: lista[0], modo: "adicionar_item" });
   }, [lista, abrirPrimeira]);
 
-  /* A aba abre ANTES do fetch: o navegador só aceita popup que sai direto do clique. */
+  /* A aba abre ANTES do fetch: o navegador só aceita popup que sai direto do clique.
+     Toda falha vira aviso FIXO na tela (toast some e o botão parece morto). */
   const abrirPortal = async () => {
+    setAvisoPortal(null); setAbrindo(true);
     const aba = window.open("about:blank", "_blank");
+    const falhou = (m: string) => { aba?.close(); setAvisoPortal(m); toast.error(m); };
     try {
       const r = await fetch(`/api/clientes/${empresaId}/portal-stripe`, { method: "POST" });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok || !d?.url) { aba?.close(); toast.error(d?.error || "Não deu para abrir o portal do Stripe"); return; }
-      if (aba) aba.location.href = d.url; else window.open(d.url, "_blank");
-    } catch { aba?.close(); toast.error("Não deu para falar com o Stripe agora."); }
+      if (r.status === 403) return falhou(SEM_PERMISSAO);
+      if (!r.ok || !d?.url) return falhou(d?.error || `Não deu para abrir o portal do Stripe (erro ${r.status}).`);
+      if (aba) aba.location.href = d.url;
+      else if (!window.open(d.url, "_blank")) setAvisoPortal(d.url); // popup bloqueado: o aviso mostra o link
+    } catch { falhou("Não deu para falar com o Stripe agora. Tente de novo em instantes."); }
+    finally { setAbrindo(false); }
   };
-
-  /* Sem assinatura viva (ou sem permissão financeira) não há o que mostrar:
-     a seção simplesmente não aparece. */
-  if (!lista?.length) return null;
 
   return (
     <>
     <section aria-label="Assinaturas no Stripe" className="flex flex-col gap-2">
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Assinaturas <span className="font-normal text-muted-foreground">· {lista.length}</span></h2>
-        <Button size="sm" variant="outline" onClick={abrirPortal}><ExternalLink /> Gerenciar no Stripe</Button>
+        <h2 className="text-sm font-semibold">Assinaturas{lista && <span className="font-normal text-muted-foreground"> · {lista.length}</span>}</h2>
+        <Button size="sm" variant="outline" onClick={abrirPortal} disabled={abrindo}>{abrindo ? <Spinner /> : <ExternalLink />} Gerenciar no Stripe</Button>
       </header>
-      <Card className="gap-0 overflow-hidden py-0">
-        <ul className="divide-y">
-          {lista.map((a, n) => <LinhaDeAssinatura key={a.id} a={a} abertaDeInicio={abrirPrimeira && n === 0} setAlvo={setAlvo} />)}
-        </ul>
-      </Card>
+      {avisoPortal && (
+        <Alert variant="destructive">
+          <AlertTitle>Portal do Stripe não abriu</AlertTitle>
+          <AlertDescription>{avisoPortal.startsWith("https://") ? <a className="underline" href={avisoPortal} target="_blank" rel="noreferrer">O navegador bloqueou a nova aba. Clique aqui para abrir o portal.</a> : avisoPortal}</AlertDescription>
+        </Alert>
+      )}
+      {erro && <p className="text-sm text-muted-foreground">{erro}</p>}
+      {lista && !lista.length && <p className="text-sm text-muted-foreground">Nenhuma assinatura ativa no Stripe. O portal ainda mostra faturas e a forma de pagamento, se o cliente já tiver cadastro de cobrança.</p>}
+      {!!lista?.length && (
+        <Card className="gap-0 overflow-hidden py-0">
+          <ul className="divide-y">
+            {lista.map((a, n) => <LinhaDeAssinatura key={a.id} a={a} abertaDeInicio={abrirPrimeira && n === 0} setAlvo={setAlvo} />)}
+          </ul>
+        </Card>
+      )}
     </section>
       {alvo && (
         <DialogoDeAlteracao

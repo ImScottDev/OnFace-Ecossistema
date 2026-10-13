@@ -1719,7 +1719,7 @@ app.post("/clientes/:empresaId/portal-stripe", async (c) => {
     // 409, não 500: a conta existe e a requisição está correta — é o cadastro
     // que não tem cliente no Stripe, e quem recebe precisa saber exatamente
     // isso para ir criar/vincular.
-    return c.json({ error: `${empresa.nome} não tem cliente no Stripe vinculado. Sem isso não há portal para abrir.` }, 409);
+    return c.json({ error: `${empresa.nome} ainda não tem cadastro de cobrança no Stripe do ONFACE (ou o cadastro que existe é do SaaS Callface, que o portal não usa). O portal nasce na primeira cobrança feita pelo ONFACE: gere a proposta/checkout deste cliente primeiro.` }, 409);
   }
   const stripeCustomerId = cliente.id;
 
