@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO, MOTIVOS_PERDA } from "@/lib/vendas/dominio";
+import { pessoaNaoMesclada, leadNaoMesclado } from "@/lib/vendas/lead-mesclado";
 import { classificar, fatosDaLinha, FATOS_DO_LEAD_SQL, type Classe, type LinhaDeFatos } from "@/lib/vendas/classificacao";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -125,12 +126,14 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
         FROM pessoas p
         LEFT JOIN leads l ON l.id = p.lead_id_legado
        WHERE p.organizacao_id = ${organizacaoId}::uuid
+         AND ${pessoaNaoMesclada("p")}
       UNION ALL
       SELECT l.id, 'lead', l.id,
              NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), ''),
              l.cargo, l.email, l.telefone, l.whatsapp, l.empresa_id, l.empresa, l.created_at
         FROM leads l
        WHERE l.organizacao_id = ${organizacaoId}::uuid
+         AND ${leadNaoMesclado("l")}
          AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
     ), ult AS (
       -- Última atividade por lead agregada UMA vez. A subconsulta correlata por
@@ -198,9 +201,11 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
       SELECT p.id, p.lead_id_legado AS lead_id, COALESCE(p.empresa_id, l.empresa_id) AS empresa_id
         FROM pessoas p LEFT JOIN leads l ON l.id = p.lead_id_legado
        WHERE p.organizacao_id = ${organizacaoId}::uuid
+         AND ${pessoaNaoMesclada("p")}
       UNION ALL
       SELECT l.id, l.id, l.empresa_id FROM leads l
        WHERE l.organizacao_id = ${organizacaoId}::uuid
+         AND ${leadNaoMesclado("l")}
          AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
     )
     SELECT x.*, count(*)::int AS n FROM (
@@ -216,8 +221,9 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
   for (const c of contagens) porRelacionamento[classificar(fatosDaLinha(c)).classe] += c.n;
 
   const [totais] = await db.execute<{ pessoas: number; empresas: number }>(sql`
-    SELECT (SELECT count(*)::int FROM pessoas WHERE organizacao_id = ${organizacaoId}::uuid)
+    SELECT (SELECT count(*)::int FROM pessoas p WHERE p.organizacao_id = ${organizacaoId}::uuid AND ${pessoaNaoMesclada("p")})
          + (SELECT count(*)::int FROM leads l WHERE l.organizacao_id = ${organizacaoId}::uuid
+              AND ${leadNaoMesclado("l")}
               AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)) AS pessoas,
            (SELECT count(*)::int FROM empresas WHERE organizacao_id = ${organizacaoId}::uuid) AS empresas
   `);
@@ -240,8 +246,10 @@ export async function linhasDeContato(organizacaoId: string, opcoes: { busca?: s
       FROM empresas e
      WHERE e.organizacao_id = ${organizacaoId}::uuid
        AND NOT EXISTS (SELECT 1 FROM pessoas p LEFT JOIN leads l ON l.id = p.lead_id_legado
-                        WHERE p.organizacao_id = ${organizacaoId}::uuid AND COALESCE(p.empresa_id, l.empresa_id) = e.id)
+                        WHERE p.organizacao_id = ${organizacaoId}::uuid AND COALESCE(p.empresa_id, l.empresa_id) = e.id
+                          AND ${pessoaNaoMesclada("p")})
        AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.empresa_id = e.id
+                        AND ${leadNaoMesclado("l")}
                         AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id))
        AND (${busca}::text IS NULL OR lower(e.nome) LIKE ${busca} OR lower(COALESCE(e.dominio, '')) LIKE ${busca})
      ORDER BY e.created_at DESC
