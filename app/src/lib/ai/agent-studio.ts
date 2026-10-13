@@ -71,7 +71,7 @@ export const AGENT_EVENT_CATALOG = [
   { id: "CanonicalServiceActivated", nome: "Serviço ativado", descricao: "Quando o serviço canônico entra na operação." },
   { id: "prospect.created", nome: "Prospect criado", descricao: "Quando um prospect entra na base outbound." },
   { id: "prospect.response_received", nome: "Prospect respondeu", descricao: "Quando um prospect responde uma abordagem." },
-  { id: "lead.atribuido_ao_agente", nome: "Atendimento atribuído ao agente", descricao: "Quando uma automação, regra ou pessoa atribui o atendimento ao agente." },
+  { id: "lead.atribuido_ao_agente", nome: "Atendimento atribuído ao agente", descricao: "Quando uma automação, regra ou pessoa atribui o atendimento ao agente, inclusive colocando-o como responsável pelo lead, oportunidade ou conversa." },
   { id: "agent.retomada", nome: "Retomada combinada venceu", descricao: "Quando chega o horário de uma retomada que o próprio agente agendou." },
   { id: "cadence.step_due", nome: "Passo de cadência vencido", descricao: "Quando uma etapa de cadência está pronta para executar." },
 ] as const;

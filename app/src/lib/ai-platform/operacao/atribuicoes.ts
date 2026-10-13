@@ -15,6 +15,8 @@ import {
   aiAgentAtribuicoes, aiAgentCompromissos, aiAgents, aiSdrContatoState, atividades, contatos, leads, usuarios,
 } from "@/lib/db/schema";
 import { isSystemAgentSlug } from "@/lib/ai/agent-studio";
+import { agenteDoUsuario } from "@/lib/agentes/usuario-do-agente";
+import { alvoDaEntidade } from "./alvo";
 
 export type Atribuicao = typeof aiAgentAtribuicoes.$inferSelect;
 export type StatusAtribuicao = "ativa" | "pausada" | "aguardando_aprovacao" | "humano" | "falha" | "encerrada";
@@ -297,4 +299,78 @@ export async function solicitarHandoffNaAtribuicao(p: { organizacaoId: string; c
   const a = await atribuicaoViva(p.organizacaoId, { contatoId: p.contatoId, leadId: p.leadId });
   if (!a || a.status === "humano") return;
   await db.update(aiAgentAtribuicoes).set({ status: "humano", motivoEstado: p.motivo, resumoHandoff: p.resumo ?? a.resumoHandoff, copiloto: p.copiloto ?? a.copiloto, updatedAt: new Date() }).where(eq(aiAgentAtribuicoes.id, a.id));
+}
+
+
+/* ── Gatilho: o agente virou (ou deixou de ser) o responsável ─────────────────
+ * UM ponto de entrada para toda superfície que grava `responsavel_id` (lista, drawer, ficha,
+ * Pré-vendas, Pipeline, Atendimento, CS, ação em massa, NEXO, cadência). Quem grava chama
+ * esta função DEPOIS de gravar; ela decide se o novo dono é um agente. É o gatilho
+ * `lead.atribuido_ao_agente` do catálogo de eventos do agente, agora também para "pessoa pôs o
+ * agente como responsável": o agente assume (atribuição viva + IA ligada na conversa) e é
+ * acionado uma vez com o contexto do registro. Trocar o responsável de volta para uma pessoa
+ * devolve o atendimento (a IA para). Nunca derruba quem gravou. */
+export type EntidadeComResponsavel = "lead" | "negocio" | "contato" | "cliente";
+
+export interface EntradaMudancaResponsavel {
+  organizacaoId: string;
+  entidade: EntidadeComResponsavel;
+  entidadeId: string;
+  anteriorId?: string | null;
+  novoId: string | null;
+  /** Quem gravou. `usuarioId` preenchido = pessoa decidindo (pode trocar de agente e retomar de humano). */
+  ator?: AtorAtribuicao;
+  /** Assume sem acionar agora (ex.: delegação de follow-up, que tem o próprio calendário de toques). */
+  semAcionar?: boolean;
+}
+
+const pendentes = new Set<Promise<unknown>>();
+/** Espera os acionamentos em segundo plano (testes e desligamento). */
+export const aguardarAcionamentos = () => Promise.allSettled([...pendentes]);
+
+export async function aoMudarResponsavel(p: EntradaMudancaResponsavel): Promise<"assumiu" | "devolveu" | "recusado" | "nada"> {
+  try {
+    const novo = await agenteDoUsuario(p.organizacaoId, p.novoId);
+    // O próprio agente passando a bola (handover) já cuida da atribuição: só reage a quem NÃO é o dono anterior.
+    const anterior = p.anteriorId && p.anteriorId !== p.ator?.usuarioId ? await agenteDoUsuario(p.organizacaoId, p.anteriorId) : null;
+    if (!novo && !anterior) return "nada";
+    const alvo = await alvoDaEntidade(p.organizacaoId, p.entidade, p.entidadeId);
+    if (!alvo) return "nada";
+
+    if (novo) {
+      const pessoa = Boolean(p.ator?.usuarioId);
+      try {
+        const { atribuicao, criada } = await atribuirAgente({
+          organizacaoId: p.organizacaoId, agentId: novo.agenteId, leadId: alvo.leadId, contatoId: alvo.contatoId, negocioId: alvo.negocioId,
+          origem: "evento", origemRef: `responsavel:${p.entidade}:${p.entidadeId}`, ator: p.ator, trocar: pessoa, sobrepoeHumano: pessoa,
+        });
+        if (criada && !p.semAcionar) {
+          const t = import("./acionar").then(({ acionarAgente }) => acionarAgente({
+            organizacaoId: p.organizacaoId, agentId: novo.agenteId, contatoId: atribuicao.contatoId, leadId: atribuicao.leadId, evento: "lead.atribuido_ao_agente",
+            mensagem: "Você foi colocada como responsável por este atendimento. Reconstrua o contexto: se o contato aguarda resposta, responda; se não, avalie o próximo passo do seu objetivo.",
+            motivoDaExecucao: "Agente definida como responsável por uma pessoa ou regra", proativo: true, atribuicaoId: atribuicao.id,
+            origem: `responsavel:${p.ator?.usuarioId ?? "sistema"}`, chaveIdempotencia: `responsavel:${atribuicao.id}`,
+          })).catch((e) => console.error("[agentes] acionamento ao virar responsável falhou:", e));
+          pendentes.add(t);
+          void t.finally(() => pendentes.delete(t));
+        }
+        return "assumiu";
+      } catch (e) {
+        if (!(e instanceof AtribuicaoRecusada)) throw e;
+        // Recusa de regra (humano atendendo, outro agente, não publicado): o responsável gravado fica, e a equipe vê por que ela não assumiu.
+        await notaNaTimeline({ organizacaoId: p.organizacaoId, leadId: alvo.leadId, negocioId: alvo.negocioId, usuarioId: p.ator?.usuarioId ?? null, titulo: `${novo.nome} é a responsável, mas não assumiu o atendimento`, descricao: e.message, dados: { codigo: e.codigo } });
+        return "recusado";
+      }
+    }
+
+    const viva = await atribuicaoViva(p.organizacaoId, { contatoId: alvo.contatoId, leadId: alvo.leadId });
+    if (anterior && viva && viva.agentId === anterior.agenteId && viva.status !== "humano") {
+      await transferirParaHumano({ organizacaoId: p.organizacaoId, atribuicaoId: viva.id, motivo: "Responsável alterado para uma pessoa", humanoUsuarioId: p.novoId, ator: p.ator });
+      return "devolveu";
+    }
+    return "nada";
+  } catch (e) {
+    console.error("[agentes] gatilho de responsável falhou (best-effort):", e);
+    return "nada";
+  }
 }

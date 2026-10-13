@@ -39,8 +39,8 @@ async function donoAtual(organizacaoId: string, alvo: { negocioId?: string | nul
 }
 
 async function reatribuir(p: { organizacaoId: string; negocioId?: string | null; leadId?: string | null; para: string; ator: Ator }) {
-  if (p.negocioId) await pipeline.atribuirResponsavelDaOportunidade({ organizacaoId: p.organizacaoId, negocioId: p.negocioId, responsavelId: p.para, ator: p.ator });
-  else await preVendas.atribuirResponsavel({ organizacaoId: p.organizacaoId, leadId: p.leadId!, responsavelId: p.para, origemAtribuicao: "manual", ator: p.ator });
+  if (p.negocioId) await pipeline.atribuirResponsavelDaOportunidade({ organizacaoId: p.organizacaoId, negocioId: p.negocioId, responsavelId: p.para, ator: p.ator, semAcionarAgente: true });
+  else await preVendas.atribuirResponsavel({ organizacaoId: p.organizacaoId, leadId: p.leadId!, responsavelId: p.para, origemAtribuicao: "manual", ator: p.ator, semAcionarAgente: true });
 }
 
 export interface EntradaDelegacao {

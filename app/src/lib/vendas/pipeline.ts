@@ -1083,13 +1083,23 @@ export async function atribuirResponsavelDaOportunidade(params: {
   negocioId: string;
   responsavelId: string;
   ator: Ator;
+  /** Agente responsável assume sem ser acionada agora (a delegação tem o calendário próprio de toques). */
+  semAcionarAgente?: boolean;
 }): Promise<void> {
   const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
+  // Gatilho "agente virou responsável" (e o inverso): vale para a mudança e também para repetir a atribuição, que converge.
+  const aoAtribuir = async () => {
+    const { aoMudarResponsavel } = await import("@/lib/ai-platform/operacao/atribuicoes");
+    await aoMudarResponsavel({
+      organizacaoId: params.organizacaoId, entidade: "negocio", entidadeId: params.negocioId, anteriorId: op.responsavel_id, novoId: params.responsavelId,
+      ator: { usuarioId: params.ator.usuarioId }, semAcionar: params.semAcionarAgente,
+    });
+  };
   const [dono] = await db.execute<{ id: string }>(sql`
     SELECT id::text FROM usuarios
      WHERE id = ${params.responsavelId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid AND ativo = true`);
   if (!dono) throw new RegraDeNegocio("responsavel_invalido", "Responsável inválido: não é um usuário ativo desta organização.");
-  if (op.responsavel_id === params.responsavelId) return;
+  if (op.responsavel_id === params.responsavelId) { await aoAtribuir(); return; }
 
   await db.execute(sql`
     UPDATE negocios SET responsavel_id = ${params.responsavelId}::uuid, updated_at = now()
@@ -1108,4 +1118,5 @@ export async function atribuirResponsavelDaOportunidade(params: {
     },
     timeline: { tipo: "nota", titulo: `Responsável da oportunidade alterado: ${op.responsavel_id ? nomes.get(op.responsavel_id) ?? "—" : "sem responsável"} → ${nomes.get(params.responsavelId) ?? "—"}` },
   });
+  await aoAtribuir();
 }

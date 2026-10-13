@@ -130,6 +130,13 @@ app.post("/contatos/:id/atribuir", async (c) => {
     });
   }
 
+  // Gatilho "agente virou responsável" da conversa (e o inverso: voltar para uma pessoa devolve a conversa).
+  const { aoMudarResponsavel } = await import("@/lib/ai-platform/operacao/atribuicoes");
+  await aoMudarResponsavel({
+    organizacaoId: ctx.organizacaoId, entidade: "contato", entidadeId: id,
+    anteriorId: contato.responsavelId, novoId: targetUserId, ator: { usuarioId: ctx.userId },
+  });
+
   return c.json({ contato: updated });
 });
 

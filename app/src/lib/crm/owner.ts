@@ -110,4 +110,13 @@ export async function registrarMudancaResponsavel(opts: {
       console.error("[owner] falha ao notificar novo responsável:", e);
     }
   }
+
+  /* Gatilho "agente virou responsável": esta é a porta de toda troca de dono de lead, negócio e cliente. */
+  if (opts.entityType === "lead" || opts.entityType === "negocio" || opts.entityType === "cliente") {
+    const { aoMudarResponsavel } = await import("@/lib/ai-platform/operacao/atribuicoes");
+    await aoMudarResponsavel({
+      organizacaoId: opts.organizacaoId, entidade: opts.entityType, entidadeId: opts.entityId,
+      anteriorId: opts.previousOwnerId, novoId: opts.newOwnerId, ator: { usuarioId: opts.actorId },
+    });
+  }
 }

@@ -390,8 +390,18 @@ export async function atribuirResponsavel(params: {
   responsavelId: string | null;
   origemAtribuicao?: "manual" | "automacao" | "round_robin" | "agente";
   ator: Ator;
+  /** Agente responsável assume sem ser acionada agora (a delegação tem o calendário próprio de toques). */
+  semAcionarAgente?: boolean;
 }): Promise<void> {
   const lead = await carregarLead(params.organizacaoId, params.leadId);
+  // Gatilho "agente virou responsável" (e o inverso): vale para a mudança e também para repetir a atribuição, que converge.
+  const aoAtribuir = async () => {
+    const { aoMudarResponsavel } = await import("@/lib/ai-platform/operacao/atribuicoes");
+    await aoMudarResponsavel({
+      organizacaoId: params.organizacaoId, entidade: "lead", entidadeId: params.leadId, anteriorId: lead.responsavel_id, novoId: params.responsavelId,
+      ator: { usuarioId: params.ator.usuarioId }, semAcionar: params.semAcionarAgente,
+    });
+  };
 
   await exigirResponsavelDaOrg(params.organizacaoId, params.responsavelId);
 
@@ -412,6 +422,7 @@ export async function atribuirResponsavel(params: {
   if (lead.responsavel_id === params.responsavelId) {
     const { sincronizarAquisicaoDoLead } = await import("./sincronizar-aquisicao");
     await sincronizarAquisicaoDoLead(params.leadId);
+    await aoAtribuir();
     return;
   }
 
@@ -435,6 +446,7 @@ export async function atribuirResponsavel(params: {
     },
     timeline: { tipo: "nota", titulo: "Responsável alterado" },
   });
+  await aoAtribuir();
 }
 
 /**
