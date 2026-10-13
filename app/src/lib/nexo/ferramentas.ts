@@ -30,6 +30,7 @@ import { classificarEmpresas, classificarLeads } from "@/lib/vendas/classificaca
 import { comClasse } from "@/lib/vendas/classificacao-rotulos";
 import { CATALOGO, medir } from "@/lib/metricas/catalogo";
 import { condicaoMinhasConversas, veTodasAsConversas } from "@/lib/whatsapp/acesso";
+import * as memoria from "@/lib/nexo/memoria";
 import type { AgentToolContext, AgentToolRegistration } from "@/lib/ai-platform/tools/registry";
 
 type R = { ok: boolean; data?: unknown; error?: string };
@@ -452,6 +453,47 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
         return r.ok ? resumo(`Mensagem enviada para ${r.contatoNome || c.nome}.`, `/atendimento?contatoId=${id}`, { mensagemId: r.mensagemId }) : { ok: false, error: r.erro };
       });
     }),
+  leitura("panorama", "Retrato do usuário agora: leads de Pré-vendas (abertos, sem próxima ação, sem responsável, entraram hoje, os mais esquecidos), pipeline (abertas, sem próxima ação, valor), carteira e pendências abertas. Com empresa_id (tela de empresa/cliente) traz também o uso da Callface AI. Não vai no prompt: chame quando a pergunta pedir visão geral ou prioridades.",
+    { empresa_id: str("uuid da empresa aberta na tela, para o uso da Callface AI") }, [],
+    async (ctx, u, i) => {
+      // Carregados sob demanda: painel.ts importa este arquivo (NEXO_TOOL_IDS).
+      const { retrato } = await import("@/lib/nexo/painel");
+      const { filaDeLoops } = await import("@/lib/vendas/loops-abertos");
+      const quem = { organizacaoId: ctx.organizacaoId, userId: u.userId, userName: u.nome, userRole: u.role };
+      const r = await retrato(quem);
+      const loops = await filaDeLoops({ organizacaoId: ctx.organizacaoId, responsavelId: u.pessoal ? u.userId : null, limite: 6 });
+      let uso: unknown = undefined;
+      const empresaId = String(i.empresa_id ?? "");
+      if (empresaId) {
+        // lerUsoCallfaceAi não filtra tenant: só lê se a empresa é desta organização.
+        const [ok] = UUID.test(empresaId) ? await db.execute(sql`SELECT 1 FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`) : [];
+        if (ok) { const { lerUsoCallfaceAi } = await import("@/lib/integrations/callface-ai/leitura-dominio"); uso = await lerUsoCallfaceAi(empresaId).catch(() => null); }
+      }
+      return { ok: true, data: {
+        escopo: u.pessoal ? "só os registros dele" : "organização inteira",
+        preVendas: { leadsAbertos: r.leadsAbertos, semProximaAcao: r.semProximaAcao, semResponsavel: r.semResponsavel, entraramHoje: r.entraramHoje, maisEsquecidos: r.prioridades },
+        pipeline: { oportunidadesAbertas: r.oportunidadesAbertas, semProximaAcao: r.oportunidadesSemProximaAcao, valorEmAberto: r.valorEmAberto },
+        carteira: { clientes: r.clientesNaCarteira },
+        loopsAbertos: loops.map((l) => ({ titulo: l.titulo, empresa: l.empresaNome, motivo: l.rotulo, detalhe: l.detalhe, valor: l.valor, responsavel: l.responsavelNome })),
+        usoCallfaceAi: uso,
+      } };
+    }),
+  leitura("lembrar", "Memória própria do usuário (vale entre conversas): busca por assunto e devolve as anotações mais relevantes (id, título, resumo; sem o corpo). Se nada casar, devolve as mais recentes com porRelevancia=false. Para ler uma inteira, nexo_abrir_anotacao.",
+    { consulta: str("assunto, pessoa ou palavras-chave"), limite: { type: "integer", minimum: 1, maximum: 8 } }, ["consulta"],
+    async (ctx, u, i) => ({ ok: true, data: await memoria.lembrar({ organizacaoId: ctx.organizacaoId, usuarioId: u.userId }, String(i.consulta ?? ""), Number(i.limite ?? 6)) })),
+  leitura("abrir_anotacao", "Lê uma anotação da memória por inteiro (corpo) e traz, só com título e resumo, as ligadas a ela.",
+    { id: str("id vindo de nexo_lembrar") }, ["id"],
+    async (ctx, u, i) => { const a = await memoria.abrir({ organizacaoId: ctx.organizacaoId, usuarioId: u.userId }, String(i.id ?? "")); return a ? { ok: true, data: a } : { ok: false, error: "anotação não encontrada" }; }),
+  escrita("anotar", "Guarda UMA coisa para lembrar depois, só do usuário (quem é, preferência, decisão, compromisso). titulo curto, resumo de uma frase que diga quando serve, corpo opcional com o detalhe. Mesmo título atualiza; substitui_id corrige outra; liga_a relaciona a anotações existentes.",
+    { titulo: str("até 120 caracteres"), resumo: str("uma frase: o fato e quando ele importa"), corpo: str("detalhe opcional"), liga_a: { type: "array", items: { type: "string" }, description: "ids de anotações relacionadas" }, substitui_id: str("id da anotação a corrigir") }, ["titulo", "resumo"],
+    async (ctx, u, i) => agir(ctx, "anotar", i, async () => {
+      const r = await memoria.anotar({ organizacaoId: ctx.organizacaoId, usuarioId: u.userId }, { titulo: i.titulo, resumo: i.resumo, corpo: i.corpo, ligaA: i.liga_a, substituiId: i.substitui_id });
+      return r.ok ? { ok: true, data: { id: r.id, criada: r.criada } } : { ok: false, error: r.erro };
+    })),
+  escrita("esquecer", "Tira uma anotação da memória do usuário (some das buscas).",
+    { id: str("id da anotação") }, ["id"],
+    async (ctx, u, i) => agir(ctx, "esquecer", i, async () =>
+      (await memoria.esquecer({ organizacaoId: ctx.organizacaoId, usuarioId: u.userId }, String(i.id ?? ""))) ? { ok: true, data: { esquecida: true } } : { ok: false, error: "anotação não encontrada" })),
   {
     id: "nexo.propor_acao", name: "nexo_propor_acao", description: "Mostra um botão de atalho (abrir_tela com href interno). Para criar/alterar algo use as ferramentas de ação, que executam; use esta só para levar a pessoa a uma tela.", category: "communication", mutates: false,
     parameters: objectSchema({ kind: { type: "string", enum: ["abrir_tela"] }, rotulo: str("texto do botão"), href: str("rota interna, ex.: /pipeline") }, ["kind", "rotulo", "href"]),

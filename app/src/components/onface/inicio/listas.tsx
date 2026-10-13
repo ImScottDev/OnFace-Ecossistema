@@ -122,18 +122,22 @@ export function Atalhos({ atalhos, comNexo }: { atalhos: Atalho[]; comNexo: bool
       <ul>
         {atalhos.map((a) => (
           <li key={a.href}>
-            <Link href={a.href} className="ini-atalho">{a.rotulo}<ArrowRight aria-hidden="true" /></Link>
+            <Link href={a.href} className="ini-atalho">
+              <span>{a.rotulo}</span>
+              {a.contagem ? <b>{inteiro(a.contagem)}</b> : null}
+              <ArrowRight aria-hidden="true" />
+            </Link>
           </li>
         ))}
+        {comNexo ? (
+          <li>
+            <button type="button" className="ini-atalho" onClick={() => abrirNexo()}>
+              <span>Perguntar ao NEXO</span>
+              <kbd>⌘J</kbd>
+            </button>
+          </li>
+        ) : null}
       </ul>
-      {comNexo ? (
-        <button type="button" className="ini-nexo" onClick={() => abrirNexo()}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/onface/oni/oni-avatar.png" alt="" aria-hidden="true" />
-          <span>Perguntar ao NEXO</span>
-          <kbd>⌘J</kbd>
-        </button>
-      ) : null}
     </nav>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Cliente 360 › Assinaturas — alterar a assinatura sem sair do ONFACE
+ * Cliente 360 › Financeiro › Assinaturas — alterar a assinatura sem sair do ONFACE
  * (stripe-onface-definicao §3 e §9). Lê o espelho local, mostra a PRÉVIA do
  * Stripe antes de confirmar e grava pelas rotas auditadas de
  * `clientes-assinatura.ts`.
@@ -14,7 +14,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -22,7 +22,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ChevronRight, ExternalLink, MoreHorizontal } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { variacaoAmigavel } from "@/lib/catalogo/rotulos";
 
 interface ItemAss { itemId: string; priceId: string | null; produto: string | null; variacao?: string | null; quantidade: number; precoUnitario: number | null; intervalo: string | null }
@@ -50,7 +52,6 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
   const [lista, setLista] = React.useState<Ass[] | null>(null);
   const [erro, setErro] = React.useState<string | null>(null);
   const [alvo, setAlvo] = React.useState<Alvo | null>(null);
-  const [aberta, setAberta] = React.useState(false);
   const [catalogo, setCatalogo] = React.useState<Produto[]>([]);
   // Quando o checkout de expansão manda para cá, a venda de origem vem na URL.
   const [origem, setOrigem] = React.useState<{ negocioId?: string; propostaId?: string }>({});
@@ -75,12 +76,10 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
     }).catch(() => {});
   }, [carregar]);
 
+  const abrirPrimeira = !!lista?.length && typeof window !== "undefined" && !!new URLSearchParams(window.location.search).get("alterar-assinatura");
   React.useEffect(() => {
-    if (lista?.length && new URLSearchParams(window.location.search).get("alterar-assinatura")) {
-      setAberta(true);
-      setAlvo((a) => a ?? { ass: lista[0], modo: "adicionar_item" });
-    }
-  }, [lista]);
+    if (abrirPrimeira && lista) setAlvo((a) => a ?? { ass: lista[0], modo: "adicionar_item" });
+  }, [lista, abrirPrimeira]);
 
   /* A aba abre ANTES do fetch: o navegador só aceita popup que sai direto do clique. */
   const abrirPortal = async () => {
@@ -94,35 +93,74 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
   };
 
   /* Sem assinatura viva (ou sem permissão financeira) não há o que mostrar:
-     o botão simplesmente não aparece. */
+     a seção simplesmente não aparece. */
   if (!lista?.length) return null;
 
   return (
     <>
-    <Button className="fixed right-4 bottom-4 z-40 shadow-lg" onClick={() => setAberta(true)}>Assinaturas</Button>
-    <Sheet open={aberta} onOpenChange={setAberta}>
-    <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-    <SheetHeader>
-      <SheetTitle>Assinaturas no Stripe</SheetTitle>
-      <SheetDescription>Alterações valem na assinatura que o cliente já tem; nada de checkout novo.</SheetDescription>
-    </SheetHeader>
-    <section aria-label="Assinaturas no Stripe" className="flex flex-col gap-3 px-4 pb-4">
-      {lista.map((a) => (
-        <Card key={a.id}>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              {brl(a.mrr)}<span className="text-xs font-normal text-muted-foreground">MRR</span>
+    <section aria-label="Assinaturas no Stripe" className="flex flex-col gap-2">
+      <header className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Assinaturas <span className="font-normal text-muted-foreground">· {lista.length}</span></h2>
+        <Button size="sm" variant="outline" onClick={abrirPortal}><ExternalLink /> Gerenciar no Stripe</Button>
+      </header>
+      <Card className="gap-0 overflow-hidden py-0">
+        <ul className="divide-y">
+          {lista.map((a, n) => <LinhaDeAssinatura key={a.id} a={a} abertaDeInicio={abrirPrimeira && n === 0} setAlvo={setAlvo} />)}
+        </ul>
+      </Card>
+    </section>
+      {alvo && (
+        <DialogoDeAlteracao
+          alvo={alvo} base={base} catalogo={catalogo} origem={origem}
+          fechar={() => setAlvo(null)} aplicado={() => { setAlvo(null); carregar(); }}
+        />
+      )}
+    </>
+  );
+}
+
+function LinhaDeAssinatura({ a, abertaDeInicio, setAlvo }: { a: Ass; abertaDeInicio: boolean; setAlvo: (x: Alvo) => void }) {
+  const [aberta, setAberta] = React.useState(abertaDeInicio);
+  const resumo = a.itens.length
+    ? a.itens.map((i) => `${i.quantidade} × ${i.produto ?? "Item"}`).join(", ")
+    : "Itens ainda não sincronizados";
+  return (
+    <li>
+      <Collapsible open={aberta} onOpenChange={setAberta}>
+        <div className="flex items-center gap-3 px-4 py-3">
+          <CollapsibleTrigger asChild>
+            <button type="button" aria-label={aberta ? "Recolher assinatura" : "Ver detalhes da assinatura"} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+              <ChevronRight className={`size-4 shrink-0 text-muted-foreground transition-transform ${aberta ? "rotate-90" : ""}`} />
+              <span className="flex shrink-0 items-baseline gap-1">
+                <span className="text-base font-semibold tabular-nums">{brl(a.mrr)}</span>
+                <span className="text-xs text-muted-foreground">MRR</span>
+              </span>
               <Badge variant={a.status === "past_due" ? "danger" : "success"}>{ROTULO_STATUS[a.status] ?? a.status}</Badge>
               {a.cancelaNoFimDoPeriodo && <Badge variant="warning">cancela em {dia(a.renovaEm)}</Badge>}
-            </CardTitle>
-            <CardDescription>{a.stripeSubscriptionId} · renova em {dia(a.renovaEm)}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+              <span className="hidden min-w-0 flex-1 truncate text-sm text-muted-foreground md:block">{resumo}</span>
+              <span className="hidden shrink-0 text-xs text-muted-foreground lg:block">renova em {dia(a.renovaEm)}</span>
+            </button>
+          </CollapsibleTrigger>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon-sm" variant="ghost" aria-label="Ações da assinatura"><MoreHorizontal /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setAlvo({ ass: a, modo: "adicionar_item" })}>Adicionar produto</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {a.cancelaNoFimDoPeriodo
+                ? <DropdownMenuItem onSelect={() => setAlvo({ ass: a, modo: "reativar" })}>Reativar</DropdownMenuItem>
+                : <DropdownMenuItem variant="destructive" onSelect={() => setAlvo({ ass: a, modo: "cancelar" })}>Cancelar assinatura</DropdownMenuItem>}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <CollapsibleContent>
+          <div className="flex flex-col gap-4 border-t bg-muted/30 px-4 py-3">
             <ul className="flex flex-col divide-y">
               {a.itens.map((i) => (
                 <li key={i.itemId} className="flex flex-wrap items-center gap-2 py-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">{i.quantidade} × {i.produto ?? "Item sem produto no catálogo"}{i.variacao ? ` · ${i.variacao}` : ""}</span>
-                  <span className="text-muted-foreground">{brl(i.precoUnitario)}{i.intervalo === "year" ? "/ano" : i.intervalo === "month" ? "/mês" : ""}</span>
+                  <span className="text-muted-foreground tabular-nums">{brl(i.precoUnitario)}{i.intervalo === "year" ? "/ano" : i.intervalo === "month" ? "/mês" : ""}</span>
                   <Button size="xs" variant="outline" onClick={() => setAlvo({ ass: a, modo: "alterar_quantidade", item: i })}>Alterar quantidade</Button>
                   <Button size="xs" variant="outline" onClick={() => setAlvo({ ass: a, modo: "trocar_price", item: i })}>Trocar plano</Button>
                   {a.itens.length > 1 && <Button size="xs" variant="subtle" onClick={() => setAlvo({ ass: a, modo: "remover_item", item: i })}>Remover</Button>}
@@ -135,7 +173,7 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
                 <ul className="flex flex-col divide-y">
                   {a.faturas.map((f) => (
                     <li key={f.id} className="flex flex-wrap items-center gap-2 py-1.5 text-sm">
-                      <span className="flex-1">{dia(f.pagaEm ?? f.vencimento ?? f.emitidaEm)} · {brl(f.valor)}</span>
+                      <span className="flex-1 tabular-nums">{dia(f.pagaEm ?? f.vencimento ?? f.emitidaEm)} · {brl(f.valor)}</span>
                       <Badge variant={f.status === "paga" ? "success" : f.status === "falhou" ? "danger" : "warning"}>{ROTULO_FATURA[f.status] ?? f.status}</Badge>
                       {f.url
                         ? <Button size="xs" variant="outline" asChild><a href={f.url} target="_blank" rel="noreferrer">Ver fatura</a></Button>
@@ -145,26 +183,11 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
                 </ul>
               </div>
             )}
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => setAlvo({ ass: a, modo: "adicionar_item" })}>Adicionar produto</Button>
-              {a.cancelaNoFimDoPeriodo
-                ? <Button size="sm" variant="tertiary" onClick={() => setAlvo({ ass: a, modo: "reativar" })}>Reativar</Button>
-                : <Button size="sm" variant="outline" onClick={() => setAlvo({ ass: a, modo: "cancelar" })}>Cancelar</Button>}
-              <Button size="sm" variant="subtle" onClick={abrirPortal}>Abrir portal</Button>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </section>
-    </SheetContent>
-    </Sheet>
-      {alvo && (
-        <DialogoDeAlteracao
-          alvo={alvo} base={base} catalogo={catalogo} origem={origem}
-          fechar={() => setAlvo(null)} aplicado={() => { setAlvo(null); carregar(); }}
-        />
-      )}
-    </>
+            <p className="font-mono text-xs text-muted-foreground">{a.stripeSubscriptionId} · renova em {dia(a.renovaEm)}</p>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </li>
   );
 }
 

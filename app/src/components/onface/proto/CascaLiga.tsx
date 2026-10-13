@@ -369,14 +369,14 @@ class Logica extends React.Component<any, any> {
       { label: "Clientes", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.9", href: "/clientes", filhos: [
         { label: "Visão Geral", href: "/clientes" }
       ] },
-      { grupo: "INTELIGÊNCIA", label: "Automações", d: "M4 14h7l-1 7 10-11h-7l1-7z", href: "/automacoes", filhos: [
+      { grupo: "INTELIGÊNCIA", label: "Automações", emBreve: true, d: "M4 14h7l-1 7 10-11h-7l1-7z", href: "/automacoes", filhos: [
         { label: "Visão Geral", href: "/automacoes" },
         { label: "Fluxos", href: "/automacoes/fluxos", pendente: true },
         { label: "Cadências / Follow-ups", href: "/automacoes/cadencias" },
         { label: "NEXO / Agentes IA", href: "/automacoes/agentes" },
         { label: "Execuções", href: "/automacoes/execucoes" }
       ] },
-      { label: "Insights", d: "M3 3v18h18M18 17V9M13 17V5M8 17v-3", href: "/relatorios", filhos: [
+      { label: "Insights", emBreve: true, d: "M3 3v18h18M18 17V9M13 17V5M8 17v-3", href: "/relatorios", filhos: [
         { label: "Visão Geral", href: "/relatorios" },
         { label: "Relatórios", href: "/relatorios/biblioteca", pendente: true },
         { label: "Performance", href: "/relatorios/performance", pendente: true }
@@ -412,16 +412,21 @@ class Logica extends React.Component<any, any> {
     const largura = mob ? 280 : abertaV ? 226 : 52;
     const areas = this.arvore().map(m => {
       const on = ativa === m.label;
-      const temFilhos = !!(m.filhos && m.filhos.length);
+      // "Em breve": sem submenu e sem navegação; o selo vem de casca-em-breve.css
+      // pelo title (= label). O código das páginas fica; só o acesso é sinalizado.
+      const emBreve = !!m.emBreve;
+      const temFilhos = !emBreve && !!(m.filhos && m.filhos.length);
       const expandido = abertaV && temFilhos && !!S.exp[m.label];
       return {
         label: m.label, d: m.d, temFilhos: temFilhos && abertaV, expandido,
         grupo: abertaV ? (m.grupo || "") : "",
         grupoStyle: "font-size:10.5px;font-weight:600;letter-spacing:.09em;color:#7e8894;padding:15px 9px 6px;white-space:nowrap",
-        style: navBase + (on ? "background:#1f2833;color:#eeeff3;font-weight:600" : "color:#b9c1ca") + (abertaV ? "" : ";justify-content:center;padding:7px 0"),
+        emBreve,
+        style: navBase + (emBreve ? "color:#8b95a1;cursor:default" : on ? "background:#1f2833;color:#eeeff3;font-weight:600" : "color:#b9c1ca") + (abertaV ? "" : ";justify-content:center;padding:7px 0"),
         chevron: "flex:0 0 auto;color:#7e8894;transition:transform .14s cubic-bezier(.2,0,.2,1);transform:rotate(" + (expandido ? 0 : -90) + "deg)",
         acionar: () => {
-          if (temFilhos && abertaV) this.setState(s => ({ exp: Object.assign({}, s.exp, { [m.label]: !s.exp[m.label] }) }));
+          if (emBreve) this.diz(m.label + " fica pronta em breve", "aviso");
+          else if (temFilhos && abertaV) this.setState(s => ({ exp: Object.assign({}, s.exp, { [m.label]: !s.exp[m.label] }) }));
           else this.ir(m.href, m.label);
         },
         filhos: (m.filhos || []).map(f => ({

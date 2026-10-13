@@ -153,7 +153,6 @@ class ClienteLigada extends ClienteLiga {
   componentDidMount() {
     super.componentDidMount?.();
     const P: any = (this as any).props;
-    if (!P.usoCallfaceAi) return;
     /* O `ref` da raiz (div pai) só é preenchido DEPOIS do didMount do filho:
        lido aqui, `raiz.current` é null, o alvo nunca nasce e a aba fica em
        branco. Adia um microtask, quando o ref já existe. */
@@ -166,8 +165,11 @@ class ClienteLigada extends ClienteLiga {
         coluna.appendChild(el);
         this._alvoUso = el;
       }
-      const aba = new URLSearchParams(window.location.search).get("aba");
-      if (aba === "uso") (this as any).setState({ aba: "uso" });
+      const q = new URLSearchParams(window.location.search);
+      const aba = q.get("aba");
+      /* O checkout de expansão manda para cá com ?alterar-assinatura: cai no Financeiro. */
+      if (aba === "uso" && P.usoCallfaceAi) (this as any).setState({ aba: "uso" });
+      else if (q.get("alterar-assinatura")) (this as any).setState({ aba: "financeiro" });
       else this.forceUpdate();
     });
   }
@@ -181,7 +183,13 @@ class ClienteLigada extends ClienteLiga {
   render() {
     const el = super.render();
     const P: any = (this as any).props;
-    if ((this as any).state.aba !== "uso" || !P.usoCallfaceAi) return el;
+    const aba = (this as any).state.aba;
+    if (aba === "financeiro") {
+      /* Assinaturas moram na aba Financeiro, como conteúdo da página (sem drawer, sem botão flutuante). */
+      const ass = <div className="px-6 pb-6"><AssinaturasDoCliente empresaId={P.real.empresa.id} /></div>;
+      return <>{el}{this._alvoUso ? createPortal(ass, this._alvoUso) : ass}</>;
+    }
+    if (aba !== "uso" || !P.usoCallfaceAi) return el;
     const painel = <UsoDoClientePainel {...P.usoCallfaceAi} aoMudar={P.refresh} />;
     /* Sem alvo a aba nunca fica em branco: o painel entra direto, sem portal. */
     return <>{el}{this._alvoUso ? createPortal(painel, this._alvoUso) : <div className="p-3.5">{painel}</div>}</>;
@@ -923,9 +931,6 @@ export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDes
         abrirExterno={(u: string) => window.open(u, "_blank", "noopener")}
         ir={ir}
       />
-      {/* Alterar a assinatura (adicionar, quantidade, trocar plano, cancelar,
-          reativar) com prévia do Stripe — o desenho não tem lugar para isso. */}
-      <AssinaturasDoCliente empresaId={cliente.empresa.id} />
     </div>
   );
 }

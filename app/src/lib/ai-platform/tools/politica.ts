@@ -61,6 +61,12 @@ export const META_FERRAMENTA: Record<string, MetaFerramenta> = {
   "cadence.pause": { dominio: "Cadências", classe: "crm", entidades: ["Cadência do time"], efeitos: "Pausa a cadência do time para a entidade.", exigeConfirmacao: true, resultado: "Cadências pausadas." },
   "followup.enroll": { dominio: "Cadências", classe: "crm", entidades: ["Cadência do time"], efeitos: "Inscreve o contato em cadência publicada. Opcional: o agente não depende dela.", exigeConfirmacao: true, resultado: "Inscrição criada." },
   "followup.cancel": { dominio: "Cadências", classe: "crm", entidades: ["Cadência do time"], efeitos: "Cancela inscrição em cadência.", exigeConfirmacao: true, resultado: "Inscrição cancelada." },
+  // NEXO: leitura do retrato e memória PRÓPRIA do usuário (anotação pessoal, nenhum dado de negócio muda).
+  "nexo.panorama": { dominio: "Leitura", classe: "leitura", entidades: ["Pré-vendas", "Pipeline", "Carteira"], efeitos: "Nenhum.", exigeConfirmacao: false, resultado: "Retrato do usuário, pendências e uso da Callface AI." },
+  "nexo.lembrar": { dominio: "Leitura", classe: "leitura", entidades: ["Memória do NEXO"], efeitos: "Nenhum.", exigeConfirmacao: false, resultado: "Anotações relevantes do usuário." },
+  "nexo.abrir_anotacao": { dominio: "Leitura", classe: "leitura", entidades: ["Memória do NEXO"], efeitos: "Nenhum.", exigeConfirmacao: false, resultado: "Anotação inteira e as ligadas." },
+  "nexo.esquecer": { dominio: "Atividades", classe: "leitura", entidades: ["Memória do NEXO"], efeitos: "Arquiva uma anotação só do usuário.", exigeConfirmacao: false, resultado: "Anotação esquecida." },
+  "nexo.anotar": { dominio: "Atividades", classe: "leitura", entidades: ["Memória do NEXO"], efeitos: "Grava ou corrige uma anotação só do usuário.", exigeConfirmacao: false, resultado: "Anotação guardada." },
   "callface.call": { dominio: "Integrações", classe: "mensagens", entidades: ["Discador"], efeitos: "Envia o lead à fila de ligação da Callface AI.", exigeConfirmacao: true, resultado: "Lead na fila de discagem." },
 };
 

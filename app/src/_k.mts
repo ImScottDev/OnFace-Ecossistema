@@ -1,0 +1,12 @@
+import { ClaudeSubscriptionAdapter } from "@/lib/ai-platform/runtime/claude-subscription-adapter";
+import { modelToolsForIds } from "@/lib/ai-platform/tools/registry";
+import { NEXO_TOOL_IDS } from "@/lib/nexo/ferramentas";
+const a = new ClaudeSubscriptionAdapter();
+const sys = "Voce e o NEXO, copiloto operacional do ONFACE.";
+const inv = async () => ({ ok: true });
+const tools = modelToolsForIds(NEXO_TOOL_IDS);
+const r0 = await a.runAgent({ model: "claude-sonnet-4-6", systemPrompt: sys, userPrompt: "oi", tools: [], maxTurns: 2, invokeTool: inv });
+console.log("sem ferramentas, prompt minimo:", r0.tokensInput);
+const r1 = await a.runAgent({ model: "claude-sonnet-4-6", systemPrompt: sys, userPrompt: "oi", tools, maxTurns: 2, invokeTool: inv });
+console.log("com catalogo compacto, prompt minimo:", r1.tokensInput);
+process.exit(0);

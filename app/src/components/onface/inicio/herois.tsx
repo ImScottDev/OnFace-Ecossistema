@@ -56,7 +56,7 @@ export function HeroDeFaturamento({ d, geradoEm, comLinks }: { d: HeroFaturament
   const mesNome = mesPorExtenso(geradoEm);
   const mrrDelta = deltaDePct(d.mrr.deltaPct);
   return (
-    <section className="ini-hero" data-onface-superficie="escura" data-tipo="faturamento" aria-labelledby="ini-h-fat">
+    <section className="ini-hero" data-tipo="faturamento" aria-labelledby="ini-h-fat">
       <div className="ini-hero-corpo">
         <div className="ini-hero-principal">
           <h2 id="ini-h-fat" className="ini-hero-rotulo">Faturamento de {mesNome}</h2>
@@ -110,7 +110,7 @@ export function HeroDeMeta({ d, geradoEm }: { d: HeroMeta; geradoEm: string }) {
   const mes = mesPorExtenso(geradoEm);
   const falta = d.alvo !== null ? Math.max(0, d.alvo - d.realizado) : null;
   return (
-    <section className="ini-hero" data-onface-superficie="escura" data-tipo="meta" aria-labelledby="ini-h-meta">
+    <section className="ini-hero" data-tipo="meta" aria-labelledby="ini-h-meta">
       <div className="ini-hero-corpo">
         <div className="ini-hero-principal">
           <h2 id="ini-h-meta" className="ini-hero-rotulo">Seu faturamento em {mes}</h2>
@@ -151,7 +151,7 @@ export function HeroDeFila({ d }: { d: HeroFila }) {
   const total = Math.max(1, d.semContato);
   const seg = (n: number) => `${(n / total) * 100}%`;
   return (
-    <section className="ini-hero" data-onface-superficie="escura" data-tipo="fila" aria-labelledby="ini-h-fila">
+    <section className="ini-hero" data-tipo="fila" aria-labelledby="ini-h-fila">
       <div className="ini-hero-corpo">
         <div className="ini-hero-principal">
           <h2 id="ini-h-fila" className="ini-hero-rotulo">Fila de primeiro contato</h2>
@@ -213,7 +213,7 @@ export function HeroDeEntrega({ d }: { d: HeroEntrega }) {
   const total = Math.max(1, d.ativas);
   const seg = (n: number) => `${(n / total) * 100}%`;
   return (
-    <section className="ini-hero" data-onface-superficie="escura" data-tipo="entrega" aria-labelledby="ini-h-entrega">
+    <section className="ini-hero" data-tipo="entrega" aria-labelledby="ini-h-entrega">
       <div className="ini-hero-corpo">
         <div className="ini-hero-principal">
           <h2 id="ini-h-entrega" className="ini-hero-rotulo">Entregas em curso</h2>

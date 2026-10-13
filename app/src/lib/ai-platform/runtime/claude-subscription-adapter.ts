@@ -33,6 +33,28 @@ type RunAgentInput = {
 };
 
 /**
+ * O catálogo vai na descrição da ponte e é reenviado a CADA chamada: JSON de
+ * schema (aspas, `type: object`, `additionalProperties`, `required` vazio)
+ * custava ~40% a mais que o necessário na janela de uso da assinatura. Uma
+ * linha por ferramenta e uma por parâmetro (`*` = obrigatório); schema que não
+ * é escalar (array, objeto) segue como JSON compacto, sem perda.
+ */
+export function compactarCatalogo(tools: ModelTool[]): string {
+  return tools.map((t) => {
+    const schema = t.parameters as { properties?: Record<string, Record<string, unknown>>; required?: string[] };
+    const obrigatorios = new Set(schema.required ?? []);
+    const params = Object.entries(schema.properties ?? {}).map(([nome, p]) => {
+      const { type, enum: valores, description, minimum, maximum, ...resto } = p as { type?: string; enum?: unknown[]; description?: string; minimum?: number; maximum?: number };
+      const escalar = typeof type === "string" && type !== "array" && type !== "object" && Object.keys(resto).length === 0;
+      const forma = !escalar ? JSON.stringify(p)
+        : [valores ? valores.join("|") : type, minimum != null || maximum != null ? `${minimum ?? ""}..${maximum ?? ""}` : "", description ? `: ${description}` : ""].filter(Boolean).join(" ").replace(" :", ":");
+      return `  ${nome}${obrigatorios.has(nome) ? "*" : ""} ${forma}`;
+    });
+    return [`${t.name} — ${t.description}`, ...params].join("\n");
+  }).join("\n");
+}
+
+/**
  * Adapter experimental para o runtime do Claude Code/Agent SDK autenticado
  * pela assinatura do Super Admin. Ele nao e um cliente da Anthropic API.
  */
@@ -81,7 +103,7 @@ export class ClaudeSubscriptionAdapter {
   async runAgent(request: RunAgentInput): Promise<ClaudeSubscriptionAgentResult> {
     const callableNames = request.tools.map((item) => item.name);
     const toolCalls: ClaudeSubscriptionToolCall[] = [];
-    const catalog = request.tools.map((item) => ({ name: item.name, description: item.description, parameters: item.parameters }));
+    const catalog = compactarCatalogo(request.tools);
 
     const bridge = callableNames.length
       ? createSdkMcpServer({
@@ -90,7 +112,7 @@ export class ClaudeSubscriptionAdapter {
         alwaysLoad: true,
         tools: [tool(
           "call_crm_tool",
-          `Executa uma ferramenta permitida do ONFACE. Escolha tool_name somente deste catalogo e envie input conforme o schema. Catalogo: ${JSON.stringify(catalog)}`,
+          `Executa uma ferramenta permitida do ONFACE. Escolha tool_name somente deste catalogo e envie input conforme o schema. Catalogo (uma ferramenta por linha; abaixo dela os parametros do input, * = obrigatorio):\n${catalog}`,
           {
             tool_name: z.enum(callableNames as [string, ...string[]]),
             input: z.record(z.string(), z.unknown()),

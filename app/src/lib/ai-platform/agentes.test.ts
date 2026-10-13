@@ -96,6 +96,8 @@ test("toda ferramenta que muta exige permissão delegada", async () => {
   const EXCECOES = new Set([
     "handoff.request", "case.open", "alert.create",
     "skill.activate", "message.prepare", "response.classify",
+    // Anotação pessoal do usuário no NEXO: nenhum dado de negócio, e só ele a lê.
+    "nexo.anotar", "nexo.esquecer",
   ]);
 
   const semGate = AGENT_TOOLS
