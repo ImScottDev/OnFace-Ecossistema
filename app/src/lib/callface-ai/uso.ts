@@ -406,6 +406,6 @@ export async function vinculosPendentes(organizacaoId: string): Promise<VinculoP
   }
   return empresas.map((e) => {
     const sugestoes = por.get(e.id) ?? [];
-    return { empresaId: e.id, empresaNome: e.nome, cnpj: e.cnpj, sugestoes, situacao: sugestoes.length ? "sugestao" : "sem_sugestao" };
+    return { empresaId: e.id, empresaNome: e.nome, cnpj: e.cnpj, sugestoes, situacao: (sugestoes.length ? "sugestao" : "sem_sugestao") as VinculoPendente["situacao"] };
   }).sort((a, b) => Number(b.sugestoes.length > 0) - Number(a.sugestoes.length > 0));
 }

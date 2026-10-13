@@ -430,7 +430,7 @@ export async function atribuirResponsavel(params: {
       de: lead.responsavel_id,
       para: params.responsavelId,
       deNome: lead.responsavel_id ? nomes.get(lead.responsavel_id) ?? null : null,
-      paraNome: nomes.get(params.responsavelId) ?? null,
+      paraNome: params.responsavelId ? nomes.get(params.responsavelId) ?? null : null,
       origemAtribuicao: params.origemAtribuicao ?? "manual",
     },
     timeline: { tipo: "nota", titulo: "Responsável alterado" },

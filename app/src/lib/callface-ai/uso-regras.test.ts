@@ -20,7 +20,7 @@ test("perto do limite: minutos ou licenças >= 85%", () => {
   assert.deepEqual(codigos({ licencasEmUso: 5, licencasContratadas: 5 }), ["perto_do_limite"]);
 });
 test("nunca usou: sem atividade e série vazia", () => {
-  assert.deepEqual(codigos({ temAtividade: false, chamadasNaSerie: 0, diasSemAtividade: null }), ["sem_uso_desde_a_contratacao"]);
+  assert.deepEqual(codigos({ temAtividade: false, chamadasNaSerie: 0, diasSemAtividade: undefined }), ["sem_uso_desde_a_contratacao"]);
 });
 test("licenças: trial fora das contratadas; em uso limitado ao contratado", () => {
   const r = resumoLicencas([

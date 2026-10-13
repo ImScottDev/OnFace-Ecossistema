@@ -28,7 +28,7 @@ export function linkDeArquivo(nome: string, url: string | null | undefined): Rea
         download={nome}
         title="Baixar"
         aria-label={"Baixar " + nome}
-        style={{ flex: "0 0 auto", fontSize: 11.5, fontWeight: 600, color: "#c2330f", textDecoration: "none" }}
+        style={{ flex: "0 0 auto", fontSize: 11.5, fontWeight: 600, color: "var(--of-tinta-acento)", textDecoration: "none" }}
       >
         Baixar
       </a>
