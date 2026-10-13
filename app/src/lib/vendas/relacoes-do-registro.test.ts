@@ -53,3 +53,9 @@ test("vínculo inválido não produz URL para outra entidade", () => {
   const rows: VinculoDoRegistro[] = [{ ...base, id: "undefined", k: "opp" }];
   assert.deepEqual(relacoesDoRegistro(rows, { empresaId: empresa }), []);
 });
+
+test("a mesma aquisição chegando por dois caminhos aparece uma vez", () => {
+  const v = { ...base, id: lead, k: "aquisicao" as const };
+  const r = relacoesDoRegistro([v, { ...v }], { empresaId: empresa });
+  assert.equal(r.length, 1);
+});

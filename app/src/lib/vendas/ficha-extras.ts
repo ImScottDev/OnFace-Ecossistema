@@ -221,7 +221,8 @@ export async function relacoesDaPessoa(organizacaoId: string, leadId: string): P
   const meus = [...achados.values()].sort((a, b) => b.criado_em.localeCompare(a.criado_em));
 
   // Contato avulso (registro sem etapa e sem aquisição) é identidade, não processo: não é relação em andamento.
-  const aquisicoes: AquisicaoDaPessoa[] = meus.filter((c) => c.tem_processo).map((c) => ({
+  // Lead duplicado (aponta para um canônico) já está contado no canônico: não é uma segunda relação.
+  const aquisicoes: AquisicaoDaPessoa[] = meus.filter((c) => c.tem_processo && !(c.canonical && c.canonical !== c.id && achados.has(c.canonical))).map((c) => ({
     id: c.id, etapa: c.etapa, etapaRotulo: ROTULO_ETAPA_PRE_VENDAS[c.etapa as EstagioPreVendas] ?? c.etapa,
     origem: c.origem, criadoEm: c.criado_em, responsavel: c.responsavel,
     pessoa: [c.nome, c.sobrenome].filter(Boolean).join(" "),

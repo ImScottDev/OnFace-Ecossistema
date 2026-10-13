@@ -1623,6 +1623,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
       LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
       LEFT JOIN usuarios u ON u.id = COALESCE(a.responsavel_id, l.responsavel_id)
      WHERE a.empresa_id = ${empresaId}::uuid
+       AND l.canonical_lead_id IS NULL -- duplicado já está contado no canônico
      ORDER BY a.created_at DESC LIMIT 20
   `);
 

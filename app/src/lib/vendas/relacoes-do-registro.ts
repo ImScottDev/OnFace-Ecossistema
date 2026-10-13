@@ -57,6 +57,8 @@ export function relacoesDoRegistro(
   return vinculos
     // id inválido ("undefined", vazio) nunca vira URL de outra entidade
     .filter((v) => UUID.test(v.id) && v.empresaId === alvo.empresaId)
+    // a mesma entidade chegando por dois caminhos vira uma relação só
+    .filter((v, i, todos) => todos.findIndex((x) => x.k === v.k && x.id === v.id) === i)
     .filter((v) => {
       // aquisição é da PESSOA: a de outro contato da mesma conta não é dela
       if (v.k !== "aquisicao") return true;
