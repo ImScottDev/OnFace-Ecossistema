@@ -26,6 +26,7 @@ import { decidirGanhoPelaOferta, propagarGanhoCanonico } from "@/lib/vendas/pont
 import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog, leads, statusChanges, oportunidadeItens, oportunidades, clientes, atividades } from "@/lib/db/schema";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
+import { valoresFechadosDoGanho } from "@/lib/crm/regras-pos-ganho";
 
 export type TipoEvidenciaComercial =
   | "stripe_payment"
@@ -293,7 +294,11 @@ export async function marcarNegocioGanhoSeAindaNao(
   // `etapa` junto com `status`: o board lê a etapa, e só `tentarGanhar` a gravava.
   // Ganho por pagamento ou contrato assinado (o caminho de PABX/White Label) ficava
   // com status 'ganho' e card parado em Proposta, e o total da coluna Ganho não o contava.
-  await db.update(negocios).set({ status: "ganho", etapa: "ganho", etapaDesde: new Date(), ganhoAt: new Date(), updatedAt: new Date() }).where(eq(negocios.id, negocioId));
+  // `mrr_fechado` e `valor_setup` são o que o faturamento do mês, a meta e o placar do vendedor somam.
+  // Só o PATCH manual os preenchia: ganho por pagamento ou contrato assinado valia R$ 0 em todo número.
+  // Preenche a partir do que as propostas já somaram no negócio, sem sobrescrever valor digitado.
+  const valoresFechados = valoresFechadosDoGanho(negocio);
+  await db.update(negocios).set({ status: "ganho", etapa: "ganho", etapaDesde: new Date(), ganhoAt: new Date(), updatedAt: new Date(), ...valoresFechados }).where(eq(negocios.id, negocioId));
   // O board lê `oportunidades`: o espelho acompanha. Best-effort, o ganho já está gravado.
   await import("@/lib/crm/sync-domain-model")
     .then((m) => m.syncOportunidadeFromNegocio(negocioId))

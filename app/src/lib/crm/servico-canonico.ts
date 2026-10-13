@@ -24,17 +24,19 @@ import { db } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { negocios, oportunidades, oportunidadeItens, servicosCanonicos, propostaGrupoComercial, checkouts } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
+import { chaveCanonicaDoItem, valoresDoServico } from "@/lib/crm/regras-pos-ganho";
 
 type OportunidadeItemRow = typeof oportunidadeItens.$inferSelect;
 
 /** Upsert de UM item -> serviço canônico. Compartilhado pelos dois pontos de materialização (manual e via grupo). */
-async function materializarItem(item: OportunidadeItemRow, ctx: { organizacaoId: string; empresaId: string | null; leadId: string | null; negocioId: string; contratoId: string | null; wonAt: Date; stripeSubscriptionId: string | null }): Promise<string> {
+async function materializarItem(item: OportunidadeItemRow, ctx: { organizacaoId: string; empresaId: string | null; leadId: string | null; negocioId: string; contratoId: string | null; wonAt: Date; stripeSubscriptionId: string | null; itensMrrNoLote: number }): Promise<string> {
   const isMrr = item.revenueNature === "MRR";
-  // STRIPE:<subscriptionId> mantém a mesma convenção da reconciliação
-  // (permite um futuro stripe-sync reconciliar pela MESMA chave); tudo que
-  // não é MRR-via-Stripe usa o prefixo novo CRM2:<itemId>, nunca colidindo
-  // com chaves legadas (STRIPE:/ZOHO:/LEDGER:/MANUAL:).
-  const canonicalKey = isMrr && ctx.stripeSubscriptionId ? `STRIPE:${ctx.stripeSubscriptionId}` : `CRM2:${item.id}`;
+  // STRIPE:<subscriptionId> mantém a mesma convenção da reconciliação (permite um futuro stripe-sync
+  // reconciliar pela MESMA chave) quando é o único item recorrente; com vários, uma linha por item
+  // (`STRIPE:<sub>:<item>`), senão o último sobrescreve os outros e o MRR vendido some. Tudo que não
+  // é MRR-via-Stripe usa o prefixo CRM2:<itemId>, nunca colidindo com chaves legadas.
+  const canonicalKey = chaveCanonicaDoItem({ itemId: item.id, ehMrr: isMrr, stripeSubscriptionId: ctx.stripeSubscriptionId, itensMrrNoLote: ctx.itensMrrNoLote });
+  const { valorRecorrente, quantidade } = valoresDoServico(item);
 
   const valores = {
     organizacaoId: ctx.organizacaoId,
@@ -50,7 +52,8 @@ async function materializarItem(item: OportunidadeItemRow, ctx: { organizacaoId:
     commercialLifecycle: "ACTIVE",
     billingStatus: isMrr ? "ACTIVE" : "BILLED",
     // Regra dura: só MRR alimenta current_recurring_value.
-    currentRecurringValue: isMrr ? item.valorTotal : "0.00",
+    currentRecurringValue: valorRecorrente,
+    quantidade,
     currentSubscriptionId: isMrr ? ctx.stripeSubscriptionId : null,
     asOfDate: ctx.wonAt.toISOString().split("T")[0],
     portfolioIncluded: true,
@@ -126,8 +129,10 @@ export async function materializarServicosCanonicosDoNegocio(
     const itens = await db.select().from(oportunidadeItens).where(eq(oportunidadeItens.oportunidadeId, oportunidade.id));
     if (itens.length === 0) return { servicoIds: [] };
 
-    const ctx = { organizacaoId: opts.organizacaoId, empresaId: negocio.empresaId, leadId: negocio.leadId, negocioId: opts.negocioId, contratoId: opts.contratoId ?? null, wonAt: opts.wonAt, stripeSubscriptionId: opts.stripeSubscriptionId ?? null };
-    const servicoIds = await Promise.all(itens.map((item) => materializarItem(item, ctx)));
+    const ctx = { organizacaoId: opts.organizacaoId, empresaId: negocio.empresaId, leadId: negocio.leadId, negocioId: opts.negocioId, contratoId: opts.contratoId ?? null, wonAt: opts.wonAt, stripeSubscriptionId: opts.stripeSubscriptionId ?? null, itensMrrNoLote: itens.filter((i) => i.revenueNature === "MRR").length };
+    // Em série: select-then-insert em paralelo para a mesma chave estourava o índice único.
+    const servicoIds: string[] = [];
+    for (const item of itens) servicoIds.push(await materializarItem(item, ctx));
     return { servicoIds };
   } catch (err) {
     console.error(`[servico-canonico] falha ao materializar serviços canônicos do negócio ${opts.negocioId} (best-effort):`, err);
@@ -173,7 +178,9 @@ export async function materializarServicosCanonicosDoGrupo(grupoComercialId: str
   const ctx = {
     organizacaoId: grupo.organizacaoId, empresaId: negocio.empresaId, leadId: negocio.leadId, negocioId: grupo.negocioId,
     contratoId: grupo.contratoId, wonAt: grupo.concluidoEm ?? new Date(), stripeSubscriptionId,
+    itensMrrNoLote: itens.filter((i) => i.revenueNature === "MRR").length,
   };
-  const servicoIds = await Promise.all(itens.map((item) => materializarItem(item, ctx)));
+  const servicoIds: string[] = [];
+  for (const item of itens) servicoIds.push(await materializarItem(item, ctx));
   return { servicoIds };
 }

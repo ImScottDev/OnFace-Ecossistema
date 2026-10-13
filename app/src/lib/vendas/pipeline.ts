@@ -780,12 +780,35 @@ export async function tentarGanhar(params: {
    * depender disto), idempotente (a segunda chamada responde "pós-venda já
    * existe") e sem efeito quando a flag POSVENDA_CANONICO está desligada. */
   const { criarPosVendaDoNegocio } = await import("@/lib/crm/pos-venda");
-  void criarPosVendaDoNegocio(params.negocioId)
-    .then((r) => {
-      if (r.criado) console.log(`[pos-venda] ${params.negocioId} -> ${r.trilha} (${r.itensChecklist} itens)`);
-      else console.warn(`[pos-venda] ${params.negocioId} não criou: ${r.motivo}`);
-    })
-    .catch((e) => console.error("[pos-venda] falha (negócio segue ganho):", params.negocioId, e));
+  void (async () => {
+    /* Serviço com PRODUTO, VALOR e QUANTIDADE antes do serviço de roteamento. `criarPosVendaDoNegocio`
+     * cria um serviço sem nome, natureza UNKNOWN e valor 0 (de propósito: roteia a entrega, não
+     * reconhece receita). Sozinho, ele fazia o Ganho por aqui (atestado financeiro, por exemplo)
+     * perder o produto e o MRR vendidos. A rota PATCH legada já materializa os itens antes; aqui é
+     * o mesmo passo. Os itens carregam `evidence.negocioId`, então o pós-venda abaixo reconhece que o
+     * serviço já existe e não cria o segundo (nem a segunda jornada). */
+    const { garantirItemComercialManual } = await import("@/lib/crm/composicao-comercial");
+    const { materializarServicosCanonicosDoNegocio } = await import("@/lib/crm/servico-canonico");
+    const { criarFulfillmentsParaServicos } = await import("@/lib/crm/fulfillment");
+    /* Grupo com entrega liberada ou concluído: quem materializa é o consumer do outbox
+     * (FulfillmentGroupCompleted). Materializar aqui também criaria um segundo serviço MRR. */
+    const [grupoLiberado] = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM proposta_grupo_comercial
+       WHERE negocio_id = ${params.negocioId}::uuid AND (entrega_liberada_em IS NOT NULL OR status = 'concluido')`);
+    if (!((grupoLiberado?.n ?? 0) > 0)) await garantirItemComercialManual(params.negocioId);
+    const [contrato] = await db.execute<{ id: string }>(sql`SELECT id::text FROM contratos WHERE negocio_id = ${params.negocioId}::uuid ORDER BY created_at DESC LIMIT 1`);
+    const { servicoIds } = (grupoLiberado?.n ?? 0) > 0 ? { servicoIds: [] as string[] } : await materializarServicosCanonicosDoNegocio({
+      negocioId: params.negocioId, organizacaoId: params.organizacaoId, contratoId: contrato?.id ?? null, wonAt: new Date(), stripeSubscriptionId: null,
+    });
+    if (servicoIds.length > 0) {
+      await criarFulfillmentsParaServicos(servicoIds, params.organizacaoId);
+      console.log(`[pos-venda] ${params.negocioId} -> ${servicoIds.length} serviço(s) com produto e valor`);
+      return;
+    }
+    const r = await criarPosVendaDoNegocio(params.negocioId);
+    if (r.criado) console.log(`[pos-venda] ${params.negocioId} -> ${r.trilha} (${r.itensChecklist} itens)`);
+    else console.warn(`[pos-venda] ${params.negocioId} não criou: ${r.motivo}`);
+  })().catch((e) => console.error("[pos-venda] falha (negócio segue ganho):", params.negocioId, e));
 
   return { ganhou: true, motivo: "Evidência comercial confirmada." };
 }

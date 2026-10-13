@@ -82,6 +82,7 @@ jobs:
             src/lib/crm/condicoes-comerciais.test.ts \
             src/lib/crm/decisao-fechamento.test.ts \
             src/lib/crm/retomada-aceite.test.ts \
+            src/lib/crm/regras-pos-ganho.test.ts \
             src/lib/email/entrega.test.ts \
             src/lib/catalogo/sincronizar-stripe.test.ts
 

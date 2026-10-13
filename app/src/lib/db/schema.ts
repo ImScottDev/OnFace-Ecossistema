@@ -3141,6 +3141,9 @@ export const servicosCanonicos = pgTable(
     billingStatus: text("billing_status").notNull(),
     // Fonte da verdade do current MRR — nunca recalcular por SUM(contratos.mrr).
     currentRecurringValue: decimal("current_recurring_value", { precision: 14, scale: 2 }).default("0").notNull(),
+    // Quantas unidades a linha vendida representa (migration 0124). INFORMATIVA: o valor acima já é o TOTAL
+    // da linha; nunca multiplicar um pelo outro, e nunca desdobrar a linha em componentes (dobraria o MRR).
+    quantidade: decimal("quantidade", { precision: 14, scale: 3 }).default("1").notNull(),
     currentSubscriptionId: text("current_subscription_id"),
     asOfDate: date("as_of_date"),
     portfolioIncluded: boolean("portfolio_included").default(false).notNull(),
