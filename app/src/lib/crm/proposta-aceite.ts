@@ -17,11 +17,11 @@
  * obrigação correspondente (contrato ou pagamento) realmente aconteceu.
  */
 import { db } from "@/lib/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { atividades, propostas, propostaGrupoComercial, auditLog, contratos } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
 import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
-import { formarGruposComerciais, vincularContratoAoGrupo, marcarAguardandoValidacaoManual, type GrupoComercialRow } from "@/lib/crm/grupo-comercial";
+import { formarGruposComerciais, vincularContratoAoGrupo, vincularContratoPreparadoAoGrupo, marcarAguardandoValidacaoManual, type GrupoComercialRow } from "@/lib/crm/grupo-comercial";
 import { gerarContratoDeTemplate, enviarContratoParaAssinatura } from "@/lib/crm/contrato-template";
 import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
@@ -31,6 +31,7 @@ import { textoDoGate } from "@/lib/crm/decisao-fechamento";
 import { ROTULO_FAMILIA } from "@/lib/vendas/dominio";
 import type { EstadoFechamento } from "@/lib/crm/estado-fechamento";
 import { appUrl } from "@/lib/app-url";
+import { decidirRetomada } from "@/lib/crm/retomada-aceite";
 
 export interface ResultadoGrupoAceite {
   grupoId: string;
@@ -44,6 +45,8 @@ export interface ResultadoGrupoAceite {
   checkoutUrl?: string | null;
   proximoUrl?: string | null;
   erro?: string;
+  /** Retomada: outra tentativa já está cuidando deste grupo; nada foi feito agora. */
+  emAndamento?: boolean;
 }
 
 const PROXIMO_PASSO_TEXTO: Record<"pagamento" | "contrato" | "validacao_manual", string> = {
@@ -59,9 +62,6 @@ export interface ResultadoAceite {
 
 type PropostaRow = typeof propostas.$inferSelect;
 type OrigemDoAceite = "publico" | "manual";
-
-/** Grupo que já passou do ponto de partida: contrato enviado, checkout gerado, pago... Não se refaz. */
-const GRUPO_NO_PONTO_DE_PARTIDA = ["aguardando_aceite", "aguardando_contrato", "aguardando_checkout"];
 
 /**
  * Processa o aceite de uma proposta: forma os grupos comerciais (decidindo
@@ -187,31 +187,105 @@ export async function processarAceiteDaProposta(opts: {
  */
 async function concluirAceite(args: {
   proposta: PropostaRow;
-  opts: { propostaId: string; organizacaoId: string; origem: OrigemDoAceite };
+  opts: { propostaId: string; organizacaoId: string; origem: OrigemDoAceite; retomar?: boolean };
   grupos: GrupoComercialRow[];
 }): Promise<ResultadoAceite> {
   const { proposta, opts, grupos } = args;
   const resultados: ResultadoGrupoAceite[] = [];
+  const destravados: ResultadoGrupoAceite[] = [];
   for (const grupo of grupos) {
-    resultados.push(await avancarGrupoAposAceite({ grupo, proposta, opts }));
+    // Retomada: reserva o grupo (uma tentativa por vez). Botão e worker podem chegar juntos; quem perde a
+    // reserva não faz nada, e por isso nada se duplica.
+    if (opts.retomar && !(await reservarTentativa(grupo.id))) {
+      resultados.push({ grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "contrato", emAndamento: true });
+      continue;
+    }
+    const r = await avancarGrupoAposAceite({ grupo, proposta, opts });
+    await registrarResultadoDoGrupo(grupo.id, r, opts.retomar === true);
+    resultados.push(r);
+    if (opts.retomar && grupo.fechamentoErro && !r.erro && !r.emAndamento) destravados.push(r);
   }
 
-  await notificarPropostaRespondida({
-    propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
-    numero: proposta.numero, versao: proposta.versao, tipo: "aceita",
-    motivo: resultados.length > 1
-      ? `Cliente aceitou. Composição mista: ${resultados.map((r) => `${r.serviceFamily ?? r.commercialModel}→${PROXIMO_PASSO_TEXTO[r.proximoPasso]}`).join(", ")}.`
-      : `Cliente aceitou e foi direcionado para ${PROXIMO_PASSO_TEXTO[resultados[0]?.proximoPasso ?? "pagamento"]}.`,
-  });
+  // O aviso ao time diz o que de fato aconteceu: "aceitou" e "contrato gerado e enviado" são fatos diferentes.
+  const falhas = resultados.filter((r) => r.erro);
+  const feitos = resultados.filter((r) => !r.erro && !r.emAndamento);
+  if (opts.retomar) {
+    // Retomada: só avisa quando destrava (nada de repetir o aviso de falha a cada tentativa).
+    if (falhas.length === 0 && destravados.length > 0) {
+      await notificarPropostaRespondida({
+        propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
+        numero: proposta.numero, versao: proposta.versao, tipo: "aceita",
+        titulo: "Aceite reprocessado com sucesso",
+        motivo: `${descreverResultados(destravados)} após nova tentativa.`,
+      });
+    }
+  } else if (falhas.length > 0) {
+    await notificarPropostaRespondida({
+      propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
+      numero: proposta.numero, versao: proposta.versao, tipo: "aceita",
+      titulo: "Proposta aceita, mas o fechamento NÃO andou",
+      motivo: `Cliente aceitou, porém ${falhas.map((r) => `${PROXIMO_PASSO_TEXTO[r.proximoPasso]} de ${r.serviceFamily ?? r.commercialModel} NÃO foi gerado (${resumoDoErro(r.erro)})`).join("; ")}. ` +
+        `O cliente foi avisado de que recebe por e-mail. Corrija o que falta e use "Reprocessar aceite" na proposta; o sistema também tenta de novo sozinho.`,
+    });
+  } else {
+    await notificarPropostaRespondida({
+      propostaId: proposta.id, negocioId: proposta.negocioId, leadId: proposta.leadId,
+      numero: proposta.numero, versao: proposta.versao, tipo: "aceita",
+      motivo: `Cliente aceitou. ${descreverResultados(feitos)}.`,
+    });
+  }
 
   return { ok: true, grupos: resultados };
+}
+
+/** O que ficou pronto, por grupo, em palavras de quem recebe o aviso. */
+function descreverResultados(rs: ResultadoGrupoAceite[]): string {
+  return rs.map((r) => {
+    const quem = rs.length > 1 ? `${r.serviceFamily ?? r.commercialModel}: ` : "";
+    if (r.proximoPasso === "validacao_manual") return `${quem}aguardando validação manual do time`;
+    if (r.proximoPasso === "pagamento") return `${quem}${r.checkoutId ? "link de pagamento gerado" : "pagamento em andamento"}`;
+    return `${quem}contrato gerado e enviado para assinatura`;
+  }).join("; ");
+}
+
+/** O erro técnico, curto, para a notificação. */
+function resumoDoErro(erro: string | undefined): string {
+  const t = (erro ?? "motivo não informado").replace(/^(Error|ContratoIncompletoError):\s*/, "").trim();
+  return t.length > 220 ? `${t.slice(0, 220)}…` : t;
+}
+
+/**
+ * Reserva a tentativa de um grupo na retomada: só uma por vez a cada 2 minutos. O UPDATE é atômico, então
+ * duas retomadas simultâneas (botão + worker) não passam as duas. `fechamento_tentativas` conta as tentativas.
+ */
+async function reservarTentativa(grupoId: string): Promise<boolean> {
+  const r = await db.execute<{ id: string }>(sql`
+    UPDATE proposta_grupo_comercial
+       SET fechamento_ultima_tentativa_em = now(), fechamento_tentativas = fechamento_tentativas + 1
+     WHERE id = ${grupoId}::uuid
+       AND (fechamento_ultima_tentativa_em IS NULL OR fechamento_ultima_tentativa_em < now() - interval '2 minutes')
+    RETURNING id::text`);
+  return r.length > 0;
+}
+
+/** Grava o desfecho: erro e tentativa quando falhou, limpa quando andou. É o que o botão e o worker leem. */
+async function registrarResultadoDoGrupo(grupoId: string, r: ResultadoGrupoAceite, retomada: boolean): Promise<void> {
+  if (r.erro) {
+    await db.update(propostaGrupoComercial).set({
+      fechamentoErro: r.erro.slice(0, 1000), fechamentoUltimaTentativaEm: new Date(),
+      // A tentativa original (não retomada) ainda não foi contada pela reserva.
+      ...(retomada ? {} : { fechamentoTentativas: sql`${propostaGrupoComercial.fechamentoTentativas} + 1` }),
+    }).where(eq(propostaGrupoComercial.id, grupoId));
+  } else if (!r.emAndamento) {
+    await db.update(propostaGrupoComercial).set({ fechamentoErro: null }).where(eq(propostaGrupoComercial.id, grupoId));
+  }
 }
 
 /** Um grupo: resolve a família, e dispara o contrato OU o checkout que o caminho dele pede. Idempotente. */
 async function avancarGrupoAposAceite(args: {
   grupo: GrupoComercialRow;
   proposta: PropostaRow;
-  opts: { propostaId: string; organizacaoId: string; origem: OrigemDoAceite };
+  opts: { propostaId: string; organizacaoId: string; origem: OrigemDoAceite; retomar?: boolean };
 }): Promise<ResultadoGrupoAceite> {
   const { grupo, proposta, opts } = args;
 
@@ -234,6 +308,10 @@ async function avancarGrupoAposAceite(args: {
   // caminho chutado (nem contrato nem cobrança automática). Fica num estado
   // explícito, e a gestão é avisada pra validar na mão.
   if (regra.trilha === "validacao_manual") {
+    // Retomada: já está marcado e a gestão já foi avisada; não repete o aviso.
+    if (grupo.status === "aguardando_validacao_manual") {
+      return { grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "validacao_manual", serviceFamily: familia, estado: "aguardando_validacao_manual" };
+    }
     await marcarAguardandoValidacaoManual(grupo.id, "Família comercial não classificada — validar manualmente antes de fechar a venda.");
     if (proposta.negocioId) {
       await notificarValidacaoManualNecessaria({
@@ -255,11 +333,12 @@ async function avancarGrupoAposAceite(args: {
     : contratoPeloModo || await exigeContratoNoGrupoAsync(grupo.id, grupo.commercialModel, familia);
 
   if (exigeContrato) {
-    // Já avançou (contrato enviado para assinatura, assinado, ou além): retomar não reenvia nada.
-    if (!GRUPO_NO_PONTO_DE_PARTIDA.includes(grupo.status)) {
+    // Já avançou (contrato enviado para assinatura, assinado, ou além): retomar não reenvia nada nem regride o grupo.
+    const passo = decidirRetomada({ caminho: "contrato", status: grupo.status, contratoId: grupo.contratoId ?? null, checkoutId: grupo.checkoutId ?? null, contratoAssinadoEm: grupo.contratoAssinadoEm ?? null });
+    if (passo.acao === "nada") {
       return {
         grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "contrato", serviceFamily: familia,
-        estado: "contrato_enviado", proximoUrl: `${appUrl()}/p/${proposta.id}#grupo-${grupo.id}`,
+        estado: passo.motivo === "contrato_ja_assinado" ? "contrato_assinado" : "contrato_enviado", proximoUrl: `${appUrl()}/p/${proposta.id}#grupo-${grupo.id}`,
       };
     }
     try {
@@ -276,6 +355,9 @@ async function avancarGrupoAposAceite(args: {
         idempotencyKey: `contract-required:${grupo.id}`,
       });
       const { contratoId } = grupo.contratoId ? { contratoId: grupo.contratoId } : await gerarContratoDeTemplate(grupo.id);
+      // Vincula o contrato ANTES de enviar: se o envio falhar, a próxima tentativa reaproveita este contrato em
+      // vez de gerar outro (cada falha deixava um contrato órfão). O estado do grupo não muda aqui.
+      if (!grupo.contratoId) await vincularContratoPreparadoAoGrupo(grupo.id, contratoId);
       await enviarContratoParaAssinatura(contratoId);
       await vincularContratoAoGrupo(grupo.id, contratoId);
       const [contratoEnviado] = await db.select({ signatarios: contratos.signatarios }).from(contratos).where(eq(contratos.id, contratoId)).limit(1);
@@ -327,7 +409,7 @@ async function avancarGrupoAposAceite(args: {
   }
 
   // Pagamento. Checkout já gerado (ou grupo adiante): não se cria outra cobrança para o mesmo grupo.
-  if (grupo.checkoutId || !GRUPO_NO_PONTO_DE_PARTIDA.includes(grupo.status)) {
+  if (decidirRetomada({ caminho: "pagamento", status: grupo.status, contratoId: grupo.contratoId ?? null, checkoutId: grupo.checkoutId ?? null, contratoAssinadoEm: grupo.contratoAssinadoEm ?? null }).acao === "nada") {
     return {
       grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "pagamento", serviceFamily: familia,
       estado: "pagamento_pendente", checkoutId: grupo.checkoutId ?? null,

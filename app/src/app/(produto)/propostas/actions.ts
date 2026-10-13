@@ -13,6 +13,7 @@ import { atualizarItensDoRascunho, criarPropostaComItens, resolverContatoDaPropo
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { lerAlteracoesDaProposta } from "@/lib/vendas/auditoria-comercial-registro";
 import type { RegistroDeAlteracao } from "@/lib/vendas/auditoria-comercial";
+import { atualizarEntregaDaOrigem, entregasDaOrigem } from "@/lib/email/entrega";
 import { avisarClienteDaPropostaEnviada, type ResultadoEmail, type ResultadoWhatsapp, type ViaEmail } from "@/lib/crm/enviar-proposta";
 
 const ROTA = "/propostas";
@@ -168,6 +169,13 @@ export interface DetalheProposta {
     assinadoEm: string | null; signatarios: string[]; pdfFinalDisponivel: boolean;
   }>;
   timeline: LinhaDoTempo[];
+  /** E-mails desta proposta e dos contratos dela, com o estado de entrega DO PROVEDOR (não o "enviado" presumido). */
+  entregas: Array<{
+    id: string; para: string; assunto: string; via: "conta" | "resend"; de: string;
+    estado: string; detalhe: string | null; texto: string; falhou: boolean; enviadoEm: string;
+  }>;
+  /** Grupos aceitos cujo próximo passo (contrato ou pagamento) não andou. Vazio = nada parado. */
+  pendenciasDoAceite: Array<{ grupoId: string; passo: "contrato" | "pagamento"; erro: string | null; tentativas: number; ultimaTentativaEm: string | null }>;
   /** Auditoria comercial desta proposta: quem mudou o quê (de → para), quando e por quê. */
   alteracoes: RegistroDeAlteracao[];
 }
@@ -277,8 +285,64 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
         ajusteEm: p.ajuste_em, ajusteDescricao: p.ajuste_desc,
       },
       timeline: await lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, limite: 30, negocioId: p.negocio_id ?? undefined }),
+      entregas: await lerEntregasDaProposta(ctx.organizacaoId, propostaId, p.negocio_id),
+      pendenciasDoAceite: p.status === "aceita" ? await lerPendenciasDoAceite(ctx.organizacaoId, propostaId) : [],
       alteracoes: await lerAlteracoesDaProposta(ctx.organizacaoId, propostaId),
     };
+  });
+}
+
+/**
+ * Entrega dos e-mails da proposta e dos contratos dela. Sem webhook do Resend, o estado é CONSULTADO aqui,
+ * na leitura da ficha (no máximo uma consulta por e-mail a cada 60 s). Falha de consulta não promove nada a "entregue".
+ */
+async function lerEntregasDaProposta(organizacaoId: string, propostaId: string, negocioId: string | null): Promise<DetalheProposta["entregas"]> {
+  const contratoIds = (await db.execute<{ id: string }>(sql`
+    SELECT c.id::text FROM contratos c JOIN proposta_grupo_comercial g ON g.contrato_id = c.id
+     WHERE g.proposta_id = ${propostaId}::uuid AND g.organizacao_id = ${organizacaoId}::uuid`)).map((c) => c.id);
+  const origens = [{ tipo: "proposta" as const, id: propostaId, rotulo: "da proposta" }, ...contratoIds.map((id) => ({ tipo: "contrato" as const, id, rotulo: "do contrato" }))];
+  for (const o of origens) {
+    await atualizarEntregaDaOrigem(organizacaoId, { tipo: o.tipo, id: o.id }, { negocioId, rotulo: o.rotulo });
+  }
+  const todas = (await Promise.all(origens.map((o) => entregasDaOrigem(organizacaoId, { tipo: o.tipo, id: o.id })))).flat();
+  return todas.sort((a, b) => b.enviadoEm.localeCompare(a.enviadoEm));
+}
+
+async function lerPendenciasDoAceite(organizacaoId: string, propostaId: string): Promise<DetalheProposta["pendenciasDoAceite"]> {
+  const linhas = await db.execute<{ id: string; caminho: string | null; modelo: string; erro: string | null; tentativas: number; ultima: string | null }>(sql`
+    SELECT g.id::text, g.caminho_fechamento AS caminho, g.commercial_model AS modelo, g.fechamento_erro AS erro,
+           g.fechamento_tentativas AS tentativas, g.fechamento_ultima_tentativa_em::text AS ultima
+      FROM proposta_grupo_comercial g
+     WHERE g.proposta_id = ${propostaId}::uuid AND g.organizacao_id = ${organizacaoId}::uuid
+       AND g.contrato_assinado_em IS NULL AND g.checkout_id IS NULL
+       AND (g.fechamento_erro IS NOT NULL OR g.status IN ('aguardando_contrato', 'aguardando_checkout'))
+       AND g.status <> 'aguardando_validacao_manual'`);
+  return linhas.map((g) => ({
+    grupoId: g.id, passo: g.caminho === "pagamento" || (!g.caminho && g.modelo === "PAGAMENTO_DIRETO") ? "pagamento" : "contrato",
+    erro: g.erro, tentativas: g.tentativas, ultimaTentativaEm: g.ultima,
+  }));
+}
+
+/**
+ * Reprocessa o aceite de uma proposta aceita: tenta de novo o contrato ou o pagamento que não andou.
+ * Seguro de repetir: não aceita de novo, não gera segundo contrato, não reenvia o que já foi enviado nem cria
+ * outra cobrança (ver `retomada-aceite.ts`). Nunca marca Ganho.
+ */
+export async function acaoReprocessarAceite(propostaId: string): Promise<Resultado<{ resultado: "andou" | "ainda_parado" | "nada_a_fazer"; detalhes: string[] }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("reprocessar aceite da proposta", async () => {
+    const { processarAceiteDaProposta } = await import("@/lib/crm/proposta-aceite");
+    const r = await processarAceiteDaProposta({ propostaId, organizacaoId: ctx.organizacaoId, origem: "manual", retomar: true });
+    if (!r.ok) throw new RegraDeNegocio("reprocessar_recusado", r.error);
+    revalidatePath(ROTA);
+    const falhas = r.grupos.filter((g) => g.erro);
+    const andando = r.grupos.filter((g) => g.emAndamento);
+    const detalhes = [
+      ...falhas.map((g) => `${g.serviceFamily ?? g.commercialModel}: ${g.erro}`),
+      ...andando.map(() => "Outra tentativa já está em andamento para este item; aguarde alguns minutos."),
+    ];
+    return { resultado: falhas.length ? "ainda_parado" as const : andando.length ? "nada_a_fazer" as const : "andou" as const, detalhes };
   });
 }
 

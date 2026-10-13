@@ -1435,6 +1435,13 @@ export const emails = pgTable(
     labels: jsonb("labels"), // provider labels/categories
     anexos: jsonb("anexos"), // [{name, url, size, mime}]
     sequenciaExecucaoId: uuid("sequencia_execucao_id"),
+    /** Estado de ENTREGA devolvido pelo provedor: sent | delivered | delivery_delayed | bounced | suppressed | complained | failed. 0120. */
+    entregaEstado: text("entrega_estado"),
+    entregaDetalhe: text("entrega_detalhe"),
+    entregaVerificadaEm: timestamp("entrega_verificada_em", { withTimezone: true }),
+    /** A que o envio pertence: proposta | contrato | checkout. */
+    origemTipo: text("origem_tipo"),
+    origemId: uuid("origem_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -1630,6 +1637,17 @@ export const propostas = pgTable(
     /** Dias de teste antes da primeira cobrança. NULL ou 0 = sem teste, que é
      *  o padrão: quem decide é o vendedor em cada proposta. Ver 0095. */
     trialDias: integer("trial_dias"),
+    /** Condições do editor que não tinham coluna (0120). `dia_vencimento_mes` = dia do mês da cobrança;
+     *  NÃO é `vencimento_dias` (dias após a emissão, que o Stripe usa para o boleto). */
+    diaVencimentoMes: integer("dia_vencimento_mes"),
+    reajusteIndice: text("reajuste_indice"), // IPCA | IGP-M | nenhum
+    inicioVigenciaTipo: text("inicio_vigencia_tipo"), // assinatura | implantacao | data | teste
+    dataInicioVigencia: date("data_inicio_vigencia"),
+    /** Fidelidade negociada, separada do prazo do contrato. 0 = sem fidelidade; NULL = não informada. */
+    fidelidadeMeses: integer("fidelidade_meses"),
+    /** Desconto com prazo: o alvo (mrr | setup) e os meses. NULL nos dois = sem desconto temporário. */
+    descontoTemporarioAlvo: text("desconto_temporario_alvo"),
+    descontoTemporarioMeses: integer("desconto_temporario_meses"),
     // Signatários informados pelo vendedor antes do envio quando a composição
     // usa contrato. Mantido na proposta para ser copiado ao contrato gerado
     // automaticamente no aceite, sem acoplar o domínio a um provider externo.
@@ -4337,6 +4355,10 @@ export const propostaGrupoComercial = pgTable("proposta_grupo_comercial", {
   pagamentoStatus: text("pagamento_status"), // pendente | confirmado | falhou
   pagamentoVenceEm: timestamp("pagamento_vence_em", { withTimezone: true }),
   pagamentoConfirmadoEm: timestamp("pagamento_confirmado_em", { withTimezone: true }),
+  /** Última falha ao avançar o grupo após o aceite (gerar/enviar contrato, criar checkout). NULL = sem pendência. 0120. */
+  fechamentoErro: text("fechamento_erro"),
+  fechamentoTentativas: integer("fechamento_tentativas").default(0).notNull(),
+  fechamentoUltimaTentativaEm: timestamp("fechamento_ultima_tentativa_em", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

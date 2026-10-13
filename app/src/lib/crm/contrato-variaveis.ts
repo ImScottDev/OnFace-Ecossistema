@@ -68,6 +68,9 @@ export const VARIAVEIS_CONTRATO: VariavelContrato[] = [
   { chave: "data_inicio_vigencia", rotulo: "Início da vigência", exemplo: "01/10/2026", grupo: "Prazos e datas", zoho: "Contratos.Data de Início" },
   { chave: "data_inicio_cobranca", rotulo: "Início da cobrança", exemplo: "01/10/2026", grupo: "Prazos e datas" },
   { chave: "dia_vencimento", rotulo: "Vencimento da cobrança", exemplo: "todo dia 10", grupo: "Prazos e datas", zoho: "Contratos.Vencimento" },
+  { chave: "reajuste_indice", rotulo: "Índice de reajuste", exemplo: "IPCA", grupo: "Prazos e datas", opcional: true },
+  { chave: "fidelidade_meses", rotulo: "Fidelidade em meses (separada do prazo)", exemplo: "12", grupo: "Prazos e datas", opcional: true },
+  { chave: "desconto_temporario", rotulo: "Desconto com prazo", exemplo: "Desconto sobre a mensalidade válido por 6 meses", grupo: "Itens e valores", opcional: true },
   { chave: "data_emissao", rotulo: "Data do contrato (por extenso)", exemplo: "1 de outubro de 2026", grupo: "Prazos e datas", zoho: "Contratos.Data de Envio do Contrato" },
 
   // Contrato e proposta

@@ -48,6 +48,10 @@ export interface GrupoComercialRow {
   /** Caminho decidido item a item no aceite. null = grupo anterior à decisão por item (regra antiga, por grupo). */
   caminho: CaminhoDeFechamento | null;
   serviceFamily: string | null;
+  /** Assinado: a retomada do aceite não reenvia nem regride um grupo assinado. */
+  contratoAssinadoEm: Date | null;
+  /** Última falha registrada ao avançar o grupo após o aceite (null = sem pendência). */
+  fechamentoErro: string | null;
 }
 
 /** Quem executa: o `db` ou a transação do aceite. */
@@ -158,6 +162,8 @@ export async function formarGruposComerciais(propostaId: string, ex: ExecutorGru
       checkoutId: g.checkoutId,
       caminho: (g.caminhoFechamento as CaminhoDeFechamento | null) ?? null,
       serviceFamily: g.serviceFamily,
+      contratoAssinadoEm: g.contratoAssinadoEm ?? null,
+      fechamentoErro: g.fechamentoErro ?? null,
     }))
     .filter((g) => g.itensIds.length > 0);
 

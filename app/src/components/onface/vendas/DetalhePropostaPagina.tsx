@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  acaoCriarRevisao, acaoEnviar, acaoSalvarJuridicos, type DetalheProposta,
+  acaoCriarRevisao, acaoEnviar, acaoReprocessarAceite, acaoSalvarJuridicos, type DetalheProposta,
 } from "@/app/(produto)/propostas/actions";
 import { VALIDADES_PROPOSTA } from "@/lib/vendas/dominio";
 import { Button } from "@/components/ui/button";
@@ -44,10 +44,22 @@ export function DetalhePropostaPagina({ proposta, voltar, abrirEnvio = false }: 
     return true;
   };
 
+  const reprocessar = async () => {
+    setPendente(true);
+    const r = await acaoReprocessarAceite(proposta.id);
+    setPendente(false);
+    if (!r.ok) { toast.error(r.erro); return; }
+    const { resultado, detalhes } = r.dados!;
+    if (resultado === "andou") toast.success("Aceite reprocessado: o contrato ou o pagamento foi gerado.");
+    else toast.warning(`${resultado === "ainda_parado" ? "Ainda não andou." : "Nada a fazer agora."} ${detalhes.join(" ")}`, { duration: 12000 });
+    router.refresh();
+  };
+
   const acoes = {
     enviar: () => setEnviando(true),
     revisar,
     completarJuridicos: () => setJuridicos(true),
+    reprocessar,
   };
 
   const editarLinhas = proposta.status === "rascunho" && proposta.oportunidade.id

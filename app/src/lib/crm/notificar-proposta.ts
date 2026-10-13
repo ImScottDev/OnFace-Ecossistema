@@ -26,6 +26,8 @@ export async function notificarPropostaRespondida(opts: {
   versao: number;
   tipo: TipoResposta;
   motivo?: string | null;
+  /** Substitui o título padrão do tipo (ex.: aceite que não andou). */
+  titulo?: string;
 }): Promise<void> {
   try {
     const { propostaId, negocioId, leadId, numero, versao, tipo, motivo } = opts;
@@ -57,7 +59,7 @@ export async function notificarPropostaRespondida(opts: {
     await db.insert(notificacoes).values({
       usuarioId: responsavelId,
       tipo: `proposta_${tipo}`,
-      titulo: TITULO[tipo],
+      titulo: opts.titulo ?? TITULO[tipo],
       mensagem,
       link: negocioId ? `/negocios/${negocioId}` : `/propostas/${propostaId}`,
     });

@@ -6,6 +6,7 @@
  * do MRR já corrigido) em vez de reimplementar — mesmo princípio de Data
  * Governance do resto do projeto.
  */
+import { entregaFalhou } from "@/lib/email/entrega-estado";
 import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { leads, negocios, ligacoes, whatsappMensagens, emails, contatos, usuarios, tarefas, mrrMovimentos, clientes } from "@/lib/db/schema";
@@ -299,7 +300,7 @@ export async function getAtividadeRecente(orgId: string, limite = 3): Promise<At
       .where(and(eq(contatos.organizacaoId, orgId), eq(whatsappMensagens.direcao, "in")))
       .orderBy(desc(whatsappMensagens.createdAt)).limit(limite),
     db.select({
-      id: emails.id, createdAt: emails.createdAt, para: emails.para, direcao: emails.direcao,
+      id: emails.id, createdAt: emails.createdAt, para: emails.para, direcao: emails.direcao, entregaEstado: emails.entregaEstado,
     }).from(emails).where(eq(emails.organizacaoId, orgId)).orderBy(desc(emails.createdAt)).limit(limite),
   ]);
 
@@ -320,7 +321,7 @@ export async function getAtividadeRecente(orgId: string, limite = 3): Promise<At
       id: `email-${e.id}`,
       canal: "email" as const,
       quando: e.createdAt,
-      texto: e.direcao === "out" ? `E-mail enviado para ${e.para}` : `E-mail recebido de ${e.para}`,
+      texto: e.direcao === "out" ? (entregaFalhou(e.entregaEstado) ? `E-mail para ${e.para} NÃO chegou` : `E-mail enviado para ${e.para}`) : `E-mail recebido de ${e.para}`,
     })),
   ];
 

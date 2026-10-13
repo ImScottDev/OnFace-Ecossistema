@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { atividades, contratos } from "@/lib/db/schema";
-import { sendResendEmail, type ResendResult } from "@/lib/email/resend";
+import { type ResendResult } from "@/lib/email/resend";
+import { enviarResendRegistrado } from "@/lib/email/entrega";
 
 export type ContratoEmailDelivery = {
   status: "sent" | "failed" | "skipped";
@@ -57,11 +58,11 @@ export async function enviarEmailFinalContrato(params: {
   if (recipients.length === 0) {
     result = { sent: false, skipped: true };
   } else {
-    result = await sendResendEmail({
+    result = await enviarResendRegistrado({
       to: recipients,
       subject: "Contrato Callface concluído",
       html: `<p>O contrato foi concluído por todos os signatários.</p><p><a href="${finalUrl}">Acessar o documento final</a></p>`,
-    });
+    }, { organizacaoId: params.contrato.organizacaoId, leadId: params.contrato.leadId, origem: { tipo: "contrato", id: params.contrato.id } });
   }
 
   const delivery: ContratoEmailDelivery = {
@@ -90,7 +91,7 @@ export async function enviarEmailFinalContrato(params: {
     leadId: params.contrato.leadId,
     negocioId: params.contrato.negocioId,
     tipo: "contrato_email",
-    titulo: result.sent ? "Cópia final do contrato enviada" : result.skipped ? "Cópia final do contrato pendente" : "Falha ao enviar cópia final do contrato",
+    titulo: result.sent ? "Cópia final do contrato entregue ao provedor de e-mail" : result.skipped ? "Cópia final do contrato pendente" : "Falha ao enviar cópia final do contrato",
     descricao: result.sent ? `Destinatários: ${recipients.join(", ")}` : result.error || "Resend não configurado ou não há signatários com e-mail.",
     dados: { contratoId: params.contrato.id, providerDocumentUrl: params.providerDocumentUrl || null, entrega: delivery },
     timelineVisible: true,

@@ -334,7 +334,8 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
       observacoes: ed.obs ?? null,
       /* No contrato, o prazo é o do modal "Dados do contrato" (ou a fidelidade da proposta). */
       prazoContratoMeses: (contratual ? Number(ed.ct?.prazo) || Number(ed.fidelidade) : 0) || null,
-      parcelasSetup: Number(ed.parcelas) || null,
+      /* "À vista" é 1 parcela, mesmo que o passo tenha guardado um número de parcelas de antes: o contrato lê este valor. */
+      parcelasSetup: ed.setupForma === "parcelado" ? (Number(ed.parcelas) || null) : 1,
       /* Quem assina (dos dois lados) e o editor inteiro, com os dados congelados no envio. */
       signatarios: contratual ? (proposta?.signatarios ?? []) : [],
       editor: proposta?.contrato ? { ...ed, contrato: proposta.contrato } : ed,

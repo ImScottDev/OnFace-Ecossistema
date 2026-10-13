@@ -10,6 +10,7 @@
  * existe aqui é a ESTRUTURA (versão, modelo comercial aplicável, resolução
  * de variável) funcionando ponta a ponta com um texto placeholder honesto.
  */
+import { variaveisDeCondicoes } from "@/lib/crm/condicoes-comerciais";
 import { db } from "@/lib/db";
 import { eq, and, asc } from "drizzle-orm";
 import {
@@ -130,10 +131,6 @@ function enderecoCompleto(empresa: typeof empresas.$inferSelect | undefined, lea
 const dataExtenso = (d: Date) => d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
 const dataCurta = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
-const FORMA_PAGAMENTO: Record<string, string> = {
-  cartao: "cartão de crédito", boleto: "boleto bancário", boleto_parcelado: "boleto bancário",
-};
-
 /** Erro que carrega o que falta, em palavras do operador. A UI e o evento de falha mostram `message`. */
 export class ContratoIncompletoError extends Error {
   constructor(public readonly faltando: string[]) {
@@ -163,6 +160,8 @@ interface VariaveisDoGrupo {
   tipoDocumento: string;
   itens: { nome: string; tipo: string; subtotal: string | null; servicoCatalogoId: string | null }[];
   mrr: number;
+  /** Início real da vigência (ver `variaveisDeCondicoes`). */
+  inicioVigencia: Date;
   setup: number;
 }
 
@@ -232,11 +231,7 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
   const multa = multaDaProposta > 0 ? multaDaProposta : politica.multaRescisoriaPct;
   const hoje = new Date();
   const numeroProposta = `P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}`;
-  const tipoPag = proposta.condicaoPagamentoTipo ? FORMA_PAGAMENTO[proposta.condicaoPagamentoTipo] : undefined;
-  const parcelas = proposta.parcelas && proposta.parcelas > 1 ? proposta.parcelas : 1;
-  const formaSetup = setup <= 0 ? "Sem setup"
-    : tipoPag ? (parcelas > 1 ? `Em ${parcelas}x, ${tipoPag}` : `À vista, ${tipoPag}`)
-    : (proposta.condicoesPagamento || "").trim();
+  const { variaveis: daCondicao, inicioVigencia } = variaveisDeCondicoes(proposta, setup, hoje);
   const cidade = empresa?.cidade || lead?.empresaCidade || "";
   const estado = empresa?.estado || lead?.empresaEstado || "";
 
@@ -282,13 +277,10 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
     itens_setup_html: linhas(["setup"], false),
     mrr_total: moeda(mrr, codigoMoeda),
     setup_total: moeda(setup, codigoMoeda),
-    forma_pagamento_setup: formaSetup,
     prazo_meses: proposta.prazoContratoMeses ? String(proposta.prazoContratoMeses) : "",
     prazo_descricao: proposta.prazoContratoMeses ? `${proposta.prazoContratoMeses} meses` : "",
-    condicoes_pagamento: (proposta.condicoesPagamento || "").trim(),
     signatarios: doCliente.map((s) => `${String(s.nome || "")} <${String(s.email || "")}>`).join(", "),
-    data_inicio_cobranca: dataCurta(hoje),
-    data_inicio_vigencia: dataCurta(hoje),
+    ...daCondicao,
     data_emissao: dataExtenso(hoje),
     // Qualificação da CONTRATADA, uma vez só: mudança cadastral não exige reeditar os modelos.
     callface_razao_social: "CALLFACE SOFTWARE E SERVIÇOS LTDA.",
@@ -298,7 +290,6 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
     contrato_base_numero: await numeroDoContratoBase(proposta.contratoBaseId),
     // Não existe numeração própria de contrato: o código que o comercial reconhece é o da proposta.
     contrato_numero: numeroProposta,
-    dia_vencimento: proposta.vencimentoDias ? `${proposta.vencimentoDias} dias após a emissão da cobrança` : "",
     cidade_uf: [cidade, estado].filter(Boolean).join(" - "),
     // A multa digitada na proposta (modal "Dados do contrato") ganha do padrão de Ajustes > Contratos.
     percentual_multa: multa ? `${multa.toLocaleString("pt-BR")}%` : "",
@@ -309,7 +300,7 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
     testemunha_1_nome: String(testemunha("testemunha_vendedor")?.nome || ""), testemunha_1_cpf: String(testemunha("testemunha_vendedor")?.cpf || ""),
     testemunha_2_nome: String(testemunha("testemunha_2")?.nome || ""), testemunha_2_cpf: String(testemunha("testemunha_2")?.cpf || ""),
   };
-  return { variaveis, proposta, grupo, serviceFamily, tipoDocumento, itens: itensDoGrupo, mrr, setup };
+  return { variaveis, proposta, grupo, serviceFamily, tipoDocumento, itens: itensDoGrupo, mrr, setup, inicioVigencia };
 }
 
 /**
@@ -370,9 +361,9 @@ export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contra
   if (!existente) throw new Error(`Grupo comercial ${grupoId} não encontrado`);
   if (existente.contratoId) return { contratoId: existente.contratoId };
 
-  const { variaveis, proposta, grupo, serviceFamily, tipoDocumento, itens, mrr, setup } = await montarVariaveisDoGrupo(grupoId);
+  const { variaveis, proposta, grupo, serviceFamily, tipoDocumento, itens, mrr, setup, inicioVigencia } = await montarVariaveisDoGrupo(grupoId);
   const { corpoGerado, templateId, templateVersao } = await resolverCorpoContrato(proposta.organizacaoId, grupo.commercialModel, variaveis, serviceFamily, tipoDocumento);
-  const inicioContrato = new Date();
+  const inicioContrato = inicioVigencia;
   const [contrato] = await db.insert(contratos).values({
     organizacaoId: proposta.organizacaoId,
     leadId: proposta.leadId,

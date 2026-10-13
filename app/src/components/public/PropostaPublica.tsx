@@ -249,6 +249,10 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
         )
       )}
 
+      {grupo.status === "aguardando_contrato" && (
+        <Aviso tom="neutro">Recebemos o seu aceite. O contrato está sendo preparado e você o receberá por e-mail para assinar. Esta página atualiza sozinha.</Aviso>
+      )}
+
       {(grupo.status === "aguardando_checkout" || grupo.status === "checkout_gerado") && (
         grupo.pagamentoEstado === "boleto_pendente" ? (
           <Aviso tom="neutro">Pagamento em andamento — aguardando compensação (boleto: até 1 dia útil; Pix: confirma em instantes após o pagamento no app do banco).</Aviso>
@@ -314,8 +318,12 @@ export function PropostaPublica({ id }: { id: string }) {
       return body;
     },
     onSuccess: (body) => {
-      const primeiroPagamento = body?.grupos?.find((grupo: { checkoutId?: string }) => grupo.checkoutId);
-      const primeiroContrato = body?.grupos?.find((grupo: { grupoId?: string; proximoPasso?: string; proximoUrl?: string }) => grupo.proximoPasso === "contrato");
+      // O aceite foi gravado, mas um grupo pode não ter andado (`erro`): contrato que não pôde ser gerado ou
+      // enviado, checkout que não saiu. Nesse caso NÃO navegamos para um link que não existe; a tela diz ao
+      // cliente que recebeu o aceite e o que esperar (ver `pendenciaDoAceite`), e o time é avisado no servidor.
+      type G = { checkoutId?: string; grupoId?: string; proximoPasso?: string; proximoUrl?: string; erro?: string };
+      const primeiroPagamento = body?.grupos?.find((grupo: G) => grupo.checkoutId && !grupo.erro);
+      const primeiroContrato = body?.grupos?.find((grupo: G) => grupo.proximoPasso === "contrato" && !grupo.erro);
       if (primeiroPagamento?.checkoutId) {
         window.location.assign(`/checkout/${primeiroPagamento.checkoutId}`);
         return;
@@ -327,6 +335,9 @@ export function PropostaPublica({ id }: { id: string }) {
       invalidar();
     },
   });
+
+  /** O aceite entrou, mas o próximo passo (contrato ou pagamento) de algum grupo não saiu agora. */
+  const pendenciaDoAceite = Boolean((aceitar.data as { grupos?: Array<{ erro?: string }> } | undefined)?.grupos?.some((g) => g.erro));
 
   const recusar = useMutation({
     mutationFn: async () => {
@@ -571,6 +582,12 @@ export function PropostaPublica({ id }: { id: string }) {
             </section>
           )}
 
+          {!aindaNaoAceitou && pendenciaDoAceite && (
+            <Aviso tom="neutro">
+              Recebemos o seu aceite. O contrato (ou o link de pagamento) ainda está sendo preparado e não ficou pronto agora.
+              Você não precisa aceitar de novo: assim que estiver pronto, enviamos por e-mail, e nosso time já foi avisado.
+            </Aviso>
+          )}
           {!aindaNaoAceitou && p.grupos.length === 0 && p.status === "aceita" && (
             <Aviso tom="ok">Proposta aceita. Nosso time vai entrar em contato para dar sequência.</Aviso>
           )}

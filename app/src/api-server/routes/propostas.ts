@@ -639,7 +639,8 @@ app.post("/propostas/:id/aceitar-publico", async (c) => {
   const userAgent = c.req.header("user-agent") || null;
   const result = await aceitarPropostaPublica(proposta, { ip, userAgent });
   if (!result.ok) return c.json({ error: result.error }, 400);
-  return c.json(result);
+  // O cliente só precisa saber SE um passo não andou (a tela explica o que esperar); o motivo técnico fica com o time.
+  return c.json({ ...result, grupos: result.grupos.map((g) => (g.erro ? { ...g, erro: "pendente" } : g)) });
 });
 
 // POST /propostas/:id/recusar-publico

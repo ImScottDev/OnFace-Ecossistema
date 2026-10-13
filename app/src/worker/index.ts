@@ -3020,6 +3020,43 @@ const slaWorker = new Worker(
       return;
     }
 
+    if (job.name === "retomar-aceites") {
+      // Proposta ACEITA cujo grupo parou antes do contrato/checkout (falha do provedor, dado faltando, processo caído).
+      // `retomar` é idempotente (retomada-aceite.ts): não gera segundo contrato, não reenvia, não cria outra cobrança.
+      const { processarAceiteDaProposta } = await import("../lib/crm/proposta-aceite");
+      const { esperaEntreTentativasMs, MAX_TENTATIVAS_AUTOMATICAS } = await import("../lib/crm/retomada-aceite");
+      const parados = await db.execute<{ proposta_id: string; organizacao_id: string; tentativas: number; ultima: string | null }>(rawSql`
+        SELECT g.proposta_id::text, g.organizacao_id::text, g.fechamento_tentativas AS tentativas,
+               g.fechamento_ultima_tentativa_em::text AS ultima
+          FROM proposta_grupo_comercial g
+          JOIN propostas p ON p.id = g.proposta_id
+         WHERE p.status = 'aceita' AND p.aceita_em < now() - interval '3 minutes'
+           AND g.contrato_assinado_em IS NULL AND g.checkout_id IS NULL
+           AND g.status IN ('aguardando_aceite', 'aguardando_contrato', 'aguardando_checkout')
+           AND g.fechamento_tentativas < ${MAX_TENTATIVAS_AUTOMATICAS}
+         LIMIT 100`);
+      const agora = Date.now();
+      const devidas = new Map<string, string>();
+      for (const g of parados) {
+        const espera = esperaEntreTentativasMs(g.tentativas);
+        if (g.ultima && agora - new Date(g.ultima).getTime() < espera) continue;
+        devidas.set(g.proposta_id, g.organizacao_id);
+      }
+      let andaram = 0;
+      for (const [propostaId, organizacaoId] of [...devidas].slice(0, 20)) {
+        try {
+          const r = await processarAceiteDaProposta({ propostaId, organizacaoId, origem: "manual", retomar: true });
+          if (!r.ok) console.error(`[RetomarAceites] proposta ${propostaId}: ${r.error}`);
+          else if (r.grupos.every((x) => !x.erro)) andaram++;
+          else console.error(`[RetomarAceites] proposta ${propostaId} ainda parada: ${r.grupos.filter((x) => x.erro).map((x) => x.erro).join(" | ")}`);
+        } catch (e) {
+          console.error(`[RetomarAceites] proposta ${propostaId} falhou:`, e);
+        }
+      }
+      if (devidas.size > 0) console.log(`[RetomarAceites] ${devidas.size} proposta(s) retomada(s), ${andaram} destravada(s)`);
+      return;
+    }
+
     if (job.name === "reconcile-pagamentos") {
       // De-para de 5 dias: propostas dadas como ganhas (aceita) com checkout do
       // Stripe que NÃO confirmaram pagamento em 5 dias → avisa a responsável
@@ -4110,7 +4147,7 @@ const SCHEDULERS_JOBS_AGENDADOS = [
   "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep", "calendar-sync-retry",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
   "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min", "fluxos-sweep",
-  "catalogo-stripe-sync", "campanha-sweep",
+  "catalogo-stripe-sync", "campanha-sweep", "retomar-aceites",
 ];
 
 // Schedule recurring jobs
@@ -4152,6 +4189,8 @@ async function setupScheduledJobs() {
   // sincroniza em vez de guardar cópia. De hora em hora porque preço muda por
   // decisão humana, não por evento: ninguém altera tabela de preço a cada
   // minuto, e ler a API de graça a cada minuto é desperdício com rate limit.
+  // Aceite que gravou mas cujo contrato/pagamento não saiu: tenta de novo (backoff e teto em retomada-aceite.ts).
+  await scheduledQueue.upsertJobScheduler("retomar-aceites", { every: 5 * 60 * 1000 }, { name: "retomar-aceites" });
   await scheduledQueue.upsertJobScheduler("catalogo-stripe-sync", { every: 60 * 60 * 1000 }, { name: "catalogo-stripe-sync" });
   // Email sync: trigger every 5 min
   await emailSyncQueue.upsertJobScheduler("email-sync-trigger", { every: 5 * 60 * 1000 }, { name: "sync-trigger" });

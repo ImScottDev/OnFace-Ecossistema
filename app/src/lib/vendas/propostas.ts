@@ -724,7 +724,9 @@ export async function criarRevisao(params: {
         moeda, status, data_emissao, observacoes, condicoes_pagamento,
         condicao_pagamento_tipo, parcelas, vencimento_dias, prazo_contrato_meses,
         signatarios, editor, total_recorrente, total_avulso, total_geral, criado_por_id,
-        modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family
+        modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family,
+        trial_dias, dia_vencimento_mes, reajuste_indice, inicio_vigencia_tipo, data_inicio_vigencia,
+        fidelidade_meses, desconto_temporario_alvo, desconto_temporario_meses
       )
       SELECT organizacao_id, lead_id, negocio_id, numero, versao + 1,
              COALESCE(proposta_original_id, id),
@@ -732,7 +734,9 @@ export async function criarRevisao(params: {
              condicao_pagamento_tipo, parcelas, vencimento_dias, prazo_contrato_meses,
              signatarios, editor, total_recorrente, total_avulso, total_geral,
              ${params.ator.usuarioId ?? null}::uuid,
-             modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family
+             modo_fechamento, validade_dias, tipo_contratual, contrato_base_id, service_family,
+             trial_dias, dia_vencimento_mes, reajuste_indice, inicio_vigencia_tipo, data_inicio_vigencia,
+             fidelidade_meses, desconto_temporario_alvo, desconto_temporario_meses
         FROM propostas WHERE id = ${proposta.id}::uuid
       RETURNING id::text, versao
     `);
@@ -961,4 +965,36 @@ export async function salvarEditorDaProposta(params: {
     RETURNING status
   `);
   if (!r) throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se edita. Para mudar uma proposta enviada, crie uma revisão.");
+  if (editor) await gravarCondicoesDoEditor(params.organizacaoId, params.propostaId, editor);
+}
+
+/**
+ * As condições que o editor coleta viram COLUNAS (contrato e cobrança leem coluna, não o jsonb).
+ * Ponto único: criar e editar o rascunho passam por `salvarEditorDaProposta`, então as duas portas gravam igual
+ * e editar não apaga o que foi gravado. Ver `condicoesDoEditor` para o que cada campo vira.
+ */
+async function gravarCondicoesDoEditor(organizacaoId: string, propostaId: string, editor: unknown): Promise<void> {
+  const [{ n }] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM proposta_itens WHERE proposta_id = ${propostaId}::uuid AND tipo = 'setup'`);
+  const { condicoesDoEditor } = await import("@/lib/crm/condicoes-comerciais");
+  const c = condicoesDoEditor(editor, { temSetup: n > 0 });
+  // Chave ausente = mantém; null = limpa. Um CASE por coluna, para o mesmo UPDATE servir aos dois casos.
+  const col = (coluna: string, chave: keyof typeof c, cast: string) => {
+    const diz = c[chave] !== undefined;
+    return sql`${sql.raw(coluna)} = CASE WHEN ${diz} THEN ${(c[chave] ?? null) as string | number | null}::${sql.raw(cast)} ELSE ${sql.raw(coluna)} END`;
+  };
+  await db.execute(sql`
+    UPDATE propostas SET
+      ${col("condicao_pagamento_tipo", "condicaoPagamentoTipo", "text")},
+      ${col("dia_vencimento_mes", "diaVencimentoMes", "int")},
+      ${col("condicoes_pagamento", "condicoesPagamento", "text")},
+      ${col("trial_dias", "trialDias", "int")},
+      ${col("validade_dias", "validadeDias", "int")},
+      ${col("reajuste_indice", "reajusteIndice", "text")},
+      ${col("inicio_vigencia_tipo", "inicioVigenciaTipo", "text")},
+      ${col("data_inicio_vigencia", "dataInicioVigencia", "date")},
+      ${col("fidelidade_meses", "fidelidadeMeses", "int")},
+      ${col("desconto_temporario_alvo", "descontoTemporarioAlvo", "text")},
+      ${col("desconto_temporario_meses", "descontoTemporarioMeses", "int")}
+    WHERE id = ${propostaId}::uuid AND organizacao_id = ${organizacaoId}::uuid AND status = 'rascunho'`);
 }

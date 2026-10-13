@@ -12,7 +12,8 @@
 import { db } from "@/lib/db";
 import { propostas, propostaItens, leads, atividades, catalogoPrecos, usuarios } from "@/lib/db/schema";
 import { eq, asc, and } from "drizzle-orm";
-import { sendResendEmail, type ResendResult } from "@/lib/email/resend";
+import { type ResendResult } from "@/lib/email/resend";
+import { enviarResendRegistrado } from "@/lib/email/entrega";
 import { enviarPelaCaixaDoUsuario } from "@/lib/email/enviar-como-usuario";
 import { enviarTextoParaLead } from "@/lib/whatsapp/enviar";
 import { buildPropostaEmail } from "@/lib/email/proposta-email";
@@ -29,7 +30,7 @@ type PropostaRow = typeof propostas.$inferSelect;
 
 /** Por onde o e-mail saiu: a caixa do usuário (Outlook/Google/IMAP) ou o Resend do sistema. */
 export type ViaEmail = "conta" | "resend";
-export type ResultadoEmailEnviado = ResendResult & { via: ViaEmail; de?: string | null; avisoConta?: string | null };
+export type ResultadoEmailEnviado = ResendResult & { via: ViaEmail; de?: string | null; avisoConta?: string | null; emailId?: string | null };
 
 /**
  * O e-mail que leva o link público ao cliente. Uma porta só: o envio legado
@@ -50,7 +51,7 @@ export type ResultadoEmailEnviado = ResendResult & { via: ViaEmail; de?: string 
  */
 export async function dispararEmailDaProposta(p: {
   para: string; clienteNome: string; empresa?: string | null;
-  proposta: Pick<PropostaRow, "numero" | "versao" | "moeda">;
+  proposta: Pick<PropostaRow, "id" | "organizacaoId" | "leadId" | "numero" | "versao" | "moeda">;
   /** `periodo` é o do Price (mensal | anual | unico): o e-mail separa mensalidade, anuidade e itens únicos. */
   itens: Array<{ nome: string; tipo: string; subtotal: number; periodo?: string | null }>;
   totalRecorrente: number; totalAvulso: number; linkPublico: string;
@@ -66,15 +67,19 @@ export async function dispararEmailDaProposta(p: {
   let avisoConta: string | null = null;
   let replyTo: string | undefined;
   if (p.usuario) {
-    const pela = await enviarPelaCaixaDoUsuario({ ...p.usuario, para: p.para, assunto: subject, html });
-    if (pela?.enviado) return { sent: true, via: "conta", de: pela.de };
+    const pela = await enviarPelaCaixaDoUsuario({ ...p.usuario, para: p.para, assunto: subject, html, origem: { tipo: "proposta", id: p.proposta.id } });
+    if (pela?.enviado) return { sent: true, via: "conta", de: pela.de, emailId: pela.emailId };
     if (pela && !pela.enviado) avisoConta = `A caixa ${pela.de} falhou (${pela.erro}); enviado pelo e-mail do sistema.`;
     const [u] = await db.select({ email: usuarios.email }).from(usuarios)
       .where(and(eq(usuarios.id, p.usuario.userId), eq(usuarios.organizacaoId, p.usuario.organizacaoId))).limit(1);
     replyTo = u?.email || undefined;
   }
   try {
-    const r = await sendResendEmail({ to: p.para, subject, html, ...(replyTo ? { replyTo } : {}) });
+    // Registra em `emails` com o id do provedor: é por ele que a ficha descobre bounce/suppressed depois.
+    const r = await enviarResendRegistrado(
+      { to: p.para, subject, html, ...(replyTo ? { replyTo } : {}) },
+      { organizacaoId: p.proposta.organizacaoId, leadId: p.proposta.leadId, enviadoPorId: p.usuario?.userId ?? null, origem: { tipo: "proposta", id: p.proposta.id } },
+    );
     return { ...r, via: "resend", de: null, avisoConta };
   } catch (e) {
     // A trava de destino do ambiente lança; vira "falhou" com o motivo, sem derrubar o envio da proposta.

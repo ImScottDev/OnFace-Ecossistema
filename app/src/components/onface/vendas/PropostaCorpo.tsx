@@ -11,7 +11,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { FileText, Send } from "lucide-react";
+import { AlertTriangle, FileText, Send } from "lucide-react";
 import {
   ROTULO_FAMILIA, ROTULO_MODO_FECHAMENTO, ROTULO_STATUS_PROPOSTA,
   type ModoFechamento,
@@ -41,6 +41,8 @@ export interface AcoesCorpoProposta {
   enviar: () => void;
   revisar: () => Promise<boolean>;
   completarJuridicos: () => void;
+  /** Tenta de novo o contrato/pagamento de uma proposta aceita que não andou. Seguro de repetir. */
+  reprocessar?: () => Promise<void>;
 }
 
 /** Marcadores de estado, iguais nas duas superfícies. */
@@ -102,6 +104,31 @@ export function CorpoProposta({ proposta, pendente, bloqueio, variante, acoes }:
   return (
     <>
       {bloqueio ? <AvisoBloqueio bloqueio={bloqueio} /> : null}
+
+      {proposta.pendenciasDoAceite.length > 0 ? (
+        <div className="ov-bloqueio" role="alert">
+          <AlertTriangle aria-hidden />
+          <div>
+            <strong>O cliente aceitou, mas o fechamento não andou.</strong>
+            <ul style={{ margin: "4px 0", paddingLeft: 16 }}>
+              {proposta.pendenciasDoAceite.map((g) => (
+                <li key={g.grupoId} style={{ fontSize: "inherit" }}>
+                  {g.passo === "contrato" ? "Contrato não gerado ou não enviado" : "Link de pagamento não gerado"}
+                  {g.erro ? `: ${g.erro}` : " (sem erro registrado; a tentativa pode ter sido interrompida)"}
+                  {g.tentativas > 0 ? ` · ${g.tentativas} tentativa(s)` : ""}
+                  {g.ultimaTentativaEm ? ` · última em ${dataHora(g.ultimaTentativaEm)}` : ""}
+                </li>
+              ))}
+            </ul>
+            O sistema tenta de novo sozinho (até 5 vezes, com intervalo crescente). Corrija o dado que falta e reprocesse agora.
+            {acoes.reprocessar ? (
+              <div className="ov-acoes" style={{ marginTop: 8 }}>
+                <button type="button" className="ov-botao" disabled={pendente} onClick={() => void acoes.reprocessar!()}>Reprocessar aceite</button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {aceita ? (
         <div className="ov-bloqueio" role="status">
@@ -250,6 +277,7 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
 
       <LinkPublico proposta={proposta} Wrap={Wrap} />
       <ContratoDaProposta proposta={proposta} Wrap={Wrap} />
+      <EmailsDaProposta proposta={proposta} Wrap={Wrap} />
 
       <Wrap titulo="Tracking">
         <dl style={{ margin: 0 }}>
@@ -369,6 +397,39 @@ function ContratoDaProposta({ proposta, Wrap }: { proposta: DetalheProposta; Wra
           Baixar {c.documento.toLowerCase()} assinado
         </a>
       ))}
+    </Wrap>
+  );
+}
+
+/**
+ * Os e-mails desta proposta e dos contratos dela, com a entrega que o PROVEDOR informou. "Aceito pelo provedor"
+ * não é "entregue", e "não chegou" aparece em destaque para quem enviou corrigir o endereço.
+ */
+function EmailsDaProposta({ proposta, Wrap }: { proposta: DetalheProposta; Wrap: typeof Secao }) {
+  if (proposta.entregas.length === 0) return null;
+  return (
+    <Wrap titulo="E-mails enviados">
+      <div className="ov-timeline">
+        {proposta.entregas.map((e) => (
+          <div className="ov-timeline-item" key={e.id}>
+            <span className="ov-timeline-marca" aria-hidden />
+            <div>
+              <strong>{e.assunto}</strong>
+              <span>
+                Para {e.para} · {dataHora(e.enviadoEm)} · {e.via === "conta" ? `pela caixa ${e.de}` : "pelo e-mail do sistema"}
+              </span>
+              <span role={e.falhou ? "alert" : undefined} style={e.falhou ? { color: "var(--destructive)", fontWeight: 600 } : undefined}>
+                {e.texto}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {proposta.entregas.some((e) => e.falhou) ? (
+        <p className="ov-nota">
+          Corrija o e-mail do contato na Pessoa. Para reenviar, copie o link da proposta ou crie uma revisão.
+        </p>
+      ) : null}
     </Wrap>
   );
 }

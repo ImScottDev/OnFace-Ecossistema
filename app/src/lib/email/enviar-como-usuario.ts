@@ -11,7 +11,7 @@ import { createEmailClient } from "./factory";
 import type { EmailContaConfig } from "./types";
 
 export type EnvioPelaConta =
-  | { enviado: true; de: string; contaId: string }
+  | { enviado: true; de: string; contaId: string; emailId: string }
   | { enviado: false; erro: string; de: string };
 
 /** Ordem de preferência: Outlook (o padrão da Callface), Google, IMAP. */
@@ -20,6 +20,8 @@ const PREFERENCIA = sql`CASE tipo WHEN 'microsoft' THEN 0 WHEN 'google' THEN 1 E
 /** `null` = o usuário não tem caixa conectada (sem erro). */
 export async function enviarPelaCaixaDoUsuario(p: {
   organizacaoId: string; userId: string; para: string; assunto: string; html: string; leadId?: string | null;
+  /** A que proposta/contrato o envio pertence: a ficha lista os envios por aqui. */
+  origem?: { tipo: "proposta" | "contrato" | "checkout"; id: string };
 }): Promise<EnvioPelaConta | null> {
   const [conta] = await db.select().from(emailContas)
     .where(and(eq(emailContas.organizacaoId, p.organizacaoId), eq(emailContas.usuarioId, p.userId), ne(emailContas.syncStatus, "error")))
@@ -37,17 +39,20 @@ export async function enviarPelaCaixaDoUsuario(p: {
   const [registro] = await db.insert(emails).values({
     organizacaoId: p.organizacaoId, leadId: p.leadId ?? null, contaId: conta.id, de, para: p.para,
     assunto: p.assunto, corpo: p.html, corpoTexto, direcao: "out", status: "queued", lido: true, enviadoPorId: p.userId,
+    origemTipo: p.origem?.tipo ?? null, origemId: p.origem?.id ?? null,
   }).returning({ id: emails.id });
   try {
     // A trava de destino do ambiente vale dentro de cada client (`garantirDestinoPermitido`).
     const r = await createEmailClient(config).sendEmail({
       to: p.para, subject: p.assunto, html: p.html, text: corpoTexto, fromAlias: conta.envioComo || undefined,
     });
-    await db.update(emails).set({ status: "sent", providerMessageId: r.messageId || null, threadId: r.threadId || null })
+    // "sent" = a caixa aceitou. O provedor da caixa não devolve entrega; devolução chega como e-mail recebido.
+    await db.update(emails).set({ status: "sent", entregaEstado: "sent", providerMessageId: r.messageId || null, threadId: r.threadId || null })
       .where(eq(emails.id, registro.id));
-    return { enviado: true, de, contaId: conta.id };
+    return { enviado: true, de, contaId: conta.id, emailId: registro.id };
   } catch (e) {
-    await db.update(emails).set({ status: "failed" }).where(eq(emails.id, registro.id));
-    return { enviado: false, erro: e instanceof Error ? e.message : String(e), de };
+    const erro = e instanceof Error ? e.message : String(e);
+    await db.update(emails).set({ status: "failed", entregaEstado: "failed", entregaDetalhe: erro.slice(0, 300) }).where(eq(emails.id, registro.id));
+    return { enviado: false, erro, de };
   }
 }
