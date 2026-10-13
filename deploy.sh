@@ -125,6 +125,17 @@ git archive --format=tar "$REV" | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE 
   --exclude='_backup*' --exclude='*.sql.gz' --exclude='*.dump' --exclude='*.bak-*' \
   $STAGE/ $DIR/ && rm -rf $STAGE"
 
+# ─── Acesso ao GHCR: só durante o deploy ────────────────────────────────────
+# O token vem do keychain deste Mac (o mesmo do git push) e o servidor faz
+# logout no fim do deploy: nenhum token fica gravado na EC2, que é dividida
+# com produção, homolog e merencia.
+if [ "$MODO" != "--construir-aqui" ]; then
+  TOKEN_GHCR="$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null | sed -n 's/^password=//p')"
+  [ -n "$TOKEN_GHCR" ] || { echo "✘ sem credencial do GitHub no keychain (ver RUNBOOK-DEPLOY no vault)" >&2; exit 1; }
+  printf '%s' "$TOKEN_GHCR" | "${SSH[@]}" "sudo docker login ghcr.io -u imscottdev --password-stdin >/dev/null" \
+    || { echo "✘ login no GHCR recusado" >&2; exit 1; }
+fi
+
 # ─── 2. Imagens, migrations e troca: no servidor, destacado ─────────────────
 REMOTO="/tmp/onface-deploy-$ALVO.sh"
 CORPO="$(mktemp)"
@@ -133,6 +144,7 @@ cat > "$CORPO" <<REMOTE
 set -euo pipefail
 cd $DIR
 t0=\$(date +%s)
+trap 'sudo docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 
 # A versão vai no .env ANTES de tudo: o compose lê IMAGE_TAG dele (sudo não
 # repassa o ambiente), e um `up` manual depois não troca de versão.
