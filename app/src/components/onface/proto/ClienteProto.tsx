@@ -154,16 +154,22 @@ class ClienteLigada extends ClienteLiga {
     super.componentDidMount?.();
     const P: any = (this as any).props;
     if (!P.usoCallfaceAi) return;
-    const coluna = P.raiz?.current?.querySelector('[data-r="pagina"] > div');
-    if (coluna) {
-      const el = document.createElement("div");
-      el.style.display = "contents";
-      coluna.appendChild(el);
-      this._alvoUso = el;
-    }
-    const aba = new URLSearchParams(window.location.search).get("aba");
-    if (aba === "uso") (this as any).setState({ aba: "uso" });
-    else this.forceUpdate();
+    /* O `ref` da raiz (div pai) só é preenchido DEPOIS do didMount do filho:
+       lido aqui, `raiz.current` é null, o alvo nunca nasce e a aba fica em
+       branco. Adia um microtask, quando o ref já existe. */
+    queueMicrotask(() => {
+      if (this._alvoUso) return;
+      const coluna = P.raiz?.current?.querySelector('[data-r="pagina"] > div');
+      if (coluna) {
+        const el = document.createElement("div");
+        el.style.display = "contents";
+        coluna.appendChild(el);
+        this._alvoUso = el;
+      }
+      const aba = new URLSearchParams(window.location.search).get("aba");
+      if (aba === "uso") (this as any).setState({ aba: "uso" });
+      else this.forceUpdate();
+    });
   }
 
   componentWillUnmount() {
@@ -175,16 +181,10 @@ class ClienteLigada extends ClienteLiga {
   render() {
     const el = super.render();
     const P: any = (this as any).props;
-    if ((this as any).state.aba !== "uso" || !this._alvoUso || !P.usoCallfaceAi) return el;
-    return (
-      <>
-        {el}
-        {createPortal(
-          <UsoDoClientePainel {...P.usoCallfaceAi} aoMudar={P.refresh} />,
-          this._alvoUso,
-        )}
-      </>
-    );
+    if ((this as any).state.aba !== "uso" || !P.usoCallfaceAi) return el;
+    const painel = <UsoDoClientePainel {...P.usoCallfaceAi} aoMudar={P.refresh} />;
+    /* Sem alvo a aba nunca fica em branco: o painel entra direto, sem portal. */
+    return <>{el}{this._alvoUso ? createPortal(painel, this._alvoUso) : <div className="p-3.5">{painel}</div>}</>;
   }
 
   /** O Liga chama `this.diz` (via E.avisar) mas não define o método. */
