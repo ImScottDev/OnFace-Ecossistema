@@ -32,6 +32,7 @@ import { toast } from "sonner";
 
 import type { ClienteDoDesenho } from "@/lib/clientes/cliente-para-o-desenho";
 import { ROTULO_STATUS_ASSINATURA } from "@/lib/clientes/financeiro-regras";
+import { produtoParaExibir } from "@/lib/catalogo/rotulos";
 import { geometriaFaturamento } from "@/lib/clientes/evolucao-geometria";
 import { ClienteLiga } from "./ClienteLiga";
 import { levarParametros } from "./rota-do-desenho";
@@ -292,7 +293,10 @@ class ClienteLigada extends ClienteLiga {
         const ct = s.contratoId ? contratoPorId.get(s.contratoId) : undefined;
         const desde = dt(ct?.inicio);
         if (ct && ct.itens.length) return ct.itens.map((i) => ({ nome: i.nome, qtd: i.quantidade, preco: i.valorUnitario, sub: i.subtotal, tipo: i.natureza ?? "Item", desde }));
-        return [{ nome: s.produtoReal ?? s.produto ?? `${F.l} (produto não identificado)`, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.assinaturaStatus === "vencida" || s.assinaturaStatus === "inadimplente" ? "Assinatura " + ROTULO_STATUS_ASSINATURA[s.assinaturaStatus].toLowerCase() : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : "Serviço", desde }];
+        // Regra única do nome (lib/catalogo/rotulos): nome do Stripe/catálogo, senão o do legado marcado como
+        // histórico; nunca o rótulo da família. Sem nome nenhum, diz que não há.
+        const p = produtoParaExibir(s);
+        return [{ nome: p.nome ?? `${F.l} (produto não identificado)`, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.assinaturaStatus === "vencida" || s.assinaturaStatus === "inadimplente" ? "Assinatura " + ROTULO_STATUS_ASSINATURA[s.assinaturaStatus].toLowerCase() : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : p.historico ? "Serviço · histórico do legado" : "Serviço", desde }];
       });
       const cancelado = svs.every((s) => s.billingStatus === "CANCELED");
       // Pagamento vencido ganha de "Ativo": a assinatura existe, mas o Stripe diz que a cobrança não passou.
@@ -336,7 +340,7 @@ class ClienteLigada extends ClienteLiga {
       const an = R.anexos.find((a) => a.origem === "documenso" && a.entidadeId === c.id)
         ?? R.anexos.find((a) => a.origem === "legado" && a.entidadeTipo === "contrato" && a.entidadeId === c.id && a.categoria === "documento_assinado")
         ?? R.anexos.find((a) => a.origem === "legado" && a.entidadeTipo === "contrato" && a.entidadeId === c.id);
-      const rotulo = c.familia ? fam(c.familia).l : c.produto === "ai" ? "Callface AI" : c.produto ?? (c.itens[0]?.nome ?? "Contrato");
+      const rotulo = c.familia ? fam(c.familia).l : c.itens[0]?.nome ?? "Contrato";
       const st = ativo ? "Ativo" : "Encerrado";
       return {
         nome: rotulo + " · " + ROT_TIPO[c.origem],

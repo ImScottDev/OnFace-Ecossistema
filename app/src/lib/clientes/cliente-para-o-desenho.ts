@@ -11,6 +11,7 @@
  * inventando um default plausível.
  * ───────────────────────────────────────────────────────────────────────── */
 
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
 import { sql } from "drizzle-orm";
@@ -34,6 +35,8 @@ export interface ServicoDoCliente {
   assinaturaStatus: StatusAssinatura | null;
   /** Nome do produto como o Stripe o nomeia; a família não é nome de produto. */
   produtoReal: string | null;
+  /** `servicos_canonicos.billing_source`: diz se o nome do produto é histórico do legado. */
+  origem: string | null;
 }
 
 /** A assinatura como o Cliente 360 a mostra: o mesmo objeto que `billingDaConta` monta. */
@@ -163,7 +166,7 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
                (SELECT min(ct.inicio)::timestamptz FROM contratos ct
                  WHERE ct.empresa_id = c.empresa_id AND ct.inicio IS NOT NULL),
                (SELECT min(f.paga_em) FROM faturas f
-                 WHERE f.empresa_id = c.empresa_id AND f.paga_em IS NOT NULL)
+                 WHERE f.empresa_id = c.empresa_id AND ${doCrm("f")} AND f.paga_em IS NOT NULL)
              ),
              CASE WHEN (SELECT count(*) FROM clientes c2
                          WHERE c2.organizacao_id = c.organizacao_id
@@ -186,10 +189,10 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
 
   const servicos = await db.execute<{
     id: string; familia: string; produto: string | null; valor: string;
-    billing_status: string | null; lifecycle: string | null; contrato_id: string | null;
+    billing_status: string | null; lifecycle: string | null; contrato_id: string | null; origem?: string | null;
   }>(sql`
     SELECT id::text, service_family AS familia, canonical_product AS produto,
-           current_recurring_value::text AS valor, billing_status,
+           current_recurring_value::text AS valor, billing_status, billing_source AS origem,
            commercial_lifecycle AS lifecycle, contrato_id::text
       FROM servicos_canonicos
      WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
@@ -397,6 +400,7 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
       billingStatus: s.billing_status, lifecycle: s.lifecycle, contratoId: s.contrato_id,
       assinaturaStatus: assinaturaDoServico.get(s.id)?.statusFin ?? null,
       produtoReal: assinaturaDoServico.get(s.id)?.produtoReal ?? null,
+      origem: s.origem ?? null,
     })),
     iniciosDeAssinatura: contratosTodos.filter((c) => origemDe(c) === "assinatura_stripe" && c.inicio)
       .map((c) => ({ inicio: c.inicio!, codigo: c.stripe_subscription_id!, mrr: c.mrr === null ? null : Number(c.mrr) })),

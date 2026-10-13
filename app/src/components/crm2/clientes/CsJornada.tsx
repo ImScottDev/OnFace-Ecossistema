@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, ChevronDown, Copy, Flag, Sparkles, TriangleAlert } from "lucide-react";
+import { produtoParaExibir } from "@/lib/catalogo/rotulos";
 import { Cf2Badge } from "@/components/crm2/ui/Badge";
 
 /**
@@ -380,7 +381,7 @@ function PainelCheckpoint({
                 {expansaoTitulo.trim() && servicos.length > 0 && (
                   <select value={expansaoServico} onChange={(e) => setExpansaoServico(e.target.value)} className={campo + " mt-1"} style={campoStyle}>
                     <option value="">Serviço de origem</option>
-                    {servicos.map((s) => <option key={s.id} value={s.id}>{s.canonicalProduct ?? s.serviceFamily}</option>)}
+                    {servicos.map((s) => <option key={s.id} value={s.id}>{produtoParaExibir({ produto: s.canonicalProduct }).nome ?? "Produto não identificado"}</option>)}
                   </select>
                 )}
               </div>

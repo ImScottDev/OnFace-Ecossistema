@@ -35,11 +35,9 @@ import {
   fulfillments,
   fulfillmentItens,
   tarefas,
-  pipelines,
 } from "@/lib/db/schema";
 import {
-  classificarItensDaProposta,
-  classificarProdutoPorNome,
+  familiaDaOportunidade,
   type FamiliaServico,
 } from "@/lib/crm/classificar-produto";
 import {
@@ -131,99 +129,55 @@ export interface ResultadoPosVenda {
 }
 
 /**
- * Descobre a família do negócio pelos melhores dados já disponíveis, na
- * ordem decrescente de confiança:
- *
- *   1. itens da proposta ACEITA vinculada ao negócio (o que foi vendido de
- *      fato, com valor pra desempatar venda mista);
- *   2. itens de qualquer proposta do negócio, se nenhuma foi marcada aceita
- *      (acontece no Won manual arrastado no pipeline);
- *   3. `contratos.produto` ('ai' | 'pabx') do contrato do negócio;
- *   4. `negocios.campos_custom.produto`, gravado pela qualificação SDR;
- *   5. título do negócio;
- *   6. o PIPELINE em que o negócio está (funil PABX ou Callface AI).
- *
- * Retorna UNKNOWN quando nenhuma das seis diz nada — nunca um palpite.
+ * Descobre a família do negócio a partir da ESTRUTURA DA OPORTUNIDADE (ver `familiaDaOportunidade` em
+ * classificar-produto.ts: negócio/oportunidade, itens, oferta, qualificação; texto só como último recurso).
+ * O funil não conta (todos os negócios estão no funil "Callface AI") e `contratos.produto = 'ai'` é padrão
+ * da gravação, não evidência. UNKNOWN quando nada diz — nunca um palpite.
  */
 export async function resolverFamiliaDoNegocio(negocioId: string): Promise<FamiliaServico> {
-  // 1./2. itens de proposta
-  const itens = await db
-    .select({
-      nome: propostaItens.nome,
-      subtotal: propostaItens.subtotal,
-      statusProposta: propostas.status,
-    })
+  // A estrutura da oportunidade: negócio, oportunidade, itens (com a família do catálogo do preço) e oferta.
+  const [base] = await db.execute<{
+    negocio_familia: string | null; oportunidade_id: string | null; oportunidade_familia: string | null;
+    oferta_familia: string | null; custom_produto: string | null; titulo: string | null;
+  }>(sql`
+    SELECT n.service_family AS negocio_familia, o.id::text AS oportunidade_id, o.service_family AS oportunidade_familia,
+           sc.service_family AS oferta_familia, n.campos_custom->>'produto' AS custom_produto, n.titulo
+      FROM negocios n
+      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
+      LEFT JOIN ofertas_comerciais oc ON oc.id = o.oferta_comercial_id
+      LEFT JOIN servicos_catalogo sc ON sc.id = oc.servico_catalogo_id
+     WHERE n.id = ${negocioId}::uuid
+     LIMIT 1`);
+  if (!base) return "UNKNOWN";
+
+  const itens = base.oportunidade_id ? await db.execute<{ familia: string | null; catalogo: string | null; valor: string }>(sql`
+    SELECT i.service_family AS familia, sc.service_family AS catalogo, i.valor_total::text AS valor
+      FROM oportunidade_itens i
+      LEFT JOIN catalogo_precos cp ON cp.id = i.catalogo_preco_id
+      LEFT JOIN servicos_catalogo sc ON sc.id = cp.servico_catalogo_id
+     WHERE i.oportunidade_id = ${base.oportunidade_id}::uuid`) : [];
+
+  // Só para o último recurso (texto): proposta aceita, senão qualquer proposta do negócio.
+  const proposta = await db
+    .select({ nome: propostaItens.nome, subtotal: propostaItens.subtotal, statusProposta: propostas.status })
     .from(propostaItens)
     .innerJoin(propostas, eq(propostaItens.propostaId, propostas.id))
     .where(eq(propostas.negocioId, negocioId));
-
-  const aceitos = itens.filter((i) => i.statusProposta === "aceita");
-  const universo = aceitos.length > 0 ? aceitos : itens;
-
-  if (universo.length > 0) {
-    const classificados = classificarItensDaProposta(
-      universo.map((i) => ({ nome: i.nome, valor: parseFloat(i.subtotal || "0") || 0 })),
-    );
-    const soma = new Map<FamiliaServico, number>();
-    for (const c of classificados) {
-      if (c.familia === "UNKNOWN") continue;
-      soma.set(c.familia, (soma.get(c.familia) ?? 0) + c.valor);
-    }
-    if (soma.size > 0) {
-      return [...soma.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    }
-  }
-
-  // 3. contratos.produto
+  const aceitos = proposta.filter((i) => i.statusProposta === "aceita");
   const [contrato] = await db
-    .select({ produto: contratos.produto, servicos: contratos.servicos })
-    .from(contratos)
-    .where(eq(contratos.negocioId, negocioId))
-    .limit(1);
-  if (contrato?.produto === "pabx") return "PABX";
-  if (contrato?.produto === "ai") return "CALLFACE_AI";
-  if (contrato?.servicos?.length) {
-    const porServico = classificarProdutoPorNome(contrato.servicos.join(" "));
-    if (porServico !== "UNKNOWN") return porServico;
-  }
+    .select({ produto: contratos.produto, servicos: contratos.servicos, tipo: contratos.tipo })
+    .from(contratos).where(eq(contratos.negocioId, negocioId)).limit(1);
 
-  // 4. campos_custom.produto (qualificação SDR)
-  const [negocio] = await db
-    .select({ camposCustom: negocios.camposCustom, titulo: negocios.titulo, pipelineId: negocios.pipelineId })
-    .from(negocios)
-    .where(eq(negocios.id, negocioId))
-    .limit(1);
-  const produtoCustom = ((negocio?.camposCustom || {}) as Record<string, unknown>).produto;
-  if (produtoCustom === "pabx") return "PABX";
-  if (produtoCustom === "ai") return "CALLFACE_AI";
-  if (typeof produtoCustom === "string") {
-    const porCustom = classificarProdutoPorNome(produtoCustom);
-    if (porCustom !== "UNKNOWN") return porCustom;
-  }
-
-  // 5. título do negócio
-  const porTitulo = classificarProdutoPorNome(negocio?.titulo);
-  if (porTitulo !== "UNKNOWN") return porTitulo;
-
-  // 6. PIPELINE em que o negócio está. Vem por último de propósito, e depois
-  // do título: o funil "Callface AI" também abriga venda White Label (medido
-  // no banco — "Spot Sales - White Label" mora lá), então o nome do negócio,
-  // quando diz algo, é mais confiável que o funil.
-  //
-  // Sem este passo, 52% dos negócios abertos caíam em Validação manual só
-  // porque se chamam "Fulano - Novo negócio" e não têm proposta com itens.
-  // O funil é uma escolha explícita de quem vendeu, não um palpite.
-  if (negocio?.pipelineId) {
-    const [pipe] = await db
-      .select({ nome: pipelines.nome })
-      .from(pipelines)
-      .where(eq(pipelines.id, negocio.pipelineId))
-      .limit(1);
-    const porPipeline = classificarProdutoPorNome(pipe?.nome);
-    if (porPipeline !== "UNKNOWN") return porPipeline;
-  }
-
-  return "UNKNOWN";
+  return familiaDaOportunidade({
+    familiaDoNegocio: base.negocio_familia,
+    familiaDaOportunidade: base.oportunidade_familia,
+    itens: itens.map((i) => ({ familia: i.familia, familiaDoCatalogo: i.catalogo, valor: parseFloat(i.valor || "0") || 0 })),
+    familiaDaOferta: base.oferta_familia,
+    produtoCamposCustom: base.custom_produto,
+    itensDaProposta: (aceitos.length ? aceitos : proposta).map((i) => ({ nome: i.nome, valor: parseFloat(i.subtotal || "0") || 0 })),
+    contrato: contrato ?? null,
+    titulo: base.titulo,
+  }).familia;
 }
 
 /**

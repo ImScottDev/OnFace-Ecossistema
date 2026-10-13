@@ -107,10 +107,24 @@ export function ehNomeGenerico(nome: string | null | undefined): boolean {
 export function classificarProdutoPorNome(nome: string | null | undefined): FamiliaServico {
   if (!nome) return "UNKNOWN";
   const n = nome.toLowerCase().trim();
+  // Família declarada no começo do nome do catálogo ("PABX - Linhas") manda sobre termo solto no resto
+  // ("PABX - Integração Callface AI" é PABX): a ordem das regras abaixo só desempata nome sem prefixo.
+  if (/^pabx\b/.test(n) && !REGRAS[0].termos.some((t) => n.includes(t))) return "PABX";
   for (const regra of REGRAS) {
     if (regra.termos.some((t) => n.includes(t))) return regra.familia;
   }
   return "UNKNOWN";
+}
+
+/**
+ * Família de um contrato. `contratos.produto` vale 'ai' por PADRÃO (a rota de contrato e a de lead gravam
+ * "ai" sem olhar o que foi vendido): é ausência de informação, não evidência, e foi assim que contrato de
+ * PABX virava Callface AI. O nome do que foi contratado vem primeiro; 'pabx' explícito vale; 'ai' sozinho não.
+ */
+export function familiaDoContrato(c: { produto?: string | null; servicos?: string[] | null; tipo?: string | null }): FamiliaServico {
+  const porNome = classificarProdutoPorNome([...(c.servicos ?? []), c.tipo ?? ""].join(" "));
+  if (porNome !== "UNKNOWN") return porNome;
+  return c.produto === "pabx" ? "PABX" : "UNKNOWN";
 }
 
 /**
@@ -134,4 +148,56 @@ export function classificarItensDaProposta<T extends { nome: string | null; valo
 
   const dominante = [...porFamilia.entries()].sort((a, b) => b[1] - a[1])[0][0];
   return comFamilia.map((i) => (i.familia === "UNKNOWN" ? { ...i, familia: dominante } : i));
+}
+
+/* ── A família de um negócio ganho: vem da ESTRUTURA DA OPORTUNIDADE ────────────────────────────────
+ * Decisão do dono do produto: "se aquela oportunidade dá Ganho, a gente já sabe qual é a família".
+ * Fonte, em ordem (a primeira que responde vence; nunca o Stripe, nunca `contratos.produto`):
+ *   1. `negocios.service_family` / `oportunidades.service_family` (declarada na oportunidade);
+ *   2. `oportunidade_itens.service_family`, ou a do catálogo do preço do item (a família é do ITEM, ADR-EXEC-019);
+ *   3. a oferta comercial da oportunidade -> catálogo;
+ *   4. `negocios.campos_custom.produto`, escolha explícita da qualificação;
+ *   5. ÚLTIMO RECURSO, por texto: itens da proposta, contrato, título.
+ * O funil NÃO é fonte: hoje todos os negócios moram no funil "Callface AI", então ele diria Callface AI para tudo.
+ */
+export interface EvidenciaDaOportunidade {
+  familiaDoNegocio?: string | null;
+  familiaDaOportunidade?: string | null;
+  itens?: { familia?: string | null; familiaDoCatalogo?: string | null; valor: number }[];
+  familiaDaOferta?: string | null;
+  produtoCamposCustom?: string | null;
+  itensDaProposta?: { nome: string | null; valor: number }[];
+  contrato?: { produto?: string | null; servicos?: string[] | null; tipo?: string | null } | null;
+  titulo?: string | null;
+}
+
+const FAMILIAS: string[] = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
+const valida = (f: string | null | undefined): f is Exclude<FamiliaServico, "UNKNOWN"> => !!f && FAMILIAS.includes(f);
+
+export function familiaDaOportunidade(e: EvidenciaDaOportunidade): { familia: FamiliaServico; fonte: string } {
+  for (const [fonte, f] of [["negocio", e.familiaDoNegocio], ["oportunidade", e.familiaDaOportunidade]] as const) {
+    if (valida(f)) return { familia: f, fonte };
+  }
+  const soma = new Map<FamiliaServico, number>();
+  for (const i of e.itens ?? []) {
+    const f = valida(i.familia) ? i.familia : valida(i.familiaDoCatalogo) ? i.familiaDoCatalogo : null;
+    if (f) soma.set(f, (soma.get(f) ?? 0) + i.valor);
+  }
+  if (soma.size) return { familia: [...soma.entries()].sort((a, b) => b[1] - a[1])[0][0], fonte: "itens_da_oportunidade" };
+  if (valida(e.familiaDaOferta)) return { familia: e.familiaDaOferta, fonte: "oferta" };
+  const custom = e.produtoCamposCustom === "pabx" ? "PABX" : e.produtoCamposCustom === "ai" ? "CALLFACE_AI" : e.produtoCamposCustom === "white_label" ? "WHITE_LABEL" : null;
+  if (custom) return { familia: custom, fonte: "qualificacao" };
+
+  // Último recurso: texto.
+  const porProposta = classificarItensDaProposta((e.itensDaProposta ?? []).map((i) => ({ nome: i.nome, valor: i.valor })));
+  const s2 = new Map<FamiliaServico, number>();
+  for (const c of porProposta) if (c.familia !== "UNKNOWN") s2.set(c.familia, (s2.get(c.familia) ?? 0) + c.valor);
+  if (s2.size) return { familia: [...s2.entries()].sort((a, b) => b[1] - a[1])[0][0], fonte: "texto_proposta" };
+  if (e.contrato) {
+    const c = familiaDoContrato(e.contrato);
+    if (c !== "UNKNOWN") return { familia: c, fonte: "texto_contrato" };
+  }
+  const t = classificarProdutoPorNome(e.titulo);
+  if (t !== "UNKNOWN") return { familia: t, fonte: "texto_titulo" };
+  return { familia: "UNKNOWN", fonte: "nenhuma" };
 }

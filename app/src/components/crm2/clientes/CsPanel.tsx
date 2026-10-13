@@ -1,5 +1,6 @@
 "use client";
 
+import { produtoParaExibir } from "@/lib/catalogo/rotulos";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -553,7 +554,7 @@ function SeletorServico({ servicos, valor, onChange, rotulo }: { servicos: Servi
       <label className="text-[12px] font-medium mb-1 block" style={{ color: "var(--cf2-text-secondary)" }}>{rotulo}</label>
       <select value={valor} onChange={(e) => onChange(e.target.value)} className={inputClass} style={inputStyle}>
         <option value="">Toda a conta</option>
-        {servicos.map((s) => <option key={s.id} value={s.id}>{s.canonicalProduct ?? FAMILIA_LABEL[s.serviceFamily] ?? s.serviceFamily}</option>)}
+        {servicos.map((s) => <option key={s.id} value={s.id}>{produtoParaExibir({ produto: s.canonicalProduct }).nome ?? `${FAMILIA_LABEL[s.serviceFamily] ?? s.serviceFamily} (produto não identificado)`}</option>)}
       </select>
     </>
   );

@@ -64,3 +64,33 @@ export function sufixoDoValor(tipo: string | null | undefined, periodo: string |
   if (tipo !== "recorrente") return "";
   return periodo === "anual" ? "/ano" : "/mês";
 }
+
+/* ── Nome do produto de um serviço (padrão único: Cliente 360, CS, listas) ─────────────────────── */
+
+/** Rótulos de FAMÍLIA que já foram gravados como se fossem nome de produto. Família não é produto. */
+const SO_FAMILIA = new Set(["callface ai", "pabx", "white label", "callface ai white label", "unknown", "nao classificado", "produto em revisao"]);
+const normalizarNome = (s: string) => semAcento(s).replace(/[^a-z0-9]+/g, " ").trim();
+
+/** `Callface AI`, `PABX`, `CALLFACE_AI`...: o rótulo da família, não o nome de um produto. */
+export const ehRotuloDeFamilia = (nome: string | null | undefined): boolean => !!nome && SO_FAMILIA.has(normalizarNome(nome));
+
+/** Serviço que veio do legado (Zoho, ledger, marco zero, WeVy), sem par garantido no catálogo do Stripe. */
+export const ehOrigemLegada = (billingSource: string | null | undefined): boolean =>
+  !!billingSource && /^(LEDGER|MARCO_ZERO|WEVY|ZOHO)/i.test(billingSource);
+
+/**
+ * O nome do produto que a tela mostra: o do Stripe/catálogo (`produtoReal`), senão o gravado no serviço.
+ * Nunca o rótulo da família e nunca um id `prod_...`. Sem nome, devolve `nome: null`: quem exibe diz
+ * "produto não identificado" em vez de inventar uma família. `historico` marca o nome que veio do legado
+ * (preservado como está, sem correspondente garantido no catálogo atual).
+ */
+export function produtoParaExibir(s: { produto?: string | null; produtoReal?: string | null; billingSource?: string | null }): { nome: string | null; historico: boolean } {
+  const bom = (n: string | null | undefined) => {
+    const t = n?.trim();
+    return t && !ehRotuloDeFamilia(t) && !/^prod_[A-Za-z0-9]{6,}$/.test(t) ? t : null;
+  };
+  const doStripe = bom(s.produtoReal);
+  if (doStripe) return { nome: doStripe, historico: false };
+  const gravado = bom(s.produto);
+  return { nome: gravado, historico: !!gravado && ehOrigemLegada(s.billingSource) };
+}
