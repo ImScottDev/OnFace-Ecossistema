@@ -92,7 +92,7 @@ test("troca de plano: lista exata de produtos e prices, só o plano muda, upgrad
   assert.equal(f.get("features[subscription_update][default_allowed_updates][1]"), null, "quantidade e cupom ficam de fora");
   assert.equal(f.get("features[subscription_update][proration_behavior]"), "always_invoice");
   assert.equal(f.get("features[subscription_update][schedule_at_period_end][conditions][0][type]"), "decreasing_item_amount");
-  assert.equal(f.get("features[subscription_update][restrictions][on_open_invoices]"), "block");
+  assert.equal(f.get("features[subscription_update][restrictions][on_open_invoices]"), null, "a versão de API desta conta recusa `restrictions` e derruba o POST inteiro");
   assert.equal(f.get("features[subscription_update][billing_cycle_anchor]"), "unchanged");
   assert.equal(f.get("features[subscription_cancel][proration_behavior]"), "none");
 });

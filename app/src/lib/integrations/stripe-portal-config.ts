@@ -96,8 +96,10 @@ export function corpoDaConfiguracao(politicas: PoliticasPortal = {}, planos: Pla
         proration_behavior: "always_invoice",
         // Downgrade (valor menor) e encurtar intervalo só valem no próximo ciclo: sem crédito a devolver.
         schedule_at_period_end: { conditions: [{ type: "decreasing_item_amount" }, { type: "shortening_interval" }] },
-        // Fatura em aberto bloqueia a troca: não se troca de plano devendo.
-        restrictions: { on_open_invoices: "block" },
+        /* Não há `restrictions.on_open_invoices` aqui de propósito: bloquear a troca com fatura
+           em aberto seria o certo, mas a versão de API desta conta recusa o parâmetro
+           ("unknown parameter", conferido na conta live em 13/10/2026) e o POST inteiro falha.
+           Enquanto o Stripe não aceitar, quem está devendo consegue trocar de plano pelo portal. */
         // O ciclo de cobrança não é reiniciado pela troca.
         billing_cycle_anchor: "unchanged",
         // Quem está em teste não perde o teste ao escolher plano.
