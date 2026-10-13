@@ -57,7 +57,7 @@ END $f$;
 -- entram (lixo). O DELETE por lista fechada de ids cobre um banco que ja as tenha
 -- recebido numa execucao anterior. Ficam 280. As cs_risco nao existem em prod: o
 -- sweep do passo 12 as regera com a Jenifer (P10).
-DELETE FROM tarefas WHERE id IN (SELECT id FROM legado.tarefas WHERE usuario_id = 'fcb69714-2213-4cb4-90e0-4c1d2a93c4bc');
+-- (aditivo: nao apaga tarefas do alvo; a regra do Filipe fica so no filtro de entrada abaixo)
 
 SELECT 'tarefas' AS tabela, pg_temp.mz_carga('tarefas',
   $$ s.usuario_id IS DISTINCT FROM 'fcb69714-2213-4cb4-90e0-4c1d2a93c4bc' $$,

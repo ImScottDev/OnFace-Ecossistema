@@ -250,6 +250,10 @@ SELECT (SELECT id FROM organizacoes), m.empresa_id, r.doc, r.nome, r.doc, r.comp
        r.evidence || jsonb_build_object('empresa_match', coalesce(m.metodo, 'sem_match')),
        encode(sha256(convert_to(r.doc || '|' || r.competencia || '|' || r.chave || '|' || r.revenue_nature, 'UTF8')), 'hex')
   FROM _mz_receita r LEFT JOIN _mz_match m ON m.doc = r.doc
+ -- aditivo: se o alvo ja tem faturamento deste (documento, competencia) vindo de outra carga (outro source_hash),
+ -- ele fica como esta; inserir de novo dobraria a receita do cliente naquele mes.
+ WHERE NOT EXISTS (SELECT 1 FROM cliente_receita_mensal x WHERE x.customer_key = r.doc AND x.competencia = r.competencia
+                      AND x.source_hash <> encode(sha256(convert_to(r.doc || '|' || r.competencia || '|' || r.chave || '|' || r.revenue_nature, 'UTF8')), 'hex'))
 ON CONFLICT (organizacao_id, source_hash) DO UPDATE SET
   empresa_id = EXCLUDED.empresa_id, cliente_nome = EXCLUDED.cliente_nome, valor = EXCLUDED.valor,
   quantidade_lancamentos = EXCLUDED.quantidade_lancamentos, service_family = EXCLUDED.service_family,

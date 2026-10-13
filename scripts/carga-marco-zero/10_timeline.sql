@@ -18,10 +18,7 @@ BEGIN;
 
 -- [Scott] Sem eventos de tarefa do Filipe. As tarefas dele ja nao entram no passo 9;
 -- este DELETE por lista fechada cobre um banco que as tenha recebido antes.
-DELETE FROM timeline_events
- WHERE metadata->'backfill'->>'origem' = 'tarefas'
-   AND metadata->'backfill'->>'id' IN
-       (SELECT id::text FROM legado.tarefas WHERE usuario_id = 'fcb69714-2213-4cb4-90e0-4c1d2a93c4bc');
+-- (aditivo: nao apaga eventos do alvo)
 
 -- Ancoras por lead e por negocio, uma vez so (os JOINs lead->pessoa/aquisicao sao 1:1).
 CREATE TEMP TABLE _mz_anc_lead AS
