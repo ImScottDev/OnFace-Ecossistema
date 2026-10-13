@@ -15,6 +15,7 @@
  * `registrarEvento` e o roteamento acontece aqui.
  */
 import { tituloDoEvento } from "./rotulos-evento";
+import { agruparWhatsappPorDia } from "./whatsapp-por-dia";
 import { idsDoContexto, contextoComNomes, resolverNomes, semUuidCru } from "./resolver-ids";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -360,6 +361,8 @@ export async function lerLinhaDoTempo(params: {
         FROM communications c
         LEFT JOIN usuarios u ON u.id = c.usuario_id
        WHERE c.organizacao_id = ${params.organizacaoId}::uuid
+         -- WhatsApp sai daqui: vem agrupado por dia (whatsapp-por-dia.ts), lido abaixo.
+         AND c.canal <> 'whatsapp'
          -- Dedup contra a projeção: as duas fontes descrevem o MESMO fato por
          -- caminhos diferentes. A ligação vira atividade (e daí evento de
          -- timeline) e também vira comunicação, então aparecia duas vezes na
@@ -452,10 +455,48 @@ export async function lerLinhaDoTempo(params: {
     LIMIT ${limite}
   `);
 
-  // Ids no contexto (responsável anterior/novo etc.) viram nome, também no histórico já gravado.
-  const nomes = await resolverNomes(params.organizacaoId, idsDoContexto(linhas.map((l) => l.contexto)));
+  // WhatsApp: uma linha por dia e conversa (regra em whatsapp-por-dia.ts), e não uma por mensagem.
+  // Agrupa na LEITURA: toda mensagem segue gravada em `communications`. Lê as mensagens à parte
+  // porque o LIMIT da consulta acima era inteiro consumido por elas (34 mil linhas) e escondia o resto.
+  const mensagens = await db.execute<{
+    id: string; chave: string; pessoa_id: string | null; direcao: string | null;
+    ocorrido_em: string; usuario_nome: string | null; resumo: string;
+  }>(sql`
+    SELECT c.id::text, COALESCE(c.pessoa_id::text, c.conversa_id::text, c.id::text) AS chave,
+           c.pessoa_id::text, c.direcao, c.ocorrido_em::text, u.nome AS usuario_nome,
+           left(COALESCE(c.summary, c.conteudo, ''), 180) AS resumo
+      FROM communications c
+      LEFT JOIN usuarios u ON u.id = c.usuario_id
+     WHERE c.organizacao_id = ${params.organizacaoId}::uuid
+       AND c.canal = 'whatsapp'
+       AND NOT EXISTS (
+         SELECT 1 FROM timeline_events t
+          WHERE t.pessoa_id = c.pessoa_id AND t.tipo = c.canal
+            AND abs(extract(epoch FROM (t.occurred_at - c.ocorrido_em))) < 120)
+       AND (
+         (${pessoaId}::uuid IS NOT NULL AND c.pessoa_id = ${pessoaId}::uuid)
+         OR (${empresaId}::uuid IS NOT NULL AND c.empresa_id = ${empresaId}::uuid)
+         OR (${negocioId}::uuid IS NOT NULL AND c.oportunidade_id IN
+               (SELECT id FROM oportunidades WHERE negocio_id_legado = ${negocioId}::uuid))
+         OR (${leadId}::uuid IS NOT NULL AND c.pessoa_id IN
+               (SELECT id FROM pessoas WHERE lead_id_legado = ${leadId}::uuid))
+       )
+     ORDER BY c.ocorrido_em DESC
+     LIMIT 5000
+  `);
+  const whatsappPorDia = agruparWhatsappPorDia(mensagens.map((m) => ({
+    id: m.id, chave: m.chave, pessoaId: m.pessoa_id, direcao: m.direcao,
+    ocorridoEm: m.ocorrido_em, usuarioNome: m.usuario_nome, resumo: m.resumo,
+  })));
+  const todas = [...linhas, ...whatsappPorDia.map((w) => ({
+    id: w.id, tipo: w.tipo, titulo: w.titulo, ator_tipo: w.atorTipo, usuario_nome: w.usuarioNome,
+    contexto: w.contexto as Record<string, unknown> | null, ocorrido_em: w.ocorridoEm,
+  }))].sort((a, b) => Date.parse(b.ocorrido_em) - Date.parse(a.ocorrido_em)).slice(0, limite);
 
-  return linhas.map((l) => {
+  // Ids no contexto (responsável anterior/novo etc.) viram nome, também no histórico já gravado.
+  const nomes = await resolverNomes(params.organizacaoId, idsDoContexto(todas.map((l) => l.contexto)));
+
+  return todas.map((l) => {
     const contexto = contextoComNomes(l.contexto, nomes);
     return {
     id: l.id,
