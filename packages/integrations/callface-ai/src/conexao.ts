@@ -33,7 +33,7 @@ export function configDoAmbiente(env: NodeJS.ProcessEnv = process.env): ConfigCa
   return {
     url,
     poolMax: Number(env.CALLFACE_AI_POOL_MAX ?? 2),
-    timeoutMs: Number(env.CALLFACE_AI_TIMEOUT_MS ?? 120_000),
+    timeoutMs: Number(env.CALLFACE_AI_TIMEOUT_MS ?? 60_000),
   };
 }
 

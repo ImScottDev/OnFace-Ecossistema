@@ -240,3 +240,229 @@ export async function medirAmbiguidade(sql: Sql, janelaDias: number): Promise<Am
     chamadasSemAtribuicao: Number(l?.sem_atribuicao ?? 0),
   };
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Vínculo: o que o ONFACE precisa saber de TODAS as organizações para ligar
+// por evidência forte e sugerir candidatas. 1.779 linhas, leitura única.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface OrganizacaoCallfaceAi {
+  id: string;
+  nome: string;
+  documentNumber: string | null;
+  email: string | null;
+  stripeCustomerId: string | null;
+  desativadaEm: Date | null;
+  /** E-mails (minúsculos) dos usuários CREATOR da organização: o dono. */
+  donos: string[];
+}
+
+export async function lerOrganizacoes(sql: Sql): Promise<OrganizacaoCallfaceAi[]> {
+  const orgs = await sql<Array<Record<string, unknown>>>`
+    SELECT id, name, document_number, email, stripe_customer_id,
+           deactivated_at AT TIME ZONE 'UTC' AS deactivated_at
+      FROM organizations`;
+  const donos = await sql<Array<{ organization_id: string; email: string }>>`
+    SELECT uo.organization_id, lower(trim(u.email)) AS email
+      FROM users_organizations uo JOIN users u ON u.id = uo.user_id
+     WHERE uo.kind = 'CREATOR' AND u.email IS NOT NULL`;
+  const porOrg = new Map<string, string[]>();
+  for (const d of donos) porOrg.set(d.organization_id, [...(porOrg.get(d.organization_id) ?? []), d.email]);
+  return orgs.map((o) => ({
+    id: String(o.id),
+    nome: String(o.name ?? ""),
+    documentNumber: (o.document_number as string) ?? null,
+    email: o.email ? String(o.email).trim().toLowerCase() : null,
+    stripeCustomerId: (o.stripe_customer_id as string) ?? null,
+    desativadaEm: (o.deactivated_at as Date) ?? null,
+    donos: [...new Set(porOrg.get(String(o.id)) ?? [])],
+  }));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Detalhe por organização: plano/licenças, usuários, campanhas, agentes,
+// integrações. NUNCA lê `credentials` de organizations_apps nem o conteúdo de
+// `headers` dos webhooks: só o que o CS precisa ver.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface LicencaPorPlano { plano: string; motivo: string; qtd: number; atribuidas: number; minutos: number; semLimite: boolean }
+export interface UsuarioCallfaceAi {
+  nome: string | null; email: string | null; papel: string; aceite: string;
+  ativo: boolean; ultimaChamadaEm: Date | null; chamadas7d: number; chamadas30d: number;
+}
+export interface DetalheCallfaceAi {
+  organizationId: string;
+  nome: string; criadaEm: Date | null; desativadaEm: Date | null;
+  licencas: LicencaPorPlano[];
+  usuarios: UsuarioCallfaceAi[];
+  campanhas: { porStatus: Record<string, number>; recentes: Array<{ nome: string; status: string; total: number; discados: number; atualizadaEm: Date | null }> };
+  agentes: { porStatus: Record<string, number>; lista: Array<{ nome: string; status: string; criadoEm: Date | null }> };
+  integracoes: { apps: Array<{ nome: string; ativo: boolean }>; webhooksAtivos: number };
+}
+
+const LISTA_CURTA = 8;
+const USUARIOS_NA_LISTA = 40;
+
+export async function lerDetalhe(sql: Sql, organizationIds: string[]): Promise<DetalheCallfaceAi[]> {
+  if (!organizationIds.length) return [];
+  const ids = sql(organizationIds);
+  const [orgs, lic, usu, camp, campRec, ag, apps, hooks] = await Promise.all([
+    sql<Array<Record<string, unknown>>>`
+      SELECT id, name, created_at AT TIME ZONE 'UTC' AS criada, deactivated_at AT TIME ZONE 'UTC' AS desativada
+        FROM organizations WHERE id IN ${ids}`,
+    sql<Array<Record<string, unknown>>>`
+      SELECT l.organization_id, coalesce(p.name, '(sem plano)') AS plano, l.reason::text AS motivo,
+             count(*)::int AS qtd,
+             count(coalesce(l.user_id, uo.user_id))::int AS atribuidas,
+             coalesce(sum(l.allowed_usage_in_minutes), 0)::int AS minutos,
+             bool_or(l.allowed_usage_in_minutes IS NULL) AS sem_limite
+        FROM license l
+        LEFT JOIN plans p ON p.id = l.plan_id
+        LEFT JOIN user_subscriptions us ON us.id = l.user_subscription_id
+        LEFT JOIN users_organizations uo ON uo.id = us.user_organization_id
+       WHERE l.organization_id IN ${ids} AND l.revoked_at IS NULL
+         AND (l.expires_at IS NULL OR l.expires_at > (now() AT TIME ZONE 'UTC'))
+       GROUP BY 1, 2, 3`,
+    sql<Array<Record<string, unknown>>>`
+      SELECT uo.organization_id, u.id AS user_id, u.name, u.email, uo.kind::text AS papel,
+             uo.acceptance_status::text AS aceite, (uo.deactivated_at IS NULL AND u.active) AS ativo
+        FROM users_organizations uo JOIN users u ON u.id = uo.user_id
+       WHERE uo.organization_id IN ${ids}`,
+    sql<Array<Record<string, unknown>>>`
+      SELECT organization_id, status::text AS status, count(*)::int AS n
+        FROM campaigns WHERE organization_id IN ${ids} AND deleted_at IS NULL GROUP BY 1, 2`,
+    sql<Array<Record<string, unknown>>>`
+      SELECT * FROM (
+        SELECT organization_id, name, status::text AS status, total_numbers, dialed_numbers,
+               updated_at AT TIME ZONE 'UTC' AS atualizada,
+               row_number() OVER (PARTITION BY organization_id ORDER BY updated_at DESC) AS rn
+          FROM campaigns WHERE organization_id IN ${ids} AND deleted_at IS NULL AND status <> 'DRAFT') x
+       WHERE rn <= ${LISTA_CURTA}`,
+    sql<Array<Record<string, unknown>>>`
+      SELECT organization_id, name, status::text AS status, created_at AT TIME ZONE 'UTC' AS criado
+        FROM agents WHERE organization_id IN ${ids}`,
+    sql<Array<Record<string, unknown>>>`
+      SELECT oa.organization_id, a.name, oa.is_active
+        FROM organizations_apps oa JOIN apps a ON a.id = oa.app_id
+       WHERE oa.organization_id IN ${ids}`,
+    sql<Array<Record<string, unknown>>>`
+      SELECT organization_id, count(*)::int AS n FROM organization_webhooks
+       WHERE organization_id IN ${ids} AND active GROUP BY 1`,
+  ]);
+
+  // Atividade por usuário nos últimos 90 dias, só dos usuários destas
+  // organizações. Usa o índice de created_at da tabela de chamadas.
+  const userIds = [...new Set(usu.map((u) => String(u.user_id)))];
+  const atividade = new Map<string, { ultima: Date | null; c7: number; c30: number }>();
+  if (userIds.length) {
+    const linhas = await sql<Array<Record<string, unknown>>>`
+      SELECT user_id, max(created_at AT TIME ZONE 'UTC') AS ultima,
+             count(*) FILTER (WHERE created_at >= (now() AT TIME ZONE 'UTC') - interval '7 days')::int AS c7,
+             count(*) FILTER (WHERE created_at >= (now() AT TIME ZONE 'UTC') - interval '30 days')::int AS c30
+        FROM calls
+       WHERE created_at >= (now() AT TIME ZONE 'UTC') - interval '90 days' AND user_id IN ${sql(userIds)}
+       GROUP BY user_id`;
+    for (const l of linhas) atividade.set(String(l.user_id), { ultima: l.ultima as Date, c7: Number(l.c7), c30: Number(l.c30) });
+  }
+
+  const por = <T extends Record<string, unknown>>(rows: T[]) => {
+    const m = new Map<string, T[]>();
+    for (const r of rows) { const k = String(r.organization_id); m.set(k, [...(m.get(k) ?? []), r]); }
+    return m;
+  };
+  const licPor = por(lic), usuPor = por(usu), campPor = por(camp), campRecPor = por(campRec),
+    agPor = por(ag), appsPor = por(apps), hooksPor = por(hooks);
+
+  return orgs.map((o) => {
+    const id = String(o.id);
+    const contar = (rows: Array<Record<string, unknown>> | undefined) =>
+      Object.fromEntries((rows ?? []).map((r) => [String(r.status), Number(r.n)]));
+    const agentes = (agPor.get(id) ?? []);
+    const agPorStatus: Record<string, number> = {};
+    for (const a of agentes) agPorStatus[String(a.status)] = (agPorStatus[String(a.status)] ?? 0) + 1;
+    const usuarios: UsuarioCallfaceAi[] = (usuPor.get(id) ?? []).map((u) => {
+      const at = atividade.get(String(u.user_id));
+      return {
+        nome: (u.name as string) ?? null, email: (u.email as string) ?? null,
+        papel: String(u.papel), aceite: String(u.aceite), ativo: Boolean(u.ativo),
+        ultimaChamadaEm: at?.ultima ?? null, chamadas7d: at?.c7 ?? 0, chamadas30d: at?.c30 ?? 0,
+      };
+    }).sort((a, b) => (b.ultimaChamadaEm?.getTime() ?? 0) - (a.ultimaChamadaEm?.getTime() ?? 0))
+      .slice(0, USUARIOS_NA_LISTA);
+    return {
+      organizationId: id, nome: String(o.name ?? ""),
+      criadaEm: (o.criada as Date) ?? null, desativadaEm: (o.desativada as Date) ?? null,
+      licencas: (licPor.get(id) ?? []).map((l) => ({
+        plano: String(l.plano), motivo: String(l.motivo), qtd: Number(l.qtd),
+        atribuidas: Number(l.atribuidas), minutos: Number(l.minutos), semLimite: Boolean(l.sem_limite),
+      })),
+      usuarios,
+      campanhas: {
+        porStatus: contar(campPor.get(id)),
+        recentes: (campRecPor.get(id) ?? []).map((c) => ({
+          nome: String(c.name ?? ""), status: String(c.status), total: Number(c.total_numbers ?? 0),
+          discados: Number(c.dialed_numbers ?? 0), atualizadaEm: (c.atualizada as Date) ?? null,
+        })),
+      },
+      agentes: {
+        porStatus: agPorStatus,
+        lista: agentes.filter((a) => a.status !== "DELETED")
+          .sort((a, b) => (b.criado as Date).getTime() - (a.criado as Date).getTime())
+          .slice(0, LISTA_CURTA)
+          .map((a) => ({ nome: String(a.name ?? ""), status: String(a.status), criadoEm: (a.criado as Date) ?? null })),
+      },
+      integracoes: {
+        apps: (appsPor.get(id) ?? []).map((a) => ({ nome: String(a.name), ativo: Boolean(a.is_active) })),
+        webhooksAtivos: Number(hooksPor.get(id)?.[0]?.n ?? 0),
+      },
+    };
+  });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Série diária (ligações e minutos por dia civil de São Paulo), com a mesma
+// regra de atribuição de `lerUso`. Só conta chamada de uma candidata única.
+// Pede-se um intervalo de DIAS CIVIS [diaIni, diaFim) em São Paulo (UTC-3, sem
+// horário de verão): fatias alinhadas ao dia, para que reler um dia o
+// SUBSTITUA inteiro em vez de sobrescrever com um dia cortado ao meio.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface UsoDiarioCallfaceAi {
+  organizationId: string; dia: string; chamadas: number; finalizadas: number; minutos: number; usuariosAtivos: number;
+}
+
+export async function lerUsoDiario(
+  sql: Sql, organizationIds: string[], diaIni: string, diaFim: string,
+): Promise<UsoDiarioCallfaceAi[]> {
+  if (!organizationIds.length) return [];
+  const linhas = await sql<Array<Record<string, unknown>>>`
+    WITH atribuicao AS (
+      SELECT c.status, c.duration, c.user_id, c.created_at,
+             ARRAY(SELECT DISTINCT x FROM unnest(ARRAY[
+               cp.organization_id, ct.organization_id,
+               CASE WHEN uo.n = 1 THEN uo.org END]) x WHERE x IS NOT NULL) AS candidatas
+        FROM calls c
+        LEFT JOIN campaigns cp ON cp.id = c.campaign_id
+        LEFT JOIN contacts  ct ON ct.id = c.contact_id
+        LEFT JOIN LATERAL (
+          SELECT count(DISTINCT u.organization_id) AS n, min(u.organization_id) AS org
+            FROM users_organizations u WHERE u.user_id = c.user_id) uo ON TRUE
+       WHERE c.created_at >= ${diaIni}::date + interval '3 hours'
+         AND c.created_at <  ${diaFim}::date + interval '3 hours'
+    )
+    SELECT candidatas[1] AS organization_id,
+           ((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
+           count(*)::int AS chamadas,
+           count(*) FILTER (WHERE status = 'FINISHED')::int AS finalizadas,
+           round(sum(least(coalesce(duration, 0), ${TETO_SEGUNDOS_POR_CHAMADA}))::numeric / 60, 2) AS minutos,
+           count(DISTINCT user_id)::int AS usuarios_ativos
+      FROM atribuicao
+     WHERE array_length(candidatas, 1) = 1 AND candidatas[1] IN ${sql(organizationIds)}
+     GROUP BY 1, 2`;
+  return linhas.map((l) => ({
+    organizationId: String(l.organization_id),
+    dia: l.dia instanceof Date ? l.dia.toISOString().slice(0, 10) : String(l.dia),
+    chamadas: Number(l.chamadas), finalizadas: Number(l.finalizadas),
+    minutos: Number(l.minutos ?? 0), usuariosAtivos: Number(l.usuarios_ativos),
+  }));
+}
