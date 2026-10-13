@@ -7,7 +7,7 @@
 // quando esses outros agentes existirem de fato.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { aiAgents, aiAgentVersions, aiAgentRuns } from "@/lib/db/schema";
+import { aiAgents, aiAgentVersions, aiAgentRuns, usuarios, whatsappSessao } from "@/lib/db/schema";
 import { eq, and, count, desc, inArray, not } from "drizzle-orm";
 import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
@@ -21,6 +21,7 @@ import {
   isSystemAgentSlug,
   isKnownAgentTool,
 } from "@/lib/ai/agent-studio";
+import { CLASSES_AUTONOMIA, ehModo } from "@/lib/ai-platform/tools/politica";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 import { verificarProntidao, resumoDasFaltas } from "@/lib/ai-platform/prontidao";
 
@@ -123,6 +124,65 @@ const agentSchema = z.object({
   }),
 });
 
+/* ── Validação da configuração (servidor é a fonte da regra; a tela só espelha) ───────────────── */
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
+const inteiroEntre = (v: unknown, min: number, max: number) => typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
+
+/** Devolve a primeira mensagem de erro (em português) ou null. Chaves ausentes valem o padrão do runtime. */
+export async function validarConfiguracaoDaVersao(organizacaoId: string, v: z.infer<typeof versionSchema>): Promise<string | null> {
+  const g = rec(v.guardrailConfig);
+  for (const k of ["autonomia", "autonomy"]) if (g[k] !== undefined && !ehModo(g[k])) return "Modo de autonomia inválido: use copiloto, sob aprovação ou autônomo controlado.";
+  if (g.autonomiaPorAcao !== undefined) {
+    const p = rec(g.autonomiaPorAcao);
+    const ids: string[] = CLASSES_AUTONOMIA.map((c) => c.id);
+    for (const [k, m] of Object.entries(p)) {
+      if (!ids.includes(k)) return `Classe de autonomia desconhecida: ${k}.`;
+      if (!ehModo(m)) return `Modo de autonomia inválido em ${CLASSES_AUTONOMIA.find((c) => c.id === k)?.rotulo ?? k}.`;
+    }
+  }
+  const l = rec(g.limites);
+  if (l.maxMensagensPorHora !== undefined && !inteiroEntre(l.maxMensagensPorHora, 1, 60)) return "Mensagens por hora deve ser um número inteiro de 1 a 60.";
+  if (l.maxMensagensPorDia !== undefined && !inteiroEntre(l.maxMensagensPorDia, 1, 500)) return "Mensagens por dia deve ser um número inteiro de 1 a 500.";
+  if (l.maxSemRetorno !== undefined && !inteiroEntre(l.maxSemRetorno, 0, 20)) return "Mensagens sem retorno deve ser um número inteiro de 0 a 20.";
+  if (l.responderForaDoHorario !== undefined && typeof l.responderForaDoHorario !== "boolean") return "Responder fora do horário deve ser sim ou não.";
+  const h = rec(g.horarioComercial);
+  if (h.inicio !== undefined && !(typeof h.inicio === "string" && HHMM.test(h.inicio))) return "Horário de início inválido (use HH:MM).";
+  if (h.fim !== undefined && !(typeof h.fim === "string" && HHMM.test(h.fim))) return "Horário de fim inválido (use HH:MM).";
+  if (typeof h.inicio === "string" && typeof h.fim === "string" && h.inicio >= h.fim) return "O horário de início deve ser antes do fim.";
+  if (h.dias !== undefined && !(Array.isArray(h.dias) && h.dias.length > 0 && h.dias.every((d) => inteiroEntre(d, 0, 6)))) return "Escolha pelo menos um dia da semana válido para o horário.";
+  const f = rec(g.followup);
+  if (f.maxRetomadas !== undefined && !inteiroEntre(f.maxRetomadas, 0, 20)) return "Máximo de retomadas deve ser um número inteiro de 0 a 20.";
+  if (f.janelaDias !== undefined && !inteiroEntre(f.janelaDias, 1, 180)) return "Janela das retomadas deve ser de 1 a 180 dias.";
+  if (f.maxDiasRetomada !== undefined && !inteiroEntre(f.maxDiasRetomada, 1, 365)) return "Horizonte máximo da retomada deve ser de 1 a 365 dias.";
+  if (g.memoria !== undefined && typeof rec(g.memoria).ativa !== "boolean" && rec(g.memoria).ativa !== undefined) return "Memória ligada deve ser sim ou não.";
+  const ho = rec(v.handoffConfig);
+  if (ho.prioridade !== undefined && !["normal", "alta", "urgente"].includes(String(ho.prioridade))) return "Prioridade do handoff inválida (normal, alta ou urgente).";
+  if (ho.mensagemTransicao !== undefined && ho.mensagemTransicao !== null && (typeof ho.mensagemTransicao !== "string" || ho.mensagemTransicao.length > 600)) return "A mensagem de transição deve ter até 600 caracteres.";
+  const kc = rec(v.knowledgeConfig);
+  if (kc.maxTrechos !== undefined && !inteiroEntre(kc.maxTrechos, 1, 8)) return "Máximo de trechos de conhecimento deve ser de 1 a 8.";
+  if (kc.categorias !== undefined && !(Array.isArray(kc.categorias) && kc.categorias.every((x) => typeof x === "string" && x.length <= 40))) return "Categorias de conhecimento inválidas.";
+
+  const c = rec(g.canais);
+  if (c.sessoes !== undefined) {
+    if (!Array.isArray(c.sessoes) || !c.sessoes.every((x) => typeof x === "string" && UUID_RE.test(x))) return "Números autorizados inválidos.";
+    const ids = [...new Set(c.sessoes as string[])];
+    if (ids.length) {
+      const ok = await db.select({ id: whatsappSessao.id }).from(whatsappSessao).where(and(eq(whatsappSessao.organizacaoId, organizacaoId), inArray(whatsappSessao.id, ids)));
+      if (ok.length !== ids.length) return "Um dos números autorizados não pertence a esta organização.";
+    }
+  }
+  const sup = g.supervisorUsuarioId;
+  if (sup !== undefined && sup !== null && sup !== "") {
+    if (typeof sup !== "string" || !UUID_RE.test(sup)) return "Supervisor inválido.";
+    const [u] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.id, sup), eq(usuarios.organizacaoId, organizacaoId), eq(usuarios.ativo, true), not(eq(usuarios.tipo, "agente")))).limit(1);
+    if (!u) return "O supervisor precisa ser uma pessoa ativa desta organização.";
+  }
+  return null;
+}
+
 function normalizarVersao(version: z.infer<typeof versionSchema>) {
   return {
     ...version,
@@ -134,6 +194,8 @@ app.post("/automacoes/agentes", async (c) => {
   const ctx = await exigirCtx(c, "ai.configure");
   const parsed = agentSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Agente invalido", details: parsed.error.flatten() }, 400);
+  const invalida = await validarConfiguracaoDaVersao(ctx.organizacaoId, parsed.data.versao);
+  if (invalida) return c.json({ error: invalida }, 400);
   const [agent] = await db.insert(aiAgents).values({
     organizacaoId: ctx.organizacaoId,
     nome: parsed.data.nome,
@@ -266,6 +328,8 @@ app.post("/automacoes/agentes/:id/versions", async (c) => {
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const parsed = versionSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Versao invalida", details: parsed.error.flatten() }, 400);
+  const invalida = await validarConfiguracaoDaVersao(ctx.organizacaoId, parsed.data);
+  if (invalida) return c.json({ error: invalida }, 400);
   const [last] = await db.select({ versao: aiAgentVersions.versao }).from(aiAgentVersions).where(eq(aiAgentVersions.agentId, agent.id)).orderBy(desc(aiAgentVersions.versao)).limit(1);
   const [version] = await db.insert(aiAgentVersions).values({ organizacaoId: ctx.organizacaoId, agentId: agent.id, versao: (last?.versao ?? 0) + 1, createdById: ctx.userId, ...normalizarVersao(parsed.data) }).returning();
   return c.json(version, 201);
@@ -278,6 +342,8 @@ app.patch("/automacoes/agentes/:id/versions/:versionId", async (c) => {
   if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
   const parsed = versionSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Versao invalida", details: parsed.error.flatten() }, 400);
+  const invalida = await validarConfiguracaoDaVersao(ctx.organizacaoId, parsed.data);
+  if (invalida) return c.json({ error: invalida }, 400);
   const [updated] = await db.update(aiAgentVersions).set(normalizarVersao(parsed.data))
     .where(and(
       eq(aiAgentVersions.id, c.req.param("versionId")),

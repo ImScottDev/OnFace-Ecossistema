@@ -2,42 +2,42 @@
 
 /* Automação → Agentes → [id]: editor do agente na linguagem ONFACE.
  *
- * Substitui o `Cf2AgenteDetalheWorkspace`. Estrutura inspirada no
- * Superagente: abas
- * de Identidade & escopo, Ações, Conhecimento, Gatilhos & handoff,
- * Desempenho e Histórico, com o Playground fixo à direita testando o
- * RASCUNHO.
+ * Abas: Identidade, Inteligência, Conhecimento, Ferramentas, Autonomia, Canais,
+ * Gatilhos, Handoff, Testes e versões, Execuções; Playground fixo à direita
+ * testando o RASCUNHO. As abas de dado vivo (Ferramentas, Gatilhos, Testes,
+ * Execuções) moram em AgenteOperacao.tsx; aqui fica o formulário da versão.
  *
- * Tudo que aparece aqui tem consumidor real:
- * - escopo e expressões de handoff entram no prompt pelo `compilarPrompt`,
- *   a mesma função que o runtime usa (o "Ver prompt compilado" é literal);
- * - modo (Copiloto / Com aprovação / Autônomo) é o `guardrail_config.autonomy`
- *   que o runtime lê para decidir se envia e se executa;
- * - gatilhos decidem o roteamento em produção; prioridade desempata;
+ * AGENTE de IA não é cadência nem automação: ele tem atribuição, retomadas
+ * próprias (follow-up inteligente) e memória. Por isso não existe campo de
+ * cadência nesta tela.
+ *
+ * Tudo que aparece aqui tem consumidor real no runtime:
+ * - identidade, escopo e expressões de handoff entram no prompt pelo
+ *   `compilarPrompt`, a mesma função que o runtime usa (o "Ver prompt
+ *   compilado" é literal);
+ * - autonomia geral e por classe, limites, horário, retomadas, canais,
+ *   supervisor, memória e política de conhecimento são lidos de
+ *   `guardrail_config` / `knowledge_config` / `handoff_config` a cada execução;
  * - credencial é a que o runtime decifra (sem ela, só a chave do ambiente).
- * O que existia no editor antigo e o runtime ignora (filtros de grupo,
- * limiar de confiança, sessão do canal) saiu da tela, mas é preservado no
- * salvar: nada do jsonb que a tela não conhece é apagado.
+ * O jsonb da versão é MESCLADO, nunca substituído: chave que a tela não conhece
+ * (permissoes, filtros, limiar...) passa intacta no salvar.
  *
- * Escrita só pelas rotas Hono existentes. O Playground chama
- * POST /api/automacoes/agentes/:id/test (modo test, egress suprimido:
- * nenhuma mensagem sai e ações viram prévia). */
+ * Escrita só pelas rotas Hono existentes; o servidor valida a configuração. */
 
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft, Bot, Check, ChevronDown, CircleAlert, FlaskConical, Loader2, Plus, RotateCcw, Send, Sparkles, Trash2, X,
-} from "lucide-react";
+import { ArrowLeft, Bot, CircleAlert, FlaskConical, Loader2, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { AGENT_EVENT_CATALOG, AGENT_PURPOSES, AGENT_TOOL_CATALOG, isKnownAgentTool, normalizarIdFerramenta, type AgentToolCategory } from "@/lib/ai/agent-studio";
-import { compilarPrompt, lerEscopo, type EscopoAgente } from "@/lib/ai/agente-escopo";
-import type { DadosEditorAgente, VersaoDoEditor, ExecucaoDoEditor } from "@/lib/automacoes/agente-detalhe";
+import { AGENT_PURPOSES, isKnownAgentTool, normalizarIdFerramenta } from "@/lib/ai/agent-studio";
+import { compilarPrompt, lerEscopo, lerIdentidade, type EscopoAgente, type IdentidadeAgente } from "@/lib/ai/agente-escopo";
+import { CLASSES_AUTONOMIA, lerAutonomiaPorAcao, type ClasseAutonomia, type ModoAutonomia } from "@/lib/ai-platform/tools/politica";
+import type { DadosEditorAgente, VersaoDoEditor } from "@/lib/automacoes/agente-detalhe";
+import { AbaExecucoes, AbaFerramentas, AbaGatilhos, AbaTestes } from "./AgenteOperacao";
+import { Aviso, Interruptor, ListaEditavel, Secao, api, num, quando, useApi } from "./agente-pecas";
 import "./agentes.css";
 import "./agente-editor.css";
 
-const TZ = "America/Sao_Paulo";
-const num = (n: number) => n.toLocaleString("pt-BR");
 const PROVEDORES = [
   { id: "anthropic", nome: "Anthropic" }, { id: "claude_subscription", nome: "Claude Subscription" },
   { id: "openai", nome: "OpenAI" }, { id: "google", nome: "Google" }, { id: "groq", nome: "Groq" },
@@ -47,38 +47,41 @@ const PROVEDORES = [
 const ASSINATURA = "claude_subscription";
 const modelosDe = (d: DadosEditorAgente, p: string) => d.modelos.filter((m) => m.provider === (p === ASSINATURA ? "anthropic" : p));
 const NOME_PROVEDOR: Record<string, string> = Object.fromEntries(PROVEDORES.map((p) => [p.id, p.nome]));
-const STATUS_VERSAO: Record<string, string> = { draft: "Rascunho", published: "No ar", superseded: "Substituída" };
-const RUN_STATUS: Record<string, string> = { completed: "Concluída", failed: "Falhou", running: "Rodando", queued: "Na fila", handed_off: "Passou para humano", aborted: "Abortada (orçamento)" };
-const MODO_RUN: Record<string, string> = { live: "Produção", test: "Teste", dry_run: "Simulação" };
-const CATEGORIAS: { id: AgentToolCategory; nome: string; ajuda: string }[] = [
-  { id: "contexto", nome: "Contexto", ajuda: "Leituras. Não alteram nada." },
-  { id: "comunicacao", nome: "Comunicação", ajuda: "Classificar e preparar a resposta ao contato." },
-  { id: "crm", nome: "CRM", ajuda: "Alteram lead, negócio, tags e timeline." },
-  { id: "operacao", nome: "Operação", ajuda: "Tarefas, reuniões, follow-ups e handoff." },
-];
 const MODOS = [
   { id: "suggest", nome: "Copiloto", texto: "Gera resposta e plano no registro da execução. Não envia mensagem nem altera dados: a equipe decide." },
-  { id: "approval", nome: "Com aprovação", texto: "Prepara as ações; as que alteram dados viram caso para a equipe aprovar. Não envia mensagem sozinho." },
-  { id: "autonomous", nome: "Autônomo", texto: "Responde no WhatsApp e executa as ações ligadas, dentro do teto de permissões." },
+  { id: "approval", nome: "Sob aprovação", texto: "Prepara as ações; as que alteram dados viram caso para a equipe aprovar. Não envia mensagem sozinho." },
+  { id: "autonomous", nome: "Autônomo controlado", texto: "Responde no WhatsApp e executa as ações ligadas, dentro do teto de permissões e dos limites abaixo." },
 ] as const;
-type Modo = (typeof MODOS)[number]["id"];
-type Aba = "identidade" | "acoes" | "conhecimento" | "gatilhos" | "desempenho" | "historico";
+type Modo = ModoAutonomia;
+const NOME_MODO = Object.fromEntries(MODOS.map((m) => [m.id, m.nome])) as Record<string, string>;
+const IDIOMAS = ["português do Brasil", "inglês", "espanhol"];
+const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const PRIORIDADES = [{ id: "normal", nome: "Normal" }, { id: "alta", nome: "Alta" }, { id: "urgente", nome: "Urgente" }];
+
+type Aba = "identidade" | "inteligencia" | "conhecimento" | "ferramentas" | "autonomia" | "canais" | "gatilhos" | "handoff" | "testes" | "execucoes";
 const ABAS: { id: Aba; nome: string }[] = [
-  { id: "identidade", nome: "Identidade & escopo" },
-  { id: "acoes", nome: "Ações" },
-  { id: "conhecimento", nome: "Conhecimento" },
-  { id: "gatilhos", nome: "Gatilhos & handoff" },
-  { id: "desempenho", nome: "Desempenho" },
-  { id: "historico", nome: "Histórico" },
+  { id: "identidade", nome: "Identidade" }, { id: "inteligencia", nome: "Inteligência" }, { id: "conhecimento", nome: "Conhecimento" },
+  { id: "ferramentas", nome: "Ferramentas" }, { id: "autonomia", nome: "Autonomia" }, { id: "canais", nome: "Canais" },
+  { id: "gatilhos", nome: "Gatilhos" }, { id: "handoff", nome: "Handoff" }, { id: "testes", nome: "Testes e versões" }, { id: "execucoes", nome: "Execuções" },
 ];
 
 interface Form {
   nome: string; descricao: string; finalidade: string; prioridade: number;
-  systemPrompt: string; provider: string; modelo: string; credentialId: string;
+  identidade: IdentidadeAgente; supervisor: string; systemPrompt: string;
+  provider: string; modelo: string; credentialId: string; maxSteps: number; tokenBudget: number; costBudget: string; janelaMsgs: number; janelaTokens: number;
+  memoriaAtiva: boolean; conhAtivo: boolean; conhCategorias: string[]; maxTrechos: number;
   tools: string[]; events: string[]; escopo: EscopoAgente;
-  handoffEnabled: boolean; handoffKeywords: string[]; modo: Modo;
-  maxSteps: number; tokenBudget: number; costBudget: string;
+  modo: Modo; porAcao: Record<ClasseAutonomia, Modo | "">;
+  horarioAtivo: boolean; dias: number[]; inicio: string; fim: string; responderFora: boolean;
+  porHora: number; porDia: number; semRetorno: number;
+  maxRetomadas: number; janelaDias: number; maxDiasRetomada: number; exigirOutlook: boolean;
+  canalWhats: boolean; sessoes: string[];
+  handoffEnabled: boolean; handoffKeywords: string[]; mensagemTransicao: string; resumoObrigatorio: boolean; prioridadeHandoff: string; copilotoApos: boolean; retomada: string;
 }
+
+const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
+const nOu = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
 function eventosDe(t: Record<string, unknown>) {
   const bruto = [...(Array.isArray(t.events) ? t.events : []), ...(Array.isArray(t.eventTypes) ? t.eventTypes : [])];
@@ -89,16 +92,28 @@ function formDe(a: DadosEditorAgente["agente"], v: VersaoDoEditor): Form {
   const g = v.guardrailConfig;
   // Os agentes semeados (NEXO, Hermes) gravaram `autonomia`; o runtime lê `autonomy`.
   const modoBruto = g.autonomy ?? g.autonomia;
-  const h = v.handoffConfig;
+  const h = v.handoffConfig, kc = v.knowledgeConfig, lim = rec(g.limites), hor = rec(g.horarioComercial), fu = rec(g.followup), can = rec(g.canais);
+  const porAcaoBruto = lerAutonomiaPorAcao(g);
+  const porAcao = Object.fromEntries(CLASSES_AUTONOMIA.map((c) => [c.id, porAcaoBruto[c.id] ?? ""])) as Form["porAcao"];
   return {
     nome: a.nome, descricao: a.descricao ?? "", finalidade: a.finalidade, prioridade: a.prioridade,
-    systemPrompt: v.systemPrompt, provider: v.provider ?? "", modelo: v.modelo ?? "", credentialId: v.credentialId ?? "",
+    identidade: lerIdentidade(g), supervisor: typeof g.supervisorUsuarioId === "string" ? g.supervisorUsuarioId : "", systemPrompt: v.systemPrompt,
+    provider: v.provider ?? "", modelo: v.modelo ?? "", credentialId: v.credentialId ?? "",
+    maxSteps: v.maxSteps, tokenBudget: v.tokenBudget, costBudget: v.costBudget ?? "", janelaMsgs: v.historyMessageWindow, janelaTokens: v.historyTokenWindow,
+    memoriaAtiva: rec(g.memoria).ativa !== false, conhAtivo: kc.ativo !== false, conhCategorias: strs(kc.categorias), maxTrechos: nOu(kc.maxTrechos, 4),
     // Só ids que o runtime conhece; nomes legados são convertidos (ver normalizarIdFerramenta).
     tools: [...new Set(v.tools.map(normalizarIdFerramenta).filter(isKnownAgentTool))], events: eventosDe(v.triggerConfig), escopo: lerEscopo(g),
-    handoffEnabled: h.enabled !== false,
-    handoffKeywords: Array.isArray(h.keywords) ? h.keywords.filter((k): k is string => typeof k === "string") : [],
-    modo: MODOS.some((m) => m.id === modoBruto) ? modoBruto as Modo : "suggest",
-    maxSteps: v.maxSteps, tokenBudget: v.tokenBudget, costBudget: v.costBudget ?? "",
+    modo: MODOS.some((m) => m.id === modoBruto) ? modoBruto as Modo : "suggest", porAcao,
+    horarioAtivo: hor.ativo !== false, dias: Array.isArray(hor.dias) && hor.dias.length ? (hor.dias as number[]) : [1, 2, 3, 4, 5],
+    inicio: typeof hor.inicio === "string" ? hor.inicio : "08:00", fim: typeof hor.fim === "string" ? hor.fim : "19:00",
+    responderFora: typeof lim.responderForaDoHorario === "boolean" ? lim.responderForaDoHorario : true,
+    porHora: nOu(lim.maxMensagensPorHora, 6), porDia: nOu(lim.maxMensagensPorDia, 30), semRetorno: nOu(lim.maxSemRetorno, 3),
+    maxRetomadas: nOu(fu.maxRetomadas, 5), janelaDias: nOu(fu.janelaDias, 30), maxDiasRetomada: nOu(fu.maxDiasRetomada, 90), exigirOutlook: g.agendaExigirOutlook !== false,
+    canalWhats: can.whatsapp !== false, sessoes: strs(can.sessoes),
+    handoffEnabled: h.enabled !== false, handoffKeywords: strs(h.keywords),
+    mensagemTransicao: typeof h.mensagemTransicao === "string" ? h.mensagemTransicao : "", resumoObrigatorio: h.resumoObrigatorio === true,
+    prioridadeHandoff: PRIORIDADES.some((p) => p.id === h.prioridade) ? String(h.prioridade) : "normal", copilotoApos: h.copilotoAposHandoff === true,
+    retomada: typeof h.retomada === "string" ? h.retomada : "somente_humano",
   };
 }
 
@@ -108,18 +123,31 @@ function formDe(a: DadosEditorAgente["agente"], v: VersaoDoEditor): Form {
 function corpoDaVersao(f: Form, base: VersaoDoEditor) {
   const { eventTypes: _legado, ...trigger } = base.triggerConfig;
   void _legado; // eventTypes foi fundido em `events` ao abrir; manter duplicaria o gatilho
+  const g = base.guardrailConfig;
+  const autonomiaPorAcao = { ...rec(g.autonomiaPorAcao) };
+  for (const c of CLASSES_AUTONOMIA) { if (f.porAcao[c.id]) autonomiaPorAcao[c.id] = f.porAcao[c.id]; else delete autonomiaPorAcao[c.id]; }
+  const identidade = { ...rec(g.identidade), ...f.identidade };
   return {
     systemPrompt: f.systemPrompt,
     provider: f.provider || null, modelo: f.modelo.trim() || null, credentialId: f.credentialId || null,
     channelSessionId: base.channelSessionId,
     tools: f.tools,
     triggerConfig: { ...trigger, events: f.events },
-    handoffConfig: { ...base.handoffConfig, enabled: f.handoffEnabled, keywords: f.handoffKeywords },
-    knowledgeConfig: base.knowledgeConfig,
-    guardrailConfig: { ...base.guardrailConfig, autonomy: f.modo, autonomia: f.modo, escopo: f.escopo },
+    handoffConfig: {
+      ...base.handoffConfig, enabled: f.handoffEnabled, keywords: f.handoffKeywords, mensagemTransicao: f.mensagemTransicao.trim() || null,
+      resumoObrigatorio: f.resumoObrigatorio, prioridade: f.prioridadeHandoff, copilotoAposHandoff: f.copilotoApos, retomada: f.retomada,
+    },
+    knowledgeConfig: { ...base.knowledgeConfig, ativo: f.conhAtivo, categorias: f.conhCategorias, maxTrechos: f.maxTrechos },
+    guardrailConfig: {
+      ...g, autonomy: f.modo, autonomia: f.modo, escopo: f.escopo, identidade, supervisorUsuarioId: f.supervisor || null, autonomiaPorAcao,
+      horarioComercial: { ...rec(g.horarioComercial), ativo: f.horarioAtivo, dias: f.dias, inicio: f.inicio, fim: f.fim },
+      limites: { ...rec(g.limites), responderForaDoHorario: f.responderFora, maxMensagensPorHora: f.porHora, maxMensagensPorDia: f.porDia, maxSemRetorno: f.semRetorno },
+      followup: { ...rec(g.followup), maxRetomadas: f.maxRetomadas, janelaDias: f.janelaDias, maxDiasRetomada: f.maxDiasRetomada },
+      agendaExigirOutlook: f.exigirOutlook, memoria: { ...rec(g.memoria), ativa: f.memoriaAtiva }, canais: { ...rec(g.canais), whatsapp: f.canalWhats, sessoes: f.sessoes },
+    },
     maxSteps: f.maxSteps, tokenBudget: f.tokenBudget,
     costBudget: f.costBudget.trim() ? Number(f.costBudget.replace(",", ".")) : null,
-    historyMessageWindow: base.historyMessageWindow, historyTokenWindow: base.historyTokenWindow, casesEnabled: base.casesEnabled,
+    historyMessageWindow: f.janelaMsgs, historyTokenWindow: f.janelaTokens, casesEnabled: base.casesEnabled,
   };
 }
 
@@ -137,81 +165,33 @@ function faltasLocais(f: Form, d: DadosEditorAgente) {
   return r;
 }
 
-async function api(url: string, init?: RequestInit) {
-  const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
-  const json = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(json?.error || json?.message || `Falha (${r.status})`);
-  return json;
-}
-
-function quando(iso: string) {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: TZ });
-}
-
-/* ── Peças ─────────────────────────────────────────────────────────── */
-
-function Interruptor({ ligado, onChange, rotulo, desligado }: { ligado: boolean; onChange: (v: boolean) => void; rotulo: string; desligado?: boolean }) {
+/** Número com faixa: aceita digitar livre e crava a faixa ao sair do campo. */
+function Num({ rotulo, valor, min, max, onChange, desligado, ajuda }: { rotulo: string; valor: number; min: number; max: number; onChange: (n: number) => void; desligado?: boolean; ajuda?: string }) {
+  const [t, setT] = React.useState(String(valor));
+  React.useEffect(() => { setT(String(valor)); }, [valor]);
   return (
-    <button type="button" role="switch" aria-checked={ligado} aria-label={rotulo} className="age-switch" disabled={desligado} onClick={() => onChange(!ligado)}>
-      <i />
-    </button>
+    <label>{rotulo}
+      <input type="number" inputMode="numeric" min={min} max={max} value={t} disabled={desligado}
+        onChange={(e) => { setT(e.target.value); const n = Number(e.target.value); if (e.target.value !== "" && Number.isFinite(n)) onChange(Math.round(n)); }}
+        onBlur={() => { const n = Math.min(max, Math.max(min, Math.round(Number(t)) || min)); setT(String(n)); onChange(n); }} />
+      {ajuda ? <small className="age-ajuda">{ajuda}</small> : null}
+    </label>
   );
 }
 
-function ListaEditavel({ titulo, ajuda, itens, onChange, exemplo, tom, travado }: {
-  titulo: string; ajuda: string; itens: string[]; onChange: (v: string[]) => void; exemplo: string; tom?: "ok" | "alerta" | "humano"; travado: boolean;
-}) {
-  const [novo, setNovo] = React.useState("");
-  const add = () => {
-    const v = novo.trim();
-    if (!v) return;
-    if (!itens.some((i) => i.toLowerCase() === v.toLowerCase())) onChange([...itens, v]);
-    setNovo("");
-  };
-  return (
-    <div className="age-lista" data-tom={tom}>
-      <div className="age-lista-topo"><strong>{titulo}</strong><span>{ajuda}</span></div>
-      <div className="age-chips">
-        {itens.length === 0 ? <span className="age-chips-vazio">Nada aqui ainda.</span> : null}
-        {itens.map((i) => (
-          <span key={i} className="age-chip">
-            {i}
-            {!travado ? <button type="button" aria-label={`Remover ${i}`} onClick={() => onChange(itens.filter((x) => x !== i))}><X size={11} /></button> : null}
-          </span>
-        ))}
-      </div>
-      {!travado ? (
-        <div className="age-lista-add">
-          <input value={novo} onChange={(e) => setNovo(e.target.value)} placeholder={exemplo} aria-label={`Adicionar em ${titulo}`} maxLength={160}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} />
-          <button type="button" className="agn-secundario" onClick={add} disabled={!novo.trim()} aria-label={`Adicionar em ${titulo}`} title="Adicionar"><Plus size={14} /></button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function Secao({ titulo, ajuda, children, direita }: { titulo: string; ajuda?: React.ReactNode; children: React.ReactNode; direita?: React.ReactNode }) {
-  return (
-    <section className="agn-cartao age-secao">
-      <div className="age-secao-topo">
-        <div><h2>{titulo}</h2>{ajuda ? <p>{ajuda}</p> : null}</div>
-        {direita}
-      </div>
-      <div className="age-secao-corpo">{children}</div>
-    </section>
-  );
+function Linha({ titulo, ajuda, children }: { titulo: string; ajuda?: string; children: React.ReactNode }) {
+  return <div className="age-linha-opcao"><div><strong>{titulo}</strong>{ajuda ? <span>{ajuda}</span> : null}</div>{children}</div>;
 }
 
 /* ── Playground ───────────────────────────────────────────────────── */
 
-type Linha = { id: number; tipo: "eu" | "agente" | "erro"; texto: string; meta?: string; humano?: boolean };
+type Linha_ = { id: number; tipo: "eu" | "agente" | "erro"; texto: string; meta?: string; humano?: boolean };
 
 function Playground({ bloqueio, aviso, testar }: {
   bloqueio: string[] | null; aviso: string | null;
   testar: (msg: string) => Promise<{ textos: string[]; meta: string; humano: boolean }>;
 }) {
-  const [linhas, setLinhas] = React.useState<Linha[]>([]);
+  const [linhas, setLinhas] = React.useState<Linha_[]>([]);
   const [msg, setMsg] = React.useState("");
   const [rodando, setRodando] = React.useState(false);
   const fim = React.useRef<HTMLDivElement>(null);
@@ -241,7 +221,7 @@ function Playground({ bloqueio, aviso, testar }: {
       <div className="age-play-topo">
         <div>
           <h2 id="age-play-titulo"><FlaskConical size={14} /> Playground</h2>
-          <p>Testa o rascunho com o modelo de verdade. Nada é enviado ao contato.</p>
+          <p>Conversa rápida com o rascunho e o modelo de verdade. Nada é enviado ao contato. Para ver contexto e ferramentas, use Testes e versões.</p>
         </div>
         {linhas.length ? <button type="button" className="age-icone" onClick={() => setLinhas([])} aria-label="Limpar conversa de teste" title="Limpar"><Trash2 size={14} /></button> : null}
       </div>
@@ -284,47 +264,13 @@ function Playground({ bloqueio, aviso, testar }: {
   );
 }
 
-/* ── Execução (Desempenho) ────────────────────────────────────────── */
-
-function LinhaExecucao({ e }: { e: ExecucaoDoEditor }) {
-  const [aberta, setAberta] = React.useState(false);
-  const [passos, setPassos] = React.useState<Record<string, unknown>[] | null>(null);
-  const [erro, setErro] = React.useState(false);
-  async function abrir() {
-    setAberta((a) => !a);
-    if (passos || aberta) return;
-    try { setPassos((await api(`/api/automacoes/ai/runs/${e.id}/steps`)).steps ?? []); } catch { setErro(true); }
-  }
-  const tom = e.status === "completed" ? "ok" : e.status === "failed" || e.status === "aborted" ? "alerta" : undefined;
-  return (
-    <div className="age-exec">
-      <button type="button" className="age-exec-linha" onClick={abrir} aria-expanded={aberta}>
-        <span className="agn-selo" data-tom={tom}><i />{RUN_STATUS[e.status] ?? e.status}</span>
-        <span className="age-exec-msg">{e.mensagem ?? "Evento sem mensagem"}</span>
-        <span className="age-exec-meta">{MODO_RUN[e.modo] ?? e.modo}{e.versao ? ` · v${e.versao}` : ""} · {num(e.tokens)} tokens · {quando(e.inicio)}</span>
-        <ChevronDown size={14} className="age-exec-seta" />
-      </button>
-      {aberta ? (
-        <div className="age-exec-detalhe">
-          {e.erro ? <p className="age-exec-erro">{e.erro}</p> : null}
-          {e.handoff ? <p>Passou para humano: {e.handoff}</p> : null}
-          {erro ? <p className="age-exec-erro">Não foi possível carregar os passos.</p> : passos == null ? <p><Loader2 size={12} className="age-gira" /> Carregando passos…</p> : passos.length === 0 ? <p>Sem passos registrados.</p> : (
-            <ol className="age-passos">
-              {passos.map((p, i) => (
-                <li key={String(p.id ?? i)} data-falhou={p.status === "failed" ? "true" : undefined}>
-                  <strong>{String(p.kind)}{p.name ? ` · ${String(p.name)}` : ""}</strong>
-                  <span>{String(p.status)}{p.errorMessage ? ` · ${String(p.errorMessage)}` : ""}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 /* ── Editor ───────────────────────────────────────────────────────── */
+
+interface Apoio {
+  sessoes: { id: string; nome: string; status: string | null; telefone: string | null; finalidade: string | null; dono: string | null }[];
+  pessoas: { id: string; nome: string; role: string | null }[];
+  fontes: { id: string; nome: string; governanca: string; categoria: string | null; status: string; indexadoEm: string | null }[];
+}
 
 export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: DadosEditorAgente; podeConfigurar: boolean; podeUsar: boolean }) {
   const router = useRouter();
@@ -335,7 +281,7 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
 
   // Estado derivado das props: quando o servidor devolve agente/versões
   // novos (após salvar/publicar), o formulário volta a espelhar o banco.
-  // Mudança só em conhecimento/desempenho não mexe no que está sendo editado.
+  // Mudança só em conhecimento/execuções não mexe no que está sendo editado.
   const chave = JSON.stringify([agente, versoes]);
   const [chaveVista, setChaveVista] = React.useState(chave);
   const [form, setForm] = React.useState<Form | null>(() => (trabalho ? formDe(agente, trabalho) : null));
@@ -349,6 +295,12 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
   const [salvando, setSalvando] = React.useState(false);
   const [publicando, setPublicando] = React.useState(false);
   const [verPrompt, setVerPrompt] = React.useState(false);
+  // Link da lista ("Testar") entra direto na aba: ?aba=testes
+  React.useEffect(() => {
+    const a = new URLSearchParams(window.location.search).get("aba");
+    if (a && ABAS.some((x) => x.id === a)) setAba(a as Aba);
+  }, []);
+  const apoio = useApi<Apoio>("/api/automacoes/agentes-op/apoio");
   // Versão gravada com nomes legados de ferramenta: o runtime ignora todas
   // até salvar, então a conversão já conta como alteração pendente.
   const ferramentasLegadas = trabalho ? trabalho.tools.filter((t) => !isKnownAgentTool(t)).length : 0;
@@ -376,12 +328,15 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
   }
   const f = form;
   const set = (patch: Partial<Form>) => setForm({ ...f, ...patch });
+  const setId = (patch: Partial<IdentidadeAgente>) => set({ identidade: { ...f.identidade, ...patch } });
   const faltas = faltasLocais(f, dados);
-  const promptCompilado = compilarPrompt({ systemPrompt: f.systemPrompt, guardrailConfig: { escopo: f.escopo }, handoffConfig: { enabled: f.handoffEnabled, keywords: f.handoffKeywords } });
+  const promptCompilado = compilarPrompt({ systemPrompt: f.systemPrompt, guardrailConfig: { escopo: f.escopo, identidade: f.identidade }, handoffConfig: { enabled: f.handoffEnabled, keywords: f.handoffKeywords } });
   const modelosDoProvedor = modelosDe(dados, f.provider);
   const credsDoProvedor = f.provider === ASSINATURA ? [] : dados.credenciais.filter((c) => c.provider === f.provider);
-  const permissoes = Array.isArray(trabalho.guardrailConfig.permissoes) ? (trabalho.guardrailConfig.permissoes as unknown[]).filter((p): p is string => typeof p === "string") : [];
+  const permissoes = strs(trabalho.guardrailConfig.permissoes);
   const temHandoffTool = f.tools.includes("handoff.request");
+  const alternarFerramenta = (id: string, ligar: boolean) => set({ tools: ligar ? [...new Set([...f.tools, id])] : f.tools.filter((x) => x !== id) });
+  const credencialOk = f.provider === ASSINATURA ? Boolean(dados.ambiente[ASSINATURA]) : Boolean(f.credentialId || (f.provider && dados.ambiente[f.provider]));
 
   /** Salva metadados + versão. Devolve o id da versão (rascunho) salva. */
   async function salvar(silencioso = false): Promise<string | null> {
@@ -458,8 +413,8 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
     : !sujo && !rascunho ? "Nada novo para publicar: a versão no ar é a mais recente"
       : faltas.length ? `Falta: ${faltas.join("; ")}` : sujo ? "Salva o rascunho e publica" : `Publicar o rascunho v${rascunho!.versao}`;
 
-  const d = dados.desempenho;
-  const maxDia = Math.max(1, ...d.serie.map((s) => s.total));
+  const fontesApoio = apoio.dados?.fontes ?? [];
+  const categoriasConhecidas = [...new Set([...fontesApoio.map((s) => s.categoria).filter((c): c is string => Boolean(c)), ...f.conhCategorias])].sort();
 
   return (
     <div className="agn-tela age-tela">
@@ -472,7 +427,7 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
           <div className="age-selos">
             {publicada ? <span className="agn-selo" data-tom="ok"><i />v{publicada.versao} no ar</span> : <span className="agn-selo"><i />Não publicado</span>}
             {rascunho ? <span className="agn-selo"><i />Rascunho v{rascunho.versao}</span> : null}
-            <span className="agn-selo"><i />{MODOS.find((m) => m.id === f.modo)?.nome}</span>
+            <span className="agn-selo"><i />{NOME_MODO[f.modo]}</span>
             {faltas.length ? <span className="agn-selo" data-tom="alerta" title={faltas.join("\n")}><i />{faltas.length === 1 ? "Falta 1 item" : `Faltam ${faltas.length} itens`}</span> : <span className="agn-selo" data-tom="ok"><i />Pronto para publicar</span>}
             {sujo ? <span className="age-sujo">Alterações não salvas</span> : null}
           </div>
@@ -502,46 +457,57 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
         {ABAS.map((a) => (
           <button key={a.id} type="button" aria-pressed={aba === a.id} onClick={() => setAba(a.id)}>
             {a.nome}
-            {a.id === "desempenho" && dados.casosAbertos.length ? <span className="age-contador">{dados.casosAbertos.length}</span> : null}
+            {a.id === "execucoes" && dados.casosAbertos.length ? <span className="age-contador">{dados.casosAbertos.length}</span> : null}
           </button>
         ))}
       </nav>
 
       <div className="age-grade">
         <div className="age-principal">
+          {/* ── A. Identidade ── */}
           {aba === "identidade" ? (
             <>
-              <Secao titulo="Identidade" ajuda="Como a equipe reconhece este agente na lista e nas execuções.">
+              <Secao titulo="Identidade" ajuda="Quem é este agente. Função, objetivo, especialidade, idioma, personalidade e estilo entram no prompt que o modelo recebe.">
                 <div className="age-form">
                   <div className="agn-duas">
                     <label>Nome<input value={f.nome} onChange={(e) => set({ nome: e.target.value })} maxLength={120} disabled={travado} /></label>
                     <label>Papel na operação
                       <select value={f.finalidade} onChange={(e) => set({ finalidade: e.target.value })} disabled={travado}>
                         {AGENT_PURPOSES.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-                        {!AGENT_PURPOSES.some((p) => p.id === f.finalidade) ? <option value={f.finalidade}>{f.finalidade === "copiloto" ? "Copiloto" : f.finalidade === "orquestracao" ? "Orquestração" : f.finalidade}</option> : null}
+                        {!AGENT_PURPOSES.some((p) => p.id === f.finalidade) ? <option value={f.finalidade}>{f.finalidade === "copiloto" ? "Copiloto" : f.finalidade === "orquestracao" ? "Orquestração" : f.finalidade === "pre_vendas" ? "Pré-vendas" : f.finalidade}</option> : null}
                       </select>
                     </label>
                   </div>
-                  <label>Descrição<textarea value={f.descricao} onChange={(e) => set({ descricao: e.target.value })} rows={2} maxLength={500} placeholder="O que ele resolve e onde deve parar." disabled={travado} /></label>
+                  <label>Função<input value={f.identidade.funcao} onChange={(e) => setId({ funcao: e.target.value })} maxLength={160} disabled={travado} placeholder="Ex.: SDR consultiva de leads inbound" /></label>
+                  <label>Descrição<textarea value={f.descricao} onChange={(e) => set({ descricao: e.target.value })} rows={2} maxLength={500} placeholder="O que ele resolve e onde deve parar. Aparece na lista de agentes." disabled={travado} /></label>
+                  <label>Objetivo<textarea value={f.identidade.objetivo} onChange={(e) => setId({ objetivo: e.target.value })} rows={2} maxLength={400} placeholder="Ex.: qualificar o lead e, havendo fit, agendar uma demonstração." disabled={travado} /></label>
+                  <div className="agn-duas">
+                    <label>Especialidade<input value={f.identidade.especialidade} onChange={(e) => setId({ especialidade: e.target.value })} maxLength={200} disabled={travado} placeholder="Ex.: telefonia e discador preditivo" /></label>
+                    <label>Idioma
+                      <select value={f.identidade.idioma} onChange={(e) => setId({ idioma: e.target.value })} disabled={travado}>
+                        <option value="">Não definir</option>
+                        {IDIOMAS.map((i) => <option key={i} value={i}>{i}</option>)}
+                        {f.identidade.idioma && !IDIOMAS.includes(f.identidade.idioma) ? <option value={f.identidade.idioma}>{f.identidade.idioma}</option> : null}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="agn-duas">
+                    <label>Personalidade<input value={f.identidade.personalidade} onChange={(e) => setId({ personalidade: e.target.value })} maxLength={200} disabled={travado} placeholder="Ex.: consultiva, segura, sem pressa" /></label>
+                    <label>Estilo de comunicação<input value={f.identidade.estilo} onChange={(e) => setId({ estilo: e.target.value })} maxLength={200} disabled={travado} placeholder="Ex.: mensagens curtas, uma pergunta por vez" /></label>
+                  </div>
                 </div>
               </Secao>
 
-              <Secao titulo="Escopo" ajuda="Cada item vira uma linha do prompt. O agente segue estas listas em toda conversa.">
-                <div className="age-listas">
+              <Secao titulo="Escopo" ajuda="Cada item vira uma linha do prompt. O agente segue estas listas em toda conversa. Quando transferir para uma pessoa fica em Handoff.">
+                <div className="age-listas age-listas-2">
                   <ListaEditavel titulo="Pode ajudar com" ajuda="Assuntos que ele resolve sozinho." tom="ok" travado={travado}
                     itens={f.escopo.podeAjudar} onChange={(v) => set({ escopo: { ...f.escopo, podeAjudar: v } })} exemplo="Ex.: dúvidas sobre planos e preços públicos" />
                   <ListaEditavel titulo="Não deve tratar de" ajuda="Recusa com educação e oferece uma pessoa." tom="alerta" travado={travado}
                     itens={f.escopo.naoDeveTratar} onChange={(v) => set({ escopo: { ...f.escopo, naoDeveTratar: v } })} exemplo="Ex.: cancelamento de contrato" />
-                  <ListaEditavel titulo="Transferir para humano quando" ajuda="Usa Solicitar atendimento humano." tom="humano" travado={travado}
-                    itens={f.escopo.transferirQuando} onChange={(v) => set({ escopo: { ...f.escopo, transferirQuando: v } })} exemplo="Ex.: pedir desconto ou condição especial" />
                 </div>
-                {f.escopo.transferirQuando.length && !temHandoffTool ? (
-                  <p className="age-alerta-linha"><CircleAlert size={13} /> A ação Solicitar atendimento humano está desligada: sem ela o agente não consegue transferir.
-                    {!travado ? <button type="button" onClick={() => set({ tools: [...f.tools, "handoff.request"] })}>Ligar</button> : null}</p>
-                ) : null}
               </Secao>
 
-              <Secao titulo="Instruções" ajuda="Objetivo, tom e jeito de conduzir a conversa. O escopo acima é somado a isto."
+              <Secao titulo="Instruções" ajuda="Objetivo, tom e jeito de conduzir a conversa. Identidade e escopo são somados a isto."
                 direita={<button type="button" className="agn-secundario" onClick={() => setVerPrompt((v) => !v)} aria-expanded={verPrompt}>{verPrompt ? "Esconder" : "Ver"} prompt compilado</button>}>
                 <div className="age-form">
                   <textarea className="age-prompt" value={f.systemPrompt} onChange={(e) => set({ systemPrompt: e.target.value })} rows={9} disabled={travado} aria-label="Instruções do agente" />
@@ -555,17 +521,27 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
                 ) : null}
               </Secao>
 
-              <Secao titulo="Modo de atendimento" ajuda="Até onde o agente vai sozinho. Vale para a versão publicada; o Playground nunca envia.">
-                <div className="age-modos" role="radiogroup" aria-label="Modo de atendimento">
-                  {MODOS.map((m) => (
-                    <button key={m.id} type="button" role="radio" aria-checked={f.modo === m.id} className="age-modo" disabled={travado} onClick={() => set({ modo: m.id })}>
-                      <span className="age-modo-topo"><i />{m.nome}</span>
-                      <span>{m.texto}</span>
-                    </button>
-                  ))}
+              <Secao titulo="Versão e supervisor" ajuda="O supervisor é a pessoa avisada quando o agente passa um atendimento, falha ou deixa uma ação aguardando aprovação.">
+                <div className="age-form">
+                  <div className="agn-duas">
+                    <div className="age-fato"><span className="agn-rotulo">Versão em edição</span><strong>v{trabalho.versao} · {trabalho.status === "draft" ? "Rascunho" : trabalho.status === "published" ? "No ar" : "Substituída"}</strong><small>{publicada ? `No ar: v${publicada.versao}, publicada ${publicada.publishedAt ? quando(publicada.publishedAt) : ""}` : "Nenhuma versão no ar"}</small></div>
+                    <label>Supervisor humano
+                      <select value={f.supervisor} onChange={(e) => set({ supervisor: e.target.value })} disabled={travado || !apoio.dados}>
+                        <option value="">{apoio.carregando ? "Carregando…" : "Ninguém (só a equipe do Atendimento é avisada)"}</option>
+                        {apoio.dados?.pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                        {f.supervisor && apoio.dados && !apoio.dados.pessoas.some((p) => p.id === f.supervisor) ? <option value={f.supervisor}>Pessoa não encontrada ou inativa</option> : null}
+                      </select>
+                    </label>
+                  </div>
+                  {apoio.erro ? <p className="age-alerta-linha"><CircleAlert size={13} /> Não foi possível carregar as pessoas da organização: {apoio.erro}</p> : null}
                 </div>
               </Secao>
+            </>
+          ) : null}
 
+          {/* ── B. Inteligência ── */}
+          {aba === "inteligencia" ? (
+            <>
               <Secao titulo="Modelo e limites" ajuda="Cada versão publicada fixa o modelo, a credencial e o teto por execução.">
                 <div className="age-form">
                   <div className="age-tres">
@@ -600,153 +576,259 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
                     <p className="age-alerta-linha"><CircleAlert size={13} /> Nenhuma credencial de {NOME_PROVEDOR[f.provider]} nesta organização. <Link href="/ajustes/integracoes">Cadastrar em Ajustes → Integrações</Link></p>
                   ) : null}
                   <div className="age-tres">
-                    <label>Passos por execução<input type="number" min={1} max={30} value={f.maxSteps} disabled={travado} onChange={(e) => set({ maxSteps: Math.min(30, Math.max(1, Number(e.target.value) || 1)) })} /></label>
-                    <label>Tokens por execução<input type="number" min={1} max={100000} value={f.tokenBudget} disabled={travado} onChange={(e) => set({ tokenBudget: Math.min(100000, Math.max(1, Number(e.target.value) || 1)) })} /></label>
-                    <label>Custo máximo (US$)<input inputMode="decimal" value={f.costBudget} placeholder="Sem limite" disabled={travado} onChange={(e) => set({ costBudget: e.target.value.replace(/[^\d.,]/g, "") })} /></label>
+                    <Num rotulo="Passos por execução" valor={f.maxSteps} min={1} max={30} desligado={travado} onChange={(n) => set({ maxSteps: n })} ajuda="Rodadas de modelo e ferramenta. 1 a 30." />
+                    <Num rotulo="Tokens por execução" valor={f.tokenBudget} min={1} max={100000} desligado={travado} onChange={(n) => set({ tokenBudget: n })} ajuda="Teto de resposta. 1 a 100.000." />
+                    <label>Orçamento por execução (US$)<input inputMode="decimal" value={f.costBudget} placeholder="Sem limite" disabled={travado} onChange={(e) => set({ costBudget: e.target.value.replace(/[^\d.,]/g, "") })} /><small className="age-ajuda">Aborta a execução ao passar.</small></label>
+                  </div>
+                  <div className="age-tres">
+                    <Num rotulo="Janela de mensagens" valor={f.janelaMsgs} min={6} max={40} desligado={travado} onChange={(n) => set({ janelaMsgs: n })} ajuda="Últimas mensagens da conversa no contexto. 6 a 40." />
+                    <Num rotulo="Janela em tokens" valor={f.janelaTokens} min={500} max={100000} desligado={travado} onChange={(n) => set({ janelaTokens: n })} ajuda="Teto do histórico em tokens." />
                   </div>
                 </div>
               </Secao>
-            </>
-          ) : null}
 
-          {aba === "acoes" ? (
-            <>
-              {ferramentasLegadas ? (
-                <div className="age-faltas" role="status">
-                  <CircleAlert size={14} />
-                  <span><strong>{ferramentasLegadas} {ferramentasLegadas === 1 ? "ação estava gravada" : "ações estavam gravadas"} num formato que o runtime não reconhece</strong>, e por isso não funcionavam. Elas aparecem ligadas abaixo; salve o rascunho para valerem.</span>
-                </div>
-              ) : null}
-              <Secao titulo="O que o agente pode fazer" ajuda={<>Ligue só o necessário. No teste, leituras consultam o CRM e ações viram prévia; em produção, ações só executam no modo Autônomo (ou após aprovação). <strong>{f.tools.length} de {AGENT_TOOL_CATALOG.length} ligadas.</strong></>}>
-                {CATEGORIAS.map((c) => (
-                  <div key={c.id} className="age-grupo">
-                    <div className="age-grupo-topo"><strong>{c.nome}</strong><span>{c.ajuda}</span></div>
-                    {AGENT_TOOL_CATALOG.filter((t) => t.categoria === c.id).map((t) => {
-                      const on = f.tools.includes(t.id);
-                      return (
-                        <div key={t.id} className="age-tool" data-on={on ? "true" : undefined}>
-                          <div>
-                            <strong>{t.nome} <em data-tipo={t.modo}>{t.modo === "leitura" ? "Leitura" : "Ação"}</em></strong>
-                            <span>{t.descricao}</span>
-                          </div>
-                          <Interruptor ligado={on} rotulo={t.nome} desligado={travado} onChange={(v) => set({ tools: v ? [...f.tools, t.id] : f.tools.filter((x) => x !== t.id) })} />
+              <Secao titulo="Memória" ajuda="Fatos com fonte que o agente lembra entre conversas (preferências, o que já foi dito, compromissos). Desligada, o agente trata cada contato sem lembrar o que sabia.">
+                <Linha titulo="Memória ligada" ajuda="Entra no contexto de toda execução. Fatos inferidos nunca valem como dado confirmado.">
+                  <Interruptor ligado={f.memoriaAtiva} rotulo="Memória ligada" desligado={travado} onChange={(v) => set({ memoriaAtiva: v })} />
+                </Linha>
+              </Secao>
+
+              <Secao titulo="Recuperação de conhecimento" ajuda="Quais trechos da base de conhecimento entram no contexto. Só conhecimento aprovado conta (aba Conhecimento).">
+                <div className="age-form">
+                  <Linha titulo="Recuperação ligada" ajuda="Desligada, o agente responde sem consultar a base.">
+                    <Interruptor ligado={f.conhAtivo} rotulo="Recuperação de conhecimento ligada" desligado={travado} onChange={(v) => set({ conhAtivo: v })} />
+                  </Linha>
+                  {f.conhAtivo ? (
+                    <>
+                      <div>
+                        <span className="agn-rotulo age-rot">Categorias consultadas ({f.conhCategorias.length ? f.conhCategorias.length : "todas"})</span>
+                        <div className="age-chips" style={{ marginTop: 8 }}>
+                          {categoriasConhecidas.length === 0 ? <span className="age-chips-vazio">Nenhuma fonte tem categoria ainda. Sem seleção, o agente consulta todas as fontes aprovadas.</span> : null}
+                          {categoriasConhecidas.map((c) => {
+                            const on = f.conhCategorias.includes(c);
+                            return <button key={c} type="button" className="age-chip age-chip-botao" aria-pressed={on} disabled={travado}
+                              onClick={() => set({ conhCategorias: on ? f.conhCategorias.filter((x) => x !== c) : [...f.conhCategorias, c] })}>{c}</button>;
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                ))}
-              </Secao>
-              <Secao titulo="Teto de permissões" ajuda="Mesmo com a ação ligada, o agente só altera dados dentro destas permissões. Sem nenhuma, fica só na leitura.">
-                {permissoes.length ? (
-                  <div className="age-chips">{permissoes.map((p) => <span key={p} className="age-chip age-chip-mono">{p}</span>)}</div>
-                ) : (
-                  <p className="age-texto-fraco">Esta versão não tem permissões delegadas: ações que alteram dados são recusadas pelo runtime.</p>
-                )}
+                      </div>
+                      <div style={{ maxWidth: 260 }}><Num rotulo="Máximo de trechos" valor={f.maxTrechos} min={1} max={8} desligado={travado} onChange={(n) => set({ maxTrechos: n })} ajuda="Trechos por consulta. 1 a 8." /></div>
+                    </>
+                  ) : null}
+                </div>
               </Secao>
             </>
           ) : null}
 
+          {/* ── C. Conhecimento ── */}
           {aba === "conhecimento" ? (
-            <Conhecimento dados={dados} form={f} set={set} travado={travado} onMudou={() => router.refresh()} />
+            <Conhecimento dados={dados} form={f} set={set} travado={travado} apoio={apoio} onMudou={() => router.refresh()} />
           ) : null}
 
-          {aba === "gatilhos" ? (
+          {/* ── D. Ferramentas ── */}
+          {aba === "ferramentas" ? (
+            <AbaFerramentas tools={f.tools} onToggle={alternarFerramenta} travado={travado} ferramentasLegadas={ferramentasLegadas} permissoes={permissoes} />
+          ) : null}
+
+          {/* ── E. Autonomia ── */}
+          {aba === "autonomia" ? (
             <>
-              <Secao titulo="Quando ele entra" ajuda="Em produção, o agente publicado só é acionado pelos eventos marcados.">
-                <div className="age-eventos">
-                  {AGENT_EVENT_CATALOG.map((ev) => {
-                    const on = f.events.includes(ev.id);
-                    return (
-                      <button key={ev.id} type="button" className="age-evento" aria-pressed={on} disabled={travado}
-                        onClick={() => set({ events: on ? f.events.filter((x) => x !== ev.id) : [...f.events, ev.id] })}>
-                        <span className="age-check">{on ? <Check size={11} strokeWidth={3} /> : null}</span>
-                        <span><strong>{ev.nome}</strong><span>{ev.descricao}</span></span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="age-form" style={{ marginTop: 14, maxWidth: 260 }}>
-                  <label>Prioridade<input type="number" min={0} max={10000} value={f.prioridade} disabled={travado} onChange={(e) => set({ prioridade: Math.min(10000, Math.max(0, Number(e.target.value) || 0)) })} /></label>
-                  <span className="age-texto-fraco">Dois agentes publicados no mesmo evento: vence o de maior prioridade.</span>
+              <Secao titulo="Modo geral" ajuda="Até onde o agente vai sozinho, quando a classe de ação não tem regra própria. Vale para a versão publicada; o Playground e a simulação nunca enviam.">
+                <div className="age-modos" role="radiogroup" aria-label="Modo geral de autonomia">
+                  {MODOS.map((m) => (
+                    <button key={m.id} type="button" role="radio" aria-checked={f.modo === m.id} className="age-modo" disabled={travado} onClick={() => set({ modo: m.id })}>
+                      <span className="age-modo-topo"><i />{m.nome}</span>
+                      <span>{m.texto}</span>
+                    </button>
+                  ))}
                 </div>
               </Secao>
-              <Secao titulo="Handoff para humano" ajuda="Quando o agente para e chama a equipe."
+
+              <Secao titulo="Autonomia por classe de ação" ajuda="Cada classe tem o seu botão, independente das outras. Exemplo: responder sozinho, mas pedir aprovação para mover oportunidade. Autonomia nunca concede permissão: o teto de RBAC continua valendo.">
+                <div className="age-classes">
+                  {CLASSES_AUTONOMIA.map((c) => (
+                    <div key={c.id} className="age-classe">
+                      <div><strong>{c.rotulo}</strong><span>{c.ajuda}{c.id === "leitura" ? " Leitura nunca é bloqueada." : ""}</span></div>
+                      <select value={f.porAcao[c.id]} disabled={travado} aria-label={`Autonomia: ${c.rotulo}`} onChange={(e) => set({ porAcao: { ...f.porAcao, [c.id]: e.target.value as Modo | "" } })}>
+                        <option value="">Segue o modo geral ({NOME_MODO[f.modo]})</option>
+                        {MODOS.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </Secao>
+
+              <Secao titulo="Horário e limites" ajuda="Travas por conversa. O agente respeita estes limites mesmo no modo autônomo.">
+                <div className="age-form">
+                  <Linha titulo="Só iniciar contato em horário comercial" ajuda="Vale para primeiro contato e retomadas. Fuso de São Paulo.">
+                    <Interruptor ligado={f.horarioAtivo} rotulo="Limitar ao horário comercial" desligado={travado} onChange={(v) => set({ horarioAtivo: v })} />
+                  </Linha>
+                  {f.horarioAtivo ? (
+                    <>
+                      <div className="age-dias" role="group" aria-label="Dias da semana">
+                        {DIAS.map((d, i) => {
+                          const on = f.dias.includes(i);
+                          return <button key={d} type="button" className="age-chip age-chip-botao" aria-pressed={on} disabled={travado}
+                            onClick={() => set({ dias: on ? f.dias.filter((x) => x !== i) : [...f.dias, i].sort() })}>{d}</button>;
+                        })}
+                      </div>
+                      <div className="agn-duas">
+                        <label>Início<input type="time" value={f.inicio} disabled={travado} onChange={(e) => set({ inicio: e.target.value })} /></label>
+                        <label>Fim<input type="time" value={f.fim} disabled={travado} onChange={(e) => set({ fim: e.target.value })} /></label>
+                      </div>
+                      {f.dias.length === 0 ? <p className="age-alerta-linha"><CircleAlert size={13} /> Escolha pelo menos um dia.</p> : null}
+                    </>
+                  ) : null}
+                  <Linha titulo="Responder fora do horário" ajuda="Quando o contato escreve primeiro, o agente responde mesmo fora da janela.">
+                    <Interruptor ligado={f.responderFora} rotulo="Responder fora do horário" desligado={travado} onChange={(v) => set({ responderFora: v })} />
+                  </Linha>
+                  <div className="age-tres">
+                    <Num rotulo="Mensagens por hora" valor={f.porHora} min={1} max={60} desligado={travado} onChange={(n) => set({ porHora: n })} ajuda="Por conversa. 1 a 60." />
+                    <Num rotulo="Mensagens por dia" valor={f.porDia} min={1} max={500} desligado={travado} onChange={(n) => set({ porDia: n })} ajuda="Por conversa. 1 a 500." />
+                    <Num rotulo="Sem retorno" valor={f.semRetorno} min={0} max={20} desligado={travado} onChange={(n) => set({ semRetorno: n })} ajuda="Mensagens seguidas sem resposta antes de parar. 0 a 20." />
+                  </div>
+                </div>
+              </Secao>
+
+              <Secao titulo="Follow-up inteligente" ajuda="Retomadas que o próprio agente agenda quando o contato pede retorno (&ldquo;me chama quinta&rdquo;). No horário, ele relê o contexto e decide a mensagem. Não é cadência: não há sequência de passos.">
+                <div className="age-tres">
+                  <Num rotulo="Máximo de retomadas" valor={f.maxRetomadas} min={0} max={20} desligado={travado} onChange={(n) => set({ maxRetomadas: n })} ajuda="Por conversa, dentro da janela. 0 a 20." />
+                  <Num rotulo="Janela em dias" valor={f.janelaDias} min={1} max={180} desligado={travado} onChange={(n) => set({ janelaDias: n })} ajuda="Período em que as retomadas são contadas. 1 a 180." />
+                  <Num rotulo="Horizonte máximo (dias)" valor={f.maxDiasRetomada} min={1} max={365} desligado={travado} onChange={(n) => set({ maxDiasRetomada: n })} ajuda="Quão longe uma retomada pode ser marcada. 1 a 365." />
+                </div>
+              </Secao>
+
+              <Secao titulo="Agenda" ajuda="Como o agente confirma horários de reunião.">
+                <Linha titulo="Exigir Outlook conectado" ajuda="Só oferece e confirma horário quando a agenda da closer pôde ser verificada no Outlook. Desligado, vale só a agenda do CRM.">
+                  <Interruptor ligado={f.exigirOutlook} rotulo="Exigir Outlook" desligado={travado} onChange={(v) => set({ exigirOutlook: v })} />
+                </Linha>
+              </Secao>
+            </>
+          ) : null}
+
+          {/* ── F. Canais ── */}
+          {aba === "canais" ? (
+            <>
+              <Secao titulo="WhatsApp" ajuda="Por onde o agente pode falar com o contato.">
+                <div className="age-form">
+                  <Linha titulo="WhatsApp ligado" ajuda="Desligado, o agente continua analisando e preparando, mas nenhuma execução real responde por WhatsApp.">
+                    <Interruptor ligado={f.canalWhats} rotulo="WhatsApp ligado" desligado={travado} onChange={(v) => set({ canalWhats: v })} />
+                  </Linha>
+                  <div className="age-aviso-canal" role="note">
+                    <CircleAlert size={14} />
+                    <span><strong>Uma conexão existente não pertence ao agente.</strong> O número continua sendo da organização (ou da pessoa dona). Autorizar aqui só permite que este agente atenda por ele; desconectar ou trocar o número é feito em Ajustes → WhatsApp e afeta o agente na hora.</span>
+                  </div>
+                  {f.canalWhats ? (
+                    <div>
+                      <span className="agn-rotulo age-rot">Números autorizados ({f.sessoes.length || (trabalho.channelSessionId ? 1 : 0)})</span>
+                      {apoio.carregando ? <Aviso><Loader2 size={13} className="age-gira" /> Carregando números…</Aviso> : null}
+                      {apoio.erro ? <Aviso tom="alerta">Não foi possível carregar os números: {apoio.erro}</Aviso> : null}
+                      {apoio.dados && apoio.dados.sessoes.length === 0 ? <div className="age-vazio"><strong>Nenhum número de WhatsApp conectado nesta organização</strong><span>Conecte um em Ajustes → WhatsApp para autorizar o agente.</span></div> : null}
+                      {apoio.dados && apoio.dados.sessoes.length ? (
+                        <ul className="age-numeros">
+                          {apoio.dados.sessoes.map((s) => {
+                            const fixo = trabalho.channelSessionId === s.id;
+                            const on = fixo || f.sessoes.includes(s.id);
+                            return (
+                              <li key={s.id}>
+                                <label>
+                                  <input type="checkbox" checked={on} disabled={travado || fixo} onChange={(e) => set({ sessoes: e.target.checked ? [...f.sessoes, s.id] : f.sessoes.filter((x) => x !== s.id) })} />
+                                  <span><strong>{s.nome}</strong><small>{s.telefone ?? "sem telefone"}{s.finalidade ? ` · ${s.finalidade}` : ""}{fixo ? " · número fixo desta versão" : ""}</small></span>
+                                </label>
+                                <span className="agn-selo" data-tom={s.status === "connected" ? "ok" : "alerta"}><i />{s.status === "connected" ? "Conectado" : s.status ?? "Desconectado"}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                      {apoio.dados && f.sessoes.length === 0 && !trabalho.channelSessionId ? <p className="age-texto-fraco" style={{ marginTop: 8 }}>Sem número autorizado, o agente só responde pelo número da própria conversa, quando a política de canal permitir.</p> : null}
+                    </div>
+                  ) : null}
+                </div>
+              </Secao>
+              <Secao titulo="Telefonia" ajuda="Ligação por voz feita pelo agente.">
+                <div className="age-vazio"><span className="agn-selo" data-tom="alerta"><i />Indisponível</span><span>Este ambiente não tem conector de telefonia para agentes. A voz com IA da Callface é o Callpilot, que é outro módulo; o agente de texto não liga.</span></div>
+              </Secao>
+            </>
+          ) : null}
+
+          {/* ── G. Gatilhos e atribuição ── */}
+          {aba === "gatilhos" ? (
+            <AbaGatilhos agenteId={agente.id} events={f.events} onToggleEvento={(id) => set({ events: f.events.includes(id) ? f.events.filter((x) => x !== id) : [...f.events, id] })}
+              prioridade={f.prioridade} onPrioridade={(n) => set({ prioridade: n })} travado={travado} />
+          ) : null}
+
+          {/* ── H. Handoff ── */}
+          {aba === "handoff" ? (
+            <>
+              <Secao titulo="Quando transferir" ajuda="O agente para e chama uma pessoa nestas situações. Entram no prompt e valem também antes do modelo, para pedido de humano e assunto sensível."
                 direita={<Interruptor ligado={f.handoffEnabled} rotulo="Handoff ligado" desligado={travado} onChange={(v) => set({ handoffEnabled: v })} />}>
-                {f.handoffEnabled ? (
-                  <ListaEditavel titulo="Expressões do contato" ajuda="Entram no prompt como gatilho de transferência." travado={travado}
-                    itens={f.handoffKeywords} onChange={(v) => set({ handoffKeywords: v })} exemplo="Ex.: quero falar com uma pessoa" />
-                ) : <p className="age-texto-fraco">Desligado: as expressões não entram no prompt. As regras de Transferir para humano do escopo continuam valendo.</p>}
+                <div className="age-listas age-listas-2">
+                  <ListaEditavel titulo="Transferir para humano quando" ajuda="Situações descritas em palavras." tom="humano" travado={travado}
+                    itens={f.escopo.transferirQuando} onChange={(v) => set({ escopo: { ...f.escopo, transferirQuando: v } })} exemplo="Ex.: pedir desconto ou condição especial" />
+                  {f.handoffEnabled ? (
+                    <ListaEditavel titulo="Expressões do contato" ajuda="Frases que disparam a transferência." travado={travado}
+                      itens={f.handoffKeywords} onChange={(v) => set({ handoffKeywords: v })} exemplo="Ex.: quero falar com uma pessoa" />
+                  ) : <p className="age-texto-fraco">Handoff desligado: as expressões não entram no prompt. As situações da lista ao lado continuam valendo.</p>}
+                </div>
                 {!temHandoffTool ? (
-                  <p className="age-alerta-linha"><CircleAlert size={13} /> A ação Solicitar atendimento humano está desligada.
-                    {!travado ? <button type="button" onClick={() => set({ tools: [...f.tools, "handoff.request"] })}>Ligar</button> : null}</p>
+                  <p className="age-alerta-linha"><CircleAlert size={13} /> A ferramenta Solicitar atendimento humano está desligada: sem ela o agente não consegue transferir.
+                    {!travado ? <button type="button" onClick={() => alternarFerramenta("handoff.request", true)}>Ligar</button> : null}</p>
                 ) : null}
               </Secao>
-            </>
-          ) : null}
 
-          {aba === "desempenho" ? (
-            <>
-              <section className="agn-hero age-hero" aria-label="Desempenho nos últimos 30 dias">
-                <span className="agn-hero-brilho" />
-                <div>
-                  <span className="agn-rotulo">Execuções · 30 dias</span>
-                  <span className="agn-numero">{num(d.total)}</span>
-                  <span className="agn-sub">{d.total === 0 ? "Nenhuma execução ainda. Testes no Playground e respostas em produção aparecem aqui." : `${num(d.producao)} em produção · ${num(d.teste)} em teste`}</span>
-                </div>
-                <div className="agn-grafico">
-                  <div className="agn-barras" role="img" aria-label={`${d.total} execuções nos últimos 30 dias`}>
-                    {d.serie.map((s) => (
-                      <span key={s.dia} className="agn-barra" data-vazio={s.total === 0 ? "true" : undefined} style={{ height: `${Math.max(4, (s.total / maxDia) * 100)}%` }}
-                        title={`${new Date(`${s.dia}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}: ${s.total} execuções${s.falhas ? `, ${s.falhas} com falha` : ""}`} />
-                    ))}
+              <Secao titulo="Para quem e com que prioridade" ajuda="Quem recebe: a pessoa responsável pelo lead (pela regra de roteamento ou delegação) e o supervisor definido em Identidade, que é avisado.">
+                <div className="age-form">
+                  <div style={{ maxWidth: 280 }}>
+                    <label>Prioridade do handoff
+                      <select value={f.prioridadeHandoff} onChange={(e) => set({ prioridadeHandoff: e.target.value })} disabled={travado}>
+                        {PRIORIDADES.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                      </select>
+                    </label>
                   </div>
-                  <div className="agn-eixo"><span>{new Date(`${d.serie[0].dia}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span><span>hoje</span></div>
+                  <p className="age-texto-fraco">Supervisor atual: {f.supervisor ? apoio.dados?.pessoas.find((p) => p.id === f.supervisor)?.nome ?? "pessoa definida" : "ninguém definido"}. Urgente também sobe a severidade do alerta.</p>
                 </div>
-                <div className="agn-kpis">
-                  <div className="agn-kpi"><span>Concluídas</span><strong>{num(d.concluidas)}</strong></div>
-                  <div className="agn-kpi"><span>Passou para humano</span><strong>{num(d.humano)}</strong></div>
-                  <div className="agn-kpi" data-alerta={d.falhas ? "true" : undefined}><span>Falhas</span><strong>{num(d.falhas)}</strong></div>
-                  <div className="agn-kpi"><span>Tempo médio</span><strong>{d.latenciaMediaMs == null ? "—" : `${(d.latenciaMediaMs / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s`}</strong></div>
-                  <div className="agn-kpi"><span>Tokens</span><strong>{num(d.tokens)}</strong></div>
-                  <div className="agn-kpi"><span>Custo estimado</span><strong>{d.custo ? `US$ ${d.custo.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}` : "—"}</strong></div>
+              </Secao>
+
+              <Secao titulo="Transição" ajuda="O que acontece na hora de passar e depois dela.">
+                <div className="age-form">
+                  <label>Mensagem de transição<textarea value={f.mensagemTransicao} onChange={(e) => set({ mensagemTransicao: e.target.value })} rows={3} maxLength={600} disabled={travado}
+                    placeholder="Ex.: Vou passar você para uma pessoa do nosso time, que já recebe todo o histórico desta conversa." /></label>
+                  <Linha titulo="Resumo obrigatório" ajuda="Sem resumo claro do que foi conversado, a transferência é recusada: quem assume não pode receber um atendimento sem contexto.">
+                    <Interruptor ligado={f.resumoObrigatorio} rotulo="Resumo obrigatório" desligado={travado} onChange={(v) => set({ resumoObrigatorio: v })} />
+                  </Linha>
+                  <Linha titulo="Continua como copiloto interno" ajuda="Depois de passar, o agente segue ajudando a pessoa com sugestões e resumo, sem enviar nada ao contato.">
+                    <Interruptor ligado={f.copilotoApos} rotulo="Continua como copiloto interno" desligado={travado} onChange={(v) => set({ copilotoApos: v })} />
+                  </Linha>
+                  <label>Regra de retomada
+                    <select value={f.retomada} onChange={(e) => set({ retomada: e.target.value })} disabled={travado}>
+                      <option value="somente_humano">Só uma pessoa devolve o atendimento ao agente</option>
+                      <option value="automatica" disabled>Automática (ainda não disponível)</option>
+                      {f.retomada !== "somente_humano" && f.retomada !== "automatica" ? <option value={f.retomada}>{f.retomada}</option> : null}
+                    </select>
+                    <small className="age-ajuda">Hoje, depois do handoff o agente só volta a conduzir quando alguém usa Retomar no Atendimento.</small>
+                  </label>
                 </div>
-              </section>
-
-              <Casos casos={dados.casosAbertos} podeUsar={podeUsar} onMudou={() => router.refresh()} />
-
-              <Secao titulo="Execuções recentes" ajuda="Clique para ver os passos: chamadas ao modelo, ferramentas e o que foi bloqueado.">
-                {dados.execucoes.length === 0 ? (
-                  <div className="age-vazio"><strong>Nenhuma execução registrada</strong><span>Mande uma mensagem no Playground para ver a primeira.</span></div>
-                ) : <div className="age-execs">{dados.execucoes.map((e) => <LinhaExecucao key={e.id} e={e} />)}</div>}
               </Secao>
             </>
           ) : null}
 
-          {aba === "historico" ? (
-            <Secao titulo="Versões" ajuda="Publicar cria um marco; a anterior fica guardada. Carregar uma versão antiga põe o conteúdo dela no editor para virar o próximo rascunho.">
-              <ol className="age-versoes">
-                {versoes.map((v) => (
-                  <li key={v.id} data-atual={v.id === trabalho.id ? "true" : undefined}>
-                    <span className="age-versao-num">v{v.versao}</span>
-                    <div>
-                      <strong>
-                        <span className="agn-selo" data-tom={v.status === "published" ? "ok" : undefined}><i />{STATUS_VERSAO[v.status] ?? v.status}</span>
-                        {v.id === trabalho.id ? <em>em edição</em> : null}
-                      </strong>
-                      <span>{v.provider ? NOME_PROVEDOR[v.provider] ?? v.provider : "sem provedor"} · {v.modelo ?? "sem modelo"} · {v.tools.length} ações · {MODOS.find((m) => m.id === (v.guardrailConfig.autonomy ?? v.guardrailConfig.autonomia))?.nome ?? "Copiloto"}</span>
-                      <span>Criada {quando(v.createdAt)}{v.publishedAt ? ` · publicada ${quando(v.publishedAt)}` : ""}</span>
-                    </div>
-                    {v.id !== trabalho.id && !travado ? (
-                      <button type="button" className="agn-secundario" onClick={() => {
-                        setForm({ ...formDe(agente, v), nome: f.nome, descricao: f.descricao, finalidade: f.finalidade, prioridade: f.prioridade });
-                        setAba("identidade");
-                        toast.success(`Conteúdo da v${v.versao} carregado. Salve para virar o rascunho.`);
-                      }}><RotateCcw size={13} /> Carregar no editor</button>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            </Secao>
+          {/* ── I. Testes e versões ── */}
+          {aba === "testes" ? (
+            <AbaTestes agenteId={agente.id} versoes={versoes} trabalho={trabalho} rascunho={rascunho} publicada={publicada} podeUsar={podeUsar} podeConfigurar={podeConfigurar}
+              sujo={sujo} salvar={() => salvar(true)} publicar={publicar} publicando={publicando} faltas={faltas} credencialOk={credencialOk}
+              onCarregar={(v) => {
+                setForm({ ...formDe(agente, v), nome: f.nome, descricao: f.descricao, finalidade: f.finalidade, prioridade: f.prioridade });
+                setAba("identidade");
+                toast.success(`Conteúdo da v${v.versao} carregado. Salve para virar o rascunho.`);
+              }} />
+          ) : null}
+
+          {/* ── Execuções ── */}
+          {aba === "execucoes" ? (
+            <>
+              <Casos casos={dados.casosAbertos} podeUsar={podeUsar} onMudou={() => router.refresh()} />
+              <AbaExecucoes agenteId={agente.id} />
+            </>
           ) : null}
         </div>
 
@@ -758,17 +840,34 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
 
 /* ── Conhecimento ─────────────────────────────────────────────────── */
 
-function Conhecimento({ dados, form, set, travado, onMudou }: {
-  dados: DadosEditorAgente; form: Form; set: (p: Partial<Form>) => void; travado: boolean; onMudou: () => void;
+const GOVERNANCA = [
+  { id: "aprovado", nome: "Aprovado", texto: "Vale como verdade comercial. É o único que o agente consulta." },
+  { id: "rascunho", nome: "Rascunho", texto: "Em revisão. Não entra na resposta." },
+  { id: "historico", nome: "Histórico", texto: "Guardado, desatualizado. Não entra na resposta." },
+] as const;
+
+function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
+  dados: DadosEditorAgente; form: Form; set: (p: Partial<Form>) => void; travado: boolean; apoio: ReturnType<typeof useApi<Apoio>>; onMudou: () => void;
 }) {
   const [nome, setNome] = React.useState("");
   const [conteudo, setConteudo] = React.useState("");
   const [memoria, setMemoria] = React.useState<string | null>(null);
   const [enviando, setEnviando] = React.useState(false);
+  const [ocupada, setOcupada] = React.useState<string | null>(null);
   const busca = form.tools.includes("knowledge.search");
   const memoriaOn = form.tools.includes("memory.read");
-  const alternar = (id: string, v: boolean) => set({ tools: v ? [...form.tools, id] : form.tools.filter((x) => x !== id) });
+  const alternar = (id: string, v: boolean) => set({ tools: v ? [...new Set([...form.tools, id])] : form.tools.filter((x) => x !== id) });
   const STATUS: Record<string, string> = { ready: "Indexada", indexing: "Indexando", pending: "Sem conteúdo", failed: "Falhou", archived: "Arquivada" };
+  const tipoDe = new Map(dados.conhecimento.map((k) => [k.id, k.tipo]));
+  const fontes = apoio.dados?.fontes ?? [];
+  const aprovadas = fontes.filter((s) => s.governanca === "aprovado" && s.status === "ready").length;
+
+  async function governar(id: string, corpo: { governanca?: string; categoria?: string | null }, ok: string) {
+    setOcupada(id);
+    try { await api(`/api/automacoes/agentes-op/conhecimento/${id}`, { method: "PATCH", body: JSON.stringify(corpo) }); toast.success(ok); apoio.recarregar(); }
+    catch (err) { toast.error(err instanceof Error ? err.message : "Não foi possível atualizar a fonte."); }
+    finally { setOcupada(null); }
+  }
 
   async function adicionar(e: React.FormEvent) {
     e.preventDefault();
@@ -776,8 +875,8 @@ function Conhecimento({ dados, form, set, travado, onMudou }: {
     setEnviando(true);
     try {
       await api("/api/automacoes/ai/knowledge", { method: "POST", body: JSON.stringify({ nome: nome.trim(), sourceType: "text", content: conteudo.trim() }) });
-      toast.success("Fonte indexada. Agentes com Buscar conhecimento já consultam.");
-      setNome(""); setConteudo(""); onMudou();
+      toast.success("Fonte indexada. Confira a governança: só aprovado vale para o agente.");
+      setNome(""); setConteudo(""); apoio.recarregar(); onMudou();
     } catch (err) { toast.error(err instanceof Error ? err.message : "Não foi possível adicionar a fonte."); }
     finally { setEnviando(false); }
   }
@@ -795,21 +894,39 @@ function Conhecimento({ dados, form, set, travado, onMudou }: {
 
   return (
     <>
-      <Secao titulo="Base de conhecimento" ajuda="Fontes da organização, compartilhadas por todos os agentes que têm Buscar conhecimento ligado."
+      <Secao titulo="Fontes e governança" ajuda="Fontes da organização, compartilhadas por todos os agentes que têm Buscar conhecimento ligado. Só conhecimento aprovado vale: rascunho e histórico ficam guardados, mas nunca entram na resposta."
         direita={<label className="age-liga">Este agente consulta<Interruptor ligado={busca} rotulo="Buscar conhecimento" desligado={travado} onChange={(v) => alternar("knowledge.search", v)} /></label>}>
-        {dados.conhecimento.length === 0 ? (
-          <div className="age-vazio"><strong>Nenhuma fonte ainda</strong><span>Cole abaixo um texto de referência (preços públicos, FAQ, políticas). Ele é dividido em trechos e fica disponível na hora.</span></div>
-        ) : (
-          <ul className="age-fontes">
-            {dados.conhecimento.map((k) => (
-              <li key={k.id}>
-                <strong>{k.nome}</strong>
-                <span>{k.tipo === "text" ? "Texto" : k.tipo === "url" ? "Link" : k.tipo === "faq" ? "FAQ" : "Arquivo"}{k.indexadoEm ? ` · ${quando(k.indexadoEm)}` : ""}</span>
-                <span className="agn-selo" data-tom={k.status === "ready" ? "ok" : k.status === "failed" ? "alerta" : undefined}><i />{STATUS[k.status] ?? k.status}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        {apoio.carregando ? <Aviso><Loader2 size={13} className="age-gira" /> Carregando fontes…</Aviso> : null}
+        {apoio.erro ? <Aviso tom="alerta">Não foi possível carregar as fontes: {apoio.erro}</Aviso> : null}
+        {apoio.dados && fontes.length === 0 ? (
+          <div className="age-vazio"><strong>Nenhuma fonte ainda</strong><span>Cole abaixo um texto de referência (preços públicos, FAQ, políticas). Ele é dividido em trechos e fica disponível na hora, depois de aprovado.</span></div>
+        ) : null}
+        {apoio.dados && fontes.length ? (
+          <>
+            <p className="age-texto-fraco" style={{ marginBottom: 10 }}><strong>{aprovadas} de {fontes.length}</strong> fontes valem para o agente agora (aprovadas e indexadas).</p>
+            <ul className="age-fontes age-fontes-gov">
+              {fontes.map((k) => (
+                <li key={k.id} data-gov={k.governanca}>
+                  <div className="age-fonte-nome">
+                    <strong>{k.nome}</strong>
+                    <span>{tipoDe.get(k.id) === "url" ? "Link" : tipoDe.get(k.id) === "faq" ? "FAQ" : tipoDe.get(k.id) === "text" ? "Texto" : "Fonte"}{k.indexadoEm ? ` · ${quando(k.indexadoEm)}` : ""}</span>
+                  </div>
+                  <span className="agn-selo" data-tom={k.status === "ready" ? "ok" : k.status === "failed" ? "alerta" : undefined}><i />{STATUS[k.status] ?? k.status}</span>
+                  <label className="age-fonte-cat">Categoria
+                    <input defaultValue={k.categoria ?? ""} disabled={travado || ocupada === k.id} maxLength={40} placeholder="Sem categoria" aria-label={`Categoria de ${k.nome}`}
+                      onBlur={(e) => { const v = e.target.value.trim(); if (v !== (k.categoria ?? "")) void governar(k.id, { categoria: v || null }, "Categoria atualizada."); }} />
+                  </label>
+                  <label className="age-fonte-gov">Governança
+                    <select value={k.governanca} disabled={travado || ocupada === k.id} aria-label={`Governança de ${k.nome}`}
+                      onChange={(e) => void governar(k.id, { governanca: e.target.value }, `Fonte marcada como ${GOVERNANCA.find((g) => g.id === e.target.value)?.nome.toLowerCase()}.`)}>
+                      {GOVERNANCA.map((g) => <option key={g.id} value={g.id}>{g.nome}</option>)}
+                    </select>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
         {!travado ? (
           <form className="age-form age-nova-fonte" onSubmit={adicionar}>
             <label>Nome da fonte<input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Tabela de planos 2026" maxLength={120} /></label>
@@ -819,7 +936,7 @@ function Conhecimento({ dados, form, set, travado, onMudou }: {
         ) : null}
       </Secao>
 
-      <Secao titulo="Memória da organização" ajuda="Documento curto com fatos que valem para toda conversa. Versionado: cada salvar publica uma nova versão."
+      <Secao titulo="Memória da organização" ajuda="Documento curto com fatos que valem para toda conversa. Versionado: cada salvar publica uma nova versão. A memória de cada contato (o que ele já disse) é outra, por contato."
         direita={<label className="age-liga">Este agente lê<Interruptor ligado={memoriaOn} rotulo="Consultar memória" desligado={travado} onChange={(v) => alternar("memory.read", v)} /></label>}>
         {memoria != null ? (
           <div className="age-form">
@@ -861,7 +978,7 @@ function Casos({ casos, podeUsar, onMudou }: { casos: DadosEditorAgente["casosAb
     finally { setOcupado(null); }
   }
   return (
-    <Secao titulo="Aguardando a equipe" ajuda="Ações que o agente preparou no modo Com aprovação, ou dúvidas que ele abriu como caso.">
+    <Secao titulo="Aguardando a equipe" ajuda="Ações que o agente preparou no modo Sob aprovação, ou dúvidas que ele abriu como caso.">
       <ul className="age-casos">
         {casos.map((c) => (
           <li key={c.id}>
@@ -884,4 +1001,3 @@ function Casos({ casos, podeUsar, onMudou }: { casos: DadosEditorAgente["casosAb
     </Secao>
   );
 }
-
