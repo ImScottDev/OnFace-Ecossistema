@@ -570,7 +570,13 @@ class ClienteLigada extends ClienteLiga {
          cliente amanhã entrega uma sessão morta. */
       portal: () => {
         if (!cus) return avisa("Esta conta não tem cliente Stripe vinculado.");
-        linkDoPortal().then((url) => { if (url) copiar(url, "Link do portal (expira em minutos)"); });
+        linkDoPortal().then((url) => {
+          if (!url) return;
+          navigator.clipboard.writeText(url).then(
+            () => toast("Link direto do portal copiado — uso imediato", { description: "Vale poucos minutos e abre uma vez. Mande ao cliente agora; amanhã ele não abre." }),
+            () => toast.error("Não deu para copiar"),
+          );
+        });
       },
       fatos: [
         { l: "Método", v: "—" },

@@ -8,7 +8,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { checkouts } from "@/lib/db/schema";
 import { registrarEvento } from "@/lib/vendas/eventos";
-import { destinatariosDaConta, inserirNotificacaoUmaVez, leadDoCustomer } from "./stripe-webhook-handlers";
+import { avisarCancelamentoSemCliente, destinatariosDaConta, inserirNotificacaoUmaVez, leadDoCustomer } from "./stripe-webhook-handlers";
 import { estadoDoRecebivel, estadoPorEvento, type FatoFinanceiro, type PagamentoDoEvento } from "./stripe-financeiro";
 import { planoDeCadastro, type MudancaDoCliente } from "./stripe-portal-retorno";
 
@@ -164,7 +164,13 @@ export async function recalcularRecebiveis(organizacaoId: string): Promise<strin
 /** Aviso interno (responsável da conta, ou admins), sem repetir a mesma mensagem. */
 export async function avisarEquipe(a: { organizacaoId: string; customerId: string | null; tipo: string; titulo: string; mensagem: string }): Promise<string> {
   const lead = a.customerId ? await leadDoCustomer(a.customerId) : null;
-  if (!lead || lead.organizacaoId !== a.organizacaoId) return "customer sem lead no CRM — sem aviso";
+  if (!lead || lead.organizacaoId !== a.organizacaoId) {
+    // Cancelamento não pode sumir em silêncio: sem cliente associado, os admins recebem o aviso dizendo isso.
+    if (a.tipo === "cancelamento_agendado") {
+      return avisarCancelamentoSemCliente({ customerId: a.customerId, agendado: true, detalhe: a.mensagem });
+    }
+    return "customer sem lead no CRM — sem aviso";
+  }
   const quem = lead.empresa || lead.nome || "cliente";
   const dest = await destinatariosDaConta(lead.responsavelId);
   for (const usuarioId of dest) {

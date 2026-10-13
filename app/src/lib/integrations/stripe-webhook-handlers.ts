@@ -532,6 +532,48 @@ export async function destinatariosDaConta(responsavelId: string | null): Promis
   return admins.map((a) => a.id);
 }
 
+/**
+ * Cancelamento (agendado ou efetivado) de um Customer que o CRM NÃO consegue associar a cliente
+ * (sem lead com esse `stripe_customer_id`) — típico de assinatura contratada pelo site (SaaS Callface)
+ * e cancelada no portal. Silêncio aqui é perder cliente sem ninguém saber: avisa os admins com o que
+ * se tem (Customer, e-mail, valor, data) e diz claramente que não está ligado a nenhuma empresa.
+ */
+export async function avisarCancelamentoSemCliente(
+  a: { customerId: string | null; subscription?: Record<string, unknown>; agendado: boolean; detalhe?: string },
+): Promise<string> {
+  const sub = a.subscription;
+  let email: string | null = null;
+  if (a.customerId) {
+    try {
+      const { stripe } = await import("./stripe-assinatura");
+      email = (await stripe<{ email?: string | null }>(`customers/${encodeURIComponent(a.customerId)}`)).email ?? null;
+    } catch { /* sem e-mail a mensagem ainda sai com o id */ }
+  }
+  type Item = { quantity?: number; price?: { unit_amount?: number | null }; current_period_end?: number };
+  const itens = ((sub?.items as { data?: Item[] } | undefined)?.data ?? []);
+  const centavos = itens.reduce((t, i) => t + (i.price?.unit_amount ?? 0) * (i.quantity ?? 1), 0);
+  const ate = (sub?.cancel_at as number | null | undefined) ?? (sub?.current_period_end as number | undefined) ?? itens[0]?.current_period_end;
+  const partes = [
+    `Cancelamento de assinatura que o CRM não consegue associar a cliente: o Customer ${a.customerId ?? "(desconhecido)"} não está ligado a nenhuma empresa ou contato.`,
+    email ? `E-mail no Stripe: ${email}.` : null,
+    centavos ? `Valor: R$ ${(centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.` : null,
+    ate ? `${a.agendado ? "Encerra em" : "Encerrada em"} ${new Date(ate * 1000).toLocaleDateString("pt-BR")}.` : null,
+    a.detalhe ?? null,
+    "Procure o cliente pelo e-mail ou pelo Customer no Stripe (provável contratação pelo site).",
+  ].filter(Boolean).join(" ");
+  const dest = await destinatariosDaConta(null);
+  for (const usuarioId of dest) {
+    await inserirNotificacaoUmaVez({
+      usuarioId,
+      tipo: a.agendado ? "cancelamento_agendado" : "cancelamento",
+      titulo: `Cancelamento sem cliente associado${email ? ` — ${email}` : ""}`,
+      mensagem: partes,
+      link: "/clientes",
+    }).catch((e) => console.error("[StripeWebhook] falha ao notificar cancelamento sem cliente:", e));
+  }
+  return `cancelamento do customer ${a.customerId} sem lead no CRM — ${dest.length} admin(s) avisados`;
+}
+
 /** O lead ligado a um customer do Stripe, com o responsável da conta. */
 export async function leadDoCustomer(customerId: string | null) {
   if (!customerId) return null;
@@ -641,7 +683,7 @@ export async function handleSubscriptionCanceled(subscription: Record<string, un
     .filter((x): x is string => typeof x === "string" && x.length > 0)
     .join(" · ");
   const quem = lead?.empresa || lead?.nome || customerId || "cliente";
-  if (!lead) return `cancelamento do customer ${customerId} sem lead no CRM`;
+  if (!lead) return avisarCancelamentoSemCliente({ customerId, subscription, agendado: false, detalhe: motivoStripe ? `Motivo informado: ${motivoStripe}.` : undefined });
 
   const temMotivo = motivoStripe.length > 0;
   for (const usuarioId of await destinatariosDaConta(lead.responsavelId)) {

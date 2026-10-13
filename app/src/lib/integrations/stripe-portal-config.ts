@@ -47,6 +47,14 @@ export const MOTIVOS_CANCELAMENTO = [
 export interface PoliticasPortal {
   privacyUrl?: string | null;
   termsUrl?: string | null;
+  /**
+   * Liga a página de login hospedada do portal (URL permanente: o cliente digita o e-mail e o Stripe
+   * manda o acesso). DESLIGADA por padrão, de propósito: a conta Stripe é COMPARTILHADA com o SaaS
+   * Callface e o Stripe acha o Customer pelo e-mail em toda a conta. Se o mesmo e-mail tem Customer no
+   * ONFACE e no site, não dá para controlar qual dos dois abre — o cliente pode ver a assinatura errada.
+   * Só ligar depois de o Scott conferir a sobreposição de e-mails (`STRIPE_PORTAL_LOGIN_PAGE=1`).
+   */
+  paginaDeLogin?: boolean;
 }
 
 /** Um produto que o cliente pode escolher na troca de plano, com os Prices permitidos. */
@@ -109,8 +117,8 @@ export function corpoDaConfiguracao(politicas: PoliticasPortal = {}, planos: Pla
 
   const corpo: Corpo = {
     features,
-    // Sem página de login hospedada: a sessão sai SEMPRE do servidor, por Customer já resolvido.
-    login_page: { enabled: false },
+    // Sem página de login hospedada por padrão: a sessão sai do servidor, por Customer já resolvido (ver `paginaDeLogin`).
+    login_page: { enabled: politicas.paginaDeLogin === true },
     metadata: { crm_portal: MARCA_CONFIG },
   };
   const bp: Corpo = {};

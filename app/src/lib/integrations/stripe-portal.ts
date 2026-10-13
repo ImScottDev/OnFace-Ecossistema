@@ -67,7 +67,10 @@ export async function stripe<T>(path: string, form?: URLSearchParams, idempotenc
 export { formDaConfiguracao, PortalConfigError } from "./stripe-portal-config";
 
 function politicasDoAmbiente(): PoliticasPortal {
-  return { privacyUrl: process.env.STRIPE_PORTAL_PRIVACY_URL, termsUrl: process.env.STRIPE_PORTAL_TERMS_URL };
+  return {
+    privacyUrl: process.env.STRIPE_PORTAL_PRIVACY_URL, termsUrl: process.env.STRIPE_PORTAL_TERMS_URL,
+    paginaDeLogin: process.env.STRIPE_PORTAL_LOGIN_PAGE === "1",
+  };
 }
 
 /** Memo de processo, com validade: uma mudança feita à mão no Dashboard é percebida em minutos, sem listar a cada clique. */
@@ -199,4 +202,21 @@ export async function abrirPortal(params: {
 
   const sessao = await stripe<{ url: string }>("billing_portal/sessions", form);
   return { url: sessao.url, mocked: false };
+}
+
+/**
+ * Link PERMANENTE de acesso ao portal (página de login do Stripe), com o e-mail já preenchido.
+ * `null` enquanto `STRIPE_PORTAL_LOGIN_PAGE` não for "1" ou a configuração ainda não tiver a página
+ * (ela passa a existir na próxima abertura de portal, que atualiza a configuração). Não autentica
+ * ninguém por si: o Stripe manda o acesso ao e-mail cadastrado no Customer — ver o risco de e-mail
+ * duplicado em `PoliticasPortal.paginaDeLogin`.
+ */
+export async function urlDeAcessoPorEmail(email: string | null | undefined): Promise<string | null> {
+  if (!politicasDoAmbiente().paginaDeLogin || getStripeCheckoutMode() === "mock") return null;
+  const { id } = await configurarPortal();
+  if (!id) return null;
+  const c = await stripe<{ login_page?: { enabled?: boolean; url?: string | null } | null }>(`billing_portal/configurations/${id}`);
+  const url = c.login_page?.enabled ? c.login_page.url : null;
+  if (!url) return null;
+  return email ? `${url}?prefilled_email=${encodeURIComponent(email)}` : url;
 }
