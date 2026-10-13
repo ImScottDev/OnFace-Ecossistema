@@ -286,7 +286,7 @@ test("Teste B: pedido de retorno vira compromisso do agente; no horário o conte
     () => ({ tools: [{ name: "message_prepare", input: { messages: ["Combinado, Rafael! Te chamo quinta de manhã."] } }] }),
   ];
   const r = await acionarAgente({ organizacaoId: org, agentId: agente.id, contatoId, leadId, evento: EVENTO_MENSAGEM, mensagem: "Estou numa correria, me chama na quinta?", atribuir: { origem: "atendimento", objetivo: "Qualificar" } });
-  assert.equal(r.resultado, "respondeu");
+  assert.equal(r.resultado, "respondeu", `motivo: ${r.motivo}`);
   const [c] = await q<{ id: string; status: string; motivo: string; instrucao: string }>(sql`SELECT id::text, status, motivo, instrucao FROM ai_agent_compromissos WHERE contato_id = ${contatoId}::uuid`);
   assert.equal(c.status, "pendente"); assert.match(c.motivo, /quinta/);
   assert.equal((await enrollments(leadId, contatoId))[0].n, 0, "nenhuma inscrição em cadência");

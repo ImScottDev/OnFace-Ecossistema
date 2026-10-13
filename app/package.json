@@ -18,7 +18,7 @@
     "check:pre-deploy": "tsx --env-file-if-exists=.env src/scripts/checar-pre-deploy.ts",
     "catalogo:sync": "tsx --env-file=.env src/scripts/sincronizar-catalogo-stripe.ts",
     "catalogo:sync:dry": "tsx --env-file=.env src/scripts/sincronizar-catalogo-stripe.ts --dry-run",
-    "test": "node --import tsx --env-file-if-exists=.env --test \"src/**/*.test.ts\"",
+    "test": "node --import tsx --env-file-if-exists=.env --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "test:ai-platform": "node --import tsx --test \"src/lib/ai-platform/**/*.test.ts\" \"src/lib/automations/**/*.test.ts\"",
     "smoke:claude-subscription": "tsx --env-file-if-exists=.env src/scripts/smoke-claude-subscription.ts",
     "ds:check": "node scripts/verificar-design-system.mjs",
