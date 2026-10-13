@@ -11,6 +11,7 @@ import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
 import { CascaProto } from "@/components/onface/proto/CascaProto";
+import { areasEmBreve } from "@/lib/areas-em-breve";
 import { nomesDeAgentesDaOrg } from "@/lib/agentes/nomes-de-agentes";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -161,7 +162,7 @@ export default async function ProdutoLayout({
         <MotionDoProto />
 
         <Cf2SidebarProvider className="contents">
-          <CascaProto naoLidas={naoLidas} usuario={usuario} agentes={agentes}>{children}</CascaProto>
+          <CascaProto naoLidas={naoLidas} usuario={usuario} agentes={agentes} areasEmBreve={areasEmBreve()}>{children}</CascaProto>
         </Cf2SidebarProvider>
       </TooltipProvider>
     </Providers>

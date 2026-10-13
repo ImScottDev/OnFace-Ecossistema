@@ -1,5 +1,6 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import { EmailClient, SendEmailParams, SendEmailResult, RawEmail, EmailContaConfig, FetchEmailsOptions } from "./types";
+import { garantirDestinoPermitido } from "./trava-destino";
 import { decrypt, encrypt } from "./encryption";
 import { dataHoraGraph } from "@/lib/calendario/fuso";
 import { db } from "@/lib/db";
@@ -74,6 +75,7 @@ export class MicrosoftEmailClient implements EmailClient {
   }
 
   async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+    garantirDestinoPermitido(params.to, params.cc, params.bcc);
     await this.ensureValidToken();
     const toRecipients = params.to.split(",").map((e) => ({
       emailAddress: { address: e.trim() },
@@ -364,6 +366,7 @@ export async function createOutlookEvent(params: CriarEventoParams): Promise<Eve
   };
   if (params.corpo) body.body = { contentType: "text", content: params.corpo };
   const convidados = [...new Set([params.attendeeEmail, ...(params.attendeeEmails ?? [])].filter((e): e is string => !!e))];
+  garantirDestinoPermitido(convidados);
   if (convidados.length) {
     body.attendees = convidados.map((address) => ({ emailAddress: { address }, type: "required" }));
   }
@@ -404,6 +407,7 @@ export async function updateOutlookEvent(params: {
   if (params.fimISO) body.end = dataHoraGraph(params.fimISO);
   if (params.corpo) body.body = { contentType: "text", content: params.corpo };
   if (params.attendeeEmails) {
+    garantirDestinoPermitido(params.attendeeEmails);
     // Mantém os convidados que já estão no evento (com a resposta deles) e só
     // acrescenta/remove a diferença; reenviar a lista crua zera aceites.
     const atual = await fetch(`https://graph.microsoft.com/v1.0/me/events/${idUrl}?$select=attendees`, {

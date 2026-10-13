@@ -2,12 +2,13 @@
 # Preparo e manutenção do servidor de HOMOLOGAÇÃO (/opt/callface/crm2-homolog).
 # Roda do seu Mac; tudo acontece na EC2. Não toca produção (crm2-dev) nem o legado (crm).
 #
-#   scripts/homolog-servidor.sh preparar          # 1ª vez: pasta, .env novo, banco e Redis de pé
+#   scripts/homolog-servidor.sh preparar          # pasta, .env refeito de produção (re-rodável), banco e Redis de pé
+#   scripts/homolog-servidor.sh env CHAVE=valor   # muda uma variável do .env e recria os containers
 #   scripts/homolog-servidor.sh recarregar-banco  # copia produção para a homologação (apaga o que há lá)
 #
-# Segredos do .env são gerados NO servidor e nunca passam por aqui nem pelo git.
-# Nada do .env de produção é copiado: homologação nasce sem Stripe, e-mail, WhatsApp, Meta,
-# Microsoft, RD, Documenso e IA. Para ligar algum, edite o .env no servidor, conscientemente.
+# O .env de homologação é COPIADO do de produção, NO servidor (segredo nunca passa por aqui nem pelo git),
+# trocando só o que é do ambiente (domínio, banco, Redis) e acrescentando as três travas:
+# WHATSAPP_ALLOWLIST, EMAIL_ALLOWED_DOMAINS e AREAS_EM_BREVE. Ver docs/operacao/homologacao.md.
 set -euo pipefail
 HOST="${DEPLOY_HOST:-ubuntu@34.204.200.52}"
 CHAVE="${DEPLOY_CHAVE:-$HOME/.ssh/infra_callface.pem}"
@@ -22,86 +23,68 @@ preparar)
   "${SSH[@]}" "bash -s" <<'REMOTE'
 set -euo pipefail
 cd /opt/callface/crm2-homolog
-if [ ! -f .env ]; then
-  r() { openssl rand -hex 32; }
-  DB_PASSWORD="$(openssl rand -hex 16)"
-  AUTH="$(openssl rand -base64 32)"
-  umask 077
-  cat > .env <<ENV
-# Homologação (qa.crm.callface.io). Gerado por scripts/homolog-servidor.sh em $(date +%F).
-# SEM efeito colateral real: Stripe, e-mail, WhatsApp, Meta, Microsoft, RD, Documenso e IA ficam VAZIOS de propósito.
-# Segredos próprios; nenhum é o de produção.
+PROD_ENV=/opt/callface/crm2-dev/.env
+DOM=dev.crm.callface.io
+# Preserva o que é desta pilha: senha do banco (o volume já nasceu com ela) e as
+# travas que o Scott ajustou. Re-rodar "preparar" traz as chaves novas de produção
+# sem desfazer isso.
+velho() { [ -f .env ] && grep -m1 "^$1=" .env | cut -d= -f2- || true; }
+DB_PASSWORD="$(velho DB_PASSWORD)"; DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -hex 16)}"
+WA="$(velho WHATSAPP_ALLOWLIST)"; WA="${WA:-0000000000}"
+EM="$(velho EMAIL_ALLOWED_DOMAINS)"; EM="${EM:-callface.ai}"
+AR="$(velho AREAS_EM_BREVE)"
+[ ! -f .env ] || cp -p .env .env.bak-anterior
+umask 077
+# Cópia do .env de produção SEM as chaves que são do ambiente (reescritas abaixo).
+# Os segredos de terceiros (Stripe, Microsoft, Resend, Documenso, IA...) ficam iguais.
+{
+  echo "# Homologação ($DOM). Gerado por scripts/homolog-servidor.sh em $(date +%F) a partir do .env de produção."
+  echo "# IDÊNTICO ao de produção, exceto o bloco 'DO AMBIENTE' e as TRAVAS no fim. Nunca versionar."
+  sudo grep -vE '^(#|$)|^(COMPOSE_PROJECT_NAME|STACK|ROTA|REDE|PG_PORTA|CRM_DOMAIN|AUTH_URL|NEXTAUTH_URL|NEXT_PUBLIC_APP_URL|UAZAPI_WEBHOOK_URL|DB_PASSWORD|DATABASE_URL|REDIS_URL|IMAGE_TAG|WHATSAPP_ALLOWLIST|EMAIL_ALLOWED_DOMAINS|AREAS_EM_BREVE|DOCUMENSO_API_URL)=' "$PROD_ENV"
+  cat <<ENV
+# ── DO AMBIENTE (o que muda em relação a produção) ──
 COMPOSE_PROJECT_NAME=crm2-homolog
 STACK=crm2-homolog
 ROTA=crm2homolog
 REDE=crm2homolog-network
 PG_PORTA=5434
-CRM_DOMAIN=qa.crm.callface.io
-NODE_ENV=production
+CRM_DOMAIN=$DOM
+AUTH_URL=https://$DOM
+NEXTAUTH_URL=https://$DOM
+UAZAPI_WEBHOOK_URL=https://$DOM/api/webhooks/whatsapp
 DB_PASSWORD=$DB_PASSWORD
 DATABASE_URL=postgres://callface:$DB_PASSWORD@callface-crm2-homolog-postgres:5432/callface_crm_mz
 REDIS_URL=redis://callface-crm2-homolog-redis:6379
-AUTH_URL=https://qa.crm.callface.io
-NEXTAUTH_URL=https://qa.crm.callface.io
-AUTH_TRUST_HOST=true
-AUTH_SECRET=$AUTH
-NEXTAUTH_SECRET=$AUTH
-HONO_API_PORT=3002
-WORKER_HEALTH_PORT=3002
-POSVENDA_CANONICO=on
-NEXT_PUBLIC_POSVENDA_CANONICO=on
-CALLFACE_AI_TAREFAS_CS=off
-# Chaves de cifra próprias: credenciais cifradas que vierem na cópia do banco ficam ilegíveis aqui.
-EMAIL_ENCRYPTION_KEY=$(r)
-AI_CREDENTIALS_ENCRYPTION_KEY=$(r)
-# Webhooks de entrada: valor aleatório (a checagem exige existir; ninguém de fora o conhece).
-RD_WEBHOOK_SECRET=$(r)
-META_LEADIDS_WEBHOOK_SECRET=$(r)
-META_WEBHOOK_VERIFY_TOKEN=$(r)
-CALLFACE_WEBHOOK_SECRET=$(r)
-CALLFACE_INBOUND_TOKEN=$(r)
-UAZAPI_WEBHOOK_SECRET=$(r)
-DOCUMENSO_WEBHOOK_SECRET=$(r)
-# Trava de WhatsApp: número que não existe. Nada sai.
-WHATSAPP_ALLOWLIST=0000000000
-# Stripe: sem chave. Checkout em modo teste e live proibido.
-STRIPE_CHECKOUT_MODE=test
-ALLOW_STRIPE_LIVE_CHECKOUT=false
-STRIPE_API_KEY=
-STRIPE_WEBHOOK_SECRET=
-# Vazios de propósito (efeito colateral ou token compartilhado com produção):
-RESEND_API_KEY=
-MICROSOFT_CLIENT_ID=
-MICROSOFT_CLIENT_SECRET=
-RD_CLIENT_ID=
-RD_CLIENT_SECRET=
-RD_REFRESH_TOKEN=
-UAZAPI_BASE_URL=
-UAZAPI_API_KEY=
-DOCUMENSO_API_URL=
-DOCUMENSO_API_TOKEN=
-CALLFACE_AI_DATABASE_URL=
-SUPABASE_URL=
-SUPABASE_SERVICE_KEY=
-META_ACCESS_TOKEN=
-META_ADS_ACCESS_TOKEN=
-META_CAPI_ACCESS_TOKEN=
-META_LEADS_ACCESS_TOKEN=
-OPENAI_API_KEY=
-GROQ_API_KEY=
-CLAUDE_CODE_OAUTH_TOKEN=
-# Lidas pelo compose (serviço wuzapi, que a homologação não sobe):
-WUZAPI_ADMIN_TOKEN=
-WUZAPI_GLOBAL_ENCRYPTION_KEY=
-WUZAPI_GLOBAL_HMAC_KEY=
+# O worker daqui não está na rede do Documenso (que é a de produção): usa o endereço público.
+DOCUMENSO_API_URL=https://sign.callface.io/api/v2
+# ── TRAVAS (só impedem atingir terceiros; ver docs/operacao/homologacao.md) ──
+# WhatsApp: só estes números recebem. Troque com: scripts/homolog-servidor.sh env WHATSAPP_ALLOWLIST=5511...,5511...
+WHATSAPP_ALLOWLIST=$WA
+# E-mail e convites (Resend, Outlook, Gmail, SMTP, assinatura Documenso, agenda): só estes domínios.
+EMAIL_ALLOWED_DOMAINS=$EM
+# Áreas fechadas ("em breve"): vazio = tudo aberto. Em produção: AREAS_EM_BREVE=automacoes
+AREAS_EM_BREVE=$AR
 ENV
-  echo ".env criado (segredos novos)"
-else
-  echo ".env já existe: mantido"
-fi
+} > .env.novo
+mv .env.novo .env
+echo ".env refeito a partir de produção: $(grep -c . .env) linhas (sem imprimir valores)"
 sudo docker compose -p crm2-homolog up -d postgres redis
 REMOTE
-  echo "✓ homologação preparada. Próximo: scripts/homolog-servidor.sh recarregar-banco"
+  echo "OK homologação preparada. Próximo: scripts/homolog-servidor.sh recarregar-banco"
+  ;;
+env)
+  # scripts/homolog-servidor.sh env CHAVE=valor  (muda uma variável do .env de homologação e recria os containers)
+  PAR="${2:?uso: scripts/homolog-servidor.sh env CHAVE=valor}"
+  [[ "$PAR" =~ ^[A-Z0-9_]+=[A-Za-z0-9_.,:/@-]*$ ]] || { echo "formato: CHAVE=valor (sem espaço nem aspas)" >&2; exit 1; }
+  "${SSH[@]}" "bash -s" "$PAR" <<'REMOTE'
+set -euo pipefail
+cd /opt/callface/crm2-homolog
+CH="${1%%=*}"
+sudo sed -i "/^$CH=/d" .env && echo "$1" | sudo tee -a .env >/dev/null
+RODANDO="$(sudo docker compose -p crm2-homolog ps --status running --services | grep -E '^(worker|api|app)$' | tr '\n' ' ' || true)"
+[ -z "$RODANDO" ] || sudo docker compose -p crm2-homolog up -d --no-deps --force-recreate $RODANDO
+echo "OK $CH atualizado${RODANDO:+ (recriados: $RODANDO)}"
+REMOTE
   ;;
 recarregar-banco)
   "${SSH[@]}" "bash -s" <<'REMOTE'
@@ -118,6 +101,9 @@ sudo docker exec $HOM psql -U callface -d postgres -v ON_ERROR_STOP=1 -qc "DROP 
 sudo docker exec $PROD pg_dump -U callface -d $DB -Fc --no-owner --no-acl \
   | sudo docker exec -i $HOM pg_restore -U callface -d $DB --no-owner --no-acl --exit-on-error
 sudo docker exec -i $HOM psql -U callface -d $DB -v ON_ERROR_STOP=1 -q < scripts/homolog-sanear.sql
+# Trava dura: nenhum token do Microsoft/Gmail pode ter sobrado na cópia (ver docs, seção Microsoft).
+RESTOU="$(sudo docker exec $HOM psql -U callface -d $DB -Atc "select count(*) from email_contas where access_token is not null or refresh_token is not null")"
+[ "$RESTOU" = 0 ] || { echo "ERRO: $RESTOU conta(s) de e-mail com token na cópia; não suba o worker." >&2; exit 1; }
 sudo docker exec $HOM psql -U callface -d $DB -Atc "select 'leads=' || count(*) from leads"
 [ -z "$VOLTAR" ] || sudo docker compose -p crm2-homolog up -d --no-deps $VOLTAR
 echo "✓ cópia de produção carregada e saneada${VOLTAR:+ (subiu de novo: $VOLTAR)}"

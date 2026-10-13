@@ -11,6 +11,8 @@
  * o fluxo que chamou. Assim o resto do CRM funciona antes do Resend ligar.
  */
 
+import { garantirDestinoPermitido } from "./trava-destino";
+
 const RESEND_API = "https://api.resend.com/emails";
 
 export interface SendResendEmailParams {
@@ -34,6 +36,7 @@ export function isResendConfigured(): boolean {
 }
 
 export async function sendResendEmail(params: SendResendEmailParams): Promise<ResendResult> {
+  garantirDestinoPermitido(params.to);
   const key = process.env.RESEND_API_KEY;
   const from = params.from || process.env.RESEND_FROM;
 

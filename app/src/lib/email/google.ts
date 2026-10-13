@@ -1,5 +1,6 @@
 import { google, type gmail_v1 } from "googleapis";
 import { EmailClient, SendEmailParams, SendEmailResult, RawEmail, EmailContaConfig, FetchEmailsOptions } from "./types";
+import { garantirDestinoPermitido } from "./trava-destino";
 import { decrypt } from "./encryption";
 
 function getOAuth2Client() {
@@ -26,6 +27,7 @@ export class GoogleEmailClient implements EmailClient {
   }
 
   async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+    garantirDestinoPermitido(params.to, params.cc, params.bcc);
     // RFC 2047 MIME encoded-word for non-ASCII chars in headers (Subject, From display name)
     const encodeHeader = (s: string) =>
       /[^\x20-\x7e]/.test(s) ? `=?UTF-8?B?${Buffer.from(s, "utf8").toString("base64")}?=` : s;

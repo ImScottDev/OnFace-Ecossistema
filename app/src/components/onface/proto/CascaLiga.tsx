@@ -369,14 +369,14 @@ class Logica extends React.Component<any, any> {
       { label: "Clientes", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.9", href: "/clientes", filhos: [
         { label: "Visão Geral", href: "/clientes" }
       ] },
-      { grupo: "INTELIGÊNCIA", label: "Automações", emBreve: true, d: "M4 14h7l-1 7 10-11h-7l1-7z", href: "/automacoes", filhos: [
+      { grupo: "INTELIGÊNCIA", label: "Automações", d: "M4 14h7l-1 7 10-11h-7l1-7z", href: "/automacoes", filhos: [
         { label: "Visão Geral", href: "/automacoes" },
         { label: "Fluxos", href: "/automacoes/fluxos", pendente: true },
         { label: "Cadências / Follow-ups", href: "/automacoes/cadencias" },
         { label: "NEXO / Agentes IA", href: "/automacoes/agentes" },
         { label: "Execuções", href: "/automacoes/execucoes" }
       ] },
-      { label: "Insights", emBreve: true, d: "M3 3v18h18M18 17V9M13 17V5M8 17v-3", href: "/relatorios", filhos: [
+      { label: "Insights", d: "M3 3v18h18M18 17V9M13 17V5M8 17v-3", href: "/relatorios", filhos: [
         { label: "Visão Geral", href: "/relatorios" },
         { label: "Relatórios", href: "/relatorios/biblioteca", pendente: true },
         { label: "Performance", href: "/relatorios/performance", pendente: true }

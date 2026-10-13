@@ -1,3 +1,4 @@
+import { garantirDestinoPermitido } from "@/lib/email/trava-destino";
 import { db } from "@/lib/db";
 import { contratos, leads } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -136,6 +137,7 @@ export class DocumensoSignatureProvider implements SignatureProvider {
     // Os campos de assinatura caem sobre o bloco de assinaturas do próprio
     // documento (âncoras `cf-sig-*`), na página em que a quebra o colocou.
     const recipients = montarDestinatarios(todos, localizarAncoras(pdf));
+    garantirDestinoPermitido(recipients.map((r) => String(r.email)));
     const titulo = opts?.titulo || row.descricao || `Contrato Callface ${numero ?? contratoId.slice(0, 8)}`;
     const payload = {
       type: "DOCUMENT",

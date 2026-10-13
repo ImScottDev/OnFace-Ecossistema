@@ -9,8 +9,8 @@
 #
 # Alvos (mesma imagem, mesmo código; muda só onde roda):
 #   dev     → /opt/callface/crm2-dev, compose `crm2-dev`. Desde a virada (13/10/2026) é a PRODUÇÃO: https://crm.callface.io (CRM_DOMAIN no .env do servidor)
-#   homolog → /opt/callface/crm2-homolog, compose `crm2-homolog`. Cópia de produção com banco próprio
-#             e SEM efeito colateral (sem Stripe, e-mail, WhatsApp): https://qa.crm.callface.io
+#   homolog → /opt/callface/crm2-homolog, compose `crm2-homolog`. .env idêntico ao de produção, banco próprio
+#             (cópia). Travas: WhatsApp só para a allowlist, e-mail só @callface.ai: https://dev.crm.callface.io
 #             Fluxo e preparo: docs/operacao/homologacao.md
 #
 # Regras que este script garante, e por quê:
@@ -211,6 +211,12 @@ if [ "$ALVO" = homolog ]; then
   # Banco e Redis da homologação sobem aqui se ainda não estiverem de pé
   # (no-op quando já estão). Em produção ficam como estão.
   sudo docker compose -p $PROJETO up -d --no-recreate postgres redis
+fi
+
+if [ "$ALVO" = dev ] && ! sudo grep -q '^AREAS_EM_BREVE=' .env; then
+  # Sem a variável a área abre (padrão do código). Em produção isso tem que ser decisão escrita.
+  echo "✘ falta AREAS_EM_BREVE no .env de produção. Defina (AREAS_EM_BREVE=automacoes fecha Automações; vazio abre tudo) e rode de novo." >&2
+  exit 1
 fi
 
 etapa "[ambiente] conferindo variáveis obrigatórias..."

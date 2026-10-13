@@ -14,6 +14,7 @@
  * falta é credencial. Tratar as duas coisas como a mesma faria o alerta tocar
  * em ambiente que nunca foi configurado, que é ruído que ninguém olha.
  */
+import { garantirDestinoPermitido } from "@/lib/email/trava-destino";
 import { db } from "@/lib/db";
 import { emailContas } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -107,6 +108,7 @@ export const googleCalendar: CalendarProvider = {
       };
       if (ev.corpo) corpo.description = ev.corpo;
       const convidados = [...new Set([ev.convidadoEmail, ...(ev.convidados ?? [])].filter((e): e is string => !!e))];
+      garantirDestinoPermitido(convidados);
       if (convidados.length) corpo.attendees = convidados.map((email) => ({ email }));
       if (ev.online !== false) {
         corpo.conferenceData = {
@@ -137,6 +139,7 @@ export const googleCalendar: CalendarProvider = {
       if (m.inicioISO) corpo.start = { dateTime: m.inicioISO, timeZone: "UTC" };
       if (m.fimISO) corpo.end = { dateTime: m.fimISO, timeZone: "UTC" };
       if (m.corpo) corpo.description = m.corpo;
+      garantirDestinoPermitido(m.convidados);
       if (m.convidados) corpo.attendees = m.convidados.map((email) => ({ email }));
       if (Object.keys(corpo).length === 0) return { ok: true, eventId };
 

@@ -1,6 +1,7 @@
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { EmailClient, SendEmailParams, SendEmailResult, RawEmail, EmailContaConfig, FetchEmailsOptions } from "./types";
+import { garantirDestinoPermitido } from "./trava-destino";
 import { decrypt } from "./encryption";
 
 export class ImapEmailClient implements EmailClient {
@@ -37,6 +38,7 @@ export class ImapEmailClient implements EmailClient {
   }
 
   async sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+    garantirDestinoPermitido(params.to, params.cc, params.bcc);
     const transport = this.getSmtpTransport();
 
     const info = await transport.sendMail({
