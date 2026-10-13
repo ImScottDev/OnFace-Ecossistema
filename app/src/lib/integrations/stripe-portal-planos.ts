@@ -23,6 +23,7 @@
  */
 
 import type { PlanoDoPortal } from "./stripe-portal-config";
+import { ehPrecoEscalonado } from "./stripe-catalogo";
 
 /** Categoria do catálogo (`servicos_catalogo.categoria`) cujos produtos são PLANOS trocáveis entre si. */
 export const CATEGORIA_TROCA_DE_PLANO = "plano";
@@ -103,7 +104,7 @@ function motivoDePrecoInelegivel(p: PrecoDoStripe): string | null {
   if (p.active === false) return "preço inativo no Stripe";
   if (p.type !== "recurring" || !p.recurring) return "preço não é recorrente";
   if (p.recurring.usage_type && p.recurring.usage_type !== "licensed") return "preço de uso medido (o portal não atualiza assinatura medida)";
-  if (p.billing_scheme === "tiered" || p.tiers_mode) return "preço escalonado";
+  if (ehPrecoEscalonado(p)) return "preço escalonado";
   if (p.transform_quantity) return "preço com divisor de quantidade";
   if ((p.currency ?? "").toLowerCase() !== MOEDA_DO_PORTAL) return `moeda ${String(p.currency).toUpperCase()} (o portal do ONFACE oferece só ${MOEDA_DO_PORTAL.toUpperCase()})`;
   return null;

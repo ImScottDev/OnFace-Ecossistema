@@ -1,6 +1,6 @@
-import { describe, it } from "node:test";
+import test, { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { caminhoDoItem, decidirGrupos, textoDoGate, type ContextoDaDecisao, type ItemParaDecisao } from "./decisao-fechamento";
+import { caminhoDoItem, decidirGrupos, exigeContratoDoPreco, textoDoGate, type ContextoDaDecisao, type ItemParaDecisao } from "./decisao-fechamento";
 
 const ctx = (o: Partial<ContextoDaDecisao> = {}): ContextoDaDecisao => ({
   modoFechamento: "PREPAID",
@@ -107,4 +107,16 @@ describe("textoDoGate", () => {
   it("família desconhecida não vira parêntese vazio", () => {
     assert.equal(textoDoGate([{ caminho: "contrato", familia: "UNKNOWN" }, { caminho: "pagamento", familia: null }], rot), "Contrato pendente e pagamento pendente");
   });
+});
+
+test("proposta aceita não muda quando o catálogo muda", () => {
+  const base = { id: "1", familia: "CALLFACE_AI" };
+  // Vendida quando o price NÃO exigia contrato; depois o catálogo passou a exigir.
+  const doCatalogoHoje = true;
+  const congelado = exigeContratoDoPreco(false, doCatalogoHoje);
+  assert.equal(congelado, false, "o valor da linha vence o catálogo ao vivo");
+  assert.equal(caminhoDoItem(item({ ...base, exigeContratoDoPreco: congelado }), ctx()).caminho, "pagamento");
+  // Linha antiga, sem o valor copiado: cai no catálogo, como antes.
+  assert.equal(exigeContratoDoPreco(null, doCatalogoHoje), true);
+  assert.equal(exigeContratoDoPreco(undefined, null), null, "sem linha nem catálogo, sem opinião");
 });

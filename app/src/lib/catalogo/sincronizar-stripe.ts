@@ -73,9 +73,41 @@ export function naturezaDaReceita(preco: PrecoStripe, categoria: string | null):
   return preco.recorrente ? "MRR" : "ONE_TIME";
 }
 
+/**
+ * Período do price COM o `interval_count`: 3 meses é trimestral, não mensal (o MRR distorcia).
+ * Contagem que não tem nome (a cada 2 meses) sai como `2_meses`/`2_anos`, nunca arredondada.
+ */
 export function periodoDoPreco(preco: PrecoStripe): string {
   if (!preco.recorrente) return "unico";
-  return preco.intervalo === "year" ? "anual" : "mensal";
+  const n = preco.intervaloContagem && preco.intervaloContagem > 0 ? preco.intervaloContagem : 1;
+  if (preco.intervalo === "year") return n === 1 ? "anual" : `${n}_anos`;
+  if (n === 1) return "mensal";
+  return n === 3 ? "trimestral" : n === 6 ? "semestral" : `${n}_meses`;
+}
+
+const ROTULO_PERIODO: Record<string, string> = {
+  unico: "Avulso", mensal: "Mensal", anual: "Anual", trimestral: "Trimestral", semestral: "Semestral",
+};
+
+/** Por que o price não pode entrar valendo um valor; null = tem valor unitário. Escalonado NUNCA vira 0,00. */
+export function motivoSemValorUnitario(preco: PrecoStripe): string | null {
+  if (preco.escalonado) return "escalonado (tiered)";
+  if (preco.valorCentavos == null) return "sem unit_amount";
+  return null;
+}
+
+/** `metadata.faixa_min/faixa_max` do price como inteiros. Presente e inválido = erro nomeado, nunca 0. */
+export function faixaDoPreco(preco: PrecoStripe): { min: number | null; max: number | null; erro: string | null } {
+  const ler = (v: string | undefined) => {
+    if (v == null || v.trim() === "") return { n: null, ruim: false };
+    const n = Number(v.trim());
+    return Number.isInteger(n) && n >= 0 ? { n, ruim: false } : { n: null, ruim: true };
+  };
+  const a = ler(preco.metadata.faixa_min), b = ler(preco.metadata.faixa_max);
+  if (a.ruim || b.ruim) return { min: null, max: null, erro: "metadata.faixa_min/faixa_max não é inteiro" };
+  if ((a.n == null) !== (b.n == null)) return { min: null, max: null, erro: "metadata.faixa_min e faixa_max precisam vir juntas" };
+  if (a.n != null && b.n != null && a.n > b.n) return { min: null, max: null, erro: "metadata.faixa_min maior que faixa_max" };
+  return { min: a.n, max: b.n, erro: null };
 }
 
 export function tipoDoPreco(preco: PrecoStripe, categoria: string | null): string {
@@ -92,7 +124,8 @@ export function tipoDoPreco(preco: PrecoStripe, categoria: string | null): strin
  */
 export function variacaoDoPreco(preco: PrecoStripe): string {
   if (preco.apelido?.trim()) return preco.apelido.trim();
-  return periodoDoPreco(preco) === "unico" ? "Avulso" : periodoDoPreco(preco) === "anual" ? "Anual" : "Mensal";
+  const p = periodoDoPreco(preco);
+  return ROTULO_PERIODO[p] ?? p.replace("_", " ");
 }
 
 export function classificarProduto(p: ProdutoStripe): {
@@ -183,11 +216,36 @@ export async function sincronizarCatalogoStripe(
     const { categoria } = classificarProduto(produto);
     const catPreco = preco.metadata.categoria_crm?.trim() || categoria;
 
+    // Price escalonado (ou sem unit_amount) não tem valor unitário: gravar 0,00 o deixaria vendável
+    // de graça. Vira pendência e fica FORA do construtor (inativo) até alguém resolver. Mesma regra
+    // do portal de planos (ehPrecoEscalonado).
+    const semValor = motivoSemValorUnitario(preco);
+    if (semValor || preco.valorCentavos == null) {
+      r.pendencias.push({
+        produto: produto.nome, stripeProductId: produto.id,
+        oQueFalta: `price ${preco.id} ${semValor}: sem valor unitário, fora do construtor de proposta até ser resolvido`,
+      });
+      await db.execute(sql`
+        UPDATE catalogo_precos SET ativo = false, updated_at = now()
+         WHERE organizacao_id = ${organizacaoId}::uuid AND stripe_price_id = ${preco.id} AND ativo = true`);
+      continue;
+    }
+    const faixa = faixaDoPreco(preco);
+    if (faixa.erro) {
+      r.pendencias.push({ produto: produto.nome, stripeProductId: produto.id, oQueFalta: `price ${preco.id}: ${faixa.erro}` });
+    }
+    // A família é do produto; price que declara outra não é aplicado em silêncio.
+    const famPreco = FAMILIA_DA_METADATA[preco.metadata.familia ?? ""];
+    if (famPreco && classificarProduto(produto).familia !== famPreco) {
+      r.pendencias.push({ produto: produto.nome, stripeProductId: produto.id, oQueFalta: `price ${preco.id}: metadata.familia (${famPreco}) diverge da família do produto` });
+    }
+
     const [linha] = await db.execute<{ criado: boolean }>(sql`
       INSERT INTO catalogo_precos (
         organizacao_id, servico_catalogo_id, stripe_price_id, sku, lookup_key,
         variacao, descricao, valor, moeda, tipo, recorrente, periodo,
-        revenue_nature, modelo_cobranca, exige_contrato, ativo
+        revenue_nature, modelo_cobranca, exige_contrato, ativo,
+        intervalo_contagem, faixa_min, faixa_max
       ) VALUES (
         ${organizacaoId}::uuid, ${servicoId}::uuid, ${preco.id},
         ${preco.metadata.sku_interno ?? preco.lookupKey ?? null}, ${preco.lookupKey},
@@ -197,7 +255,8 @@ export async function sincronizarCatalogoStripe(
         ${naturezaDaReceita(preco, catPreco)},
         ${preco.metadata.modelo_cobranca ?? produto.metadata.modelo_cobranca ?? null},
         ${(preco.metadata.exige_contrato ?? produto.metadata.exige_contrato) === "sim"},
-        ${preco.ativo}
+        ${preco.ativo},
+        ${preco.recorrente ? (preco.intervaloContagem ?? 1) : null}, ${faixa.min}, ${faixa.max}
       )
       ON CONFLICT (organizacao_id, stripe_price_id) DO UPDATE SET
         servico_catalogo_id = EXCLUDED.servico_catalogo_id,
@@ -214,6 +273,9 @@ export async function sincronizarCatalogoStripe(
         modelo_cobranca = EXCLUDED.modelo_cobranca,
         exige_contrato = EXCLUDED.exige_contrato,
         ativo = EXCLUDED.ativo,
+        intervalo_contagem = EXCLUDED.intervalo_contagem,
+        faixa_min = EXCLUDED.faixa_min,
+        faixa_max = EXCLUDED.faixa_max,
         updated_at = now()
         -- ordem e observacao ficam de fora pelo mesmo motivo do produto.
       RETURNING (xmax = 0) AS criado`);

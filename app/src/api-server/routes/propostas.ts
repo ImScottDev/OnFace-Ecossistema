@@ -1107,6 +1107,8 @@ app.post("/propostas/:id/nova-versao", async (c) => {
         skuPreco: item.skuPreco,
         variacao: item.variacao,
         valorTabela: item.valorTabela,
+        exigeContrato: item.exigeContrato,
+        periodo: item.periodo,
       }))
     );
   }

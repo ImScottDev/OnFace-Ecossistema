@@ -1593,6 +1593,11 @@ export const catalogoPrecos = pgTable("catalogo_precos", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   ofertaComercialId: uuid("oferta_comercial_id"),
+  // interval_count do Stripe (3 = trimestral quando periodo é "trimestral"); migration 0121.
+  intervaloContagem: integer("intervalo_contagem"),
+  // Faixa de licenças (White Label), de metadata.faixa_min/faixa_max do price; migration 0121.
+  faixaMin: integer("faixa_min"),
+  faixaMax: integer("faixa_max"),
 }, (table) => [
   uniqueIndex("idx_catalogo_precos_stripe_price").on(table.organizacaoId, table.stripePriceId),
   index("idx_catalogo_precos_produto").on(table.servicoCatalogoId, table.ordem),
@@ -1762,6 +1767,10 @@ export const propostaItens = pgTable(
     skuPreco: text("sku_preco"),
     variacao: text("variacao"),
     valorTabela: decimal("valor_tabela", { precision: 12, scale: 2 }),
+    // Congelados do price na criação da linha (migration 0121): o que foi vendido não muda se o
+    // catálogo mudar. NULL = linha antiga; quem lê cai no catálogo.
+    exigeContrato: boolean("exige_contrato"),
+    periodo: text("periodo"),
   },
   (table) => [
     index("idx_proposta_itens_proposta").on(table.propostaId),
@@ -4442,7 +4451,12 @@ export const callfaceAiTenantSnapshots = pgTable(
     campanhasConcluidas: integer("campanhas_concluidas"),
     chamadasTotal: integer("chamadas_total"),
     chamadasFinalizadas: integer("chamadas_finalizadas"),
+    /** Minutos TARIFADOS (`calls.billed_time`), o que o SaaS cobra. */
     minutosUso: decimal("minutos_uso", { precision: 14, scale: 2 }),
+    /** Duração de chamada (`calls.duration`), tempo de linha, não o cobrado. NULL = snapshot anterior à 0122. */
+    minutosDuracao: decimal("minutos_duracao", { precision: 14, scale: 2 }),
+    /** Chamadas sem `billed_time`: não entram em `minutos_uso`, e não valem zero. */
+    chamadasSemTarifa: integer("chamadas_sem_tarifa"),
     agentesProntos: integer("agentes_prontos"),
     integracaoWhatsappConectada: boolean("integracao_whatsapp_conectada"),
     /** A janela que os contadores de uso cobrem. Sem ela o número não é métrica. */

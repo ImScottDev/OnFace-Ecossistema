@@ -48,7 +48,7 @@ async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
   if (unicos.length === 0) return new Map<string, {
     id: string; servicoCatalogoId: string; stripePriceId: string; stripeProductId: string | null; sku: string | null;
     variacao: string; valor: string; serviceFamily: string; revenueNature: string; exigeContrato: boolean;
-    descricaoProduto: string;
+    periodo: string | null; descricaoProduto: string;
   }>();
   const rows = await db
     .select({
@@ -60,6 +60,7 @@ async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
       valor: catalogoPrecos.valor,
       revenueNature: catalogoPrecos.revenueNature,
       exigeContrato: catalogoPrecos.exigeContrato,
+      periodo: catalogoPrecos.periodo,
       stripeProductId: servicosCatalogo.stripeProductId,
       serviceFamily: servicosCatalogo.serviceFamily,
       descricaoComercial: servicosCatalogo.descricaoComercial,
@@ -268,6 +269,9 @@ export async function inserirItensDaProposta(tx: Tx, propostaId: string, moeda: 
         skuPreco: preco?.sku,
         variacao: preco?.variacao,
         valorTabela: preco?.valor,
+        // Congelados com o resto: o aceite lê da linha, não do catálogo ao vivo.
+        exigeContrato: preco?.exigeContrato,
+        periodo: preco?.periodo,
       };
     })
   );

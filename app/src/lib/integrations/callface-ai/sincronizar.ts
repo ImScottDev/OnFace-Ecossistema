@@ -55,7 +55,7 @@ export interface ResultadoSync {
   duracaoMs: number;
 }
 
-async function gravarEstado(
+export async function gravarEstado(
   organizacaoId: string, recurso: string,
   campos: { status: string; erro?: string | null; itens?: number | null; duracaoMs?: number | null; sucesso?: boolean },
 ): Promise<void> {
@@ -99,7 +99,7 @@ export function instanteDoSnapshot(agora: Date): Date {
 
 /**
  * O esquema local tem o que este sync grava? O sync nasceu na 0086/0105 e a
- * saúde diária na 0116: um banco do ONFACE ANTES delas (o `callface_crm`
+ * saúde diária na 0116 e o minuto tarifado na 0122: um banco do ONFACE ANTES delas (o `callface_crm`
  * antigo, que não recebe as migrations novas) estourava no meio do INSERT com
  * "column does not exist", depois de ler o SaaS inteiro. Aqui falha ANTES, em
  * uma frase que diz qual migration falta, e o estado fica 'falhou' (visível).
@@ -107,9 +107,9 @@ export function instanteDoSnapshot(agora: Date): Date {
 export async function esquemaLocalCompleto(): Promise<{ ok: true } | { ok: false; falta: string[] }> {
   const exigidas: Array<[string, string[]]> = [
     ["integracao_sync_estado", ["organizacao_id", "provider", "recurso", "ultimo_sucesso_em"]],
-    ["callface_ai_tenant_snapshots", ["janela_dias", "ultima_atividade_em", "coletado_em", "usuarios_com_atividade"]],
+    ["callface_ai_tenant_snapshots", ["janela_dias", "ultima_atividade_em", "coletado_em", "usuarios_com_atividade", "minutos_duracao", "chamadas_sem_tarifa"]],
     ["callface_ai_tenant_detalhe", ["external_identity_id", "licencas", "usuarios"]],
-    ["callface_ai_uso_diario", ["external_identity_id", "dia", "minutos"]],
+    ["callface_ai_uso_diario", ["external_identity_id", "dia", "minutos", "minutos_duracao", "chamadas_sem_tarifa"]],
     ["callface_ai_external_identities", ["evidencia", "estado", "org_nome"]],
     ["callface_ai_reconciliation_candidates", ["razao", "org_nome", "evidencia"]],
     ["callface_ai_saude_diaria", ["external_identity_id", "dia", "semaforo", "motivos"]],
@@ -134,7 +134,7 @@ export async function sincronizarCallfaceAi(
 
   const esquema = await esquemaLocalCompleto();
   if (!esquema.ok) {
-    const erro = `esquema do ONFACE sem as migrations 0086/0105/0116 (faltam: ${esquema.falta.slice(0, 6).join(", ")}${esquema.falta.length > 6 ? "…" : ""})`;
+    const erro = `esquema do ONFACE sem as migrations 0086/0105/0116/0122 (faltam: ${esquema.falta.slice(0, 6).join(", ")}${esquema.falta.length > 6 ? "…" : ""})`;
     await gravarEstado(organizacaoId, RECURSO_SNAPSHOT, { status: "falhou", erro, duracaoMs: Date.now() - inicio })
       .catch(() => undefined); // se até a tabela de estado falta, o log abaixo é o registro
     console.error(`[CallfaceAI] ${erro}`);
@@ -160,9 +160,15 @@ export async function sincronizarCallfaceAi(
   const porOrg = new Map(vinculados.map((v) => [v.organizationId, v]));
 
   // Quem já tem série diária só relê os últimos dias; quem não tem, busca 90.
+  // Linha da janela com `chamadas_sem_tarifa` NULL foi gravada quando `minutos` ainda era a
+  // DURAÇÃO (antes da 0122): quem tem uma delas relê os 90 dias inteiros, uma vez, e a
+  // série passa a ser em minutos tarifados. Depois disso nenhuma linha da janela é NULL.
   const comSerie = new Set((await db.execute<{ org: string }>(sql`
-    SELECT DISTINCT i.external_id AS org FROM callface_ai_uso_diario d
-      JOIN callface_ai_external_identities i ON i.id = d.external_identity_id`)).map((r) => r.org));
+    SELECT i.external_id AS org FROM callface_ai_uso_diario d
+      JOIN callface_ai_external_identities i ON i.id = d.external_identity_id
+     GROUP BY i.external_id
+    HAVING count(*) FILTER (WHERE d.dia >= ${diaCivil(new Date(), -(DIAS_SERIE - 1))}::date
+                              AND d.chamadas_sem_tarifa IS NULL) = 0`)).map((r) => r.org));
   const novos = orgIds.filter((o) => !comSerie.has(o));
   
   // 2. Uma leitura só, para todas as janelas, dentro de UMA transação read-only.
@@ -207,7 +213,7 @@ export async function sincronizarCallfaceAi(
             external_identity_id, snapshot_at, janela_dias,
             usuarios_total, usuarios_ativos, usuarios_pendentes, licencas_ativas,
             workspaces_ativos, campanhas_ativas, campanhas_concluidas,
-            chamadas_total, chamadas_finalizadas, minutos_uso, agentes_prontos,
+            chamadas_total, chamadas_finalizadas, minutos_uso, minutos_duracao, chamadas_sem_tarifa, agentes_prontos,
             chamadas_ambiguas, sessoes_copilot, contatos_base,
             usuarios_com_atividade, reunioes, apps_ativos, webhooks_ativos,
             ultima_atividade_em, coletado_em
@@ -216,7 +222,7 @@ export async function sincronizarCallfaceAi(
             ${t.usuariosTotal}, ${t.usuariosAtivos}, ${t.usuariosPendentes}, ${t.licencasAtivas},
             ${t.workspacesAtivos}, ${uso.campanhasAtivas}, ${uso.campanhasConcluidas},
             ${uso.chamadasTotal}, ${uso.chamadasFinalizadas},
-            ${(uso.segundosUso / 60).toFixed(2)}, ${t.agentesProntos},
+            ${(uso.segundosTarifados / 60).toFixed(2)}, ${(uso.segundosDuracao / 60).toFixed(2)}, ${uso.chamadasSemTarifa}, ${t.agentesProntos},
             ${uso.chamadasAmbiguas}, ${uso.sessoesCopilot}, ${t.contatosBase},
             ${uso.usuariosComAtividade}, ${uso.reunioes}, ${t.appsAtivos}, ${t.webhooksAtivos},
             ${(saudePorOrg.get(uso.organizationId)?.ultimaAtividadeEm ?? uso.ultimaAtividadeEm)?.toISOString() ?? null}::timestamptz, now()
@@ -232,6 +238,8 @@ export async function sincronizarCallfaceAi(
             chamadas_total = EXCLUDED.chamadas_total,
             chamadas_finalizadas = EXCLUDED.chamadas_finalizadas,
             minutos_uso = EXCLUDED.minutos_uso,
+            minutos_duracao = EXCLUDED.minutos_duracao,
+            chamadas_sem_tarifa = EXCLUDED.chamadas_sem_tarifa,
             agentes_prontos = EXCLUDED.agentes_prontos,
             chamadas_ambiguas = EXCLUDED.chamadas_ambiguas,
             sessoes_copilot = EXCLUDED.sessoes_copilot,
@@ -289,18 +297,19 @@ export async function sincronizarCallfaceAi(
   let diasDeUso = 0;
   const linhasDia = serie.flatMap((u) => {
     const v = porOrg.get(u.organizationId);
-    return v ? [{ id: v.identityId, dia: u.dia, ch: u.chamadas, fi: u.finalizadas, mi: u.minutos, ua: u.usuariosAtivos }] : [];
+    return v ? [{ id: v.identityId, dia: u.dia, ch: u.chamadas, fi: u.finalizadas, mi: u.minutos, md: u.minutosDuracao, st: u.chamadasSemTarifa, ua: u.usuariosAtivos }] : [];
   });
   for (let i = 0; i < linhasDia.length; i += 500) {
     const lote = linhasDia.slice(i, i + 500);
     try {
       await db.execute(sql`
-        INSERT INTO callface_ai_uso_diario (external_identity_id, dia, chamadas, finalizadas, minutos, usuarios_ativos, coletado_em)
-        SELECT r.id, r.dia, r.ch, r.fi, r.mi, r.ua, now()
+        INSERT INTO callface_ai_uso_diario (external_identity_id, dia, chamadas, finalizadas, minutos, minutos_duracao, chamadas_sem_tarifa, usuarios_ativos, coletado_em)
+        SELECT r.id, r.dia, r.ch, r.fi, r.mi, r.md, r.st, r.ua, now()
           FROM jsonb_to_recordset(${JSON.stringify(lote)}::jsonb)
-               AS r(id uuid, dia date, ch int, fi int, mi numeric, ua int)
+               AS r(id uuid, dia date, ch int, fi int, mi numeric, md numeric, st int, ua int)
         ON CONFLICT (external_identity_id, dia) DO UPDATE SET
           chamadas = EXCLUDED.chamadas, finalizadas = EXCLUDED.finalizadas, minutos = EXCLUDED.minutos,
+          minutos_duracao = EXCLUDED.minutos_duracao, chamadas_sem_tarifa = EXCLUDED.chamadas_sem_tarifa,
           usuarios_ativos = EXCLUDED.usuarios_ativos, coletado_em = EXCLUDED.coletado_em`);
       diasDeUso += lote.length;
     } catch (e) {

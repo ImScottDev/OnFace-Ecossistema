@@ -2787,6 +2787,13 @@ const callfaceAiWorker = new Worker(
           // O sync resolve as identidades por conta própria (primeiro passo dele).
           const r = await sincronizarCallfaceAi(org.id);
           console.log(`[callface-ai-sync] ${org.slug} (${(job.data as { origem?: string })?.origem ?? "agendado"}): ${r.status} em ${r.duracaoMs}ms — ${r.identidadesNovas} identidade(s) nova(s), ${r.tenants} tenant(s), ${r.snapshots} snapshot(s), ${r.detalhes} detalhe(s), ${r.diasDeUso} dia(s) de uso, saúde ${r.saude?.linhas ?? 0} linha(s)/${r.saude?.mudancasDeSemaforo ?? 0} mudança(s) de semáforo, tarefas ${r.tarefas ? `+${r.tarefas.criadas} ~${r.tarefas.atualizadas} -${r.tarefas.fechadas}` : "n/a"}${r.erro ? ` — ${r.erro}` : ""}`);
+          // White Label: espelho de parceiros + conferência do faturado contra o CRM.
+          // Tem estado próprio (recurso 'parceiros') e não derruba o sync de uso.
+          if (r.status !== "desabilitado") {
+            const { sincronizarParceirosCallfaceAi } = await import("../lib/integrations/callface-ai/parceiros-sincronizar");
+            const p = await sincronizarParceirosCallfaceAi(org.id);
+            console.log(`[callface-ai-sync] ${org.slug} parceiros: ${p.status} em ${p.duracaoMs}ms — ${p.parceiros} parceiro(s), ${p.licencasAtivas}/${p.licencas} licença(s) ativa(s), ${p.faturas} fatura(s), ${p.pendenciasAbertas} pendência(s) (${p.pendenciasAltas} alta(s), ${p.faturasVencidas} fatura(s) vencida(s))${p.limites.length ? ` — não conferido: ${p.limites.join(" | ")}` : ""}${p.erro ? ` — ${p.erro}` : ""}`);
+          }
         } catch (e) {
           console.error(`[callface-ai-sync] ${org.slug}: falhou:`, e instanceof Error ? e.message : e);
         }

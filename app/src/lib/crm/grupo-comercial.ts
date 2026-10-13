@@ -27,7 +27,7 @@ import {
 } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
 import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem, type CommercialModel } from "@/lib/crm/commercial-model";
-import { decidirGrupos, type CaminhoDeFechamento } from "@/lib/crm/decisao-fechamento";
+import { decidirGrupos, exigeContratoDoPreco, type CaminhoDeFechamento } from "@/lib/crm/decisao-fechamento";
 import { classificarProdutoPorNome } from "@/lib/crm/classificar-produto";
 import { regraDaFamilia } from "@/lib/crm/politica-familia";
 
@@ -83,7 +83,8 @@ export async function formarGruposComerciais(propostaId: string, ex: ExecutorGru
       id: propostaItens.id, nome: propostaItens.nome, subtotal: propostaItens.subtotal, ordem: propostaItens.ordem,
       commercialModel: propostaItens.commercialModel, servicoCatalogoId: propostaItens.servicoCatalogoId,
       familiaDaLinha: propostaItens.serviceFamily, familiaDoCatalogo: servicosCatalogo.serviceFamily,
-      catalogoPrecoId: propostaItens.catalogoPrecoId, exigeContratoDoPreco: catalogoPrecos.exigeContrato,
+      catalogoPrecoId: propostaItens.catalogoPrecoId,
+      exigeContratoDaLinha: propostaItens.exigeContrato, exigeContratoDoCatalogo: catalogoPrecos.exigeContrato,
     })
     .from(propostaItens)
     .leftJoin(servicosCatalogo, eq(servicosCatalogo.id, propostaItens.servicoCatalogoId))
@@ -115,7 +116,9 @@ export async function formarGruposComerciais(propostaId: string, ex: ExecutorGru
       // linha herda a família dominante do mesmo caminho e modelo (item genérico, como "Setup") ou, não
       // havendo, o grupo vai para validação manual: nunca um palpite.
       familia: conhecida(item.familiaDaLinha) ?? conhecida(item.familiaDoCatalogo) ?? conhecida(classificarProdutoPorNome(item.nome)),
-      exigeContratoDoPreco: item.catalogoPrecoId ? item.exigeContratoDoPreco : null,
+      // O que foi gravado na linha manda (editar o catálogo não muda proposta já enviada);
+      // linha antiga, sem o valor copiado, cai no catálogo ao vivo como antes.
+      exigeContratoDoPreco: item.catalogoPrecoId ? exigeContratoDoPreco(item.exigeContratoDaLinha, item.exigeContratoDoCatalogo) : null,
       subtotal: Number(item.subtotal) || 0,
     })), {
       modoFechamento: proposta.modoFechamento,

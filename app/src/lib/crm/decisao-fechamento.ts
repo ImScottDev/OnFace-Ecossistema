@@ -39,6 +39,14 @@ export interface ItemParaDecisao {
   subtotal: number;
 }
 
+/**
+ * `exige_contrato` do Price da linha: o valor GRAVADO na linha quando a proposta foi criada manda;
+ * linha antiga (NULL) cai no catálogo ao vivo. Editar o catálogo não muda proposta já enviada.
+ */
+export function exigeContratoDoPreco(daLinha: boolean | null | undefined, doCatalogo: boolean | null | undefined): boolean | null {
+  return daLinha ?? doCatalogo ?? null;
+}
+
 export interface ContextoDaDecisao {
   /** `propostas.modo_fechamento`: PREPAID | CONTRACT | null. */
   modoFechamento: string | null;

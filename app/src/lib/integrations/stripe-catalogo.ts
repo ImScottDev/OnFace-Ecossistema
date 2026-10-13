@@ -58,7 +58,8 @@ export interface ProdutoStripe {
 export interface PrecoStripe {
   id: string;
   produtoId: string;
-  valorCentavos: number;
+  /** `unit_amount`. null = o price não tem valor unitário (escalonado/tiered): NUNCA tratar como zero. */
+  valorCentavos: number | null;
   moeda: string;
   recorrente: boolean;
   intervalo: "month" | "year" | null;
@@ -66,6 +67,8 @@ export interface PrecoStripe {
   apelido: string | null;
   lookupKey: string | null;
   ativo: boolean;
+  /** `billing_scheme === "tiered"` ou `tiers_mode` presente: o valor depende da quantidade. */
+  escalonado?: boolean;
   /** Divisor de quantidade do Stripe: 1 unidade cobrada a cada N do cliente. */
   divideQuantidadePor: number | null;
   metadata: Record<string, string>;
@@ -75,6 +78,11 @@ export interface CatalogoStripe {
   produtos: ProdutoStripe[];
   precos: PrecoStripe[];
   lidoEm: Date;
+}
+
+/** Price escalonado: não tem `unit_amount`, o valor sai de faixas. Regra única (o portal de planos usa a mesma). */
+export function ehPrecoEscalonado(p: { billing_scheme?: string | null; tiers_mode?: string | null }): boolean {
+  return p.billing_scheme === "tiered" || !!p.tiers_mode;
 }
 
 function chave(): string {
@@ -159,7 +167,8 @@ export async function lerCatalogoDoStripe(): Promise<CatalogoStripe> {
       return {
         id: String(p.id),
         produtoId: String(p.product),
-        valorCentavos: Number(p.unit_amount ?? 0),
+        valorCentavos: p.unit_amount == null ? null : Number(p.unit_amount),
+        escalonado: ehPrecoEscalonado(p as { billing_scheme?: string; tiers_mode?: string }),
         moeda: String(p.currency ?? "brl").toUpperCase(),
         recorrente: p.type === "recurring",
         intervalo: (rec?.interval as "month" | "year") ?? null,

@@ -21,10 +21,26 @@
  * a ninguém. Eles são contados e devolvidos como ambiguidade, que é o que
  * permite alguém decidir depois em vez de o número mentir agora.
  *
- * A hierarquia pai/filho que a auditoria de agosto sugeriu usar NÃO existe:
- * parent_organization_id está nulo em 1.779 de 1.779 organizações.
+ * HIERARQUIA. `organizations.parent_organization_id` está nulo em 1.779 de 1.779
+ * organizações, e por isso este arquivo afirmou até 13/10/2026 que white label
+ * não era representável. ESTAVA ERRADO: a hierarquia existe, mas em
+ * `organizations.partner_id` (a organização pertence a um registro de `partners`).
+ * Descoberto em 13/10/2026, lendo o modelo de White Label do SaaS: `partners`
+ * (preço por licença, dia de faturamento, prazo, domínio), o bloco reservado em
+ * `license` com `reason = 'PARTNER_WHITE_LABEL'` e a cobrança em
+ * `partner_invoices` + `partner_invoice_items`. As leituras de parceiro estão no
+ * fim deste arquivo. A regra de atribuição de chamadas acima NÃO muda por isso:
+ * as 41 mil chamadas divergentes continuam sem dono até alguém decidir a regra.
+ *
+ * MINUTO. O SaaS tarifa `calls.billed_time`, não `calls.duration`. Em 30 dias,
+ * 19,4 milhões de segundos de duração contra 9,4 milhões tarifados: ler duração
+ * mostrava o dobro do que o cliente consome e paga. `duration` ficou como
+ * "tempo de chamada" (campo à parte); `billed_time` é o minuto cobrado.
  */
 import type { Sql } from "postgres";
+import { licencaAtivaEm, resumirTarifacao } from "./regras";
+
+export { licencaAtivaEm, resumirTarifacao };
 
 /** Fatos do tenant que saem de tabelas com organization_id direto. */
 export interface TenantCallfaceAi {
@@ -53,7 +69,12 @@ export interface UsoCallfaceAi {
   chamadasTotal: number;
   chamadasFinalizadas: number;
   chamadasAmbiguas: number;
-  segundosUso: number;
+  /** Segundos TARIFADOS (`billed_time`): o minuto que o SaaS cobra. */
+  segundosTarifados: number;
+  /** Segundos de DURAÇÃO (`duration`): tempo de chamada, não o cobrado. */
+  segundosDuracao: number;
+  /** Chamadas sem `billed_time`: ficam fora dos tarifados e NÃO viram zero. */
+  chamadasSemTarifa: number;
   usuariosComAtividade: number;
   campanhasAtivas: number;
   campanhasConcluidas: number;
@@ -133,7 +154,7 @@ export async function lerUso(
       SELECT ((now() AT TIME ZONE 'UTC') - make_interval(days => ${janelaDias})) AS inicio
     ),
     atribuicao AS (
-      SELECT c.id, c.status, c.duration, c.user_id, c.created_at,
+      SELECT c.id, c.status, c.duration, c.billed_time, c.user_id, c.created_at,
              ARRAY(SELECT DISTINCT x FROM unnest(ARRAY[
                cp.organization_id,
                ct.organization_id,
@@ -150,7 +171,7 @@ export async function lerUso(
        WHERE c.created_at >= j.inicio
     ),
     resolvido AS (
-      SELECT candidatas[1] AS organization_id, id, status, duration, user_id, created_at,
+      SELECT candidatas[1] AS organization_id, id, status, duration, billed_time, user_id, created_at,
              (array_length(candidatas, 1) = 1) AS unica
         FROM atribuicao WHERE candidatas <> '{}'
     ),
@@ -164,7 +185,11 @@ export async function lerUso(
       SELECT organization_id,
              count(*) AS chamadas_total,
              count(*) FILTER (WHERE status = 'FINISHED') AS chamadas_finalizadas,
-             coalesce(sum(least(coalesce(duration, 0), ${TETO_SEGUNDOS_POR_CHAMADA})), 0) AS segundos_uso,
+             coalesce(sum(least(coalesce(duration, 0), ${TETO_SEGUNDOS_POR_CHAMADA})), 0) AS segundos_duracao,
+             -- FILTER é obrigatório: least(NULL, 7200) é 7200 no Postgres (ignora NULL),
+             -- então chamada sem billed_time viraria 2 horas tarifadas.
+             coalesce(sum(least(billed_time, ${TETO_SEGUNDOS_POR_CHAMADA})) FILTER (WHERE billed_time IS NOT NULL), 0) AS segundos_tarifados,
+             count(billed_time) AS chamadas_com_tarifa,
              count(DISTINCT user_id) AS usuarios_com_atividade,
              max(created_at) AS ultima_chamada
         FROM resolvido WHERE unica GROUP BY organization_id
@@ -173,7 +198,9 @@ export async function lerUso(
            coalesce(u.chamadas_total, 0) AS chamadas_total,
            coalesce(u.chamadas_finalizadas, 0) AS chamadas_finalizadas,
            coalesce((SELECT count(*) FROM ambiguas a WHERE a.organization_id = o.id), 0) AS chamadas_ambiguas,
-           coalesce(u.segundos_uso, 0) AS segundos_uso,
+           coalesce(u.segundos_duracao, 0) AS segundos_duracao,
+           coalesce(u.segundos_tarifados, 0) AS segundos_tarifados,
+           coalesce(u.chamadas_com_tarifa, 0) AS chamadas_com_tarifa,
            coalesce(u.usuarios_com_atividade, 0) AS usuarios_com_atividade,
            (SELECT count(*) FROM campaigns cp WHERE cp.organization_id = o.id
               AND cp.deleted_at IS NULL AND cp.status = 'ACTIVE') AS campanhas_ativas,
@@ -205,7 +232,12 @@ export async function lerUso(
     chamadasTotal: Number(l.chamadas_total ?? 0),
     chamadasFinalizadas: Number(l.chamadas_finalizadas ?? 0),
     chamadasAmbiguas: Number(l.chamadas_ambiguas ?? 0),
-    segundosUso: Number(l.segundos_uso ?? 0),
+    ...resumirTarifacao({
+      chamadas: Number(l.chamadas_total ?? 0),
+      chamadasComTarifa: Number(l.chamadas_com_tarifa ?? 0),
+      segundosDuracao: Number(l.segundos_duracao ?? 0),
+      segundosTarifados: Number(l.segundos_tarifados ?? 0),
+    }),
     usuariosComAtividade: Number(l.usuarios_com_atividade ?? 0),
     campanhasAtivas: Number(l.campanhas_ativas ?? 0),
     campanhasConcluidas: Number(l.campanhas_concluidas ?? 0),
@@ -435,7 +467,14 @@ export async function lerDetalhe(sql: Sql, organizationIds: string[]): Promise<D
 // ───────────────────────────────────────────────────────────────────────────
 
 export interface UsoDiarioCallfaceAi {
-  organizationId: string; dia: string; chamadas: number; finalizadas: number; minutos: number; usuariosAtivos: number;
+  organizationId: string; dia: string; chamadas: number; finalizadas: number;
+  /** Minutos TARIFADOS (`billed_time`). */
+  minutos: number;
+  /** Minutos de DURAÇÃO (`duration`): tempo de chamada, não o cobrado. */
+  minutosDuracao: number;
+  /** Chamadas do dia sem `billed_time`: fora de `minutos`, e não valem zero. */
+  chamadasSemTarifa: number;
+  usuariosAtivos: number;
 }
 
 export async function lerUsoDiario(
@@ -444,7 +483,7 @@ export async function lerUsoDiario(
   if (!organizationIds.length) return [];
   const linhas = await sql<Array<Record<string, unknown>>>`
     WITH atribuicao AS (
-      SELECT c.status, c.duration, c.user_id, c.created_at,
+      SELECT c.status, c.duration, c.billed_time, c.user_id, c.created_at,
              ARRAY(SELECT DISTINCT x FROM unnest(ARRAY[
                cp.organization_id, ct.organization_id,
                CASE WHEN uo.n = 1 THEN uo.org END]) x WHERE x IS NOT NULL) AS candidatas
@@ -461,7 +500,9 @@ export async function lerUsoDiario(
            ((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
            count(*)::int AS chamadas,
            count(*) FILTER (WHERE status = 'FINISHED')::int AS finalizadas,
-           round(sum(least(coalesce(duration, 0), ${TETO_SEGUNDOS_POR_CHAMADA}))::numeric / 60, 2) AS minutos,
+           round(coalesce(sum(least(billed_time, ${TETO_SEGUNDOS_POR_CHAMADA})) FILTER (WHERE billed_time IS NOT NULL), 0)::numeric / 60, 2) AS minutos,
+           round(sum(least(coalesce(duration, 0), ${TETO_SEGUNDOS_POR_CHAMADA}))::numeric / 60, 2) AS minutos_duracao,
+           (count(*) - count(billed_time))::int AS chamadas_sem_tarifa,
            count(DISTINCT user_id)::int AS usuarios_ativos
       FROM atribuicao
      WHERE array_length(candidatas, 1) = 1 AND candidatas[1] IN ${sql(organizationIds)}
@@ -470,7 +511,8 @@ export async function lerUsoDiario(
     organizationId: String(l.organization_id),
     dia: l.dia instanceof Date ? l.dia.toISOString().slice(0, 10) : String(l.dia),
     chamadas: Number(l.chamadas), finalizadas: Number(l.finalizadas),
-    minutos: Number(l.minutos ?? 0), usuariosAtivos: Number(l.usuarios_ativos),
+    minutos: Number(l.minutos ?? 0), minutosDuracao: Number(l.minutos_duracao ?? 0),
+    chamadasSemTarifa: Number(l.chamadas_sem_tarifa ?? 0), usuariosAtivos: Number(l.usuarios_ativos),
   }));
 }
 
@@ -582,6 +624,202 @@ export async function lerSaude(sql: Sql, organizationIds: string[]): Promise<Sau
       assinaturasCanceladas: Number(l.ass_canceladas ?? 0),
       canceladaEm: (l.cancelada_em as Date) ?? null,
       cancelamentoMotivo: (l.cancelamento_motivo as string) ?? null,
+    };
+  });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// White Label: parceiros, o bloco reservado de licenças e a fatura do parceiro.
+//
+// SOMENTE SELECT, como o resto. Nenhuma credencial, nenhum dado de usuário.
+//
+// `partners`, `partner_invoices` e `partner_invoice_items` são lidas com
+// `to_jsonb(linha)`: (1) timestamp WITHOUT time zone sai como texto ISO sem
+// offset e é lido como UTC aqui, sem a armadilha de fuso do driver descrita em
+// `lerUso`; (2) os nomes de coluna que NÃO foram confirmados contra o schema
+// (total, ciclo, vencimento, a chave que liga item a fatura) são procurados por
+// uma lista de nomes. Os que identificam a linha são OBRIGATÓRIOS: se faltarem,
+// a leitura FALHA dizendo qual coluna, em vez de devolver parceiro sem preço.
+// ───────────────────────────────────────────────────────────────────────────
+
+type Linha = Record<string, unknown>;
+
+function achar(l: Linha, nomes: string[]): unknown {
+  for (const n of nomes) if (l[n] !== undefined && l[n] !== null) return l[n];
+  return null;
+}
+
+function obrigatorio(l: Linha, nomes: string[], tabela: string): unknown {
+  const v = achar(l, nomes);
+  if (v === null) {
+    throw new Error(`${tabela}: nenhuma das colunas [${nomes.join(", ")}] existe ou tem valor. Colunas lidas: ${Object.keys(l).sort().join(", ")}`);
+  }
+  return v;
+}
+
+const texto = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+const numero = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const booleano = (v: unknown): boolean | null => (typeof v === "boolean" ? v : null);
+
+/** Texto ISO do `to_jsonb`. Sem offset = UTC (é como o SaaS grava). */
+function instante(v: unknown): Date | null {
+  if (typeof v !== "string" || !v) return null;
+  const d = new Date(/(Z|[+-]\d\d:?\d\d)$/.test(v) || /^\d{4}-\d\d-\d\d$/.test(v) ? v : `${v}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Dia civil `YYYY-MM-DD`. */
+function dia(v: unknown): string | null {
+  return typeof v === "string" && /^\d{4}-\d\d-\d\d/.test(v) ? v.slice(0, 10) : null;
+}
+
+export interface ParceiroCallfaceAi {
+  partnerId: string;
+  nome: string | null;
+  precoPorLicenca: number | null;
+  diaFaturamento: number | null;
+  prazoPagamentoDias: number | null;
+  dominio: string | null;
+  dnsVerificado: boolean | null;
+  ativo: boolean | null;
+  /** Organização do SaaS que é o próprio parceiro e documento (CNPJ), quando o SaaS os guarda: chaves de vínculo com o CRM. */
+  organizationId: string | null;
+  documento: string | null;
+}
+
+export async function lerParceiros(sql: Sql): Promise<ParceiroCallfaceAi[]> {
+  const linhas = await sql<Array<{ r: Linha }>>`
+    SELECT to_jsonb(p) AS r FROM partners p ORDER BY 1`;
+  return linhas.map(({ r }) => {
+    const ativoBruto = achar(r, ["is_active", "active", "enabled"]);
+    const status = texto(achar(r, ["status"]));
+    return {
+      partnerId: String(obrigatorio(r, ["id"], "partners")),
+      nome: texto(achar(r, ["name", "company_name", "trade_name", "slug"])),
+      precoPorLicenca: numero(obrigatorio(r, ["wholesale_price_per_license"], "partners")),
+      diaFaturamento: numero(achar(r, ["billing_day"])),
+      prazoPagamentoDias: numero(achar(r, ["payment_terms_days"])),
+      dominio: texto(achar(r, ["custom_domain"])),
+      dnsVerificado: booleano(achar(r, ["dns_verified"])),
+      ativo: booleano(ativoBruto) ?? (status ? !/^(inactive|disabled|suspended|canceled|cancelled)$/i.test(status) : null),
+      organizationId: texto(achar(r, ["organization_id", "owner_organization_id"])),
+      documento: texto(achar(r, ["document_number", "cnpj", "document"])),
+    };
+  });
+}
+
+export interface LicencaWhiteLabelCallfaceAi {
+  licenseId: string;
+  organizationId: string;
+  orgNome: string | null;
+  partnerId: string | null;
+  inicioEm: Date | null;
+  revogadaEm: Date | null;
+  expiraEm: Date | null;
+  /** Calculado no SaaS pelo predicado único: não revogada e não expirada. */
+  ativaHoje: boolean;
+}
+
+/**
+ * O bloco reservado: licença `PARTNER_WHITE_LABEL`, slot da organização (sem
+ * `user_id`). O parceiro vem de `organizations.partner_id`. Traz as revogadas
+ * também, porque a fatura proporcional depende de quando o slot deixou de existir.
+ */
+export async function lerLicencasWhiteLabel(sql: Sql): Promise<LicencaWhiteLabelCallfaceAi[]> {
+  const linhas = await sql<Array<Record<string, unknown>>>`
+    SELECT l.id, l.organization_id, o.name AS org_nome, o.partner_id,
+           l.start_at AT TIME ZONE 'UTC' AS inicio,
+           l.revoked_at AT TIME ZONE 'UTC' AS revogada,
+           l.expires_at AT TIME ZONE 'UTC' AS expira,
+           (l.revoked_at IS NULL AND (l.expires_at IS NULL OR l.expires_at > (now() AT TIME ZONE 'UTC'))) AS ativa_hoje
+      FROM license l
+      JOIN organizations o ON o.id = l.organization_id
+     WHERE l.reason::text = 'PARTNER_WHITE_LABEL'
+     ORDER BY l.start_at, l.id`;
+  return linhas.map((l) => ({
+    licenseId: String(l.id),
+    organizationId: String(l.organization_id),
+    orgNome: (l.org_nome as string) ?? null,
+    partnerId: l.partner_id == null ? null : String(l.partner_id),
+    inicioEm: (l.inicio as Date) ?? null,
+    revogadaEm: (l.revogada as Date) ?? null,
+    expiraEm: (l.expira as Date) ?? null,
+    ativaHoje: Boolean(l.ativa_hoje),
+  }));
+}
+
+export interface ItemFaturaParceiroCallfaceAi {
+  itemId: string;
+  invoiceId: string;
+  licenseId: string | null;
+  organizationId: string | null;
+  diasAtivos: number;
+  diasNoCiclo: number;
+  proporcional: boolean;
+  precoUnitario: number;
+  totalLinha: number;
+  licencaInicioEm: Date | null;
+  licencaRevogadaEm: Date | null;
+}
+
+export interface FaturaParceiroCallfaceAi {
+  invoiceId: string;
+  partnerId: string;
+  /** Como a plataforma grava (ex.: OVERDUE). */
+  status: string;
+  competencia: string | null;
+  cicloInicio: string | null;
+  cicloFim: string | null;
+  vencimento: Date | null;
+  pagaEm: Date | null;
+  /** null = a plataforma não informa o total (a conferência soma os itens). */
+  total: number | null;
+  moeda: string | null;
+  itens: ItemFaturaParceiroCallfaceAi[];
+}
+
+export async function lerFaturasDeParceiro(sql: Sql): Promise<FaturaParceiroCallfaceAi[]> {
+  const [faturas, itens] = await Promise.all([
+    sql<Array<{ r: Linha }>>`SELECT to_jsonb(f) AS r FROM partner_invoices f`,
+    sql<Array<{ r: Linha }>>`SELECT to_jsonb(i) AS r FROM partner_invoice_items i`,
+  ]);
+  const itensPor = new Map<string, ItemFaturaParceiroCallfaceAi[]>();
+  for (const { r } of itens) {
+    const faturaId = String(obrigatorio(r, ["partner_invoice_id", "invoice_id"], "partner_invoice_items"));
+    const item: ItemFaturaParceiroCallfaceAi = {
+      itemId: String(obrigatorio(r, ["id"], "partner_invoice_items")),
+      invoiceId: faturaId,
+      licenseId: texto(achar(r, ["license_id"])),
+      organizationId: texto(achar(r, ["organization_id"])),
+      diasAtivos: Number(obrigatorio(r, ["days_active"], "partner_invoice_items")),
+      diasNoCiclo: Number(obrigatorio(r, ["days_in_cycle"], "partner_invoice_items")),
+      proporcional: Boolean(obrigatorio(r, ["is_prorated"], "partner_invoice_items")),
+      precoUnitario: Number(obrigatorio(r, ["unit_price"], "partner_invoice_items")),
+      totalLinha: Number(obrigatorio(r, ["line_total"], "partner_invoice_items")),
+      licencaInicioEm: instante(achar(r, ["license_start_at"])),
+      licencaRevogadaEm: instante(achar(r, ["license_revoked_at"])),
+    };
+    itensPor.set(faturaId, [...(itensPor.get(faturaId) ?? []), item]);
+  }
+  return faturas.map(({ r }) => {
+    const id = String(obrigatorio(r, ["id"], "partner_invoices"));
+    const cicloInicio = dia(achar(r, ["cycle_start", "period_start", "reference_start", "start_date"]));
+    return {
+      invoiceId: id,
+      partnerId: String(obrigatorio(r, ["partner_id"], "partner_invoices")),
+      status: String(obrigatorio(r, ["status"], "partner_invoices")),
+      competencia: dia(achar(r, ["reference_month", "competence", "billing_month", "period"])) ?? cicloInicio,
+      cicloInicio,
+      cicloFim: dia(achar(r, ["cycle_end", "period_end", "reference_end", "end_date"])),
+      vencimento: instante(achar(r, ["due_date", "due_at", "due_on"])),
+      pagaEm: instante(achar(r, ["paid_at"])),
+      total: numero(achar(r, ["total_amount", "total", "amount", "total_value"])),
+      moeda: texto(achar(r, ["currency"])),
+      itens: itensPor.get(id) ?? [],
     };
   });
 }

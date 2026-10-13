@@ -746,12 +746,12 @@ export async function criarRevisao(params: {
         proposta_id, servico_catalogo_id, nome, descricao, tipo, moeda, quantidade,
         valor_unitario, desconto, desconto_tipo, subtotal, ordem, commercial_model,
         catalogo_preco_id, stripe_product_id, stripe_price_id, sku_preco, variacao,
-        valor_tabela, service_family, revenue_nature
+        valor_tabela, service_family, revenue_nature, exige_contrato, periodo
       )
       SELECT ${nova.id}::uuid, servico_catalogo_id, nome, descricao, tipo, moeda, quantidade,
              valor_unitario, desconto, desconto_tipo, subtotal, ordem, commercial_model,
              catalogo_preco_id, stripe_product_id, stripe_price_id, sku_preco, variacao,
-             valor_tabela, service_family, revenue_nature
+             valor_tabela, service_family, revenue_nature, exige_contrato, periodo
         FROM proposta_itens WHERE proposta_id = ${proposta.id}::uuid
     `);
     return { propostaId: nova.id, versao: nova.versao, nova: true, deId: proposta.id, negocioId: proposta.negocio_id, numero: proposta.numero, deVersao: proposta.versao };

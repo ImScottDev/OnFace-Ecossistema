@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   familiaPeloNome, naturezaDaReceita, periodoDoPreco, tipoDoPreco,
-  variacaoDoPreco, classificarProduto,
+  variacaoDoPreco, classificarProduto, motivoSemValorUnitario, faixaDoPreco,
 } from "./sincronizar-stripe";
 import type { PrecoStripe, ProdutoStripe } from "../integrations/stripe-catalogo";
 
@@ -112,4 +112,31 @@ test("produto sem metadata nem prefixo é nomeado como espelhado fora do constru
   const c = classificarProduto(produto({ nome: "SETUP", metadata: {} }));
   assert.equal(c.familia, null);
   assert.ok(c.faltando.some((f) => f.includes("UNKNOWN")));
+});
+
+test("price escalonado não entra valendo zero", () => {
+  assert.ok(motivoSemValorUnitario(preco({ escalonado: true, valorCentavos: null })), "tiered é recusado");
+  assert.ok(motivoSemValorUnitario(preco({ valorCentavos: null })), "sem unit_amount é recusado");
+  assert.equal(motivoSemValorUnitario(preco({ valorCentavos: 0 })), null, "zero declarado pelo Stripe é valor, não ausência");
+  assert.equal(motivoSemValorUnitario(preco({ valorCentavos: 9990 })), null);
+});
+
+test("faixa do price vira dado", () => {
+  assert.deepEqual(faixaDoPreco(preco({ metadata: { faixa_min: "1", faixa_max: "99" } })), { min: 1, max: 99, erro: null });
+  assert.deepEqual(faixaDoPreco(preco({ metadata: { faixa_min: "500", faixa_max: "999999" } })), { min: 500, max: 999999, erro: null });
+  assert.deepEqual(faixaDoPreco(preco({})), { min: null, max: null, erro: null }, "sem faixa não é erro");
+  assert.ok(faixaDoPreco(preco({ metadata: { faixa_min: "1" } })).erro, "só uma ponta é acusada");
+  assert.ok(faixaDoPreco(preco({ metadata: { faixa_min: "a", faixa_max: "9" } })).erro, "texto é acusado, não vira 0");
+  assert.ok(faixaDoPreco(preco({ metadata: { faixa_min: "100", faixa_max: "9" } })).erro, "faixa invertida é acusada");
+});
+
+test("trimestral não vira mensal", () => {
+  assert.equal(periodoDoPreco(preco({ intervalo: "month", intervaloContagem: 1 })), "mensal");
+  assert.equal(periodoDoPreco(preco({ intervalo: "month", intervaloContagem: 3 })), "trimestral");
+  assert.equal(periodoDoPreco(preco({ intervalo: "month", intervaloContagem: 6 })), "semestral");
+  assert.equal(periodoDoPreco(preco({ intervalo: "month", intervaloContagem: 2 })), "2_meses");
+  assert.equal(periodoDoPreco(preco({ intervalo: "year", intervaloContagem: 1 })), "anual");
+  assert.equal(periodoDoPreco(preco({ intervalo: "year", intervaloContagem: 2 })), "2_anos");
+  assert.equal(periodoDoPreco(preco({ intervalo: "month", intervaloContagem: null })), "mensal", "sem contagem = 1");
+  assert.equal(variacaoDoPreco(preco({ intervalo: "month", intervaloContagem: 3 })), "Trimestral");
 });
