@@ -1910,9 +1910,14 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
            l.campos_custom, l.meta_ad_id, l.meta_adset_id, l.meta_campaign_id,
            l.lead_score, e.telefone AS emp_telefone, e.observacoes AS emp_observacoes,
            -- "Cliente" = está na carteira (serviço ativo), não "teve algum ganho".
+           -- O serviço é da empresa; quando o lead ainda não tem empresa, vale o que
+           -- aponta para ele por lead_id (41 serviços não têm empresa e sumiam da ficha).
            EXISTS (SELECT 1 FROM servicos_canonicos s
-                    WHERE s.empresa_id = l.empresa_id AND s.commercial_lifecycle = 'ACTIVE') AS na_carteira,
-           EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = l.empresa_id) AS ja_teve_servico,
+                    WHERE s.organizacao_id = l.organizacao_id AND s.commercial_lifecycle = 'ACTIVE'
+                      AND (s.empresa_id = l.empresa_id OR s.lead_id = l.id)) AS na_carteira,
+           EXISTS (SELECT 1 FROM servicos_canonicos s
+                    WHERE s.organizacao_id = l.organizacao_id
+                      AND (s.empresa_id = l.empresa_id OR s.lead_id = l.id)) AS ja_teve_servico,
            EXISTS (SELECT 1 FROM clientes c WHERE c.empresa_id = l.empresa_id
                     AND c.organizacao_id = l.organizacao_id) AS ficha_de_cliente,
            l.estagio_pre_vendas AS etapa, pe.codigo AS etapa_canonica, (a.id IS NOT NULL) AS tem_aquisicao,

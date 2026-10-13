@@ -94,10 +94,20 @@ const PROPOSTA_ABERTA: Record<string, string> = {
   rascunho: "Rascunho", enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado",
 };
 
+/** O que a ficha diz de uma venda ganha. "Ganho, sem serviço ativo" juntava quatro
+ *  situações diferentes; cada uma pede uma ação diferente de quem lê a ficha. */
+export function rotuloDoGanho(f: { semEmpresa: boolean; ativo: boolean; jaTeveServico: boolean }): { status: string; dica: string | null } {
+  if (f.ativo) return { status: "Ganho", dica: null };
+  if (f.semEmpresa) return { status: "Ganho, sem empresa vinculada", dica: "Vincule a empresa para ver o serviço" };
+  if (f.jaTeveServico) return { status: "Ganho, serviço encerrado", dica: "Serviço da empresa já encerrado" };
+  return { status: "Ganho, serviço não criado", dica: "Nenhum serviço criado para esta venda" };
+}
+
 export function montarRelacoes(f: FatosDasRelacoes): RelacoesDaFicha {
   const c = f.conta;
   const base = { empresaId: f.empresaId, pessoaId: null, leadId: null };
   const v: VinculoDoRegistro[] = [];
+  const aviso = rotuloDoGanho({ semEmpresa: !f.empresaId, ativo: c.ativo, jaTeveServico: c.jaTeveServico });
 
   /* Sem serviço (ativo ou encerrado) não há linha de Cliente: venda ganha
      sozinha não faz a conta cliente. Sem a ficha 360 não há para onde levar. */
@@ -118,9 +128,9 @@ export function montarRelacoes(f: FatosDasRelacoes): RelacoesDaFicha {
     const ganha = o.etapa === "ganho";
     v.push({
       ...base, id: o.id, k: "opp", titulo: o.titulo,
-      sub: o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir",
+      sub: [o.familia ? ROTULO_FAMILIA[o.familia as Familia] ?? o.familia : "Família a definir", ganha ? aviso.dica : null].filter(Boolean).join(" · "),
       /* Ganho não é "Cliente ativo": quem diz isso é o serviço ativo (linha acima). */
-      status: ganha ? (c.ativo ? "Ganho" : "Ganho, sem serviço ativo") : o.etapaRotulo,
+      status: ganha ? aviso.status : o.etapaRotulo,
       tom: ganha ? "cinza" : "coral",
     });
   }

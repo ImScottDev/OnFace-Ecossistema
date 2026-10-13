@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { eq, and, lte, lt, sql as rawSql, like, gte, isNull, isNotNull, count as drizzleCount, desc, inArray, gt } from "drizzle-orm";
 
 import http from "node:http";
+import { telefoneDoJid } from "./telefone-do-jid";
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const url = new URL(redisUrl);
@@ -622,19 +623,18 @@ async function handleWebhookEvent(data: {
       const rawSenderAlt = (info.SenderAlt || info.senderAlt || "") as string;
       const rawRecipientAlt = (info.RecipientAlt || info.recipientAlt || "") as string;
 
-      const extractPhone = (jid: string): string | null => {
-        if (!jid) return null;
-        const isLid = jid.includes("@lid");
-        const digits = jid.replace(/@.*$/, "").replace(/:.*$/, "");
-        return isLid ? null : digits || null;
-      };
-
-      let phone: string;
-      if (isFromMe) {
-        phone = extractPhone(rawChat) || extractPhone(rawRecipientAlt) || rawChat.replace(/@.*$/, "").replace(/:.*$/, "");
-      } else {
-        phone = extractPhone(rawChat) || extractPhone(rawSender) || extractPhone(rawSenderAlt) || rawChat.replace(/@.*$/, "").replace(/:.*$/, "");
-      }
+      /* O LID (`@lid`) ainda é gravado como telefone quando o WhatsApp não entrega o número real.
+         É um defeito de qualidade de dado (363 conversas com 14+ dígitos), conhecido e aceito POR ENQUANTO.
+         NÃO descarte a mensagem para "limpar" isso: mensagem perdida é cliente sem resposta, sem registro
+         e sem como recuperar. Conversa com identificador estranho se corrige depois; mensagem perdida, não.
+         A solução certa é um campo/tabela própria para o identificador do WhatsApp (migration nova,
+         proposta no diagnóstico de duplicados, precisa de autorização), para o LID deixar de ocupar `telefone`.
+         `telefoneDoJid` diz se o JID tem telefone real; hoje só serve para isso. O comportamento abaixo é o
+         original: telefone real, senão os dígitos do chat; só ids de canal/comunidade (fora de 8-15 dígitos) são ignorados, como sempre foram. */
+      const digitosDoChat = rawChat.replace(/@.*$/, "").replace(/:.*$/, "");
+      const phone = telefoneDoJid({
+        isFromMe, chat: rawChat, sender: rawSender, senderAlt: rawSenderAlt, recipientAlt: rawRecipientAlt,
+      }) ?? digitosDoChat;
       if (!phone) break;
       // Defense-in-depth: real phone numbers never exceed 15 digits.
       // WhatsApp Channel/community JIDs are 18-digit ids (120363...) — drop them.

@@ -56,8 +56,26 @@ describe("relações da ficha", () => {
   it("ganho sem serviço ativo não vira Cliente ativo", () => {
     const r = com({ oportunidades: [ganho] });
     assert.equal(r.itens.some((i) => i.status === "Cliente ativo" || i.k === "cliente"), false);
-    assert.equal(r.itens[0].status, "Ganho, sem serviço ativo");
+    assert.equal(r.itens[0].status, "Ganho, serviço não criado");
     assert.equal(r.itens[0].href, `/pipeline/${O1}`);
+  });
+
+  it("o rótulo do ganho separa os três casos medidos", () => {
+    const st = (o: Partial<FatosDasRelacoes>, c: Partial<FatosDasRelacoes["conta"]>) =>
+      com({ oportunidades: [ganho], ...o }, c).itens.find((i) => i.k === "opp")!;
+    const sem = st({ empresaId: "" }, {});
+    assert.equal(sem.status, "Ganho, sem empresa vinculada");
+    assert.match(sem.sub, /Vincule a empresa/);
+    assert.equal(st({}, {}).status, "Ganho, serviço não criado");
+    const enc = st({}, { jaTeveServico: true });
+    assert.equal(enc.status, "Ganho, serviço encerrado");
+    assert.equal(st({}, { ativo: true, jaTeveServico: true }).status, "Ganho");
+  });
+
+  it("serviço achado por lead_id (lead sem empresa) tira o aviso da ficha", () => {
+    // a consulta devolve ativo=true quando `servicos_canonicos.lead_id` aponta para o lead
+    const r = com({ empresaId: "", oportunidades: [ganho] }, { ativo: true, jaTeveServico: true });
+    assert.equal(r.itens.find((i) => i.k === "opp")!.status, "Ganho");
   });
 
   it("Cliente ativo só com serviço ativo, e leva ao 360", () => {

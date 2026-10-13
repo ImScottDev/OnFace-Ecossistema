@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { empresas } from "@/lib/db/schema";
-import { eq, and, ilike } from "drizzle-orm";
+import { eq, and, ilike, sql } from "drizzle-orm";
+import { dominioPublico, empresaUnicaDoDominio, normalizarDominio } from "./dominio-empresa";
 
 type ResolverArgs = {
   organizacaoId: string;
@@ -19,7 +20,8 @@ type ResolverArgs = {
 /**
  * Resolve a empresa como entidade real e devolve o empresa_id.
  *
- * Ordem: empresaId explícito > CNPJ (14 dígitos) > nome (ilike) > cria nova.
+ * Ordem: empresaId explícito > CNPJ (14 dígitos) > nome (ilike) > domínio
+ * corporativo que aponta para UMA única empresa > cria nova.
  *
  * Existe porque todo ponto de entrada de lead precisa disso e a lógica estava
  * inline só no POST /api/leads — os webhooks (RD Station, site) e o modal de
@@ -27,7 +29,7 @@ type ResolverArgs = {
  * gerou 691 leads sem vínculo em produção, que aparecem no drawer como
  * "Sem cadastro — clique pra criar e vincular".
  *
- * Devolve null quando não há nome nem CNPJ — nesse caso o chamador deve
+ * Devolve null quando não há nome, CNPJ nem domínio corporativo — nesse caso o chamador deve
  * gravar só o texto `empresa` (se tiver) e seguir.
  */
 export async function resolverEmpresaId(args: ResolverArgs): Promise<string | null> {
@@ -37,20 +39,25 @@ export async function resolverEmpresaId(args: ResolverArgs): Promise<string | nu
   const cnpj = args.cnpj?.replace(/\D/g, "") || null;
   const cnpjValido = cnpj && cnpj.length === 14 ? cnpj : null;
 
-  if (!nome && !cnpjValido) return null;
+  const dominio = normalizarDominio(args.website);
+  if (!nome && !cnpjValido && !dominio) return null;
 
-  const [existente] = await db
-    .select({ id: empresas.id })
-    .from(empresas)
-    .where(
-      and(
-        eq(empresas.organizacaoId, args.organizacaoId),
-        cnpjValido ? eq(empresas.cnpj, cnpjValido) : ilike(empresas.nome, nome!)
+  if (nome || cnpjValido) {
+    const [existente] = await db
+      .select({ id: empresas.id })
+      .from(empresas)
+      .where(
+        and(
+          eq(empresas.organizacaoId, args.organizacaoId),
+          cnpjValido ? eq(empresas.cnpj, cnpjValido) : ilike(empresas.nome, nome!)
+        )
       )
-    )
-    .limit(1);
+      .limit(1);
+    if (existente) return existente.id;
+  }
 
-  if (existente) return existente.id;
+  const porDominio = await empresaUnicaPorDominio(args.organizacaoId, dominio);
+  if (porDominio) return porDominio;
 
   // Sem nome não dá pra criar (nome é NOT NULL) — só tinha CNPJ e não bateu.
   if (!nome) return null;
@@ -73,35 +80,21 @@ export async function resolverEmpresaId(args: ResolverArgs): Promise<string | nu
 }
 
 /**
- * Domínio do e-mail, quando serve como identificador de empresa.
- *
- * Devolve null para provedores públicos: nesses casos o domínio não diz nada
- * sobre a empresa e usá-lo como website/chave agruparia leads sem relação.
+ * Empresas ligadas ao domínio: o site cadastrado na empresa OU o e-mail de quem
+ * já está nela. Só devolve quando é UMA; provedor público nunca casa.
  */
-const DOMINIOS_PUBLICOS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "hotmail.com",
-  "hotmail.com.br",
-  "outlook.com",
-  "outlook.com.br",
-  "live.com",
-  "msn.com",
-  "yahoo.com",
-  "yahoo.com.br",
-  "uol.com.br",
-  "bol.com.br",
-  "terra.com.br",
-  "globo.com",
-  "icloud.com",
-  "me.com",
-  "aol.com",
-  "protonmail.com",
-  "proton.me",
-]);
-
-export function dominioCorporativo(email?: string | null): string | null {
-  const dom = email?.trim().toLowerCase().split("@")[1];
-  if (!dom || !dom.includes(".")) return null;
-  return DOMINIOS_PUBLICOS.has(dom) ? null : dom;
+export async function empresaUnicaPorDominio(organizacaoId: string, dominio: string | null): Promise<string | null> {
+  if (!dominio || dominioPublico(dominio)) return null;
+  const linhas = await db.execute<{ id: string }>(sql`
+    SELECT e.id::text AS id FROM empresas e
+     WHERE e.organizacao_id = ${organizacaoId}::uuid
+       AND regexp_replace(lower(coalesce(e.website, '')), '^(https?://)?(www\\.)?|/.*$', '', 'g') = ${dominio}
+    UNION
+    SELECT p.empresa_id::text FROM pessoas p
+     WHERE p.organizacao_id = ${organizacaoId}::uuid AND p.empresa_id IS NOT NULL
+       AND lower(split_part(p.email, '@', 2)) = ${dominio}
+  `);
+  return empresaUnicaDoDominio(dominio, [...linhas].map((l) => l.id));
 }
+
+export { dominioCorporativo } from "./dominio-empresa";

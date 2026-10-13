@@ -83,7 +83,7 @@ async function main() {
 
     if (ganhoSemServico) {
       const t = await card(`/pessoas/${ganhoSemServico.id}`, "5-pessoa-ganho-sem-servico");
-      confere(!/Cliente ativo/.test(t) && /Ganho, sem serviço ativo/.test(t), "ganho sem serviço ativo não é 'Cliente ativo'");
+      confere(!/Cliente ativo/.test(t) && /Ganho, (sem empresa vinculada|serviço encerrado|serviço não criado)/.test(t), "ganho sem serviço ativo não é 'Cliente ativo'");
     } else console.log("SEM DADO: ganho sem serviço ativo");
   } finally {
     await browser.close();
