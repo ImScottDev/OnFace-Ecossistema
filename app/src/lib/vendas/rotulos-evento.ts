@@ -140,8 +140,9 @@ export function tituloDoEvento(
   if (/stagechanged$|^etapa$|^mudanca_etapa$/.test(t) && para) {
     return `Etapa: ${de ? rotuloDeEtapa(de) + " → " : "para "}${rotuloDeEtapa(para)}${motivo ? " · " + motivo : ""}`;
   }
-  if (t === "ownerchanged" && para) {
-    return `${c.entidade === "cliente" ? "Customer Success" : "Responsável"}: ${de ? String(de) : "sem responsável"} → ${String(para)}`;
+  const novoResp = para ?? c.responsavelId;
+  if ((t === "ownerchanged" || t === "opportunityassigned" || t === "leadassigned") && novoResp) {
+    return `${c.entidade === "cliente" ? "Customer Success" : "Responsável"}: ${de ? String(de) : "sem responsável"} → ${String(novoResp)}`;
   }
   if (t === "tarefa" && titulo) {
     const feita = /conclu|feit|done/i.test(String(c.status ?? ""));

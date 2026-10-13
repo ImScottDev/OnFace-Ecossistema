@@ -14,6 +14,7 @@
  *   - Proposta e Negociação têm gate de proposta vinculada (§10);
  *   - Ganho nunca é drag: é consequência de evidência (§19-20).
  */
+import { resolverNomes } from "./resolver-ids";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { registrarEvento, registrarMudancaDeEtapa } from "./eventos";
@@ -1074,10 +1075,15 @@ export async function atribuirResponsavelDaOportunidade(params: {
   await db.execute(sql`
     UPDATE oportunidades SET responsavel_id = ${params.responsavelId}::uuid, updated_at = now()
      WHERE negocio_id_legado = ${params.negocioId}::uuid`);
+  const nomes = await resolverNomes(params.organizacaoId, [op.responsavel_id, params.responsavelId].filter((x): x is string => !!x));
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "OpportunityAssigned", ator: params.ator,
     negocioId: params.negocioId, leadId: op.lead_id, empresaId: op.empresa_id,
-    contexto: { de: op.responsavel_id, para: params.responsavelId },
-    timeline: { tipo: "nota", titulo: "Responsável da oportunidade alterado" },
+    contexto: {
+      de: op.responsavel_id, para: params.responsavelId,
+      deNome: op.responsavel_id ? nomes.get(op.responsavel_id) ?? null : null,
+      paraNome: nomes.get(params.responsavelId) ?? null,
+    },
+    timeline: { tipo: "nota", titulo: `Responsável da oportunidade alterado: ${op.responsavel_id ? nomes.get(op.responsavel_id) ?? "—" : "sem responsável"} → ${nomes.get(params.responsavelId) ?? "—"}` },
   });
 }

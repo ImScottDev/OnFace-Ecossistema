@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { ExecutorDb } from "./executor";
 import { registrarEvento, registrarMudancaDeEtapa } from "./eventos";
+import { resolverNomes } from "./resolver-ids";
 import {
   resolverEmpresa, resolverPessoa, registrarTouchpoint, telefoneParaGravar,
   type DadosEmpresa, type Touchpoint,
@@ -419,6 +420,7 @@ export async function atribuirResponsavel(params: {
      WHERE id = ${params.leadId}::uuid
   `);
 
+  const nomes = await resolverNomes(params.organizacaoId, [lead.responsavel_id, params.responsavelId].filter((x): x is string => !!x));
   await registrarEvento({
     organizacaoId: params.organizacaoId,
     tipo: lead.responsavel_id ? "OwnerChanged" : "LeadAssigned",
@@ -427,6 +429,8 @@ export async function atribuirResponsavel(params: {
     contexto: {
       de: lead.responsavel_id,
       para: params.responsavelId,
+      deNome: lead.responsavel_id ? nomes.get(lead.responsavel_id) ?? null : null,
+      paraNome: nomes.get(params.responsavelId) ?? null,
       origemAtribuicao: params.origemAtribuicao ?? "manual",
     },
     timeline: { tipo: "nota", titulo: "Responsável alterado" },

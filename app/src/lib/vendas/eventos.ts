@@ -15,6 +15,7 @@
  * `registrarEvento` e o roteamento acontece aqui.
  */
 import { tituloDoEvento } from "./rotulos-evento";
+import { idsDoContexto, contextoComNomes, resolverNomes, semUuidCru } from "./resolver-ids";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { sincronizarAquisicaoDoLead } from "./sincronizar-aquisicao";
@@ -445,13 +446,19 @@ export async function lerLinhaDoTempo(params: {
     LIMIT ${limite}
   `);
 
-  return linhas.map((l) => ({
+  // Ids no contexto (responsável anterior/novo etc.) viram nome, também no histórico já gravado.
+  const nomes = await resolverNomes(params.organizacaoId, idsDoContexto(linhas.map((l) => l.contexto)));
+
+  return linhas.map((l) => {
+    const contexto = contextoComNomes(l.contexto, nomes);
+    return {
     id: l.id,
     tipo: l.tipo as TipoEventoVendas,
-    titulo: tituloDoEvento(l.tipo, l.titulo, l.contexto),
+    titulo: semUuidCru(tituloDoEvento(l.tipo, l.titulo, contexto)),
     atorTipo: l.ator_tipo,
     usuarioNome: l.usuario_nome,
-    contexto: l.contexto,
+    contexto,
     ocorridoEm: l.ocorrido_em,
-  }));
+    };
+  });
 }
