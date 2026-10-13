@@ -40,9 +40,22 @@ export async function conferirComOStripe(catalogo: ProdutoDoCatalogo[], ler: Ler
   const produtosStripe: ProdutoDoStripe[] = [];
   const precosStripe: PrecoDoStripe[] = [];
   for (const id of candidatos) {
-    try { produtosStripe.push(await ler<ProdutoDoStripe>(`products/${id}`)); } catch { /* produto sumiu: o resolver exclui com motivo */ }
-    const lista = await ler<{ data: PrecoDoStripe[] }>(`prices?product=${encodeURIComponent(id)}&limit=100`);
-    precosStripe.push(...(lista.data ?? []));
+    /*
+     * O produto pode não existir NESTA conta/modo: o catálogo de produção tem id de produto que só
+     * existe em modo de teste (`prod_VM7mpDDa0yBG9K`, 13/10/2026), e a chave é live. Quando a leitura
+     * do produto falha, os preços dele nem são consultados — a consulta devolveria 400 e derrubaria a
+     * resolução inteira, desligando a troca de plano por causa de UMA linha errada do catálogo. Sem o
+     * produto, o resolver exclui o candidato dizendo o motivo, e os outros seguem.
+     */
+    try {
+      produtosStripe.push(await ler<ProdutoDoStripe>(`products/${id}`));
+    } catch {
+      continue;
+    }
+    try {
+      const lista = await ler<{ data: PrecoDoStripe[] }>(`prices?product=${encodeURIComponent(id)}&limit=100`);
+      precosStripe.push(...(lista.data ?? []));
+    } catch { /* sem preço legível, o resolver exclui o produto dizendo o motivo */ }
   }
   return resolverPlanosDoPortal({ catalogo, produtosStripe, precosStripe });
 }
