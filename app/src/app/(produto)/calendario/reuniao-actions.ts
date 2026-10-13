@@ -32,6 +32,8 @@ export type ReuniaoDaPeca = {
   syncStatus: string | null;
   syncErro: string | null;
   syncEm: string | null;
+  /** Resposta de cada convidado lida do Outlook: {email: accepted | declined | tentativelyAccepted | none}. */
+  respostas: Record<string, string>;
 }
 
 export type MembroDaPeca = { id: string; nome: string; outlook: boolean }
@@ -55,7 +57,8 @@ export async function acaoReuniaoDaPeca(id: string): Promise<ReuniaoDaPeca | nul
            coalesce(el.nome, nullif(l.empresa, ''), en.nome, eln.nome, nullif(ln.empresa, '')) AS empresa,
            (r.outlook_event_id IS NOT NULL OR r.calendar_event_id IS NOT NULL) AS "temEvento",
            r.calendar_sync_status AS "syncStatus", r.calendar_sync_erro AS "syncErro",
-           to_char(r.calendar_sync_em AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "syncEm"
+           to_char(r.calendar_sync_em AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "syncEm",
+           r.participantes_respostas AS respostas
       FROM reunioes r
       LEFT JOIN usuarios u ON u.id = r.responsavel_id
       LEFT JOIN leads l ON l.id = r.lead_id

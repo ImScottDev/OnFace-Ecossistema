@@ -52,7 +52,7 @@ export const ROTINAS_AGENDADAS: RotinaAgendada[] = [
   { chave: "snapshot-diario", nome: "Snapshot diário", frequencia: "a cada 1 h", grupo: "clientes", oQueFaz: "Grava o retrato diário dos indicadores para os relatórios." },
   { chave: "stripe-sync", nome: "Sincronização Stripe", frequencia: "a cada 30 min", grupo: "integracoes", oQueFaz: "Reconcilia assinaturas, faturas e churn com o Stripe." },
   { chave: "catalogo-stripe-sync", nome: "Catálogo Stripe", frequencia: "a cada 1 h", grupo: "integracoes", oQueFaz: "Traz preços e produtos do Stripe para o catálogo comercial." },
-  { chave: "outlook-reuniao-sync", nome: "Reuniões do Outlook", frequencia: "a cada 15 min", grupo: "integracoes", oQueFaz: "Sincroniza as reuniões com o calendário do Outlook." },
+  { chave: "outlook-reuniao-sync", nome: "Reuniões do Outlook", frequencia: "a cada 5 min", grupo: "integracoes", oQueFaz: "Traz do Outlook para o ONFACE o que mudou nas reuniões: horário, convidados, respostas e cancelamento." },
   { chave: "calendar-sync-retry", nome: "Reenvio ao calendário", frequencia: "a cada 10 min", grupo: "integracoes", oQueFaz: "Tenta de novo as reuniões que falharam ao sincronizar." },
   { chave: "check-whatsapp-connection", nome: "Conexão do WhatsApp", frequencia: "a cada 5 min", grupo: "integracoes", oQueFaz: "Verifica se as sessões do WhatsApp continuam conectadas." },
   { chave: "email-sync-trigger", nome: "Sincronização de e-mail", frequencia: "a cada 5 min", grupo: "integracoes", oQueFaz: "Busca e-mails novos das caixas conectadas e liga aos leads." },

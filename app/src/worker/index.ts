@@ -2886,13 +2886,14 @@ const slaWorker = new Worker(
     }
 
     if (job.name === "outlook-reuniao-sync") {
-      // Reuniao reagendada/cancelada direto no Outlook (fora do CRM) reflete
-      // no card do pipeline — polling simples, sem webhook do Graph.
+      // Volta Outlook -> ONFACE: renova a assinatura (change notifications) e roda a delta query
+      // de cada conta Microsoft com reunião viva. A notificação é o caminho rápido; isto é a rede.
       try {
-        const { syncOutlookReunioes } = await import("../lib/crm/outlook-reuniao-sync");
-        await syncOutlookReunioes(db);
+        const { sincronizarVoltaMicrosoft } = await import("../lib/calendario/volta");
+        const r = await sincronizarVoltaMicrosoft();
+        if (r.contas > 0) console.log(`[OutlookVolta] ${r.contas} conta(s), ${r.reunioes} reunião(ões) atualizada(s), ${r.erros} erro(s)`);
       } catch (e) {
-        console.error("[OutlookReuniaoSync] erro:", e instanceof Error ? e.message : e);
+        console.error("[OutlookVolta] erro:", e instanceof Error ? e.message : e);
       }
       return;
     }
@@ -4090,7 +4091,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("reconcile-pagamentos", { every: 24 * 60 * 60 * 1000 }, { name: "reconcile-pagamentos" });
   await scheduledQueue.upsertJobScheduler("expirar-propostas", { every: 60 * 60 * 1000 }, { name: "expirar-propostas" });
   await scheduledQueue.upsertJobScheduler("rd-criativo-sync", { every: 6 * 60 * 60 * 1000 }, { name: "rd-criativo-sync" });
-  await scheduledQueue.upsertJobScheduler("outlook-reuniao-sync", { every: 15 * 60 * 1000 }, { name: "outlook-reuniao-sync" });
+  await scheduledQueue.upsertJobScheduler("outlook-reuniao-sync", { every: 5 * 60 * 1000 }, { name: "outlook-reuniao-sync" });
   await scheduledQueue.upsertJobScheduler("follow-up-proposta", { every: 60 * 60 * 1000 }, { name: "follow-up-proposta" });
   await scheduledQueue.upsertJobScheduler("cs-sweep", { every: 60 * 60 * 1000 }, { name: "cs-sweep" });
   // A cada 6 h: o snapshot do Callface AI é uso agregado por tenant, não muda de

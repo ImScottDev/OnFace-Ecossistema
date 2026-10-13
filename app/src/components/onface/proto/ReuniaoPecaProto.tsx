@@ -72,7 +72,7 @@ function paraItem(r: ReuniaoDaPeca) {
     reuniao: {
       data: iso(ini), hora: hm(ini), duracao: dur, formato: FORMATO_DO_TIPO[r.tipo ?? "call"] ?? "Ligação",
       closer: r.responsavel ?? "", participantes: Array.isArray(r.participantes) ? r.participantes : [],
-      rsvp: {}, // sem aceite lido do Outlook: ninguém aparece como "aceitou"
+      rsvp: {}, // o aceite real vem de `respostas` (lido do Outlook) em renderVals
       link: r.link, local, resultado: RESULTADO_DO_STATUS[status] ?? null,
     },
   };
@@ -212,7 +212,8 @@ class ReuniaoLigada extends ReuniaoLiga {
       v.rv.copiar = () => { navigator.clipboard?.writeText(link ?? "").then(() => toast.success("Link da reunião copiado"), () => toast.error("Não consegui copiar o link.")); };
       v.rv.entrar = () => { if (link) window.open(link, "_blank", "noopener"); };
       v.rv.sync = textoSync(r);
-      for (const pt of v.rv.part) pt.st = "Convidado";
+      const RESPOSTA: Record<string, string> = { accepted: "Aceitou", declined: "Recusou", tentativelyAccepted: "Talvez", none: "Aguardando" };
+      for (const pt of v.rv.part) pt.st = RESPOSTA[r.respostas?.[String(pt.email).toLowerCase()] ?? ""] ?? "Convidado";
       const n = v.rv.part.length;
       v.rv.rsResumo = n ? n + (n > 1 ? " convidados" : " convidado") : "Ninguém convidado";
     }

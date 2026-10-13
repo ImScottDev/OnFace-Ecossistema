@@ -47,6 +47,7 @@ const WEBHOOKS: Webhook[] = [
   { nome: "Meta Lead Ads", arquivo: "app/api/webhooks/meta-leads/route.ts", envVar: "META_APP_SECRET" },
   { nome: "WhatsApp (wuzapi)", arquivo: "api-server/routes/whatsapp.ts", envVar: "UAZAPI_WEBHOOK_SECRET" },
   { nome: "Apollo", arquivo: "api-server/routes/apollo.ts", envVar: "APOLLO_WEBHOOK_SECRET" },
+  { nome: "Microsoft Calendar (Graph)", arquivo: "app/api/webhooks/microsoft-calendar/route.ts", envVar: "MICROSOFT_CALENDAR_CLIENT_STATE" },
 ];
 
 /**
