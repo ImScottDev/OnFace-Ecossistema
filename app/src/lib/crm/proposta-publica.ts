@@ -12,7 +12,7 @@
  */
 import { db } from "@/lib/db";
 import { propostas, contratos } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
 import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
@@ -25,16 +25,25 @@ import { registrarRespostaDoCliente } from "@/lib/vendas/propostas";
 type PropostaRow = typeof propostas.$inferSelect;
 
 /** Chamado a cada GET da página pública. ProposalOpened em TODA visita; ProposalViewed só na 1ª (evento distinto — abertura do link != decisão do cliente). */
+/**
+ * Soma uma visualização de forma atômica e diz se foi a primeira. Antes lia o
+ * contador, somava 1 em JS e gravava: duas aberturas simultâneas perdiam uma
+ * contagem, e as duas se achavam "a primeira" (evento ProposalViewed duplicado).
+ */
+export async function incrementarVisualizacao(propostaId: string): Promise<{ primeiraVez: boolean }> {
+  const [r] = await db.execute<{ primeira: boolean }>(sql`
+    WITH antes AS (SELECT id, primeira_visualizacao_em FROM propostas WHERE id = ${propostaId}::uuid FOR UPDATE)
+    UPDATE propostas p SET
+      visualizacoes = p.visualizacoes + 1,
+      primeira_visualizacao_em = COALESCE(p.primeira_visualizacao_em, now()),
+      ultima_visualizacao_em = now()
+    FROM antes WHERE p.id = antes.id
+    RETURNING (antes.primeira_visualizacao_em IS NULL) AS primeira`);
+  return { primeiraVez: r?.primeira === true };
+}
+
 export async function registrarVisualizacao(proposta: PropostaRow): Promise<void> {
-  const primeiraVez = !proposta.primeiraVisualizacaoEm;
-  await db
-    .update(propostas)
-    .set({
-      visualizacoes: proposta.visualizacoes + 1,
-      primeiraVisualizacaoEm: proposta.primeiraVisualizacaoEm ?? new Date(),
-      ultimaVisualizacaoEm: new Date(),
-    })
-    .where(eq(propostas.id, proposta.id));
+  const { primeiraVez } = await incrementarVisualizacao(proposta.id);
 
   await publicarEvento({
     organizacaoId: proposta.organizacaoId, eventType: "ProposalOpened", aggregateType: "proposta", aggregateId: proposta.id,
