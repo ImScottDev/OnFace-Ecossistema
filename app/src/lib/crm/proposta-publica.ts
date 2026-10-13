@@ -12,7 +12,7 @@
  */
 import { db } from "@/lib/db";
 import { propostas, contratos } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { publicarEvento } from "@/lib/events/outbox";
 import { notificarPropostaRespondida } from "@/lib/crm/notificar-proposta";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
@@ -80,9 +80,12 @@ export async function recusarPropostaPublica(proposta: PropostaRow, motivo?: str
     return { ok: false, error: "Essa proposta não está mais aguardando resposta." };
   }
 
-  await db.update(propostas).set({
+  // Transição condicional: se o aceite (ou outra resposta) chegou entre a leitura acima e este UPDATE,
+  // a recusa não sobrescreve. Antes o UPDATE era só por id e uma recusa atrasada desfazia um aceite.
+  const recusada = await db.update(propostas).set({
     status: "recusada", clienteRespondeuEm: new Date(), motivoRecusa: motivo || null, updatedAt: new Date(),
-  }).where(eq(propostas.id, proposta.id));
+  }).where(and(eq(propostas.id, proposta.id), inArray(propostas.status, ["enviada", "visualizada", "ajuste_solicitado"]))).returning({ id: propostas.id });
+  if (recusada.length === 0) return { ok: false, error: "Essa proposta acabou de receber outra resposta." };
 
   // A linha na timeline (com o motivo) sai de registrarRespostaDoCliente, abaixo: gravar também aqui duplicava a entrada.
 
@@ -116,7 +119,10 @@ export async function recusarPropostaPublica(proposta: PropostaRow, motivo?: str
 export async function solicitarAjustePropostaPublica(proposta: PropostaRow, mensagem: string): Promise<void> {
   if (!["enviada", "visualizada", "ajuste_solicitado"].includes(proposta.status)) return;
 
-  await db.update(propostas).set({ status: "ajuste_solicitado", updatedAt: new Date() }).where(eq(propostas.id, proposta.id));
+  // Condicional pelo mesmo motivo da recusa: ajuste atrasado não pode desfazer aceite ou recusa.
+  const marcada = await db.update(propostas).set({ status: "ajuste_solicitado", updatedAt: new Date() })
+    .where(and(eq(propostas.id, proposta.id), inArray(propostas.status, ["enviada", "visualizada", "ajuste_solicitado"]))).returning({ id: propostas.id });
+  if (marcada.length === 0) return;
 
   // Timeline: ver registrarRespostaDoCliente (uma entrada só).
 

@@ -841,10 +841,15 @@ export async function registrarRecusaInterna(params: {
   if (!["enviada", "visualizada", "ajuste_solicitado"].includes(p.status)) {
     throw new RegraDeNegocio("proposta_nao_recusavel", "Só proposta enviada, visualizada ou com ajuste pedido pode ser recusada.");
   }
-  await db.execute(sql`
+  // Condicional: um aceite do cliente no meio não pode ser desfeito por esta recusa.
+  const recusada = await db.execute(sql`
     UPDATE propostas SET status = 'recusada', recusada_em = now(), cliente_respondeu_em = now(),
            motivo_recusa = ${params.motivo}, updated_at = now()
-     WHERE id = ${params.propostaId}::uuid`);
+     WHERE id = ${params.propostaId}::uuid AND status IN ('enviada', 'visualizada', 'ajuste_solicitado')
+    RETURNING id`);
+  if (recusada.length === 0) {
+    throw new RegraDeNegocio("proposta_nao_recusavel", "A proposta acabou de receber outra resposta. Recarregue a tela.");
+  }
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "ProposalRejected", ator: params.ator,
     propostaId: params.propostaId, negocioId: p.negocio_id, leadId: p.lead_id, empresaId: p.empresa_id,
@@ -875,7 +880,10 @@ export async function excluirRascunho(params: { organizacaoId: string; propostaI
                          WHEN primeira_visualizacao_em IS NOT NULL THEN 'visualizada' ELSE 'enviada' END,
            substituida_em = NULL, substituida_por_id = NULL, updated_at = now()
      WHERE substituida_por_id = ${params.propostaId}::uuid AND status = 'substituida'`);
-  await db.execute(sql`DELETE FROM propostas WHERE id = ${params.propostaId}::uuid`);
+  const excluida = await db.execute(sql`DELETE FROM propostas WHERE id = ${params.propostaId}::uuid AND status = 'rascunho' RETURNING id`);
+  if (excluida.length === 0) {
+    throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se exclui. Proposta enviada fica no histórico.");
+  }
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "ProposalDeleted", ator: params.ator,
     negocioId: p.negocio_id, leadId: p.lead_id, empresaId: p.empresa_id,
