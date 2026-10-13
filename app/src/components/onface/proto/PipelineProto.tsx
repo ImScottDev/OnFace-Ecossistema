@@ -24,11 +24,16 @@ import { levarParametros } from "./rota-do-desenho";
 import { persistirEtapa, type CommandsDeEtapa } from "./persistencia";
 import { usePecas } from "./pecas-host";
 import { DelegarAgenteHost } from "./DelegarAgenteHost";
+import { oportunidadeParaODesenho } from "./oportunidade-para-o-desenho";
+import type { DetalheOportunidade } from "@/lib/vendas/consultas";
+import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 
 /** Os commands que a tela precisa. A página é quem os passa. */
 export type AcoesPipeline = CommandsDeEtapa & {
   /** No-show: devolve o lead ao Pre-vendas. Sem isto o botao avisa que nao grava. */
   noShow?: (negocioId: string, reuniaoId: string | null) => Promise<Resultado>;
+  /** Detalhe completo (atividades, notas, timeline) carregado ao abrir o drawer. */
+  detalhe?: (id: string) => Promise<Resultado<{ oportunidade: DetalheOportunidade | null; timeline: LinhaDoTempo[] }>>;
 };
 
 /* ── Domínio → desenho ─────────────────────────────────────────────────── */
@@ -157,6 +162,35 @@ class PipelineLigado extends PipelineLiga {
   /* Mutacao sem command nao grava: o `persistir` avisa e a tela relê. O toast de sucesso que o
      desenho dispara logo depois seria mentira; fica calado ate o fim do tick. */
   private naoGrava = false;
+
+  /* O cartão do quadro vem resumido (sem atividades, notas, timeline). Ao abrir o
+     drawer, carrega o detalhe completo e mescla por cima, com o MESMO mapeamento
+     da página /pipeline/[id]. Enquanto carrega, a timeline avisa. */
+  componentDidUpdate(prevProps?: any, prevState?: any) {
+    (super.componentDidUpdate as any)?.call(this, prevProps, prevState);
+    const id = (this as any).state?.aberto;
+    if (id && id !== prevState?.aberto) this.carregarDetalhe(id);
+  }
+
+  carregarDetalhe(id: string) {
+    const carregar = (this as any).props?.carregarDetalhe;
+    if (typeof carregar !== "function" || this.detalhes[id]) return;
+    this.detalhes[id] = { eventos: [{ t: "Carregando histórico…", quando: "", autor: "" }], carregando: true };
+    this.forceUpdate();
+    void Promise.resolve(carregar(id)).then((r: any) => {
+      if (r?.ok && r.dados?.oportunidade) {
+        const d = oportunidadeParaODesenho(r.dados.oportunidade, r.dados.timeline ?? []);
+        this.detalhes[id] = { atvs: d.atvs, notas: d.notas, eventos: d.eventos, arquivos: d.arquivos, pessoas: d.pessoas };
+      } else delete this.detalhes[id];
+      this.forceUpdate();
+    }).catch(() => { delete this.detalhes[id]; this.forceUpdate(); });
+  }
+
+  private detalhes: Record<string, any> = {};
+
+  base() {
+    return (super.base() as any[]).map((o) => (this.detalhes[o.id] ? { ...o, ...this.detalhes[o.id] } : o));
+  }
 
   gravarOpp(o: any, evento: string) {
     const antes = ((this as any).state.opps || []).find((x: any) => x.id === o.id);
@@ -291,6 +325,7 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
         abrir={abrir}
         persistir={persistir}
         registrarNoShow={registrarNoShow}
+        carregarDetalhe={acoes.detalhe}
         ir={(href: string) => router.push(href)}
       />
       <DelegarAgenteHost />

@@ -795,15 +795,8 @@ function DialogoNovaOportunidade({ aberto, responsaveis, pendente, bloqueio, bus
  * BACKFILL_07" na tela. O dado foi corrigido na migration 0079, e o valor cru
  * deixou de aparecer em tela para o próximo valor inesperado não vazar também.
  */
-export function rotuloProcesso(processo: string | null): string {
-  switch (processo) {
-    case "PRE_SALES": return "Pré-vendas";
-    case "OUTBOUND_DIRECT": return "Prospecção direta";
-    case "MANUAL": return "Criação manual";
-    case "EXPANSION": return "Carteira / expansão";
-    default: return "—";
-  }
-}
+import { rotuloProcesso } from "@/lib/vendas/rotulos-evento";
+export { rotuloProcesso };
 
 function rotuloPerda(chave: string): string {
   return MOTIVOS_PERDA.find((m) => m.chave === chave)?.rotulo ?? chave;

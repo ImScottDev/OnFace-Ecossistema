@@ -153,3 +153,14 @@ export function tituloDoEvento(
   // Sem título próprio (evento de domínio): o rótulo em português, nunca o nome do tipo cru ("CompanyCreated").
   return tituloLegivel(titulo) ?? (t ? rotuloDeEvento(tipo) : null);
 }
+
+/** Rótulo de origem do processo comercial (nunca o código cru). */
+export function rotuloProcesso(processo: string | null): string {
+  switch (processo) {
+    case "PRE_SALES": return "Pré-vendas";
+    case "OUTBOUND_DIRECT": return "Prospecção direta";
+    case "MANUAL": return "Criação manual";
+    case "EXPANSION": return "Carteira / expansão";
+    default: return "—";
+  }
+}
