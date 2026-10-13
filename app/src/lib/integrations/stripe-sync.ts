@@ -26,13 +26,10 @@ import { assinaturaItens, assinaturas, clientes, contratos, faturas, leads, mrrM
 import { eq, gt, sql, and, inArray, isNotNull } from "drizzle-orm";
 import { resolveBillingCustomer, type BillingResolution } from "./billing-identity";
 import { negocioDaMetadataStripe } from "../crm/metadata-comercial";
-<<<<<<< Updated upstream
 import { resumoDeCancelamento } from "./stripe-portal-retorno";
-=======
 import { periodoCorrente } from "./stripe-financeiro";
 
 const seg = (n: number | null | undefined) => (n ? new Date(n * 1000) : null);
->>>>>>> Stashed changes
 
 const STRIPE_API = "https://api.stripe.com/v1";
 
@@ -421,13 +418,9 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             produto: planoNome,
             stripePriceId: item0?.price?.id || null,
             quantidade: quantidadeTotal,
-<<<<<<< Updated upstream
-            currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
+            currentPeriodEnd: seg(periodo.fim),
             // Mescla (não substitui): outros escritores podem ter guardado evidência no mesmo jsonb.
             raw: sql`COALESCE(${assinaturas.raw}, '{}'::jsonb) || ${JSON.stringify(resumoDeCancelamento(s))}::jsonb`,
-=======
-            currentPeriodEnd: seg(periodo.fim),
->>>>>>> Stashed changes
             syncedAt: new Date(),
             updatedAt: new Date(),
           })
@@ -544,12 +537,8 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             motivoCancelamento: motivo,
             iniciadaEm: s.start_date ? new Date(s.start_date * 1000) : null,
             canceladaEm,
-<<<<<<< Updated upstream
-            currentPeriodEnd: s.current_period_end ? new Date(s.current_period_end * 1000) : null,
-            raw: resumoDeCancelamento(s),
-=======
             currentPeriodEnd: seg(periodo.fim),
->>>>>>> Stashed changes
+            raw: resumoDeCancelamento(s),
             syncedAt: new Date(),
           })
           .returning({ id: assinaturas.id });
