@@ -152,7 +152,7 @@ export async function configurarPortal(): Promise<ConfiguracaoDoPortal> {
 
 async function acharConfiguracao(): Promise<string | null> {
   const r = await stripe<{ data: { id: string; metadata?: Record<string, string> | null }[] }>(
-    "billing_portal/configurations?limit=100&is_active=true",
+    "billing_portal/configurations?limit=100&active=true",
   );
   return (r.data ?? []).find((c) => c.metadata?.crm_portal === MARCA_CONFIG)?.id ?? null;
 }
