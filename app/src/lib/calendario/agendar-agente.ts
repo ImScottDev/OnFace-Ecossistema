@@ -16,7 +16,7 @@ import { reunioes, notificacoes, usuarios, atividades } from "@/lib/db/schema";
 import { getFullAvailability, formatSlotLabel } from "@/lib/crm/agenda-closers";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
 import { agendaDoUsuario, criarNaAgenda, atualizarNaAgenda, cancelarNaAgenda } from "./sincronizar";
-import { FRASE_DA_FALHA } from "./provider";
+import { FRASE_DA_FALHA, type MotivoFalha } from "./provider";
 
 export interface SlotLivre { inicioISO: string; fimISO: string; label: string }
 export interface Disponibilidade {
@@ -68,6 +68,14 @@ export async function horariosLivres(o: OpcoesHorarios): Promise<Disponibilidade
     }
   }
   return { verificado, fonte: verificado ? "outlook+interno" : "interno", motivoNaoVerificado: motivo, slots: escolhidos };
+}
+
+/** Token expirado: avisa a closer (no máximo 1 vez por dia) para reconectar o Outlook; sem isso o agente fica sem agenda e ninguém sabe. */
+async function avisarReconexao(closerId: string, motivo: MotivoFalha) {
+  if (motivo !== "token_expirado") return;
+  const [ja] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM notificacoes WHERE usuario_id = ${closerId}::uuid AND tipo = 'calendario_reconectar' AND created_at > now() - interval '1 day'`);
+  if ((ja?.n ?? 0) > 0) return;
+  await db.insert(notificacoes).values({ usuarioId: closerId, tipo: "calendario_reconectar", titulo: "Reconecte seu calendário", mensagem: "A conexão com o Outlook expirou. Enquanto isso, os agentes não conseguem oferecer horários da sua agenda.", link: "/ajustes/integracoes" }).catch(() => undefined);
 }
 
 /** O instante exato ainda está na grade livre (interna + Outlook)? */

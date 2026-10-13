@@ -155,7 +155,19 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
     return { sincronizado: false, provider: escolha.provider.nome, aviso: FRASE_DA_FALHA[res.motivo] };
   }
   const link = ("joinUrl" in res ? res.joinUrl : null) ?? ("link" in res ? res.link : null) ?? null;
-  await gravarEstado(reuniaoId, { provider: escolha.provider.nome, eventId: res.eventId, status: "ok", link });
+  // O evento externo JÁ existe. Se a gravação interna falhar, tenta de novo; persistindo a falha, o evento é
+  // desfeito no provedor: reconcilia sem deixar convite órfão e sem duplicar no reprocessamento.
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      await gravarEstado(reuniaoId, { provider: escolha.provider.nome, eventId: res.eventId, status: "ok", link });
+      break;
+    } catch (e) {
+      if (tentativa < 3) { await new Promise((ok) => setTimeout(ok, 200 * tentativa)); continue; }
+      console.error(`[calendario] evento ${res.eventId} criado mas a reunião ${reuniaoId} não gravou o vínculo; desfazendo o evento:`, e);
+      if (res.eventId) await escolha.provider.cancelar(escolha.contaId, res.eventId).catch(() => undefined);
+      return { sincronizado: false, provider: escolha.provider.nome, aviso: "O convite foi criado, mas não deu para registrá-lo no CRM; foi desfeito para não duplicar. Tente de novo." };
+    }
+  }
   return { sincronizado: true, provider: escolha.provider.nome, eventId: res.eventId, aviso: null, link };
 }
 

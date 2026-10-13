@@ -29,6 +29,7 @@ import { resolverCloser, listarRegras, sinaisDoLead } from "@/lib/crm/roteamento
 import { criarLiaSdr } from "@/lib/ai-platform/lia/criar";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 import { criarFluxo } from "@/lib/automacoes/fluxos-servico";
+import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
 
 const app = new Hono();
 const AO = "/automacoes/agentes-op";
@@ -383,6 +384,12 @@ app.post(`${AO}/teste/lead`, async (c) => {
     organizacaoId: ctx.organizacaoId, nome: `[Teste] ${b.nome}`, email: `teste.${Date.now().toString(36)}@teste.invalid`, empresa: b.empresa ?? null, cargo: b.cargo ?? null, origem: "teste_agente",
     utmCampaign: b.campanha ?? null, servicosInteresse: b.produto ? [b.produto] : null, camposCustom: b.form ?? {}, estagioPreVendas: "novo", tipo: "lead",
   }).returning({ id: leads.id });
+  // Lead de teste nasce pela porta canônica como qualquer outro (aquisição e evento), marcado por origem teste_agente.
+  await garantirEntradaCanonica({
+    organizacaoId: ctx.organizacaoId, tipo: "MANUAL", origem: "teste_agente", provider: "agent-studio",
+    pessoa: { nome: `[Teste] ${b.nome}`, email: null, telefone: null, cargo: b.cargo ?? null }, empresa: b.empresa ? { nome: b.empresa } : null,
+    atribuicao: { utmCampaign: b.campanha ?? null }, responsavelId: ctx.userId,
+  }, l.id);
   const [ct] = await db.insert(contatos).values({ organizacaoId: ctx.organizacaoId, canal: "whatsapp", nome: `[Teste] ${b.nome}`, leadId: l.id, responsavelId: ctx.userId }).returning({ id: contatos.id });
   for (const m of b.mensagens) await db.execute(sql`INSERT INTO whatsapp_mensagens (contato_id, lead_id, telefone, direcao, tipo, conteudo, status) VALUES (${ct.id}::uuid, ${l.id}::uuid, 'teste', 'in', 'text', ${m}, 'received')`);
   return c.json({ leadId: l.id, contatoId: ct.id }, 201);
