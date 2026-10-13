@@ -249,13 +249,12 @@
 
 /* ── Herói ────────────────────────────────────────────────────────────── */
 
-/* O herói é um cartão como os outros: mesma superfície, mesmo raio, mesma borda. */
 .ini-hero {
-  background: var(--surface-card);
-  border: 1px solid var(--line-hairline);
+  background: var(--surface-shell);
+  box-shadow: inset 0 0 0 1px var(--onface-alpha-hairline);
   border-radius: var(--ini-raio);
-  padding: var(--space-24);
-  display: flex; flex-direction: column; gap: var(--space-24);
+  padding: var(--space-32);
+  display: flex; flex-direction: column; gap: var(--space-32);
   color: var(--text-body);
   min-width: 0;
 }
@@ -285,7 +284,7 @@
 .ini-hero-meta-detalhe { font-size: var(--t-12); color: var(--text-muted); line-height: 1.5; }
 .ini-hero-nota { font-size: var(--t-12); color: var(--text-muted); padding-top: var(--space-12); }
 
-.ini-meta-barra { height: var(--space-8); border-radius: var(--radius-full); background: var(--surface-sunken); overflow: hidden; }
+.ini-meta-barra { height: var(--space-8); border-radius: var(--radius-full); background: var(--onface-alpha-divider); overflow: hidden; }
 .ini-meta-barra span { display: block; height: 100%; border-radius: var(--radius-full); background: var(--onface-coral); transition: width 0.5s var(--ease-standard, ease); }
 .ini-meta-barra span[data-batida="true"] { background: var(--status-success-strong); }
 
@@ -297,7 +296,12 @@
   margin-top: auto;
 }
 /* Rodapé do herói: três células iguais, cada uma um bloco do mesmo tamanho e com o mesmo respiro. */
-.ini-hero-celula { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-12) var(--space-16); min-width: 0; border-radius: var(--radius-card); background: var(--surface-sunken); }
+.ini-hero-celula { display: flex; align-items: flex-start; gap: var(--space-12); padding-inline: var(--space-20); min-width: 0; border-inline-start: 1px solid var(--line-hairline); }
+.ini-hero-celula:first-child { padding-inline-start: 0; border-inline-start: 0; }
+.ini-hero-celula-icone { display: inline-flex; flex: none; color: var(--text-muted); }
+.ini-hero-celula-icone svg { width: var(--space-20); height: var(--space-20); }
+.ini-hero-celula-corpo { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.ini-hero-celula dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-8); }
 .ini-hero-celula dt { font-size: var(--t-12); color: var(--text-muted); }
 .ini-hero-celula dd { font-family: var(--font-onface-display), sans-serif; font-size: var(--text-lg); font-weight: var(--weight-semibold); color: var(--text-strong); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .ini-hero-celula small { color: var(--text-muted); }
@@ -306,7 +310,7 @@
 
 /* Faixas do herói de fila e de entrega: o que já estourou é coral, o resto é neutro. */
 .ini-fila { display: flex; flex-direction: column; gap: var(--space-10); margin-top: var(--space-12); }
-.ini-fila-barra { display: flex; gap: 2px; height: calc(10 * var(--u)); min-height: 8px; border-radius: var(--radius-full); overflow: hidden; background: var(--surface-sunken); }
+.ini-fila-barra { display: flex; gap: 2px; height: calc(10 * var(--u)); min-height: 8px; border-radius: var(--radius-full); overflow: hidden; background: var(--onface-alpha-hairline); }
 .ini-fila-barra span { display: block; height: 100%; }
 .ini-fila-barra [data-faixa="fora"], .ini-fila-legenda [data-faixa="fora"] { background: var(--onface-coral); }
 .ini-fila-barra [data-faixa="vencendo"], .ini-fila-legenda [data-faixa="vencendo"] { background: var(--text-muted); }
@@ -491,16 +495,20 @@
 .ini-legenda i[data-lado="linha"] { background: var(--text-strong); height: 2px; min-height: 2px; border-radius: 0; width: calc(14 * var(--u)); }
 .ini-legenda i[data-lado="ritmo"] { background: none; height: 0; min-height: 0; border-top: 2px dashed var(--text-muted); border-radius: 0; width: calc(14 * var(--u)); }
 
-/* Barras: faturamento por mês */
+/* Barras: faturamento por mês, com escala no eixo Y */
+.ini-fat-quadro { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-8); }
+.ini-fat-eixo { display: flex; flex-direction: column; justify-content: space-between; height: calc(120 * var(--u)); font-size: var(--t-11); color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; line-height: 1; }
 .ini-fat-corpo { position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-8); }
-.ini-fat-coluna { position: relative; display: grid; grid-template-rows: auto calc(120 * var(--u)) auto; gap: var(--space-6); outline: none; cursor: default; border-radius: calc(6 * var(--u)); }
+.ini-fat-grade { position: absolute; inset-inline: 0; height: 0; border-top: 1px dashed var(--onface-alpha-hairline); pointer-events: none; }
+.ini-fat-coluna { position: relative; display: grid; grid-template-rows: calc(120 * var(--u)) auto; gap: var(--space-8); outline: none; cursor: default; border-radius: var(--radius-sm); }
 .ini-fat-coluna:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; }
-.ini-fat-valor { text-align: center; font-size: var(--t-11); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ini-fat-trilho { display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--line-hairline); }
-.ini-fat-barra { display: block; width: min(60%, calc(32 * var(--u))); border-radius: calc(4 * var(--u)) calc(4 * var(--u)) 0 0; background: var(--text-strong); opacity: 0.4; transform-origin: bottom; transition: opacity 0.12s var(--ease-standard, ease); animation: ini-cresce-y 0.5s var(--ease-standard, ease) both; animation-delay: var(--atraso, 0ms); }
-.ini-fat-coluna[data-atual="true"] .ini-fat-barra, .ini-fat-coluna[data-ativo="true"] .ini-fat-barra { opacity: 1; }
+.ini-fat-barra { display: block; width: min(60%, calc(32 * var(--u))); border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--text-strong); opacity: 0.35; transform-origin: bottom; transition: opacity 0.12s var(--ease-standard, ease); animation: ini-cresce-y 0.5s var(--ease-standard, ease) both; animation-delay: var(--atraso, 0ms); }
+.ini-fat-coluna[data-atual="true"] .ini-fat-barra { background: var(--onface-coral); opacity: 1; }
+.ini-fat-coluna[data-ativo="true"] .ini-fat-barra { opacity: 0.7; }
+.ini-fat-coluna[data-atual="true"][data-ativo="true"] .ini-fat-barra { opacity: 1; }
 .ini-fat-mes { text-align: center; font-size: var(--t-12); color: var(--text-muted); }
-.ini-fat-coluna[data-atual="true"] .ini-fat-mes, .ini-fat-coluna[data-atual="true"] .ini-fat-valor { color: var(--text-strong); font-weight: var(--weight-semibold); }
+.ini-fat-coluna[data-atual="true"] .ini-fat-mes { color: var(--text-strong); font-weight: var(--weight-semibold); }
 @keyframes ini-cresce-y { from { transform: scaleY(0); } }
 
 /* Tooltip: uma superfície escura nos dois tons, porque flutua e some quando o ponteiro sai. */
@@ -586,3 +594,12 @@
 .ic-jornada-link { align-self: flex-end; }
 
 .ini-kpi .ini-spark { margin-top: auto; }
+
+/* Indicadores: ícone no rótulo e série na cor de destaque */
+.ini-kpi-rotulo { display: flex; align-items: center; gap: var(--space-8); }
+.ini-kpi-rotulo svg { width: var(--space-16); height: var(--space-16); color: var(--text-muted); flex: none; }
+.ini-spark-linha { stroke: var(--onface-coral); }
+.ini-spark-area { fill: var(--onface-coral); opacity: 0.1; }
+.ini-spark-ponto { background: var(--onface-coral); }
+.ini-atalho > svg:first-child { color: var(--text-muted); }
+.ini-atalho > svg:last-child:not(:first-child) { margin-left: auto; }

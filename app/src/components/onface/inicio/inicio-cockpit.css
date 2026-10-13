@@ -35,18 +35,34 @@
 .ic-brief-head p { margin-top: var(--space-2); font-size: var(--text-sm); line-height: 1.5; color: var(--text-muted); }
 .ic-brief-numeros { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-8); }
 .ic-brief-num {
-  display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; text-align: left;
+  position: relative; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; text-align: left;
   padding: var(--space-12); background: var(--surface-sunken); border: 0; border-radius: var(--radius-card);
   font: inherit; color: inherit; cursor: pointer; transition: background 0.12s var(--ease-standard, ease);
 }
 .ic-brief-num:hover { background: var(--onface-coral-subtle); }
+.ic-brief-num > svg { position: absolute; top: var(--space-12); right: var(--space-12); width: var(--space-16); height: var(--space-16); color: var(--text-muted); }
+.ic-brief-num[data-risco="true"] > svg { color: var(--ini-sinal); }
 .ic-brief-num strong { font-size: var(--display-kpi); font-weight: var(--weight-semibold); letter-spacing: -0.03em; line-height: 1.1; color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .ic-brief-num[data-risco="true"] strong { color: var(--ini-sinal); }
-.ic-brief-num span { font-size: var(--text-sm); color: var(--text-muted); }
-.ic-brief-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-8) var(--space-16); margin-top: auto; }
-.ic-brief-links > * { display: inline-flex; align-items: center; gap: var(--space-4); background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-strong); }
-.ic-brief-links > *:hover, .ic-leitor-card a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.ic-brief-links svg { width: var(--text-base); height: var(--text-base); }
+.ic-brief-num span { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-strong); }
+.ic-brief-num small { font-size: var(--text-xs); color: var(--text-muted); }
+.ic-brief-itens { display: flex; flex-direction: column; gap: var(--space-8); }
+.ic-brief-itens-topo { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); }
+.ini.ic .ic-brief-itens-topo h3 { font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.ic-brief-itens-topo button, .ic-brief-calendario { display: inline-flex; align-items: center; gap: var(--space-4); background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--onface-coral-texto); }
+.ic-brief-itens-topo button:hover, .ic-brief-calendario:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ic-brief-itens-topo svg, .ic-brief-calendario svg { width: var(--text-base); height: var(--text-base); }
+.ic-brief-itens ul { display: flex; flex-direction: column; gap: var(--space-2); }
+.ic-brief-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-12); padding: var(--space-8); margin-inline: calc(-1 * var(--space-8)); border-radius: var(--radius-control); transition: background 0.12s var(--ease-standard, ease); }
+.ic-brief-item:hover { background: var(--surface-sunken); }
+.ic-brief-item-icone { display: grid; place-items: center; width: var(--space-32); height: var(--space-32); border-radius: var(--radius-full); background: var(--surface-sunken); color: var(--text-muted); }
+.ic-brief-item[data-severidade="critico"] .ic-brief-item-icone { background: var(--onface-coral-subtle); color: var(--onface-coral-texto); }
+.ic-brief-item-icone svg { width: var(--space-16); height: var(--space-16); }
+.ic-brief-item-texto { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.ic-brief-item-texto strong { font-size: var(--text-md); font-weight: var(--weight-semibold); color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic-brief-item-texto small { font-size: var(--text-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic-brief-item > svg { width: var(--text-base); height: var(--text-base); color: var(--text-muted); }
+.ic-brief-calendario { margin-top: auto; }
 .ic-leitor-card { justify-content: center; }
 .ic-leitor-card > svg { width: var(--text-lg); height: var(--text-lg); color: var(--text-subtle); }
 .ic-leitor-card strong { font-size: var(--text-lg); font-weight: var(--weight-semibold); color: var(--text-strong); }

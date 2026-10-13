@@ -2,7 +2,10 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, CircleAlert, Minus } from "lucide-react";
+import {
+  Activity, ArrowDownRight, ArrowUpRight, BarChart3, Banknote, Building2, CalendarDays, CircleAlert,
+  Clock, Headset, LayoutDashboard, ListChecks, Minus, Send, Target, TrendingUp, Users, Workflow, Zap,
+} from "lucide-react";
 import type { Bloco, Delta } from "@/lib/inicio/tipos";
 
 /**
@@ -70,4 +73,27 @@ export function horasLegivel(h: number): string {
   if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
   if (h < 48) return `${Math.round(h)} h`;
   return `${Math.round(h / 24)} d`;
+}
+
+/** Ícone de contexto por indicador e por atalho: dá ao número o assunto, sem texto a mais. */
+const ICONES_KPI: Record<string, React.ComponentType<{ "aria-hidden"?: boolean }>> = {
+  faturamento: Banknote, leads: Users, propostas: Send, clientes: Building2, mrr: TrendingUp, concluidas: ListChecks,
+};
+export const iconeDoKpi = (chave: string) => ICONES_KPI[chave] ?? Activity;
+
+export function iconeDoAtalho(href: string) {
+  if (href.startsWith("/vendas")) return TrendingUp;
+  if (href.startsWith("/pos-vendas")) return Workflow;
+  if (href.startsWith("/clientes/risco")) return Users;
+  if (href.startsWith("/clientes/financeiro")) return Banknote;
+  if (href.startsWith("/clientes")) return Building2;
+  if (href.startsWith("/relatorios")) return BarChart3;
+  if (href.startsWith("/automacoes")) return Zap;
+  if (href.startsWith("/tarefas")) return ListChecks;
+  if (href.startsWith("/atendimento")) return Headset;
+  if (href.startsWith("/calendario")) return CalendarDays;
+  if (href.startsWith("/pipeline")) return Target;
+  if (href.startsWith("/propostas")) return Send;
+  if (href.startsWith("/pre-vendas")) return Clock;
+  return LayoutDashboard;
 }

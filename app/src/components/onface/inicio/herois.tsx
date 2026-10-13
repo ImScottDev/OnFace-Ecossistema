@@ -12,6 +12,7 @@
  * O resto da tela recua para o herói poder ser grande.
  */
 import Link from "next/link";
+import { CalendarClock, ShoppingBag, TrendingUp } from "lucide-react";
 import { brlInteiro, moedaCompacta } from "@/lib/inicio/lente";
 import { deltaDePct } from "@/lib/inicio/lente";
 import type { HeroEntrega, HeroFaturamento, HeroFila, HeroMeta } from "@/lib/inicio/tipos";
@@ -21,15 +22,18 @@ import { SeloDelta, horasLegivel, inteiro } from "./compartilhado";
 const mesPorExtenso = (iso: string) =>
   new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", month: "long" });
 
-function Rodape({ itens }: { itens: Array<{ rotulo: string; valor: string; apoio?: string; tom?: "risco"; href?: string | null }> }) {
+function Rodape({ itens }: { itens: Array<{ rotulo: string; valor: string; apoio?: string; tom?: "risco"; href?: string | null; icone?: React.ReactNode; selo?: React.ReactNode }> }) {
   return (
     <dl className="ini-hero-rodape">
       {itens.map((i) => {
         const conteudo = (
           <>
-            <dt>{i.rotulo}</dt>
-            <dd data-tom={i.tom}>{i.valor}</dd>
-            {i.apoio ? <small>{i.apoio}</small> : null}
+            {i.icone ? <span className="ini-hero-celula-icone" aria-hidden="true">{i.icone}</span> : null}
+            <div className="ini-hero-celula-corpo">
+              <dt>{i.rotulo}</dt>
+              <dd data-tom={i.tom}>{i.valor}{i.selo}</dd>
+              {i.apoio ? <small>{i.apoio}</small> : null}
+            </div>
           </>
         );
         return i.href
@@ -56,7 +60,7 @@ export function HeroDeFaturamento({ d, geradoEm, comLinks }: { d: HeroFaturament
   const mesNome = mesPorExtenso(geradoEm);
   const mrrDelta = deltaDePct(d.mrr.deltaPct);
   return (
-    <section className="ini-hero" data-tipo="faturamento" aria-labelledby="ini-h-fat">
+    <section className="ini-hero" data-onface-superficie="escura" data-tipo="faturamento" aria-labelledby="ini-h-fat">
       <div className="ini-hero-corpo">
         <div className="ini-hero-principal">
           <h2 id="ini-h-fat" className="ini-hero-rotulo">Faturamento de {mesNome}</h2>
@@ -90,12 +94,14 @@ export function HeroDeFaturamento({ d, geradoEm, comLinks }: { d: HeroFaturament
       </div>
       <Rodape
         itens={[
-          { rotulo: "Vendas ganhas", valor: inteiro(d.ganhos), apoio: `em ${mesNome}, até hoje`, href: comLinks ? "/vendas" : null },
-          { rotulo: "Mês anterior", valor: moedaCompacta(d.mesAnterior), apoio: "fechado inteiro" },
+          { icone: <ShoppingBag />, rotulo: "Vendas ganhas", valor: inteiro(d.ganhos), apoio: `em ${mesNome}, até hoje`, href: comLinks ? "/vendas" : null },
+          { icone: <CalendarClock />, rotulo: "Mês anterior", valor: moedaCompacta(d.mesAnterior), apoio: "fechado inteiro" },
           {
+            icone: <TrendingUp />,
             rotulo: "MRR ativo",
             valor: moedaCompacta(d.mrr.atual),
-            apoio: `${mrrDelta.texto} em ${d.mrr.janelaDias} dias`,
+            selo: <SeloDelta delta={mrrDelta} />,
+            apoio: `em ${d.mrr.janelaDias} dias`,
             href: comLinks ? "/clientes" : null,
           },
         ]}

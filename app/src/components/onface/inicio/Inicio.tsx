@@ -10,9 +10,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Activity, ArrowRight, ArrowUpRight, BellRing, CalendarDays, CheckCircle2,
-  CircleHelp, Clock3, Compass, LayoutDashboard, Plus, RefreshCw, Sparkles,
-  Target, TrendingUp, Users, Workflow,
+  Activity, ArrowRight, ArrowUpRight, BellRing, CalendarDays, CheckCircle2, ChevronRight, CircleHelp, Clock3,
+  ClipboardList, Compass, LayoutDashboard, Plus, RefreshCw, Sparkles, Target, TrendingUp, TriangleAlert, Users, Workflow,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -62,6 +61,7 @@ function SituacaoDoDia({ painel, irParaMeuDia }: { painel: PainelInicio; irParaM
   const quantidade = painel.atencao?.ok ? painel.atencao.dados.total : null;
   const criticos = painel.atencao?.ok ? painel.atencao.dados.porSeveridade.critico : null;
   const reunioes = painel.agenda?.ok ? painel.agenda.dados.reunioes : null;
+  const itens = painel.atencao?.ok ? painel.atencao.dados.itens.slice(0, 3) : [];
   const vazio = quantidade === 0 && (reunioes === 0 || reunioes === null);
   const numero = (n: number | null) => (n === null ? "—" : n.toLocaleString("pt-BR"));
   return (
@@ -76,24 +76,43 @@ function SituacaoDoDia({ painel, irParaMeuDia }: { painel: PainelInicio; irParaM
       <div className="ic-brief-numeros">
         {painel.atencao !== null ? (
           <button type="button" className="ic-brief-num" onClick={irParaMeuDia}>
-            <strong>{numero(quantidade)}</strong><span>itens na fila</span>
+            <ClipboardList aria-hidden="true" />
+            <strong>{numero(quantidade)}</strong><span>itens na fila</span><small>Aguardando ação</small>
           </button>
         ) : null}
         {painel.atencao !== null ? (
           <button type="button" className="ic-brief-num" data-risco={criticos !== null && criticos > 0 ? "true" : undefined} onClick={irParaMeuDia}>
-            <strong>{numero(criticos)}</strong><span>críticos</span>
+            <TriangleAlert aria-hidden="true" />
+            <strong>{numero(criticos)}</strong><span>críticos</span><small>Requer atenção</small>
           </button>
         ) : null}
         {painel.agenda !== null ? (
           <button type="button" className="ic-brief-num" onClick={irParaMeuDia}>
-            <strong>{numero(reunioes)}</strong><span>reuniões hoje</span>
+            <CalendarDays aria-hidden="true" />
+            <strong>{numero(reunioes)}</strong><span>reuniões hoje</span><small>Na sua agenda</small>
           </button>
         ) : null}
       </div>
-      <div className="ic-brief-links">
-        {painel.atencao ? <button type="button" onClick={irParaMeuDia}>Ver prioridades <ArrowRight size={14} aria-hidden="true" /></button> : null}
-        {painel.agenda ? <Link href="/calendario">Abrir calendário <ArrowRight size={14} aria-hidden="true" /></Link> : null}
-      </div>
+      {itens.length > 0 ? (
+        <div className="ic-brief-itens">
+          <div className="ic-brief-itens-topo">
+            <h3>Principais itens</h3>
+            <button type="button" onClick={irParaMeuDia}>Ver todos ({numero(quantidade)}) <ArrowRight aria-hidden="true" /></button>
+          </div>
+          <ul>
+            {itens.map((i) => (
+              <li key={i.id}>
+                <Link href={i.href} className="ic-brief-item" data-severidade={i.severidade}>
+                  <span className="ic-brief-item-icone" aria-hidden="true">{i.severidade === "critico" ? <TriangleAlert /> : <Clock3 />}</span>
+                  <span className="ic-brief-item-texto"><strong>{i.titulo}</strong><small>{i.tipo} · {i.detalhe}</small></span>
+                  <ChevronRight aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {painel.agenda ? <Link href="/calendario" className="ic-brief-calendario">Abrir calendário <ArrowRight aria-hidden="true" /></Link> : null}
     </aside>
   );
 }

@@ -20,9 +20,17 @@ import type { MesDeFaturamento } from "@/lib/inicio/tipos";
 
 /* ═══ Barras: faturamento por mês ═════════════════════════════════════════ */
 
+/** Teto "redondo" para três intervalos: 0, 25 mil, 50 mil, 75 mil. */
+function escalaDe(max: number) {
+  const bruto = Math.max(max, 1) / 3;
+  const mag = 10 ** Math.floor(Math.log10(bruto));
+  const passo = ([1, 2, 2.5, 5, 10].map((f) => f * mag).find((p) => p >= bruto)) ?? 10 * mag;
+  return { passo, teto: passo * 3 };
+}
+
 export function BarrasDeFaturamento({ meses }: { meses: MesDeFaturamento[] }) {
   const [ativo, setAtivo] = React.useState<number | null>(null);
-  const teto = Math.max(1, ...meses.map((m) => m.valor));
+  const { passo, teto } = escalaDe(Math.max(0, ...meses.map((m) => m.valor)));
   const ultimo = meses.length - 1;
 
   if (meses.every((m) => m.valor === 0)) {
@@ -36,33 +44,38 @@ export function BarrasDeFaturamento({ meses }: { meses: MesDeFaturamento[] }) {
 
   return (
     <figure className="ini-fat" aria-label="Faturamento por mês, últimos seis meses">
-      <div className="ini-fat-corpo" onPointerLeave={() => setAtivo(null)}>
-        {meses.map((m, i) => (
-          <div
-            key={m.rotulo + i}
-            className="ini-fat-coluna"
-            data-ativo={ativo === i ? "true" : undefined}
-            data-atual={i === ultimo ? "true" : undefined}
-            tabIndex={0}
-            role="group"
-            aria-label={`${m.rotulo}${i === ultimo ? " (até hoje)" : ""}: ${brlInteiro(m.valor)}`}
-            onPointerEnter={() => setAtivo(i)}
-            onFocus={() => setAtivo(i)}
-            onBlur={() => setAtivo(null)}
-          >
-            <span className="ini-fat-valor">{m.valor > 0 ? moedaCompacta(m.valor).replace("R$ ", "") : "0"}</span>
-            <div className="ini-fat-trilho">
-              <span className="ini-fat-barra" style={{ height: `${Math.max(m.valor > 0 ? 2 : 0, (m.valor / teto) * 100)}%`, "--atraso": `${i * 45}ms` } as React.CSSProperties} />
-            </div>
-            <span className="ini-fat-mes">{m.rotulo}</span>
-            {ativo === i ? (
-              <div className="ini-dica ini-dica-barra" role="status" data-borda={i === 0 ? "esq" : i === ultimo ? "dir" : undefined}>
-                <b>{m.rotulo}{i === ultimo ? " (até hoje)" : ""}</b>
-                <span>Faturamento<em>{brlInteiro(m.valor)}</em></span>
+      <div className="ini-fat-quadro">
+        <div className="ini-fat-eixo" aria-hidden="true">
+          {[3, 2, 1, 0].map((i) => <span key={i}>{i === 0 ? "0" : moedaCompacta(passo * i).replace("R$ ", "")}</span>)}
+        </div>
+        <div className="ini-fat-corpo" onPointerLeave={() => setAtivo(null)}>
+          {[1, 2, 3].map((i) => <i key={i} className="ini-fat-grade" style={{ bottom: `${(i / 3) * 100}%` }} aria-hidden="true" />)}
+          {meses.map((m, i) => (
+            <div
+              key={m.rotulo + i}
+              className="ini-fat-coluna"
+              data-ativo={ativo === i ? "true" : undefined}
+              data-atual={i === ultimo ? "true" : undefined}
+              tabIndex={0}
+              role="group"
+              aria-label={`${m.rotulo}${i === ultimo ? " (até hoje)" : ""}: ${brlInteiro(m.valor)}`}
+              onPointerEnter={() => setAtivo(i)}
+              onFocus={() => setAtivo(i)}
+              onBlur={() => setAtivo(null)}
+            >
+              <div className="ini-fat-trilho">
+                <span className="ini-fat-barra" style={{ height: `${Math.max(m.valor > 0 ? 2 : 0, (m.valor / teto) * 100)}%`, "--atraso": `${i * 45}ms` } as React.CSSProperties} />
               </div>
-            ) : null}
-          </div>
-        ))}
+              <span className="ini-fat-mes">{m.rotulo}</span>
+              {ativo === i ? (
+                <div className="ini-dica ini-dica-barra" role="status" data-borda={i === 0 ? "esq" : i === ultimo ? "dir" : undefined}>
+                  <b>{m.rotulo}{i === ultimo ? " (até hoje)" : ""}</b>
+                  <span>Faturamento<em>{brlInteiro(m.valor)}</em></span>
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
       </div>
       <table className="sr-only">
         <caption>Faturamento por mês</caption>

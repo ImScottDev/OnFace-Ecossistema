@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowRight, CalendarDays, CheckCheck, ListChecks, Phone, Rocket, Video } from "lucide-react";
 import type { Agenda, Atalho, Atencao, ItemAgenda, Severidade } from "@/lib/inicio/tipos";
 import { abrirNexo } from "@/lib/nexo/cliente";
-import { TopoDeCartao, Vazio, inteiro } from "./compartilhado";
+import { TopoDeCartao, Vazio, iconeDoAtalho, inteiro } from "./compartilhado";
 
 const ROTULO_SEVERIDADE: Record<Severidade, string> = { critico: "Crítico", alto: "Alto", moderado: "Moderado" };
 
@@ -123,6 +123,7 @@ export function Atalhos({ atalhos, comNexo }: { atalhos: Atalho[]; comNexo: bool
         {atalhos.map((a) => (
           <li key={a.href}>
             <Link href={a.href} className="ini-atalho">
+              {(() => { const Icone = iconeDoAtalho(a.href); return <Icone aria-hidden />; })()}
               <span>{a.rotulo}</span>
               {a.contagem ? <b>{inteiro(a.contagem)}</b> : null}
               <ArrowRight aria-hidden="true" />

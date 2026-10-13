@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Kpi } from "@/lib/inicio/tipos";
 import { brlInteiro } from "@/lib/inicio/lente";
 import { Spark } from "./graficos";
-import { SeloDelta, inteiro } from "./compartilhado";
+import { SeloDelta, iconeDoKpi, inteiro } from "./compartilhado";
 
 /** Formata um ponto da série no mesmo idioma do valor do KPI (dinheiro ou contagem). */
 const formatoDaSerie = (k: Kpi) => (k.chave === "faturamento" ? brlInteiro : inteiro);
@@ -18,9 +18,10 @@ export function FaixaDeKpis({ kpis }: { kpis: Kpi[] }) {
   return (
     <section className="ini-kpis" aria-label="Indicadores dos últimos 30 dias">
       {kpis.map((k) => {
+        const Icone = iconeDoKpi(k.chave);
         const corpo = (
           <>
-            <span className="ini-kpi-rotulo">{k.rotulo}</span>
+            <span className="ini-kpi-rotulo"><Icone aria-hidden />{k.rotulo}</span>
             <strong className="ini-kpi-valor">{k.valor}</strong>
             <span className="ini-kpi-apoio">
               {k.delta ? <SeloDelta delta={k.delta} /> : null}
