@@ -12,8 +12,11 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO, MOTIVOS_PERDA } from "./dominio";
 
-import type { Classe } from "./classificacao-rotulos";
-export { ROTULO_CLASSE, type Classe } from "./classificacao-rotulos";
+import type { Classificacao } from "./classificacao-rotulos";
+export {
+  ROTULO_CLASSE, CONTATO_AVULSO, apresentarClasse, comClasse, textoDaClasse,
+  type Classe, type Classificacao, type ClasseApresentada,
+} from "./classificacao-rotulos";
 
 export interface FatosDeClassificacao {
   /** Conta com serviço ativo (da pessoa ou da empresa dela). */
@@ -33,8 +36,6 @@ export interface FatosDeClassificacao {
   /** Chave do motivo (desqualificação, nutrição ou perda). */
   motivo?: string | null;
 }
-
-export interface Classificacao { classe: Classe; motivo: string | null; estagio: string | null }
 
 const ETAPA_ROTULO: Record<string, string> = {
   novo: "Novo", em_contato: "Em contato", qualificacao: "Qualificação", qualificado: "Qualificado",
@@ -117,6 +118,27 @@ export async function classificarLeads(organizacaoId: string, leadIds: string[])
       LEFT JOIN pipeline_etapas pe ON pe.id = aq.etapa_id
       LEFT JOIN empresas emp ON emp.id = l.empresa_id
      WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.id = ANY(${literal(leadIds)}::uuid[])`);
+  for (const r of linhas) out.set(r.id, classificar(fatosDaLinha(r)));
+  return out;
+}
+
+/**
+ * Classe de várias PESSOAS pelo id de `pessoas` (chave = id da pessoa). Mesma
+ * leitura da lista de Contatos: os fatos são os do lead de origem (quando há) e
+ * o serviço ativo é o da empresa dela; pessoa criada em Contatos, sem lead,
+ * só tem a empresa como fato.
+ */
+export async function classificarPessoas(organizacaoId: string, pessoaIds: string[]): Promise<Map<string, Classificacao>> {
+  const out = new Map<string, Classificacao>();
+  if (!pessoaIds.length) return out;
+  const linhas = await db.execute<LinhaDeFatos & { id: string }>(sql`
+    SELECT p.id::text, ${FATOS_DO_LEAD_SQL}
+      FROM pessoas p
+      LEFT JOIN leads l ON l.id = p.lead_id_legado
+      LEFT JOIN empresas emp ON emp.id = COALESCE(p.empresa_id, l.empresa_id)
+      LEFT JOIN aquisicoes aq ON aq.lead_legado_id = l.id
+      LEFT JOIN pipeline_etapas pe ON pe.id = aq.etapa_id
+     WHERE p.organizacao_id = ${organizacaoId}::uuid AND p.id = ANY(${literal(pessoaIds)}::uuid[])`);
   for (const r of linhas) out.set(r.id, classificar(fatosDaLinha(r)));
   return out;
 }

@@ -225,7 +225,9 @@ class Logica extends React.Component<any, any> {
     const registros = A ? [["Pessoas", A.pessoas], ["Empresas", A.empresas], ["Negócios", A.negocios], ["Propostas", A.propostas]]
       .filter(([, l]) => l && l.length)
       .map(([titulo, l]) => ({ titulo, itens: l.map(r => ({
-        label: r.nome, d: dReg, tag: r.apoio || "",
+        /* Pessoa e empresa chegam com a classe da função única (classeRotulo):
+           a paleta só a mostra, não deriva nada. Negócio e proposta não têm classe. */
+        label: r.nome, d: dReg, tag: [r.classeRotulo, r.apoio].filter(Boolean).join(" · "),
         acao: () => { this.setState({ buscaAberta: false }); this.ir(r.href, r.nome); }
       })) })) : [];
     if (!q) return grupos.map(g => ({ titulo: g.titulo, itens: g.itens.slice(0, g.titulo === "Ações" ? 4 : 6) }));

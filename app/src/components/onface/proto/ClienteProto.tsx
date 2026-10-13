@@ -26,6 +26,7 @@ import {
   acaoAdicionarPessoaAoCliente, acaoRemoverDocumentoDoCliente, type TipoDeVenda, type Resultado,
 } from "@/app/(produto)/clientes/[id]/actions";
 import { rotuloDeEvento } from "@/lib/vendas/rotulos-evento";
+import { textoDaClasse } from "@/lib/vendas/classificacao-rotulos";
 import { toast } from "sonner";
 
 import type { ClienteDoDesenho } from "@/lib/clientes/cliente-para-o-desenho";
@@ -622,7 +623,10 @@ class ClienteLigada extends ClienteLiga {
       vazia: !fatFil.length, linhas: fatFil.map(fatRow), exportar,
     };
 
-    const statusC = fams.length && fams.every((f) => f.st === "Encerrado") ? ["Cobrança encerrada", "neutro"] : R.fulfillmentAberto ? ["Em implantação", "coral"] : ["Cliente ativo", "ok"];
+    const statusC = fams.length && fams.every((f) => f.st === "Encerrado") ? ["Cobrança encerrada", "neutro"] : R.fulfillmentAberto ? ["Em implantação", "coral"]
+      /* "Cliente ativo" é uma afirmação de CLASSE: só sai quando a função única diz Cliente.
+         Fora disso (ex.: ficou sem serviço ativo) a etiqueta é a classe real, com o estágio. */
+      : R.classificacao.classe === "cliente" ? ["Cliente ativo", "ok"] : [textoDaClasse(R.classificacao), "neutro"];
     const ABAS: Array<[string, string, number | null, boolean?]> = [["geral", "Visão geral", null], ["produtos", "Produtos", nItens], ["financeiro", "Financeiro", vencidas.length || null, !!vencidas.length], ["pessoas", "Pessoas", pessoas.length], ["documentos", "Documentos", docsTodos.length], ["historico", "Histórico", null]];
     /* Aba de uso só existe quando a página trouxe a leitura da Callface AI.
        Vínculo pendente acende a contagem em coral: há uma decisão esperando. */

@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getCtx } from "../compat.js";
+import { classificarEmpresas, classificarLeads, classificarPessoas } from "@/lib/vendas/classificacao";
+import { comClasse } from "@/lib/vendas/classificacao-rotulos";
 
 /**
  * Busca global (⌘K): pessoa, empresa, negócio e proposta numa chamada só.
@@ -10,6 +12,9 @@ import { getCtx } from "../compat.js";
  * e mantém as quatro consultas baratas (ILIKE sem índice, tabelas pequenas).
  * Cada item já devolve o `href` final do produto, sem passar pelo tradutor
  * do desenho.
+ *
+ * Pessoa e empresa saem com `classe`/`classeRotulo`/`estagio`/`motivo` da função
+ * única (`lib/vendas/classificacao.ts`): a busca não decide classe por conta própria.
  */
 const app = new Hono();
 const POR_TIPO = 5;
@@ -57,10 +62,20 @@ app.get("/busca-global", async (c) => {
         AND (l.nome ILIKE ${like} OR ('#' || p.numero::text) ILIKE ${like} OR p.numero::text = ${q.replace(/^#/, "")})
       ORDER BY p.created_at DESC LIMIT ${POR_TIPO}`),
   ]);
+  const [classesLeads, classesPessoas, classesEmpresas] = await Promise.all([
+    classificarLeads(org, (pessoas as any[]).map((r) => String(r.id))),
+    classificarPessoas(org, (pessoasSemLead as any[]).map((r) => String(r.id))),
+    classificarEmpresas(org, (empresas as any[]).map((r) => String(r.id))),
+  ]);
   const com = (rows: any[], base: string) => rows.map((r) => ({ id: r.id, nome: r.nome, apoio: r.apoio ?? "", href: `${base}/${r.id}` }));
+  const doRegistro = (rows: any[], base: string, classes: Parameters<typeof comClasse>[2]) =>
+    comClasse(com(rows, base), (r) => r.id, classes);
   return c.json({
-    pessoas: [...com(pessoas as any[], "/pessoas"), ...com(pessoasSemLead as any[], "/contatos/pessoas")],
-    empresas: com(empresas as any[], "/empresas"),
+    pessoas: [
+      ...doRegistro(pessoas as any[], "/pessoas", classesLeads),
+      ...doRegistro(pessoasSemLead as any[], "/contatos/pessoas", classesPessoas),
+    ],
+    empresas: doRegistro(empresas as any[], "/empresas", classesEmpresas),
     negocios: com(negocios as any[], "/negocios"),
     propostas: com(propostas as any[], "/propostas"),
   });

@@ -26,6 +26,8 @@ import * as pipeline from "@/lib/vendas/pipeline";
 const motorDeCadencia = () => import("@/lib/cadencia/cadence-engine");
 import { resolverEmpresa, resolverPessoa, garantirRegistroDeContato } from "@/lib/vendas/identidade";
 import { criarTarefa, alterarTarefa, excluirTarefa, TIPOS_TAREFA, PRIORIDADES_TAREFA, STATUS_TAREFA } from "@/lib/tarefas/portas";
+import { classificarEmpresas, classificarLeads } from "@/lib/vendas/classificacao";
+import { comClasse } from "@/lib/vendas/classificacao-rotulos";
 import { CATALOGO, medir } from "@/lib/metricas/catalogo";
 import { condicaoMinhasConversas, veTodasAsConversas } from "@/lib/whatsapp/acesso";
 import type { AgentToolContext, AgentToolRegistration } from "@/lib/ai-platform/tools/registry";
@@ -186,7 +188,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
       const d = await horariosLivresEquipe({ organizacaoId: ctx.organizacaoId, closerIds: closerId ? [closerId] : undefined, duracaoMin: Number(i.duracao ?? 30), dias: Number(i.dias ?? 7), maxSlots: 10 });
       return { ok: true, data: d };
     }),
-  leitura("leads", "Leads de Pré-vendas (cards). etapa: novo, em_contato, qualificacao, qualificado, nutricao, desqualificado. sem_proxima_acao=true só os sem tarefa aberta.",
+  leitura("leads", "Leads de Pré-vendas (cards). etapa: novo, em_contato, qualificacao, qualificado, nutricao, desqualificado. sem_proxima_acao=true só os sem tarefa aberta. Cada item traz `classe`/`classeRotulo` (Cliente, Lead, Prospect, Contato), `estagio` e `motivo`: use ESSES campos para dizer o que a pessoa é; a etapa sozinha não é a classe (nutrição e desqualificado são Contato).",
     { etapa: str("etapa de pré-vendas"), sem_proxima_acao: { type: "boolean" }, termo: str("parte do nome/empresa"), limite: { type: "integer" } }, [],
     async (ctx, u, i) => {
       const etapa = i.etapa ? String(i.etapa) : null; const termo = i.termo ? `%${String(i.termo).replace(/[%_\\]/g, "\\$&")}%` : null;
@@ -199,7 +201,10 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
         SELECT l.id::text AS id, l.nome, l.empresa, l.estagio_pre_vendas AS etapa, usr.nome AS responsavel, l.created_at, '/pessoas/' || l.id::text AS href
           FROM leads l LEFT JOIN usuarios usr ON usr.id = l.responsavel_id WHERE ${onde} ORDER BY l.updated_at DESC LIMIT ${lim(i.limite)}`);
       const [tot] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM leads l WHERE ${onde}`);
-      return { ok: true, data: { escopo: u.pessoal ? "só os dele" : "organização inteira", total: tot?.n ?? 0, leads: rows } };
+      /* `etapa` é a etapa de Pré-vendas, NÃO a classe: quem está em nutrição ou desqualificado
+         aparece aqui como card, mas a classe é Contato. A classe vem da função única. */
+      const classes = await classificarLeads(ctx.organizacaoId, (rows as unknown as Array<{ id: string }>).map((r) => r.id));
+      return { ok: true, data: { escopo: u.pessoal ? "só os dele" : "organização inteira", total: tot?.n ?? 0, leads: comClasse(rows as unknown as Array<{ id: string }>, (r) => r.id, classes) } };
     }),
   leitura("pipeline", "Oportunidades do Pipeline (cards). etapa: entrada, diagnostico, proposta, negociacao (abertas) ou ganho/perdido (só leitura).",
     { etapa: str("etapa"), termo: str("título/empresa"), limite: { type: "integer" } }, [],
@@ -226,16 +231,19 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
          ORDER BY p.created_at DESC LIMIT ${lim(i.limite)}`);
       return { ok: true, data: { propostas: rows } };
     }),
-  leitura("clientes", "Clientes da carteira / Customer Success: ciclo de vida, último contato, próxima revisão e saúde (pode estar vazia: então diga que não há dado).", { termo: str("nome da empresa"), limite: { type: "integer" } }, [],
+  leitura("clientes", "Clientes da carteira / Customer Success: ciclo de vida, último contato, próxima revisão e saúde (pode estar vazia: então diga que não há dado). Cada item traz `classe`/`classeRotulo` da empresa, a mesma que as telas mostram.", { termo: str("nome da empresa"), limite: { type: "integer" } }, [],
     async (ctx, u, i) => {
       const termo = i.termo ? `%${String(i.termo).replace(/[%_\\]/g, "\\$&")}%` : null;
       const rows = await db.execute(sql`
-        SELECT c.id::text AS id, e.nome AS empresa, c.lifecycle_status AS ciclo, c.health_atual AS saude, c.ultimo_contato_em, c.proxima_revisao_em, c.status_financeiro, usr.nome AS responsavel, '/clientes/' || c.id::text AS href
+        SELECT c.id::text AS id, c.empresa_id::text AS empresa_id, e.nome AS empresa, c.lifecycle_status AS ciclo, c.health_atual AS saude, c.ultimo_contato_em, c.proxima_revisao_em, c.status_financeiro, usr.nome AS responsavel, '/clientes/' || c.id::text AS href
           FROM clientes c LEFT JOIN empresas e ON e.id = c.empresa_id LEFT JOIN usuarios usr ON usr.id = COALESCE(c.responsavel_cs_id, c.responsavel_id)
          WHERE c.organizacao_id = ${ctx.organizacaoId}::uuid AND (${termo}::text IS NULL OR e.nome ILIKE ${termo})
            AND (${u.pessoal}::boolean = false OR c.responsavel_id = ${u.userId}::uuid OR c.responsavel_cs_id = ${u.userId}::uuid)
          ORDER BY c.ultimo_contato_em ASC NULLS FIRST LIMIT ${lim(i.limite)}`);
-      return { ok: true, data: { clientes: rows } };
+      /* Estar na carteira (linha em `clientes`) não é ser Cliente: a classe vem da função única. */
+      const lista = rows as unknown as Array<{ empresa_id: string | null }>;
+      const classes = await classificarEmpresas(ctx.organizacaoId, lista.map((r) => r.empresa_id).filter((x): x is string => !!x));
+      return { ok: true, data: { clientes: comClasse(lista, (r) => r.empresa_id, classes) } };
     }),
   leitura("conversas", "Conversas do Atendimento (WhatsApp): lista recente ou, com contato_id, as últimas mensagens daquela conversa.", { contato_id: str("uuid do contato"), somente_nao_lidas: { type: "boolean" }, limite: { type: "integer" } }, [],
     async (ctx, u, i) => {
@@ -289,7 +297,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
       try { return { ok: true, data: await medir(ctx.organizacaoId, String(i.codigo), { de: i.de ? new Date(String(i.de)) : null, ate: i.ate ? new Date(String(i.ate)) : null }) }; }
       catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
     }),
-  leitura("buscar", "Procura empresas, leads, oportunidades e clientes pelo nome, dentro do que o usuário pode ver.", { termo: str("parte do nome (mínimo 2 letras)") }, ["termo"],
+  leitura("buscar", "Procura empresas, leads, oportunidades e clientes pelo nome, dentro do que o usuário pode ver. Empresas e leads trazem `classe`/`classeRotulo`/`estagio`/`motivo`, a mesma classificação que as telas mostram.", { termo: str("parte do nome (mínimo 2 letras)") }, ["termo"],
     async (ctx, u, i) => {
       if (u.role === "leitor") return { ok: false, error: "o papel leitor não consulta registros individuais" };
       const termo = String(i.termo).trim(); if (termo.length < 2) return { ok: false, error: "termo curto demais" };
@@ -299,7 +307,15 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
         db.execute(sql`SELECT id::text AS id, nome, empresa, estagio_pre_vendas AS etapa, '/pessoas/' || id::text AS href FROM leads WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND (nome ILIKE ${like} OR empresa ILIKE ${like}) AND (${u.pessoal}::boolean = false OR responsavel_id = ${u.userId}::uuid) ORDER BY updated_at DESC LIMIT 8`),
         db.execute(sql`SELECT id::text AS id, titulo, etapa, valor_total AS valor, '/pipeline/' || id::text AS href FROM negocios WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND titulo ILIKE ${like} AND (${u.pessoal}::boolean = false OR responsavel_id = ${u.userId}::uuid) ORDER BY updated_at DESC LIMIT 8`),
       ]);
-      return { ok: true, data: { empresas, leads, oportunidades: negocios } };
+      const [classesEmpresas, classesLeads] = await Promise.all([
+        classificarEmpresas(ctx.organizacaoId, (empresas as unknown as Array<{ id: string }>).map((r) => r.id)),
+        classificarLeads(ctx.organizacaoId, (leads as unknown as Array<{ id: string }>).map((r) => r.id)),
+      ]);
+      return { ok: true, data: {
+        empresas: comClasse(empresas as unknown as Array<{ id: string }>, (r) => r.id, classesEmpresas),
+        leads: comClasse(leads as unknown as Array<{ id: string }>, (r) => r.id, classesLeads),
+        oportunidades: negocios,
+      } };
     }),
 
   /* ── Escrita (executa; confirma só o que envia, apaga ou não desfaz) ──── */

@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { faturamentoMensal, type FaturamentoMes } from "@/lib/financeiro/faturamento-mensal";
 import { sql } from "drizzle-orm";
 import { empresa360, type Empresa360 } from "@/lib/vendas/consultas";
+import type { Classificacao } from "@/lib/vendas/classificacao-rotulos";
 import { billingDaConta, type FaturaResumo } from "@/lib/cs/billing";
 import { healthDaEmpresa } from "@/lib/cs/health";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
@@ -71,6 +72,12 @@ export interface NotaDoCliente { id: string; texto: string; autor: string | null
 
 export interface ClienteDoDesenho {
   empresa: Empresa360;
+  /**
+   * Classe da conta (Cliente, Lead, Prospect, Contato) da função única
+   * (`lib/vendas/classificacao.ts`, via `empresa360`). A tela não deriva classe:
+   * ter linha em `clientes` abre o 360, mas quem diz se é Cliente é esta.
+   */
+  classificacao: Classificacao;
   /** `clientes.id`: é a chave de `notas.cliente_id`. */
   clienteId: string;
   /** Notas escritas na conta (notas.empresa_id), mais recentes primeiro. */
@@ -338,6 +345,7 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
 
   return {
     empresa,
+    classificacao: empresa.classificacao,
     clienteId: cli.cliente_id,
     notas,
     csmId: cli.csm_id,
