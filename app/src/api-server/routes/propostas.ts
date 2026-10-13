@@ -25,8 +25,8 @@ import {
   solicitarAjustePropostaPublica,
   assinarContratoPublico,
 } from "@/lib/crm/proposta-publica";
-import { criarPropostaComItens, inserirItensDaProposta } from "@/lib/crm/proposta-criacao";
-import { calcularItens } from "@/lib/crm/proposta-regras";
+import { criarPropostaComItens, inserirItensDaProposta, prepararItensDaProposta } from "@/lib/crm/proposta-criacao";
+import { validarDataValidade, validarMoeda } from "@/lib/crm/proposta-regras";
 import { agruparItensPorLinhaComercial, organizarVendaMultiLinha } from "@/lib/crm/oportunidade-bundle";
 import { appUrl } from "@/lib/app-url";
 import { isDocumensoConfigured } from "@/lib/crm/signature/documenso-provider";
@@ -57,7 +57,7 @@ const itemSchema = z.object({
 const createSchema = z.object({
   leadId: z.string().uuid().optional(),
   negocioId: z.string().uuid().optional(),
-  moeda: z.enum(["BRL", "USD", "EUR", "CAD"]).default("BRL"),
+  moeda: z.string().default("BRL"), // validada por validarMoeda (política única: só BRL por ora)
   observacoes: z.string().optional(),
   condicoesPagamento: z.string().optional(),
   // Estruturado (25/08, billing avançado) — o texto livre acima continua
@@ -76,7 +76,7 @@ const createSchema = z.object({
 });
 
 const updateSchema = z.object({
-  moeda: z.enum(["BRL", "USD", "EUR", "CAD"]).optional(),
+  moeda: z.string().optional(),
   observacoes: z.string().optional().nullable(),
   condicoesPagamento: z.string().optional().nullable(),
   condicaoPagamentoTipo: z.enum(["cartao", "boleto", "boleto_parcelado", "outro"]).optional().nullable(),
@@ -869,14 +869,14 @@ app.patch("/propostas/:id", async (c) => {
   }
 
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
-  if (parsed.data.moeda !== undefined) updateData.moeda = parsed.data.moeda;
+  if (parsed.data.moeda !== undefined) updateData.moeda = validarMoeda(parsed.data.moeda);
   if (parsed.data.observacoes !== undefined) updateData.observacoes = parsed.data.observacoes;
   if (parsed.data.condicoesPagamento !== undefined) updateData.condicoesPagamento = parsed.data.condicoesPagamento;
   if (parsed.data.condicaoPagamentoTipo !== undefined) updateData.condicaoPagamentoTipo = parsed.data.condicaoPagamentoTipo;
   if (parsed.data.parcelas !== undefined) updateData.parcelas = parsed.data.parcelas;
   if (parsed.data.vencimentoDias !== undefined) updateData.vencimentoDias = parsed.data.vencimentoDias;
   if (parsed.data.prazoContratoMeses !== undefined) updateData.prazoContratoMeses = parsed.data.prazoContratoMeses;
-  if (parsed.data.dataValidade !== undefined) updateData.dataValidade = parsed.data.dataValidade;
+  if (parsed.data.dataValidade !== undefined) updateData.dataValidade = parsed.data.dataValidade === null ? null : validarDataValidade(parsed.data.dataValidade);
   if (parsed.data.signatarios !== undefined) updateData.signatarios = parsed.data.signatarios;
 
   // Replace items if provided
@@ -895,7 +895,10 @@ app.patch("/propostas/:id", async (c) => {
       }, 400);
     }
     // Valida e calcula ANTES de apagar qualquer coisa: item inválido não pode deixar a proposta sem linhas.
-    const calculo = calcularItens(parsed.data.itens);
+    const calculo = await prepararItensDaProposta(
+      { organizacaoId: ctx.organizacaoId, moeda: parsed.data.moeda || existing.moeda, negocioId: existing.negocioId },
+      parsed.data.itens,
+    );
     itensNovos = calculo.itens;
     updateData.totalRecorrente = calculo.totalRecorrente.toFixed(2);
     updateData.totalAvulso = calculo.totalAvulso.toFixed(2);

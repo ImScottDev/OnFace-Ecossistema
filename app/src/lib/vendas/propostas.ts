@@ -75,6 +75,7 @@ export async function catalogoDaFamilia(organizacaoId: string, familia: Familia)
      WHERE sc.organizacao_id = ${organizacaoId}::uuid
        AND sc.service_family = ${familia}
        AND COALESCE(cp.ativo, true) = true
+       AND COALESCE(sc.ativo, true) = true
      ORDER BY sc.categoria NULLS LAST, sc.nome, cp.ordem, cp.valor, cp.variacao
   `);
 

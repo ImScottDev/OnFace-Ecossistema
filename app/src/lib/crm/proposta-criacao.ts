@@ -11,7 +11,7 @@ import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores"
 import { syncOportunidadeItensFromProposta, resolverServiceFamiliesPorCatalogoIds, mapTipoParaRevenueNature } from "@/lib/crm/composicao-comercial";
 import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem } from "@/lib/crm/commercial-model";
 import { ehFamiliaValida, RegraDeNegocio } from "@/lib/vendas/dominio";
-import { calcularItens } from "@/lib/crm/proposta-regras";
+import { calcularItens, validarDataValidade, validarMoeda } from "@/lib/crm/proposta-regras";
 
 export interface ItemEntrada {
   servicoCatalogoId?: string | null;
@@ -65,6 +65,77 @@ async function carregarPrecosOficiais(ids: (string | null | undefined)[]) {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
+/**
+ * UMA resolução de família comercial para toda a proposta: a do negócio, e na
+ * falta dela a da oportunidade canônica (deduzida no backfill). A action de
+ * criar, a de editar e este núcleo liam cada uma de um jeito (a action olhava só
+ * `negocios.service_family`, e 128 oportunidades abertas só têm a da canônica).
+ */
+export async function resolverFamiliaDoNegocio(organizacaoId: string, negocioId: string): Promise<{ existe: boolean; familia: string | null }> {
+  const [r] = await db.execute<{ service_family: string | null }>(sql`
+    SELECT COALESCE(n.service_family, o.service_family) AS service_family
+      FROM negocios n
+      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
+     WHERE n.id = ${negocioId}::uuid AND n.organizacao_id = ${organizacaoId}::uuid
+  `);
+  return { existe: !!r, familia: r?.service_family ?? null };
+}
+
+/**
+ * Toda linha NOVA precisa de um Price oficial válido: existe, é da organização,
+ * está ativo (e o produto pai também), tem a moeda da proposta e é da família
+ * da oportunidade. O tipo (recorrente/avulso/setup) sai do Price, não do chamador.
+ * Linha legada mantida (`itemExistenteId`) não passa por aqui.
+ */
+export async function padronizarItensPeloCatalogo<T extends ItemEntrada & { itemExistenteId?: string | null }>(
+  opts: { organizacaoId: string; moeda: string; familia: string | null },
+  itens: T[],
+): Promise<T[]> {
+  const novos = itens.filter((i) => !i.itemExistenteId);
+  for (const i of novos) {
+    if (!i.catalogoPrecoId) throw new RegraDeNegocio("item_sem_catalogo", `O item "${i.nome}" não veio do catálogo. Escolha o preço no catálogo.`);
+  }
+  const ids = [...new Set(novos.map((i) => i.catalogoPrecoId as string))];
+  if (ids.length === 0) return itens;
+  const rows = await db.execute<{
+    id: string; organizacao_id: string; moeda: string; tipo: string; ativo: boolean; produto_ativo: boolean;
+    service_family: string | null; produto: string; variacao: string;
+  }>(sql`
+    SELECT cp.id::text, cp.organizacao_id::text, cp.moeda, cp.tipo, COALESCE(cp.ativo, true) AS ativo,
+           COALESCE(sc.ativo, true) AS produto_ativo, sc.service_family, sc.nome AS produto, cp.variacao
+      FROM catalogo_precos cp JOIN servicos_catalogo sc ON sc.id = cp.servico_catalogo_id
+     WHERE cp.id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})`);
+  const porId = new Map(rows.map((r) => [r.id, r]));
+  return itens.map((i) => {
+    if (i.itemExistenteId) return i;
+    const r = porId.get(i.catalogoPrecoId as string);
+    if (!r || r.organizacao_id !== opts.organizacaoId) {
+      throw new RegraDeNegocio("item_catalogo_inexistente", `O preço do item "${i.nome}" não existe no catálogo desta organização.`);
+    }
+    if (!r.ativo || !r.produto_ativo) {
+      throw new RegraDeNegocio("item_catalogo_inativo", `"${r.produto} · ${r.variacao}" está inativo no catálogo. Escolha outro preço.`);
+    }
+    if (r.moeda !== opts.moeda) {
+      throw new RegraDeNegocio("item_moeda_diferente", `"${r.produto} · ${r.variacao}" é em ${r.moeda}, e a proposta é em ${opts.moeda}.`);
+    }
+    if (ehFamiliaValida(opts.familia) && r.service_family !== opts.familia) {
+      throw new RegraDeNegocio("item_de_outra_familia", "Há item de outra família. Use só o catálogo da família desta oportunidade.");
+    }
+    return { ...i, tipo: r.tipo as ItemEntrada["tipo"], nome: i.nome?.trim() ? i.nome : `${r.produto} · ${r.variacao}` };
+  });
+}
+
+/** Porta única antes de gravar linhas: catálogo, moeda, família e conta (subtotal/totais) validados juntos. */
+export async function prepararItensDaProposta<T extends ItemEntrada & { itemExistenteId?: string | null }>(
+  opts: { organizacaoId: string; moeda: string; negocioId: string | null },
+  itens: T[],
+) {
+  const moeda = validarMoeda(opts.moeda);
+  const familia = opts.negocioId ? (await resolverFamiliaDoNegocio(opts.organizacaoId, opts.negocioId)).familia : null;
+  const padronizados = await padronizarItensPeloCatalogo({ organizacaoId: opts.organizacaoId, moeda, familia }, itens);
+  return calcularItens(padronizados);
+}
+
 type ItemCalculado = ItemEntrada & { subtotal: number; ordem: number };
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -111,7 +182,9 @@ export async function inserirItensDaProposta(tx: Tx, propostaId: string, moeda: 
   await tx.insert(propostaItens).values(
     itensWithCalc.map((item) => {
       const preco = item.catalogoPrecoId ? precoMap.get(item.catalogoPrecoId) : undefined;
-      const servicoCatalogoId = preco?.servicoCatalogoId ?? item.servicoCatalogoId;
+      // Última barreira: linha nova sem Price oficial não entra por nenhuma porta.
+      if (!preco) throw new RegraDeNegocio("item_sem_catalogo", `O item "${item.nome}" não veio do catálogo. Escolha o preço no catálogo.`);
+      const servicoCatalogoId = preco.servicoCatalogoId;
       return {
         propostaId,
         servicoCatalogoId: servicoCatalogoId || undefined,
@@ -163,27 +236,12 @@ export async function criarPropostaComItens(opts: {
   // Esta é a última fronteira antes de persistir uma proposta. A UI e o
   // pipeline já orientam o usuário, mas outros chamadores deste núcleo não
   // podem criar uma proposta para uma oportunidade ainda sem família.
-  /* A MESMA cadeia de família que o resto do módulo usa.
-   *
-   * Lia só `negocios.service_family`, e 128 das 536 oportunidades abertas têm
-   * a família apenas na oportunidade canônica, deduzida no backfill. O efeito
-   * era cruel: o cartão mostrava "Callface AI", o Builder mostrava "Definido
-   * pela oportunidade", e ao salvar o command dizia para definir a família que
-   * já estava ali.
-   *
-   * `pipeline.carregarOportunidade` e `consultas.ts` já resolviam assim; esta
-   * era a única porta que olhava um lado só. */
-  const [negocio] = await db.execute<{ service_family: string | null }>(sql`
-    SELECT COALESCE(n.service_family, o.service_family) AS service_family
-      FROM negocios n
-      LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
-     WHERE n.id = ${opts.negocioId}::uuid
-       AND n.organizacao_id = ${opts.organizacaoId}::uuid
-  `);
-  if (!negocio) {
+  // A mesma cadeia de família do resto do módulo (negócio, depois oportunidade canônica).
+  const { existe, familia } = await resolverFamiliaDoNegocio(opts.organizacaoId, opts.negocioId);
+  if (!existe) {
     throw new RegraDeNegocio("oportunidade_nao_encontrada", "Oportunidade não encontrada.");
   }
-  if (!ehFamiliaValida(negocio.service_family)) {
+  if (!ehFamiliaValida(familia)) {
     throw new RegraDeNegocio(
       "proposta_exige_familia",
       "Defina a família comercial antes de criar uma proposta.",
@@ -191,7 +249,9 @@ export async function criarPropostaComItens(opts: {
     );
   }
 
-  const { itens: itensWithCalc, totalRecorrente, totalAvulso } = calcularItens(opts.itens);
+  const moeda = validarMoeda(opts.moeda);
+  const dataValidade = opts.dataValidade ? validarDataValidade(opts.dataValidade) : undefined;
+  const { itens: itensWithCalc, totalRecorrente, totalAvulso } = await prepararItensDaProposta({ ...opts, moeda }, opts.itens);
   const today = new Date().toISOString().split("T")[0];
 
   // Proposta, número e linhas na MESMA transação: ou grava tudo ou nada.
@@ -203,10 +263,10 @@ export async function criarPropostaComItens(opts: {
       negocioId: opts.negocioId,
       numero,
       versao: 1,
-      moeda: opts.moeda,
+      moeda,
       status: "rascunho",
       dataEmissao: today,
-      dataValidade: opts.dataValidade || undefined,
+      dataValidade,
       observacoes: opts.observacoes,
       condicoesPagamento: opts.condicoesPagamento,
       condicaoPagamentoTipo: opts.condicaoPagamentoTipo,
@@ -220,7 +280,7 @@ export async function criarPropostaComItens(opts: {
       totalGeral: (totalRecorrente + totalAvulso).toFixed(2),
       criadoPorId: opts.criadoPorId,
     }).returning();
-    await inserirItensDaProposta(tx, criada.id, opts.moeda, itensWithCalc);
+    await inserirItensDaProposta(tx, criada.id, moeda, itensWithCalc);
     return criada;
   });
 
@@ -241,13 +301,21 @@ export async function atualizarItensDoRascunho(opts: {
   organizacaoId: string;
   propostaId: string;
   itens: Array<ItemEntrada & { itemExistenteId?: string | null }>;
+  /** `undefined` mantém o que está gravado; `null` limpa (parcelas volta a 1). */
   observacoes?: string | null;
   prazoContratoMeses?: number | null;
   parcelas?: number | null;
 }) {
   if (opts.itens.length === 0) throw new RegraDeNegocio("proposta_sem_itens", "A proposta precisa de pelo menos um item.");
+  const [previa] = await db.execute<{ negocio_id: string | null; moeda: string }>(sql`
+    SELECT negocio_id::text, moeda FROM propostas
+     WHERE id = ${opts.propostaId}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid`);
+  if (!previa) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");
   // Valida tudo ANTES de abrir a transação ou apagar qualquer linha.
-  const calc = calcularItens(opts.itens.map((item, idx) => ({ ...item, ordem: idx }))).itens;
+  const calc = (await prepararItensDaProposta(
+    { organizacaoId: opts.organizacaoId, moeda: previa.moeda, negocioId: previa.negocio_id },
+    opts.itens.map((item, idx) => ({ ...item, ordem: idx })),
+  )).itens;
   const mantidos = calc.filter((i) => i.itemExistenteId);
   const novos = calc.filter((i) => !i.itemExistenteId);
 
@@ -282,9 +350,9 @@ export async function atualizarItensDoRascunho(opts: {
         total_recorrente = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid AND tipo = 'recorrente'), 0),
         total_avulso = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid AND tipo <> 'recorrente'), 0),
         total_geral = COALESCE((SELECT sum(subtotal) FROM proposta_itens WHERE proposta_id = ${opts.propostaId}::uuid), 0),
-        observacoes = COALESCE(${opts.observacoes ?? null}, observacoes),
-        prazo_contrato_meses = COALESCE(${opts.prazoContratoMeses ?? null}::int, prazo_contrato_meses),
-        parcelas = COALESCE(${opts.parcelas ?? null}::int, parcelas),
+        observacoes = CASE WHEN ${opts.observacoes !== undefined} THEN ${opts.observacoes?.trim() || null} ELSE observacoes END,
+        prazo_contrato_meses = CASE WHEN ${opts.prazoContratoMeses !== undefined} THEN ${opts.prazoContratoMeses ?? null}::int ELSE prazo_contrato_meses END,
+        parcelas = CASE WHEN ${opts.parcelas !== undefined} THEN COALESCE(${opts.parcelas ?? null}::int, 1) ELSE parcelas END,
         updated_at = now()
        WHERE id = ${opts.propostaId}::uuid`);
     return p.negocio_id;

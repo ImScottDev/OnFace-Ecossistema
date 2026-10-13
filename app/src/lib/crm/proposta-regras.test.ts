@@ -40,3 +40,19 @@ describe("calcularItens", () => {
     assert.equal(codigo(() => calcularItens([])), "proposta_sem_itens");
   });
 });
+
+import { dataValidadePadrao, validarDataValidade, validarMoeda } from "./proposta-regras";
+
+describe("moeda e validade", () => {
+  it("só BRL, em qualquer caixa; USD/EUR/CAD recusadas com erro claro", () => {
+    assert.equal(validarMoeda("brl"), "BRL");
+    for (const m of ["USD", "EUR", "CAD", "", null]) assert.equal(codigo(() => validarMoeda(m)), "moeda_nao_suportada");
+  });
+  const hoje = new Date("2026-10-13T12:00:00Z");
+  it("validade padrão é 14 dias (não 10)", () => assert.equal(dataValidadePadrao(hoje), "2026-10-27"));
+  it("data de validade: hoje e +30 passam; ontem, +31 e lixo não", () => {
+    assert.equal(validarDataValidade("2026-10-13", hoje), "2026-10-13");
+    assert.equal(validarDataValidade("2026-11-12", hoje), "2026-11-12");
+    for (const d of ["2026-10-12", "2026-11-13", "2026-02-30", "amanhã"]) assert.equal(codigo(() => validarDataValidade(d, hoje)), "validade_invalida");
+  });
+});

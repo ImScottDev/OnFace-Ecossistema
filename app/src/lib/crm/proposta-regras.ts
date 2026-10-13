@@ -5,7 +5,7 @@
  * (`api-server/routes/propostas.ts`) passam por aqui; ninguém recalcula
  * subtotal por conta própria. Módulo puro (sem banco) para ser testável.
  */
-import { RegraDeNegocio } from "@/lib/vendas/dominio";
+import { RegraDeNegocio, VALIDADES_PROPOSTA } from "@/lib/vendas/dominio";
 
 export interface ItemParaCalculo {
   nome?: string;
@@ -49,4 +49,43 @@ export function calcularItens<T extends ItemParaCalculo & { tipo: string; ordem?
     return { ...item, subtotal, ordem: item.ordem ?? idx };
   });
   return { itens: calculados, totalRecorrente: arredondar(totalRecorrente), totalAvulso: arredondar(totalAvulso), totalGeral: arredondar(totalRecorrente + totalAvulso) };
+}
+
+/* ── Moeda e validade: uma política só para action, núcleo e rota ──────── */
+
+/** Moedas que o catálogo e o Stripe suportam hoje. As demais são recusadas com erro claro. */
+export const MOEDAS_SUPORTADAS = ["BRL"] as const;
+
+export function validarMoeda(moeda: unknown): string {
+  const m = typeof moeda === "string" ? moeda.trim().toUpperCase() : "";
+  if (!(MOEDAS_SUPORTADAS as readonly string[]).includes(m)) {
+    throw new RegraDeNegocio("moeda_nao_suportada", `Moeda "${String(moeda)}" não suportada. Hoje o catálogo e o Stripe trabalham só em ${MOEDAS_SUPORTADAS.join(", ")}.`);
+  }
+  return m;
+}
+
+/** Mesma lista do envio pelo módulo Vendas (`VALIDADES_PROPOSTA`): 7, 14, 22 ou 30 dias. */
+export const VALIDADE_PADRAO_DIAS = 14;
+
+const MS_DIA = 86_400_000;
+const isoDia = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Data de validade padrão (hoje + 14 dias), substituindo o antigo +10 do envio legado. */
+export function dataValidadePadrao(hoje: Date = new Date()): string {
+  return isoDia(new Date(hoje.getTime() + VALIDADE_PADRAO_DIAS * MS_DIA));
+}
+
+/**
+ * Uma data de validade informada diretamente (API): data válida, não passada,
+ * no máximo na maior validade da política (30 dias). Devolve YYYY-MM-DD.
+ */
+export function validarDataValidade(data: string, hoje: Date = new Date()): string {
+  const ok = /^\d{4}-\d{2}-\d{2}$/.test(data) && isoDia(new Date(`${data}T00:00:00Z`)) === data;
+  const maximo = Math.max(...VALIDADES_PROPOSTA);
+  if (!ok) throw new RegraDeNegocio("validade_invalida", "Validade inválida: use uma data no formato AAAA-MM-DD.");
+  if (data < isoDia(hoje)) throw new RegraDeNegocio("validade_invalida", "A validade não pode estar no passado.");
+  if (data > isoDia(new Date(hoje.getTime() + maximo * MS_DIA))) {
+    throw new RegraDeNegocio("validade_invalida", `A validade máxima é de ${maximo} dias.`);
+  }
+  return data;
 }

@@ -20,14 +20,10 @@ import { formarGruposComerciais, vincularContratoPreparadoAoGrupo } from "@/lib/
 import { exigeContrato } from "@/lib/crm/commercial-model";
 import { gerarContratoDeTemplate, conferirContratoDoGrupo } from "@/lib/crm/contrato-template";
 import { appUrl } from "@/lib/app-url";
+import { dataValidadePadrao } from "@/lib/crm/proposta-regras";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
-function validadePadraoIso(): string {
-  const data = new Date();
-  data.setUTCDate(data.getUTCDate() + 10);
-  return data.toISOString().slice(0, 10);
-}
 
 /**
  * O e-mail que leva o link público ao cliente. Uma porta só: o envio legado
@@ -202,7 +198,7 @@ export async function enviarPropostaComCheckout(opts: {
   // O PDF/email histórico já informava "10 dias após o recebimento" quando
   // o vendedor não preenchia uma data. Materializamos essa regra no registro
   // no momento do envio para que exibição, worker e aceite usem a mesma data.
-  const dataValidadeEfetiva = proposta.dataValidade || validadePadraoIso();
+  const dataValidadeEfetiva = proposta.dataValidade || dataValidadePadrao();
   const base = appUrl();
   const clienteNome = [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "";
   const linkPublico = `${base}/p/${proposta.id}`;

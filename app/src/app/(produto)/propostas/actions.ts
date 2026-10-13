@@ -9,7 +9,7 @@ import {
 } from "@/lib/vendas/dominio";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as propostas from "@/lib/vendas/propostas";
-import { atualizarItensDoRascunho, criarPropostaComItens, type ItemEntrada } from "@/lib/crm/proposta-criacao";
+import { atualizarItensDoRascunho, criarPropostaComItens, resolverFamiliaDoNegocio, type ItemEntrada } from "@/lib/crm/proposta-criacao";
 import { lerLinhaDoTempo, registrarEvento, type LinhaDoTempo } from "@/lib/vendas/eventos";
 import { avisarClienteDaPropostaEnviada, type ResultadoEmail } from "@/lib/crm/enviar-proposta";
 
@@ -402,6 +402,8 @@ export async function acaoBaseNovaProposta(): Promise<BaseNovaProposta> {
  */
 export async function acaoCriar(entrada: {
   negocioId: string;
+  /** Contato que recebe a proposta, quando a oportunidade não tem um definido. */
+  leadId?: string | null;
   itens: Array<{ catalogoPrecoId: string; nome: string; tipo: "recorrente" | "avulso" | "setup"; quantidade: number; valorUnitario: number; desconto: number }>;
   observacoes?: string | null;
   prazoContratoMeses?: number | null;
@@ -415,37 +417,42 @@ export async function acaoCriar(entrada: {
   if (entrada.itens.length === 0) return { ok: false, erro: "Escolha ao menos um item do catálogo." };
 
   return executar("criar proposta", async () => {
-    const [negocio] = await db.execute<{ lead_id: string | null; familia: string | null; empresa_id: string | null }>(sql`
-      SELECT lead_id::text, service_family AS familia, empresa_id::text FROM negocios
+    const [negocio] = await db.execute<{ lead_id: string | null; empresa_id: string | null }>(sql`
+      SELECT lead_id::text, empresa_id::text FROM negocios
        WHERE id = ${entrada.negocioId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
     `);
     if (!negocio) throw new Error("oportunidade não encontrada");
+    // Mesma resolução de família do núcleo e da edição (negócio, depois oportunidade canônica).
+    const { familia } = await resolverFamiliaDoNegocio(ctx.organizacaoId, entrada.negocioId);
 
-    // `propostas.lead_id` é NOT NULL no schema legado. Quando a oportunidade
-    // nasceu sem lead (criação manual ou outbound direto), é preciso um lead de
-    // referência — usa-se o contato principal da empresa, que é a identidade
-    // que a proposta realmente representa.
-    let leadId = negocio.lead_id;
+    // `propostas.lead_id` é NOT NULL no schema legado. O contato que recebe a proposta é
+    // o da oportunidade, ou o que o vendedor escolheu (`leadId`, da mesma empresa). Nunca
+    // "o primeiro lead da empresa": isso mandava a proposta para a pessoa errada.
+    let leadId = entrada.leadId ?? negocio.lead_id;
+    if (entrada.leadId && entrada.leadId !== negocio.lead_id) {
+      const [ok] = await db.execute<{ id: string }>(sql`
+        SELECT id::text FROM leads
+         WHERE id = ${entrada.leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
+           AND empresa_id IS NOT DISTINCT FROM ${negocio.empresa_id}::uuid`);
+      if (!ok) throw new RegraDeNegocio("contato_invalido", "O contato escolhido não pertence à empresa desta oportunidade.");
+    }
     if (!leadId && negocio.empresa_id) {
-      const [contato] = await db.execute<{ id: string }>(sql`
+      const candidatos = await db.execute<{ id: string }>(sql`
         SELECT id::text FROM leads
          WHERE empresa_id = ${negocio.empresa_id}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
-         ORDER BY created_at LIMIT 1
-      `);
-      leadId = contato?.id ?? null;
+         ORDER BY created_at LIMIT 2`);
+      // Um único contato na empresa não é ambíguo; mais de um exige escolha explícita.
+      if (candidatos.length === 1) leadId = candidatos[0].id;
+      else if (candidatos.length > 1) {
+        throw new RegraDeNegocio(
+          "proposta_exige_contato",
+          "A oportunidade não tem contato definido e a empresa tem mais de um. Defina o contato que recebe a proposta antes de criar.",
+          { rotulo: "Definir contato", tipo: "definir_contato" },
+        );
+      }
     }
     if (!leadId) {
-      throw new Error("a oportunidade não tem contato vinculado para receber a proposta");
-    }
-
-    // O catálogo da tela já vem filtrado pela família, mas a action é chamável com
-    // qualquer id: um preço de outra família entrava na proposta e o aceite fechava
-    // o grupo pela família do ITEM, não pela da oportunidade. Barra aqui.
-    if (ehFamiliaValida(negocio.familia)) {
-      const permitidos = new Set((await propostas.catalogoDaFamilia(ctx.organizacaoId, negocio.familia)).map((c) => c.catalogoPrecoId));
-      if (entrada.itens.some((i) => !permitidos.has(i.catalogoPrecoId))) {
-        throw new RegraDeNegocio("item_de_outra_familia", "Há item de outra família. Use só o catálogo da família desta oportunidade.");
-      }
+      throw new RegraDeNegocio("proposta_exige_contato", "A oportunidade não tem contato vinculado para receber a proposta.", { rotulo: "Definir contato", tipo: "definir_contato" });
     }
 
     const itens: ItemEntrada[] = entrada.itens.map((i, ordem) => ({
@@ -475,7 +482,7 @@ export async function acaoCriar(entrada: {
     });
 
     await db.execute(sql`
-      UPDATE propostas SET service_family = ${negocio.familia} WHERE id = ${proposta.id}::uuid
+      UPDATE propostas SET service_family = ${familia} WHERE id = ${proposta.id}::uuid
     `);
     if (entrada.signatarios !== undefined || entrada.editor !== undefined) {
       await propostas.salvarEditorDaProposta({
@@ -486,7 +493,7 @@ export async function acaoCriar(entrada: {
     await registrarEvento({
       organizacaoId: ctx.organizacaoId, tipo: "ProposalCreated", ator: ctx.ator,
       propostaId: proposta.id, negocioId: entrada.negocioId, leadId,
-      contexto: { familia: negocio.familia, itens: itens.length },
+      contexto: { familia, itens: itens.length },
       timeline: { tipo: "nota", titulo: `Proposta #${proposta.numero} criada` },
     });
 
@@ -519,24 +526,11 @@ export async function acaoAtualizarRascunho(entrada: {
   if (entrada.itens.length === 0) return { ok: false, erro: "A proposta precisa de pelo menos um item." };
 
   return executar("editar rascunho da proposta", async () => {
-    const [p] = await db.execute<{ negocio_id: string | null; lead_id: string; familia: string | null }>(sql`
-      SELECT p.negocio_id::text, p.lead_id::text,
-             COALESCE(n.service_family, o.service_family) AS familia
-        FROM propostas p
-        LEFT JOIN negocios n ON n.id = p.negocio_id
-        LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
-       WHERE p.id = ${entrada.propostaId}::uuid AND p.organizacao_id = ${ctx.organizacaoId}::uuid`);
+    const [p] = await db.execute<{ negocio_id: string | null; lead_id: string }>(sql`
+      SELECT negocio_id::text, lead_id::text FROM propostas
+       WHERE id = ${entrada.propostaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
     if (!p) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");
-
-    if (ehFamiliaValida(p.familia)) {
-      const permitidos = new Set((await propostas.catalogoDaFamilia(ctx.organizacaoId, p.familia)).map((c) => c.catalogoPrecoId));
-      if (entrada.itens.some((i) => i.catalogoPrecoId && !permitidos.has(i.catalogoPrecoId))) {
-        throw new RegraDeNegocio("item_de_outra_familia", "Há item de outra família. Use só o catálogo da família desta oportunidade.");
-      }
-    }
-    if (entrada.itens.some((i) => !i.catalogoPrecoId && !i.itemExistenteId)) {
-      throw new RegraDeNegocio("item_sem_catalogo", "Há item que não veio do catálogo. Escolha o preço no catálogo.");
-    }
+    // Catálogo, família, moeda e conta são validados no núcleo (`prepararItensDaProposta`).
 
     await atualizarItensDoRascunho({
       organizacaoId: ctx.organizacaoId,
@@ -547,9 +541,10 @@ export async function acaoAtualizarRascunho(entrada: {
         // Em REAIS (total do item), como em `acaoCriar`.
         desconto: i.desconto, descontoTipo: "valor", ordem,
       })),
-      observacoes: entrada.observacoes ?? null,
-      prazoContratoMeses: entrada.prazoContratoMeses ?? null,
-      parcelas: entrada.parcelasSetup ?? null,
+      // Sem o campo = mantém; null = limpa (a tela manda o formulário inteiro).
+      observacoes: entrada.observacoes,
+      prazoContratoMeses: entrada.prazoContratoMeses,
+      parcelas: entrada.parcelasSetup,
     });
 
     if (entrada.signatarios !== undefined || entrada.editor !== undefined) {
