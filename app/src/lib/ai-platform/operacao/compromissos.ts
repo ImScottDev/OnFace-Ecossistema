@@ -156,14 +156,14 @@ async function cumprir(c: Compromisso, agora: Date): Promise<Desfecho> {
   return { fim: "bloqueado", motivo: r.motivo ?? r.resultado };
 }
 
-export async function processarCompromissosVencidos(p: { agora?: Date; limite?: number } = {}): Promise<{ concluidos: number; bloqueados: number; adiados: number; falhas: number; expirados: number; cancelados: number }> {
+export async function processarCompromissosVencidos(p: { agora?: Date; limite?: number; /** Só estes agentes (execução dirigida e testes isolados). */ agentIds?: string[] } = {}): Promise<{ concluidos: number; bloqueados: number; adiados: number; falhas: number; expirados: number; cancelados: number }> {
   const agora = p.agora ?? new Date();
   const out = { concluidos: 0, bloqueados: 0, adiados: 0, falhas: 0, expirados: 0, cancelados: 0 };
   // Worker que caiu no meio: o que ficou "processando" há mais de 10 min volta à fila.
   await db.execute(sql`UPDATE ai_agent_compromissos SET status = 'pendente', updated_at = now() WHERE status = 'processando' AND updated_at < now() - interval '10 minutes'`);
   const reivindicados = await db.execute<Record<string, unknown>>(sql`
     UPDATE ai_agent_compromissos SET status = 'processando', tentativas = tentativas + 1, updated_at = now()
-     WHERE id IN (SELECT id FROM ai_agent_compromissos WHERE status = 'pendente' AND due_at <= ${agora.toISOString()}::timestamptz ORDER BY due_at LIMIT ${p.limite ?? 10} FOR UPDATE SKIP LOCKED)
+     WHERE id IN (SELECT id FROM ai_agent_compromissos WHERE status = 'pendente' AND due_at <= ${agora.toISOString()}::timestamptz AND ${p.agentIds?.length ? sql`agent_id IN (${sql.join(p.agentIds.map((i) => sql`${i}::uuid`), sql`, `)})` : sql`true`} ORDER BY due_at LIMIT ${p.limite ?? 10} FOR UPDATE SKIP LOCKED)
     RETURNING id::text`);
   for (const { id } of reivindicados as unknown as { id: string }[]) {
     const [c] = await db.select().from(aiAgentCompromissos).where(eq(aiAgentCompromissos.id, id)).limit(1);

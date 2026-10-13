@@ -88,6 +88,7 @@ before(async () => {
   for (const nome of ["A", "B"]) {
     const [{ id }] = await q<{ id: string }>(sql`INSERT INTO usuarios (organizacao_id, nome, email, senha_hash, role, tipo, ativo) VALUES (${org}::uuid, ${`${T} Closer ${nome}`}, ${`${T}-${nome}-${Math.random().toString(36).slice(2)}@qa.local`}, 'x', 'closer', 'humano', true) RETURNING id::text`);
     ids.usuarios.push(id);
+    await db.execute(sql`INSERT INTO user_roles (usuario_id, role_id, organizacao_id) SELECT ${id}::uuid, r.id, r.organizacao_id FROM roles r WHERE r.organizacao_id = ${org}::uuid AND r.codigo = 'closer' ON CONFLICT DO NOTHING`);
     await db.execute(sql`INSERT INTO closer_disponibilidade (organizacao_id, usuario_id, horario_trabalho, ativo) VALUES (${org}::uuid, ${id}::uuid, ${JSON.stringify({ inicio: "07:00", fim: "23:00", diasSemana: [0, 1, 2, 3, 4, 5, 6] })}::jsonb, true)`);
     if (nome === "A") closerA = id; else closerB = id;
   }
@@ -140,7 +141,8 @@ async function novoAgente(p: { nome: string; tools?: readonly string[]; guardrai
   const slug = `qa-${Math.random().toString(36).slice(2, 9)}`;
   const [{ id }] = await q<{ id: string }>(sql`INSERT INTO ai_agents (organizacao_id, nome, slug, finalidade, status) VALUES (${org}::uuid, ${`${T} ${p.nome}`}, ${slug}, 'pre_vendas', 'draft') RETURNING id::text`);
   ids.agentes.push(id);
-  const guard = { ...LIA_VERSAO.guardrailConfig, ...(p.guardrail ?? {}) };
+  // Horário comercial desligado por padrão: os testes não podem depender da hora em que rodam. O que testa horário passa o dele.
+  const guard = { ...LIA_VERSAO.guardrailConfig, horarioComercial: { ativo: false }, ...(p.guardrail ?? {}) };
   const [{ vid }] = await q<{ vid: string }>(sql`
     INSERT INTO ai_agent_versions (organizacao_id, agent_id, versao, status, system_prompt, provider, modelo, tools, trigger_config, handoff_config, knowledge_config, guardrail_config, max_steps, token_budget, history_message_window, published_at)
     VALUES (${org}::uuid, ${id}::uuid, 1, 'published', ${"Você é a agente de testes " + p.nome + ". Siga as instruções do sistema."}, 'openai', 'fake-model',
@@ -296,7 +298,7 @@ test("Teste B: pedido de retorno vira compromisso do agente; no horário o conte
   // horário comercial: a retomada só roda dentro da janela configurada; o teste fixa o relógio em quarta 11h BRT
   const agora = new Date("2026-10-14T14:00:00Z");
   await db.execute(sql`UPDATE ai_agent_compromissos SET due_at = ${new Date(agora.getTime() - 60_000).toISOString()}::timestamptz WHERE id = ${c.id}::uuid`);
-  const p = await processarCompromissosVencidos({ agora });
+  const p = await processarCompromissosVencidos({ agora, agentIds: [agente.id] });
   assert.equal(p.concluidos, 1);
   const retomada = ultimaChamada();
   assert.match(sistema(retomada), /somos 12 vendedores agora/, "contexto ATUALIZADO, não a mensagem antiga");
@@ -315,7 +317,7 @@ test("Teste F: humano assumiu antes da retomada vencer: nada é enviado e o comp
   await transferirParaHumano({ organizacaoId: org, atribuicaoId: atribuicao.id, motivo: "Pessoa assumiu", humanoUsuarioId: humano.id });
   await db.execute(sql`UPDATE ai_agent_compromissos SET due_at = '2026-10-14T13:00:00Z' WHERE id = ${c.id}::uuid`);
   const antes = chamadas.length;
-  const p = await processarCompromissosVencidos({ agora: new Date("2026-10-14T14:00:00Z") });
+  const p = await processarCompromissosVencidos({ agora: new Date("2026-10-14T14:00:00Z"), agentIds: [agente.id] });
   assert.equal(p.bloqueados, 1);
   assert.equal(chamadas.length, antes, "o modelo nem foi chamado");
   const [r] = await q<{ status: string; bloqueio_motivo: string }>(sql`SELECT status, bloqueio_motivo FROM ai_agent_compromissos WHERE id = ${c.id}::uuid`);
@@ -327,26 +329,26 @@ test("Teste F: humano assumiu antes da retomada vencer: nada é enviado e o comp
 });
 
 test("retomada: fora do horário adia; canal desconectado adia; opt-out bloqueia", opts, async () => {
-  const agente = await novoAgente({ nome: "Lia R" });
+  const agente = await novoAgente({ nome: "Lia R", guardrail: { horarioComercial: LIA_VERSAO.guardrailConfig.horarioComercial } });
   const { leadId, contatoId } = await novoLead({ nome: "Rafael R" });
   await atribuirAgente({ organizacaoId: org, agentId: agente.id, contatoId, leadId, origem: "atendimento" });
   const c = await criarCompromisso({ organizacaoId: org, agentId: agente.id, contatoId, leadId, dueAt: new Date(Date.now() + 3_600_000), motivo: "Voltar" });
   const antes = chamadas.length;
   // domingo 23h BRT: fora do horário
   await db.execute(sql`UPDATE ai_agent_compromissos SET due_at = '2026-10-18T01:00:00Z' WHERE id = ${c.id}::uuid`);
-  let p = await processarCompromissosVencidos({ agora: new Date("2026-10-18T02:00:00Z") });
+  let p = await processarCompromissosVencidos({ agora: new Date("2026-10-18T02:00:00Z"), agentIds: [agente.id] });
   assert.equal(p.adiados, 1);
   assert.equal(chamadas.length, antes);
   // número desconectado
   await db.execute(sql`UPDATE whatsapp_sessao SET status = 'disconnected' WHERE id = ${sessaoId}::uuid`);
   await db.execute(sql`UPDATE ai_agent_compromissos SET due_at = '2026-10-14T13:00:00Z', status = 'pendente' WHERE id = ${c.id}::uuid`);
-  p = await processarCompromissosVencidos({ agora: new Date("2026-10-14T14:00:00Z") });
+  p = await processarCompromissosVencidos({ agora: new Date("2026-10-14T14:00:00Z"), agentIds: [agente.id] });
   assert.equal(p.adiados, 1);
   await db.execute(sql`UPDATE whatsapp_sessao SET status = 'connected' WHERE id = ${sessaoId}::uuid`);
   // opt-out
   await lembrar({ organizacaoId: org, escopo: "pessoa", contatoId, leadId, chave: "opt_out", valor: "pediu para parar", fonte: "humano" });
   await db.execute(sql`UPDATE ai_agent_compromissos SET due_at = '2026-10-14T13:00:00Z', status = 'pendente' WHERE id = ${c.id}::uuid`);
-  p = await processarCompromissosVencidos({ agora: new Date("2026-10-14T14:00:00Z") });
+  p = await processarCompromissosVencidos({ agora: new Date("2026-10-14T14:00:00Z"), agentIds: [agente.id] });
   assert.equal(p.bloqueados, 1);
   assert.equal((await q<{ bloqueio_motivo: string }>(sql`SELECT bloqueio_motivo FROM ai_agent_compromissos WHERE id = ${c.id}::uuid`))[0].bloqueio_motivo, "opt_out");
   assert.equal(chamadas.length, antes);

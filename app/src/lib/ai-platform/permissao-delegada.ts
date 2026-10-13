@@ -52,6 +52,8 @@ export const PERMISSAO_POR_FERRAMENTA: Record<string, CodigoPermissao> = {
   "followup.cancel": "automation.manage",
   "cadence.pause": "automation.manage",
   "callface.call": "acquisition.manage",
+  // Memória e retomada própria do agente: gravam fato e agendam contato sobre uma pessoa, então exigem a mesma permissão de quem trabalha o lead.
+  "memory.remember": "acquisition.manage", "followup.schedule": "acquisition.manage", "followup.resume_cancel": "acquisition.manage",
   // NEXO (chat do ecossistema): leitura também é gateada pelo papel, porque o
   // painel age COMO o usuário. As escritas checam dentro da ferramenta, porque
   // a permissão depende do alvo (lead x oportunidade).

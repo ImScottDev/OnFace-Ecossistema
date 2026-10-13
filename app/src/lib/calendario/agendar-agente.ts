@@ -37,6 +37,9 @@ export interface OpcoesHorarios {
   exigirOutlook?: boolean;
 }
 
+/** Antecedência mínima de um horário oferecido: marcar para daqui a poucos minutos não dá tempo nem de avisar a closer. */
+export const ANTECEDENCIA_MINIMA_MIN = 30;
+
 export async function horariosLivres(o: OpcoesHorarios): Promise<Disponibilidade> {
   const dias = o.dias ?? 7;
   const duracao = o.duracaoMin ?? 30;
@@ -61,8 +64,9 @@ export async function horariosLivres(o: OpcoesHorarios): Promise<Disponibilidade
   const max = o.maxSlots ?? 6;
   const escolhidos: SlotLivre[] = [];
   // No máximo 2 por dia, para a oferta cobrir dias diferentes em vez de empilhar manhãs.
+  const limite = Date.now() + ANTECEDENCIA_MINIMA_MIN * 60_000;
   for (const d of grade) {
-    for (const s of d.slots.slice(0, 2)) {
+    for (const s of d.slots.filter((x) => x.inicio.getTime() >= limite).slice(0, 2)) {
       if (escolhidos.length >= max) break;
       escolhidos.push({ inicioISO: s.inicio.toISOString(), fimISO: s.fim.toISOString(), label: formatSlotLabel(s) });
     }

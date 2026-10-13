@@ -47,7 +47,15 @@ test("NEXO e Hermes existem, com versão e ferramentas que existem de verdade", 
 
   // Agente que já nasce executando sozinho em base de produção é feature sem
   // revisão: pode dar certo, e quando dá errado ninguém sabe o que ele fez.
-  const publicados = agentes.filter((a) => a.status !== "draft");
+  //
+  // A decisão de quem opera fica REGISTRADA aqui, por agente, com a nota que a prova. NEXO foi publicado por
+  // decisão do Scott (08/10: age COMO o usuário; 12/10: é o harness do ONFACE, vault ONFACE/execucao/2026-10-12-mapa-nexo-e-agentes);
+  // Hermes roda por evento dentro do teto restrito da versão. Agente novo publicado sem entrar nesta lista continua reprovando.
+  const DECIDIDOS: Record<string, string> = {
+    nexo: "decisão do Scott em 08/10 e 12/10: harness do ONFACE, age como o usuário, teto de permissão pela interseção",
+    hermes: "orquestração por evento, teto restrito da versão (sem usuário), publicado junto do NEXO",
+  };
+  const publicados = agentes.filter((a) => a.status !== "draft" && !DECIDIDOS[a.slug]);
   assert.deepEqual(publicados.map((a) => a.slug), [], "agente publicado sem decisão de quem opera");
 });
 

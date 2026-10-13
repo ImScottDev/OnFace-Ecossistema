@@ -56,7 +56,8 @@ export async function sincronizarUsuariosDosAgentes(organizacaoId: string): Prom
         SELECT u.id, r.id, r.organizacao_id
           FROM usuarios u JOIN roles r ON r.organizacao_id = u.organizacao_id AND r.codigo = 'sdr'
          WHERE u.agente_id = ${a.id}::uuid
-           AND NOT EXISTS (SELECT 1 FROM user_roles x WHERE x.usuario_id = u.id)`);
+           AND NOT EXISTS (SELECT 1 FROM user_roles x WHERE x.usuario_id = u.id)
+       ON CONFLICT DO NOTHING`);
       criados++;
       continue;
     }
@@ -71,7 +72,8 @@ export async function sincronizarUsuariosDosAgentes(organizacaoId: string): Prom
     SELECT u.id, r.id, r.organizacao_id
       FROM usuarios u JOIN roles r ON r.organizacao_id = u.organizacao_id AND r.codigo = 'sdr'
      WHERE u.organizacao_id = ${organizacaoId}::uuid AND u.tipo = ${TIPO_AGENTE}
-       AND NOT EXISTS (SELECT 1 FROM user_roles x WHERE x.usuario_id = u.id)`);
+       AND NOT EXISTS (SELECT 1 FROM user_roles x WHERE x.usuario_id = u.id)
+       ON CONFLICT DO NOTHING`);
   // A tag que dispara a delegação de follow-up existe para a equipe aplicar (porta única de tag).
   if (criados || existentes.some((u) => u.ativo)) {
     await db.execute(sql`
