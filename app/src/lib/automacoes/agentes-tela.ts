@@ -11,15 +11,17 @@
  * por provedor e rótulo da credencial da organização), nunca valor nem last4.
  */
 import { db } from "@/lib/db";
-import { aiAgents, aiAgentVersions, aiAgentRuns, aiProviderCredentials } from "@/lib/db/schema";
+import { aiAgents, aiAgentVersions, aiAgentRuns, aiProviderCredentials, usuarios, whatsappSessao } from "@/lib/db/schema";
 import { and, count, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { provedoresNoAmbiente, verificarProntidao, type Falta } from "@/lib/ai-platform/prontidao";
+import { lerAutonomiaPorAcao, type ClasseAutonomia, type ModoAutonomia } from "@/lib/ai-platform/tools/politica";
 import { AGENT_PURPOSES, AGENT_SYSTEM_SLUGS, AGENT_TOOL_CATALOG, isKnownAgentTool, type AgentToolCategory } from "@/lib/ai/agent-studio";
 
 export type ProviderId = "groq" | "openai" | "anthropic" | "google" | "claude_subscription";
 
 export interface AgenteDaTela {
   id: string;
+  slug: string;
   nome: string;
   descricao: string | null;
   papel: string;
@@ -36,6 +38,20 @@ export interface AgenteDaTela {
   /** `guardrail_config.autonomy` da versão em trabalho: suggest | approval | autonomous. */
   modo: string;
   faltas: Falta[];
+  /** Versão em trabalho (id), alvo do botão Publicar. Só rascunho publica. */
+  versionId: string | null;
+  versaoEmTrabalhoStatus: string | null;
+  /** Autonomia por classe de ação da versão que vale (publicada, senão a em trabalho). Vazio = só o modo geral. */
+  autonomiaPorAcao: Partial<Record<ClasseAutonomia, ModoAutonomia>>;
+  /** Números autorizados (guardrailConfig.canais.sessoes + channelSessionId), com nome. */
+  canais: { id: string; nome: string }[];
+  /** WhatsApp desligado no agente (guardrailConfig.canais.whatsapp === false). */
+  whatsappDesligado: boolean;
+  supervisor: { id: string; nome: string } | null;
+  /** Atribuições vivas (ativa, pausada, aguardando aprovação, falha): contagem real. */
+  atribuicoes: number;
+  execucoes7d: number;
+  alertasAbertos: number;
   execucoes: number;
   ultimaExecucao: string | null;
   atualizadoEm: string;
@@ -79,7 +95,7 @@ export async function dadosTelaAgentes(organizacaoId: string): Promise<DadosTela
   // hoje (BRT) fora da série enquanto as execuções dele entrariam nos totais.
   const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-  const [agentes, versoes, porAgente, execucoes, serieBruta, credenciais] = await Promise.all([
+  const [agentes, versoes, porAgente, execucoes, serieBruta, credenciais, sessoes, pessoas, atribRows, runs7dRows, alertaRows] = await Promise.all([
     db.select().from(aiAgents)
       .where(and(eq(aiAgents.organizacaoId, organizacaoId), AGENTES_DE_PRODUTO))
       .orderBy(desc(aiAgents.prioridade), desc(aiAgents.updatedAt)),
@@ -111,7 +127,25 @@ export async function dadosTelaAgentes(organizacaoId: string): Promise<DadosTela
     db.select({ provider: aiProviderCredentials.provider, label: aiProviderCredentials.label })
       .from(aiProviderCredentials)
       .where(and(eq(aiProviderCredentials.organizacaoId, organizacaoId), eq(aiProviderCredentials.ativo, true))),
+    db.select({ id: whatsappSessao.id, nome: sql<string>`coalesce(nullif(btrim(${whatsappSessao.label}), ''), ${whatsappSessao.sessionName})` })
+      .from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId)),
+    db.select({ id: usuarios.id, nome: usuarios.nome }).from(usuarios).where(eq(usuarios.organizacaoId, organizacaoId)),
+    db.execute<{ agent_id: string; n: number }>(sql`SELECT agent_id::text, count(*)::int AS n FROM ai_agent_atribuicoes WHERE organizacao_id = ${organizacaoId}::uuid AND status IN ('ativa','pausada','aguardando_aprovacao','falha') GROUP BY agent_id`),
+    db.execute<{ agent_id: string; n: number }>(sql`SELECT agent_id::text, count(*)::int AS n FROM ai_agent_runs WHERE organizacao_id = ${organizacaoId}::uuid AND started_at > now() - interval '7 days' GROUP BY agent_id`),
+    // Alerta aberto do agente: o que nasceu de uma execução dele, ou da conversa que ele conduz (handoff, limite).
+    db.execute<{ agent_id: string; n: number }>(sql`
+      SELECT agent_id, count(DISTINCT id)::int AS n FROM (
+        SELECT r.agent_id::text AS agent_id, a.id FROM ai_alerts a JOIN ai_agent_runs r ON a.ref_kind = 'run' AND a.ref_id = r.id
+         WHERE a.organizacao_id = ${organizacaoId}::uuid AND a.status = 'open'
+        UNION ALL
+        SELECT t.agent_id::text, a.id FROM ai_alerts a JOIN ai_agent_atribuicoes t ON a.ref_kind = 'contato' AND a.ref_id = t.contato_id AND t.status <> 'encerrada'
+         WHERE a.organizacao_id = ${organizacaoId}::uuid AND a.status = 'open'
+      ) x GROUP BY agent_id`),
   ]);
+  const nomeSessao = new Map(sessoes.map((x) => [x.id, x.nome]));
+  const nomePessoa = new Map(pessoas.map((x) => [x.id, x.nome]));
+  const contagem = (rows: { agent_id: string; n: number }[]) => new Map(Array.from(rows, (r) => [r.agent_id, Number(r.n)]));
+  const atribs = contagem(atribRows as never); const runs7d = contagem(runs7dRows as never); const alertas = contagem(alertaRows as never);
 
   const runs = new Map(porAgente.map((r) => [r.agentId, r]));
   const lista: AgenteDaTela[] = await Promise.all(agentes.map(async (a) => {
@@ -129,11 +163,17 @@ export async function dadosTelaAgentes(organizacaoId: string): Promise<DadosTela
       const c = AGENT_TOOL_CATALOG.find((d) => d.id === t)?.categoria;
       if (c) categorias[c] = (categorias[c] ?? 0) + 1;
     }
+    const vale = publicada ?? trabalho; // o que está no ar vale mais que o rascunho em edição
+    const gv = (vale?.guardrailConfig ?? {}) as Record<string, unknown>;
+    const canaisCfg = (gv.canais ?? {}) as { whatsapp?: boolean; sessoes?: unknown };
+    const idsCanal = Array.from(new Set([vale?.channelSessionId, ...(Array.isArray(canaisCfg.sessoes) ? canaisCfg.sessoes : [])].filter((x): x is string => typeof x === "string" && x.length > 0)));
+    const supId = typeof gv.supervisorUsuarioId === "string" ? gv.supervisorUsuarioId : null;
     const g = (trabalho?.guardrailConfig ?? {}) as Record<string, unknown>;
     // Os agentes semeados gravaram `autonomia`; o runtime lê `autonomy`.
     const modoBruto = g.autonomy ?? g.autonomia;
     return {
       id: a.id,
+      slug: a.slug,
       nome: a.nome,
       descricao: a.descricao,
       papel: nomeDoPapel(a.finalidade),
@@ -147,6 +187,15 @@ export async function dadosTelaAgentes(organizacaoId: string): Promise<DadosTela
       legadas: brutas.length - tools.length,
       modo: typeof modoBruto === "string" ? modoBruto : "suggest",
       faltas: pront?.faltas ?? [],
+      versionId: trabalho?.id ?? null,
+      versaoEmTrabalhoStatus: trabalho?.status ?? null,
+      autonomiaPorAcao: lerAutonomiaPorAcao(gv),
+      canais: idsCanal.map((id) => ({ id, nome: nomeSessao.get(id) ?? "Número removido" })),
+      whatsappDesligado: canaisCfg.whatsapp === false,
+      supervisor: supId && nomePessoa.has(supId) ? { id: supId, nome: nomePessoa.get(supId)! } : null,
+      atribuicoes: atribs.get(a.id) ?? 0,
+      execucoes7d: runs7d.get(a.id) ?? 0,
+      alertasAbertos: alertas.get(a.id) ?? 0,
       execucoes: r?.total ?? 0,
       ultimaExecucao: r?.ultima ? new Date(r.ultima).toISOString() : null,
       atualizadoEm: a.updatedAt.toISOString(),
@@ -178,4 +227,10 @@ export async function dadosTelaAgentes(organizacaoId: string): Promise<DadosTela
       organizacao: credenciais.filter((c) => c.provider === p.id).map((c) => c.label),
     })),
   };
+}
+
+/** Agentes de produto para filtros (id e nome), sem o custo da prontidão. */
+export async function agentesParaFiltro(organizacaoId: string) {
+  return db.select({ id: aiAgents.id, nome: aiAgents.nome }).from(aiAgents)
+    .where(and(eq(aiAgents.organizacaoId, organizacaoId), AGENTES_DE_PRODUTO)).orderBy(aiAgents.nome);
 }

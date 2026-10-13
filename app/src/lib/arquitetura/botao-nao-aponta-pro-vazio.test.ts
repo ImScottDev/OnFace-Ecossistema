@@ -61,8 +61,11 @@ function rotasRegistradas(): Set<string> {
     const caminho = path.join(SRC, "api-server", "routes", `${arquivo}.ts`);
     if (!fs.existsSync(caminho)) continue;
     const txt = fs.readFileSync(caminho, "utf8");
-    for (const r of txt.matchAll(/app\.(get|post|put|patch|delete)\("([^"]+)"/g)) {
-      rotas.add((m[1] + r[2]).replace(/\/+/g, "/"));
+    // Prefixo guardado numa constante do arquivo (`const AO = "/x"`; `app.get(`${AO}/y`)`).
+    const consts = new Map([...txt.matchAll(/const (\w+) = "(\/[^"]*)";/g)].map((c) => [c[1], c[2]]));
+    for (const r of txt.matchAll(/app\.(get|post|put|patch|delete)\(["`]([^"`]+)["`]/g)) {
+      const rota = r[2].replace(/\$\{(\w+)\}/g, (_, n) => consts.get(n) ?? "${" + n + "}");
+      rotas.add((m[1] + rota).replace(/\/+/g, "/"));
     }
   }
   // Route handlers do Next: a pasta É a rota.

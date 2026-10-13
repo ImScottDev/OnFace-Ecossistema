@@ -1,0 +1,37 @@
+/* Roteamento comercial. Reaproveita o vocabulário de agentes.css (agn-*); aqui só o que é da tela. */
+.rot { display: flex; flex-direction: column; gap: 12px; min-width: 0; font-family: var(--of-fonte); color: var(--of-tinta); }
+.rot * { box-sizing: border-box; }
+.rot-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.rot-barra p { margin: 0; flex: 1 1 420px; max-width: 72ch; font-size: 12.5px; line-height: 1.5; color: var(--of-tinta-3); }
+.rot-bloco { padding-bottom: 6px; }
+.rot-rolagem { position: relative; overflow-x: auto; }
+.rot-tabela { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 12.5px; }
+.rot-tabela th, .rot-tabela td { padding: 11px 14px; text-align: left; vertical-align: top; border-top: 1px solid var(--of-fio); }
+.rot-tabela thead th { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--of-tinta-3); background: var(--of-papel-alterno); }
+.rot-tabela tbody th { font-weight: 400; }
+.rot-tabela tbody th strong { display: block; margin-bottom: 4px; font-size: 13px; color: var(--of-tinta-forte); }
+.rot-tabela tr[data-inativa="true"] td, .rot-tabela tr[data-inativa="true"] th strong { color: var(--of-tinta-3); }
+.rot-sub { display: block; margin-top: 2px; font-size: 11.5px; color: var(--of-tinta-3); }
+.rot-duas { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; align-items: start; }
+.rot-fila { list-style: none; margin: 0; padding: 0 18px 4px; display: grid; gap: 2px; }
+.rot-fila li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--of-fio); }
+.rot-fila li[data-pausada="true"] strong { color: var(--of-tinta-3); }
+.rot-nota { margin: 4px 18px 12px; font-size: 11.5px; color: var(--of-tinta-3); }
+.rot-sim-form { padding-bottom: 8px; }
+.rot-sim-botao { justify-self: start; }
+.rot-lead { position: relative; }
+.rot-achados { position: absolute; z-index: 5; left: 0; right: 0; top: 100%; margin: 4px 0 0; padding: 4px; list-style: none; border-radius: var(--of-r-controle); background: var(--of-papel); box-shadow: var(--of-sombra-popover); max-height: 220px; overflow: auto; }
+.rot-achados button { width: 100%; padding: 8px 10px; border: 0; border-radius: var(--of-r-item); background: transparent; text-align: left; font: inherit; font-size: 13px; color: var(--of-tinta); cursor: pointer; }
+.rot-achados button:hover, .rot-achados button:focus-visible { background: var(--of-calha); outline: 0; }
+.rot-resultado { display: flex; flex-direction: column; gap: 3px; margin: 0 18px 14px; padding: 12px 14px; border-radius: 12px; background: var(--of-calha); font-size: 12.5px; color: var(--of-tinta-2); }
+.rot-resultado strong { font-family: var(--of-fonte-titulo); font-size: 15px; color: var(--of-tinta-forte); }
+.rot-resultado[data-tipo="fila_humana"] { background: var(--of-coral-fundo); }
+.rot-erro { margin: 0 18px 10px; font-size: 12.5px; color: var(--of-coral-texto); }
+.rot-dialogo { background: var(--of-papel); color: var(--of-tinta); font-family: var(--of-fonte); }
+.rot-dialogo .agn-form { padding: 0; }
+.rot-dialogo .rot-erro { margin: 0; }
+.rot-ajuda { font-size: 11.5px; font-weight: 400; color: var(--of-tinta-3); }
+.rot-check { display: flex !important; grid-template-columns: none !important; align-items: center; gap: 8px !important; }
+.rot-check input { width: auto !important; }
+.rot-rodape { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 900px) { .rot-duas { grid-template-columns: 1fr; } }

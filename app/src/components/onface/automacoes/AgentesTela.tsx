@@ -14,9 +14,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bot, ChevronRight, Plus, Search, X } from "lucide-react";
+import { Bot, Plus, Search, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { AGENT_PRESETS, AGENT_PURPOSES, DEFAULT_HANDOFF_CONFIG, type AgentToolCategory } from "@/lib/ai/agent-studio";
+import { CLASSES_AUTONOMIA } from "@/lib/ai-platform/tools/politica";
 import type { DadosTelaAgentes, AgenteDaTela } from "@/lib/automacoes/agentes-tela";
 import "./agentes.css";
 
@@ -147,24 +148,82 @@ const CATEGORIA: { id: AgentToolCategory; nome: string }[] = [
   { id: "contexto", nome: "Contexto" }, { id: "comunicacao", nome: "Comunicação" }, { id: "crm", nome: "CRM" }, { id: "operacao", nome: "Operação" },
 ];
 
-/** Card do agente (benchmark §3): estado, provedor · modelo, capacidades por
- * categoria, modo e uso real. Tudo vem da versão em trabalho e de ai_agent_runs. */
-function CardAgente({ a }: { a: AgenteDaTela }) {
+/** Chama uma rota de ciclo de vida do agente e devolve o JSON. Erro vira mensagem legível. */
+async function chamar(url: string, okMsg: string): Promise<{ ok: boolean; json: Record<string, unknown> }> {
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const json = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!r.ok) { toast.error(String(json.error ?? json.message ?? "Não foi possível concluir a ação")); return { ok: false, json }; }
+    toast.success(okMsg);
+    return { ok: true, json };
+  } catch {
+    toast.error("Sem conexão com o servidor. Tente de novo.");
+    return { ok: false, json: {} };
+  }
+}
+
+/** Card do agente: estado, finalidade, modelo, autonomia (geral e por classe), números autorizados,
+ * supervisor e o uso real (atribuições vivas, execuções de 7 dias, alertas). Tudo vem do banco. */
+function CardAgente({ a, podeConfigurar }: { a: AgenteDaTela; podeConfigurar: boolean }) {
+  const router = useRouter();
+  const [ocupado, setOcupado] = React.useState<string | null>(null);
   const noAr = a.status === "published";
+  const porClasse = CLASSES_AUTONOMIA.filter((c) => a.autonomiaPorAcao[c.id]);
+  const execucoesHref = `/automacoes/execucoes?visao=agentes&agente=${a.id}`;
+
+  async function acao(id: string, url: string, okMsg: string, depois?: (j: Record<string, unknown>) => void) {
+    if (ocupado) return;
+    setOcupado(id);
+    const r = await chamar(url, okMsg);
+    setOcupado(null);
+    if (r.ok) { if (depois) depois(r.json); else router.refresh(); }
+  }
+  const desligado = !podeConfigurar || ocupado !== null;
+  const motivo = podeConfigurar ? undefined : "Exige a permissão de configurar IA";
+
   return (
-    <Link href={`/automacoes/agentes/${a.id}`} className="agn-card" data-ativo={noAr ? "true" : undefined}>
+    <article className="agn-card" data-ativo={noAr ? "true" : undefined} aria-labelledby={`agn-${a.id}`}>
       <div className="agn-card-topo">
         <span className="agn-avatar" data-ativo={noAr ? "true" : undefined}><Bot size={16} /></span>
         <span style={{ minWidth: 0, flex: 1 }}>
-          <span className="agn-card-nome">{a.nome}</span>
-          <span className="agn-fraco">{a.papel} · {MODO_ATENDIMENTO[a.modo] ?? "Copiloto"}</span>
+          <Link href={`/automacoes/agentes/${a.id}`} id={`agn-${a.id}`} className="agn-card-nome agn-card-link">{a.nome}</Link>
+          <span className="agn-fraco">{a.papel}</span>
         </span>
-        <span className="agn-selo" data-tom={noAr ? "ok" : undefined}><i />{noAr && a.versaoPublicada ? `v${a.versaoPublicada} no ar` : STATUS[a.status] ?? a.status}</span>
+        <span className="agn-selo" data-tom={noAr ? "ok" : a.status === "paused" ? "alerta" : undefined}><i />{noAr && a.versaoPublicada ? `v${a.versaoPublicada} no ar` : STATUS[a.status] ?? a.status}</span>
       </div>
-      <p className="agn-card-desc">{a.descricao || "Sem descrição. Abra o agente e diga o que ele resolve e onde deve parar."}</p>
-      <div className="agn-card-modelo">
-        <span className="agn-mono">{a.provider ? PROVIDER[a.provider] ?? a.provider : "Sem provedor"}{a.modelo ? ` · ${a.modelo}` : ""}</span>
+      <p className="agn-card-desc">{a.descricao || "Sem finalidade escrita. Abra o agente e diga o que ele resolve e onde deve parar."}</p>
+
+      <dl className="agn-ficha">
+        <div><dt>Modelo</dt><dd className="agn-mono">{a.provider ? PROVIDER[a.provider] ?? a.provider : "Sem provedor"}{a.modelo ? ` · ${a.modelo}` : ""}</dd></div>
+        <div>
+          <dt>Autonomia</dt>
+          <dd>
+            {MODO_ATENDIMENTO[a.modo] ?? "Copiloto"}
+            {porClasse.length > 0 ? (
+              <span className="agn-classes">
+                {porClasse.map((c) => <span key={c.id} className="agn-chip" title={c.ajuda}>{c.rotulo}<b>{MODO_ATENDIMENTO[a.autonomiaPorAcao[c.id]!]}</b></span>)}
+              </span>
+            ) : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Canais</dt>
+          <dd>
+            {a.whatsappDesligado ? "WhatsApp desligado" : a.canais.length === 0 ? <span className="agn-fraco-inline">Nenhum número autorizado</span> : (
+              <span className="agn-classes">{a.canais.map((c) => <span key={c.id} className="agn-chip">{c.nome}</span>)}</span>
+            )}
+          </dd>
+        </div>
+        <div><dt>Supervisor</dt><dd>{a.supervisor ? a.supervisor.nome : <span className="agn-fraco-inline">Sem supervisor</span>}</dd></div>
+      </dl>
+
+      <div className="agn-uso">
+        <div><strong className="agn-num">{num(a.atribuicoes)}</strong><span>{a.atribuicoes === 1 ? "conversa atribuída" : "conversas atribuídas"}</span></div>
+        <div><strong className="agn-num">{num(a.execucoes7d)}</strong><span>execuções em 7 dias</span></div>
+        <div><strong className="agn-num" data-alerta={a.alertasAbertos > 0 ? "true" : undefined}>{num(a.alertasAbertos)}</strong><span>{a.alertasAbertos === 1 ? "alerta aberto" : "alertas abertos"}</span></div>
+        <div><strong className="agn-num">{a.ultimaExecucao ? quando(a.ultimaExecucao) : "sem dados"}</strong><span>última atividade</span></div>
       </div>
+
       <div className="agn-card-chips">
         {a.capacidades === 0 ? (
           <span className="agn-chip" data-vazio="true">{a.legadas ? `${a.legadas} ações em formato antigo: abra e salve para valerem` : "Nenhuma ação ligada"}</span>
@@ -172,21 +231,61 @@ function CardAgente({ a }: { a: AgenteDaTela }) {
           <span key={c.id} className="agn-chip">{c.nome}<b>{a.categorias[c.id]}</b></span>
         ))}
       </div>
+
       <div className="agn-card-pe">
         <SeloProntidao a={a} />
-        <span className="agn-card-uso">
-          <span className="agn-num">{num(a.execucoes)}</span>
-          <span>{a.execucoes === 1 ? "execução" : "execuções"}{a.ultimaExecucao ? ` · ${quando(a.ultimaExecucao)}` : ""}</span>
-          <ChevronRight size={14} />
+        <span className="agn-acoes" role="group" aria-label={`Ações de ${a.nome}`}>
+          <Link href={`/automacoes/agentes/${a.id}`} className="agn-acao">Editar</Link>
+          <Link href={`/automacoes/agentes/${a.id}?aba=testes`} className="agn-acao">Testar</Link>
+          <Link href={execucoesHref} className="agn-acao">Ver execuções</Link>
+          {a.versaoEmTrabalhoStatus === "draft" && a.versionId ? (
+            <button type="button" className="agn-acao" disabled={desligado} title={motivo}
+              onClick={() => acao("publicar", `/api/automacoes/agentes/${a.id}/versions/${a.versionId}/publish`, "Agente publicado.")}>
+              {ocupado === "publicar" ? "Publicando…" : "Publicar"}
+            </button>
+          ) : null}
+          {noAr ? (
+            <button type="button" className="agn-acao" disabled={desligado} title={motivo}
+              onClick={() => acao("pausar", `/api/automacoes/agentes/${a.id}/pausar`, "Agente pausado. Não responde mais ninguém.")}>
+              {ocupado === "pausar" ? "Pausando…" : "Pausar"}
+            </button>
+          ) : null}
+          {a.status === "paused" ? (
+            <button type="button" className="agn-acao" disabled={desligado} title={motivo}
+              onClick={() => acao("retomar", `/api/automacoes/agentes/${a.id}/retomar`, "Agente retomado.")}>
+              {ocupado === "retomar" ? "Retomando…" : "Retomar"}
+            </button>
+          ) : null}
+          <button type="button" className="agn-acao" disabled={desligado} title={motivo}
+            onClick={() => acao("duplicar", `/api/automacoes/agentes/${a.id}/duplicar`, "Cópia criada como rascunho.", (j) => router.push(`/automacoes/agentes/${(j.agente as { id: string }).id}`))}>
+            {ocupado === "duplicar" ? "Duplicando…" : "Duplicar"}
+          </button>
         </span>
       </div>
-    </Link>
+    </article>
+  );
+}
+
+/** Estado vazio e atalho da Lia: cria o agente em rascunho com a base governada e o roteamento inicial. Não publica. */
+function CriarLia({ onCriada, compacto }: { onCriada: (id: string) => void; compacto?: boolean }) {
+  const [ocupado, setOcupado] = React.useState(false);
+  async function criar() {
+    setOcupado(true);
+    const r = await chamar("/api/automacoes/agentes-op/lia/criar", "Lia SDR criada em rascunho. Revise e publique quando estiver pronta.");
+    setOcupado(false);
+    if (r.ok) onCriada(String(r.json.agentId));
+  }
+  return (
+    <button type="button" className={compacto ? "agn-secundario" : "agn-primario"} style={compacto ? undefined : { marginTop: 14 }} onClick={criar} disabled={ocupado}>
+      <Sparkles size={14} /> {ocupado ? "Criando a Lia…" : "Criar Lia SDR a partir do modelo"}
+    </button>
   );
 }
 
 export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes; podeConfigurar: boolean }) {
   const [busca, setBusca] = React.useState("");
-  const [recorte, setRecorte] = React.useState<"todos" | "published" | "draft">("todos");
+  const router = useRouter();
+  const [recorte, setRecorte] = React.useState<"todos" | "published" | "draft" | "paused">("todos");
   const [criando, setCriando] = React.useState(false);
 
   const { agentes, execucoes, serie, totais30d, provedores } = dados;
@@ -194,6 +293,7 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
   const conectados = provedores.filter((p) => p.ambiente || p.organizacao.length > 0);
   const maxDia = Math.max(1, ...serie.map((s) => s.total));
 
+  const temLia = agentes.some((a) => a.slug === "lia-sdr");
   const q = busca.trim().toLowerCase();
   const lista = agentes.filter((a) =>
     (recorte === "todos" || a.status === recorte) &&
@@ -269,7 +369,7 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Agente, papel ou modelo" aria-label="Buscar agente especializado" />
         </div>
         <div className="agn-segmento" role="group" aria-label="Filtrar por status">
-          {([["todos", "Todos"], ["published", "Publicados"], ["draft", "Rascunhos"]] as const).map(([id, rotulo]) => (
+          {([["todos", "Todos"], ["published", "Publicados"], ["paused", "Pausados"], ["draft", "Rascunhos"]] as const).map(([id, rotulo]) => (
             <button key={id} type="button" aria-pressed={recorte === id} onClick={() => setRecorte(id)}>{rotulo}</button>
           ))}
         </div>
@@ -277,6 +377,8 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
         {/* Sem ai.configure a API devolve 403: o botão fica visível, desligado
             e dizendo por quê, em vez de abrir um formulário que vai falhar. */}
         {!podeConfigurar ? <span className="agn-motivo">Criar agente exige a permissão de configurar IA</span> : null}
+        <Link href="/automacoes/roteamento" className="agn-secundario">Roteamento comercial</Link>
+        {!temLia && podeConfigurar ? <CriarLia compacto onCriada={(id) => router.push(`/automacoes/agentes/${id}`)} /> : null}
         <button type="button" className="agn-primario" disabled={!podeConfigurar} onClick={() => setCriando(true)}>
           <Plus size={14} strokeWidth={2.3} /> Novo agente
         </button>
@@ -291,12 +393,17 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
           {lista.length === 0 ? (
             <div className="agn-vazio">
               <strong>{agentes.length === 0 ? "Nenhum agente configurado" : "Nenhum agente neste recorte"}</strong>
-              <span>{agentes.length === 0 ? "Crie o primeiro agente a partir de um modelo. Ele nasce como rascunho e pode ser testado no Playground antes da publicação." : "Ajuste a busca ou o filtro de status."}</span>
-              {agentes.length === 0 && podeConfigurar ? <button type="button" className="agn-primario" style={{ marginTop: 14 }} onClick={() => setCriando(true)}><Plus size={14} /> Novo agente</button> : null}
+              <span>{agentes.length === 0 ? "Comece pela Lia SDR, o agente de qualificação e agendamento da Callface, ou crie um agente a partir de um modelo. Ele nasce como rascunho e pode ser testado antes da publicação." : "Ajuste a busca ou o filtro de status."}</span>
+              {agentes.length === 0 && podeConfigurar ? (
+                <span className="agn-vazio-acoes">
+                  <CriarLia onCriada={(id) => router.push(`/automacoes/agentes/${id}`)} />
+                  <button type="button" className="agn-secundario" style={{ marginTop: 14 }} onClick={() => setCriando(true)}><Plus size={14} /> Novo agente</button>
+                </span>
+              ) : null}
             </div>
           ) : (
             <div className="agn-cards">
-              {lista.map((a) => <CardAgente key={a.id} a={a} />)}
+              {lista.map((a) => <CardAgente key={a.id} a={a} podeConfigurar={podeConfigurar} />)}
             </div>
           )}
         </section>
@@ -304,7 +411,7 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
         <section className="agn-cartao" aria-labelledby="agn-exec-titulo">
           <div className="agn-cartao-topo">
             <h2 id="agn-exec-titulo">Últimas execuções</h2>
-            <Link href="/automacoes/execucoes" className="agn-fraco" style={{ color: "var(--of-coral-texto)", marginTop: 0 }}>Ver todas</Link>
+            <Link href="/automacoes/execucoes?visao=agentes" className="agn-fraco" style={{ color: "var(--of-coral-texto)", marginTop: 0 }}>Ver todas</Link>
           </div>
           {execucoes.length === 0 ? (
             <div className="agn-vazio">
@@ -312,7 +419,7 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
               <span>Testes no detalhe do agente e respostas a contatos aparecem aqui, com status, tokens e latência.</span>
             </div>
           ) : execucoes.map((e) => (
-            <Link key={e.id} href={`/automacoes/agentes/${e.agenteId}`} className="agn-exec" style={{ textDecoration: "none", color: "inherit" }}>
+            <Link key={e.id} href={`/automacoes/execucoes?visao=agentes&agente=${e.agenteId}&exec=${e.id}`} className="agn-exec" style={{ textDecoration: "none", color: "inherit" }}>
               <span className="agn-forte">{e.agente}</span>
               <span className="agn-selo" data-tom={e.status === "completed" ? "ok" : e.status === "failed" || e.status === "aborted" ? "alerta" : undefined}><i />{RUN_STATUS[e.status] ?? e.status}</span>
               <span className="agn-exec-meta">

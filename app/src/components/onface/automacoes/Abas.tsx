@@ -1,13 +1,16 @@
 import Link from "next/link";
 
-/* As mesmas cinco entradas do grupo Automações na sidebar (navegacao.ts),
-   na mesma ordem: a aba é atalho entre irmãs, não uma segunda árvore. */
+/* As cinco entradas do grupo Automações na sidebar (navegacao.ts), na mesma
+   ordem, mais Roteamento: administração das regras de closer. A árvore do menu
+   está congelada, então Roteamento é só aba (a rota herda "Agentes" na sidebar
+   por ROTA_HERDA_DESTINO). */
 const ABAS = [
   { href: "/automacoes", l: "Visão geral" },
   { href: "/automacoes/fluxos", l: "Fluxos" },
   { href: "/automacoes/cadencias", l: "Cadências" },
   { href: "/automacoes/agentes", l: "Agentes especializados" },
   { href: "/automacoes/execucoes", l: "Execuções" },
+  { href: "/automacoes/roteamento", l: "Roteamento" },
 ];
 
 export function AbasAutomacoes({ atual }: { atual: string }) {

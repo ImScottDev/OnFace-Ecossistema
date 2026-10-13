@@ -180,6 +180,7 @@ const ROTA_HERDA_DESTINO: Array<[prefixo: string, destino: string]> = [
   ["/clientes/sucesso", "/clientes/cs"],
   ["/automacoes/agente-ia", "/automacoes/agentes"],
   ["/automacoes/ai", "/automacoes/agentes"],
+  ["/automacoes/roteamento", "/automacoes/agentes"],
   ["/contratos", "/propostas"],
   ["/inbox", "/atendimento"],
   ["/whatsapp", "/atendimento"],

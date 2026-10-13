@@ -5,6 +5,9 @@ import {
   type FonteExecucao, type StatusExecucao,
 } from "@/lib/automacoes/execucoes";
 import { Pagina, PaginaCabecalho, PaginaResumo, type ItemResumo } from "@/components/onface/shell/Pagina";
+import { agentesParaFiltro } from "@/lib/automacoes/agentes-tela";
+import { ExecucoesAgentes } from "@/components/onface/automacoes/ExecucoesAgentes";
+import Link from "next/link";
 import { Execucoes } from "@/components/onface/automacoes/Execucoes";
 import { ReprocessarBotao } from "@/components/onface/automacoes/ReprocessarBotao";
 import { AbasAutomacoes } from "@/components/onface/automacoes/Abas";
@@ -29,7 +32,7 @@ function idade(iso: string) {
 export default async function AutomacoesExecucoesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ fonte?: string; status?: string }>;
+  searchParams: Promise<{ fonte?: string; status?: string; visao?: string; agente?: string; exec?: string }>;
 }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
@@ -38,6 +41,29 @@ export default async function AutomacoesExecucoesPage({
   const podeReprocessar = PODE_REPROCESSAR.includes(ctx.userRole);
 
   const p = await searchParams;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const visaoAgentes = p.visao === "agentes";
+  const seletorVisao = (
+    <nav className="exe-segmento" aria-label="Tipo de execução" style={{ marginBottom: 12, alignSelf: "flex-start" }}>
+      <Link href="/automacoes/execucoes" aria-current={!visaoAgentes ? "page" : undefined}>Fila, automações e cadências</Link>
+      <Link href="/automacoes/execucoes?visao=agentes" aria-current={visaoAgentes ? "page" : undefined}>Agentes de IA</Link>
+    </nav>
+  );
+  if (visaoAgentes) {
+    const agentes = await agentesParaFiltro(ctx.organizacaoId);
+    return (
+      <Pagina>
+        <div className="oa-barra" style={{ marginBottom: 12 }}><AbasAutomacoes atual="/automacoes/execucoes" /></div>
+        <PaginaCabecalho titulo="Execuções" descricao="O que cada agente de IA consultou, decidiu e fez, com fontes, ferramentas, custo e resultado. Indicadores calculados só de fatos registrados." />
+        {seletorVisao}
+        <ExecucoesAgentes
+          agentes={agentes}
+          agenteInicial={UUID.test(p.agente ?? "") ? p.agente! : ""}
+          execInicial={UUID.test(p.exec ?? "") ? p.exec! : null}
+        />
+      </Pagina>
+    );
+  }
   const fontesValidas: FonteExecucao[] = verFila ? ["fila", "automacao", "cadencia"] : ["automacao", "cadencia"];
   const fonte = fontesValidas.includes(p.fonte as FonteExecucao) ? (p.fonte as FonteExecucao) : null;
   // Recortes que só existem no outbox somem para quem não vê a fila: sem chip
@@ -101,6 +127,7 @@ export default async function AutomacoesExecucoesPage({
           ) : null
         }
       />
+      {seletorVisao}
       <PaginaResumo itens={itens} />
       {!verFila ? (
         <p className="exe-aviso" style={{ marginBottom: 12 }}>
