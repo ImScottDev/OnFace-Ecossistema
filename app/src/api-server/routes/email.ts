@@ -4,12 +4,13 @@ import {
   emails, leads, emailContas, leadUserUnread, usuarios,
   emailTemplates, emailSequencias, emailSequenciaPassos, emailSequenciaExecucoes,
 } from "@/lib/db/schema";
-import { eq, desc, and, sql, ilike, or, isNull, inArray, asc } from "drizzle-orm";
+import { eq, ne, desc, and, sql, ilike, or, isNull, inArray, asc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { createEmailClient } from "@/lib/email/factory";
 import type { EmailContaConfig } from "@/lib/email/types";
 import { encrypt, decrypt } from "@/lib/email/encryption";
+import { salvarContaOAuth, STATUS_CONTA_MESCLADA } from "@/lib/email/conta-oauth";
 import { testImapConnection, testSmtpConnection } from "@/lib/email/imap";
 import { extractVariables } from "@/lib/email/template-engine";
 import { getGoogleAuthUrl } from "@/lib/email/google";
@@ -148,6 +149,7 @@ app.get("/email", async (c) => {
     .where(and(
       eq(emailContas.organizacaoId, ctx.organizacaoId),
       eq(emailContas.usuarioId, effectiveUserId),
+      ne(emailContas.syncStatus, STATUS_CONTA_MESCLADA),
     ));
 
   if (userContas.length === 0) {
@@ -408,7 +410,7 @@ app.get("/email/contas", async (c) => {
       createdAt: emailContas.createdAt,
     })
     .from(emailContas)
-    .where(eq(emailContas.organizacaoId, ctx.organizacaoId))
+    .where(and(eq(emailContas.organizacaoId, ctx.organizacaoId), ne(emailContas.syncStatus, STATUS_CONTA_MESCLADA)))
     .orderBy(desc(emailContas.createdAt));
 
   return c.json(contas);
@@ -420,6 +422,15 @@ app.post("/email/contas", async (c) => {
   try {
     const body = await c.req.json();
     const data = createImapSchema.parse(body);
+
+    const [jaExiste] = await db.select({ id: emailContas.id }).from(emailContas).where(and(
+      eq(emailContas.organizacaoId, ctx.organizacaoId),
+      eq(emailContas.usuarioId, ctx.userId),
+      eq(emailContas.tipo, "imap"),
+      sql`lower(${emailContas.email}) = ${data.email.trim().toLowerCase()}`,
+      ne(emailContas.syncStatus, STATUS_CONTA_MESCLADA),
+    )).limit(1);
+    if (jaExiste) return c.json({ error: "Esta caixa já está conectada. Edite a conta existente." }, 409);
 
     const [conta] = await db.insert(emailContas).values({
       organizacaoId: ctx.organizacaoId,
@@ -676,6 +687,7 @@ app.post("/email/mark-all-read", async (c) => {
     .where(and(
       eq(emailContas.organizacaoId, ctx.organizacaoId),
       eq(emailContas.usuarioId, ctx.userId),
+      ne(emailContas.syncStatus, STATUS_CONTA_MESCLADA),
     ));
 
   if (userContas.length === 0) {
@@ -1122,7 +1134,9 @@ app.get("/email/auth/google/callback", async (c) => {
 
     const tokens = await exchangeGoogleCode(code);
 
-    await db.insert(emailContas).values({
+    // UPSERT por (organizacao, usuario, tipo, lower(email)): reconectar atualiza os
+    // tokens da conta existente, nunca cria linha nova para a mesma caixa.
+    await salvarContaOAuth(db, {
       organizacaoId,
       usuarioId: userId,
       tipo: "google",
@@ -1131,7 +1145,6 @@ app.get("/email/auth/google/callback", async (c) => {
       accessToken: encrypt(tokens.accessToken),
       refreshToken: tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
       tokenExpiry: tokens.expiryDate,
-      syncStatus: "active",
     });
 
     return c.redirect(`${process.env.NEXTAUTH_URL}/ajustes/email?success=google`);
@@ -1172,7 +1185,9 @@ app.get("/email/auth/microsoft/callback", async (c) => {
 
     const tokens = await exchangeMicrosoftCode(code);
 
-    await db.insert(emailContas).values({
+    // UPSERT por (organizacao, usuario, tipo, lower(email)): reconectar atualiza os
+    // tokens da conta existente, nunca cria linha nova para a mesma caixa.
+    await salvarContaOAuth(db, {
       organizacaoId,
       usuarioId: userId,
       tipo: "microsoft",
@@ -1181,7 +1196,6 @@ app.get("/email/auth/microsoft/callback", async (c) => {
       accessToken: encrypt(tokens.accessToken),
       refreshToken: tokens.refreshToken ? encrypt(tokens.refreshToken) : null,
       tokenExpiry: tokens.expiryDate,
-      syncStatus: "active",
     });
 
     return c.redirect(`${process.env.NEXTAUTH_URL}/ajustes/email?success=microsoft`);

@@ -4,7 +4,7 @@ import {
   leads, usuarios, whatsappSessao, whatsappMensagens,
   cadenciaExecucoes, atividades, emails, emailContas,
 } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { whatsappOutgoingQueue } from "@/lib/queue";
@@ -198,6 +198,7 @@ app.post("/cadencia/:leadId/enviar", async (c) => {
       .where(and(
         eq(emailContas.organizacaoId, ctx.organizacaoId),
         eq(emailContas.usuarioId, ctx.userId),
+        ne(emailContas.syncStatus, "mesclada"),
       ));
     if (userContas.length === 0) {
       return c.json({ error: "Conecte seu email no CRM para enviar por aqui.", code: "NO_EMAIL" }, 400);

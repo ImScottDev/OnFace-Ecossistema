@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { closerDisponibilidade, emailContas, organizacoes, teams, usuarios, whatsappSessao } from "@/lib/db/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 
 /**
  * Dados da tela /perfil, lidos no servidor.
@@ -92,7 +92,7 @@ export async function carregarPerfil(organizacaoId: string, usuarioId: string): 
         padrao: emailContas.isDefault,
       })
       .from(emailContas)
-      .where(and(eq(emailContas.organizacaoId, organizacaoId), eq(emailContas.usuarioId, usuarioId)))
+      .where(and(eq(emailContas.organizacaoId, organizacaoId), eq(emailContas.usuarioId, usuarioId), ne(emailContas.syncStatus, "mesclada")))
       .orderBy(asc(emailContas.createdAt)),
     db
       .select({
