@@ -19,6 +19,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { trilhaAtual } from "../navegacao";
 import { CascaLiga } from "./CascaLiga";
+import "./casca-em-breve.css";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { PecasHost } from "./pecas-host";
 import { AgentesDaOrgContexto } from "@/components/ui/avatar";
