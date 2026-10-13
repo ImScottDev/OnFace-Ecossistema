@@ -12,6 +12,7 @@ import {
   leadLabels,
   cadenceEnrollments,
 } from "../db/schema";
+import { encerrarAquisicaoConvertida } from "../vendas/sincronizar-aquisicao";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "./sync-domain-model";
 
 // Lógica de "Converter em oportunidade" (handover SDR → closer), extraída da rota
@@ -226,6 +227,7 @@ export async function converterLeadEmOportunidade(
   await db.insert(negocioLeads).values({ negocioId: negocio.id, leadId: lead.id, papel: "contato" });
 
   await db.update(leads).set({ negocioAtivoId: negocio.id, sdrStatus: "qualified", updatedAt: new Date() }).where(eq(leads.id, lead.id));
+  await encerrarAquisicaoConvertida(lead.id); // handoff: a aquisição sai de Pré-vendas como convertida
 
   await db.insert(statusChanges).values({
     leadId: lead.id,

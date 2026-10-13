@@ -72,6 +72,7 @@ apaga coluna ou tabela: a contração é a fase 27 e não foi executada.
 | 0105 | Callface AI: vínculo com evidência e estado (`evidencia`, `estado`, `org_nome`), pendências com razão (chave única empresa+organização), `callface_ai_tenant_detalhe` e `callface_ai_uso_diario` — aditiva e idempotente |
 | 0106 | catálogo: desativa os 15 produtos de test mode (`prod_VM7m…`) e seus Prices no espelho, e reaponta os 3 itens de proposta BINA ao Price real de mesmo valor — idempotente, sem apagar |
 | 0107 | proposta: numeração atômica por organização (contador) e unicidade (organizacao_id, numero) — idempotente |
+| 0108 | aquisição convertida em oportunidade (handoff) passa a ter `closed_at` e etapa `oportunidade`: sai de Relações em andamento; backup em `_relacoes_conversao_20261013` — idempotente |
 
 ## 3. AS-IS → TO-BE
 

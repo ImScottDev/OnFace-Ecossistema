@@ -19,6 +19,26 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 
 /**
+ * Handoff concluído: a aquisição é ENCERRADA como convertida (`closed_at`, etapa
+ * `oportunidade`) e sai de "Relações em andamento"; fica só a oportunidade.
+ * Idempotente; não sobrescreve um `closed_at` anterior. Recebe o executor para
+ * entrar na mesma transação do UPDATE do lead.
+ */
+export async function encerrarAquisicaoConvertida(
+  leadId: string, ex: { execute: (q: never) => Promise<unknown> } = db as never,
+): Promise<void> {
+  await ex.execute(sql`
+    UPDATE aquisicoes a
+       SET etapa_id = COALESCE((SELECT pe.id FROM pipeline_etapas pe JOIN pipelines p ON p.id = pe.pipeline_id
+                                 WHERE p.organizacao_id = a.organizacao_id AND p.slug = 'aquisicao' AND pe.codigo = 'oportunidade'),
+                               a.etapa_id),
+           qualificado = true,
+           closed_at = COALESCE(a.closed_at, now()),
+           updated_at = now()
+     WHERE a.lead_legado_id = ${leadId}::uuid` as never);
+}
+
+/**
  * Espelha em `aquisicoes` o que a leitura do board usa.
  *
  * Best-effort de propósito: a ação comercial já foi gravada no legado, e falhar

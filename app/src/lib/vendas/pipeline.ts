@@ -18,6 +18,7 @@ import { resolverNomes } from "./resolver-ids";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { registrarEvento, registrarMudancaDeEtapa } from "./eventos";
+import { encerrarAquisicaoConvertida } from "./sincronizar-aquisicao";
 import { publicarEvento } from "@/lib/events/outbox";
 import {
   ehFamiliaValida, RegraDeNegocio, ROTULO_FAMILIA, STATUS_LEGADO_DA_ETAPA,
@@ -253,15 +254,22 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
   // a origem — mas empurrá-lo para a etapa "Oportunidade" de Pré-vendas seria
   // fingir uma passagem que não houve, que é o que Bloco 04 §13 proíbe.
   if (entrada.leadId && entrada.sourceProcess === "PRE_SALES") {
-    await db.execute(sql`
-      UPDATE leads SET
-        estagio_pre_vendas = 'oportunidade',
-        negocio_ativo_id = ${criadas[0].id}::uuid,
-        convertido_at = COALESCE(convertido_at, now()),
-        sdr_status = 'qualified',
-        updated_at = now()
-       WHERE id = ${entrada.leadId}::uuid
-    `);
+    // Mesma transação: o lead vira Oportunidade E a aquisição é encerrada como
+    // convertida. Sem o segundo passo ela seguia "aberta" em Pré-vendas e a
+    // ficha mostrava Pré-vendas e Oportunidade ao mesmo tempo.
+    const leadId = entrada.leadId;
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        UPDATE leads SET
+          estagio_pre_vendas = 'oportunidade',
+          negocio_ativo_id = ${criadas[0].id}::uuid,
+          convertido_at = COALESCE(convertido_at, now()),
+          sdr_status = 'qualified',
+          updated_at = now()
+         WHERE id = ${leadId}::uuid
+      `);
+      await encerrarAquisicaoConvertida(leadId, tx as never);
+    });
     await registrarMudancaDeEtapa({
       organizacaoId: entrada.organizacaoId, ator, leadId: entrada.leadId,
       negocioId: criadas[0].id, de: "qualificado", para: "oportunidade",
