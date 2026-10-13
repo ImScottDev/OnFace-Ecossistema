@@ -322,13 +322,16 @@ const maskCnpj = (d: string) => `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 
 const consulta = (chaves: readonly string[], valores: string[]) =>
   chaves.flatMap((k) => valores.map((v) => `metadata['${k}']:${aspas(v)}`)).join(" OR ");
 
-async function resolver(e: EntradaCustomer, criar: boolean, p: PortasCustomer): Promise<ResultadoCustomer | null> {
+async function resolver(e: EntradaCustomer, criar: boolean, p: PortasCustomer, leitura = false): Promise<ResultadoCustomer | null> {
   const alvo = e.empresaId ?? e.leadId;
   if (!alvo) throw new Error("Sem empresa nem contato: não há a quem vincular o Customer do Stripe.");
   const modo = p.modo();
   const avisos: string[] = [];
   const empresaId = e.empresaId?.toLowerCase() ?? null;
   const cnpj = normalizeCnpj(e.cnpj);
+  /* Modo leitura (portal): Customer do SaaS Callface serve como ÚLTIMO recurso. Fica na reserva enquanto
+     houver Customer do ONFACE; a reserva nunca grava no banco nem completa metadata no Stripe. */
+  const reserva: { c: CustomerStripe; metodo: MetodoCustomer }[] = [];
   const identidade = metadataStripe({ organizacaoId: e.organizacaoId, empresaId, cnpj });
 
   return p.banco.serializar(`stripe-customer:${e.empresaId ?? `lead:${e.leadId}`}`, async (v) => {
@@ -361,7 +364,11 @@ async function resolver(e: EntradaCustomer, criar: boolean, p: PortasCustomer): 
       if (modo === "mock") return adotar({ id }, metodo);
       const c = await p.stripe.ler(id);
       if (!c) { avisos.push(`${id} (${metodo}) não existe mais no Stripe: descartado`); continue; }
-      if (ehCustomerDoSaas(c)) { avisos.push(`${id} (${metodo}) é Customer do SaaS Callface: descartado`); continue; }
+      if (ehCustomerDoSaas(c)) {
+        if (leitura) { reserva.push({ c, metodo }); avisos.push(`${id} (${metodo}) é Customer do SaaS Callface: só entra se não houver outro`); }
+        else avisos.push(`${id} (${metodo}) é Customer do SaaS Callface: descartado`);
+        continue;
+      }
       const dono = idsDaMetadataStripe(c.metadata).empresaId;
       if (dono && empresaId && dono !== empresaId) avisos.push(`${id} (${metodo}) está marcado como da empresa ${dono}`);
       return adotar(c, metodo);
@@ -374,14 +381,17 @@ async function resolver(e: EntradaCustomer, criar: boolean, p: PortasCustomer): 
 
     /* 5-7: o Stripe. Um candidato só serve se não é apagado, não é do SaaS e
        não declara outra empresa. */
-    const serve = (c: CustomerStripe) => {
-      if (c.deleted || ehCustomerDoSaas(c) || !idCompativelComModo(c.id, modo)) return false;
+    const servePara = (metodo: MetodoCustomer) => (c: CustomerStripe) => {
+      if (c.deleted || !idCompativelComModo(c.id, modo)) return false;
       const dono = idsDaMetadataStripe(c.metadata).empresaId;
-      return !dono || !empresaId || dono === empresaId;
+      if (dono && empresaId && dono !== empresaId) return false;
+      if (!ehCustomerDoSaas(c)) return true;
+      if (leitura) reserva.push({ c, metodo });
+      return false;
     };
     const porMetadata = async () => {
       const q = e.empresaId ? consulta(CHAVES_DE_EMPRESA, [e.empresaId.toLowerCase(), e.empresaId]) : consulta(["crm_lead_id"], [e.leadId!]);
-      return escolherCanonico((await p.stripe.buscar(q)).filter(serve));
+      return escolherCanonico((await p.stripe.buscar(q)).filter(servePara("metadata")));
     };
 
     const achadoMeta = await porMetadata();
@@ -389,7 +399,7 @@ async function resolver(e: EntradaCustomer, criar: boolean, p: PortasCustomer): 
 
     if (cnpj) {
       const q = consulta(["crm_cnpj", "cnpj"], [cnpj, maskCnpj(cnpj)]);
-      const achado = escolherCanonico((await p.stripe.buscar(q)).filter(serve));
+      const achado = escolherCanonico((await p.stripe.buscar(q)).filter(servePara("cnpj")));
       if (achado) return adotar(achado, "cnpj");
     }
 
@@ -399,13 +409,17 @@ async function resolver(e: EntradaCustomer, criar: boolean, p: PortasCustomer): 
          pegar o Customer dele seria cobrar (e ter o nome/endereço reescritos
          pelo Checkout) num objeto que não é nosso. Além da metadata, olha as
          assinaturas: Customer do SaaS sem metadata ainda tem assinatura do SaaS. */
-      for (const c of (await p.stripe.porEmail(email)).filter(serve).sort((a, b) => (a.created ?? 0) - (b.created ?? 0))) {
+      for (const c of (await p.stripe.porEmail(email)).filter(servePara("email")).sort((a, b) => (a.created ?? 0) - (b.created ?? 0))) {
         const subs = await p.stripe.assinaturasDoCustomer(c.id);
-        if (subs.some((s) => ehDoSaas(s.metadata ?? undefined))) { avisos.push(`${c.id} (e-mail) tem assinatura do SaaS: descartado`); continue; }
+        if (subs.some((s) => ehDoSaas(s.metadata ?? undefined))) { avisos.push(`${c.id} (e-mail) tem assinatura do SaaS: descartado`); if (leitura) reserva.push({ c, metodo: "email" }); continue; }
         return adotar(c, "email");
       }
     }
 
+    if (leitura && reserva.length) {
+      const canonico = escolherCanonico(reserva.map((r) => r.c))!;
+      return { id: canonico.id, mocked: false, metodo: reserva.find((r) => r.c.id === canonico.id)!.metodo, avisos };
+    }
     if (!criar) return null;
 
     /* 8: cria. A chave é estável por empresa: se a gravação no banco falhar
@@ -451,6 +465,33 @@ export async function garantirCustomerDaEmpresa(e: EntradaCustomer, p: PortasCus
  */
 export function localizarCustomerDaEmpresa(e: EntradaCustomer, p: PortasCustomer = PORTAS_REAIS): Promise<ResultadoCustomer | null> {
   return resolver(e, false, p);
+}
+
+/**
+ * O id do Customer que o ONFACE já tem para a empresa, SEM consultar o Stripe: a mesma ordem do
+ * resolver (empresa → identidade → espelho). É o que a tela de cobrança e o link "Abrir no Stripe"
+ * (dashboard, uso interno) usam — ter o id basta, não depende de assinatura viva nem de portal.
+ */
+export async function customerIdLocalDaEmpresa(organizacaoId: string, empresaId: string): Promise<string | null> {
+  const modo = getStripeCheckoutMode();
+  return db.transaction(async (tx) => {
+    const v = vinculosDoBanco(tx);
+    for (const id of [await v.daEmpresa(organizacaoId, empresaId), await v.daIdentidade(organizacaoId, empresaId, null), await v.doEspelho(organizacaoId, empresaId)]) {
+      if (id && idCompativelComModo(id, modo)) return id;
+    }
+    return null;
+  });
+}
+
+/**
+ * O Customer para ABRIR O PORTAL: qualquer Customer da empresa, inclusive o do SaaS Callface
+ * (contratado pelo site). Decisão do Scott de 13/10/2026: se a empresa tem Customer no Stripe,
+ * o portal abre. Ordem: Customer do ONFACE primeiro; do SaaS só se não houver outro, e entre
+ * vários o mesmo critério canônico (`escolherCanonico`). Só lê: não grava vínculo no banco nem
+ * toca na metadata do Customer — o do SaaS continua não sendo cobrável por checkout/fatura.
+ */
+export function localizarCustomerParaPortal(e: EntradaCustomer, p: PortasCustomer = PORTAS_REAIS): Promise<ResultadoCustomer | null> {
+  return resolver(e, false, p, true);
 }
 
 /**

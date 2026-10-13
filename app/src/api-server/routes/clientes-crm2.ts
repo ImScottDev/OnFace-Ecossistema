@@ -1706,12 +1706,13 @@ app.post("/clientes/:empresaId/portal-stripe", async (c) => {
   if (!empresa) return c.json({ error: "Empresa não encontrada" }, 404);
 
   // O Customer vem do resolver canônico (empresa → identidade → espelho de
-  // assinaturas → metadata/CNPJ/e-mail no Stripe), que descarta apagado e do SaaS
-  // Callface. Nunca cria: portal é de quem já é cliente.
-  const { localizarCustomerDaEmpresa } = await import("@/lib/integrations/stripe-customer");
-  let cliente: Awaited<ReturnType<typeof localizarCustomerDaEmpresa>>;
+  // assinaturas → metadata/CNPJ/e-mail no Stripe). Descarta apagado; o do SaaS Callface
+  // (contratado pelo site) vale quando é o único: tem Customer no Stripe, tem portal.
+  // Nunca cria: portal é de quem já é cliente.
+  const { localizarCustomerParaPortal } = await import("@/lib/integrations/stripe-customer");
+  let cliente: Awaited<ReturnType<typeof localizarCustomerParaPortal>>;
   try {
-    cliente = await localizarCustomerDaEmpresa({ organizacaoId: ctx.organizacaoId, empresaId, nome: empresa.nome, cnpj: empresa.cnpj });
+    cliente = await localizarCustomerParaPortal({ organizacaoId: ctx.organizacaoId, empresaId, nome: empresa.nome, cnpj: empresa.cnpj });
   } catch (erro) {
     return c.json({ error: `Falha ao localizar o cliente no Stripe: ${erro instanceof Error ? erro.message : String(erro)}` }, 502);
   }
@@ -1719,7 +1720,7 @@ app.post("/clientes/:empresaId/portal-stripe", async (c) => {
     // 409, não 500: a conta existe e a requisição está correta — é o cadastro
     // que não tem cliente no Stripe, e quem recebe precisa saber exatamente
     // isso para ir criar/vincular.
-    return c.json({ error: `${empresa.nome} ainda não tem cadastro de cobrança no Stripe do ONFACE (ou o cadastro que existe é do SaaS Callface, que o portal não usa). O portal nasce na primeira cobrança feita pelo ONFACE: gere a proposta/checkout deste cliente primeiro.` }, 409);
+    return c.json({ error: `${empresa.nome} ainda não tem cadastro de cobrança no Stripe. Ele nasce na primeira cobrança: gere a proposta/checkout deste cliente primeiro.` }, 409);
   }
   const stripeCustomerId = cliente.id;
 

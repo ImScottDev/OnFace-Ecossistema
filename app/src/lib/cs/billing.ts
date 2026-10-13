@@ -282,7 +282,10 @@ export async function billingDaConta(organizacaoId: string, empresaId: string): 
     ? montar(null, null, "Cobrança sem serviço vinculado", "0", null, assinaturaOrfa, faturasOrfas)
     : null;
 
-  const stripeCustomerId = (assinaturasRows.find((a) => a.stripe_customer_id)?.stripe_customer_id as string) ?? null;
+  /* Sem assinatura no espelho (cancelada, cliente antigo) o Customer continua sendo da empresa:
+     cai na mesma resolução local que o portal usa (stripe-customer), em vez de dizer "sem cliente". */
+  const stripeCustomerId = (assinaturasRows.find((a) => a.stripe_customer_id)?.stripe_customer_id as string)
+    ?? await (await import("@/lib/integrations/stripe-customer")).customerIdLocalDaEmpresa(organizacaoId, empresaId).catch(() => null);
 
   return { porServico, naoAtribuido, stripeCustomerId, indisponivel: INDISPONIVEL };
 }

@@ -105,7 +105,9 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
     .where(and(eq(catalogoPrecos.organizacaoId, ctx.organizacaoId), inArray(catalogoPrecos.stripePriceId, priceIds)))
     : []).map((r) => [r.priceId, { produto: r.produto, variacao: variacaoAmigavel(r.produto, r.variacao) }]));
 
+  const { customerIdLocalDaEmpresa } = await import("@/lib/integrations/stripe-customer");
   return c.json({
+    stripeCustomerId: await customerIdLocalDaEmpresa(ctx.organizacaoId, empresaId).catch(() => null),
     assinaturas: subs.map((s) => ({
       id: s.id,
       stripeSubscriptionId: s.stripeSubscriptionId,

@@ -6,6 +6,7 @@ import {
   garantirCustomerDaEmpresa,
   idCompativelComModo,
   localizarCustomerDaEmpresa,
+  localizarCustomerParaPortal,
   type CustomerStripe,
   type EntradaCustomer,
   type GravacaoCustomer,
@@ -324,4 +325,47 @@ test("checkout: metadata com organizacaoId/empresaId/negocioId/propostaId E crm_
   } finally {
     globalThis.fetch = original;
   }
+});
+
+/* ── portal: qualquer Customer da empresa, inclusive o do SaaS ───────────── */
+
+test("portal: empresa só com Customer do site (SaaS) abre o portal, sem gravar nada", async () => {
+  const m = mundo();
+  poe(m, { id: "cus_site", created: 1, metadata: { user_name: "Dono", plan_id: "p" } });
+  m.empresa.set(EMP, "cus_site");
+  const r = await localizarCustomerParaPortal(entrada(), portas(m));
+  assert.equal(r?.id, "cus_site");
+  assert.equal(m.gravacoes.length, 0, "não vincula");
+  assert.equal(m.completadas.length, 0, "não mexe na metadata do Stripe");
+  // checkout continua recusando o mesmo Customer
+  assert.equal((await localizarCustomerDaEmpresa(entrada(), portas(mundo({ ...m, gravacoes: [] }))))?.id ?? null, null);
+});
+
+test("portal: empresa sem nenhum Customer recebe null (a rota mostra a mensagem)", async () => {
+  assert.equal(await localizarCustomerParaPortal(entrada(), portas(mundo())), null);
+});
+
+test("portal: Customer do ONFACE vence o do SaaS, mesmo que o do SaaS seja o vínculo da empresa", async () => {
+  const m = mundo();
+  poe(m, { id: "cus_site", created: 1, metadata: { user_name: "x" } });
+  poe(m, { id: "cus_onface", created: 5, metadata: {} });
+  m.empresa.set(EMP, "cus_site");
+  m.identidade.set(EMP, "cus_onface");
+  assert.equal((await localizarCustomerParaPortal(entrada(), portas(m)))?.id, "cus_onface");
+});
+
+test("portal: vários Customers do SaaS escolhem pelo critério canônico (o mais antigo)", async () => {
+  const m = mundo();
+  poe(m, { id: "cus_b", created: 9, metadata: { user_name: "x" } });
+  poe(m, { id: "cus_a", created: 3, metadata: { user_name: "x" } });
+  m.empresa.set(EMP, "cus_b");
+  m.identidade.set(EMP, "cus_a");
+  assert.equal((await localizarCustomerParaPortal(entrada(), portas(m)))?.id, "cus_a");
+});
+
+test("portal: Customer do SaaS achado pelo CNPJ também serve; apagado e de outra empresa não", async () => {
+  const m = mundo();
+  poe(m, { id: "cus_cnpj", created: 1, metadata: { user_cnpj: CNPJ, crm_cnpj: CNPJ } });
+  poe(m, { id: "cus_outra", created: 1, metadata: { user_name: "x", crm_cnpj: CNPJ, empresaId: OUTRA } });
+  assert.equal((await localizarCustomerParaPortal(entrada(), portas(m)))?.id, "cus_cnpj");
 });

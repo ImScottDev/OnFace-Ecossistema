@@ -56,8 +56,7 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
   const [catalogo, setCatalogo] = React.useState<Produto[]>([]);
   // Quando o checkout de expansão manda para cá, a venda de origem vem na URL.
   const [origem, setOrigem] = React.useState<{ negocioId?: string; propostaId?: string }>({});
-  const [avisoPortal, setAvisoPortal] = React.useState<string | null>(null);
-  const [abrindo, setAbrindo] = React.useState(false);
+  const [customerId, setCustomerId] = React.useState<string | null>(null);
   const base = `/api/clientes/${empresaId}/assinaturas-stripe`;
 
   const carregar = React.useCallback(async () => {
@@ -65,7 +64,7 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
       const r = await fetch(base);
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(r.status === 403 ? SEM_PERMISSAO : d?.error || "Não deu para ler as assinaturas");
-      setLista(d.assinaturas); setErro(null);
+      setLista(d.assinaturas); setCustomerId(d.stripeCustomerId ?? null); setErro(null);
     } catch (e) { setErro(e instanceof Error ? e.message : "Falha ao ler as assinaturas"); }
   }, [base]);
 
@@ -84,36 +83,16 @@ export function AssinaturasDoCliente({ empresaId }: { empresaId: string }) {
     if (abrirPrimeira && lista) setAlvo((a) => a ?? { ass: lista[0], modo: "adicionar_item" });
   }, [lista, abrirPrimeira]);
 
-  /* A aba abre ANTES do fetch: o navegador só aceita popup que sai direto do clique.
-     Toda falha vira aviso FIXO na tela (toast some e o botão parece morto). */
-  const abrirPortal = async () => {
-    setAvisoPortal(null); setAbrindo(true);
-    const aba = window.open("about:blank", "_blank");
-    const falhou = (m: string) => { aba?.close(); setAvisoPortal(m); toast.error(m); };
-    try {
-      const r = await fetch(`/api/clientes/${empresaId}/portal-stripe`, { method: "POST" });
-      const d = await r.json().catch(() => ({}));
-      if (r.status === 403) return falhou(SEM_PERMISSAO);
-      if (!r.ok || !d?.url) return falhou(d?.error || `Não deu para abrir o portal do Stripe (erro ${r.status}).`);
-      if (aba) aba.location.href = d.url;
-      else if (!window.open(d.url, "_blank")) setAvisoPortal(d.url); // popup bloqueado: o aviso mostra o link
-    } catch { falhou("Não deu para falar com o Stripe agora. Tente de novo em instantes."); }
-    finally { setAbrindo(false); }
-  };
-
   return (
     <>
     <section aria-label="Assinaturas no Stripe" className="flex flex-col gap-2">
       <header className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Assinaturas{lista && <span className="font-normal text-muted-foreground"> · {lista.length}</span>}</h2>
-        <Button size="sm" variant="outline" onClick={abrirPortal} disabled={abrindo}>{abrindo ? <Spinner /> : <ExternalLink />} Gerenciar no Stripe</Button>
+        {/* Uso interno: abre o cliente no dashboard do Stripe. Ter o id basta; o portal do cliente é outro botão. */}
+        {customerId
+          ? <Button size="sm" variant="outline" asChild><a href={`https://dashboard.stripe.com/customers/${customerId}`} target="_blank" rel="noreferrer"><ExternalLink /> Gerenciar no Stripe</a></Button>
+          : <Button size="sm" variant="outline" onClick={() => toast.error("Esta empresa ainda não tem cliente no Stripe. Ele nasce na primeira cobrança.")}><ExternalLink /> Gerenciar no Stripe</Button>}
       </header>
-      {avisoPortal && (
-        <Alert variant="destructive">
-          <AlertTitle>Portal do Stripe não abriu</AlertTitle>
-          <AlertDescription>{avisoPortal.startsWith("https://") ? <a className="underline" href={avisoPortal} target="_blank" rel="noreferrer">O navegador bloqueou a nova aba. Clique aqui para abrir o portal.</a> : avisoPortal}</AlertDescription>
-        </Alert>
-      )}
       {erro && <p className="text-sm text-muted-foreground">{erro}</p>}
       {lista && !lista.length && <p className="text-sm text-muted-foreground">Nenhuma assinatura ativa no Stripe. O portal ainda mostra faturas e a forma de pagamento, se o cliente já tiver cadastro de cobrança.</p>}
       {!!lista?.length && (
