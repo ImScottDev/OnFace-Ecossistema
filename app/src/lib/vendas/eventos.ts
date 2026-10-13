@@ -58,7 +58,13 @@ export type TipoEventoVendas =
   | "ProspectArchived"
   // Diretório
   | "CompanyCreated" | "CompanyUpdated" | "PersonCreated" | "PersonUpdated"
-  | "PersonLinkedToCompany" | "PersonUnlinkedFromCompany";
+  | "PersonLinkedToCompany" | "PersonUnlinkedFromCompany"
+  // Financeiro (webhooks do Stripe → timeline da empresa/negócio)
+  | "SubscriptionCreated" | "SubscriptionUpdated" | "SubscriptionCancelScheduled" | "SubscriptionCanceled"
+  | "SubscriptionUpgraded" | "SubscriptionDowngraded" | "SubscriptionTrialEnding"
+  | "InvoiceIssued" | "InvoicePaid" | "InvoiceOverdue" | "InvoicePaymentFailed" | "InvoiceActionRequired"
+  | "InvoiceVoided" | "InvoiceUncollectible" | "PaymentReceived" | "PaymentFailed" | "PaymentRefunded"
+  | "PaymentMethodAttached" | "PaymentMethodUpdated" | "PaymentMethodDetached";
 
 export interface EventoVendas {
   organizacaoId: string;

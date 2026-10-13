@@ -54,6 +54,15 @@ const ROTULO_EVENTO: Record<string, string> = {
   contractsigned: "Contrato assinado",
   paymentcreated: "Cobrança criada",
   paymentconfirmed: "Pagamento confirmado",
+  // Financeiro (Stripe)
+  subscriptioncreated: "Assinatura criada", subscriptionupdated: "Assinatura alterada",
+  subscriptioncancelscheduled: "Cancelamento agendado", subscriptioncanceled: "Assinatura cancelada",
+  subscriptionupgraded: "Upgrade de assinatura", subscriptiondowngraded: "Downgrade de assinatura",
+  subscriptiontrialending: "Teste terminando", invoiceissued: "Fatura emitida", invoicepaid: "Fatura paga",
+  invoiceoverdue: "Fatura vencida", invoicepaymentfailed: "Pagamento falhou", invoiceactionrequired: "Pagamento exige ação",
+  invoicevoided: "Fatura anulada", invoiceuncollectible: "Fatura incobrável", paymentreceived: "Pagamento recebido",
+  paymentfailed: "Pagamento falhou", paymentrefunded: "Pagamento estornado", paymentmethodattached: "Forma de pagamento adicionada",
+  paymentmethodupdated: "Forma de pagamento atualizada", paymentmethoddetached: "Forma de pagamento removida",
   // Prospecção
   prospectadded: "Prospect adicionado",
   prospectimported: "Prospect importado",
@@ -135,6 +144,8 @@ export function tituloDoEvento(
 ): string | null {
   const t = String(tipo ?? "").toLowerCase();
   const c = contexto ?? {};
+  // Fato do Stripe já chega com o título pronto e o valor formatado (stripe-financeiro.ts).
+  if (c.fonte === "stripe" && typeof c.titulo === "string" && c.titulo.trim()) return c.titulo.trim();
   const de = c.de ?? c.fromStage, para = c.para ?? c.toStage;
   const motivo = typeof c.motivo === "string" && c.motivo.trim() ? c.motivo.trim() : null;
   if (/stagechanged$|^etapa$|^mudanca_etapa$/.test(t) && para) {
@@ -150,11 +161,6 @@ export function tituloDoEvento(
   }
   if (/leaddisqualified|leadnurtured|opportunitylost/.test(t) && motivo) {
     return `${tituloLegivel(titulo) ?? rotuloDeEvento(tipo)} — ${motivo}`;
-  }
-  // Alteração comercial da proposta: o título diz o que mudou ("Proposta editada — 2 alterações: desconto e quantidade").
-  const resumo = typeof c.resumo === "string" && c.resumo.trim() ? c.resumo.trim() : null;
-  if (t === "proposaledited" && resumo && Array.isArray(c.alteracoes)) {
-    return `${rotuloDeEvento(tipo)} — ${resumo}`;
   }
   // Sem título próprio (evento de domínio): o rótulo em português, nunca o nome do tipo cru ("CompanyCreated").
   return tituloLegivel(titulo) ?? (t ? rotuloDeEvento(tipo) : null);

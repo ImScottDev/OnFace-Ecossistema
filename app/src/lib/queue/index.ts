@@ -63,6 +63,14 @@ export const callfaceCallEventsQueue = filaPreguicosa("callface-call-events", {
   backoff: { type: "exponential" as const, delay: 30000 },
 });
 
+// Reprocesso de webhooks do Stripe que falharam (produtor: rota /api/webhooks/stripe e rota admin;
+// consumidor: worker/index.ts). Retry com backoff exponencial: 30s, 1min, 2min, 4min, 8min.
+export const stripeWebhookEventsQueue = filaPreguicosa("stripe-webhook-events", {
+  ...defaultJobOptions,
+  attempts: 6,
+  backoff: { type: "exponential" as const, delay: 30000 },
+});
+
 /** Fecha as filas que chegaram a ser abertas. Útil em script/teste que precisa terminar. */
 export async function fecharFilas(): Promise<void> {
   for (const fila of instancias.values()) await fila.close();

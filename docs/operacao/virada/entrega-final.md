@@ -398,3 +398,5 @@ e o de dev é de 20/09. É produção andando, não diferença de receita.
 refactor até 22/09, com os números medidos e os erros cometidos. A estrutura
 vigente está no README da raiz.
 | 0115 | proposta: `proposta_grupo_comercial.caminho_fechamento` — o caminho de fechamento (contrato ou pagamento) decidido item a item quando a proposta é aceita; grupo antigo (NULL) segue a regra anterior — aditiva e idempotente |
+| 0112 | Stripe: o inbox de webhooks fala um vocabulário só — derruba o CHECK de status, normaliza `stripe_webhook_events.status` para minúsculo (produção gravou MAIÚSCULAS) e muda o DEFAULT para `'pending'` — aditiva e idempotente |
+| 0117 | Stripe financeiro: índice único `uq_vendas_eventos_stripe_chave` (idempotência da timeline financeira por fato) e backfill de `faturas.receivable_state` (`open`/`paid`/`overdue`/`uncollectible`/`void`) nas faturas do Stripe — aditiva e idempotente |

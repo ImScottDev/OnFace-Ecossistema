@@ -1,12 +1,18 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { stripeWebhookEvents } from "../db/schema";
-import { syncStripe } from "./stripe-sync";
+import { normalizarStatusInbox } from "./stripe-webhook-status";
+import { executarEventoDoInbox } from "./stripe-webhook-inbox-db";
+
+export { normalizarStatusInbox, statusIgual } from "./stripe-webhook-status";
 
 /**
- * Consumes a persisted delivery. It is intentionally a reconciliation job:
- * all Stripe-side facts are re-read by syncStripe, so a webhook payload cannot
- * overwrite a newer subscription/invoice state that arrived out of order.
+ * Consome um evento persistido (job da fila `stripe-webhook-events`).
+ *
+ * Roda o MESMO processamento da primeira entrega HTTP (handlers + sync + timeline +
+ * pagamentos), não só o sync. Em falha LANÇA o erro: o BullMQ refaz com backoff e o
+ * inbox fica `failed` com o motivo. O status é comparado sem diferenciar caixa
+ * (produção gravou MAIÚSCULAS).
  */
 export async function processStoredStripeWebhookEvent(stripeEventId: string) {
   const [event] = await db
@@ -15,31 +21,15 @@ export async function processStoredStripeWebhookEvent(stripeEventId: string) {
     .where(eq(stripeWebhookEvents.eventId, stripeEventId))
     .limit(1);
   if (!event) throw new Error(`evento Stripe ${stripeEventId} não encontrado`);
-  /* MINÚSCULAS, que é o vocabulário do schema
-     (`status: text("status").default("pending")`, schema.ts:908) e o que a rota
-     HTTP grava. Este módulo comparava em MAIÚSCULAS, então nada casava: evento
-     já processado era reprocessado, e o UPDATE de claim abaixo afetava zero
-     linhas — o job seguia sem trava, que é exatamente a corrida que o advisory
-     lock do syncStripe existe para matar. Eventos `failed` ficavam parados no
-     inbox sem ninguém drenar. */
-  if (event.status === "processed") return { skipped: true, type: event.eventType };
+  if (normalizarStatusInbox(event.status) === "processed") return { skipped: true, type: event.eventType };
 
-  await db
-    .update(stripeWebhookEvents)
-    .set({ status: "processing", processingStartedAt: new Date(), attempts: sql`${stripeWebhookEvents.attempts} + 1`, lastError: null })
-    .where(and(eq(stripeWebhookEvents.id, event.id), inArray(stripeWebhookEvents.status, ["pending", "failed", "processing"])));
-
-  try {
-    const synced = await syncStripe();
-    await db.update(stripeWebhookEvents)
-      .set({ status: "processed", processedAt: new Date(), lastError: null })
-      .where(eq(stripeWebhookEvents.id, event.id));
-    return { skipped: false, type: event.eventType, synced };
-  } catch (error) {
-    const message = error instanceof Error ? error.message.slice(0, 2000) : String(error).slice(0, 2000);
-    await db.update(stripeWebhookEvents)
-      .set({ status: "failed", lastError: message })
-      .where(eq(stripeWebhookEvents.id, event.id));
-    throw error;
+  const r = await executarEventoDoInbox(event.id, { enfileirarSeFalhar: false });
+  switch (r.estado) {
+    case "processado": return { skipped: false, type: event.eventType, passos: r.passos };
+    case "ja_processado": return { skipped: true, type: event.eventType };
+    case "sem_organizacao": return { skipped: true, type: event.eventType, semOrganizacao: true };
+    case "em_andamento": throw new Error(`evento ${stripeEventId} está sendo processado por outro executor; tentar de novo`);
+    case "falhou": throw new Error(r.erro);
+    default: throw new Error(`evento Stripe ${stripeEventId} não encontrado`);
   }
 }

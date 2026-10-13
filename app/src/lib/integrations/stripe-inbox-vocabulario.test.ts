@@ -56,15 +56,13 @@ test("o schema continua definindo o default minúsculo", () => {
   );
 });
 
-test("o claim atômico do worker cobre os três estados retomáveis", () => {
-  // Sem `processing` na lista, um evento que morreu no meio (processo caiu)
-  // fica preso para sempre: ninguém mais consegue reivindicá-lo.
-  const worker = ler("lib/integrations/stripe-webhook-events.ts");
-  const m = /inArray\(stripeWebhookEvents\.status,\s*\[([^\]]*)\]\)/.exec(worker);
-  assert.ok(m, "o claim por inArray sumiu do worker");
-  const estados = [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]).sort();
-  assert.deepEqual(
-    estados, ["failed", "pending", "processing"],
-    "o claim precisa retomar pendente, falho e travado-no-meio",
-  );
+test("o claim atômico do inbox é case-insensitive e cobre os estados retomáveis", () => {
+  // Sem `processing` na lista, um evento que morreu no meio (processo caiu) fica preso para sempre.
+  // Sem lower(), a MAIÚSCULA que a produção gravou nunca casaria.
+  const inbox = ler("lib/integrations/stripe-webhook-inbox-db.ts");
+  const m = /lower\(\$\{T\.status\}\) IN \(([^)]*)\)/.exec(inbox);
+  assert.ok(m, "o claim com lower(status) IN (...) sumiu do inbox");
+  const estados = [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]).sort();
+  assert.deepEqual(estados, ["failed", "pending", "unresolved"]);
+  assert.match(inbox, /lower\(\$\{T\.status\}\) = 'processing'/, "o claim precisa retomar `processing` parado");
 });
