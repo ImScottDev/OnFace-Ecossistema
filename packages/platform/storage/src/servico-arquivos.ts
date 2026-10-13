@@ -26,7 +26,7 @@ export interface EntidadeVinculada {
    */
   tipo: "empresa" | "pessoa" | "oportunidade" | "proposta" | "contrato"
       | "servico_canonico" | "fulfillment" | "communication" | "reuniao"
-      | "aquisicao";
+      | "aquisicao" | "tarefa" | "tarefa_comentario";
   id: string;
   /** Para que serve o arquivo nesta entidade: "contrato_assinado", "anexo". */
   papel?: string | null;

@@ -1,10 +1,15 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { db } from "@/lib/db";
 import { tarefas, leads, usuarios, negocios, empresas, notificacoes } from "@/lib/db/schema";
 import { desc, eq, ne, and, or, lte, ilike, SQL, asc, isNull, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
 import { isPersonalView, isAdminView } from "@/lib/auth/roles";
+import { RegraDeNegocio } from "@/lib/vendas/dominio";
+import {
+  carregarDetalhe, criarSubtarefa, alterarSubtarefa, reordenarSubtarefas, excluirSubtarefa,
+  comentar, editarComentario, excluirComentario, anexar, removerAnexo, type ArquivoEnviado,
+} from "@/lib/tarefas/detalhe";
 
 const app = new Hono();
 
@@ -21,6 +26,9 @@ const TIPOS = [
   "geral",
   "confirmar_reuniao_outlook",
   "gerada_callface",
+  // Os tipos E-mail e Mensagem do desenho (a leitura já os conhecia; a escrita recusava).
+  "email",
+  "whatsapp",
 ] as const;
 
 const createTarefaSchema = z.object({
@@ -371,6 +379,7 @@ app.get("/tarefas/:id", async (c) => {
       empresaId: tarefas.empresaId,
       empresaNome: empresas.nome,
       origem: tarefas.origem,
+      motivo: tarefas.motivo,
     })
     .from(tarefas)
     .leftJoin(leads, eq(tarefas.leadId, leads.id))
@@ -381,8 +390,66 @@ app.get("/tarefas/:id", async (c) => {
     .limit(1);
 
   if (!tarefa) return c.json({ error: "Tarefa nao encontrada" }, 404);
-  return c.json(tarefa);
+  // A gaveta lê tudo de uma vez: subtarefas, comentários, anexos e o feed.
+  return c.json({ ...tarefa, ...(await carregarDetalhe(ctx, id)) });
 });
+
+/* ── Subtarefa, comentário e anexo (lib/tarefas/detalhe) ──────────────────
+   A regra mora na porta; aqui só o HTTP: corpo validado e erro de negócio
+   traduzido em status. */
+
+const STATUS_DA_REGRA: Record<string, 400 | 403 | 404> = { nao_encontrado: 404, sem_permissao: 403 };
+
+async function pelaPorta(c: Context, f: (ctx: Awaited<ReturnType<typeof getCtx>>) => Promise<unknown>, criado = false) {
+  const ctx = await getCtx(c);
+  try {
+    return c.json(await f(ctx), criado ? 201 : 200);
+  } catch (e) {
+    if (e instanceof RegraDeNegocio) return c.json({ error: e.message, codigo: e.codigo }, STATUS_DA_REGRA[e.codigo] ?? 400);
+    if (e instanceof z.ZodError) return c.json({ error: "Dados invalidos", details: e.flatten() }, 400);
+    throw e;
+  }
+}
+
+const subtarefaSchema = z.object({
+  titulo: z.string().optional(),
+  descricao: z.string().nullable().optional(),
+  concluida: z.boolean().optional(),
+  responsavelId: z.string().uuid().nullable().optional(),
+  venceEm: z.string().nullable().optional(),
+}).strict();
+
+async function arquivosDo(form: FormData): Promise<ArquivoEnviado[]> {
+  const fs = form.getAll("arquivo").filter((v): v is File => typeof v === "object" && v !== null && "arrayBuffer" in v);
+  return Promise.all(fs.map(async (f) => ({ nome: f.name || "arquivo", mime: f.type || "application/octet-stream", conteudo: new Uint8Array(await f.arrayBuffer()) })));
+}
+
+app.post("/tarefas/:id/subtarefas", (c) => pelaPorta(c, async (ctx) =>
+  criarSubtarefa(ctx, c.req.param("id"), subtarefaSchema.parse(await c.req.json())), true));
+app.patch("/tarefas/:id/subtarefas/:subId", (c) => pelaPorta(c, async (ctx) =>
+  alterarSubtarefa(ctx, c.req.param("id"), c.req.param("subId"), subtarefaSchema.parse(await c.req.json()))));
+app.put("/tarefas/:id/subtarefas-ordem", (c) => pelaPorta(c, async (ctx) =>
+  reordenarSubtarefas(ctx, c.req.param("id"), z.object({ ids: z.array(z.string().uuid()) }).parse(await c.req.json()).ids)));
+app.delete("/tarefas/:id/subtarefas/:subId", (c) => pelaPorta(c, (ctx) =>
+  excluirSubtarefa(ctx, c.req.param("id"), c.req.param("subId"))));
+
+// Comentário: multipart (corpo + arquivo[]), porque o anexo do comentário vai junto.
+app.post("/tarefas/:id/comentarios", (c) => pelaPorta(c, async (ctx) => {
+  const form = await c.req.formData();
+  return comentar(ctx, c.req.param("id"), String(form.get("corpo") ?? ""), await arquivosDo(form));
+}, true));
+app.patch("/tarefas/:id/comentarios/:comId", (c) => pelaPorta(c, async (ctx) =>
+  editarComentario(ctx, c.req.param("id"), c.req.param("comId"), z.object({ corpo: z.string() }).strict().parse(await c.req.json()).corpo)));
+app.delete("/tarefas/:id/comentarios/:comId", (c) => pelaPorta(c, (ctx) =>
+  excluirComentario(ctx, c.req.param("id"), c.req.param("comId"))));
+
+app.post("/tarefas/:id/anexos", (c) => pelaPorta(c, async (ctx) => {
+  const [arq] = await arquivosDo(await c.req.formData());
+  if (!arq) throw new RegraDeNegocio("sem_arquivo", "Nenhum arquivo enviado.");
+  return anexar(ctx, c.req.param("id"), arq);
+}, true));
+app.delete("/tarefas/:id/anexos/:arquivoId", (c) => pelaPorta(c, (ctx) =>
+  removerAnexo(ctx, c.req.param("id"), c.req.param("arquivoId"))));
 
 // PATCH /api/tarefas/:id
 app.patch("/tarefas/:id", async (c) => {

@@ -1097,6 +1097,48 @@ export const tarefas = pgTable(
   ]
 );
 
+/** Subtarefa da atividade (migration 0111): o checklist da gaveta de atividade. */
+export const tarefaSubtarefas = pgTable(
+  "tarefa_subtarefas",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    tarefaId: uuid("tarefa_id").references(() => tarefas.id, { onDelete: "cascade" }).notNull(),
+    titulo: text("titulo").notNull(),
+    descricao: text("descricao"),
+    concluida: boolean("concluida").default(false).notNull(),
+    concluidaEm: timestamp("concluida_em", { withTimezone: true }),
+    ordem: integer("ordem").default(0).notNull(),
+    responsavelId: uuid("responsavel_id").references(() => usuarios.id, { onDelete: "set null" }),
+    venceEm: date("vence_em"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid("created_by").references(() => usuarios.id, { onDelete: "set null" }),
+  },
+  (table) => [
+    index("idx_tarefa_subtarefas_tarefa").on(table.tarefaId, table.ordem),
+    index("idx_tarefa_subtarefas_org").on(table.organizacaoId),
+  ]
+);
+
+/** Comentário da atividade (migration 0111). `mencoes` = ids dos usuários citados com @. */
+export const tarefaComentarios = pgTable(
+  "tarefa_comentarios",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    tarefaId: uuid("tarefa_id").references(() => tarefas.id, { onDelete: "cascade" }).notNull(),
+    autorId: uuid("autor_id").references(() => usuarios.id, { onDelete: "set null" }),
+    corpo: text("corpo").notNull(),
+    mencoes: jsonb("mencoes").$type<string[]>().default([]).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    editadoEm: timestamp("editado_em", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_tarefa_comentarios_tarefa").on(table.tarefaId, table.createdAt),
+    index("idx_tarefa_comentarios_org").on(table.organizacaoId),
+  ]
+);
+
 // ─── NOTIFICACOES ───────────────────────────────────────────
 export const notificacoes = pgTable(
   "notificacoes",
