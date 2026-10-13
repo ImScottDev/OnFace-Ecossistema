@@ -17,6 +17,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, fecharConexao } from "@/lib/db";
 import { contratos, empresas, leads, negocios, organizacoes, pipelines, propostaGrupoComercial, propostas, usuarios } from "@/lib/db/schema";
 import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
+import { daLinha, precoOficial } from "./_preco-oficial";
 import { processarAceiteDaProposta } from "@/lib/crm/proposta-aceite";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 
@@ -49,11 +50,14 @@ async function main() {
   const [negocio] = await db.insert(negocios).values({ organizacaoId: org.id, leadId: lead.id, empresaId: empresa.id, pipelineId: pipeline.id, responsavelId: user.id, titulo: `${TAG} ${FAMILIA} ${suf}`, status: "proposta_enviada", serviceFamily: FAMILIA }).returning({ id: negocios.id });
   await syncOportunidadeFromNegocio(negocio.id);
 
+  // Toda linha nova exige um Price oficial da família: recorrente para a mensalidade, setup (ou avulso) para a implantação.
+  const precoRec = await precoOficial(org.id, FAMILIA, { tipos: ["recorrente"] });
+  const precoSetup = await precoOficial(org.id, FAMILIA, { tipos: ["setup", "avulso"] });
   const proposta = await criarPropostaComItens({
     organizacaoId: org.id, leadId: lead.id, negocioId: negocio.id, moeda: "BRL",
     observacoes: `${TAG} prova de contrato`, condicoesPagamento: "Boleto mensal", condicaoPagamentoTipo: "boleto", vencimentoDias: 10, prazoContratoMeses: 12,
     signatarios: [{ nome: `${TAG} Signatário ${suf}`, email: EMAIL, papel: "signatario", ordem: 1, cpf: "123.456.789-00", cargo: "Diretor" } as never],
-    itens: ITENS[FAMILIA].map((i) => ({ nome: i.nome, descricao: i.descricao, tipo: i.tipo, quantidade: i.qtd, valorUnitario: i.valor, desconto: 0, descontoTipo: "percentual" as const, commercialModel: "CONTRATO_OBRIGATORIO" })) as never,
+    itens: ITENS[FAMILIA].map((i) => ({ ...daLinha(i.tipo === "recorrente" ? precoRec : precoSetup), nome: i.nome, descricao: i.descricao, tipo: i.tipo, quantidade: i.qtd, valorUnitario: i.valor, desconto: 0, descontoTipo: "percentual" as const, commercialModel: "CONTRATO_OBRIGATORIO" })) as never,
     criadoPorId: user.id,
   });
   await db.execute(sql`UPDATE proposta_itens SET service_family = ${FAMILIA} WHERE proposta_id = ${proposta.id}::uuid`);

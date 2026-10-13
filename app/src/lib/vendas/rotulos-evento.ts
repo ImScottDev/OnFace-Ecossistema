@@ -151,6 +151,11 @@ export function tituloDoEvento(
   if (/leaddisqualified|leadnurtured|opportunitylost/.test(t) && motivo) {
     return `${tituloLegivel(titulo) ?? rotuloDeEvento(tipo)} — ${motivo}`;
   }
+  // Alteração comercial da proposta: o título diz o que mudou ("Proposta editada — 2 alterações: desconto e quantidade").
+  const resumo = typeof c.resumo === "string" && c.resumo.trim() ? c.resumo.trim() : null;
+  if (t === "proposaledited" && resumo && Array.isArray(c.alteracoes)) {
+    return `${rotuloDeEvento(tipo)} — ${resumo}`;
+  }
   // Sem título próprio (evento de domínio): o rótulo em português, nunca o nome do tipo cru ("CompanyCreated").
   return tituloLegivel(titulo) ?? (t ? rotuloDeEvento(tipo) : null);
 }

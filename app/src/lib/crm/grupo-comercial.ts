@@ -20,13 +20,16 @@
  * best-effort silencioso (ADR-EXEC-021, resiliência da materialização).
  */
 import { db } from "@/lib/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import {
   propostas, propostaItens, propostaGrupoComercial, propostaGrupoComercialItens,
-  oportunidades, oportunidadeItens,
+  oportunidades, oportunidadeItens, catalogoPrecos, servicosCatalogo,
 } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
-import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem, exigeContrato, type CommercialModel } from "@/lib/crm/commercial-model";
+import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem, type CommercialModel } from "@/lib/crm/commercial-model";
+import { decidirGrupos, type CaminhoDeFechamento } from "@/lib/crm/decisao-fechamento";
+import { classificarProdutoPorNome } from "@/lib/crm/classificar-produto";
+import { regraDaFamilia } from "@/lib/crm/politica-familia";
 
 export type StatusGrupoComercial =
   | "aguardando_aceite" | "aguardando_contrato" | "contrato_enviado_assinatura" | "contrato_assinado"
@@ -41,91 +44,139 @@ export interface GrupoComercialRow {
   status: StatusGrupoComercial;
   itensIds: string[];
   contratoId?: string | null;
+  checkoutId?: string | null;
+  /** Caminho decidido item a item no aceite. null = grupo anterior à decisão por item (regra antiga, por grupo). */
+  caminho: CaminhoDeFechamento | null;
+  serviceFamily: string | null;
 }
 
-/**
- * Forma (ou reconcilia) os grupos comerciais de uma proposta a partir do
- * commercial_model resolvido de cada item — chamado no ACEITE (não na
- * criação/edição, que continua livre pra mudar composição). Idempotente:
- * item que muda de modelo entre edições é realocado pro grupo certo; grupo
- * que fica sem item nenhum não é removido (mantém rastro/estado histórico),
- * só fica vazio.
- */
-export async function formarGruposComerciais(propostaId: string): Promise<GrupoComercialRow[]> {
-  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, propostaId)).limit(1);
-  if (!proposta) return [];
+/** Quem executa: o `db` ou a transação do aceite. */
+export type ExecutorGrupos = Pick<typeof db, "select" | "insert" | "update" | "delete" | "execute">;
 
-  const itens = await db.select().from(propostaItens).where(eq(propostaItens.propostaId, propostaId));
+/**
+ * Forma os grupos comerciais de uma proposta, decidindo contrato × pagamento
+ * ITEM A ITEM (P1-13, ver `decisao-fechamento.ts`).
+ *
+ * Chamado no ACEITE, dentro da transação dele. Cada linha ganha o seu caminho
+ * (modelo comercial, modo da proposta, Price, família) e as que seguem o mesmo
+ * caminho, modelo e família dividem UM grupo — um contrato ou um checkout por
+ * grupo, nunca dois. O caminho fica gravado no grupo.
+ *
+ * Idempotente e sem duplicar: linha que já está num grupo FICA onde está (a
+ * proposta aceita é imutável, e realocar linha de grupo que já tem contrato ou
+ * checkout seria desfazer a venda em curso); só as linhas ainda sem grupo são
+ * decididas, e entram num grupo existente de mesma decisão antes de criar outro.
+ * A proposta é travada (FOR UPDATE) para duas chamadas simultâneas não criarem
+ * grupos em dobro.
+ */
+export async function formarGruposComerciais(propostaId: string, ex: ExecutorGrupos = db): Promise<GrupoComercialRow[]> {
+  const [proposta] = await ex.select().from(propostas).where(eq(propostas.id, propostaId)).limit(1);
+  if (!proposta) return [];
+  await ex.execute(sql`SELECT 1 FROM propostas WHERE id = ${propostaId}::uuid FOR UPDATE`);
+
+  const itens = await ex
+    .select({
+      id: propostaItens.id, nome: propostaItens.nome, subtotal: propostaItens.subtotal, ordem: propostaItens.ordem,
+      commercialModel: propostaItens.commercialModel, servicoCatalogoId: propostaItens.servicoCatalogoId,
+      familiaDaLinha: propostaItens.serviceFamily, familiaDoCatalogo: servicosCatalogo.serviceFamily,
+      catalogoPrecoId: propostaItens.catalogoPrecoId, exigeContratoDoPreco: catalogoPrecos.exigeContrato,
+    })
+    .from(propostaItens)
+    .leftJoin(servicosCatalogo, eq(servicosCatalogo.id, propostaItens.servicoCatalogoId))
+    .leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
+    .where(eq(propostaItens.propostaId, propostaId))
+    .orderBy(propostaItens.ordem);
   if (itens.length === 0) return [];
 
-  const catalogoIds = itens.map((i) => i.servicoCatalogoId).filter((id): id is string => !!id);
-  const defaultMap = await resolverCommercialModelPadraoPorCatalogoIds(catalogoIds);
+  const jaAgrupados = new Set((await ex
+    .select({ itemId: propostaGrupoComercialItens.propostaItemId })
+    .from(propostaGrupoComercialItens)
+    .innerJoin(propostaGrupoComercial, eq(propostaGrupoComercial.id, propostaGrupoComercialItens.grupoId))
+    .where(eq(propostaGrupoComercial.propostaId, propostaId))).map((r) => r.itemId));
 
-  const itensPorModelo = new Map<CommercialModel, typeof itens>();
-  for (const item of itens) {
-    // commercial_model já foi resolvido na criação do item (proposta_itens.commercial_model,
-    // não nulo) — usa ele diretamente, sem re-resolver (evita divergência se o
-    // catálogo mudar depois que a proposta já foi montada).
-    const modelo = resolverCommercialModelDoItem({
-      overrideExplicito: item.commercialModel,
-      servicoCatalogoId: item.servicoCatalogoId,
-      catalogoDefaultMap: defaultMap,
+  const novos = itens.filter((i) => !jaAgrupados.has(i.id));
+  if (novos.length > 0) {
+    const catalogoIds = novos.map((i) => i.servicoCatalogoId).filter((id): id is string => !!id);
+    const defaultMap = await resolverCommercialModelPadraoPorCatalogoIds(catalogoIds);
+    const conhecida = (f: string | null | undefined) => (f && f !== "UNKNOWN" ? f : null);
+
+    const decididos = decidirGrupos(novos.map((item) => ({
+      id: item.id,
+      // commercial_model já foi resolvido na criação do item (proposta_itens.commercial_model,
+      // não nulo) — usa ele diretamente, sem re-resolver (evita divergência se o catálogo mudar depois).
+      commercialModel: resolverCommercialModelDoItem({
+        overrideExplicito: item.commercialModel, servicoCatalogoId: item.servicoCatalogoId, catalogoDefaultMap: defaultMap,
+      }),
+      // A linha, depois o catálogo, depois o nome — a mesma ordem de `calcularFamiliaDoGrupo`. Sem nenhuma, a
+      // linha herda a família dominante do mesmo caminho e modelo (item genérico, como "Setup") ou, não
+      // havendo, o grupo vai para validação manual: nunca um palpite.
+      familia: conhecida(item.familiaDaLinha) ?? conhecida(item.familiaDoCatalogo) ?? conhecida(classificarProdutoPorNome(item.nome)),
+      exigeContratoDoPreco: item.catalogoPrecoId ? item.exigeContratoDoPreco : null,
+      subtotal: Number(item.subtotal) || 0,
+    })), {
+      modoFechamento: proposta.modoFechamento,
+      familiaExigeContrato: (f) => regraDaFamilia(f).exigeContrato,
     });
-    const lista = itensPorModelo.get(modelo) || [];
-    lista.push(item);
-    itensPorModelo.set(modelo, lista);
+
+    const existentes = await ex.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.propostaId, propostaId));
+    for (const d of decididos) {
+      let grupo = existentes.find((g) =>
+        g.commercialModel === d.commercialModel && g.caminhoFechamento === d.caminho && (g.serviceFamily ?? "UNKNOWN") === d.familia);
+      if (!grupo) {
+        [grupo] = await ex
+          .insert(propostaGrupoComercial)
+          .values({
+            organizacaoId: proposta.organizacaoId,
+            propostaId,
+            negocioId: proposta.negocioId,
+            commercialModel: d.commercialModel,
+            caminhoFechamento: d.caminho,
+            serviceFamily: d.familia === "UNKNOWN" ? null : d.familia,
+            status: d.caminho === "contrato" ? "aguardando_contrato" : "aguardando_checkout",
+          })
+          .returning();
+        existentes.push(grupo);
+      }
+      // O índice único em proposta_item_id garante que uma linha nunca fica em 2 grupos.
+      await ex.insert(propostaGrupoComercialItens).values(d.itensIds.map((itemId) => ({ grupoId: grupo!.id, propostaItemId: itemId })));
+    }
   }
 
-  const grupos: GrupoComercialRow[] = [];
-
-  for (const [commercialModel, itensDoGrupo] of itensPorModelo) {
-    let [grupo] = await db
-      .select()
-      .from(propostaGrupoComercial)
-      .where(and(eq(propostaGrupoComercial.propostaId, propostaId), eq(propostaGrupoComercial.commercialModel, commercialModel)))
-      .limit(1);
-
-    if (!grupo) {
-      const statusInicial: StatusGrupoComercial = exigeContrato(commercialModel) ? "aguardando_contrato" : "aguardando_checkout";
-      [grupo] = await db
-        .insert(propostaGrupoComercial)
-        .values({
-          organizacaoId: proposta.organizacaoId,
-          propostaId,
-          negocioId: proposta.negocioId,
-          commercialModel,
-          status: statusInicial,
-        })
-        .returning();
-    }
-
-    // Realoca cada item pro grupo certo (delete-then-insert — o índice único
-    // em proposta_item_id garante que um item nunca fica em 2 grupos ao mesmo tempo).
-    for (const item of itensDoGrupo) {
-      await db.delete(propostaGrupoComercialItens).where(eq(propostaGrupoComercialItens.propostaItemId, item.id));
-      await db.insert(propostaGrupoComercialItens).values({ grupoId: grupo.id, propostaItemId: item.id });
-    }
-
-    grupos.push({ id: grupo.id, commercialModel, status: grupo.status as StatusGrupoComercial, itensIds: itensDoGrupo.map((i) => i.id), contratoId: grupo.contratoId });
-  }
+  // Todos os grupos da proposta, com as linhas de cada um.
+  const grupos = await ex.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.propostaId, propostaId)).orderBy(propostaGrupoComercial.createdAt);
+  const vinculos = await ex
+    .select({ grupoId: propostaGrupoComercialItens.grupoId, itemId: propostaGrupoComercialItens.propostaItemId })
+    .from(propostaGrupoComercialItens)
+    .where(inArray(propostaGrupoComercialItens.grupoId, grupos.map((g) => g.id)));
+  const resultado: GrupoComercialRow[] = grupos
+    .map((g) => ({
+      id: g.id,
+      commercialModel: g.commercialModel as CommercialModel,
+      status: g.status as StatusGrupoComercial,
+      itensIds: vinculos.filter((v) => v.grupoId === g.id).map((v) => v.itemId),
+      contratoId: g.contratoId,
+      checkoutId: g.checkoutId,
+      caminho: (g.caminhoFechamento as CaminhoDeFechamento | null) ?? null,
+      serviceFamily: g.serviceFamily,
+    }))
+    .filter((g) => g.itensIds.length > 0);
 
   // Propaga o modelo/grupo pra oportunidade_itens já materializados (se
   // existirem) — pra tela de negócio mostrar fulfillment por item sem
   // precisar recalcular nada.
   const [oportunidade] = proposta.negocioId
-    ? await db.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, proposta.negocioId)).limit(1)
+    ? await ex.select({ id: oportunidades.id }).from(oportunidades).where(eq(oportunidades.negocioIdLegado, proposta.negocioId)).limit(1)
     : [undefined];
   if (oportunidade) {
-    for (const grupo of grupos) {
-      if (grupo.itensIds.length === 0) continue;
-      await db
+    for (const grupo of resultado) {
+      await ex
         .update(oportunidadeItens)
         .set({ commercialModel: grupo.commercialModel, grupoComercialId: grupo.id, updatedAt: new Date() })
         .where(and(eq(oportunidadeItens.oportunidadeId, oportunidade.id), inArray(oportunidadeItens.propostaItemIdLegado, grupo.itensIds)));
     }
   }
 
-  return grupos;
+  return resultado;
 }
 
 async function atualizarStatusGrupo(grupoId: string, status: StatusGrupoComercial, extra: Record<string, unknown> = {}): Promise<void> {

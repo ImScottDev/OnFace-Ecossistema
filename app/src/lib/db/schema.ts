@@ -4319,6 +4319,10 @@ export const propostaGrupoComercial = pgTable("proposta_grupo_comercial", {
   // qual trilha de entrega o cliente vai. Ver lib/crm/politica-familia.ts.
   serviceFamily: text("service_family"), // PABX | CALLFACE_AI | WHITE_LABEL | UNKNOWN
   contratoAssinadoEm: timestamp("contrato_assinado_em", { withTimezone: true }),
+  // P1-13 — o caminho decidido ITEM A ITEM no aceite (contrato | pagamento) e gravado no grupo: nunca
+  // recalculado depois, para uma mudança de catálogo não trocar o caminho de uma venda em curso.
+  // null = grupo anterior à decisão por item (vale a regra antiga, por grupo). Migration 0115.
+  caminhoFechamento: text("caminho_fechamento"), // contrato | pagamento
   // Entrega liberada != pagamento confirmado. Em PABX/White Label a
   // assinatura já libera a materialização do serviço e a implantação,
   // enquanto o pagamento segue rastreado como pendente.

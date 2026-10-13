@@ -22,3 +22,15 @@ describe("tituloDoEvento — evento de domínio sem título", () => {
     assert.equal(tituloDoEvento("PersonLinkedToCompany", null, {}), "Pessoa vinculada à empresa");
   });
 });
+
+describe("tituloDoEvento — alteração comercial da proposta", () => {
+  it("diz o que mudou, não só 'Proposta editada'", () => {
+    assert.equal(
+      tituloDoEvento("ProposalEdited", null, { resumo: "2 alterações: desconto e quantidade", alteracoes: [{}, {}] }),
+      "Proposta editada — 2 alterações: desconto e quantidade",
+    );
+  });
+  it("evento antigo, sem o registro estruturado, mantém o rótulo simples", () => {
+    assert.equal(tituloDoEvento("ProposalEdited", null, { itens: 2 }), "Proposta editada");
+  });
+});

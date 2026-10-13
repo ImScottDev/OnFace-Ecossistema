@@ -21,14 +21,15 @@ import {
   servicosCanonicos, fulfillments, fulfillmentItens, tarefas,
 } from "@/lib/db/schema";
 import { criarPosVendaDoNegocio } from "@/lib/crm/pos-venda";
+import { gravarLinhasOficiais } from "./_preco-oficial";
 
 const TAG = "[TESTE-POSVENDA]";
 const manter = process.argv.includes("--manter");
 
-const CENARIOS = [
+const CENARIOS: Array<{ nome: string; itens: Array<{ nome: string; subtotal: string; setup?: boolean }>; familiaEsperada: string; trilhaEsperada: string }> = [
   {
     nome: "Callface AI",
-    itens: [{ nome: "Callface AI - Plano Full", subtotal: "1200.00" }, { nome: "Setup", subtotal: "500.00" }],
+    itens: [{ nome: "Callface AI - Plano Full", subtotal: "1200.00" }, { nome: "Setup", subtotal: "500.00", setup: true }],
     familiaEsperada: "CALLFACE_AI",
     trilhaEsperada: "onboarding",
   },
@@ -137,15 +138,11 @@ async function main() {
       status: "aceita",
     }).returning({ id: propostas.id });
 
-    await db.insert(propostaItens).values(
-      cen.itens.map((i, ordem) => ({
-        propostaId: proposta.id,
-        nome: i.nome,
-        tipo: "recorrente",
-        subtotal: i.subtotal,
-        ordem,
-      })),
-    );
+    // As linhas entram pela porta do produto, cada uma com o Price oficial da família (P1-6).
+    await gravarLinhasOficiais({
+      organizacaoId: org.id, negocioId: negocio.id, propostaId: proposta.id, familia: cen.familiaEsperada,
+      linhas: cen.itens.map((i) => ({ nome: i.nome, valor: parseFloat(i.subtotal), tipos: i.setup ? ["setup", "avulso"] : ["recorrente"] })),
+    });
 
     // ── Primeira execução ──────────────────────────────────
     const r1 = await criarPosVendaDoNegocio(negocio.id, { ignorarFlag: true });

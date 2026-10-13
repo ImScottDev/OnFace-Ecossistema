@@ -10,7 +10,9 @@ import { propostas, propostaItens, catalogoPrecos, servicosCatalogo } from "@/li
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { syncOportunidadeItensFromProposta, resolverServiceFamiliesPorCatalogoIds, mapTipoParaRevenueNature } from "@/lib/crm/composicao-comercial";
 import { resolverCommercialModelPadraoPorCatalogoIds, resolverCommercialModelDoItem } from "@/lib/crm/commercial-model";
-import { ehFamiliaValida, RegraDeNegocio } from "@/lib/vendas/dominio";
+import { atorHumano, ehFamiliaValida, RegraDeNegocio, type Ator } from "@/lib/vendas/dominio";
+import { lerFotoComercial, registrarAlteracaoComercial } from "@/lib/vendas/auditoria-comercial-registro";
+import { FOTO_VAZIA } from "@/lib/vendas/auditoria-comercial";
 import { calcularItens, validarDataValidade, validarMoeda } from "@/lib/crm/proposta-regras";
 import { descricaoDoProduto, variacaoAmigavel } from "@/lib/catalogo/rotulos";
 
@@ -85,6 +87,54 @@ export async function resolverFamiliaDoNegocio(organizacaoId: string, negocioId:
      WHERE n.id = ${negocioId}::uuid AND n.organizacao_id = ${organizacaoId}::uuid
   `);
   return { existe: !!r, familia: r?.service_family ?? null };
+}
+
+/**
+ * UMA resolução do contato que recebe a proposta, para criar e para editar.
+ *
+ * O contato é o da oportunidade ou o que o vendedor ESCOLHEU (`leadId`, da mesma
+ * empresa). Nunca "o primeiro lead da empresa": isso mandava a proposta para a
+ * pessoa errada. Sem contato na oportunidade, a empresa com um único contato não
+ * é ambígua; com mais de um, a escolha é obrigatória.
+ */
+export async function resolverContatoDaProposta(opts: {
+  organizacaoId: string; negocioId: string; leadId?: string | null;
+}): Promise<string> {
+  const [negocio] = await db.execute<{ lead_id: string | null; empresa_id: string | null }>(sql`
+    SELECT lead_id::text, empresa_id::text FROM negocios
+     WHERE id = ${opts.negocioId}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid`);
+  if (!negocio) throw new RegraDeNegocio("oportunidade_nao_encontrada", "Oportunidade não encontrada.");
+
+  if (opts.leadId && opts.leadId !== negocio.lead_id) {
+    // Oportunidade sem empresa: só vale o contato da própria oportunidade (sem empresa, "da mesma empresa" casaria com qualquer lead solto).
+    const [ok] = negocio.empresa_id
+      ? await db.execute<{ id: string }>(sql`
+          SELECT id::text FROM leads
+           WHERE id = ${opts.leadId}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid
+             AND empresa_id = ${negocio.empresa_id}::uuid`)
+      : [];
+    if (!ok) throw new RegraDeNegocio("contato_invalido", "O contato escolhido não pertence à empresa desta oportunidade.");
+  }
+
+  let leadId = opts.leadId ?? negocio.lead_id;
+  if (!leadId && negocio.empresa_id) {
+    const candidatos = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM leads
+       WHERE empresa_id = ${negocio.empresa_id}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid
+       ORDER BY created_at LIMIT 2`);
+    if (candidatos.length === 1) leadId = candidatos[0].id;
+    else if (candidatos.length > 1) {
+      throw new RegraDeNegocio(
+        "proposta_exige_contato",
+        "A oportunidade não tem contato definido e a empresa tem mais de um. Escolha o contato que recebe a proposta.",
+        { rotulo: "Definir contato", tipo: "definir_contato" },
+      );
+    }
+  }
+  if (!leadId) {
+    throw new RegraDeNegocio("proposta_exige_contato", "A oportunidade não tem contato vinculado para receber a proposta.", { rotulo: "Definir contato", tipo: "definir_contato" });
+  }
+  return leadId;
 }
 
 /**
@@ -289,6 +339,12 @@ export async function criarPropostaComItens(opts: {
       criadoPorId: opts.criadoPorId,
     }).returning();
     await inserirItensDaProposta(tx, criada.id, moeda, itensWithCalc);
+    // Auditoria: o que nasceu (itens, preços negociados, descontos) e quem criou, na mesma transação.
+    await registrarAlteracaoComercial(tx, {
+      organizacaoId: opts.organizacaoId, propostaId: criada.id, ator: atorHumano(opts.criadoPorId),
+      antes: FOTO_VAZIA, depois: await lerFotoComercial(tx, opts.organizacaoId, criada.id),
+      tipo: "ProposalCreated", contexto: { familia, itens: itensWithCalc.length },
+    });
     return criada;
   });
 
@@ -313,6 +369,12 @@ export async function atualizarItensDoRascunho(opts: {
   observacoes?: string | null;
   prazoContratoMeses?: number | null;
   parcelas?: number | null;
+  /** Quem editou: a auditoria (de → para) sai em nome dele. Obrigatório, sem alteração sem autor. */
+  ator: Ator;
+  /** Motivo opcional da alteração; vai no registro. */
+  motivo?: string | null;
+  /** Contato que recebe a proposta. Ausente = mantém. */
+  leadId?: string | null;
 }) {
   if (opts.itens.length === 0) throw new RegraDeNegocio("proposta_sem_itens", "A proposta precisa de pelo menos um item.");
   const [previa] = await db.execute<{ negocio_id: string | null; moeda: string }>(sql`
@@ -326,6 +388,10 @@ export async function atualizarItensDoRascunho(opts: {
   )).itens;
   const mantidos = calc.filter((i) => i.itemExistenteId);
   const novos = calc.filter((i) => !i.itemExistenteId);
+  // Valida o contato escolhido antes de abrir a transação (mesma regra da criação).
+  const novoContato = opts.leadId && previa.negocio_id
+    ? await resolverContatoDaProposta({ organizacaoId: opts.organizacaoId, negocioId: previa.negocio_id, leadId: opts.leadId })
+    : null;
 
   const negocioId = await db.transaction(async (tx) => {
     // FOR UPDATE: um envio simultâneo espera esta edição terminar (e vice-versa).
@@ -336,6 +402,7 @@ export async function atualizarItensDoRascunho(opts: {
     if (p.status !== "rascunho") {
       throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se edita. Para mudar uma proposta enviada, crie uma revisão.");
     }
+    const antes = await lerFotoComercial(tx, opts.organizacaoId, opts.propostaId);
 
     // oportunidade_itens aponta para proposta_itens (FK RESTRICT): soltar antes de apagar.
     if (p.negocio_id) {
@@ -361,8 +428,14 @@ export async function atualizarItensDoRascunho(opts: {
         observacoes = CASE WHEN ${opts.observacoes !== undefined} THEN ${opts.observacoes?.trim() || null} ELSE observacoes END,
         prazo_contrato_meses = CASE WHEN ${opts.prazoContratoMeses !== undefined} THEN ${opts.prazoContratoMeses ?? null}::int ELSE prazo_contrato_meses END,
         parcelas = CASE WHEN ${opts.parcelas !== undefined} THEN COALESCE(${opts.parcelas ?? null}::int, 1) ELSE parcelas END,
+        lead_id = COALESCE(${novoContato}::uuid, lead_id),
         updated_at = now()
        WHERE id = ${opts.propostaId}::uuid`);
+    // Auditoria na MESMA transação: a alteração e o registro dela existem juntos ou não existem.
+    await registrarAlteracaoComercial(tx, {
+      organizacaoId: opts.organizacaoId, propostaId: opts.propostaId, ator: opts.ator, motivo: opts.motivo,
+      antes, depois: await lerFotoComercial(tx, opts.organizacaoId, opts.propostaId),
+    });
     return p.negocio_id;
   });
 

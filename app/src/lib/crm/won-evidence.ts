@@ -175,32 +175,20 @@ export async function avaliarEvidenciaWon(negocioId: string, organizacaoId: stri
     return { permitido: true, evidencias: valida, motivo: "evidência registrada" };
   }
 
-  // Fallback legado — mesmo critério do gate anterior, só pra negócios que
-  // nunca passaram por um ponto que registra evidência explicitamente.
+  // Fallback legado, só para negócios que nunca passaram por um ponto que registra evidência
+  // explicitamente: um contrato JÁ ASSINADO conta como `signed_contract`.
   //
-  // Achado real (E2E do Commercial Core, 16/08): no fluxo condicional de
-  // proposta (ADR-EXEC-020), "aceita" no caminho contrato significa "cliente
-  // aceitou comercialmente, aguardando assinatura" — NUNCA "contrato
-  // assinado" (ver comentário em proposta-publica.ts::aceitarPropostaPublica,
-  // "não é Won ainda"). O fallback tratava os dois como equivalentes e
-  // liberava Won antes da assinatura de verdade — exatamente a promessa
-  // verbal/status manual que a Commercial Evidence Policy existe pra barrar.
-  // Corrigido: ambos os fallbacks agora ignoram contrato com
-  // assinatura_status='pendente'.
-  const [propostaAceita] = await db.select({ id: propostas.id, contratoId: propostas.contratoId }).from(propostas).where(and(eq(propostas.negocioId, negocioId), eq(propostas.status, "aceita"))).limit(1);
-  if (propostaAceita) {
-    const contratoPendente = propostaAceita.contratoId
-      ? await db.select({ assinaturaStatus: contratos.assinaturaStatus }).from(contratos).where(eq(contratos.id, propostaAceita.contratoId)).limit(1).then((r) => r[0]?.assinaturaStatus === "pendente")
-      : false;
-    if (!contratoPendente) {
-      await registrarEvidencia({ negocioId, organizacaoId, tipo: "signed_contract", sourceRef: propostaAceita.id, metadata: { origem: "fallback_legado_proposta_aceita" } });
-      if (tiposAceitos.includes("signed_contract")) return { permitido: true, evidencias: ["signed_contract"], motivo: "proposta aceita (fallback legado)" };
-    }
-  }
-  const [contratoExistente] = await db.select({ id: contratos.id, assinaturaStatus: contratos.assinaturaStatus }).from(contratos).where(eq(contratos.negocioId, negocioId)).limit(1);
-  if (contratoExistente && contratoExistente.assinaturaStatus !== "pendente") {
-    await registrarEvidencia({ negocioId, organizacaoId, tipo: "signed_contract", sourceRef: contratoExistente.id, metadata: { origem: "fallback_legado_contrato_existente" } });
-    if (tiposAceitos.includes("signed_contract")) return { permitido: true, evidencias: ["signed_contract"], motivo: "contrato existente (fallback legado)" };
+  // Aqui NÃO existe mais o atalho "proposta aceita". Ele registrava `signed_contract` a partir do ACEITE
+  // (status 'aceita' sem contrato pendente), isto é, tratava o "sim" do cliente como evidência de
+  // fechamento — exatamente o que o Bloco 03 §26 e o Scott proíbem: aceite NÃO é ganho. Ganho vem da
+  // evidência (contrato assinado ou pagamento confirmado), decidida pela política da oferta. O mesmo vale
+  // para o contrato: só 'assinado' e 'aceite_simples' são assinatura; 'pendente', 'recusado', 'cancelado' e
+  // 'expirado' não são (o critério antigo, "diferente de pendente", deixava os três últimos passarem).
+  const [contratoExistente] = await db.select({ id: contratos.id, assinaturaStatus: contratos.assinaturaStatus })
+    .from(contratos).where(and(eq(contratos.negocioId, negocioId), or(eq(contratos.assinaturaStatus, "assinado"), eq(contratos.assinaturaStatus, "aceite_simples")))).limit(1);
+  if (contratoExistente) {
+    await registrarEvidencia({ negocioId, organizacaoId, tipo: "signed_contract", sourceRef: contratoExistente.id, metadata: { origem: "fallback_legado_contrato_assinado" } });
+    if (tiposAceitos.includes("signed_contract")) return { permitido: true, evidencias: ["signed_contract"], motivo: "contrato assinado (fallback legado)" };
   }
 
   return { permitido: false, evidencias: [], motivo: "nenhuma evidência comercial válida encontrada" };

@@ -9,8 +9,10 @@ import {
 } from "@/lib/vendas/dominio";
 import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as propostas from "@/lib/vendas/propostas";
-import { atualizarItensDoRascunho, criarPropostaComItens, resolverFamiliaDoNegocio, type ItemEntrada } from "@/lib/crm/proposta-criacao";
-import { lerLinhaDoTempo, registrarEvento, type LinhaDoTempo } from "@/lib/vendas/eventos";
+import { atualizarItensDoRascunho, criarPropostaComItens, resolverContatoDaProposta, resolverFamiliaDoNegocio, type ItemEntrada } from "@/lib/crm/proposta-criacao";
+import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
+import { lerAlteracoesDaProposta } from "@/lib/vendas/auditoria-comercial-registro";
+import type { RegistroDeAlteracao } from "@/lib/vendas/auditoria-comercial";
 import { avisarClienteDaPropostaEnviada, type ResultadoEmail } from "@/lib/crm/enviar-proposta";
 
 const ROTA = "/propostas";
@@ -166,6 +168,8 @@ export interface DetalheProposta {
     assinadoEm: string | null; signatarios: string[]; pdfFinalDisponivel: boolean;
   }>;
   timeline: LinhaDoTempo[];
+  /** Auditoria comercial desta proposta: quem mudou o quê (de → para), quando e por quê. */
+  alteracoes: RegistroDeAlteracao[];
 }
 
 export async function acaoDetalhe(propostaId: string): Promise<Resultado<DetalheProposta | null>> {
@@ -273,6 +277,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
         ajusteEm: p.ajuste_em, ajusteDescricao: p.ajuste_desc,
       },
       timeline: await lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, limite: 30, negocioId: p.negocio_id ?? undefined }),
+      alteracoes: await lerAlteracoesDaProposta(ctx.organizacaoId, propostaId),
     };
   });
 }
@@ -417,43 +422,10 @@ export async function acaoCriar(entrada: {
   if (entrada.itens.length === 0) return { ok: false, erro: "Escolha ao menos um item do catálogo." };
 
   return executar("criar proposta", async () => {
-    const [negocio] = await db.execute<{ lead_id: string | null; empresa_id: string | null }>(sql`
-      SELECT lead_id::text, empresa_id::text FROM negocios
-       WHERE id = ${entrada.negocioId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
-    `);
-    if (!negocio) throw new Error("oportunidade não encontrada");
+    // Mesma resolução do núcleo e da edição: contato da oportunidade ou o escolhido (da mesma empresa).
+    const leadId = await resolverContatoDaProposta({ organizacaoId: ctx.organizacaoId, negocioId: entrada.negocioId, leadId: entrada.leadId });
     // Mesma resolução de família do núcleo e da edição (negócio, depois oportunidade canônica).
     const { familia } = await resolverFamiliaDoNegocio(ctx.organizacaoId, entrada.negocioId);
-
-    // `propostas.lead_id` é NOT NULL no schema legado. O contato que recebe a proposta é
-    // o da oportunidade, ou o que o vendedor escolheu (`leadId`, da mesma empresa). Nunca
-    // "o primeiro lead da empresa": isso mandava a proposta para a pessoa errada.
-    let leadId = entrada.leadId ?? negocio.lead_id;
-    if (entrada.leadId && entrada.leadId !== negocio.lead_id) {
-      const [ok] = await db.execute<{ id: string }>(sql`
-        SELECT id::text FROM leads
-         WHERE id = ${entrada.leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
-           AND empresa_id IS NOT DISTINCT FROM ${negocio.empresa_id}::uuid`);
-      if (!ok) throw new RegraDeNegocio("contato_invalido", "O contato escolhido não pertence à empresa desta oportunidade.");
-    }
-    if (!leadId && negocio.empresa_id) {
-      const candidatos = await db.execute<{ id: string }>(sql`
-        SELECT id::text FROM leads
-         WHERE empresa_id = ${negocio.empresa_id}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
-         ORDER BY created_at LIMIT 2`);
-      // Um único contato na empresa não é ambíguo; mais de um exige escolha explícita.
-      if (candidatos.length === 1) leadId = candidatos[0].id;
-      else if (candidatos.length > 1) {
-        throw new RegraDeNegocio(
-          "proposta_exige_contato",
-          "A oportunidade não tem contato definido e a empresa tem mais de um. Defina o contato que recebe a proposta antes de criar.",
-          { rotulo: "Definir contato", tipo: "definir_contato" },
-        );
-      }
-    }
-    if (!leadId) {
-      throw new RegraDeNegocio("proposta_exige_contato", "A oportunidade não tem contato vinculado para receber a proposta.", { rotulo: "Definir contato", tipo: "definir_contato" });
-    }
 
     const itens: ItemEntrada[] = entrada.itens.map((i, ordem) => ({
       catalogoPrecoId: i.catalogoPrecoId,
@@ -492,12 +464,7 @@ export async function acaoCriar(entrada: {
       });
     }
 
-    await registrarEvento({
-      organizacaoId: ctx.organizacaoId, tipo: "ProposalCreated", ator: ctx.ator,
-      propostaId: proposta.id, negocioId: entrada.negocioId, leadId,
-      contexto: { familia, itens: itens.length },
-      timeline: { tipo: "nota", titulo: `Proposta #${proposta.numero} criada` },
-    });
+    // ProposalCreated (com os itens, preços e descontos) é gravado pelo núcleo, na mesma transação da proposta.
 
     revalidatePath(ROTA);
     return { propostaId: proposta.id as string };
@@ -522,21 +489,24 @@ export async function acaoAtualizarRascunho(entrada: {
   parcelasSetup?: number | null;
   signatarios?: unknown;
   editor?: unknown;
+  /** Contato que recebe a proposta (da mesma empresa). Ausente = mantém o atual. */
+  leadId?: string | null;
+  /** Motivo opcional da alteração: vai no registro de auditoria. */
+  motivo?: string | null;
 }): Promise<Resultado<{ propostaId: string }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   if (entrada.itens.length === 0) return { ok: false, erro: "A proposta precisa de pelo menos um item." };
 
   return executar("editar rascunho da proposta", async () => {
-    const [p] = await db.execute<{ negocio_id: string | null; lead_id: string }>(sql`
-      SELECT negocio_id::text, lead_id::text FROM propostas
-       WHERE id = ${entrada.propostaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
-    if (!p) throw new RegraDeNegocio("proposta_nao_encontrada", "Proposta não encontrada.");
-    // Catálogo, família, moeda e conta são validados no núcleo (`prepararItensDaProposta`).
+    // Catálogo, família, moeda, contato e conta são validados no núcleo; a auditoria (de → para) sai de lá, na mesma transação.
 
     await atualizarItensDoRascunho({
       organizacaoId: ctx.organizacaoId,
       propostaId: entrada.propostaId,
+      ator: ctx.ator,
+      motivo: entrada.motivo,
+      leadId: entrada.leadId,
       itens: entrada.itens.map((i, ordem) => ({
         catalogoPrecoId: i.catalogoPrecoId ?? null, itemExistenteId: i.itemExistenteId ?? null,
         nome: i.nome, descricao: i.descricao ?? null, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario,
@@ -554,13 +524,6 @@ export async function acaoAtualizarRascunho(entrada: {
         organizacaoId: ctx.organizacaoId, propostaId: entrada.propostaId, signatarios: entrada.signatarios, editor: entrada.editor,
       });
     }
-
-    await registrarEvento({
-      organizacaoId: ctx.organizacaoId, tipo: "ProposalEdited", ator: ctx.ator,
-      propostaId: entrada.propostaId, negocioId: p.negocio_id, leadId: p.lead_id,
-      contexto: { itens: entrada.itens.length },
-      timeline: { tipo: "nota", titulo: "Rascunho da proposta editado" },
-    });
 
     revalidatePath(ROTA);
     revalidatePath("/pipeline");

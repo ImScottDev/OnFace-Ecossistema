@@ -26,6 +26,7 @@ import {
   comercialEvidencia,
 } from "@/lib/db/schema";
 import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
+import { daLinha, precoOficial } from "./_preco-oficial";
 import { processarAceiteDaProposta } from "@/lib/crm/proposta-aceite";
 import { processarEventosPendentes } from "@/lib/events/consumer";
 import { limparCenariosDeAceite } from "./_limpeza-aceite";
@@ -88,10 +89,11 @@ async function cenario(familia: "PABX" | "WHITE_LABEL", nomeServico: string, tri
     serviceFamily: familia,
   }).returning({ id: negocios.id });
 
-  // 1. Proposta com item da família
+  // 1. Proposta com item da família (o Price é o do catálogo; o nome e o valor negociado são do cenário)
+  const preco = await precoOficial(org.id, familia, { tipos: ["recorrente"] });
   const proposta = await criarPropostaComItens({
     organizacaoId: org.id, leadId: lead.id, negocioId: negocio.id, criadoPorId: user.id, moeda: "BRL",
-    itens: [{ nome: nomeServico, descricao: `${rotulo} item`, tipo: "recorrente", quantidade: 1, valorUnitario: 2500, desconto: 0, descontoTipo: "valor" }],
+    itens: [{ ...daLinha(preco), nome: nomeServico, descricao: `${rotulo} item`, tipo: "recorrente", quantidade: 1, valorUnitario: 2500, desconto: 0, descontoTipo: "valor" }],
   });
   const propostaId = proposta.id;
   await db.update(propostas).set({ status: "enviada" }).where(eq(propostas.id, propostaId));

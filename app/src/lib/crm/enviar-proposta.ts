@@ -10,7 +10,7 @@
  * Compartilhado entre a rota Next (local) e a rota Hono (prod) pra manter paridade.
  */
 import { db } from "@/lib/db";
-import { propostas, propostaItens, leads, atividades } from "@/lib/db/schema";
+import { propostas, propostaItens, leads, atividades, catalogoPrecos } from "@/lib/db/schema";
 import { eq, asc, and } from "drizzle-orm";
 import { sendResendEmail, type ResendResult } from "@/lib/email/resend";
 import { buildPropostaEmail } from "@/lib/email/proposta-email";
@@ -34,7 +34,8 @@ type PropostaRow = typeof propostas.$inferSelect;
 export async function dispararEmailDaProposta(p: {
   para: string; clienteNome: string; empresa?: string | null;
   proposta: Pick<PropostaRow, "numero" | "versao" | "moeda">;
-  itens: Array<{ nome: string; tipo: string; subtotal: number }>;
+  /** `periodo` é o do Price (mensal | anual | unico): o e-mail separa mensalidade, anuidade e itens únicos. */
+  itens: Array<{ nome: string; tipo: string; subtotal: number; periodo?: string | null }>;
   totalRecorrente: number; totalAvulso: number; linkPublico: string;
   validade?: string | null; remetenteNome?: string | null;
 }) {
@@ -77,15 +78,16 @@ export async function avisarClienteDaPropostaEnviada(opts: {
     const [lead] = await db.select({ nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email })
       .from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
     const destino = decidirDestinoEmail({ enviarEmail: opts.enviarEmail, destinatarioEmail: opts.destinatarioEmail, emailDoLead: lead?.email });
-    const itens = await db.select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal })
-      .from(propostaItens).where(eq(propostaItens.propostaId, opts.propostaId)).orderBy(asc(propostaItens.ordem));
+    const itens = await db.select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, periodo: catalogoPrecos.periodo })
+      .from(propostaItens).leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
+      .where(eq(propostaItens.propostaId, opts.propostaId)).orderBy(asc(propostaItens.ordem));
 
     let email: ResultadoEmail = opts.enviarEmail ? "sem_destinatario" : "nao_solicitado";
     let erro: string | null = null;
     if (destino) {
       const r = await dispararEmailDaProposta({
         para: destino, clienteNome: [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "", empresa: lead?.empresa,
-        proposta, itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
+        proposta, itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0"), periodo: i.periodo })),
         totalRecorrente: parseFloat(proposta.totalRecorrente || "0"), totalAvulso: parseFloat(proposta.totalAvulso || "0"),
         linkPublico: link, validade: proposta.dataValidade, remetenteNome: opts.userName ?? null,
       });
@@ -151,8 +153,9 @@ export async function enviarPropostaComCheckout(opts: {
   }
 
   const itens = await db
-    .select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, commercialModel: propostaItens.commercialModel })
+    .select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, commercialModel: propostaItens.commercialModel, periodo: catalogoPrecos.periodo })
     .from(propostaItens)
+    .leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
     .where(eq(propostaItens.propostaId, propostaId))
     .orderBy(asc(propostaItens.ordem));
 
@@ -206,7 +209,7 @@ export async function enviarPropostaComCheckout(opts: {
   const emailResult: ResendResult = !skipEmail && lead?.email
     ? await dispararEmailDaProposta({
         para: lead.email, clienteNome, empresa: lead.empresa, proposta,
-        itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0") })),
+        itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0"), periodo: i.periodo })),
         totalRecorrente, totalAvulso, linkPublico, validade: dataValidadeEfetiva, remetenteNome: userName ?? null,
       })
     : ({ sent: false, skipped: true } satisfies ResendResult);

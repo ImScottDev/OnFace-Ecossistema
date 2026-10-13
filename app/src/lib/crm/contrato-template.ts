@@ -433,6 +433,9 @@ export async function enviarContratoParaAssinatura(contratoId: string): Promise<
   const [antes] = await db.select().from(contratos).where(eq(contratos.id, contratoId)).limit(1);
   if (!antes) throw new Error(`Contrato ${contratoId} não encontrado`);
   if (antes.signatureStatus === "signed") return;
+  // Já enviado ao provedor: reenviar abriria um SEGUNDO documento para o cliente assinar (retomada de aceite,
+  // duplo clique, retry). O link e o estado do que já foi enviado seguem valendo.
+  if (antes.signatureProviderRef) return;
   await prepararContratoParaEnvio(contratoId);
   const [contrato] = await db.select().from(contratos).where(eq(contratos.id, contratoId)).limit(1);
   const provider = getSignatureProvider();

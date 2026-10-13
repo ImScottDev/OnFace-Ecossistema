@@ -99,7 +99,7 @@ export default async function NovaPropostaPage({ searchParams }: {
         origem: negocio.source_process,
         pessoas: contatos.map((c) => ({
           id: c.id, nome: c.nome, papel: c.cargo ?? "Contato",
-          email: c.email, telefone: c.telefone, cpf: c.cpf,
+          email: c.email, telefone: c.telefone, cpf: c.cpf, leadId: c.leadId,
         })),
         propostas: propostas.map((p) => ({
           id: p.id, codigo: String(p.numero), versao: p.versao, status: p.status,

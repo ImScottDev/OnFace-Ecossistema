@@ -26,6 +26,7 @@ import {
   comercialEvidencia, eventOutbox, atividades, organizacoes,
 } from "@/lib/db/schema";
 import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
+import { daLinha, precoOficial } from "./_preco-oficial";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 
 const BASE = (process.env.BASE || "http://localhost:3000").replace(/\/$/, "");
@@ -54,11 +55,13 @@ async function criar() {
     titulo: `[QA] Fluxo contrato ${suf}`, status: "proposta_enviada", serviceFamily: "PABX",
   } as never).returning({ id: negocios.id });
   await syncOportunidadeFromNegocio(neg.id);
+  // Toda linha nova exige um Price oficial: o nome e o valor negociado são do cenário, o Price é do catálogo.
+  const preco = await precoOficial(org.id, "PABX", { tipos: ["recorrente"] });
   const p = await criarPropostaComItens({
     organizacaoId: org.id, leadId: lead.id, negocioId: neg.id, moeda: "BRL", observacoes: "[QA] fluxo contrato", condicoesPagamento: "Boleto",
     condicaoPagamentoTipo: "boleto", vencimentoDias: 15, prazoContratoMeses: 12,
     signatarios: [{ nome: `[QA] Signatário ${suf}`, email, papel: "signer", ordem: 1 }],
-    itens: [{ nome: "PABX Callface - ramais [QA]", descricao: "PABX em nuvem", tipo: "recorrente", quantidade: 5, valorUnitario: 49.9, desconto: 0, descontoTipo: "percentual" }],
+    itens: [{ ...daLinha(preco), nome: "PABX Callface - ramais [QA]", descricao: "PABX em nuvem", tipo: "recorrente", quantidade: 5, valorUnitario: 49.9, desconto: 0, descontoTipo: "percentual" }],
     criadoPorId: user.id,
   } as never);
   const validade = new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10);

@@ -348,7 +348,11 @@ class Logica extends React.Component<any, any> {
     const v0 = !!(d.titulo || "").trim() && !!d.contato && !!d.familia;
     const itOk = (it) => (it.nome || "").trim() && n(it.valor) > 0 && n(it.qtd) > 0;
     const v1 = d.itens.length > 0 && d.itens.every(itOk);
-    const precisaAprov = c.pctEf > 15;
+    /* Decisão do Scott (13/10/2026): desconto SEM limite e SEM aprovação; toda alteração fica registrada
+       (quem, de → para, quando, motivo opcional) na auditoria da proposta. O protótipo mandava desconto
+       acima de 15% para o gestor — fluxo que não existe e que travava o envio. A justificativa do
+       desconto continua opcional e vai como motivo para o registro. */
+    const precisaAprov = false;
     const v2 = !precisaAprov || !!(d.desc.justif || "").trim();
     const mailOk = (m) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m || "");
     const cfE = this.cfEfetivo(d);

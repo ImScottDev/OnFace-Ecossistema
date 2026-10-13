@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { periodoDoItem, SUFIXO_PERIODO, totaisPorPeriodo } from "@/lib/crm/periodo-cobranca";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Clock, FileSignature, CreditCard, CheckCircle2, AlertTriangle, Download, ShieldCheck, Loader2 } from "lucide-react";
-import { rotuloDaRecorrencia, sufixoDoValor } from "@/lib/catalogo/rotulos";
+import { rotuloDaRecorrencia } from "@/lib/catalogo/rotulos";
 import "./publico.css";
 
 /**
@@ -158,7 +159,9 @@ function SecaoTitulo({ n, children }: { n: string; children: React.ReactNode }) 
 }
 
 function ItemLinha({ item }: { item: Item }) {
-  const suf = sufixoDoValor(item.tipo, item.periodo);
+  // O mesmo período do agrupamento e do resumo: o do Price. Locação de hardware é cobrada todo mês mesmo não sendo "recorrente" no tipo.
+  const { periodo } = periodoDoItem(item);
+  const suf = SUFIXO_PERIODO[periodo];
   const qtd = Number(item.quantidade || 1);
   return (
     <div className="pp-item">
@@ -168,7 +171,7 @@ function ItemLinha({ item }: { item: Item }) {
       </div>
       <div className="pp-item-valor">
         <strong>{brl(item.subtotal)}{suf}</strong>
-        <small>{qtd.toLocaleString("pt-BR")} × {brl(item.valorUnitario)} · {rotuloDaRecorrencia(item.tipo, item.periodo)}</small>
+        <small>{qtd.toLocaleString("pt-BR")} × {brl(item.valorUnitario)} · {periodo === "unico" ? rotuloDaRecorrencia(item.tipo, item.periodo) : periodo === "anual" ? "Cobrança anual" : "Cobrança mensal"}</small>
       </div>
     </div>
   );
@@ -383,10 +386,17 @@ export function PropostaPublica({ id }: { id: string }) {
 
   const todosGruposConcluidos = p.grupos.length > 0 && p.grupos.every((g) => g.status === "concluido" || g.status === "pago");
   const aindaNaoAceitou = vigente;
-  const mensais = p.itens.filter((i) => i.tipo === "recorrente");
-  const unicos = p.itens.filter((i) => i.tipo !== "recorrente");
-  const totalMensal = Number(p.totalRecorrente);
-  const totalUnico = Number(p.totalAvulso);
+  // Cada linha no seu período de cobrança (o do Price): mensalidade, anuidade e itens únicos
+  // nunca viram um número só, e anuidade nunca leva "/mês".
+  const doPeriodo = (per: "mensal" | "anual" | "unico") => p.itens.filter((i) => periodoDoItem(i).periodo === per);
+  const mensais = doPeriodo("mensal");
+  const anuais = doPeriodo("anual");
+  const unicos = doPeriodo("unico");
+  const tot = totaisPorPeriodo(p.itens);
+  const totalMensal = tot.mensal;
+  const totalAnual = tot.anual;
+  const totalUnico = tot.unico;
+  const periodosComValor = [totalMensal, totalAnual, totalUnico].filter((v) => v > 0).length;
 
   const titulo = p.empresa || p.clienteNome || "Proposta comercial";
   const sub = p.negocioTitulo && p.negocioTitulo !== titulo ? p.negocioTitulo : null;
@@ -398,6 +408,7 @@ export function PropostaPublica({ id }: { id: string }) {
 
   const linhasResumo: Array<[string, string]> = [];
   if (totalMensal > 0) linhasResumo.push(["Mensalidade", `${brl(totalMensal)}/mês`]);
+  if (totalAnual > 0) linhasResumo.push(["Anuidade", `${brl(totalAnual)}/ano`]);
   if (totalUnico > 0) linhasResumo.push(["Setup e itens únicos", brl(totalUnico)]);
   if (condicaoPagamentoTexto) linhasResumo.push(["Pagamento", condicaoPagamentoTexto]);
   if (p.prazoContratoMeses) linhasResumo.push(["Fidelidade", `${p.prazoContratoMeses} meses`]);
@@ -451,6 +462,8 @@ export function PropostaPublica({ id }: { id: string }) {
                 <>
                   {mensais.length > 0 && <div className="pp-grupo">Mensalidade</div>}
                   {mensais.map((item) => <ItemLinha key={item.id} item={item} />)}
+                  {anuais.length > 0 && <div className="pp-grupo">Anuidade</div>}
+                  {anuais.map((item) => <ItemLinha key={item.id} item={item} />)}
                   {unicos.length > 0 && <div className="pp-grupo">Implantação e itens únicos</div>}
                   {unicos.map((item) => <ItemLinha key={item.id} item={item} />)}
                 </>
@@ -468,13 +481,17 @@ export function PropostaPublica({ id }: { id: string }) {
                   </dl>
                 </div>
               )}
-              <div className="pp-total">
-                <div>
-                  <span className="pp-rotulo">Valor da proposta</span>
-                  {totalMensal > 0 && totalUnico > 0 ? <small>Mensalidade + setup e itens únicos</small> : totalMensal > 0 ? <small>Por mês</small> : null}
+              {/* Um período só: o valor dele, com o sufixo certo. Mais de um: o resumo acima já os separa, e
+                  somá-los num "valor da proposta" misturaria mensalidade, anuidade e itens únicos. */}
+              {periodosComValor === 1 ? (
+                <div className="pp-total">
+                  <div>
+                    <span className="pp-rotulo">Valor da proposta</span>
+                    <small>{totalMensal > 0 ? "Por mês" : totalAnual > 0 ? "Por ano" : "Pagamento único"}</small>
+                  </div>
+                  <strong>{brl(totalMensal || totalAnual || totalUnico)}{totalMensal > 0 ? "/mês" : totalAnual > 0 ? "/ano" : ""}</strong>
                 </div>
-                <strong>{brl(p.totalGeral)}{totalMensal > 0 && totalUnico === 0 ? "/mês" : ""}</strong>
-              </div>
+              ) : null}
             </div>
             {p.condicoesPagamento ? <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--of-tinta-3)" }}>{p.condicoesPagamento}</p> : null}
           </section>

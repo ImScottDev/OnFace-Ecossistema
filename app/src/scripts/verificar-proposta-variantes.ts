@@ -220,7 +220,7 @@ async function main() {
     ];
     const conv2 = itensParaCriar(editor2);
     await atualizarItensDoRascunho({
-      organizacaoId: org.id, propostaId,
+      organizacaoId: org.id, propostaId, ator,
       itens: conv2.itens.map((i, ordem) => ({ ...i, catalogoPrecoId: i.catalogoPrecoId, descontoTipo: "valor" as const, ordem })),
     });
     tela = await relerComoATela(org.id, negPabx, propostaId);

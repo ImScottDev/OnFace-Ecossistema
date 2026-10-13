@@ -9,14 +9,15 @@
  */
 import { db } from "@/lib/db";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { gravarLinhasOficiais } from "./_preco-oficial";
 import { organizacoes, leads, negocios, propostas, propostaItens, servicosCanonicos, fulfillments, fulfillmentItens, tarefas, contratos, statusChanges, atividades } from "@/lib/db/schema";
 
 const TAG = "[TESTE]";
 
-const CENARIOS = [
-  { nome: "Callface AI", empresa: "Acme AI Ltda", itens: [{ nome: "Callface AI - Plano Full", v: "1200.00" }, { nome: "Setup", v: "500.00" }], espera: "Onboarding" },
-  { nome: "PABX", empresa: "Beta Telecom Ltda", itens: [{ nome: "Ramal Yeastar", v: "80.00" }, { nome: "Linha SIP", v: "150.00" }, { nome: "Portabilidade", v: "300.00" }], espera: "Implantação PABX" },
-  { nome: "White Label", empresa: "Gama Partners Ltda", itens: [{ nome: "White Label - Callface AI (Licença)", v: "3000.00" }, { nome: "Setup White Label", v: "2000.00" }], espera: "Implantação White Label" },
+const CENARIOS: Array<{ nome: string; familia: string; empresa: string; itens: Array<{ nome: string; v: string; setup?: boolean }>; espera: string }> = [
+  { nome: "Callface AI", familia: "CALLFACE_AI", empresa: "Acme AI Ltda", itens: [{ nome: "Callface AI - Plano Full", v: "1200.00" }, { nome: "Setup", v: "500.00", setup: true }], espera: "Onboarding" },
+  { nome: "PABX", familia: "PABX", empresa: "Beta Telecom Ltda", itens: [{ nome: "Ramal Yeastar", v: "80.00" }, { nome: "Linha SIP", v: "150.00" }, { nome: "Portabilidade", v: "300.00", setup: true }], espera: "Implantação PABX" },
+  { nome: "White Label", familia: "WHITE_LABEL", empresa: "Gama Partners Ltda", itens: [{ nome: "White Label - Callface AI (Licença)", v: "3000.00" }, { nome: "Setup White Label", v: "2000.00", setup: true }], espera: "Implantação White Label" },
 ];
 
 async function limpar(orgId: string) {
@@ -87,9 +88,11 @@ async function main() {
       totalGeral: total.toFixed(2),
     }).returning({ id: propostas.id });
 
-    await db.insert(propostaItens).values(c.itens.map((i, ordem) => ({
-      propostaId: prop.id, nome: i.nome, tipo: "recorrente", subtotal: i.v, valorUnitario: i.v, ordem,
-    })));
+    // As linhas entram pela porta do produto, cada uma com o Price oficial da família (P1-6).
+    await gravarLinhasOficiais({
+      organizacaoId: org.id, negocioId: neg.id, propostaId: prop.id, familia: c.familia,
+      linhas: c.itens.map((i) => ({ nome: i.nome, valor: parseFloat(i.v), tipos: i.setup ? ["setup", "avulso"] : ["recorrente"] })),
+    });
 
     console.log(`✓ ${c.nome.padEnd(12)} → esperado: ${c.espera}`);
     console.log(`  ${TAG} ${c.empresa} · R$ ${total.toFixed(2)} · ${c.itens.map((i) => i.nome).join(", ")}`);

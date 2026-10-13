@@ -19,6 +19,7 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { db, fecharConexao } from "@/lib/db";
 import { empresas, leads, negocios, pipelines, usuarios, propostas, contratos, propostaGrupoComercial, organizacoes } from "@/lib/db/schema";
 import { criarPropostaComItens } from "@/lib/crm/proposta-criacao";
+import { daLinha, precoOficial } from "./_preco-oficial";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { formarGruposComerciais } from "@/lib/crm/grupo-comercial";
 import { gerarContratoDeTemplate } from "@/lib/crm/contrato-template";
@@ -60,9 +61,11 @@ async function main() {
     titulo: `[QA] Dados contrato ${suf}`, status: "proposta_enviada", serviceFamily: "PABX",
   } as never).returning({ id: negocios.id });
   await syncOportunidadeFromNegocio(neg.id);
+  // Toda linha nova exige um Price oficial: o nome e o valor negociado são do cenário, o Price é do catálogo.
+  const preco = await precoOficial(org.id, "PABX", { tipos: ["recorrente"] });
   const novaProposta = async () => (await criarPropostaComItens({
     organizacaoId: org.id, leadId: lead.id, negocioId: neg.id, moeda: "BRL", prazoContratoMeses: 12,
-    itens: [{ nome: "PABX [QA] ramais", descricao: "PABX em nuvem", tipo: "recorrente", quantidade: 5, valorUnitario: 49.9, desconto: 0, descontoTipo: "valor" }],
+    itens: [{ ...daLinha(preco), nome: "PABX [QA] ramais", descricao: "PABX em nuvem", tipo: "recorrente", quantidade: 5, valorUnitario: 49.9, desconto: 0, descontoTipo: "valor" }],
     criadoPorId: user.id,
   } as never)).id as string;
 

@@ -44,7 +44,8 @@ export interface OportunidadeDaProposta {
   origem: string | null;
   /** Dados do contrato já gravados na Empresa, no formato do modal "Dados do contrato". */
   empresaDados?: Record<string, string>;
-  pessoas: Array<{ id: string; nome: string; papel: string; email: string | null; telefone: string | null; cpf?: string | null }>;
+  /** `leadId` é o que a proposta guarda como destinatário; null = a pessoa não tem cadastro de lead e não pode recebê-la. */
+  pessoas: Array<{ id: string; nome: string; papel: string; email: string | null; telefone: string | null; cpf?: string | null; leadId?: string | null }>;
   /** As propostas da oportunidade, com as linhas: o builder abre o rascunho com elas. */
   propostas: Array<{
     id: string; codigo: string; versao: number; status: string; modo?: string | null; validade?: number;
@@ -73,6 +74,8 @@ export interface AcoesProposta {
   salvarDadosContrato?: (e: { empresaId: string } & MudancaDoContrato) => Promise<Resultado<{ pessoaSalva: boolean; pessoaId: string | null }>>;
   criar: (e: {
     negocioId: string;
+    /** O contato que recebe a proposta, escolhido na tela. */
+    leadId?: string | null;
     itens: ItemParaCriar[];
     observacoes?: string | null;
     prazoContratoMeses?: number | null;
@@ -83,6 +86,10 @@ export interface AcoesProposta {
   /** Edita as linhas de um rascunho que já existe. */
   atualizar: (e: {
     propostaId: string;
+    /** Só quando o vendedor trocou o contato nesta edição. */
+    leadId?: string | null;
+    /** Motivo opcional da alteração (a justificativa de desconto do passo 2): vai para a auditoria. */
+    motivo?: string | null;
     itens: Array<Omit<ItemParaCriar, "catalogoPrecoId"> & { catalogoPrecoId?: string | null; itemExistenteId?: string | null }>;
     observacoes?: string | null;
     prazoContratoMeses?: number | null;
@@ -264,6 +271,32 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
     await esvaziar();
 
     const ed = proposta?.editor ?? {};
+
+    /* O contato que recebe a proposta é ESCOLHA do vendedor (passo 0): o nome escolhido vira o lead dele.
+       Pessoa da empresa sem lead não pode receber proposta, e dizer isso é melhor que assumir outra. */
+    const nomeContato = String(ed.contato ?? "").trim();
+    let leadEscolhido: string | null = null;
+    if (nomeContato) {
+      if (nomeContato === oportunidade.pessoa && oportunidade.leadId) leadEscolhido = oportunidade.leadId;
+      else {
+        const pessoa = oportunidade.pessoas.find((p) => p.nome === nomeContato);
+        if (pessoa && !pessoa.leadId) {
+          toast.error(`${nomeContato} não tem cadastro de contato (lead) e não pode receber a proposta. Escolha outro contato ou cadastre este.`);
+          return;
+        }
+        leadEscolhido = pessoa?.leadId ?? null;
+      }
+    }
+    /* Na edição de um rascunho, só troca o destinatário se o vendedor MUDOU o contato nesta edição. */
+    const alvoId = alvo?.alvoId ?? null;
+    const salva = alvoId ? oportunidade.propostas.find((p) => p.id === alvoId) : null;
+    const contatoSalvo = String((salva?.editor as any)?.contato ?? oportunidade.pessoa ?? "").trim();
+    const trocouContato = !!alvoId && nomeContato !== "" && nomeContato !== contatoSalvo;
+    /* A justificativa do desconto (opcional) é o motivo que a auditoria guarda. */
+    const justif = String(ed.desc?.justif ?? "").trim();
+    const justifSalva = String((salva?.editor as any)?.desc?.justif ?? "").trim();
+    /* Só vale o que o vendedor escreveu NESTA edição: uma justificativa velha não pode ser colada numa mudança nova. */
+    const motivo = justif && justif !== justifSalva ? justif : null;
     const contratual = proposta?.modo !== "PREPAID";
     const condicoes = {
       observacoes: ed.obs ?? null,
@@ -277,15 +310,16 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
 
     let criada: Resultado<{ propostaId: string }>;
     if (alvo?.alvoId) {
-      criada = await acoes.atualizar({ propostaId: alvo.alvoId, itens, ...condicoes });
+      criada = await acoes.atualizar({ propostaId: alvo.alvoId, itens, motivo, ...(trocouContato && leadEscolhido ? { leadId: leadEscolhido } : {}), ...condicoes });
     } else if (alvo?.baseId) {
-      // Versão nova de proposta já enviada: a revisão copia as linhas, e o que mudou entra por cima.
+      // Versão nova de proposta já enviada: a revisão copia as linhas (e o contato), e o que mudou entra por cima.
       const rev = await acoes.revisar(alvo.baseId);
       if (!rev.ok) { toast.error(rev.erro); return; }
-      criada = await acoes.atualizar({ propostaId: rev.dados!.propostaId, itens, ...condicoes });
+      criada = await acoes.atualizar({ propostaId: rev.dados!.propostaId, itens, motivo, ...(leadEscolhido ? { leadId: leadEscolhido } : {}), ...condicoes });
     } else {
       criada = await acoes.criar({
         negocioId: oportunidade.id,
+        leadId: leadEscolhido,
         itens: itens.map((i) => ({ ...i, catalogoPrecoId: i.catalogoPrecoId })),
         ...condicoes,
       });

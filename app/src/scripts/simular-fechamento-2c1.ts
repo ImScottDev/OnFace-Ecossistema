@@ -47,6 +47,7 @@ import { derivarEstadoFechamento, ESTADO_FECHAMENTO_LABEL } from "@/lib/crm/esta
 import { montarMetadataComercial } from "@/lib/crm/metadata-comercial";
 import { processarEventosPendentes } from "@/lib/events/consumer";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
+import { daLinha, precoOficial } from "./_preco-oficial";
 
 const TAG = "ZZTESTE2C1";
 
@@ -178,18 +179,25 @@ async function main() {
     const [negocio] = await db.insert(negocios).values({
       organizacaoId: org.id, leadId: lead.id, empresaId: empresa.id, pipelineId: pipeline.id,
       titulo: `${TAG} ${cen.familia}`, status: "proposta_enviada", responsavelId: user.id,
+      // A família precisa existir ANTES da proposta (P1-5): o núcleo recusa oportunidade sem ela.
+      serviceFamily: cen.familia,
     }).returning({ id: negocios.id });
     // Dual-write da oportunidade: sem ela não existe oportunidade_itens, e sem
     // itens não há serviço canônico pra materializar.
     await syncOportunidadeFromNegocio(negocio.id);
 
     // ── proposta ─────────────────────────────────────────────────────────
+    // Toda linha nova exige um Price oficial da família (P1-6). O cenário escolhe o Price pela exigência que
+    // quer provar (contrato × pagamento, declarada no Price); o nome e o valor negociado continuam sendo dele.
+    const preco = await precoOficial(org.id, cen.familia, cen.fecharPor === "contrato"
+      ? { tipos: ["recorrente", "setup", "avulso"], exigeContrato: true }
+      : { tipos: ["recorrente"], exigeContrato: false });
     const propostaCriada = await criarPropostaComItens({
       organizacaoId: org.id, leadId: lead.id, negocioId: negocio.id, moeda: "BRL",
       observacoes: `${TAG} simulação ${cen.familia}`,
       condicaoPagamentoTipo: "boleto", vencimentoDias: 15, prazoContratoMeses: cen.fecharPor === "contrato" ? 12 : null,
       signatarios: [{ nome: `${TAG} Contato ${cen.familia}`, email: `zzteste2c1.${cen.familia.toLowerCase()}@exemplo.invalid`, papel: "signatario", ordem: 1 }],
-      itens: [{ nome: cen.itemNome, tipo: "recorrente", quantidade: 1, valorUnitario: 1500, desconto: 0, descontoTipo: "percentual" }],
+      itens: [{ ...daLinha(preco), nome: cen.itemNome, quantidade: 1, valorUnitario: 1500, desconto: 0, descontoTipo: "percentual" }],
       criadoPorId: user.id,
     });
     const propostaId = propostaCriada.id;
@@ -333,15 +341,22 @@ async function main() {
     const [negocio] = await db.insert(negocios).values({
       organizacaoId: org.id, leadId: lead.id, empresaId: empresa.id, pipelineId: pipeline.id,
       titulo: `${TAG} outros`, status: "proposta_enviada", responsavelId: user.id,
+      // A porta não deixa mais nascer proposta sem família nem sem Price (P1-5/P1-6); a linha de família
+      // desconhecida que este cenário prova só existe na proposta HISTÓRICA. Então a proposta nasce pela
+      // porta, com um Price real, e a linha é rebaixada abaixo para o estado legado.
+      serviceFamily: "PABX",
     }).returning({ id: negocios.id });
     await syncOportunidadeFromNegocio(negocio.id);
+    const precoOutros = await precoOficial(org.id, "PABX", { tipos: ["avulso", "setup", "recorrente"] });
     const propostaCriada = await criarPropostaComItens({
       organizacaoId: org.id, leadId: lead.id, negocioId: negocio.id, moeda: "BRL", observacoes: `${TAG} simulação outros`,
       // Nome deliberadamente genérico: não bate com nenhuma regra de família.
-      itens: [{ nome: `${TAG} Consultoria avulsa`, tipo: "avulso", quantidade: 1, valorUnitario: 700, desconto: 0, descontoTipo: "percentual" }],
+      itens: [{ ...daLinha(precoOutros), nome: `${TAG} Consultoria avulsa`, quantidade: 1, valorUnitario: 700, desconto: 0, descontoTipo: "percentual" }],
       criadoPorId: user.id,
     });
     const propostaId = propostaCriada.id;
+    // Linha histórica: sem Price, sem produto e sem família — o que a validação manual existe para pegar.
+    await db.execute(sql`UPDATE proposta_itens SET catalogo_preco_id = NULL, servico_catalogo_id = NULL, service_family = 'UNKNOWN' WHERE proposta_id = ${propostaId}::uuid`);
     await db.update(propostas).set({ status: "enviada" }).where(eq(propostas.id, propostaId));
 
     const aceite = await processarAceiteDaProposta({ propostaId, organizacaoId: org.id, origem: "manual" });
@@ -377,11 +392,12 @@ async function main() {
     }).returning({ id: leads.id });
     const [negocio] = await db.insert(negocios).values({
       organizacaoId: org.id, leadId: lead.id, empresaId: empresa.id, pipelineId: pipeline.id,
-      titulo: `${TAG} ${acao}`, status: "proposta_enviada", responsavelId: user.id,
+      titulo: `${TAG} ${acao}`, status: "proposta_enviada", responsavelId: user.id, serviceFamily: "CALLFACE_AI",
     }).returning({ id: negocios.id });
+    const precoAi = await precoOficial(org.id, "CALLFACE_AI", { tipos: ["recorrente"] });
     const propostaCriada = await criarPropostaComItens({
       organizacaoId: org.id, leadId: lead.id, negocioId: negocio.id, moeda: "BRL", observacoes: `${TAG} simulação ${acao}`,
-      itens: [{ nome: `${TAG} Callface AI - Full`, tipo: "recorrente", quantidade: 1, valorUnitario: 900, desconto: 0, descontoTipo: "percentual" }],
+      itens: [{ ...daLinha(precoAi), nome: `${TAG} Callface AI - Full`, quantidade: 1, valorUnitario: 900, desconto: 0, descontoTipo: "percentual" }],
       criadoPorId: user.id,
     });
     const propostaId = propostaCriada.id;

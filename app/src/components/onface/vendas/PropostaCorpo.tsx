@@ -23,6 +23,7 @@ import { Bloco } from "./pagina";
 import { AcoesContato } from "./pagina";
 import { rotuloAtor } from "./PreVendas";
 import { rotuloDeEvento } from "@/lib/vendas/rotulos-evento";
+import { descreverAlteracao } from "@/lib/vendas/auditoria-comercial";
 
 export function rotuloStatus(status: string): string {
   return ROTULO_STATUS_PROPOSTA[status as keyof typeof ROTULO_STATUS_PROPOSTA] ?? status;
@@ -126,18 +127,28 @@ export function CorpoProposta({ proposta, pendente, bloqueio, variante, acoes }:
         </Wrap>
       ) : null}
 
-      {/* Bloco 03 §5: recorrente e não recorrente separados. Somar os dois num
-          total único engana, e a spec proíbe. */}
+      {/* Bloco 03 §5: mensal, anual e único separados, cada um no seu período de cobrança (o do Price).
+          Somar tudo num total único engana, e dizer "/mês" sobre uma anuidade também. */}
       <Wrap titulo="Composição financeira">
         <div className="ov-composicao">
-          <div className="ov-composicao-item">
-            <dt>Recorrente / mês</dt>
-            <dd>{moedaExata(proposta.composicao.recorrenteMensal)}</dd>
-          </div>
-          <div className="ov-composicao-item">
-            <dt>Não recorrente</dt>
-            <dd>{moedaExata(proposta.composicao.naoRecorrente)}</dd>
-          </div>
+          {proposta.composicao.recorrenteMensal > 0 || (proposta.composicao.recorrenteAnual === 0 && proposta.composicao.naoRecorrente === 0) ? (
+            <div className="ov-composicao-item">
+              <dt>Mensal / mês</dt>
+              <dd>{moedaExata(proposta.composicao.recorrenteMensal)}</dd>
+            </div>
+          ) : null}
+          {proposta.composicao.recorrenteAnual > 0 ? (
+            <div className="ov-composicao-item">
+              <dt>Anual / ano</dt>
+              <dd>{moedaExata(proposta.composicao.recorrenteAnual)}</dd>
+            </div>
+          ) : null}
+          {proposta.composicao.naoRecorrente > 0 ? (
+            <div className="ov-composicao-item">
+              <dt>Único (setup e avulsos)</dt>
+              <dd>{moedaExata(proposta.composicao.naoRecorrente)}</dd>
+            </div>
+          ) : null}
           {proposta.composicao.tcv !== null ? (
             <div className="ov-composicao-item">
               <dt>Contratado ({proposta.composicao.prazoMeses} meses)</dt>
@@ -145,8 +156,14 @@ export function CorpoProposta({ proposta, pendente, bloqueio, variante, acoes }:
             </div>
           ) : null}
         </div>
-        {proposta.composicao.tcv === null && proposta.composicao.recorrenteMensal > 0 ? (
+        {proposta.composicao.tcv === null && (proposta.composicao.recorrenteMensal > 0 || proposta.composicao.recorrenteAnual > 0) ? (
           <p className="ov-nota">Sem prazo contratual definido, o valor total do contrato não é calculado.</p>
+        ) : null}
+        {proposta.composicao.periodoDeduzido > 0 ? (
+          <p className="ov-nota">
+            {proposta.composicao.periodoDeduzido === 1 ? "1 linha desta proposta não tem preço no catálogo" : `${proposta.composicao.periodoDeduzido} linhas desta proposta não têm preço no catálogo`}
+            : o período de cobrança dela foi deduzido do tipo (recorrente = mensal).
+          </p>
         ) : null}
       </Wrap>
 
@@ -244,6 +261,8 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
         </dl>
       </Wrap>
 
+      <AlteracoesComerciais proposta={proposta} Wrap={Wrap} />
+
       <Wrap titulo="Histórico">
         {proposta.timeline.length === 0 ? (
           <p className="ov-nota">Nenhum evento registrado.</p>
@@ -265,6 +284,45 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
         )}
       </Wrap>
     </>
+  );
+}
+
+/**
+ * Auditoria comercial da proposta, à vista de quem a abre: quem mudou o quê
+ * (de → para), quando e por quê. Desconto não tem limite nem aprovação, e por
+ * isso mesmo nada fica sem registro. Mesma peça na gaveta e na página.
+ */
+function AlteracoesComerciais({ proposta, Wrap }: { proposta: DetalheProposta; Wrap: typeof Secao }) {
+  const registros = proposta.alteracoes;
+  return (
+    <Wrap titulo="Alterações comerciais">
+      {registros.length === 0 ? (
+        <p className="ov-nota">Nenhuma alteração registrada nesta proposta.</p>
+      ) : (
+        <div className="ov-timeline">
+          {registros.map((r) => (
+            <div className="ov-timeline-item" key={r.id}>
+              <span className="ov-timeline-marca" aria-hidden />
+              <div>
+                <strong>
+                  {r.quem ?? rotuloAtor(r.atorTipo)}
+                  {" · "}{dataHora(r.em)}
+                  {r.totalAntes !== null && r.totalDepois !== null && r.totalAntes !== r.totalDepois
+                    ? <> · total {moedaExata(r.totalAntes)} → {moedaExata(r.totalDepois)}</>
+                    : null}
+                </strong>
+                <ul style={{ margin: "2px 0 0", paddingLeft: 16 }}>
+                  {r.alteracoes.map((a, i) => (
+                    <li key={i} style={{ fontSize: "inherit" }}>{descreverAlteracao(a)}</li>
+                  ))}
+                </ul>
+                {r.motivo ? <span>Motivo: {r.motivo}</span> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Wrap>
   );
 }
 

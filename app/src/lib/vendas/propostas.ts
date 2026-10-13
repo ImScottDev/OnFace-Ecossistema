@@ -18,6 +18,9 @@ import { db } from "@/lib/db";
 import { registrarEvento } from "./eventos";
 import type { ExecutorDb } from "./executor";
 import { moverEtapa } from "./pipeline";
+import { lerFotoComercial, registrarAlteracaoComercial } from "./auditoria-comercial-registro";
+import { totalDaFoto } from "./auditoria-comercial";
+import { totaisPorPeriodo, totalNoPrazo } from "@/lib/crm/periodo-cobranca";
 import {
   juntarEndereco, separarEndereco, comPadraoDaPolitica, ehCliente, emailValido, faltaRepresentante, normalizarSignatarios, PAPEL_CLIENTE,
 } from "@/lib/crm/proposta-signatarios";
@@ -274,16 +277,17 @@ export async function salvarDadosDoContrato(params: {
  */
 export async function lerDadosDoContrato(organizacaoId: string, empresaId: string | null): Promise<{
   empresaDados: Record<string, string> | undefined;
-  contatos: Array<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; cpf: string | null }>;
+  /** `leadId` é o contato como a proposta o guarda (`propostas.lead_id`); null = a pessoa não tem lead e não pode receber proposta. */
+  contatos: Array<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; cpf: string | null; leadId: string | null }>;
 }> {
   if (!empresaId) return { empresaDados: undefined, contatos: [] };
   const [emp] = await db.execute<Record<string, string | null>>(sql`
     SELECT razao_social, nome, cnpj, logradouro, numero, complemento, bairro, cep, cidade, estado
       FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
   `);
-  const contatos = await db.execute<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; cpf: string | null }>(sql`
+  const contatos = await db.execute<{ id: string; nome: string; cargo: string | null; email: string | null; telefone: string | null; cpf: string | null; leadId: string | null }>(sql`
     SELECT id::text, trim(COALESCE(nome, 'Sem nome') || ' ' || COALESCE(sobrenome, '')) AS nome, cargo, email, telefone,
-           metadata->>'cpf' AS cpf
+           metadata->>'cpf' AS cpf, lead_id_legado::text AS "leadId"
       FROM pessoas
      WHERE empresa_id = ${empresaId}::uuid AND organizacao_id = ${organizacaoId}::uuid
      ORDER BY nome LIMIT 50
@@ -464,6 +468,8 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
 
   const validade = new Date();
   validade.setDate(validade.getDate() + envio.validadeDias);
+  // Validade e modo de fechamento nascem aqui: a auditoria registra o que o envio definiu (de → para).
+  const fotoAntesDoEnvio = await lerFotoComercial(db, envio.organizacaoId, envio.propostaId);
 
   // Transição atômica: só envia quem ainda é rascunho (dois envios simultâneos não passam os dois) e,
   // na mesma transação, a versão anterior vigente deixa de poder ser aceita: agora existe a que a substitui.
@@ -495,6 +501,14 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
       RETURNING id::text, versao
     `);
   });
+  // O envio já está gravado (status, validade, modo). Se o registro da auditoria falhar aqui, a falha é
+  // dita no log e não vira "erro ao enviar": o cliente já pode abrir o link, e reenviar só acusaria "já enviada".
+  await registrarAlteracaoComercial(db, {
+    organizacaoId: envio.organizacaoId, propostaId: envio.propostaId, ator: envio.ator,
+    antes: fotoAntesDoEnvio, depois: await lerFotoComercial(db, envio.organizacaoId, envio.propostaId),
+    contexto: { origem: "envio" },
+    titulo: `Proposta #${proposta.numero} v${proposta.versao}: condições definidas no envio`,
+  }).catch((e) => console.error(`[vendas/propostas] envio da proposta ${envio.propostaId} gravado, mas a auditoria das condições falhou:`, e));
   for (const anterior of substituidas) {
     await registrarEvento({
       organizacaoId: envio.organizacaoId, tipo: "ProposalSuperseded", ator: envio.ator,
@@ -559,6 +573,8 @@ export async function registrarRespostaDoCliente(params: {
   descricao?: string | null;
   contatoNome?: string | null;
   metadados?: Record<string, unknown> | null;
+  /** O que falta para fechar, já resolvido por grupo ("Contrato pendente (PABX) e pagamento pendente (Callface AI)"). Sem ele, vale o modo da proposta. */
+  gatePendente?: string;
 }): Promise<void> {
   const proposta = await carregarProposta(params.organizacaoId, params.propostaId);
 
@@ -594,7 +610,7 @@ export async function registrarRespostaDoCliente(params: {
       break;
   }
 
-  const gatePendente = proposta.modo_fechamento === "CONTRACT" ? "Contrato pendente" : "Pagamento pendente";
+  const gatePendente = params.gatePendente ?? (proposta.modo_fechamento === "CONTRACT" ? "Contrato pendente" : "Pagamento pendente");
 
   const tipoEvento = params.tipo === "visualizada" ? "ProposalViewed"
     : params.tipo === "aceita" ? "ProposalAccepted"
@@ -768,55 +784,62 @@ export async function expirarPropostasVencidas(organizacaoId: string): Promise<n
 /* ── Composição financeira (Bloco 02 §14, Bloco 03 §5) ─────────────────── */
 
 export interface ComposicaoFinanceira {
+  /** Mensalidade: itens cobrados todo mês (período MENSAL do Price). */
   recorrenteMensal: number;
+  /** Anuidade: itens cobrados todo ano (período ANUAL do Price). Nunca entra na mensalidade. */
+  recorrenteAnual: number;
+  /** Pagamento único: setup, hardware, avulsos. */
   naoRecorrente: number;
   porNatureza: Array<{ natureza: string; total: number }>;
   /** Só existe quando há prazo contratual. Sem prazo, não se inventa TCV. */
   tcv: number | null;
   prazoMeses: number | null;
+  /** Linhas sem Price (legado) cujo período foi deduzido do tipo. 0 = tudo veio do catálogo. */
+  periodoDeduzido: number;
 }
 
 /**
- * Composição da proposta por natureza econômica.
+ * Composição da proposta por PERÍODO DE COBRANÇA (mensal, anual, único) e por
+ * natureza econômica.
  *
  * Bloco 03 §5 e §30: somar recorrência com setup e chamar de "valor total" é
- * proibido, porque engana. O recorrente e o não recorrente ficam separados, e
- * o TCV só aparece quando existe prazo contratual para multiplicar.
+ * proibido, porque engana — e somar mensalidade com anuidade e escrever "/mês"
+ * também. O período sai do Price (`catalogo_precos.periodo`), a mesma fonte da
+ * página pública e do PDF, em `lib/crm/periodo-cobranca.ts`. O TCV só aparece
+ * quando existe prazo contratual para multiplicar.
  */
 export async function composicaoDaProposta(propostaId: string): Promise<ComposicaoFinanceira> {
-  const itens = await db.execute<{ natureza: string | null; tipo: string; subtotal: string }>(sql`
-    SELECT revenue_nature AS natureza, tipo, subtotal::text
-      FROM proposta_itens WHERE proposta_id = ${propostaId}::uuid
+  const itens = await db.execute<{ natureza: string | null; tipo: string; subtotal: string; periodo: string | null }>(sql`
+    SELECT i.revenue_nature AS natureza, i.tipo, i.subtotal::text, cp.periodo
+      FROM proposta_itens i LEFT JOIN catalogo_precos cp ON cp.id = i.catalogo_preco_id
+     WHERE i.proposta_id = ${propostaId}::uuid
   `);
   const [proposta] = await db.execute<{ prazo: number | null }>(sql`
     SELECT prazo_contrato_meses AS prazo FROM propostas WHERE id = ${propostaId}::uuid
   `);
 
-  let recorrenteMensal = 0;
-  let naoRecorrente = 0;
   const porNatureza = new Map<string, number>();
-
   for (const item of itens) {
     const valor = Number(item.subtotal) || 0;
     // A natureza do catálogo manda; `tipo` é o campo legado e só entra quando
     // a natureza não foi classificada.
     const natureza = item.natureza ?? (item.tipo === "recorrente" ? "MRR" : item.tipo === "setup" ? "SETUP" : "ONE_TIME");
     porNatureza.set(natureza, (porNatureza.get(natureza) ?? 0) + valor);
-    if (natureza === "MRR") recorrenteMensal += valor;
-    else naoRecorrente += valor;
   }
 
+  const totais = totaisPorPeriodo(itens.map((i) => ({ subtotal: i.subtotal, periodo: i.periodo, tipo: i.tipo, natureza: i.natureza })));
   const prazoMeses = proposta?.prazo ?? null;
-  const tcv = prazoMeses && prazoMeses > 0 ? recorrenteMensal * prazoMeses + naoRecorrente : null;
 
   return {
-    recorrenteMensal: Math.round(recorrenteMensal * 100) / 100,
-    naoRecorrente: Math.round(naoRecorrente * 100) / 100,
+    recorrenteMensal: totais.mensal,
+    recorrenteAnual: totais.anual,
+    naoRecorrente: totais.unico,
     porNatureza: [...porNatureza.entries()].map(([natureza, total]) => ({
       natureza, total: Math.round(total * 100) / 100,
     })),
-    tcv: tcv === null ? null : Math.round(tcv * 100) / 100,
+    tcv: totalNoPrazo(totais, prazoMeses),
     prazoMeses,
+    periodoDeduzido: totais.deduzidos,
   };
 }
 
@@ -868,6 +891,8 @@ export async function excluirRascunho(params: { organizacaoId: string; propostaI
   if (p.status !== "rascunho") {
     throw new RegraDeNegocio("proposta_nao_e_rascunho", "Só rascunho se exclui. Proposta enviada fica no histórico.");
   }
+  // O registro da proposta (e a auditoria dela) some junto com o rascunho; o que ela tinha fica no evento do negócio.
+  const fotoFinal = await lerFotoComercial(db, params.organizacaoId, params.propostaId);
   if (p.negocio_id) {
     const { limparOportunidadeItensDeOrigemProposta } = await import("@/lib/crm/composicao-comercial");
     await limparOportunidadeItensDeOrigemProposta(p.negocio_id);
@@ -887,7 +912,10 @@ export async function excluirRascunho(params: { organizacaoId: string; propostaI
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "ProposalDeleted", ator: params.ator,
     negocioId: p.negocio_id, leadId: p.lead_id, empresaId: p.empresa_id,
-    contexto: { numero: p.numero, versao: p.versao },
+    contexto: {
+      numero: p.numero, versao: p.versao, totalExcluido: totalDaFoto(fotoFinal), contato: fotoFinal.contato,
+      itens: fotoFinal.itens.map((i) => ({ nome: i.nome, quantidade: i.quantidade, valorUnitario: i.valorUnitario, desconto: i.desconto, subtotal: i.subtotal })),
+    },
     timeline: p.negocio_id ? { tipo: "nota", titulo: `Rascunho da proposta #${p.numero} excluído` } : null,
   });
   if (p.negocio_id) {

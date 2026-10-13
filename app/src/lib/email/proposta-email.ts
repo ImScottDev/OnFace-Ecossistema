@@ -6,10 +6,14 @@
  * Tom: profissional e direto, sem travessão. Vai na cara do cliente.
  */
 
+import { periodoDoItem, SUFIXO_PERIODO, totaisPorPeriodo, type PeriodoDeCobranca } from "@/lib/crm/periodo-cobranca";
+
 export interface PropostaEmailItem {
   nome: string;
   tipo: string; // recorrente | avulso | setup
   subtotal: number;
+  /** mensal | anual | unico, do Price do catálogo. Sem ele (linha legada), vale o tipo. */
+  periodo?: string | null;
 }
 
 export interface PropostaEmailParams {
@@ -53,17 +57,40 @@ export function buildPropostaEmail(p: PropostaEmailParams): { subject: string; h
   const numeroFmt = `P-${String(p.numero).padStart(3, "0")}-v${p.versao}`;
   const saudacao = primeiroNome(p.clienteNome) || "Olá";
 
-  const recorrentes = p.itens.filter((i) => i.tipo === "recorrente");
-  const temRecorrente = recorrentes.length > 0 && p.totalRecorrente > 0;
-  const totalExibido = temRecorrente ? p.totalRecorrente : (p.totalAvulso ?? 0);
-  const linhasItens = (recorrentes.length ? recorrentes : p.itens)
-    .map(
-      (i) => `
+  // Cada linha no período de cobrança do Price: mensalidade, anuidade e itens únicos têm totais
+  // SEPARADOS, e "/mês" nunca vai sobre uma anuidade.
+  const tot = totaisPorPeriodo(p.itens);
+  const temRecorrente = tot.mensal > 0 || tot.anual > 0;
+  const periodos: Array<[PeriodoDeCobranca, string]> = [["mensal", "Mensalidade"], ["anual", "Anuidade"], ["unico", "Setup e itens únicos"]];
+  const comItens = periodos.filter(([per]) => p.itens.some((i) => periodoDoItem(i).periodo === per));
+  const linha = (i: PropostaEmailItem) => {
+    const suf = SUFIXO_PERIODO[periodoDoItem(i).periodo];
+    return `
       <tr>
         <td style="padding:12px 0;border-bottom:1px solid #ececf2;color:${BRAND.text};font-size:14px;">${escapeHtml(i.nome)}</td>
-        <td style="padding:12px 0;border-bottom:1px solid #ececf2;color:${BRAND.text};font-size:14px;text-align:right;white-space:nowrap;">${money(i.subtotal, moeda)}${i.tipo === "recorrente" ? "<span style=\"color:#6b7280\">/mês</span>" : ""}</td>
-      </tr>`
-    )
+        <td style="padding:12px 0;border-bottom:1px solid #ececf2;color:${BRAND.text};font-size:14px;text-align:right;white-space:nowrap;">${money(i.subtotal, moeda)}${suf ? `<span style="color:#6b7280">${suf}</span>` : ""}</td>
+      </tr>`;
+  };
+  const linhasItens = comItens
+    .map(([per, titulo]) => {
+      const cabeca = comItens.length > 1
+        ? `<tr><td colspan="2" style="padding:12px 0 0;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;">${titulo}</td></tr>`
+        : "";
+      return cabeca + p.itens.filter((i) => periodoDoItem(i).periodo === per).map(linha).join("");
+    })
+    .join("");
+  const totais: Array<[string, number, string]> = [
+    ["Total mensal", tot.mensal, SUFIXO_PERIODO.mensal],
+    ["Total anual", tot.anual, SUFIXO_PERIODO.anual],
+    [temRecorrente ? "Setup e itens únicos" : "Total", tot.unico, SUFIXO_PERIODO.unico],
+  ];
+  const linhasTotais = totais
+    .filter(([, valor]) => valor > 0)
+    .map(([rotulo, valor, suf]) => `
+            <tr>
+              <td style="padding:16px 0 12px;color:${BRAND.text};font-size:15px;font-weight:700;">${rotulo}</td>
+              <td style="padding:16px 0 12px;color:${BRAND.carmim};font-size:18px;font-weight:800;text-align:right;white-space:nowrap;">${money(valor, moeda)}${suf ? `<span style="color:#9ca3af;font-size:13px;font-weight:600;">${suf}</span>` : ""}</td>
+            </tr>`)
     .join("");
 
   const validadeTxt = p.validade
@@ -95,10 +122,7 @@ export function buildPropostaEmail(p: PropostaEmailParams): { subject: string; h
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #ececf2;border-radius:12px;padding:4px 18px;margin-bottom:8px;">
             <tr><td style="padding-top:8px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;">Proposta ${escapeHtml(numeroFmt)}</td></tr>
             ${linhasItens}
-            <tr>
-              <td style="padding:16px 0 12px;color:${BRAND.text};font-size:15px;font-weight:700;">${temRecorrente ? "Total mensal" : "Total"}</td>
-              <td style="padding:16px 0 12px;color:${BRAND.carmim};font-size:18px;font-weight:800;text-align:right;white-space:nowrap;">${money(totalExibido, moeda)}${temRecorrente ? '<span style="color:#9ca3af;font-size:13px;font-weight:600;">/mês</span>' : ""}</td>
-            </tr>
+            ${linhasTotais}
           </table>
 
           <!-- CTA -->

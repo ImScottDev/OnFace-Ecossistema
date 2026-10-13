@@ -1,5 +1,6 @@
 // Geração do PDF da Proposta Comercial (moldes Zoho) via HTML + Chrome headless.
 // Renderiza no container `api` (Hono). Requer chromium (PUPPETEER_EXECUTABLE_PATH).
+import { periodoDoItem, totaisPorPeriodo } from "@/lib/crm/periodo-cobranca";
 import puppeteer from "puppeteer";
 import { existsSync } from "node:fs";
 import { LOGO_WHITE, LOGO_COLOR } from "./pdf-assets";
@@ -127,8 +128,12 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
   const moeda = p.moeda || "BRL";
   const cliente = p.leadEmpresa || p.leadNome || "Cliente";
   const numeroFmt = `PROP ${String(p.numero).padStart(4, "0")}${p.versao > 1 ? ` · v${p.versao}` : ""}`;
-  const recorrentes = p.itens.filter((i) => i.tipo === "recorrente");
-  const setups = p.itens.filter((i) => i.tipo === "setup" || i.tipo === "avulso");
+  // Cada linha no período de cobrança do Price: a anuidade não entra na tabela (nem no total) "mensal".
+  const doPeriodo = (per: "mensal" | "anual" | "unico") => p.itens.filter((i) => periodoDoItem(i).periodo === per);
+  const recorrentes = doPeriodo("mensal");
+  const anuais = doPeriodo("anual");
+  const setups = doPeriodo("unico");
+  const totais = totaisPorPeriodo(p.itens);
 
   const diferenciais = [
     ["GESTÃO SIMPLIFICADA", "Gerencie seu time no console de gerenciamento. Disponibilizamos também dashboard personalizado para sua empresa."],
@@ -313,11 +318,12 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
   ${header()}
   <div class="body">
     <h2>6. Mapa de investimento</h2>
-    ${itensTabela(recorrentes, moeda, "Investimento mensal", p.totalRecorrente)}
-    ${setups.length ? `<h2 style="margin-top:16px">7. Setup e itens avulsos</h2>${itensTabela(setups, moeda, "Setup", p.totalAvulso)}` : ""}
+    ${itensTabela(recorrentes, moeda, "Investimento mensal", totais.mensal)}
+    ${anuais.length ? `<div style="margin-top:12px">${itensTabela(anuais, moeda, "Investimento anual", totais.anual)}</div>` : ""}
+    ${setups.length ? `<h2 style="margin-top:16px">7. Setup e itens avulsos</h2>${itensTabela(setups, moeda, "Setup", totais.unico)}` : ""}
     <table class="mapa" style="margin-top:14px">
       <tbody>
-        <tr class="mapa-total"><td class="rgt" style="font-size:12px">Total geral${recorrentes.length ? " (1º mês)" : ""}</td><td class="rgt" style="font-size:12px">${money(p.totalGeral, moeda)}</td></tr>
+        <tr class="mapa-total"><td class="rgt" style="font-size:12px">Total geral${recorrentes.length || anuais.length ? " (1ª cobrança)" : ""}</td><td class="rgt" style="font-size:12px">${money(p.totalGeral, moeda)}</td></tr>
       </tbody>
     </table>
     ${p.condicoesPagamento ? `<p class="muted" style="margin-top:12px"><strong>Condições de pagamento:</strong> ${esc(p.condicoesPagamento)}</p>` : ""}

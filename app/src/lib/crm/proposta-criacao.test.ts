@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { atualizarItensDoRascunho, criarPropostaComItens } from "./proposta-criacao";
 import { limparOportunidadeItensDeOrigemProposta } from "./composicao-comercial";
+import { atorHumano } from "@/lib/vendas/dominio";
 
 const codigo = async (p: Promise<unknown>) => { try { await p; } catch (e) { return (e as { codigo?: string }).codigo ?? "erro"; } return null; };
 
@@ -76,13 +77,19 @@ test("proposta: numeração, atomicidade, catálogo oficial e limpeza de campos"
     // Rascunho: undefined mantém, null limpa.
     const id = criadas[0].id;
     const campos = async () => (await db.execute<{ observacoes: string | null; prazo: number | null }>(sql`SELECT observacoes, prazo_contrato_meses AS prazo FROM propostas WHERE id = ${id}::uuid`))[0];
-    await atualizarItensDoRascunho({ organizacaoId: alvo.org, propostaId: id, itens: [item(ok)], observacoes: "texto", prazoContratoMeses: 12 });
+    await atualizarItensDoRascunho({ ator: atorHumano(null), organizacaoId: alvo.org, propostaId: id, itens: [item(ok)], observacoes: "texto", prazoContratoMeses: 12 });
     assert.deepEqual(await campos(), { observacoes: "texto", prazo: 12 });
-    await atualizarItensDoRascunho({ organizacaoId: alvo.org, propostaId: id, itens: [item(ok)] });
+    // Auditoria: a edição que mudou observação e prazo gerou UM registro de → para; salvar sem mudar nada, nenhum.
+    const edicoes = async () => (await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM vendas_eventos
+       WHERE proposta_id = ${id}::uuid AND tipo = 'ProposalEdited' AND contexto->'alteracoes' @> '[{"campo":"observacoes"}]'::jsonb`))[0].n;
+    assert.equal(await edicoes(), 1, "edição auditada");
+    await atualizarItensDoRascunho({ ator: atorHumano(null), organizacaoId: alvo.org, propostaId: id, itens: [item(ok)] });
     assert.deepEqual(await campos(), { observacoes: "texto", prazo: 12 });
-    await atualizarItensDoRascunho({ organizacaoId: alvo.org, propostaId: id, itens: [item(ok)], observacoes: null, prazoContratoMeses: null });
+    assert.equal(await edicoes(), 1, "salvar sem mudar nada não gera registro");
+    await atualizarItensDoRascunho({ ator: atorHumano(null), organizacaoId: alvo.org, propostaId: id, itens: [item(ok)], observacoes: null, prazoContratoMeses: null });
     assert.deepEqual(await campos(), { observacoes: null, prazo: null });
-    assert.equal(await codigo(atualizarItensDoRascunho({ organizacaoId: alvo.org, propostaId: id, itens: [item(ok, { desconto: 999 })] })), "item_desconto_maior_que_total");
+    assert.equal(await codigo(atualizarItensDoRascunho({ ator: atorHumano(null), organizacaoId: alvo.org, propostaId: id, itens: [item(ok, { desconto: 999 })] })), "item_desconto_maior_que_total");
     const [{ n }] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM proposta_itens WHERE proposta_id = ${id}::uuid`);
     assert.equal(n, 1, "edição inválida não pode apagar as linhas");
   } finally {

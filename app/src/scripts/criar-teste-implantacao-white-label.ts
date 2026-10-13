@@ -1,7 +1,8 @@
 /** Cria uma única implantação White Label fictícia para revisão visual local. */
 import { db } from "@/lib/db";
 import { and, eq, sql } from "drizzle-orm";
-import { empresas, leads, negocios, organizacoes, propostaItens, propostas, usuarios } from "@/lib/db/schema";
+import { empresas, leads, negocios, organizacoes, propostas, usuarios } from "@/lib/db/schema";
+import { gravarLinhasOficiais } from "./_preco-oficial";
 import { criarPosVendaDoNegocio } from "@/lib/crm/pos-venda";
 
 const TAG = "[TESTE WL]";
@@ -15,10 +16,14 @@ async function main() {
   const [negocio] = await db.insert(negocios).values({ organizacaoId: org.id, empresaId: empresa.id, leadId: lead.id, responsavelId: responsavel?.id ?? null, titulo: `${TAG} Agência Aurora — White Label`, status: "ganho", ganhoAt: new Date(), valorTotal: "5000.00", tipoReceita: "recorrente" }).returning({ id: negocios.id });
   const [{ numero }] = await db.select({ numero: sql<number>`coalesce(max(${propostas.numero}), 900000) + 1` }).from(propostas).where(and(eq(propostas.organizacaoId, org.id), sql`${propostas.numero} >= 900000`));
   const [proposta] = await db.insert(propostas).values({ organizacaoId: org.id, leadId: lead.id, negocioId: negocio.id, numero, status: "aceita", totalGeral: "5000.00" }).returning({ id: propostas.id });
-  await db.insert(propostaItens).values([
-    { propostaId: proposta.id, nome: "White Label - Callface AI (Licença)", tipo: "recorrente", subtotal: "3000.00", valorUnitario: "3000.00", ordem: 0 },
-    { propostaId: proposta.id, nome: "Setup White Label", tipo: "avulso", subtotal: "2000.00", valorUnitario: "2000.00", ordem: 1 },
-  ]);
+  // As linhas entram pela porta do produto, cada uma com o Price oficial da família (P1-6).
+  await gravarLinhasOficiais({
+    organizacaoId: org.id, negocioId: negocio.id, propostaId: proposta.id, familia: "WHITE_LABEL",
+    linhas: [
+      { nome: "White Label - Callface AI (Licença)", valor: 3000, tipos: ["recorrente"] },
+      { nome: "Setup White Label", valor: 2000, tipos: ["setup", "avulso"] },
+    ],
+  });
   const resultado = await criarPosVendaDoNegocio(negocio.id, { ignorarFlag: true });
   if (!resultado.criado || !resultado.fulfillmentId) throw new Error(resultado.motivo || "A implantação de teste não foi criada");
   console.log(JSON.stringify({ fulfillmentId: resultado.fulfillmentId, empresa: `${TAG} Agência Aurora`, rota: `/pos-venda/entrega/${resultado.fulfillmentId}` }));
