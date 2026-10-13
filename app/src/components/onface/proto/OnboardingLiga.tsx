@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -120,7 +121,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, PR = this.dadosDoProto.Projetos, D = this.dadosDoProto || {}, EU = this.eu;
-    const ini = D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => [...x][0]).join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => [...x][0]).join("").toUpperCase()))(n));
     const diz = (t, tom) => E && E.avisar(t, tom || "ok");
     const escuro = false;
     const TEMA = escuro ? { bg: "#0f1318", sf: "#161b21", sf2: "#1c222a", ln: "rgba(255,255,255,.08)", tx: "#eef0f1", tx2: "#b3bac0", tx3: "#7b858f", hv: "rgba(255,255,255,.05)", inp: "#12161b", ok: "#3ecf8e", okbg: "rgba(62,207,142,.12)", warn: "#e0b04f", warnbg: "rgba(224,176,79,.12)", err: "#ff7a63", errbg: "rgba(255,106,85,.12)", hero: "#1c222a" }

@@ -14,6 +14,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 
 import type { LinhaProspeccao } from "@/lib/vendas/consultas";
 import {
@@ -282,7 +283,7 @@ export function ProspeccaoLiga(p: PropsDaLiga) {
       return {
         leadId: l.leadId, empresa: l.empresa,
         pessoa: l.pessoa ? `${l.pessoa}${l.cargo ? " · " + l.cargo : ""}` : "Sem pessoa associada",
-        responsavel: l.responsavel ?? "Sem responsável", iniciais: iniciaisDe(l.responsavel),
+        responsavel: l.responsavel ?? "Sem responsável", iniciais: avatarDe(l.responsavel, iniciaisDe(l.responsavel)),
         tempo: diasDesde(l.atualizadoEm, agora) + "d",
         origem: l.lista ?? l.fonte ?? "Outbound",
         origemSelo: "display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0;height:19px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;background:#eeeff3;color:#4a5560",
@@ -365,12 +366,12 @@ export function ProspeccaoLiga(p: PropsDaLiga) {
       respMenuStyle: "position:absolute;top:calc(100% + 4px);left:0;min-width:208px;max-height:240px;overflow-y:auto;z-index:46;border-radius:6px;background:#fff;border:1px solid #e3e7e8;box-shadow:0 8px 20px -4px rgba(0,0,0,.18),0 2px 4px -2px rgba(0,0,0,.12);padding:4px;animation:of-rise .1s cubic-bezier(.2,0,.2,1) both",
       abrirResp: (e: React.MouseEvent) => { e.stopPropagation(); setRespAberto(respAberto === l.leadId ? null : l.leadId); },
       respOpcoes: equipe.map((o) => ({
-        label: o.nome ?? "Sem responsável", iniciais: iniciaisDe(o.nome),
+        label: o.nome ?? "Sem responsável", iniciais: avatarDe(o.nome, iniciaisDe(o.nome)),
         avatar: "flex:0 0 auto;width:22px;height:22px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;background:" + (o.nome ? "#eeeff3;color:#616b78" : "#fdeae5;color:#9c3210"),
         style: "display:flex;align-items:center;gap:8px;width:100%;padding:5px 6px;border-radius:6px;border:0;cursor:pointer;background:transparent;" + (l.responsavelId === o.id ? "font-weight:600" : ""),
         onClick: (e: React.MouseEvent) => { e.stopPropagation(); setRespAberto(null); if (l.responsavelId !== o.id) p.aoAtribuir(l.leadId, o.id); },
       })),
-      iniciais: iniciaisDe(l.responsavel),
+      iniciais: avatarDe(l.responsavel, iniciaisDe(l.responsavel)),
       avatarStyle: "flex:0 0 auto;width:24px;height:24px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;"
         + (l.responsavel ? "background:#eeeff3;color:#616b78" : "background:#fff;color:#c2330f;box-shadow:inset 0 0 0 1.5px #f0c8bd"),
       estado: l.estadoRotulo,

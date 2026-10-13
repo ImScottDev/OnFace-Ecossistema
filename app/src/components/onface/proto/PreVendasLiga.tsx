@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -242,7 +243,7 @@ class Logica extends React.Component<any, any> {
          (ReferenceError em linhaLista), escondido pelo @ts-nocheck do arquivo. */
       respOpcoes: [this.eu].concat((this.dadosDoProto.EQUIPE || []).filter(n => n && n !== this.eu)).concat([null]).map(nome => ({
         label: nome || "Sem responsável",
-        iniciais: nome ? iniciaisDe(nome) : "—",
+        iniciais: nome ? avatarDe(nome, iniciaisDe(nome)) : "—",
         ativo: (L.resp || null) === nome,
         avatar: "flex:0 0 auto;width:22px;height:22px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;background:"
           + (nome ? "#eeeff3;color:#616b78" : "#fdeae5;color:#9c3210"),
@@ -254,7 +255,7 @@ class Logica extends React.Component<any, any> {
           this.diz(nome ? "Responsável alterado para " + nome : "Responsável removido — lead volta para a fila", nome ? "ok" : "aviso");
         }
       })),
-      iniciais: iniciaisDe(L.resp),
+      iniciais: avatarDe(L.resp, iniciaisDe(L.resp)),
       avatarStyle: "flex:0 0 auto;width:24px;height:24px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;"
         + (L.resp ? "background:#eeeff3;color:#616b78" : "background:#fff;color:#c2330f;box-shadow:inset 0 0 0 1.5px #f0c8bd"),
       origem: L.origem,
@@ -509,7 +510,7 @@ class Logica extends React.Component<any, any> {
         empresa: card.empresa || "Sem empresa",
         pessoa: card.pessoa + " · " + card.cargo,
         responsavel: card.resp || "Sem responsável",
-        iniciais: iniciaisDe(card.resp),
+        iniciais: avatarDe(card.resp, iniciaisDe(card.resp)),
         tempo: card.dias + "d",
         origem: card.campanha || card.origem,
         origemSelo: "display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0;height:19px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;"
@@ -838,7 +839,7 @@ class Logica extends React.Component<any, any> {
             + (L.acao ? "400;color:#4a5560" : "600;color:#c2330f"),
           resp: L.resp || "Sem responsável",
           respStyle: "flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:" + (L.resp ? "#4a5560" : "#c2330f"),
-          iniciais: iniciaisDe(L.resp),
+          iniciais: avatarDe(L.resp, iniciaisDe(L.resp)),
           avatarStyle: "flex:0 0 auto;width:22px;height:22px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;background:"
             + (L.resp ? "#eeeff3;color:#616b78" : "#fdeae5;color:#9c3210"),
           origem: L.origem,

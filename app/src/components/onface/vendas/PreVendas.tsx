@@ -22,6 +22,7 @@ import {
   Plus, SearchX, Sparkles, UserPlus, Users, X,
 } from "lucide-react";
 import type { BoardPreVendas, CardPreVendas, DetalheLead } from "@/lib/vendas/consultas";
+import { NomeUsuario, SeloIA } from "@/components/ui/avatar";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import {
   FAMILIAS, MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO, ROTULO_FAMILIA,
@@ -931,7 +932,7 @@ function PainelLead({ lead, timeline, pendente, bloqueio, responsaveis, aoFechar
                   <strong>{rotuloEvento(e.tipo)}</strong>
                   <span>
                     {dataHora(e.ocorridoEm)}
-                    {e.usuarioNome ? ` · ${e.usuarioNome}` : e.atorTipo !== "HUMAN" ? ` · ${rotuloAtor(e.atorTipo)}` : ""}
+                    {e.usuarioNome ? <> · <NomeUsuario nome={e.usuarioNome} ehAgente={e.atorTipo === "AI_AGENT" || undefined} /></> : e.atorTipo !== "HUMAN" ? <> · {e.atorTipo === "AI_AGENT" ? <SeloIA className="size-3" /> : null}{rotuloAtor(e.atorTipo)}</> : ""}
                   </span>
                 </div>
               </div>

@@ -11,6 +11,7 @@ import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
 import { CascaProto } from "@/components/onface/proto/CascaProto";
+import { nomesDeAgentesDaOrg } from "@/lib/agentes/nomes-de-agentes";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { MotionDoProto } from "@/components/onface/proto/MotionDoProto";
@@ -52,6 +53,14 @@ async function usuarioDaCasca(u: { name?: string | null; email?: string | null }
     }
   } catch { /* sem organização, o perfil mostra só o nome */ }
   return { nome, email: u.email ?? "", organizacao };
+}
+
+/** Nomes dos agentes de IA da organização, para o selo de IA em qualquer avatar. */
+async function agentesDaOrg(): Promise<string[]> {
+  try {
+    const ctx = await getTenantContext();
+    return ctx ? await nomesDeAgentesDaOrg(ctx.organizacaoId) : [];
+  } catch { return []; }
 }
 
 async function conversasNaoLidas(): Promise<number | null> {
@@ -119,6 +128,7 @@ export default async function ProdutoLayout({
 
   const naoLidas = await conversasNaoLidas();
   const usuario = await usuarioDaCasca(session.user);
+  const agentes = await agentesDaOrg();
 
   return (
     <Providers session={session}>
@@ -151,7 +161,7 @@ export default async function ProdutoLayout({
         <MotionDoProto />
 
         <Cf2SidebarProvider className="contents">
-          <CascaProto naoLidas={naoLidas} usuario={usuario}>{children}</CascaProto>
+          <CascaProto naoLidas={naoLidas} usuario={usuario} agentes={agentes}>{children}</CascaProto>
         </Cf2SidebarProvider>
       </TooltipProvider>
     </Providers>

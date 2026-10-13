@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { formatPhoneDisplay } from "@/lib/whatsapp/phone-utils";
 import { toast } from "sonner";
@@ -494,7 +495,7 @@ class Logica extends React.Component<any, any> {
         if (S.dropMenu === "resp") {
           const eq = (this.dadosDoProto && this.dadosDoProto.EQUIPE) || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
           return eq.map(n => ({
-            label: n, iniciais: iniciaisDe(n), on: L0.resp === n, temNota: false, nota: "",
+            label: n, iniciais: avatarDe(n, iniciaisDe(n)), on: L0.resp === n, temNota: false, nota: "",
             marca: "flex:0 0 auto;width:22px;height:22px;border-radius:9999px;display:grid;place-items:center;font-size:9px;font-weight:700;background:#eeeff3;color:#616b78",
             onClick: () => {
               this.setState(s => Object.assign({}, fechar, { leads: s.leads.map(x => x.id === L0.id ? Object.assign({}, x, { resp: n }) : x) }));
@@ -1101,7 +1102,7 @@ class Logica extends React.Component<any, any> {
           empresasOpp: empsOpp.map(e => {
             const on = e.nome === empOpp;
             return {
-              nome: e.nome, papel: e.papel, on, iniciais: iniciaisDe(e.nome),
+              nome: e.nome, papel: e.papel, on, iniciais: avatarDe(e.nome, iniciaisDe(e.nome)),
               style: "display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;border:0;cursor:pointer;min-width:0;"
                 + (on ? "background:#fff;box-shadow:inset 0 0 0 1.5px #12171d" : "background:#fff;box-shadow:inset 0 0 0 1px #dbdede"),
               avatar: "flex:0 0 auto;width:30px;height:30px;border-radius:8px;font-size:10px;font-weight:700;display:grid;place-items:center;"
@@ -1392,7 +1393,7 @@ class Logica extends React.Component<any, any> {
           lista: lista.map(e => {
             const on = S.vincSel === e.nome;
             return {
-              nome: e.nome, iniciais: iniciaisDe(e.nome),
+              nome: e.nome, iniciais: avatarDe(e.nome, iniciaisDe(e.nome)),
               meta: (e.seg ? e.seg + " · " : "") + e.n + (e.n > 1 ? " leads" : " lead"),
               on,
               style: "display:flex;align-items:center;gap:10px;width:100%;padding:8px 9px;border-radius:9px;border:0;cursor:pointer;text-align:left;background:" + (on ? "#f6f6f3;box-shadow:inset 0 0 0 1.5px #12171d" : "transparent"),

@@ -23,6 +23,7 @@ import { perguntarAoNexo, conversasRecentes, mensagensDaConversa as mensagensDaC
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -181,7 +182,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {};
-    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n));
     const EU = this.eu, equipe = (D.EQUIPE || [] /* ANTES: sem equipe real, listava Camila Reis / Diego Nunes / Ana Vitória como colegas. Nomes inventados. */).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
     const H0 = this.hoje(), H1 = new Date(H0.getTime() + 864e5), H2 = new Date(H0.getTime() + 2 * 864e5), agora = new Date();
     const fimSem = new Date(H0); fimSem.setDate(fimSem.getDate() + (7 - fimSem.getDay()) % 7 + 1);

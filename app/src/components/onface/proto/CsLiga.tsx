@@ -23,6 +23,7 @@ import { perguntarAoNexo, novaConversaId, botoesDaResposta, confirmarAcaoDoNexo 
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -124,7 +125,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {}, EU = this.eu;
-    const ini = D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => [...x][0]).join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => [...x][0]).join("").toUpperCase()))(n));
     const diz = (t, tom) => E && E.avisar(t, tom || "ok");
     const CS = (E && E.ler("cs", {})) || {}, X360 = (E && E.ler("clientes360", {})) || {};
     const gravarCS = (patch) => E && E.gravar({ cs: Object.assign({}, E.ler("cs", {}) || {}, patch) });

@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Maximize2, Mail, MessageCircle, Phone } from "lucide-react";
 import type { ReactNode } from "react";
+import { NomeUsuario, SeloIA } from "@/components/ui/avatar";
 import type { DetalheOportunidade, Empresa360 } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { ROTULO_FAMILIA } from "@/lib/vendas/dominio";
@@ -140,7 +141,7 @@ function Historico({ timeline }: { timeline: LinhaDoTempo[] }) {
             <strong>{evento.titulo || rotuloEvento(evento.tipo)}</strong>
             <span>
               {dataHora(evento.ocorridoEm)}
-              {evento.usuarioNome ? ` · ${evento.usuarioNome}` : evento.atorTipo !== "HUMAN" ? ` · ${rotuloAtor(evento.atorTipo)}` : ""}
+              {evento.usuarioNome ? <> · <NomeUsuario nome={evento.usuarioNome} ehAgente={evento.atorTipo === "AI_AGENT" || undefined} /></> : evento.atorTipo !== "HUMAN" ? <> · {evento.atorTipo === "AI_AGENT" ? <SeloIA className="size-3" /> : null}{rotuloAtor(evento.atorTipo)}</> : ""}
             </span>
           </div>
         </div>

@@ -19,6 +19,7 @@ import {
   ArrowRight, CalendarClock, FileText, Plus, Trophy, Users,
 } from "lucide-react";
 import type { BoardPipeline, CardPipeline, DetalheOportunidade } from "@/lib/vendas/consultas";
+import { NomeUsuario, SeloIA } from "@/components/ui/avatar";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import {
   ETAPAS_PIPELINE, FAMILIAS, MOTIVOS_ESTAGNACAO, MOTIVOS_PERDA,
@@ -26,6 +27,7 @@ import {
   type EtapaPipelineAberta, type Familia, type MotivoEstagnacao, type MotivoPerda,
 } from "@/lib/vendas/dominio";
 import type { Resultado } from "@/lib/vendas/resultado";
+import { IniciaisUsuario } from "@/components/ui/avatar";
 import {
    AvisoBloqueio, Board, Busca, Campo, ChecklistFechamento, Coluna, ColunaVazia, ComPainel, LimparFiltros,
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, moeda, moedaExata, useAcao,
@@ -332,7 +334,7 @@ function CardOportunidade({ card, selecionado, aoAbrir }: {
 
       <span className="ov-card-rodape">
         <span style={{ display: "inline-flex", alignItems: "center", gap: "calc(6 * var(--onface-u))" }}>
-          {card.responsavelIniciais ? <span className="ov-avatar" aria-hidden>{card.responsavelIniciais}</span> : null}
+          {card.responsavelIniciais ? <span className="ov-avatar" aria-hidden><IniciaisUsuario nome={card.responsavel} iniciais={card.responsavelIniciais} /></span> : null}
           {card.responsavel ? card.responsavel.split(" ")[0] : "Sem responsável"}
         </span>
         <span>{card.diasNaEtapa === null ? "—" : `${card.diasNaEtapa}d na etapa`}</span>
@@ -555,7 +557,7 @@ function PainelOportunidade({ op, timeline, pendente, bloqueio, motivoGanhoPende
                   <strong>{rotuloEvento(e.tipo)}</strong>
                   <span>
                     {dataHora(e.ocorridoEm)}
-                    {e.usuarioNome ? ` · ${e.usuarioNome}` : e.atorTipo !== "HUMAN" ? ` · ${rotuloAtor(e.atorTipo)}` : ""}
+                    {e.usuarioNome ? <> · <NomeUsuario nome={e.usuarioNome} ehAgente={e.atorTipo === "AI_AGENT" || undefined} /></> : e.atorTipo !== "HUMAN" ? <> · {e.atorTipo === "AI_AGENT" ? <SeloIA className="size-3" /> : null}{rotuloAtor(e.atorTipo)}</> : ""}
                   </span>
                 </div>
               </div>

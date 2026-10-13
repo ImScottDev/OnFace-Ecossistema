@@ -17,6 +17,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { autorDoEvento } from "./avatar-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { acaoSalvarContato } from "@/app/(produto)/pre-vendas/actions";
@@ -400,7 +401,7 @@ export class PecasLigadas extends PecasLiga {
             hora: hhmm(e.ocorridoEm),
             titulo: e.titulo || rotuloDeEvento(e.tipo),
             ator: e.atorTipo || "SYSTEM",
-            autor: e.usuarioNome || (e.atorTipo === "AI_AGENT" ? "ONI" : e.atorTipo === "AUTOMATION" ? "Automação" : "Sistema"),
+            autor: autorDoEvento(e, e.atorTipo === "AUTOMATION" ? "Automação" : "Sistema"),
           }));
           /* Contato, respostas do formulário e tags REAIS do lead: a gaveta lê
              daqui. Antes telefone/e-mail eram fabricados a partir do id. */

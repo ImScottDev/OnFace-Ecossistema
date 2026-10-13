@@ -23,6 +23,7 @@ import { perguntarAoNexo, conversasRecentes, mensagensDaConversa as mensagensDaC
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -170,7 +171,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {};
-    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n));
     const C = (this.dadosDoProto.ClientesSeed || []).concat((E && E.ler("clientesExtra", [])) || []);
     const PROD = { CALLFACE_AI: ["Callface AI", "#fe4f2b", "#fff6f4", "#c2330f", "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8z"],
       WHITE_LABEL: ["White Label", "#4f3fa8", "#efecfa", "#4f3fa8", "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"],

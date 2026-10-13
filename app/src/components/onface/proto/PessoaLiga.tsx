@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
@@ -165,7 +166,7 @@ class Logica extends React.Component<any, any> {
     });
     const D = this.dadosDoProto || {};
     const slug = D.slug || ((s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, ""));
-    const ini = D.iniciais || ((n) => (n || "").split(" ").slice(0, 2).map(p => [...p][0] || "").join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").slice(0, 2).map(p => [...p][0] || "").join("").toUpperCase()))(n));
     const etapas = D.ETAPAS || {};
     const diz = (t, tom) => Es && Es.avisar(t, tom);
     const leads0 = (this.E && Es.ler("leads", null)) || D.LEADS || [];

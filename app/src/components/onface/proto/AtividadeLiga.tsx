@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -130,7 +131,7 @@ class Logica extends React.Component<any, any> {
   }
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {}, EU = this.eu, A = this.dadosDoProto.Agenda;
-    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n));
     const equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
     const PR = { Alta: "#d93c1a", "Média": "#c9a45c", Baixa: "#8b949e" };
     const prioS = (on, p) => "display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:500;" + (on ? "background:" + PR[p] + ";color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede");

@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -294,7 +295,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, D = this.dadosDoProto || {}, Es = this.E;
-    const ini = D.iniciais || (s => (s || "").split(" ").map(p => [...p][0]).slice(0, 2).join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || (s => (s || "").split(" ").map(p => [...p][0]).slice(0, 2).join("").toUpperCase()))(n));
     const ir = (href, rot, p) => Es && Es.irPara(href, rot, p);
     const irPipeline = () => ir("/onface-preview/pipeline", "Pipeline");
     const O = this.opp();

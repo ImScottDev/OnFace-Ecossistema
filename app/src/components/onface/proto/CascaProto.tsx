@@ -21,6 +21,7 @@ import { trilhaAtual } from "../navegacao";
 import { CascaLiga } from "./CascaLiga";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { PecasHost } from "./pecas-host";
+import { AgentesDaOrgContexto } from "@/components/ui/avatar";
 import { UsuarioDoProtoContexto, iniciaisDe, type UsuarioDoProto } from "./usuario-do-proto";
 import { desenharRadar, tituloDoRadar } from "@/lib/nexo/radar-desenho";
 import type { DadosRadar, MsgNexo } from "@/lib/nexo/painel";
@@ -366,8 +367,11 @@ export function CascaProto({
   children,
   naoLidas = null,
   usuario: sessao,
+  agentes = [],
 }: {
   children: React.ReactNode;
+  /** Nomes dos agentes de IA da organização (selo de IA nos avatares). */
+  agentes?: string[];
   /** O usuário da sessão, lido no layout. */
   usuario: { nome: string; email: string; organizacao: string };
   /** Conversas não lidas visíveis ao usuário, contadas no layout. */
@@ -387,7 +391,10 @@ export function CascaProto({
     [sessao],
   );
 
+  const nomesDeAgentes = React.useMemo(() => new Set(agentes), [agentes]);
+
   return (
+    <AgentesDaOrgContexto.Provider value={nomesDeAgentes}>
     <UsuarioDoProtoContexto.Provider value={usuario}>
     {/* As peças do protótipo abrem por cima de qualquer tela: o hospedeiro
         fica por fora do miolo e a peça aberta é irmã dele. */}
@@ -420,5 +427,6 @@ export function CascaProto({
     </CascaLigada>
     </PecasHost>
     </UsuarioDoProtoContexto.Provider>
+    </AgentesDaOrgContexto.Provider>
   );
 }

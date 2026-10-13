@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -312,7 +313,7 @@ class Logica extends React.Component<any, any> {
         pct: Math.round(ritmo * 100) + "%",
         sub: feito + " de " + meta + " qualificados",
         pilha: pilhaBruta.map(([nome, v, cor]) => ({
-          nome, valor: v, iniciais: iniciais(nome),
+          nome, valor: v, iniciais: avatarDe(nome, iniciais(nome)),
           share: Math.round((v / feito) * 100) + "%",
           chipStyle: "flex:0 0 auto;width:9px;height:9px;border-radius:3px;background:" + cor
         }))

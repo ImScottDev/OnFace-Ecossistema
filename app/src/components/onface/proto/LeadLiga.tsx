@@ -17,6 +17,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { avatarDe } from "./avatar-do-proto";
 
 import type { Resultado } from "@/lib/vendas/resultado";
 import { LeadDesenho } from "./LeadDesenho";
@@ -211,7 +212,7 @@ export function LeadLiga({ l, acoes }: Props) {
       moduloRotulo: l.moduloRotulo,
       titulo: l.titulo, empresa: l.empresa.nome, pessoa: l.pessoa.nome, cargo: l.pessoa.cargo || "—",
       empIni: iniciais(l.empresa.nome), pesIni: iniciais(l.pessoa.nome), empSub: l.empresa.sub,
-      resp: l.resp.nome ?? "Sem responsável", respIni: iniciais(l.resp.nome),
+      resp: l.resp.nome ?? "Sem responsável", respIni: avatarDe(l.resp.nome, iniciais(l.resp.nome)),
       etapaLabel: l.etapaRotulo, etapaPonto: "width:7px;height:7px;border-radius:9999px;background:" + cor,
       etapaChip: "display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:9999px;border:0;font-size:12px;font-weight:600;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;color:" + cor + ";cursor:" + (etapaMovivel ? "pointer" : "default"),
       etapaDica: etapaMovivel ? "Mover de etapa" : "Esta etapa muda pelo banner abaixo",
@@ -352,7 +353,7 @@ export function LeadLiga({ l, acoes }: Props) {
     };
     const ativa = notaAtiva || !!nota;
     const ntLista = l.notas.map((n, k) => ({
-      autor: n.sistema ? "Sistema · Callface" : n.autor, ini: iniciais(n.autor), quando: n.quando, sistema: n.sistema, humano: !n.sistema,
+      autor: n.sistema ? "Sistema · Callface" : n.autor, ini: n.sistema ? iniciais(n.autor) : avatarDe(n.autor, iniciais(n.autor)), quando: n.quando, sistema: n.sistema, humano: !n.sistema,
       fixada: false, temTag: false, tag: "", partes: partesDe(n.texto), temAnexos: false, anexos: [],
       linha: "display:flex;align-items:flex-start;gap:10px;padding:10px 2px;" + (k ? "border-top:1px solid #f3f5f5" : ""),
       tagStyle: "", fixarTitulo: "", fixarStyle: "display:none",
@@ -363,7 +364,7 @@ export function LeadLiga({ l, acoes }: Props) {
       texto: nota, ativa, linhas: ativa ? 3 : 1,
       temMencao: menc.length > 0,
       mencoes: menc.map((n) => ({
-        nome: n, ini: iniciais(n),
+        nome: n, ini: avatarDe(n, iniciais(n)),
         escolher: (e: React.SyntheticEvent) => { e.preventDefault(); setNota(nota.slice(0, nota.length - (mm?.[2].length ?? 0) - 1) + "@" + n + " "); },
       })),
       caixa: "border-radius:10px;background:" + (ativa ? "#fff" : "#fafafa") + ";box-shadow:inset 0 0 0 1px " + (ativa ? "#a9b1b4" : "#e3e7e8"),

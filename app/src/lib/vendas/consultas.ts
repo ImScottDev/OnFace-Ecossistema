@@ -255,7 +255,7 @@ export interface BoardPreVendas {
     /** Média de horas entre a chegada e o primeiro toque, ou null se ninguém foi contatado. */
     horasAteContato: number | null;
   };
-  filtros: { responsaveis: Array<{ id: string; nome: string; papel?: string | null }>; origens: string[]; campanhas: string[] };
+  filtros: { responsaveis: Array<{ id: string; nome: string; papel?: string | null; ehAgente?: boolean }>; origens: string[]; campanhas: string[] };
   /** Quantos cada view rápida encontra. Sem isto a view é um botão às cegas. */
   contadores: Record<ViewPreVendas, number>;
 }
@@ -482,9 +482,9 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
 
   const contadores = await contadoresDeViews(organizacaoId, filtros.usuarioId);
 
-  const responsaveis = await db.execute<{ id: string; nome: string; papel: string | null }>(sql`
-    SELECT DISTINCT u.id::text, u.nome, u.role AS papel FROM usuarios u
-     WHERE u.organizacao_id = ${organizacaoId}::uuid AND u.ativo = true ORDER BY u.nome
+  const responsaveis = await db.execute<{ id: string; nome: string; papel: string | null; eh_agente: boolean }>(sql`
+    SELECT DISTINCT u.id::text, u.nome, u.role AS papel, (u.tipo = 'agente' OR u.agente_id IS NOT NULL) AS eh_agente FROM usuarios u
+     WHERE u.organizacao_id = ${organizacaoId}::uuid AND u.ativo = true ORDER BY eh_agente, u.nome
   `);
   const origens = await db.execute<{ origem: string }>(sql`
     SELECT DISTINCT origem FROM aquisicoes
@@ -511,7 +511,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       horasAteContato: (await resumoSlaPreVendas(organizacaoId, { desde: new Date(Date.now() - 90 * 86_400_000) })).horasAteContato,
     },
     filtros: {
-      responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome, papel: r.papel ?? null })),
+      responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome, papel: r.papel ?? null, ehAgente: r.eh_agente })),
       origens: origens.map((o) => o.origem),
       campanhas: campanhas.map((c) => c.campanha),
     },
@@ -585,7 +585,7 @@ export interface BoardPipeline {
     aceitaDrop: boolean;
   }>;
   resumo: { abertas: number; ganhas: number; perdidas: number; semProximaAcao: number; valorEmAberto: number };
-  filtros: { responsaveis: Array<{ id: string; nome: string }>; familias: string[] };
+  filtros: { responsaveis: Array<{ id: string; nome: string; ehAgente?: boolean }>; familias: string[] };
 }
 
 export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipeline = {}): Promise<BoardPipeline> {
@@ -783,9 +783,9 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
      WHERE o.organizacao_id = ${organizacaoId}::uuid
   `);
 
-  const responsaveis = await db.execute<{ id: string; nome: string }>(sql`
-    SELECT id::text, nome FROM usuarios
-     WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome
+  const responsaveis = await db.execute<{ id: string; nome: string; eh_agente: boolean }>(sql`
+    SELECT id::text, nome, (tipo = 'agente' OR agente_id IS NOT NULL) AS eh_agente FROM usuarios
+     WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY eh_agente, nome
   `);
   const familias = await db.execute<{ familia: string }>(sql`
     SELECT DISTINCT service_family AS familia FROM oportunidades
@@ -802,7 +802,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       valorEmAberto: Number(resumo?.valor_aberto ?? 0),
     },
     filtros: {
-      responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome })),
+      responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome, ehAgente: r.eh_agente })),
       familias: familias.map((f) => f.familia),
     },
   };
@@ -1020,8 +1020,8 @@ function linhaDeProspeccao(l: LinhaBruta): LinhaProspeccao {
 
 async function opcoesDeFiltroProspeccao(organizacaoId: string) {
   const [responsaveis, listas, cadencias] = await Promise.all([
-    db.execute<{ id: string; nome: string }>(sql`
-      SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome`),
+    db.execute<{ id: string; nome: string; eh_agente: boolean }>(sql`
+      SELECT id::text, nome, (tipo = 'agente' OR agente_id IS NOT NULL) AS eh_agente FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY eh_agente, nome`),
     db.execute<{ nome: string }>(sql`
       SELECT DISTINCT lb.nome FROM labels lb
         JOIN lead_labels ll ON ll.label_id = lb.id
@@ -1036,7 +1036,7 @@ async function opcoesDeFiltroProspeccao(organizacaoId: string) {
        ORDER BY 2 LIMIT 40`),
   ]);
   return {
-    responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome })),
+    responsaveis: responsaveis.map((r) => ({ id: r.id, nome: r.nome, ehAgente: r.eh_agente })),
     listas: listas.map((l) => l.nome),
     cadencias: cadencias.map((c) => ({ id: c.id, nome: c.nome })),
   };
@@ -1058,7 +1058,7 @@ async function resumoPorEstado(organizacaoId: string, filtros: FiltrosProspeccao
 export async function listaProspeccao(organizacaoId: string, filtros: FiltrosProspeccao = {}): Promise<{
   linhas: LinhaProspeccao[];
   resumo: Record<EstadoProspeccao, number>;
-  filtros: { responsaveis: Array<{ id: string; nome: string }>; listas: string[]; cadencias: Array<{ id: string; nome: string }> };
+  filtros: { responsaveis: Array<{ id: string; nome: string; ehAgente?: boolean }>; listas: string[]; cadencias: Array<{ id: string; nome: string }> };
   /** Total do recorte (com o filtro de estado) e a janela devolvida. */
   paginacao: { total: number; pagina: number; porPagina: number; paginas: number };
 }> {

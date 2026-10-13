@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
@@ -297,7 +298,7 @@ posFlutuante(r, alto) {
     const leads = P.leads || D.LEADS || [];
     const E = leads.find(x => x.id === P.leadId) || leads[0] || {};
     const diz = P.onAviso || function () {};
-    const ini = D.iniciais || ((n) => (n || "").slice(0, 2).toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").slice(0, 2).toUpperCase()))(n));
     const slug = D.slug || ((s) => (s || "").toLowerCase().replace(/[^a-z]/g, ""));
     const etapas = D.ETAPAS || {};
     const segmentos = D.SEGMENTOS || {};

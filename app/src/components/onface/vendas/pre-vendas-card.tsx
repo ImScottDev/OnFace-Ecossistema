@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import type { CardPreVendas } from "@/lib/vendas/consultas";
 import { acaoVencida, estadoSla } from "@/lib/vendas/sla";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, IniciaisUsuario, NomeUsuario } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -305,10 +305,10 @@ export function CardAquisicao({
             <>
               <Avatar className="size-5">
                 <AvatarFallback className="text-[9px] font-semibold">
-                  {card.responsavelIniciais}
+                  <IniciaisUsuario nome={card.responsavel} iniciais={card.responsavelIniciais} />
                 </AvatarFallback>
               </Avatar>
-              {card.responsavel ? <span className="truncate">{card.responsavel.split(" ")[0]}</span> : null}
+              {card.responsavel ? <NomeUsuario nome={card.responsavel.split(" ")[0]} ehAgente={undefined} className="truncate" /> : null}
             </>
           ) : (
             // Sem dono é estado acionável, não um vazio: ícone + texto, porque

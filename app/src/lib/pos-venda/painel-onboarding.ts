@@ -125,7 +125,7 @@ export async function painelOnboarding(organizacaoId: string): Promise<PainelOnb
   const ids = linhas.map((l) => l.id as string);
   const equipeRows = await db.execute<{ id: string; nome: string }>(sql`
     SELECT id::text, nome FROM usuarios
-     WHERE organizacao_id = ${organizacaoId}::uuid AND ativo ORDER BY nome`);
+     WHERE organizacao_id = ${organizacaoId}::uuid AND ativo ORDER BY (tipo = 'agente' OR agente_id IS NOT NULL), nome`);
   const equipe = equipeRows.map((u) => ({ id: u.id, nome: u.nome }));
   if (!ids.length) return { projetos: [], hoje: [], equipe };
 

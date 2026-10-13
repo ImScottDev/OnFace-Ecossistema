@@ -17,6 +17,7 @@ import {
   type ModoFechamento,
 } from "@/lib/vendas/dominio";
 import type { DetalheProposta } from "@/app/(produto)/propostas/actions";
+import { NomeUsuario, SeloIA } from "@/components/ui/avatar";
 import { AvisoBloqueio, Campo, Secao, Tag, dataCurta, dataHora, moedaExata, type Bloqueio } from "./ui";
 import { Bloco } from "./pagina";
 import { AcoesContato } from "./pagina";
@@ -255,7 +256,7 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
                   <strong>{e.titulo || rotuloDeEvento(e.tipo)}</strong>
                   <span>
                     {dataHora(e.ocorridoEm)}
-                    {e.usuarioNome ? ` · ${e.usuarioNome}` : e.atorTipo !== "HUMAN" ? ` · ${rotuloAtor(e.atorTipo)}` : ""}
+                    {e.usuarioNome ? <> · <NomeUsuario nome={e.usuarioNome} ehAgente={e.atorTipo === "AI_AGENT" || undefined} /></> : e.atorTipo !== "HUMAN" ? <> · {e.atorTipo === "AI_AGENT" ? <SeloIA className="size-3" /> : null}{rotuloAtor(e.atorTipo)}</> : ""}
                   </span>
                 </div>
               </div>

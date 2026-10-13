@@ -164,7 +164,7 @@ export async function paginaDeAtendimento(ctx: Ctx, escopoPedido: EscopoAtendime
        ORDER BY (l.empresa_id IS NULL) ASC, l.updated_at DESC`),
     // Destino de transferência: quem está ativo na organização, não só quem já tem conversa.
     db.execute<{ id: string; nome: string }>(sql`
-      SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${org} AND ativo ORDER BY nome`),
+      SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${org} AND ativo ORDER BY (tipo = 'agente' OR agente_id IS NOT NULL), nome`),
     /* Os números DA PESSOA (dono ou autorizado), não os da organização; em
        "Equipe", os do escopo de gestão, com o dono para o seletor agrupar por
        pessoa e por agente. A mesma regra da query de conversas, aplicada aqui:

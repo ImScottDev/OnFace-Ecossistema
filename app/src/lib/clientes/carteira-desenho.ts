@@ -408,6 +408,6 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     comAtividade: clientes.filter((c) => c.ultima).length,
     faturamento: await faturamentoMensal(organizacaoId),
     equipe: [...await db.execute<{ id: string; nome: string }>(sql`
-      SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo ORDER BY nome`)],
+      SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo ORDER BY (tipo = 'agente' OR agente_id IS NOT NULL), nome`)],
   };
 }

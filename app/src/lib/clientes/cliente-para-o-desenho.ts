@@ -266,7 +266,7 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
      ORDER BY n.created_at DESC LIMIT 100`);
 
   const equipeIds = await db.execute<{ id: string; nome: string }>(sql`
-    SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome`);
+    SELECT id::text, nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY (tipo = 'agente' OR agente_id IS NOT NULL), nome`);
 
   const tarefas = await db.execute<{
     id: string; titulo: string; tipo: string | null; vence_em: string | null; responsavel: string | null;
@@ -284,7 +284,7 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
      ORDER BY COALESCE(t.vence_em, t.data_vencimento) ASC NULLS LAST LIMIT 20`);
 
   const equipe = (await db.execute<{ nome: string }>(sql`
-    SELECT nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY nome`))
+    SELECT nome FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY (tipo = 'agente' OR agente_id IS NOT NULL), nome`))
     .map((u) => u.nome);
 
   const leadDaPessoa = Object.fromEntries((await db.execute<{ id: string; lead: string }>(sql`

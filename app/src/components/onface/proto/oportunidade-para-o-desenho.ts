@@ -1,6 +1,7 @@
 /* Domínio → desenho da oportunidade: UM mapeamento só, usado pela página
    /pipeline/[id] e pelo drawer do quadro. */
 import { quandoBR } from "@/lib/datas-br";
+import { autorDoEvento } from "./avatar-do-proto";
 import type { DetalheOportunidade } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { rotuloDeEvento, rotuloProcesso, tituloLegivel } from "@/lib/vendas/rotulos-evento";
@@ -144,7 +145,7 @@ export function oportunidadeParaODesenho(o: DetalheOportunidade, timeline: Linha
     eventos: timeline.map((e) => ({
       t: e.titulo || rotuloDeEvento(e.tipo),
       quando: quando(e.ocorridoEm),
-      autor: e.usuarioNome ?? "Sistema",
+      autor: autorDoEvento(e),
     })),
     /* O resumo é da OPORTUNIDADE (`negocios.campos_custom.resumoOportunidade`); o que ninguém
        escreveu ainda cai na qualificação de Pré-vendas, que é a fonte única dessas respostas. */

@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -125,7 +126,7 @@ class Logica extends React.Component<any, any> {
 
   renderVals() {
     const S = this.state, E = this.E, D = this.dadosDoProto || {}, EU = this.eu;
-    const ini = D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => [...x][0]).join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map(x => [...x][0]).join("").toUpperCase()))(n));
     const slug = D.slug || ((s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, ""));
     const diz = (t, tom) => E && E.avisar(t, tom || "ok");
     const seed = (this.dadosDoProto.ClientesSeed || []).concat((E && E.ler("clientesExtra", [])) || []);

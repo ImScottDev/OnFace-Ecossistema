@@ -206,7 +206,7 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
 
     db.execute<Row>(sql`
       SELECT id, nome FROM usuarios
-       WHERE organizacao_id = ${organizacaoId} AND ativo = true ORDER BY nome`),
+       WHERE organizacao_id = ${organizacaoId} AND ativo = true ORDER BY (tipo = 'agente' OR agente_id IS NOT NULL), nome`),
   ]);
 
   const cr = await carteiraEmRisco(organizacaoId);

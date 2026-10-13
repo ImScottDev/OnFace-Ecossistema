@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import type { Resultado } from "@/lib/vendas/resultado";
 import type { BoardPipeline, CardPipeline } from "@/lib/vendas/consultas";
 import { PipelineLiga } from "./PipelineLiga";
+import { avatarDe } from "./avatar-do-proto";
 import { levarParametros } from "./rota-do-desenho";
 import { persistirEtapa, type CommandsDeEtapa } from "./persistencia";
 import { usePecas } from "./pecas-host";
@@ -96,7 +97,7 @@ function paraODesenho(card: CardPipeline) {
     familiaRotulo: c.familiaRotulo,
     etapa: c.etapa,
     resp: c.responsavel,
-    iniciais: c.responsavelIniciais,
+    iniciais: avatarDe(c.responsavel, c.responsavelIniciais ?? undefined),
     // O cartão do Pipeline mostra VALOR, não MRR — regra do Bloco 02 §14.
     valor: c.valor,
     dias: c.diasNaEtapa ?? 0,

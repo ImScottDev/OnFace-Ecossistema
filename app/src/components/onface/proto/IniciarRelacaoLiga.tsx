@@ -22,6 +22,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { avatarDe } from "./avatar-do-proto";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
@@ -134,7 +135,7 @@ class Logica extends React.Component<any, any> {
     const S = this.state, C = S.ctx, E = this.E, D = this.dadosDoProto || {};
     if (!C) return { aberto: false, passos: [], caminhos: [], contatos: [], origens: [], etapas: [], equipe: [], interesses: [], cadencias: [], tipos: [], familias: [], efeitos: [] };
     const F = S.f, up = (p) => this.setState(s => ({ f: Object.assign({}, s.f, p), tentou: false }));
-    const ini = D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase());
+    const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n));
     const equipe = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
     const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const TIPO = { nova: "Nova venda", expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação" };

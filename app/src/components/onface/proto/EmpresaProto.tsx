@@ -12,6 +12,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { autorDoEvento } from "./avatar-do-proto";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { formatarTelefone } from "@/lib/telefone";
@@ -55,7 +56,7 @@ function quandoDoEvento(iso: string | null): string {
 function eventosDoDesenho(timeline: LinhaDoTempo[], vinc: string) {
   return timeline.map((e) => ({
     titulo: e.titulo || ROTULO_EVENTO[String(e.tipo).toLowerCase()] || String(e.tipo),
-    autor: e.usuarioNome ?? "Sistema",
+    autor: autorDoEvento(e),
     quando: quandoDoEvento(e.ocorridoEm),
     d: ICONE_EVENTO,
     vinc,
