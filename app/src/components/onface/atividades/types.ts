@@ -51,6 +51,11 @@ export interface Atividade {
   concluidaEm: string | null;
   /** Nasceu de uma régua em vez da mão de alguém. */
   automatica: boolean;
+  /** Progresso e contadores da gaveta (tarefa_subtarefas, tarefa_comentarios, file_links). */
+  subtarefas?: number;
+  subtarefasFeitas?: number;
+  comentarios?: number;
+  anexos?: number;
 }
 
 export interface ColunaKanban {
@@ -125,3 +130,16 @@ export interface NovaAtividade {
   vencimento: string | null;
   responsavelId: string | null;
 }
+
+/** Jornada de onde a atividade veio, por `tarefas.origem` (a "área" da gaveta). */
+export const JORNADA_POR_ORIGEM: Record<string, string> = {
+  MANUAL: "Manual",
+  PLAYBOOK: "Playbook",
+  BILLING: "Financeiro",
+  ONBOARDING: "Onboarding",
+  IMPLANTACAO: "Implantação",
+  RENOVACAO: "CS",
+  RISCO: "CS",
+  EXPANSAO: "Expansão",
+  AUTOMACAO: "Automação",
+};
