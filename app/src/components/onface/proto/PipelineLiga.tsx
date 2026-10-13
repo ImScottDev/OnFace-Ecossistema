@@ -116,12 +116,17 @@ class Logica extends React.Component<any, any> {
   }
 
   abrirAtv(O, i, tipo) {
-    const Es0 = this.E; if (Es0) { if (i == null) return Es0.abrir("novaAtividade", { empresa: O.empresa, pessoa: O.pessoa, tipo, oppId: O.id }); if (((O.atvs || [])[i] || {}).tipo !== "Reunião") return Es0.abrir("verAtividade", "o:" + O.id + ":" + i); }
-    const A = i != null ? (O.atvs || [])[i] || {} : {};
-    const m = String(A.quando || "").match(/(\d{2})\/(\d{2})(?:\/(\d{4}))?/), h = (String(A.quando || "").match(/(\d{1,2}:\d{2})/) || [])[1] || "";
-    const data = m ? (m[3] || new Date().getFullYear()) + "-" + m[2] + "-" + m[1] : "";
-    this.setState({ av: { id: O.id, i, modo: "editar", novo: i == null, f: { situacao: A.situacao || (A.feita ? "Feita" : "A fazer"), tipo: A.tipo || tipo || "Follow up", titulo: A.titulo || "", desc: A.desc || "", data, hora: h.padStart(5, "0") === "0:00" ? "" : (h.length === 4 ? "0" + h : h), resp: A.autor || O.resp, quandoLivre: !m && !h ? (A.quando || "") : "" } } });
+    /* Atividade: a peça ÚNICA (AtividadePecaProto), para criar e para ver/editar. Ela relê a tarefa por id
+       a cada abertura. Não existe mais modal de atividade aqui dentro. */
+    if (i == null) return this.E.abrir("novaAtividade", { empresa: O.empresa, pessoa: O.pessoa, tipo, oppId: O.id, leadId: O.leadId || null, empresaId: O.empresaId || null });
+    const A = (O.atvs || [])[i] || {};
+    if (A.tipo === "Reunião") return this.abrirReuniao(O, i);
+    if (A.tarefaId) return this.E.abrir("verAtividade", "p:" + A.tarefaId);
+    /* Registro do histórico (ligação, e-mail, nota de sistema): não é tarefa; fica na linha do tempo. */
+    if (A.tipo === "Ligação" && O.leadId && /^Liga[cç][aã]o/i.test(A.titulo || "")) return this.E.abrir("relatorio", { leadId: O.leadId, audioUrl: A.audioUrl || "" });
+    this.diz("Este é um registro do histórico: está na linha do tempo da oportunidade.", "aviso");
   }
+
 
   abrirReuniao(O, i) {
     /* A peça ÚNICA de Reunião (`/api/reunioes`, evento e agenda), para criar E para ver/editar: ela
@@ -486,7 +491,7 @@ class Logica extends React.Component<any, any> {
           };
           const via = O.via || ((O.atvs || []).some(x => x.tipo === "Reunião") ? "reuniao" : (O.atvs || []).some(x => x.tipo === "E-mail") ? "email" : (O.atvs || []).some(x => x.tipo === "Ligação") ? "ligacao" : "outro");
           const abrirNa = (tipo) => { setUi({ menu: null }); if (tipo === "Reunião") return this.abrirReuniao(O); this.abrirAtv(O, null, tipo); };
-          const verAtv = (i) => { setUi({ menu: null }); const A = (O.atvs || [])[i] || {}; if (A.tipo === "Reunião") return this.abrirReuniao(O, i); if (Es) return Es.abrir("verAtividade", "o:" + O.id + ":" + i); this.setState({ av: { id: O.id, i, modo: "ver" } }); };
+          const verAtv = (i) => { setUi({ menu: null }); this.abrirAtv(O, i); };
           const tel = (LD && (LD.tel || LD.telefone)) || "";
           const irAt = (canal) => lead && Es ? Es.irPara("/atendimento", "Atendimento", { lead, canal }) : this.diz(O.pessoa + " ainda não tem conversa no Atendimento", "aviso");
           const canais = [
@@ -629,49 +634,7 @@ class Logica extends React.Component<any, any> {
     let m = { grupos: [], campos: [], resumo: [], itens: [] };
     const md0 = S.modal, MO0 = md0 ? todas.find(o => o.id === md0.id) : null;
     const md = md0, MO = MO0;
-    const av = (() => {
-      const AV = S.av, AO = AV ? todas.find(o => o.id === AV.id) : null;
-      if (!AV || !AO) return { aberto: false, situacoes: [], tipos: [], equipe: [] };
-      const A = AV.i != null ? (AO.atvs || [])[AV.i] || {} : {};
-      const ed = AV.modo === "editar", F = ed ? AV.f : null;
-      const sit = ed ? F.situacao : (A.situacao || (A.feita ? "Feita" : "A fazer")), tipo = ed ? F.tipo : (A.tipo || "Tarefa");
-      const SIT = [["A fazer", "A fazer", "M12 6v6l4 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"], ["Em andamento", "Em andamento", "M21 12a9 9 0 1 1-6.2-8.6"], ["Feita", "Feito", "M20 6 9 17l-5-5"], ["Declinada", "Declinada", "M18 6 6 18M6 6l12 12"]];
-      const TIP = [["Ligação", "M13.8 16.6a1 1 0 0 0 1.2-.3l.4-.5A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.5.4a1 1 0 0 0-.3 1.2 14 14 0 0 0 6.4 6.4z"], ["Mensagem", "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"], ["E-mail", "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6"], ["Follow up", "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"], ["Reunião", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"], ["Proposta", "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5"], ["Tarefa", "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]];
-      const upF = (p) => this.setState(s => ({ av: Object.assign({}, s.av, { f: Object.assign({}, s.av.f, p) }) }));
-      const chipS = (on, cor) => "display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:9px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;" + (on ? (cor === "coral" ? "background:#fff6f4;color:#c2330f;box-shadow:inset 0 0 0 1px #f0a896" : "background:#12171d;color:#fff") : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede");
-      const selo = (bg, c) => "display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font-size:11.5px;font-weight:600;background:" + bg + ";color:" + c;
-      const SITC = { "A fazer": ["#eeeff3", "#4a5560"], "Em andamento": ["#e8f0fb", "#2c5f9e"], Feita: ["#e6f4ee", "#1f7256"], Declinada: ["#fdeeea", "#c2330f"] };
-      const fechar = () => this.setState({ av: null });
-      const gravarA = (nova, msg) => { const x = (AO.atvs || []).slice(); if (AV.i != null) x[AV.i] = nova; else x.unshift(nova); this.gravarOpp(Object.assign({}, AO, { atvs: x }), msg); return AV.i != null ? AV.i : 0; };
-      const setSit = (v) => { gravarA(Object.assign({}, A, { situacao: v, feita: v === "Feita" || v === "Declinada" }), "“" + (A.titulo || "Atividade") + "” · " + v); this.diz("Atividade: " + (v === "Feita" ? "feito" : v.toLowerCase()), v === "Feita" ? "ok" : "aviso"); };
-      const quandoTxt = (F2) => F2.data ? F2.data.split("-").reverse().join("/") + (F2.hora ? " · " + F2.hora : "") : (F2.hora ? "Hoje · " + F2.hora : (F2.quandoLivre || ""));
-      return { aberto: true, fechar, parar: (e) => e.stopPropagation(), ehVer: !ed, ehEditar: ed,
-        situacao: SIT.find(s => s[0] === sit)[1], situacaoSelo: selo(SITC[sit][0], SITC[sit][1]), tipo, tipoSelo: selo("#fff6f4", "#c2330f"),
-        tituloVisto: (ed ? F.titulo : A.titulo) || "Atividade sem título", contexto: AO.empresa + " · " + AO.pessoa,
-        quando: A.quando || "Sem data", resp: ed ? F.resp : (A.autor || AO.resp), respIniciais: ini(ed ? F.resp : (A.autor || AO.resp)),
-        descVista: A.desc || "Sem descrição.", descStyle: "font-size:13px;line-height:1.55;white-space:pre-wrap;text-wrap:pretty;color:" + (A.desc ? "#1f252c" : "#8b949e"),
-        concluir: () => setSit(sit === "Feita" ? "A fazer" : "Feita"), concluirLabel: sit === "Feita" ? "Reabrir" : "Marcar como feito",
-        concluirStyle: "display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;border:0;font-size:12.5px;font-weight:600;white-space:nowrap;cursor:pointer;" + (sit === "Feita" ? "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede" : "background:#e6f4ee;color:#1f7256"),
-        declinar: () => setSit(sit === "Declinada" ? "A fazer" : "Declinada"), declinarLabel: sit === "Declinada" ? "Reativar" : "Declinar",
-        declinarStyle: "height:34px;padding:0 13px;border-radius:8px;border:0;background:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;cursor:pointer;" + (sit === "Declinada" ? "color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede" : "color:#c2330f;box-shadow:inset 0 0 0 1px #f0c3b6"),
-        editar: () => this.abrirAtv(AO, AV.i),
-        situacoes: SIT.map(([v, l, d]) => ({ label: l, d, style: chipS(ed && F.situacao === v), onClick: () => upF({ situacao: v }) })),
-        tipos: TIP.map(([v, d]) => ({ label: v, d, style: chipS(ed && F.tipo === v, "coral"), onClick: () => { if (v === "Reunião" && AV.novo) { this.setState({ av: null }); return this.abrirReuniao(AO); } upF({ tipo: v }); } })),
-        titulo: ed ? F.titulo : "", setTitulo: (e) => upF({ titulo: e.target.value }),
-        desc: ed ? F.desc : "", setDesc: (e) => upF({ desc: e.target.value }),
-        data: ed ? F.data : "", setData: (e) => upF({ data: e.target.value }), hora: ed ? F.hora : "", setHora: (e) => upF({ hora: e.target.value }),
-        equipe: equipe.map(p => ({ v: p, l: p })), setResp: (e) => upF({ resp: e.target.value }),
-        cancelarEdicao: () => AV.novo ? fechar() : this.setState({ av: { id: AV.id, i: AV.i, modo: "ver" } }),
-        tituloErro: ed && !!AV.tentou && !(F.titulo || "").trim(),
-        tituloInp: "width:100%;height:34px;padding:0 11px;border-radius:8px;background:#fff;outline:0;font-size:13px;border:1px solid " + (ed && AV.tentou && !(F.titulo || "").trim() ? "#d93c1a" : "#dbdede"),
-        salvar: () => {
-          if (!(F.titulo || "").trim()) return this.setState({ av: Object.assign({}, AV, { tentou: true }) });
-          const nova = Object.assign({}, A, { titulo: F.titulo.trim(), desc: (F.desc || "").trim(), tipo: F.tipo, situacao: F.situacao, feita: F.situacao === "Feita" || F.situacao === "Declinada", quando: quandoTxt(F) || "Sem data", autor: F.resp });
-          const i = gravarA(nova, (AV.novo ? "Atividade criada: " : "Atividade editada: ") + nova.titulo);
-          this.setState({ av: { id: AV.id, i, modo: "ver" } });
-          this.diz(AV.novo ? "Atividade criada" : "Atividade salva", "ok");
-        } };
-    })();
+    const av = { aberto: false, situacoes: [], tipos: [], equipe: [] }; // atividade: só a peça única (pecas-host)
     const rv = { aberto: false, part: [], sits: [] }; // reunião: só a peça única (pecas-host)
     if (md && MO) {
       const Fm = S.form, s = somas(MO);
@@ -688,38 +651,12 @@ class Logica extends React.Component<any, any> {
       const TIPOS = ["Ligação", "Reunião", "E-mail", "Mensagem", "Tarefa", "Follow up"], SITS = ["A fazer", "Em andamento", "Feita", "Declinada"];
       const ICOT = { Ligação: "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39", Reunião: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "E-mail": "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6", Mensagem: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z" };
       const icoA = "flex:0 0 auto;width:36px;height:36px;border-radius:9px;background:#fff6f4;color:#c2330f;display:grid;place-items:center";
-      if (md.k === "atvver") {
-        const A = (MO.atvs || [])[md.i] || {};
-        const sit = A.situacao || (A.feita ? "Feita" : "A fazer");
-        const setSit = (v) => { const x = (MO.atvs || []).slice(); x[md.i] = Object.assign({}, A, { situacao: v, feita: v === "Feita" || v === "Declinada" }); this.gravarOpp(Object.assign({}, MO, { atvs: x }), "“" + A.titulo + "” · " + v); this.diz("Atividade: " + v.toLowerCase(), v === "Feita" ? "ok" : "aviso"); };
-        m = Object.assign(base, { titulo: A.tipo || "Atividade", sub: MO.empresa + " · " + MO.pessoa, d: ICOT[A.tipo] || "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", icoStyle: icoA,
-          temVer: true, ver: { titulo: A.titulo || "Sem título", desc: A.desc || "Sem descrição.", descStyle: "font-size:13.5px;line-height:1.55;text-wrap:pretty;color:" + (A.desc ? "#1f252c" : "#8b949e"),
-            meta: [["Quando", A.quando || "Sem data"], ["Responsável", A.autor || MO.resp], ["Tipo", A.tipo || "—"]].map(([label, valor]) => ({ label, valor })) },
-          grupos: [{ label: "Situação", obrig: false, temErro: false, erro: "", opcoes: SITS.map(v => ({ label: v, style: chip(sit === v), onClick: () => setSit(v) })) }],
-          cancelarLabel: "Fechar", salvarLabel: "Editar", salvarStyle: btnForte("#12171d"),
-          salvar: () => this.setState({ modal: { k: "atv", id: MO.id, i: md.i }, form: { tipo: A.tipo || "Ligação", situacao: sit, titulo: A.titulo || "", desc: A.desc || "", quando: A.quando || "" }, tentou: false }) });
-      } else if (md.k === "propgate") {
+      if (md.k === "propgate") {
         m = Object.assign(base, { titulo: "Crie a proposta primeiro", sub: "Para ir a " + ROT[md.depois] + ", " + MO.empresa + " precisa de uma proposta. O valor da oportunidade nasce nela.",
           d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5",
           icoStyle: "flex:0 0 auto;width:36px;height:36px;border-radius:9px;background:#eeeff3;color:#1f252c;display:grid;place-items:center",
           salvarLabel: "Criar proposta", salvarStyle: btnForte("#12171d"),
           salvar: () => { this.setState({ modal: null }); Es && Es.irPara("/onface-preview/proposta", "Proposta", { opp: MO.id, ver: "" }); } });
-      } else if (md.k === "atv") {
-        const edit = md.i != null, A = edit ? (MO.atvs || [])[md.i] || {} : {};
-        m = Object.assign(base, { titulo: edit ? "Editar atividade" : "Nova atividade", sub: MO.empresa + " · " + MO.pessoa, d: edit ? "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z" : "M12 5v14M5 12h14", icoStyle: icoA,
-          grupos: [grupo("tipo", "Tipo", TIPOS, true), grupo("situacao", "Situação", SITS, false)],
-          campos: [campo("titulo", "Título", "Ex: Enviar proposta final", true), campo("desc", "Descrição", "Contexto, pauta ou o que precisa ser feito", false, true), campo("quando", "Quando", "Ex: amanhã, 10h", true)],
-          salvarLabel: edit ? "Salvar" : "Criar atividade", salvarStyle: btnForte("#12171d"),
-          salvar: () => {
-            if (!Fm.tipo || !(Fm.titulo || "").trim() || !(Fm.quando || "").trim()) return this.setState({ tentou: true });
-            const sit = Fm.situacao || "A fazer";
-            const nova = Object.assign({}, A, { tipo: Fm.tipo, situacao: sit, feita: sit === "Feita" || sit === "Declinada", titulo: Fm.titulo.trim(), desc: (Fm.desc || "").trim(), quando: Fm.quando.trim(), autor: A.autor || MO.resp });
-            const x = (MO.atvs || []).slice();
-            if (edit) x[md.i] = nova; else x.unshift(nova);
-            this.gravarOpp(Object.assign({}, MO, { atvs: x }), (edit ? "Atividade editada: " : "Atividade criada: ") + nova.titulo);
-            this.setState({ modal: edit ? { k: "atvver", id: MO.id, i: md.i } : null, form: {}, tentou: false });
-            this.diz(edit ? "Atividade salva" : "Atividade criada", "ok");
-          } });
       } else if (md.k === "perda") {
         const MOT = ["Sem retorno", "Sem interesse", "Preço", "Escolheu concorrente", "Sem orçamento", "Timing / outra data", "Trava na negociação", "Trava contratual", "Projeto cancelado", "Sem fit após diagnóstico", "Outro"];
         m = Object.assign(base, { titulo: "Marcar como perdida", sub: MO.empresa + " · o motivo alimenta o relatório de perdas.", d: "M18 6 6 18M6 6l12 12",
