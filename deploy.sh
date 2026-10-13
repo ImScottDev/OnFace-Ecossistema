@@ -1,8 +1,10 @@
 #!/bin/bash
-# Deploy do ONFACE: commit do repo → servidor → imagens → ambiente → migrations → troca.
+# Deploy do ONFACE: imagem pronta do GHCR → servidor → ambiente → migrations → troca.
 #
-#   ./deploy.sh dev            # roda da raiz do repo, na máquina de quem publica
-#   ./deploy.sh dev --seguir   # reata o acompanhamento de um deploy já em curso
+#   ./deploy.sh dev                    # publica o HEAD (tem que ser o origin/main)
+#   ./deploy.sh dev --seguir           # reata o acompanhamento de um deploy em curso
+#   ./deploy.sh dev --versao <sha>     # rollback: volta para a imagem de um commit antigo
+#   ./deploy.sh dev --construir-aqui   # fallback: constrói na EC2 (lento; só se o GHCR cair)
 #
 # Alvos:
 #   dev  → /opt/callface/crm2-dev, compose `crm2-dev`, https://dev.crm.callface.io
@@ -11,37 +13,38 @@
 # (docs/operacao/virada/) e só acontece com o OK do Kauã.
 #
 # Regras que este script garante, e por quê:
-#   - Publica exatamente um commit (`git archive HEAD`). Rsync de pasta de
-#     trabalho levava lixo local e deixava no servidor tudo que o repo apagou:
-#     em 05/10 o servidor tinha 73 arquivos que o repo já não tinha, entre eles
-#     uma tela que abria sem login.
+#   - **A imagem NÃO é construída na EC2.** O GitHub Actions
+#     (.github/workflows/imagens.yml) publica `ghcr.io/imscottdev/onface-{app,
+#     backend}:<sha>` a cada push na `main`; aqui só se faz pull. Construindo na
+#     EC2 (2 vCPU, dividida com produção, build preso a 1 CPU) o deploy levava
+#     ~48 min (12/10/2026).
+#   - Publica exatamente um commit: a imagem é a do sha, e o compose e a infra
+#     vão por `git archive` do mesmo sha. Rsync de pasta de trabalho deixava no
+#     servidor tudo que o repo apagou (05/10: uma tela que abria sem login).
 #   - `--delete` espelha o repo, protegendo o que é do servidor: .env, uploads,
-#     segredos do Documenso e backups (deploy nunca apaga backup).
-#   - **O trabalho pesado roda DESTACADO no servidor.** Em 05/10 a conexão ssh
-#     caiu no meio do `next build`: o build morreu junto e o deploy terminou
-#     dizendo que estava construindo, sem ter trocado nada. Agora o cliente só
-#     acompanha um log; derrubar o terminal não interrompe o deploy, e
-#     `--seguir` reata.
-#   - Build com --cpuset-cpus=1, uma imagem por vez: a EC2 tem 2 vCPU e
-#     produção roda na mesma máquina. Sem isso o build derrubou produção (01/10).
+#     segredos do Documenso e backups.
+#   - O trabalho roda DESTACADO no servidor: derrubar o terminal não interrompe
+#     o deploy, e `--seguir` reata.
 #   - Ambiente e migrations são conferidos com a imagem NOVA, antes de trocar
 #     container. Com a imagem antiga a migration nova nunca é aplicada.
-#   - `.onface-release` registra o commit publicado, e só no fim: se ele não
-#     mudou, o deploy não chegou ao fim.
+#   - IMAGE_TAG fica gravado no .env do servidor: um `docker compose up` manual
+#     depois sobe a versão publicada, não a `:main` do momento.
+#   - `.onface-release` registra o commit publicado, e só no fim.
+#   - Rollback de código com `--versao` só é seguro sobre migrations aditivas:
+#     migrations não voltam.
 set -euo pipefail
 
 ALVO="${1:-}"
-SEGUIR="${2:-}"
+MODO="${2:-}"
 case "$ALVO" in
   dev)
     DIR=/opt/callface/crm2-dev
     PROJETO=crm2-dev
-    PREFIXO_IMAGEM=crm2-dev
     CONTAINER_APP=callface-crm2-dev-app
     CONTAINER_WORKER=callface-crm2-dev-worker
     ;;
   *)
-    echo "uso: ./deploy.sh dev [--seguir]" >&2
+    echo "uso: ./deploy.sh dev [--seguir | --versao <sha> | --construir-aqui]" >&2
     exit 1
     ;;
 esac
@@ -49,9 +52,9 @@ esac
 HOST="${DEPLOY_HOST:-ubuntu@34.204.200.52}"
 CHAVE="${DEPLOY_CHAVE:-$HOME/.ssh/infra_callface.pem}"
 SSH=(ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i "$CHAVE" "$HOST")
+REGISTRO=ghcr.io/imscottdev
 
 cd "$(git rev-parse --show-toplevel)"
-REV="$(git rev-parse HEAD)"
 LOG="/tmp/onface-deploy-$ALVO.log"
 FIM="/tmp/onface-deploy-$ALVO.fim"
 
@@ -71,27 +74,48 @@ acompanhar() {
       echo "✘ deploy falhou (código $codigo)" >&2
       return 1
     fi
-    sleep 15
+    sleep 10
   done
 }
 
-if [ "$SEGUIR" = "--seguir" ]; then
-  echo "=== reatando o acompanhamento de $ALVO ==="
-  acompanhar
-  exit $?
-fi
-
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "✘ há mudança não commitada: o deploy publica só o que está no commit" >&2
-  exit 1
-fi
+case "$MODO" in
+  --seguir)
+    REV="(em curso)"
+    echo "=== reatando o acompanhamento de $ALVO ==="
+    acompanhar
+    exit $?
+    ;;
+  --versao)
+    REV="$(git rev-parse --verify "${3:?informe o sha: ./deploy.sh dev --versao <sha>}^{commit}")"
+    ;;
+  ""|--construir-aqui)
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+      echo "✘ há mudança não commitada: o deploy publica só o que está no commit" >&2
+      exit 1
+    fi
+    REV="$(git rev-parse HEAD)"
+    if [ -z "$MODO" ]; then
+      # A imagem só existe para o commit que chegou na `main` do GitHub.
+      git fetch -q origin main
+      if [ "$(git rev-parse origin/main)" != "$REV" ]; then
+        echo "✘ HEAD ($REV) não é o origin/main ($(git rev-parse origin/main))." >&2
+        echo "  Faça push (ou pull) antes: a imagem é construída pelo GitHub a partir da main." >&2
+        exit 1
+      fi
+    fi
+    ;;
+  *)
+    echo "✘ modo desconhecido: $MODO" >&2
+    exit 1
+    ;;
+esac
 
 echo "=== ONFACE → $ALVO ($REV) ==="
 
-# ─── 1. Código: o commit, espelhado no servidor ─────────────────────────────
+# ─── 1. Código e infra do commit, espelhados no servidor ────────────────────
 echo "[1/2] Enviando o commit..."
 STAGE="/tmp/onface-release-$REV"
-git archive --format=tar HEAD | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE && tar -x -C $STAGE"
+git archive --format=tar "$REV" | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE && tar -x -C $STAGE"
 "${SSH[@]}" "sudo rsync -a --delete \
   --exclude=/.env --exclude=/.env.* \
   --exclude=/uploads/ --exclude=/app/public/uploads/ \
@@ -100,33 +124,63 @@ git archive --format=tar HEAD | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE &&
   --exclude='_backup*' --exclude='*.sql.gz' --exclude='*.dump' --exclude='*.bak-*' \
   $STAGE/ $DIR/ && rm -rf $STAGE"
 
-# ─── 2. Build, migrations e troca: no servidor, destacado ───────────────────
+# ─── 2. Imagens, migrations e troca: no servidor, destacado ─────────────────
 REMOTO="/tmp/onface-deploy-$ALVO.sh"
 CORPO="$(mktemp)"
 cat > "$CORPO" <<REMOTE
 #!/bin/bash
 set -euo pipefail
 cd $DIR
+t0=\$(date +%s)
 
-for SERVICO in app api worker; do
-  ARQ=Dockerfile; [ "\$SERVICO" = app ] || ARQ="Dockerfile.\$SERVICO"
-  echo "[build] \$SERVICO (o container antigo continua servindo)..."
-  sudo env DOCKER_BUILDKIT=0 docker build --cpuset-cpus=1 --memory=4g --memory-swap=9g \
-    -f "\$ARQ" -t "$PREFIXO_IMAGEM-\$SERVICO" . 2>&1 | tail -5
-done
+# A versão vai no .env ANTES de tudo: o compose lê IMAGE_TAG dele (sudo não
+# repassa o ambiente), e um `up` manual depois não troca de versão.
+sudo cp -p .env .env.bak-deploy
+sudo sed -i '/^IMAGE_TAG=/d' .env
+echo "IMAGE_TAG=$REV" | sudo tee -a .env >/dev/null
+# Falhou antes da troca (pull, ambiente, migration): o .env volta a apontar
+# para a versão que está rodando.
+trap 'sudo cp -p .env.bak-deploy .env' ERR
+etapa() { echo "[\$(( \$(date +%s) - t0 ))s] \$*"; }
 
-echo "[ambiente] conferindo variáveis obrigatórias..."
+if [ "$MODO" = "--construir-aqui" ]; then
+  # Fallback. BuildKit num builder próprio preso a 1 CPU: a EC2 tem 2 vCPU e
+  # produção roda nela (sem o limite o build derrubou produção em 01/10).
+  sudo docker buildx inspect onface-lento >/dev/null 2>&1 || \
+    sudo docker buildx create --name onface-lento --driver docker-container \
+      --driver-opt cpuset-cpus=1 --driver-opt memory=4g --driver-opt memory-swap=9g >/dev/null
+  for ALVO_IMG in backend app; do
+    etapa "[build] \$ALVO_IMG na EC2 (o container antigo continua servindo)..."
+    sudo docker buildx build --builder onface-lento --load --target \$ALVO_IMG \
+      -t $REGISTRO/onface-\$ALVO_IMG:$REV . 2>&1 | tail -5
+  done
+else
+  etapa "[imagens] esperando $REGISTRO/onface-{app,backend}:$REV no GHCR..."
+  for i in \$(seq 1 120); do
+    if sudo docker manifest inspect $REGISTRO/onface-app:$REV >/dev/null 2>&1 && \
+       sudo docker manifest inspect $REGISTRO/onface-backend:$REV >/dev/null 2>&1; then
+      break
+    fi
+    [ \$i = 120 ] && { echo "✘ imagens não apareceram no GHCR em 20 min (veja o workflow 'imagens' no GitHub)" >&2; exit 1; }
+    sleep 10
+  done
+  etapa "[imagens] pull..."
+  sudo docker compose -p $PROJETO pull -q worker api app
+fi
+
+etapa "[ambiente] conferindo variáveis obrigatórias..."
 sudo docker compose -p $PROJETO run --rm --no-deps --entrypoint '' api node app/dist/checar-env-runtime.mjs
 
-echo "[banco] migrations..."
+etapa "[banco] migrations..."
 if ! sudo docker compose -p $PROJETO run --rm --no-deps --entrypoint '' api \
      env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs --check; then
   sudo docker compose -p $PROJETO run --rm --no-deps --entrypoint '' api \
     env MIGRATIONS_DIR=/repo/app/dist/migrations node app/dist/migrar.mjs
 fi
 
-echo "[troca] worker, api e app..."
+etapa "[troca] worker, api e app..."
 sudo docker compose -p $PROJETO up -d --no-deps --no-build worker api app
+trap - ERR
 
 for i in \$(seq 1 45); do
   STATUS="\$(sudo docker inspect --format='{{.State.Health.Status}}' $CONTAINER_APP 2>/dev/null || echo starting)"
@@ -134,7 +188,9 @@ for i in \$(seq 1 45); do
     echo "$REV" | sudo tee $DIR/.onface-release >/dev/null
     # O worker carrega os jobs agendados e o sweep do outbox: se ele ficar
     # unhealthy, o pós-venda congela em silêncio.
-    echo "✓ app saudável · worker: \$(sudo docker inspect --format='{{.State.Health.Status}}' $CONTAINER_WORKER 2>/dev/null || echo '?')"
+    etapa "✓ app saudável · worker: \$(sudo docker inspect --format='{{.State.Health.Status}}' $CONTAINER_WORKER 2>/dev/null || echo '?')"
+    # Só camadas órfãs. Nunca `-a`: a caixa é dividida com produção.
+    sudo docker image prune -f >/dev/null 2>&1 || true
     exit 0
   fi
   echo "  aguardando app... (\$STATUS) [\$i/45]"
@@ -149,6 +205,6 @@ REMOTE
 rm -f "$CORPO"
 "${SSH[@]}" "setsid nohup bash -c '$REMOTO > $LOG 2>&1; echo \$? > $FIM' >/dev/null 2>&1 < /dev/null &"
 
-echo "[2/2] Build, migrations e troca rodando no servidor (seguem mesmo se este terminal cair)."
+echo "[2/2] Imagens, migrations e troca rodando no servidor (seguem mesmo se este terminal cair)."
 echo "      Para reatar: ./deploy.sh $ALVO --seguir"
 acompanhar

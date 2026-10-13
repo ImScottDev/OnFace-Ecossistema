@@ -10,7 +10,7 @@
 #   - wuzapi proprio, com WHATSAPP_ALLOWLIST travando a saida no numero do Kaua
 #
 # Subir:  docker compose -p crm2-dev up -d
-# Buildar: um servico por vez, a EC2 tem 2 vCPU e produção roda na mesma maquina.
+# Imagens: construidas no GitHub Actions (GHCR); a EC2 so faz pull. Ver deploy.sh.
 
 services:
   postgres:
@@ -93,14 +93,13 @@ services:
           memory: 192M
 
   app:
+    # Imagem pronta do GHCR, construída pelo GitHub Actions na tag do commit.
+    # IMAGE_TAG vem do .env do servidor, gravado pelo ./deploy.sh. O `build:`
+    # fica só para o fallback `./deploy.sh dev --construir-aqui`.
     build:
-      # Contexto na RAIZ, e o Dockerfile também. O contexto `./app` deixava
-      # `packages/` fora da imagem, e o `npm ci` de lá morria em `workspace:*`:
-      # os três containers do CRM não construíam desde que o repositório virou
-      # monorepo (CP63).
       context: .
-      dockerfile: Dockerfile
-    image: crm2-dev-app
+      target: app
+    image: ghcr.io/imscottdev/onface-app:${IMAGE_TAG:-main}
     container_name: callface-crm2-dev-app
     restart: unless-stopped
     env_file: .env
@@ -154,14 +153,12 @@ services:
       start_period: 40s
 
   api:
+    # API e worker são a MESMA imagem (`backend`); muda só o processo.
     build:
-      # Contexto na RAIZ, e o Dockerfile também. O contexto `./app` deixava
-      # `packages/` fora da imagem, e o `npm ci` de lá morria em `workspace:*`:
-      # os três containers do CRM não construíam desde que o repositório virou
-      # monorepo (CP63).
       context: .
-      dockerfile: Dockerfile.api
-    image: crm2-dev-api
+      target: backend
+    image: ghcr.io/imscottdev/onface-backend:${IMAGE_TAG:-main}
+    command: ["node", "app/dist/api/index.mjs"]
     container_name: callface-crm2-dev-api
     restart: unless-stopped
     env_file: .env
@@ -208,14 +205,8 @@ services:
       start_period: 30s
 
   worker:
-    build:
-      # Contexto na RAIZ, e o Dockerfile também. O contexto `./app` deixava
-      # `packages/` fora da imagem, e o `npm ci` de lá morria em `workspace:*`:
-      # os três containers do CRM não construíam desde que o repositório virou
-      # monorepo (CP63).
-      context: .
-      dockerfile: Dockerfile.worker
-    image: crm2-dev-worker
+    image: ghcr.io/imscottdev/onface-backend:${IMAGE_TAG:-main}
+    command: ["node", "app/dist/worker/index.mjs"]
     container_name: callface-crm2-dev-worker
     restart: unless-stopped
     env_file: .env

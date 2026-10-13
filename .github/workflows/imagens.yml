@@ -1,0 +1,60 @@
+# Imagens do ONFACE: construídas aqui, publicadas no GHCR, baixadas pela VPS.
+#
+# Até 12/10/2026 a imagem era construída NA EC2 (2 vCPU, dividida com
+# produção, build preso a 1 CPU para não derrubá-la): ~48 min por deploy.
+# Agora cada push na `main` publica
+#
+#   ghcr.io/imscottdev/onface-app:<sha>       e  :main
+#   ghcr.io/imscottdev/onface-backend:<sha>   e  :main   (API + worker)
+#
+# e o `./deploy.sh dev` só faz pull da tag do commit, migra e troca. A tag por
+# commit é imutável: é ela que dá o rollback (`./deploy.sh dev --versao <sha>`)
+# e que permite promover a mesma imagem para produção na virada.
+#
+# O cache de camadas fica no próprio GitHub (type=gha). Mudança só de código
+# não refaz o install: só o build do Next/esbuild e a camada `dist`.
+name: imagens
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: imagens-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  construir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        alvo: [app, backend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.alvo }}
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: |
+            ghcr.io/imscottdev/onface-${{ matrix.alvo }}:${{ github.sha }}
+            ghcr.io/imscottdev/onface-${{ matrix.alvo }}:main
+          cache-from: type=gha,scope=onface-${{ matrix.alvo }}
+          cache-to: type=gha,scope=onface-${{ matrix.alvo }},mode=max
