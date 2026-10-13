@@ -624,6 +624,8 @@ export interface SinaisDaOrganizacao {
   implantacao: Awaited<ReturnType<typeof getImplantacaoResumo>>;
   cs: Awaited<ReturnType<typeof getCsResumo>>;
   atendimento: Awaited<ReturnType<typeof getAtendimentoResumo>>;
+  /** Saúde de uso da Callface AI (a MESMA função da carteira em /clientes/uso). null = sem leitura. */
+  usoCallfaceAi?: { vermelhos: number; semUsar: number; semResponsavel: number } | null;
 }
 
 /** Gestão: sinais agregados, cada um com a lista que o resolve. Nada de nome de pessoa. */
@@ -654,6 +656,15 @@ export function atencaoDaOrganizacao(s: SinaisDaOrganizacao): Atencao {
       titulo: plural(s.cs.clientesEmRisco, "cliente em risco", "clientes em risco"),
       detalhe: "Risco crítico ou em risco aberto na carteira", peso: null,
       href: "/clientes/risco", acao: "Ver risco", agregado: true, ordem: s.cs.clientesEmRisco,
+    });
+  }
+  if (s.usoCallfaceAi && s.usoCallfaceAi.vermelhos > 0) {
+    const u = s.usoCallfaceAi;
+    itens.push({
+      id: "uso-callface-ai", severidade: u.semUsar > 0 ? "critico" : "alto", tipo: "Clientes",
+      titulo: plural(u.vermelhos, "cliente em risco no Callface AI", "clientes em risco no Callface AI"),
+      detalhe: [u.semUsar > 0 ? `${u.semUsar} parou de usar` : null, u.semResponsavel > 0 ? `${u.semResponsavel} sem CS responsável` : null].filter(Boolean).join(" · ") || "Churn de uso: o CS já tem a tarefa",
+      peso: null, href: "/clientes/uso", acao: "Ver carteira de uso", agregado: true, ordem: u.vermelhos,
     });
   }
   if (s.atendimento.whatsappAbertas > 0) {

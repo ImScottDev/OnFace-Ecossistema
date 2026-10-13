@@ -15,13 +15,18 @@ test("projeção linear e variação sem base", () => {
 test("ritmo acima do plano vira expansão, mas não repete o flag de limite", () => {
   const e = { ...base, minutosMes: 1000, minutos30d: 2000, minutosContratados: 2000 };
   assert.deepEqual(chaves(e), ["ritmo"]);
-  assert.deepEqual(chaves({ ...e, flags: ["perto_do_limite"] }), []);
+  assert.deepEqual(chaves({ ...e, flags: ["no_teto"] }), []);
 });
 
 test("adoção baixa só para conta que está usando", () => {
   const e = { ...base, minutos30d: 300, licencasContratadas: 10, licencasEmUso: 2 };
   assert.deepEqual(chaves(e), ["adocao"]);
-  assert.deepEqual(chaves({ ...e, flags: ["inativo_14d"] }), []);
+  assert.deepEqual(chaves({ ...e, flags: ["silencio"] }), []);
+});
+
+test("licença ociosa já dita pelo semáforo não repete como adoção", () => {
+  const e = { ...base, minutos30d: 300, licencasContratadas: 10, licencasEmUso: 2 };
+  assert.deepEqual(chaves({ ...e, flags: ["licenca_ociosa"] }), []);
 });
 
 test("sem flag e com uso: constante; sem uso: nada", () => {

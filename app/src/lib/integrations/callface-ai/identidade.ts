@@ -14,7 +14,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { lerComTransacao, lerOrganizacoes, type OrganizacaoCallfaceAi, type TenantCallfaceAi } from "@onface/integrations-callface-ai";
-import { decidirVinculos, type AlvoEmpresa } from "./vinculo-regra";
+import { decidirVinculos, type AlvoEmpresa, type Decisao, type EmpresaLigada } from "./vinculo-regra";
 
 export interface ResultadoIdentidade {
   ok: boolean;
@@ -25,6 +25,12 @@ export interface ResultadoIdentidade {
   contradicoes: number;
   /** Organização disputada por duas empresas. */
   disputadas: number;
+  /** Empresas duplicadas no ONFACE (mesmo CNPJ) que ficaram pendentes: a canônica liga, a outra espera unificação. */
+  duplicadas: number;
+  /** Duplicatas em que nenhuma empresa é claramente a principal (ninguém liga). */
+  duplicadasIndecisas: number;
+  /** Sinal forte ambíguo (organização repetida no SaaS ou sinal dividido) que ficou pendente com a razão. */
+  ambiguas: number;
   /** Empresas sem nenhum sinal forte nem sugestão razoável. */
   semSinal: number;
   /** Empresas sem vínculo que ficaram com sugestão/pendência registrada. */
@@ -36,6 +42,7 @@ export interface ResultadoIdentidade {
 interface LinhaAlvo extends Record<string, unknown> {
   empresa_id: string; nome: string; razao_social: string | null; cnpj: string | null;
   website: string | null; stripe_ids: string[] | null; emails: string[] | null;
+  servicos_ai: number; assinaturas: number; oportunidades: number; pessoas: number;
 }
 
 async function carregarAlvos(organizacaoId: string): Promise<AlvoEmpresa[]> {
@@ -48,7 +55,11 @@ async function carregarAlvos(organizacaoId: string): Promise<AlvoEmpresa[]> {
                   WHERE p.organizacao_id = e.organizacao_id AND p.email IS NOT NULL AND trim(p.email) <> ''
                     AND (p.empresa_id = e.id OR p.id IN (
                           SELECT v.pessoa_id FROM pessoa_empresa_vinculos v
-                           WHERE v.empresa_id = e.id AND v.encerrado_em IS NULL)))) AS emails
+                           WHERE v.empresa_id = e.id AND v.encerrado_em IS NULL)))) AS emails,
+           (SELECT count(*)::int FROM servicos_canonicos s WHERE s.empresa_id = e.id AND s.service_family = 'CALLFACE_AI') AS servicos_ai,
+           (SELECT count(*)::int FROM assinaturas a WHERE a.empresa_id = e.id) AS assinaturas,
+           (SELECT count(*)::int FROM oportunidades o WHERE o.empresa_id = e.id) AS oportunidades,
+           (SELECT count(*)::int FROM pessoas p WHERE p.empresa_id = e.id) AS pessoas
       FROM empresas e
      WHERE e.organizacao_id = ${organizacaoId}::uuid
        AND EXISTS (SELECT 1 FROM servicos_canonicos s
@@ -60,23 +71,46 @@ async function carregarAlvos(organizacaoId: string): Promise<AlvoEmpresa[]> {
   return linhas.map((l) => ({
     empresaId: l.empresa_id, nome: l.nome, razaoSocial: l.razao_social, cnpj: l.cnpj, website: l.website,
     stripeIds: l.stripe_ids ?? [], emails: l.emails ?? [],
+    peso: { servicosAi: l.servicos_ai, assinaturas: l.assinaturas, oportunidades: l.oportunidades, pessoas: l.pessoas },
   }));
 }
 
-/** Resolve e grava os vínculos automáticos e as pendências. */
-export async function resolverIdentidades(organizacaoId: string): Promise<ResultadoIdentidade> {
+/** Nome e CNPJ das empresas que já têm vínculo: reconhece a candidata que é duplicata de uma delas. */
+async function carregarEmpresasLigadas(organizacaoId: string): Promise<Map<string, EmpresaLigada>> {
+  const linhas = await db.execute<{ id: string; nome: string; cnpj: string | null }>(sql`
+    SELECT e.id::text AS id, e.nome, e.cnpj FROM empresas e
+     WHERE e.organizacao_id = ${organizacaoId}::uuid
+       AND EXISTS (SELECT 1 FROM callface_ai_external_identities i
+                    WHERE i.entity_type = 'empresa' AND i.entity_id = e.id AND i.external_type = 'organization')`);
+  return new Map(linhas.map((l) => [l.id, { nome: l.nome, cnpj: l.cnpj }] as const));
+}
+
+export interface DecisoesDeIdentidade {
+  alvos: AlvoEmpresa[];
+  decisoes: Decisao[];
+  nomePorOrg: Map<string, string>;
+  jaVinculadas: number;
+}
+
+/**
+ * Lê (SELECT no ONFACE e no SaaS) e decide, SEM gravar nada. É a mesma decisão
+ * do sync e do script de simulação, para os dois nunca divergirem.
+ */
+export async function decidirIdentidades(organizacaoId: string): Promise<
+  | ({ ok: true } & DecisoesDeIdentidade)
+  | { ok: false; avaliadas: number; jaVinculadas: number; erro?: string; naoConfigurado?: boolean }
+> {
   const alvos = await carregarAlvos(organizacaoId);
   const jaVinculadas = Number((await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM callface_ai_external_identities i
       JOIN empresas e ON e.id = i.entity_id
      WHERE i.entity_type = 'empresa' AND i.external_type = 'organization'
        AND e.organizacao_id = ${organizacaoId}::uuid`))[0]?.n ?? 0);
-  const zero = { avaliadas: 0, vinculadas: 0, jaVinculadas, contradicoes: 0, disputadas: 0, semSinal: 0, pendentes: 0 };
-  if (!alvos.length) return { ok: true, ...zero };
+  if (!alvos.length) return { ok: true, alvos, decisoes: [], nomePorOrg: new Map(), jaVinculadas };
 
   const leitura = await lerComTransacao<OrganizacaoCallfaceAi[]>((s) => lerOrganizacoes(s));
   if (!leitura.ok) {
-    return { ok: false, ...zero, avaliadas: alvos.length, erro: leitura.erro,
+    return { ok: false, avaliadas: alvos.length, jaVinculadas, erro: leitura.erro,
       naoConfigurado: "naoConfigurado" in leitura && leitura.naoConfigurado };
   }
   const orgs = leitura.dados;
@@ -90,19 +124,35 @@ export async function resolverIdentidades(organizacaoId: string): Promise<Result
     SELECT empresa_id::text || '|' || external_organization_id AS k
       FROM callface_ai_reconciliation_candidates WHERE status = 'rejeitado'`)).map((r) => r.k));
 
-  const decisoes = decidirVinculos(alvos, orgs, ligadas, rejeitados);
-  const r = { ...zero, avaliadas: alvos.length };
+  const decisoes = decidirVinculos(alvos, orgs, ligadas, rejeitados, new Date(), await carregarEmpresasLigadas(organizacaoId));
+  return { ok: true, alvos, decisoes, nomePorOrg, jaVinculadas };
+}
+
+/** Resolve e grava os vínculos automáticos e as pendências. */
+export async function resolverIdentidades(organizacaoId: string): Promise<ResultadoIdentidade> {
+  const d = await decidirIdentidades(organizacaoId);
+  const zero = { avaliadas: 0, vinculadas: 0, jaVinculadas: d.ok ? d.jaVinculadas : d.jaVinculadas, contradicoes: 0, disputadas: 0, duplicadas: 0, duplicadasIndecisas: 0, ambiguas: 0, semSinal: 0, pendentes: 0 };
+  if (!d.ok) {
+    return { ok: false, ...zero, avaliadas: d.avaliadas, erro: d.erro, naoConfigurado: d.naoConfigurado };
+  }
+  if (!d.alvos.length) return { ok: true, ...zero };
+
+  const { decisoes, nomePorOrg } = d;
+  const r = { ...zero, avaliadas: d.alvos.length };
   const comPendencia = new Set<string>();
 
-  for (const d of decisoes) {
-    if (d.tipo === "auto") {
-      const criou = await gravarVinculoAuto(organizacaoId, d.empresaId, d.orgId, nomePorOrg.get(d.orgId) ?? null, d.evidencia);
+  for (const x of decisoes) {
+    if (x.tipo === "auto") {
+      const criou = await gravarVinculoAuto(organizacaoId, x.empresaId, x.orgId, nomePorOrg.get(x.orgId) ?? null, x.evidencia);
       if (criou) r.vinculadas++;
-    } else if (d.tipo === "pendente") {
-      comPendencia.add(d.empresaId);
-      if (d.sinal === "contradicao") r.contradicoes++;
-      if (d.sinal === "disputada") r.disputadas++;
-      await registrarPendencia(d.empresaId, d.orgId, nomePorOrg.get(d.orgId) ?? null, d.sinal, d.score, d.razao, d.evidencia);
+    } else if (x.tipo === "pendente") {
+      comPendencia.add(x.empresaId);
+      if (x.sinal === "contradicao") r.contradicoes++;
+      if (x.sinal === "disputada") r.disputadas++;
+      if (x.sinal === "duplicada") r.duplicadas++;
+      if (x.sinal === "duplicada_indecisa") r.duplicadasIndecisas++;
+      if (x.sinal === "ambigua") r.ambiguas++;
+      await registrarPendencia(x.empresaId, x.orgId, nomePorOrg.get(x.orgId) ?? null, x.sinal, x.score, x.razao, x.evidencia);
     } else {
       r.semSinal++;
     }
@@ -116,11 +166,12 @@ export async function resolverIdentidades(organizacaoId: string): Promise<Result
  * organization do SaaS pertence a UMA empresa. Reexecutar não duplica, e duas
  * execuções concorrentes não criam dois vínculos para o mesmo tenant.
  */
-async function gravarVinculoAuto(
+export async function gravarVinculoAuto(
   organizacaoId: string, empresaId: string, orgSaasId: string, orgNome: string | null, evidencia: unknown,
+  ex: Pick<typeof db, "execute"> = db,
 ): Promise<boolean> {
   const regra = (evidencia as { regra: string }).regra;
-  const r = await db.execute<{ id: string }>(sql`
+  const r = await ex.execute<{ id: string }>(sql`
     INSERT INTO callface_ai_external_identities
       (entity_type, entity_id, provider, external_type, external_id, confidence, source,
        verified_at, evidencia, estado, org_nome)
@@ -129,10 +180,10 @@ async function gravarVinculoAuto(
     ON CONFLICT (provider, external_type, external_id) DO NOTHING
     RETURNING id::text`);
   if (!r.length) return false;
-  await db.execute(sql`
+  await ex.execute(sql`
     UPDATE callface_ai_reconciliation_candidates SET status = 'resolvido', updated_at = now()
      WHERE empresa_id = ${empresaId}::uuid AND status = 'pendente'`);
-  await db.execute(sql`
+  await ex.execute(sql`
     INSERT INTO audit_log (organizacao_id, actor_id, action, entity_type, entity_id, before, after, source)
     VALUES (${organizacaoId}::uuid, NULL, 'callface_ai.vinculo.auto', 'empresa', ${empresaId}::uuid, NULL,
             ${JSON.stringify({ organizationId: orgSaasId, orgNome, evidencia })}::jsonb, 'worker')`);

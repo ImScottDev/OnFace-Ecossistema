@@ -7,7 +7,18 @@ export const LIMIARES_USO = {
   quedaPct: 40,
   /** Abaixo disto o período anterior é pouco para falar em "queda". */
   minutosMinimosParaQueda: 30,
-  pertoDoLimitePct: 85,
+  /**
+   * "Perto do limite" (oportunidade de expansão). Era 85% de minutos OU de
+   * licenças, sem piso de tamanho. Agora:
+   *   - minutos: 90% dos minutos contratados NO MÊS CIVIL (acumulado do mês só
+   *     cresce, então dentro do mês o alerta não acende e apaga; zera na virada);
+   *   - licenças: 90% das licenças em uso nos últimos 30 dias, e só em plano com
+   *     `licencasMinimasParaAlerta` ou mais — 1 de 1 licença em uso é adoção
+   *     saudável, não limite, e disparava para todo cliente de plano pequeno.
+   * Um alerta por cliente por mês, qualquer que seja o eixo (ver `chave`).
+   */
+  pertoDoLimitePct: 90,
+  licencasMinimasParaAlerta: 5,
 } as const;
 
 export interface FlagUso {
@@ -15,6 +26,11 @@ export interface FlagUso {
   rotulo: string;
   detalhe: string;
   gravidade: "atencao" | "risco";
+  /**
+   * Identidade estável do alerta, para quem notificar/abrir tarefa deduplicar:
+   * a mesma chave nunca deve gerar um segundo aviso. Só o "perto do limite" a tem.
+   */
+  chave?: string;
 }
 
 export interface LicencasResumo {
@@ -56,7 +72,13 @@ export interface EntradaFlags {
   licencasContratadas: number;
   chamadasNaSerie: number;
   temAtividade: boolean;
+  /** Cliente e mês civil (AAAA-MM, fuso de SP) da avaliação: formam a `chave` do alerta de limite. */
+  empresaId?: string;
+  periodo?: string;
 }
+
+/** Uma chave por cliente e mês, sem o eixo: minutos e licenças acesos no mesmo mês são UM alerta. */
+export const chaveDoAlertaDeLimite = (empresaId: string, periodo: string) => `perto_do_limite:${empresaId}:${periodo}`;
 
 export function avaliarFlags(e: EntradaFlags): FlagUso[] {
   const f: FlagUso[] = [];
@@ -71,10 +93,17 @@ export function avaliarFlags(e: EntradaFlags): FlagUso[] {
       f.push({ codigo: "queda_40", rotulo: "Queda de uso", detalhe: `${Math.round(queda)}% menos minutos que nos 30 dias anteriores.`, gravidade: queda > 70 ? "risco" : "atencao" });
     }
   }
-  const licPct = e.licencasContratadas > 0 ? (e.licencasEmUso / e.licencasContratadas) * 100 : null;
-  const maior = Math.max(e.percentualMinutos ?? 0, licPct ?? 0);
+  const licPct = e.licencasContratadas >= LIMIARES_USO.licencasMinimasParaAlerta
+    ? (e.licencasEmUso / e.licencasContratadas) * 100 : null;
+  const pctMin = e.percentualMinutos ?? 0;
+  const maior = Math.max(pctMin, licPct ?? 0);
   if (maior >= LIMIARES_USO.pertoDoLimitePct) {
-    f.push({ codigo: "perto_do_limite", rotulo: "Perto do limite", detalhe: `${Math.round(maior)}% do limite de ${(e.percentualMinutos ?? 0) >= (licPct ?? 0) ? "minutos" : "licenças"} (oportunidade de expansão).`, gravidade: "atencao" });
+    f.push({
+      codigo: "perto_do_limite", rotulo: "Perto do limite",
+      detalhe: `${Math.round(maior)}% do limite de ${pctMin >= (licPct ?? 0) ? "minutos no mês" : "licenças"} (oportunidade de expansão).`,
+      gravidade: "atencao",
+      ...(e.empresaId && e.periodo ? { chave: chaveDoAlertaDeLimite(e.empresaId, e.periodo) } : {}),
+    });
   }
   return f;
 }

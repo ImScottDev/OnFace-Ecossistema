@@ -17,6 +17,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getAtendimentoResumo, getCsResumo, getImplantacaoResumo } from "@/lib/analytics/command-center";
 import { getPrecisaAtencao } from "@/lib/analytics/inicio";
+import { vermelhosDoDia } from "@/lib/callface-ai/uso";
 import { boardPreVendas } from "@/lib/vendas/consultas";
 import {
   dataPorExtenso, focoDoDia, horaEmSaoPaulo, lenteDoPapel, permissoesDaLente, saudacaoDaHora, type SinalDoFoco,
@@ -115,11 +116,17 @@ async function montar(entrada: EntradaDoPainel, lente: Lente, agora: Date): Prom
   const atencao = lente === "leitor" ? null : bloco("atencao", async () => {
     if (lente === "closer") return C.atencaoDoCloser(ctx);
     if (lente === "sdr") return C.atencaoDoSdr(ctx);
-    const [atencaoSinais, implantacao, cs, atendimento] = await Promise.all([
+    const [atencaoSinais, implantacao, cs, atendimento, usoCallfaceAi] = await Promise.all([
       getPrecisaAtencao(entrada.orgId, agora, { semFinanceiro: !perm.financeiro }), getImplantacaoResumo(entrada.orgId),
       getCsResumo(entrada.orgId), getAtendimentoResumo(entrada.orgId),
+      // Mesma função da carteira /clientes/uso; falha dela não derruba o Início.
+      vermelhosDoDia(entrada.orgId, { limite: 500 }).then((v) => ({
+        vermelhos: v.length,
+        semUsar: v.filter((x) => x.flags.some((f) => f.codigo === "silencio" || f.codigo === "nunca_usou")).length,
+        semResponsavel: v.filter((x) => !x.csResponsavel).length,
+      })).catch(() => null),
     ]);
-    return C.atencaoDaOrganizacao({ atencao: atencaoSinais, implantacao, cs, atendimento });
+    return C.atencaoDaOrganizacao({ atencao: atencaoSinais, implantacao, cs, atendimento, usoCallfaceAi });
   });
 
   // Pré-vendas do time: gestão, operação, leitor e SDR veem o recorte da

@@ -251,8 +251,11 @@ class ClientesLigada extends ClientesLiga {
   }
 }
 
-const ROTULO_FLAG: Record<FlagDeUso, string> = { sem_uso_desde_a_contratacao: "nunca usou", inativo_14d: "inativo há +14 dias", queda_40: "uso em queda", perto_do_limite: "perto do limite do plano" };
-const ORDEM_FLAG: FlagDeUso[] = ["sem_uso_desde_a_contratacao", "inativo_14d", "queda_40", "perto_do_limite"];
+const ROTULO_FLAG: Record<FlagDeUso, string> = {
+  desativada: "organização desativada", cancelamento: "assinatura cancelada", nunca_usou: "nunca usou", silencio: "sem usar há 5+ dias",
+  queda: "uso em queda", vencimento: "licença vencendo", licenca_ociosa: "licenças ociosas", copiloto_baixo: "copiloto pouco usado", no_teto: "no teto do plano",
+};
+const ORDEM_FLAG: FlagDeUso[] = ["desativada", "cancelamento", "nunca_usou", "silencio", "queda", "vencimento", "licenca_ociosa", "copiloto_baixo", "no_teto"];
 const rotuloDeFlags = (f: FlagDeUso[]) => ORDEM_FLAG.filter((x) => f.includes(x)).map((x) => ROTULO_FLAG[x]).join(", ");
 
 export function ClientesProto({ carteira, usoPorEmpresa }: {

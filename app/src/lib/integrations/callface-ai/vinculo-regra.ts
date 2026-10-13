@@ -11,9 +11,17 @@
  * Sinais que apontam para organizações diferentes, ou organização disputada por
  * duas empresas, NÃO ligam: viram pendência com a razão.
  *
+ * EMPRESA DUPLICADA (mesmo CNPJ de 14 dígitos no ONFACE): elege-se a canônica
+ * (`vinculo-canonica.ts`) só quando uma domina as outras sem empate; a canônica
+ * segue a regra normal e as duplicatas viram pendência "duplicada". Sem canônica
+ * clara, todas ficam pendentes com a razão. Nunca se escolhe no escuro.
+ *
  * NOME sozinho nunca liga. Nome e domínio só geram SUGESTÃO pendente.
  */
 import type { OrganizacaoCallfaceAi } from "@onface/integrations-callface-ai";
+import { agruparPorCnpj, elegerCanonica, type PesoEmpresa } from "./vinculo-canonica";
+
+export type { PesoEmpresa };
 
 export type ChaveSinal = "cnpj" | "stripe_customer_id" | "email_dono";
 
@@ -31,6 +39,8 @@ export interface EvidenciaVinculo {
   sinais: SinalEvidente[];
   decididoEm: string;
   versaoRegra: 1;
+  /** Presente quando o vínculo só foi possível por eleição de canônica entre duplicatas. */
+  canonica?: { criterio: string; duplicadas: string[] };
 }
 
 export interface AlvoEmpresa {
@@ -41,7 +51,12 @@ export interface AlvoEmpresa {
   website: string | null;
   stripeIds: string[];
   emails: string[];
+  /** O que cada empresa carrega; base da eleição de canônica entre duplicatas. Ausente = zeros. */
+  peso?: PesoEmpresa;
 }
+
+/** Empresa que já tem vínculo: serve para reconhecer que a candidata é duplicata dela. */
+export interface EmpresaLigada { nome: string; cnpj: string | null }
 
 export type Decisao =
   | { tipo: "auto"; empresaId: string; orgId: string; evidencia: EvidenciaVinculo }
@@ -96,18 +111,46 @@ function indexar<T>(itens: T[], chaves: (i: T) => Array<string | null>): Map<str
  * @param orgs         todas as organizações do SaaS
  * @param orgsLigadas  organizationId -> empresaId já vinculados (qualquer estado)
  * @param rejeitados   "empresaId|orgId" que uma pessoa já rejeitou: não se sugere de novo
+ * @param empresasLigadas empresaId -> nome/CNPJ das empresas que já têm vínculo (reconhece duplicata)
  */
 export function decidirVinculos(
   alvos: AlvoEmpresa[], orgs: OrganizacaoCallfaceAi[],
   orgsLigadas: Map<string, string>, rejeitados: Set<string>, agora = new Date(),
+  empresasLigadas: Map<string, EmpresaLigada> = new Map(),
 ): Decisao[] {
   const porDoc = indexar(orgs, (o) => [cnpjNormalizado(o.documentNumber)]);
   const porStripe = indexar(orgs, (o) => [o.stripeCustomerId]);
   const porEmail = indexar(orgs, (o) => [...o.donos.map(emailNorm), emailNorm(o.email)]);
-  const alvosPorDoc = indexar(alvos, (a) => [cnpjNormalizado(a.cnpj)]);
-  const alvosPorStripe = indexar(alvos, (a) => a.stripeIds);
-  const alvosPorEmail = indexar(alvos, (a) => a.emails.map(emailNorm));
   const quando = agora.toISOString();
+
+  // Duplicatas por CNPJ: elege a canônica ANTES de contar 1:1. A duplicada sai
+  // dos índices (a canônica passa a ser a única dona do sinal); a indecisa
+  // fica neles de propósito, para o sinal seguir ambíguo e ninguém ligar.
+  type Papel =
+    | { tipo: "canonica"; criterio: string; duplicadas: string[] }
+    | { tipo: "duplicada"; canonicaNome: string; criterio: string; cnpj: string }
+    | { tipo: "indecisa"; motivo: string; cnpj: string };
+  const papel = new Map<string, Papel>();
+  for (const [cnpj, grupo] of agruparPorCnpj(alvos, (v) => cnpjNormalizado(v))) {
+    const e = elegerCanonica(grupo.map((g) => ({ empresaId: g.empresaId, nome: g.nome, peso: g.peso })));
+    if (e.tipo === "canonica") {
+      const canonica = grupo.find((g) => g.empresaId === e.canonicaId)!;
+      papel.set(e.canonicaId, { tipo: "canonica", criterio: e.criterio, duplicadas: e.duplicadas });
+      for (const id of e.duplicadas) papel.set(id, { tipo: "duplicada", canonicaNome: canonica.nome, criterio: e.criterio, cnpj });
+    } else {
+      for (const g of grupo) papel.set(g.empresaId, { tipo: "indecisa", motivo: e.motivo, cnpj });
+    }
+  }
+  const alvosEfetivos = alvos.filter((a) => papel.get(a.empresaId)?.tipo !== "duplicada");
+  const alvosPorDoc = indexar(alvosEfetivos, (a) => [cnpjNormalizado(a.cnpj)]);
+  const alvosPorStripe = indexar(alvosEfetivos, (a) => a.stripeIds);
+  const alvosPorEmail = indexar(alvosEfetivos, (a) => a.emails.map(emailNorm));
+  /** Organizações que QUALQUER sinal forte da empresa alcança (só para dar destino à pendência). */
+  const orgsAlcancadas = (a: AlvoEmpresa): string[] => [...new Set([
+    ...(porDoc.get(cnpjNormalizado(a.cnpj) ?? "") ?? []),
+    ...a.stripeIds.flatMap((c) => porStripe.get(c) ?? []),
+    ...a.emails.map(emailNorm).flatMap((e) => porEmail.get(e ?? "") ?? []),
+  ].map((o) => o.id))].slice(0, 5);
 
   type Achado = { orgId: string; sinal: SinalEvidente };
   const decisoes: Decisao[] = [];
@@ -116,28 +159,52 @@ export function decidirVinculos(
     decisoes.push({ tipo: "pendente", empresaId: a.empresaId, orgId, razao, sinal, score: 1, evidencia });
 
   for (const a of alvos) {
+    const eleicao = papel.get(a.empresaId);
+    if (eleicao && eleicao.tipo !== "canonica") {
+      const destinos = orgsAlcancadas(a).filter((id) => !rejeitados.has(`${a.empresaId}|${id}`));
+      if (!destinos.length) { decisoes.push({ tipo: "sem_sugestao", empresaId: a.empresaId }); continue; }
+      for (const orgId of destinos) {
+        if (eleicao.tipo === "duplicada") {
+          naoLigou(a, orgId, `Empresa duplicada: o ONFACE tem outra com o mesmo CNPJ ${eleicao.cnpj} (${eleicao.canonicaNome}), eleita canônica por ter ${eleicao.criterio}. O vínculo vai para a canônica; unifique ou arquive esta.`,
+            "duplicada", { cnpj: eleicao.cnpj, canonica: eleicao.canonicaNome });
+        } else {
+          naoLigou(a, orgId, eleicao.motivo, "duplicada_indecisa", { cnpj: eleicao.cnpj });
+        }
+      }
+      continue;
+    }
     const achados: Achado[] = [];
     const ambiguos: string[] = [];
+    const orgsAmbiguas = new Set<string>();
 
     const doc = cnpjNormalizado(a.cnpj);
     if (doc) {
       const os = porDoc.get(doc) ?? [];
       if (os.length === 1 && (alvosPorDoc.get(doc) ?? []).length === 1) {
         achados.push({ orgId: os[0].id, sinal: { chave: "cnpj", valor: doc, onface: "empresas.cnpj", saas: "organizations.document_number" } });
-      } else if (os.length) ambiguos.push(`cnpj ${doc} aponta para ${os.length} organização(ões) e ${(alvosPorDoc.get(doc) ?? []).length} empresa(s)`);
+      } else if (os.length) {
+        ambiguos.push(`cnpj ${doc} aponta para ${os.length} organização(ões) e ${(alvosPorDoc.get(doc) ?? []).length} empresa(s)`);
+        os.forEach((o) => orgsAmbiguas.add(o.id));
+      }
     }
     for (const cus of a.stripeIds) {
       const os = porStripe.get(cus) ?? [];
       if (os.length === 1 && (alvosPorStripe.get(cus) ?? []).length === 1) {
         achados.push({ orgId: os[0].id, sinal: { chave: "stripe_customer_id", valor: cus, onface: "empresas/assinaturas.stripe_customer_id", saas: "organizations.stripe_customer_id" } });
-      } else if (os.length) ambiguos.push(`stripe ${cus} aponta para ${os.length} organização(ões)`);
+      } else if (os.length) {
+        ambiguos.push(`stripe ${cus} aponta para ${os.length} organização(ões) e ${(alvosPorStripe.get(cus) ?? []).length} empresa(s)`);
+        os.forEach((o) => orgsAmbiguas.add(o.id));
+      }
     }
     for (const em of a.emails.map(emailNorm)) {
       if (!em) continue;
       const os = porEmail.get(em) ?? [];
       if (os.length === 1 && (alvosPorEmail.get(em) ?? []).length === 1) {
         achados.push({ orgId: os[0].id, sinal: { chave: "email_dono", valor: em, onface: "pessoas.email", saas: "users(CREATOR).email / organizations.email" } });
-      } else if (os.length) ambiguos.push(`e-mail ${em} aponta para ${os.length} organização(ões) e ${(alvosPorEmail.get(em) ?? []).length} empresa(s)`);
+      } else if (os.length) {
+        ambiguos.push(`e-mail ${em} aponta para ${os.length} organização(ões) e ${(alvosPorEmail.get(em) ?? []).length} empresa(s)`);
+        os.forEach((o) => orgsAmbiguas.add(o.id));
+      }
     }
 
     const orgsDosSinais = [...new Set(achados.map((x) => x.orgId))];
@@ -152,6 +219,13 @@ export function decidirVinculos(
       const orgId = orgsDosSinais[0];
       const donoAtual = orgsLigadas.get(orgId);
       if (donoAtual && donoAtual !== a.empresaId) {
+        const dono = empresasLigadas.get(donoAtual);
+        const cnpjA = cnpjNormalizado(a.cnpj);
+        if (dono && cnpjA && cnpjNormalizado(dono.cnpj) === cnpjA) {
+          naoLigou(a, orgId, `Empresa duplicada: o ONFACE tem outra com o mesmo CNPJ ${cnpjA} (${dono.nome}) que já está vinculada a esta organização. Unifique ou arquive esta.`,
+            "duplicada", { cnpj: cnpjA, canonica: dono.nome, sinais: achados.map((x) => x.sinal) });
+          continue;
+        }
         naoLigou(a, orgId, "Esta organização já está vinculada a outra empresa do ONFACE: conflito de cadastro para decidir.", "disputada",
           { sinais: achados.map((x) => x.sinal) });
         continue;
@@ -159,6 +233,18 @@ export function decidirVinculos(
       // Uma pessoa já rejeitou/removeu exatamente este par: o sync não o refaz.
       if (rejeitados.has(`${a.empresaId}|${orgId}`)) { decisoes.push({ tipo: "sem_sugestao", empresaId: a.empresaId }); continue; }
       fortes.set(a.empresaId, { empresaId: a.empresaId, orgId, sinais: achados.map((x) => x.sinal) });
+      continue;
+    }
+
+    // Sinais fortes existem mas são ambíguos (organização repetida no SaaS ou
+    // sinal dividido entre empresas): pendente EXPLÍCITO com a razão, em vez de
+    // seguir para sugestão por nome como se nada tivesse acontecido.
+    const destinosAmbiguos = [...orgsAmbiguas].filter((id) => !rejeitados.has(`${a.empresaId}|${id}`)).slice(0, 5);
+    if (destinosAmbiguos.length) {
+      for (const orgId of destinosAmbiguos) {
+        naoLigou(a, orgId, `Casamento ambíguo, ninguém ligado: ${ambiguos.join("; ")}. Decida qual é a organização (ou a empresa) certa.`, "ambigua",
+          { ambiguidades: ambiguos });
+      }
       continue;
     }
 
@@ -203,9 +289,15 @@ export function decidirVinculos(
       });
       continue;
     }
+    const p = papel.get(f.empresaId);
+    const canonica = p?.tipo === "canonica" ? p : null;
     decisoes.push({
       tipo: "auto", empresaId: f.empresaId, orgId: f.orgId,
-      evidencia: { origem: "auto", regra: f.sinais.map((s) => s.chave).join("+"), sinais: f.sinais, decididoEm: quando, versaoRegra: 1 },
+      evidencia: {
+        origem: "auto", regra: f.sinais.map((s) => s.chave).join("+") + (canonica ? "+canonica" : ""), sinais: f.sinais,
+        decididoEm: quando, versaoRegra: 1,
+        ...(canonica ? { canonica: { criterio: canonica.criterio, duplicadas: canonica.duplicadas } } : {}),
+      },
     });
   }
   return decisoes;

@@ -21,8 +21,10 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import { lerComTransacao, lerDetalhe, lerTenants, lerUso, lerUsoDiario, medirAmbiguidade, type UsoDiarioCallfaceAi } from "@onface/integrations-callface-ai";
+import { lerComTransacao, lerDetalhe, lerSaude, lerTenants, lerUso, lerUsoDiario, medirAmbiguidade, type UsoDiarioCallfaceAi } from "@onface/integrations-callface-ai";
 import { resolverIdentidades, tenantsVinculados } from "./identidade";
+import { gravarSaudeDoDia } from "./saude-espelho";
+import { sincronizarTarefasDeSaude, type ResultadoTarefasSaude } from "@/lib/callface-ai/tarefas-saude";
 
 export const PROVIDER = "callface_ai";
 export const RECURSO_SNAPSHOT = "tenant_snapshot";
@@ -30,10 +32,8 @@ export const RECURSO_SNAPSHOT = "tenant_snapshot";
 /** 30 dias é a janela do snapshot principal; 7 entra junto para dar tendência. */
 export const JANELAS_PADRAO = [7, 30] as const;
 
-/** Dia civil de São Paulo (UTC-3 fixo), AAAA-MM-DD, deslocado por `dias`. */
-export function diaCivil(agora: Date, dias = 0): string {
-  return new Date(agora.getTime() - 3 * 3600_000 + dias * 86400_000).toISOString().slice(0, 10);
-}
+export { diaCivil } from "./calendario-sp";
+import { diaCivil } from "./calendario-sp";
 
 /** Série diária: 90 dias na primeira vez de cada vínculo, depois só os 4 últimos dias. */
 const DIAS_SERIE = 90;
@@ -49,6 +49,8 @@ export interface ResultadoSync {
   diasDeUso: number;
   identidadesNovas: number;
   ambiguidade: { chamadasAmbiguas: number; chamadasSemAtribuicao: number; chamadasTotal: number } | null;
+  saude: { linhas: number; mudancasDeSemaforo: number } | null;
+  tarefas: ResultadoTarefasSaude | null;
   erro?: string;
   duracaoMs: number;
 }
@@ -95,6 +97,31 @@ export function instanteDoSnapshot(agora: Date): Date {
   return d;
 }
 
+/**
+ * O esquema local tem o que este sync grava? O sync nasceu na 0086/0105 e a
+ * saúde diária na 0116: um banco do ONFACE ANTES delas (o `callface_crm`
+ * antigo, que não recebe as migrations novas) estourava no meio do INSERT com
+ * "column does not exist", depois de ler o SaaS inteiro. Aqui falha ANTES, em
+ * uma frase que diz qual migration falta, e o estado fica 'falhou' (visível).
+ */
+export async function esquemaLocalCompleto(): Promise<{ ok: true } | { ok: false; falta: string[] }> {
+  const exigidas: Array<[string, string[]]> = [
+    ["integracao_sync_estado", ["organizacao_id", "provider", "recurso", "ultimo_sucesso_em"]],
+    ["callface_ai_tenant_snapshots", ["janela_dias", "ultima_atividade_em", "coletado_em", "usuarios_com_atividade"]],
+    ["callface_ai_tenant_detalhe", ["external_identity_id", "licencas", "usuarios"]],
+    ["callface_ai_uso_diario", ["external_identity_id", "dia", "minutos"]],
+    ["callface_ai_external_identities", ["evidencia", "estado", "org_nome"]],
+    ["callface_ai_reconciliation_candidates", ["razao", "org_nome", "evidencia"]],
+    ["callface_ai_saude_diaria", ["external_identity_id", "dia", "semaforo", "motivos"]],
+  ];
+  const linhas = await db.execute<{ t: string; c: string }>(sql`
+    SELECT table_name AS t, column_name AS c FROM information_schema.columns
+     WHERE table_schema = current_schema() AND table_name = ANY(${exigidas.map(([t]) => t)}::text[])`);
+  const tem = new Set(linhas.map((l) => `${l.t}.${l.c}`));
+  const falta = exigidas.flatMap(([t, cs]) => cs.filter((c) => !tem.has(`${t}.${c}`)).map((c) => `${t}.${c}`));
+  return falta.length ? { ok: false, falta } : { ok: true };
+}
+
 export async function sincronizarCallfaceAi(
   organizacaoId: string,
   opts: { janelas?: readonly number[]; agora?: Date } = {},
@@ -102,7 +129,16 @@ export async function sincronizarCallfaceAi(
   const inicio = Date.now();
   const janelas = opts.janelas ?? JANELAS_PADRAO;
   const agora = instanteDoSnapshot(opts.agora ?? new Date());
-  const vazio = { ok: false, tenants: 0, snapshots: 0, detalhes: 0, diasDeUso: 0, identidadesNovas: 0, ambiguidade: null };
+  const vazio = { ok: false, tenants: 0, snapshots: 0, detalhes: 0, diasDeUso: 0, identidadesNovas: 0, ambiguidade: null, saude: null, tarefas: null };
+
+  const esquema = await esquemaLocalCompleto();
+  if (!esquema.ok) {
+    const erro = `esquema do ONFACE sem as migrations 0086/0105/0116 (faltam: ${esquema.falta.slice(0, 6).join(", ")}${esquema.falta.length > 6 ? "…" : ""})`;
+    await gravarEstado(organizacaoId, RECURSO_SNAPSHOT, { status: "falhou", erro, duracaoMs: Date.now() - inicio })
+      .catch(() => undefined); // se até a tabela de estado falta, o log abaixo é o registro
+    console.error(`[CallfaceAI] ${erro}`);
+    return { ...vazio, status: "falhou", erro, duracaoMs: Date.now() - inicio };
+  }
 
   // 1. Identidade primeiro: sem vínculo não há o que sincronizar, e o vínculo
   //    novo já entra no snapshot desta mesma execução.
@@ -116,7 +152,7 @@ export async function sincronizarCallfaceAi(
   const vinculados = await tenantsVinculados(organizacaoId);
   if (!vinculados.length) {
     await gravarEstado(organizacaoId, RECURSO_SNAPSHOT, { status: "ok", itens: 0, duracaoMs: Date.now() - inicio, sucesso: true });
-    return { ok: true, status: "ok", tenants: 0, snapshots: 0, detalhes: 0, diasDeUso: 0, identidadesNovas: ident.vinculadas, ambiguidade: null, duracaoMs: Date.now() - inicio };
+    return { ok: true, status: "ok", tenants: 0, snapshots: 0, detalhes: 0, diasDeUso: 0, identidadesNovas: ident.vinculadas, ambiguidade: null, saude: null, tarefas: null, duracaoMs: Date.now() - inicio };
   }
 
   const orgIds = vinculados.map((v) => v.organizationId);
@@ -135,13 +171,14 @@ export async function sincronizarCallfaceAi(
     for (const j of janelas) usoPorJanela.set(j, await lerUso(s, j, orgIds));
     const ambiguidade = await medirAmbiguidade(s, Math.max(...janelas));
     const detalhes = await lerDetalhe(s, orgIds);
+    const saude = await lerSaude(s, orgIds);
     const serie: UsoDiarioCallfaceAi[] = [];
     const fim = diaCivil(new Date(), 1);
     if (comSerie.size) serie.push(...await lerUsoDiario(s, orgIds.filter((o) => comSerie.has(o)), diaCivil(new Date(), -DIAS_RELIDOS + 1), fim));
     for (let ini = DIAS_SERIE; novos.length && ini > 0; ini -= FATIA_DIAS) {
       serie.push(...await lerUsoDiario(s, novos, diaCivil(new Date(), -(ini - 1)), diaCivil(new Date(), -(Math.max(ini - FATIA_DIAS, 0) - 1))));
     }
-    return { tenants, usoPorJanela, ambiguidade, detalhes, serie };
+    return { tenants, usoPorJanela, ambiguidade, detalhes, serie, saude };
   });
 
   if (!leitura.ok) {
@@ -150,7 +187,8 @@ export async function sincronizarCallfaceAi(
     return { ...vazio, status, erro: leitura.erro, identidadesNovas: ident.vinculadas, duracaoMs: Date.now() - inicio };
   }
 
-  const { tenants, usoPorJanela, ambiguidade, detalhes, serie } = leitura.dados;
+  const { tenants, usoPorJanela, ambiguidade, detalhes, serie, saude } = leitura.dados;
+  const saudePorOrg = new Map(saude.map((x) => [x.organizationId, x]));
   const tenantPorId = new Map(tenants.map((t) => [t.organizationId, t]));
   let snapshots = 0;
 
@@ -180,7 +218,7 @@ export async function sincronizarCallfaceAi(
             ${(uso.segundosUso / 60).toFixed(2)}, ${t.agentesProntos},
             ${uso.chamadasAmbiguas}, ${uso.sessoesCopilot}, ${t.contatosBase},
             ${uso.usuariosComAtividade}, ${uso.reunioes}, ${t.appsAtivos}, ${t.webhooksAtivos},
-            ${uso.ultimaAtividadeEm ? uso.ultimaAtividadeEm.toISOString() : null}::timestamptz, now()
+            ${(saudePorOrg.get(uso.organizationId)?.ultimaAtividadeEm ?? uso.ultimaAtividadeEm)?.toISOString() ?? null}::timestamptz, now()
           )
           ON CONFLICT (external_identity_id, snapshot_at, janela_dias) DO UPDATE SET
             usuarios_total = EXCLUDED.usuarios_total,
@@ -270,16 +308,31 @@ export async function sincronizarCallfaceAi(
     }
   }
 
+  // 6. Saúde do dia + semáforo + tarefas de CS. Isolados: se falharem, o
+  //    espelho de uso que acabou de ser gravado continua valendo.
+  let saudeGravada: ResultadoSync["saude"] = null;
+  let tarefas: ResultadoTarefasSaude | null = null;
+  try {
+    const g = await gravarSaudeDoDia(organizacaoId, saude);
+    saudeGravada = { linhas: g.linhas, mudancasDeSemaforo: g.mudancas.filter((m) => m.de !== null).length };
+    falhas += g.falhas;
+    // Trava de emergência: CALLFACE_AI_TAREFAS_CS=off mantém espelho e semáforo, mas não abre nem fecha tarefa.
+    if (process.env.CALLFACE_AI_TAREFAS_CS?.trim().toLowerCase() !== "off") tarefas = await sincronizarTarefasDeSaude(organizacaoId);
+  } catch (e) {
+    falhas++;
+    console.error("[CallfaceAI] saúde/tarefas falharam:", e instanceof Error ? e.message : e);
+  }
+
   const duracaoMs = Date.now() - inicio;
   const status = falhas === 0 ? "ok" : snapshots > 0 ? "parcial" : "falhou";
   await gravarEstado(organizacaoId, RECURSO_SNAPSHOT, {
     status, itens: snapshots + nDetalhes + diasDeUso, duracaoMs, sucesso: falhas === 0,
-    erro: falhas ? `${falhas} snapshot(s) falharam` : null,
+    erro: falhas ? `${falhas} etapa(s) falharam (ver log [CallfaceAI])` : null,
   });
 
   return {
     ok: falhas === 0, status, tenants: vinculados.length, snapshots, detalhes: nDetalhes, diasDeUso,
-    identidadesNovas: ident.vinculadas, ambiguidade, duracaoMs,
-    erro: falhas ? `${falhas} snapshot(s) falharam` : undefined,
+    identidadesNovas: ident.vinculadas, ambiguidade, saude: saudeGravada, tarefas, duracaoMs,
+    erro: falhas ? `${falhas} etapa(s) falharam` : undefined,
   };
 }

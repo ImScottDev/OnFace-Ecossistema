@@ -350,19 +350,24 @@ export async function lerDetalhe(sql: Sql, organizationIds: string[]): Promise<D
        WHERE organization_id IN ${ids} AND active GROUP BY 1`,
   ]);
 
-  // Atividade por usuário nos últimos 90 dias, só dos usuários destas
-  // organizações. Usa o índice de created_at da tabela de chamadas.
+  // Atividade por usuário. A ÚLTIMA chamada vale SEM janela (o índice
+  // (user_id, created_at) responde "a mais recente" com uma descida de índice
+  // por usuário): antes ela era cortada em 90 dias e quem parou há mais tempo
+  // aparecia como "nunca ligou", que é mentira. As contagens 7d/30d seguem
+  // limitadas pela janela.
   const userIds = [...new Set(usu.map((u) => String(u.user_id)))];
   const atividade = new Map<string, { ultima: Date | null; c7: number; c30: number }>();
   if (userIds.length) {
     const linhas = await sql<Array<Record<string, unknown>>>`
-      SELECT user_id, max(created_at AT TIME ZONE 'UTC') AS ultima,
-             count(*) FILTER (WHERE created_at >= (now() AT TIME ZONE 'UTC') - interval '7 days')::int AS c7,
-             count(*) FILTER (WHERE created_at >= (now() AT TIME ZONE 'UTC') - interval '30 days')::int AS c30
-        FROM calls
-       WHERE created_at >= (now() AT TIME ZONE 'UTC') - interval '90 days' AND user_id IN ${sql(userIds)}
-       GROUP BY user_id`;
-    for (const l of linhas) atividade.set(String(l.user_id), { ultima: l.ultima as Date, c7: Number(l.c7), c30: Number(l.c30) });
+      SELECT uid AS user_id,
+             (SELECT c.created_at AT TIME ZONE 'UTC' FROM calls c WHERE c.user_id = uid
+               ORDER BY c.created_at DESC LIMIT 1) AS ultima,
+             (SELECT count(*) FROM calls c WHERE c.user_id = uid
+                AND c.created_at >= (now() AT TIME ZONE 'UTC') - interval '7 days')::int AS c7,
+             (SELECT count(*) FROM calls c WHERE c.user_id = uid
+                AND c.created_at >= (now() AT TIME ZONE 'UTC') - interval '30 days')::int AS c30
+        FROM unnest(${sql.array(userIds)}::text[]) AS uid`;
+    for (const l of linhas) atividade.set(String(l.user_id), { ultima: (l.ultima as Date) ?? null, c7: Number(l.c7), c30: Number(l.c30) });
   }
 
   const por = <T extends Record<string, unknown>>(rows: T[]) => {
@@ -465,4 +470,116 @@ export async function lerUsoDiario(
     chamadas: Number(l.chamadas), finalizadas: Number(l.finalizadas),
     minutos: Number(l.minutos ?? 0), usuariosAtivos: Number(l.usuarios_ativos),
   }));
+}
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// Saúde do cliente: o que SÓ o SaaS sabe e a tela precisa para o semáforo.
+//
+// "Última atividade" NÃO existe no SaaS (não há last_login nem last_access).
+// Deriva-se do uso real e SEM janela: a mais recente entre a última chamada de
+// qualquer usuário da organização, a última sessão do copiloto e a última
+// reunião. Mede uso, não abertura de aba. Chamada de campanha entra pela
+// cadeia do usuário: medido em 13/10, 1.213 de 1.213 chamadas de campanha do
+// dia têm usuário que pertence à organização da campanha.
+//
+// Tudo por índice: (user_id, created_at) em calls, (organization_id,
+// started_at) em sales_copilot_sessions. Medido: 1.846 organizações em ~3,7 s.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface SaudeRdsCallfaceAi {
+  organizationId: string;
+  ultimaChamadaEm: Date | null;
+  ultimaCopilotoEm: Date | null;
+  ultimaReuniaoEm: Date | null;
+  /** O mais recente dos três. */
+  ultimaAtividadeEm: Date | null;
+  /** Primeira licença paga (ou a criação da organização, sem licença). */
+  inicioEm: Date | null;
+  licencasPagas: number;
+  licencaVenceEm: Date | null;
+  licencasVencendo30d: number;
+  licencasVencendo60d: number;
+  copilotoSessoes30d: number;
+  copilotoSugestoes30d: number;
+  copilotoUsadas30d: number;
+  assinaturasTotal: number;
+  assinaturasCanceladas: number;
+  canceladaEm: Date | null;
+  cancelamentoMotivo: string | null;
+}
+
+export async function lerSaude(sql: Sql, organizationIds: string[]): Promise<SaudeRdsCallfaceAi[]> {
+  if (!organizationIds.length) return [];
+  const ids = sql(organizationIds);
+  const linhas = await sql<Array<Record<string, unknown>>>`
+    SELECT o.id AS organization_id,
+      (SELECT max(x.ult) FROM users_organizations uo
+         CROSS JOIN LATERAL (SELECT c.created_at AS ult FROM calls c
+                              WHERE c.user_id = uo.user_id ORDER BY c.created_at DESC LIMIT 1) x
+        WHERE uo.organization_id = o.id) AT TIME ZONE 'UTC' AS ultima_chamada,
+      (SELECT max(coalesce(s.started_at, s.created_at)) FROM sales_copilot_sessions s
+        WHERE s.organization_id = o.id) AT TIME ZONE 'UTC' AS ultima_copiloto,
+      -- Reunião agendada para o futuro ainda não é uso.
+      (SELECT max(x.ult) FROM users_organizations uo
+         CROSS JOIN LATERAL (SELECT m.start_at AS ult FROM meetings m
+                              WHERE m.user_id = uo.user_id AND m.start_at <= (now() AT TIME ZONE 'UTC')
+                              ORDER BY m.start_at DESC LIMIT 1) x
+        WHERE uo.organization_id = o.id) AT TIME ZONE 'UTC' AS ultima_reuniao,
+      coalesce(
+        (SELECT min(l.start_at) FROM license l WHERE l.organization_id = o.id
+            AND l.revoked_at IS NULL AND l.reason::text <> 'TRIAL'),
+        o.created_at) AT TIME ZONE 'UTC' AS inicio,
+      (SELECT count(*) FROM license l WHERE l.organization_id = o.id AND l.revoked_at IS NULL
+          AND l.reason::text <> 'TRIAL'
+          AND (l.expires_at IS NULL OR l.expires_at > (now() AT TIME ZONE 'UTC')))::int AS licencas_pagas,
+      (SELECT min(l.expires_at) FROM license l WHERE l.organization_id = o.id AND l.revoked_at IS NULL
+          AND l.reason::text <> 'TRIAL' AND l.expires_at > (now() AT TIME ZONE 'UTC')) AT TIME ZONE 'UTC' AS vence_em,
+      (SELECT count(*) FROM license l WHERE l.organization_id = o.id AND l.revoked_at IS NULL
+          AND l.reason::text <> 'TRIAL' AND l.expires_at > (now() AT TIME ZONE 'UTC')
+          AND l.expires_at <= (now() AT TIME ZONE 'UTC') + interval '30 days')::int AS vence_30,
+      (SELECT count(*) FROM license l WHERE l.organization_id = o.id AND l.revoked_at IS NULL
+          AND l.reason::text <> 'TRIAL' AND l.expires_at > (now() AT TIME ZONE 'UTC')
+          AND l.expires_at <= (now() AT TIME ZONE 'UTC') + interval '60 days')::int AS vence_60,
+      (SELECT count(*) FROM sales_copilot_sessions s WHERE s.organization_id = o.id
+          AND s.created_at >= (now() AT TIME ZONE 'UTC') - interval '30 days')::int AS cop_sessoes,
+      (SELECT coalesce(sum(s.suggestions_total), 0) FROM sales_copilot_sessions s WHERE s.organization_id = o.id
+          AND s.created_at >= (now() AT TIME ZONE 'UTC') - interval '30 days')::int AS cop_sugestoes,
+      (SELECT coalesce(sum(s.suggestions_used), 0) FROM sales_copilot_sessions s WHERE s.organization_id = o.id
+          AND s.created_at >= (now() AT TIME ZONE 'UTC') - interval '30 days')::int AS cop_usadas,
+      (SELECT count(*) FROM user_subscriptions us JOIN users_organizations uo ON uo.id = us.user_organization_id
+        WHERE uo.organization_id = o.id)::int AS ass_total,
+      (SELECT count(*) FROM user_subscriptions us JOIN users_organizations uo ON uo.id = us.user_organization_id
+        WHERE uo.organization_id = o.id AND us.canceled_at IS NOT NULL)::int AS ass_canceladas,
+      (SELECT max(us.canceled_at) FROM user_subscriptions us JOIN users_organizations uo ON uo.id = us.user_organization_id
+        WHERE uo.organization_id = o.id AND us.canceled_at IS NOT NULL) AT TIME ZONE 'UTC' AS cancelada_em,
+      (SELECT us.canceled_reason FROM user_subscriptions us JOIN users_organizations uo ON uo.id = us.user_organization_id
+        WHERE uo.organization_id = o.id AND us.canceled_at IS NOT NULL
+        ORDER BY us.canceled_at DESC LIMIT 1) AS cancelamento_motivo
+    FROM organizations o
+    WHERE o.id IN ${ids}`;
+  const maisRecente = (...ds: Array<Date | null>): Date | null =>
+    ds.filter((d): d is Date => d instanceof Date).sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  return linhas.map((l) => {
+    const chamada = (l.ultima_chamada as Date) ?? null;
+    const copiloto = (l.ultima_copiloto as Date) ?? null;
+    const reuniao = (l.ultima_reuniao as Date) ?? null;
+    return {
+      organizationId: String(l.organization_id),
+      ultimaChamadaEm: chamada, ultimaCopilotoEm: copiloto, ultimaReuniaoEm: reuniao,
+      ultimaAtividadeEm: maisRecente(chamada, copiloto, reuniao),
+      inicioEm: (l.inicio as Date) ?? null,
+      licencasPagas: Number(l.licencas_pagas ?? 0),
+      licencaVenceEm: (l.vence_em as Date) ?? null,
+      licencasVencendo30d: Number(l.vence_30 ?? 0),
+      licencasVencendo60d: Number(l.vence_60 ?? 0),
+      copilotoSessoes30d: Number(l.cop_sessoes ?? 0),
+      copilotoSugestoes30d: Number(l.cop_sugestoes ?? 0),
+      copilotoUsadas30d: Number(l.cop_usadas ?? 0),
+      assinaturasTotal: Number(l.ass_total ?? 0),
+      assinaturasCanceladas: Number(l.ass_canceladas ?? 0),
+      canceladaEm: (l.cancelada_em as Date) ?? null,
+      cancelamentoMotivo: (l.cancelamento_motivo as string) ?? null,
+    };
+  });
 }

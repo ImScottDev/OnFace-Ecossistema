@@ -2,11 +2,11 @@
  * Sinais COMPLEMENTARES de uso da Callface AI para o Cliente 360 — lógica
  * pura, sem banco (Client Component pode importar).
  *
- * Os flags de CS (inativo, queda, perto do limite, nunca usou) são de
- * `uso-regras.ts` e chegam prontos em `UsoDoCliente.flags`; aqui NÃO se
+ * Os motivos de saúde (silêncio, queda, teto, licença ociosa, nunca usou…) são de
+ * `saude-regras.ts` e chegam prontos em `UsoDoCliente.flags`; aqui NÃO se
  * recalcula nenhum deles, para a tela e a carteira nunca discordarem. Este
  * arquivo só acrescenta o que ajuda a decidir e o contrato não traz:
- *   - ritmo do mês que passa do plano antes de bater 85% (expansão cedo);
+ *   - ritmo do mês que passa do plano antes de bater 90% (expansão cedo);
  *   - licenças contratadas com pouca gente usando (adoção baixa);
  *   - "uso constante" quando nada disparou e houve uso (o vazio de sinais
  *     não fica parecendo erro).
@@ -46,9 +46,9 @@ const n = (x: number) => Math.round(x).toLocaleString("pt-BR");
 
 export function sinaisComplementares(e: EntradaComplementar): Sinal[] {
   const s: Sinal[] = [];
-  const parado = e.flags.includes("inativo_14d") || e.flags.includes("sem_uso_desde_a_contratacao");
+  const parado = e.flags.includes("silencio") || e.flags.includes("nunca_usou");
 
-  if (!e.flags.includes("perto_do_limite") && e.minutosContratados) {
+  if (!e.flags.includes("no_teto") && e.minutosContratados) {
     const proj = projecaoDoMes(e.minutosMes, e.agora);
     if (proj >= e.minutosContratados) {
       s.push({
@@ -58,7 +58,7 @@ export function sinaisComplementares(e: EntradaComplementar): Sinal[] {
     }
   }
 
-  if (!parado && e.licencasContratadas > 1) {
+  if (!parado && !e.flags.includes("licenca_ociosa") && e.licencasContratadas > 1) {
     const adocao = (e.licencasEmUso / e.licencasContratadas) * 100;
     if (adocao < LIMIAR_ADOCAO_PCT) {
       s.push({

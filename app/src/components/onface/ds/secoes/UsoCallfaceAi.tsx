@@ -39,7 +39,7 @@ const vazio = (empresaNome: string, sugestoes: SugestaoDeVinculo[]): UsoDoClient
   empresaId: "lab-" + empresaNome, empresaNome,
   vinculo: { estado: sugestoes.length ? "pendente" : "sem", orgCallfaceId: null, nomeOrg: null, evidencia: null, vinculadoEm: null, decididoPor: null, sugestoes },
   sincronizacao: SINC, plano: null, minutos: null, ligacoes: null, usuarios: null, campanhas: null, agentes: null, integracoes: null,
-  ultimaAtividadeEm: null, diasSemAtividade: null, flags: [],
+  ultimaAtividadeEm: null, diasSemAtividade: null, flags: [], saude: null, tarefas: [],
 });
 
 const SERIE_VIDA = serie(320, (i) => 1 + (90 - i) / 140);
@@ -76,12 +76,19 @@ const SAUDAVEL: UsoDoCliente = {
   integracoes: { apps: [{ nome: "Google Agenda", ativo: true }, { nome: "WhatsApp", ativo: false }], appsAtivos: 1, webhooksAtivos: 2 },
   ultimaAtividadeEm: iso(2026, 9, 13, 10),
   diasSemAtividade: 0,
-  flags: [{ codigo: "perto_do_limite", rotulo: "Perto do limite", detalhe: "87% do limite de minutos (oportunidade de expansão).", gravidade: "atencao" }],
+  flags: [{ codigo: "no_teto", rotulo: "No teto do plano", detalhe: "92% do direito do mês: 5.520 de 6.000 min (oportunidade de expansão).", gravidade: "oportunidade", numeros: { consumoPct: 92 } }],
+  saude: {
+    semaforo: "verde", dia: "2026-10-13", idadeHoras: 0.3, ultimaChamadaEm: iso(2026, 9, 13, 10), ultimaCopilotoEm: iso(2026, 9, 12, 15), ultimaReuniaoEm: iso(2026, 9, 8, 11),
+    inicioEm: iso(2026, 3, 2), licencaVenceEm: null,
+    copiloto: { sessoes30d: 38, sugestoes30d: 410, usadas30d: 176, adocaoPct: 42.9 },
+    assinaturas: { total: 8, canceladas: 0, canceladaEm: null, motivo: null }, minutos14d: 3900, minutos14dAnteriores: 3600,
+  },
+  tarefas: [{ id: "t1", titulo: "Vida Plena no teto do plano (92%) — conversar sobre expansão", venceEm: iso(2026, 9, 16), prioridade: "media", responsavel: "Mariana CS", motivo: "No teto do plano" }],
 };
 
 const FLAGS_AURORA: FlagUso[] = [
-  { codigo: "inativo_14d", rotulo: "Inativo", detalhe: "22 dias sem atividade.", gravidade: "atencao" },
-  { codigo: "queda_40", rotulo: "Queda de uso", detalhe: "88% menos minutos que nos 30 dias anteriores.", gravidade: "risco" },
+  { codigo: "silencio", rotulo: "Sem usar", detalhe: "22 dias sem nenhuma atividade (última em 21/09/2026). Nos 14 dias anteriores a isso: 1.000 min.", gravidade: "risco", numeros: { diasSilencio: 22 } },
+  { codigo: "queda", rotulo: "Uso caindo", detalhe: "88% menos minutos: 120 min nos últimos 14 dias contra 1.000 min nos 14 anteriores.", gravidade: "risco", numeros: { quedaPct: 88 } },
 ];
 
 const SUG_AURORA: SugestaoDeVinculo[] = [
@@ -97,13 +104,13 @@ const ACOES: AcoesDeVinculo = { confirmar: ok, remover: ok };
 const item = (empresaId: string, empresaNome: string, p: Partial<ItemCarteiraDeUso>): ItemCarteiraDeUso => ({
   empresaId, empresaNome, orgCallfaceId: "org_" + empresaId, estadoVinculo: "auto", plano: "Growth", minutos30d: 0, minutos30dAnteriores: 0,
   tendenciaPct: null, usuariosAtivos30d: 0, licencasContratadas: 0, licencasEmUso: 0, percentualMinutos: null,
-  ultimaAtividadeEm: null, diasSemAtividade: null, idadeDadoHoras: 0.3, flags: [], ...p,
+  ultimaAtividadeEm: null, diasSemAtividade: null, idadeDadoHoras: 0.3, flags: [], semaforo: null, csResponsavel: null, tarefasAbertas: 0, usuariosTotal: null, ...p,
 });
 const CARTEIRA: ItemCarteiraDeUso[] = [
-  item("a", "Clínica Vida Plena", { minutos30d: 8436, minutos30dAnteriores: 6900, tendenciaPct: 22.3, usuariosAtivos30d: 7, licencasContratadas: 8, licencasEmUso: 7, percentualMinutos: 87.3, ultimaAtividadeEm: SAUDAVEL.ultimaAtividadeEm, diasSemAtividade: 0, flags: SAUDAVEL.flags }),
-  item("b", "Grupo Aurora", { plano: "Starter", minutos30d: 120, minutos30dAnteriores: 1000, tendenciaPct: -88, usuariosAtivos30d: 1, licencasContratadas: 5, licencasEmUso: 1, ultimaAtividadeEm: iso(2026, 8, 21), diasSemAtividade: 22, flags: FLAGS_AURORA }),
-  item("c", "Imobiliária Horizonte", { minutos30d: 2210, minutos30dAnteriores: 4100, tendenciaPct: -46.1, usuariosAtivos30d: 3, licencasContratadas: 4, licencasEmUso: 3, ultimaAtividadeEm: iso(2026, 9, 12), diasSemAtividade: 1, idadeDadoHoras: 30, flags: [{ codigo: "queda_40", rotulo: "Queda de uso", detalhe: "46% menos minutos que nos 30 dias anteriores.", gravidade: "atencao" }] }),
-  item("d", "Escola Saber Mais", { plano: "Starter", licencasContratadas: 3, flags: [{ codigo: "sem_uso_desde_a_contratacao", rotulo: "Nunca usou", detalhe: "Nenhuma ligação nem atividade registrada nos últimos 90 dias.", gravidade: "risco" }] }),
+  item("a", "Clínica Vida Plena", { minutos30d: 8436, minutos30dAnteriores: 6900, tendenciaPct: 22.3, usuariosAtivos30d: 7, licencasContratadas: 8, licencasEmUso: 7, percentualMinutos: 87.3, ultimaAtividadeEm: SAUDAVEL.ultimaAtividadeEm, diasSemAtividade: 0, semaforo: "verde", csResponsavel: { id: "u1", nome: "Mariana CS" }, tarefasAbertas: 1, flags: SAUDAVEL.flags }),
+  item("b", "Grupo Aurora", { plano: "Starter", minutos30d: 120, minutos30dAnteriores: 1000, tendenciaPct: -88, usuariosAtivos30d: 1, licencasContratadas: 5, licencasEmUso: 1, ultimaAtividadeEm: iso(2026, 8, 21), diasSemAtividade: 22, semaforo: "vermelho", csResponsavel: { id: "u2", nome: "Diego CS" }, tarefasAbertas: 2, flags: FLAGS_AURORA }),
+  item("c", "Imobiliária Horizonte", { minutos30d: 2210, minutos30dAnteriores: 4100, tendenciaPct: -46.1, usuariosAtivos30d: 3, licencasContratadas: 4, licencasEmUso: 3, ultimaAtividadeEm: iso(2026, 9, 12), diasSemAtividade: 1, idadeDadoHoras: 30, semaforo: "vermelho", csResponsavel: { id: "u1", nome: "Mariana CS" }, tarefasAbertas: 1, flags: [{ codigo: "queda", rotulo: "Uso caindo", detalhe: "46% menos minutos: 2.210 min nos últimos 14 dias contra 4.100 nos 14 anteriores.", gravidade: "risco", numeros: { quedaPct: 46 } }] }),
+  item("d", "Escola Saber Mais", { plano: "Starter", licencasContratadas: 3, semaforo: "vermelho", csResponsavel: null, tarefasAbertas: 1, flags: [{ codigo: "nunca_usou", rotulo: "Nunca usou", detalhe: "21 dias desde o início (22/09/2026) e nenhuma chamada, sessão do copiloto ou reunião registrada.", gravidade: "risco", numeros: { diasDesdeInicio: 21 } }] }),
   item("e", "Ótica Visão Clara", { plano: null, minutos30d: 3980, minutos30dAnteriores: 3820, tendenciaPct: 4.2, usuariosAtivos30d: 4, ultimaAtividadeEm: iso(2026, 9, 13, 8), diasSemAtividade: 0 }),
 ];
 const SERIES = Object.fromEntries(CARTEIRA.map((c, i) => [c.empresaId, serie([280, 40, 80, 0, 130][i], (k) => (i === 1 && k < 22 ? 0 : 1)).slice(-30).map((p) => p.minutos)]));

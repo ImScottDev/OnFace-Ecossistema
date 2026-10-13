@@ -8,7 +8,7 @@
  */
 import { db } from "@/lib/db";
 import { tarefas, atividades, clientes, leads, empresas } from "@/lib/db/schema";
-import { and, eq, desc, isNull } from "drizzle-orm";
+import { and, eq, desc, isNull, sql } from "drizzle-orm";
 
 export type OrigemTarefa =
   | "MANUAL" | "PLAYBOOK" | "BILLING" | "ONBOARDING" | "IMPLANTACAO"
@@ -138,4 +138,95 @@ export async function contasSemOwner(organizacaoId: string) {
     .from(clientes)
     .innerJoin(empresas, eq(empresas.id, clientes.empresaId))
     .where(and(eq(clientes.organizacaoId, organizacaoId), isNull(clientes.responsavelId)));
+}
+
+
+// ───────────────────────────────────────────────────────────────────────────
+// Tarefa AUTOMÁTICA que acompanha um fato vivo (silêncio de uso, queda, teto…).
+//
+// `criarTarefaCs` com chave de idempotência cria no máximo UMA vez para sempre;
+// isso serve a marco e renovação, que acontecem uma vez. Um fato que dura dias
+// e some quando o cliente volta precisa de outro ciclo de vida:
+//
+//   uma tarefa ABERTA por empresa e motivo → o fato novo ATUALIZA a aberta;
+//   o motivo some → ela se FECHA sozinha, registrando o fato;
+//   fechada por uma PESSOA → período de respiro antes de a regra reabrir.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface TarefaAutomaticaAberta {
+  id: string; titulo: string; descricao: string | null; prioridade: string; venceEm: Date | null;
+  usuarioId: string | null; createdAt: Date;
+}
+
+/** A tarefa automática ainda viva (nem concluída nem declinada) desta empresa e deste tipo. */
+export async function tarefaAutomaticaAberta(organizacaoId: string, empresaId: string, tipo: string): Promise<TarefaAutomaticaAberta | null> {
+  const [r] = await db.execute<{
+    id: string; titulo: string; descricao: string | null; prioridade: string; vence_em: Date | null;
+    usuario_id: string | null; created_at: Date;
+  }>(sql`
+    SELECT id::text, titulo, descricao, prioridade, vence_em, usuario_id::text, created_at
+      FROM tarefas
+     WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
+       AND tipo = ${tipo} AND origem = 'AUTOMACAO'
+       AND concluida = false AND status NOT IN ('concluida', 'declinada')
+     ORDER BY created_at DESC LIMIT 1`);
+  return r ? { id: r.id, titulo: r.titulo, descricao: r.descricao, prioridade: r.prioridade, venceEm: r.vence_em,
+    usuarioId: r.usuario_id, createdAt: r.created_at } : null;
+}
+
+/** Uma PESSOA fechou tarefa deste tipo nos últimos `dias` dias? (Fechamento automático não conta.) */
+export async function fechadaPorPessoaRecentemente(organizacaoId: string, empresaId: string, tipo: string, dias: number): Promise<boolean> {
+  const [r] = await db.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM tarefas
+     WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
+       AND tipo = ${tipo} AND origem = 'AUTOMACAO'
+       AND (concluida = true OR status IN ('concluida', 'declinada'))
+       AND coalesce(chave_idempotencia, '') NOT LIKE '%:auto-fechada'
+       AND coalesce(concluida_em, created_at) > now() - make_interval(days => ${dias})`);
+  return (r?.n ?? 0) > 0;
+}
+
+async function fatoDaTarefa(organizacaoId: string, tarefaId: string, tipo: "TaskStatusChanged" | "TaskRescheduled" | "TaskCreated", payload: Record<string, unknown>) {
+  try {
+    await db.execute(sql`
+      INSERT INTO domain_events (organizacao_id, event_type, aggregate_type, aggregate_id, actor_type, source, payload)
+      VALUES (${organizacaoId}::uuid, ${tipo}, 'tarefa', ${tarefaId}::uuid, 'AUTOMATION', 'callface_ai_saude',
+              ${JSON.stringify({ ...payload, via: "callface_ai_saude" })}::jsonb)`);
+  } catch (e) {
+    console.error(`[tarefas] fato ${tipo} não registrado:`, e);
+  }
+}
+
+/** Atualiza título, corpo, prioridade e (se pedido) o prazo da tarefa aberta. Só grava o que mudou. */
+export async function atualizarTarefaAutomatica(
+  organizacaoId: string, atual: TarefaAutomaticaAberta,
+  novo: { titulo: string; descricao: string; prioridade: string; venceEm?: Date | null },
+): Promise<boolean> {
+  const mudou = atual.titulo !== novo.titulo || (atual.descricao ?? "") !== novo.descricao || atual.prioridade !== novo.prioridade
+    || (novo.venceEm !== undefined && (novo.venceEm?.getTime() ?? null) !== (atual.venceEm?.getTime() ?? null));
+  if (!mudou) return false;
+  await db.execute(sql`
+    UPDATE tarefas SET titulo = ${novo.titulo}, descricao = ${novo.descricao}, prioridade = ${novo.prioridade}
+          ${novo.venceEm !== undefined ? sql`, vence_em = ${novo.venceEm ? novo.venceEm.toISOString() : null}::timestamptz,
+            data_vencimento = ${novo.venceEm ? novo.venceEm.toISOString().slice(0, 10) : null}::date` : sql``}
+     WHERE id = ${atual.id}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
+  if (atual.prioridade !== novo.prioridade) {
+    await fatoDaTarefa(organizacaoId, atual.id, "TaskStatusChanged", { prioridadeDe: atual.prioridade, prioridadePara: novo.prioridade, titulo: novo.titulo });
+  }
+  return true;
+}
+
+/**
+ * Fecha a tarefa porque o motivo acabou, deixando o fato escrito nela.
+ * A chave de idempotência ganha o sufixo `:auto-fechada`: marca que NÃO foi uma
+ * pessoa (não gera período de respiro) e libera a chave.
+ */
+export async function fecharTarefaAutomatica(organizacaoId: string, tarefaId: string, fato: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE tarefas
+       SET concluida = true, concluida_em = now(), status = 'concluida',
+           descricao = coalesce(descricao, '') || E'\n\n— Fechada automaticamente: ' || ${fato},
+           chave_idempotencia = coalesce(chave_idempotencia, 'auto:' || id::text) || ':auto-fechada'
+     WHERE id = ${tarefaId}::uuid AND organizacao_id = ${organizacaoId}::uuid AND concluida = false`);
+  await fatoDaTarefa(organizacaoId, tarefaId, "TaskStatusChanged", { de: "aberta", para: "concluida", automatica: true, fato });
 }

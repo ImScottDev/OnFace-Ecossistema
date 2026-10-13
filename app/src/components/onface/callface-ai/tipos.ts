@@ -6,7 +6,7 @@
 
 export type {
   UsoDoCliente, ItemCarteiraDeUso, VinculoPendente, SugestaoDeVinculo, VinculoCallfaceAi,
-  EvidenciaDoVinculo, FlagUso, DiaDeUso, UsuarioDeUso,
+  EvidenciaDoVinculo, FlagUso, DiaDeUso, UsuarioDeUso, Semaforo,
 } from "@/lib/callface-ai/uso";
 import type { ResultadoVinculo } from "@/lib/callface-ai/vinculo-escrita";
 export type { ResultadoVinculo };

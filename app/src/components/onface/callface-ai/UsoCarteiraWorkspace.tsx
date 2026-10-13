@@ -27,19 +27,29 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { haQuanto, inteiro, pct } from "./formato";
-import type { AcoesDeVinculo, FlagUso, ItemCarteiraDeUso, ResultadoVinculo, SeriesDaCarteira, VinculoPendente } from "./tipos";
+import type { AcoesDeVinculo, FlagUso, ItemCarteiraDeUso, ResultadoVinculo, Semaforo, SeriesDaCarteira, VinculoPendente } from "./tipos";
 
 type FlagDeUso = FlagUso["codigo"];
 type LinhaCarteiraDeUso = ItemCarteiraDeUso;
 import "@/components/onface/vendas/vendas.css";
 
 const FLAG: Record<FlagDeUso, { rotulo: string; curto: string; badge: "danger" | "warning" | "info"; porque: string; peso: number }> = {
-  sem_uso_desde_a_contratacao: { rotulo: "Sem uso desde a contratação", curto: "Sem uso", badge: "danger", peso: 4, porque: "Contratou e nunca ligou. Onboarding travado ou venda que não pegou." },
-  inativo_14d: { rotulo: "Inativos há mais de 14 dias", curto: "Inativo", badge: "danger", peso: 3, porque: "Sem nenhuma atividade há mais de 14 dias. Ligar antes de virar cancelamento." },
-  queda_40: { rotulo: "Queda acima de 40%", curto: "Queda", badge: "warning", peso: 2, porque: "Minutos dos últimos 30 dias mais de 40% abaixo dos 30 anteriores." },
-  perto_do_limite: { rotulo: "Perto do limite do plano", curto: "Perto do limite", badge: "info", peso: 1, porque: "Usaram 85% ou mais dos minutos ou das licenças contratadas. Conversa de upgrade." },
+  desativada: { rotulo: "Organização desativada", curto: "Desativada", badge: "danger", peso: 8, porque: "A organização foi desativada no Callface AI. O cliente já saiu do produto." },
+  cancelamento: { rotulo: "Assinatura cancelada", curto: "Cancelou", badge: "danger", peso: 7, porque: "Assinatura cancelada nos últimos 30 dias. Cancelamento parcial num grupo é aviso do todo." },
+  nunca_usou: { rotulo: "Nunca usou", curto: "Nunca usou", badge: "danger", peso: 6, porque: "Passaram 14 dias do início e não houve uma chamada, sessão do copiloto ou reunião. Onboarding que não pegou." },
+  silencio: { rotulo: "Sem usar há 5 dias ou mais", curto: "Sem usar", badge: "danger", peso: 5, porque: "Nenhuma chamada, sessão do copiloto ou reunião há 5 dias ou mais. Ligar para descobrir o que aconteceu, antes de virar cancelamento." },
+  queda: { rotulo: "Queda de 40% ou mais", curto: "Queda", badge: "danger", peso: 4, porque: "Minutos dos últimos 14 dias pelo menos 40% abaixo dos 14 anteriores." },
+  vencimento: { rotulo: "Licença vencendo", curto: "Vencimento", badge: "warning", peso: 3, porque: "Licença paga vence em até 60 dias. Vermelho quando vence em 30 e o uso está baixo." },
+  licenca_ociosa: { rotulo: "Licenças ociosas", curto: "Licença ociosa", badge: "warning", peso: 2, porque: "30% ou mais das licenças pagas sem nenhuma chamada em 30 dias. É o dinheiro que será cortado na renovação." },
+  copiloto_baixo: { rotulo: "Copiloto pouco usado", curto: "Copiloto", badge: "warning", peso: 1, porque: "Menos de 20% das sugestões do copiloto aproveitadas. Quem usa o diferencial não troca por telefonia barata." },
+  no_teto: { rotulo: "No teto do plano", curto: "No teto", badge: "info", peso: 0, porque: "Consumiram 90% ou mais dos minutos do mês. Expansão, não risco: o closer da venda é avisado." },
 };
-const ORDEM_FLAGS: FlagDeUso[] = ["inativo_14d", "queda_40", "perto_do_limite", "sem_uso_desde_a_contratacao"];
+const ORDEM_FLAGS: FlagDeUso[] = ["silencio", "nunca_usou", "queda", "licenca_ociosa", "vencimento", "cancelamento", "no_teto"];
+
+const SEMAFORO: Record<Semaforo | "nenhum", { rotulo: string; badge: "success" | "warning" | "danger" | "info" }> = {
+  vermelho: { rotulo: "Em risco", badge: "danger" }, amarelo: { rotulo: "Atenção", badge: "warning" },
+  verde: { rotulo: "Saudável", badge: "success" }, sem_dado: { rotulo: "Sem dado", badge: "info" }, nenhum: { rotulo: "Calculando", badge: "info" },
+};
 
 type Coluna = "risco" | "nome" | "minutos" | "tendencia" | "usuarios" | "ultima";
 const ROTULO_COLUNA: Record<Coluna, string> = {
@@ -48,7 +58,9 @@ const ROTULO_COLUNA: Record<Coluna, string> = {
 const PASSO = 50;
 
 const temFlag = (l: LinhaCarteiraDeUso, f: FlagDeUso) => l.flags.some((x) => x.codigo === f);
-const pesoDeRisco = (l: LinhaCarteiraDeUso) => l.flags.reduce((a, f) => a + FLAG[f.codigo].peso * 10 + (f.gravidade === "risco" ? 5 : 0), 0) - (l.tendenciaPct ?? 0) / 100;
+const PESO_SEMAFORO_UI: Record<Semaforo | "nenhum", number> = { vermelho: 3000, amarelo: 2000, verde: 1000, sem_dado: 500, nenhum: 0 };
+const pesoDeRisco = (l: LinhaCarteiraDeUso) =>
+  PESO_SEMAFORO_UI[l.semaforo ?? "nenhum"] + l.flags.reduce((a, f) => a + FLAG[f.codigo].peso * 10, 0) + Math.min(l.diasSemAtividade ?? 0, 99) - (l.tendenciaPct ?? 0) / 100;
 
 export type PropsUsoCarteira = {
   carteira: LinhaCarteiraDeUso[];
@@ -58,9 +70,11 @@ export type PropsUsoCarteira = {
   erro?: string | null;
   abaInicial?: string;
   agora?: Date;
+  /** Estado do sincronizador, para o vazio dizer a verdade (nunca rodou × rodou e não achou). */
+  sincronizacao?: { status: string | null; ultimoSucessoEm: string | null; ultimoSyncEm: string | null; erro: string | null } | null;
 };
 
-export function UsoCarteiraWorkspace({ carteira, pendentes, series, acoes, erro, abaInicial, agora }: PropsUsoCarteira) {
+export function UsoCarteiraWorkspace({ carteira, pendentes, series, acoes, erro, abaInicial, agora, sincronizacao }: PropsUsoCarteira) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -73,7 +87,7 @@ export function UsoCarteiraWorkspace({ carteira, pendentes, series, acoes, erro,
   };
 
   const contagem = React.useMemo(() => {
-    const c: Record<FlagDeUso, number> = { inativo_14d: 0, queda_40: 0, perto_do_limite: 0, sem_uso_desde_a_contratacao: 0 };
+    const c = Object.fromEntries(Object.keys(FLAG).map((k) => [k, 0])) as Record<FlagDeUso, number>;
     for (const l of carteira) for (const f of l.flags) c[f.codigo]++;
     return c;
   }, [carteira]);
@@ -91,7 +105,7 @@ export function UsoCarteiraWorkspace({ carteira, pendentes, series, acoes, erro,
         </div>
       </div>
       {aba === "carteira"
-        ? erro ? <ErroDaCarteira mensagem={erro} /> : <Carteira carteira={carteira} series={series} contagem={contagem} pendentes={pendentes.length} irParaVinculos={() => trocarAba("vinculos")} agora={agora} />
+        ? erro ? <ErroDaCarteira mensagem={erro} /> : <Carteira carteira={carteira} series={series} contagem={contagem} pendentes={pendentes.length} irParaVinculos={() => trocarAba("vinculos")} agora={agora} sincronizacao={sincronizacao} />
         : <FilaDeVinculos pendentes={pendentes} acoes={acoes} aoMudar={() => router.refresh()} />}
     </>
   );
@@ -99,10 +113,18 @@ export function UsoCarteiraWorkspace({ carteira, pendentes, series, acoes, erro,
 
 /* ── Carteira ──────────────────────────────────────────────────────────── */
 
-function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora }: {
+function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora, sincronizacao }: {
   carteira: LinhaCarteiraDeUso[]; series?: SeriesDaCarteira; contagem: Record<FlagDeUso, number>; pendentes: number; irParaVinculos: () => void; agora?: Date;
+  sincronizacao?: PropsUsoCarteira["sincronizacao"];
 }) {
   const [flag, setFlag] = React.useState<FlagDeUso | null>(null);
+  const [semaforo, setSemaforo] = React.useState<Semaforo | "todos">("todos");
+  const [cs, setCs] = React.useState<string>("todos");
+  const responsaveis = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of carteira) if (l.csResponsavel) m.set(l.csResponsavel.id, l.csResponsavel.nome);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
+  }, [carteira]);
   const [busca, setBusca] = React.useState("");
   const [ordem, setOrdem] = React.useState<{ col: Coluna; desc: boolean }>({ col: "risco", desc: true });
   const [limite, setLimite] = React.useState(PASSO);
@@ -110,6 +132,8 @@ function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora
   const linhas = React.useMemo(() => {
     const q = busca.trim().toLowerCase();
     const f = carteira.filter((l) => (!flag || temFlag(l, flag)) &&
+      (semaforo === "todos" || l.semaforo === semaforo) &&
+      (cs === "todos" || (cs === "sem" ? !l.csResponsavel : l.csResponsavel?.id === cs)) &&
       (!q || l.empresaNome.toLowerCase().includes(q) || (l.plano ?? "").toLowerCase().includes(q)));
     const chave: Record<Coluna, (l: LinhaCarteiraDeUso) => number | string> = {
       risco: pesoDeRisco, nome: (l) => l.empresaNome.toLowerCase(), minutos: (l) => l.minutos30d,
@@ -122,7 +146,7 @@ function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora
       const r = x < y ? -1 : x > y ? 1 : 0;
       return ordem.desc ? -r : r;
     });
-  }, [carteira, flag, busca, ordem]);
+  }, [carteira, flag, semaforo, cs, busca, ordem]);
 
   const minutosTotal = carteira.reduce((a, l) => a + l.minutos30d, 0);
   const alternar = (f: FlagDeUso) => { setFlag(flag === f ? null : f); setLimite(PASSO); };
@@ -133,8 +157,16 @@ function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora
       <section className="flex flex-col items-start gap-3 rounded-card bg-superficie p-6 shadow-[inset_0_0_0_1px_var(--line-hairline)]">
         <p className="text-corpo font-semibold text-tinta">Nenhum cliente vinculado a uma organização da Callface AI ainda.</p>
         <p className="max-w-[68ch] text-apoio text-tinta-suave">
-          O uso aparece aqui quando o cliente do ONFACE está ligado à organização dele no SaaS. Vínculos com evidência forte entram
+          O uso aparece aqui quando o cliente do ONFACE está ligado à organização dele no SaaS. Vínculos com evidência forte (Stripe ou CNPJ iguais) entram
           sozinhos; os outros esperam uma pessoa confirmar.
+        </p>
+        <p className="max-w-[68ch] text-apoio text-tinta-suave" suppressHydrationWarning>
+          {!sincronizacao?.status || sincronizacao.status === "nunca_rodou"
+            ? "O sincronizador ainda não rodou neste ambiente."
+            : sincronizacao.status === "desabilitado" ? "A conexão com o banco do Callface AI não está configurada neste ambiente."
+            : sincronizacao.status === "indisponivel" ? `O banco do Callface AI não respondeu na última tentativa${sincronizacao.erro ? ` (${sincronizacao.erro})` : ""}.`
+            : sincronizacao.status === "falhou" ? `A última rodada do sincronizador falhou${sincronizacao.erro ? `: ${sincronizacao.erro}` : ""}.`
+            : `O sincronizador rodou ${haQuanto(sincronizacao.ultimoSyncEm, agora)} e não encontrou cliente com evidência forte.`}
         </p>
         {pendentes > 0 ? <Button size="sm" onClick={irParaVinculos}><Link2 /> Revisar {pendentes} {pendentes === 1 ? "vínculo pendente" : "vínculos pendentes"}</Button> : null}
       </section>
@@ -149,7 +181,7 @@ function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora
             aoSelecionar: () => { setFlag(null); setLimite(PASSO); }, ativo: flag === null },
           ...ORDEM_FLAGS.map((f, i) => ({
             rotulo: FLAG[f].curto, valor: contagem[f], detalhe: FLAG[f].rotulo.toLowerCase(),
-            destaque: i === 0, sinal: f !== "perto_do_limite", aoSelecionar: () => alternar(f), ativo: flag === f,
+            destaque: i === 0, sinal: f !== "no_teto", aoSelecionar: () => alternar(f), ativo: flag === f,
           })),
         ]}
       />
@@ -160,10 +192,21 @@ function Carteira({ carteira, series, contagem, pendentes, irParaVinculos, agora
           <p className="text-apoio font-semibold text-tinta" aria-live="polite">
             {linhas.length} {linhas.length === 1 ? "cliente" : "clientes"}
           </p>
-          {flag || busca ? (
+          {flag || busca || semaforo !== "todos" || cs !== "todos" ? (
             <button type="button" className="text-apoio text-tinta-suave underline-offset-2 hover:underline"
-              onClick={() => { setFlag(null); setBusca(""); setLimite(PASSO); }}>Limpar recorte</button>
+              onClick={() => { setFlag(null); setBusca(""); setSemaforo("todos"); setCs("todos"); setLimite(PASSO); }}>Limpar recorte</button>
           ) : null}
+          <NativeSelect size="sm" aria-label="Semáforo" value={semaforo} onChange={(e) => { setSemaforo(e.target.value as Semaforo | "todos"); setLimite(PASSO); }}>
+            <NativeSelectOption value="todos">Todos os semáforos</NativeSelectOption>
+            <NativeSelectOption value="vermelho">Em risco</NativeSelectOption>
+            <NativeSelectOption value="amarelo">Atenção</NativeSelectOption>
+            <NativeSelectOption value="verde">Saudável</NativeSelectOption>
+          </NativeSelect>
+          <NativeSelect size="sm" aria-label="CS responsável" value={cs} onChange={(e) => { setCs(e.target.value); setLimite(PASSO); }}>
+            <NativeSelectOption value="todos">Todo CS</NativeSelectOption>
+            <NativeSelectOption value="sem">Sem responsável</NativeSelectOption>
+            {responsaveis.map(([id, nome]) => <NativeSelectOption key={id} value={id}>{nome}</NativeSelectOption>)}
+          </NativeSelect>
           <label className="ov-busca ml-auto" style={{ maxWidth: 260 }}>
             <Search aria-hidden />
             <input type="search" placeholder="Buscar cliente ou plano" aria-label="Buscar cliente ou plano"
@@ -229,9 +272,14 @@ function LinhaDeUso({ l, serie, agora }: { l: LinhaCarteiraDeUso; serie?: number
     <Link role="row" href={`/clientes/${l.empresaId}?aba=uso`}
       className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-linha px-4 py-3 transition-colors last:border-b-0 hover:bg-superficie-alt focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ring)] desktop:grid-cols-[minmax(0,1.6fr)_96px_110px_90px_96px_120px_minmax(0,1fr)]">
       <span role="cell" className="min-w-0">
-        <span className="block truncate text-corpo font-semibold text-tinta">{l.empresaNome}</span>
+        <span className="flex items-center gap-2">
+          <Badge variant={SEMAFORO[l.semaforo ?? "nenhum"].badge}>{SEMAFORO[l.semaforo ?? "nenhum"].rotulo}</Badge>
+          <span className="block truncate text-corpo font-semibold text-tinta">{l.empresaNome}</span>
+        </span>
         <span className="block truncate text-apoio text-tinta-suave">
-          {l.plano ? `Plano ${l.plano}` : "plano não informado"}
+          {l.csResponsavel ? `CS ${l.csResponsavel.nome}` : "sem CS responsável"}
+          {l.tarefasAbertas > 0 ? ` · ${l.tarefasAbertas} ${l.tarefasAbertas === 1 ? "tarefa aberta" : "tarefas abertas"}` : ""}
+          {l.plano ? ` · plano ${l.plano}` : ""}
           {l.percentualMinutos != null ? ` · ${inteiro(l.percentualMinutos)}% dos minutos` : ""}
           {velho ? ` · dado de ${haQuanto(new Date(Date.now() - l.idadeDadoHoras! * 3600e3).toISOString())}` : ""}
         </span>

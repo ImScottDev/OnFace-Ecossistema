@@ -2759,6 +2759,69 @@ const whatsappStatusWorker = new Worker(
 // Scheduled Jobs Queue
 const scheduledQueue = new Queue("scheduled-jobs", { connection, defaultJobOptions: { removeOnComplete: { count: 200 }, removeOnFail: { count: 500 } } });
 
+// Callface AI: fila PRÓPRIA. O sync lê o RDS do SaaS (3,8 milhões de chamadas) e
+// leva minutos; dentro de `scheduled-jobs` (concurrency 1) ele seguraria o
+// campanha-sweep, o agentes-autonomia e o resto da fila por esse tempo todo.
+// Mesmo desenho do `email-sync` e do `email-sequence`: o que é lento e externo
+// tem fila e worker separados.
+const callfaceAiQueue = new Queue("callface-ai", { connection, defaultJobOptions: { removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } } });
+
+const callfaceAiWorker = new Worker(
+  "callface-ai",
+  async (job) => {
+    if (job.name !== "callface-ai-sync") return;
+    // O sync do SaaS Callface AI (espelho de uso + saúde + tarefas de CS).
+    // A conexão com o RDS é somente-leitura por desenho (três travas no
+    // pacote de integração), então este job não escreve lá.
+    //
+    // Falha de conexão NÃO derruba o job: o sync devolve status
+    // 'indisponivel' em vez de lançar, e aqui isso vira log. O RDS é externo e
+    // um job que explode a cada 6 horas por isso só produz ruído de alerta.
+    const { sincronizarCallfaceAi } = await import("../lib/integrations/callface-ai/sincronizar");
+    const { fecharConexao } = await import("@onface/integrations-callface-ai");
+    try {
+      const orgs = await db.execute<{ id: string; slug: string }>(rawSql`SELECT id::text, slug FROM organizacoes`);
+      for (const org of orgs) {
+        try {
+          // O sync resolve as identidades por conta própria (primeiro passo dele).
+          const r = await sincronizarCallfaceAi(org.id);
+          console.log(`[callface-ai-sync] ${org.slug} (${(job.data as { origem?: string })?.origem ?? "agendado"}): ${r.status} em ${r.duracaoMs}ms — ${r.identidadesNovas} identidade(s) nova(s), ${r.tenants} tenant(s), ${r.snapshots} snapshot(s), ${r.detalhes} detalhe(s), ${r.diasDeUso} dia(s) de uso, saúde ${r.saude?.linhas ?? 0} linha(s)/${r.saude?.mudancasDeSemaforo ?? 0} mudança(s) de semáforo, tarefas ${r.tarefas ? `+${r.tarefas.criadas} ~${r.tarefas.atualizadas} -${r.tarefas.fechadas}` : "n/a"}${r.erro ? ` — ${r.erro}` : ""}`);
+        } catch (e) {
+          console.error(`[callface-ai-sync] ${org.slug}: falhou:`, e instanceof Error ? e.message : e);
+        }
+      }
+    } finally {
+      await fecharConexao().catch(() => undefined);
+    }
+  },
+  { connection, concurrency: 1 },
+);
+callfaceAiWorker.on("failed", (job, err) => console.error(`[callface-ai] job ${job?.id} falhou:`, err.message));
+
+/**
+ * `every` agenda a PRIMEIRA execução um intervalo DEPOIS do registro. Com deploy
+ * várias vezes ao dia o worker reinicia antes dos 6 h e o sync nunca rodava:
+ * 20 h de log sem uma única linha "callface-ai". Na subida, se o último sucesso
+ * tem mais de 5,5 h (ou nunca houve), enfileira UMA execução. O `jobId` por
+ * hora faz reinícios seguidos na mesma hora não empilharem nada.
+ */
+async function enfileirarSyncCallfaceAiSeAtrasado(): Promise<void> {
+  try {
+    const [e] = await db.execute<{ idade_h: number | null }>(rawSql`
+      SELECT EXTRACT(epoch FROM now() - max(ultimo_sucesso_em))::float / 3600 AS idade_h
+        FROM integracao_sync_estado WHERE provider = 'callface_ai' AND recurso = 'tenant_snapshot'`);
+    const idade = e?.idade_h ?? null;
+    if (idade !== null && idade < 5.5) return;
+    await callfaceAiQueue.add("callface-ai-sync", { origem: "subida" }, {
+      jobId: `callface-ai-sync-subida-${Math.floor(Date.now() / 3_600_000)}`,
+      delay: 60_000, // deixa o worker terminar de subir antes de pegar o RDS
+    });
+    console.log(`[Worker] callface-ai-sync enfileirado na subida (último sucesso: ${idade === null ? "nunca" : `${idade.toFixed(1)} h`})`);
+  } catch (err) {
+    console.error("[Worker] não enfileirou o callface-ai-sync da subida:", err instanceof Error ? err.message : err);
+  }
+}
+
 // SLA + Scheduled Worker
 const slaWorker = new Worker(
   "scheduled-jobs",
@@ -3134,40 +3197,6 @@ const slaWorker = new Worker(
         }
       } catch (e) {
         console.error("[calendar-sync] erro:", e instanceof Error ? e.message : e);
-      }
-      return;
-    }
-
-    if (job.name === "callface-ai-sync") {
-      // O sync do SaaS Callface AI tinha motor completo e NENHUM acionador: só
-      // um script manual, que ninguém rodava. O efeito visível era o Cliente 360
-      // mostrando "não conectado" nos 238 serviços da família CALLFACE_AI, e as
-      // quatro tabelas `callface_ai_*` em zero desde que foram criadas.
-      //
-      // A conexão com o banco do SaaS é somente-leitura por desenho (três
-      // travas no pacote de integração), então este job não escreve lá.
-      //
-      // Falha de conexão NÃO derruba o job: a resolução devolve `ok: false` em
-      // vez de lançar, e aqui isso vira log. O banco do SaaS é um RDS externo
-      // que pode ficar indisponível, e um job que explode a cada 6 horas por
-      // isso só produz ruído de alerta.
-      const { sincronizarCallfaceAi } = await import("../lib/integrations/callface-ai/sincronizar");
-      const { resolverIdentidades } = await import("../lib/integrations/callface-ai/identidade");
-      const { fecharConexao } = await import("@onface/integrations-callface-ai");
-      try {
-        const orgs = await db.execute<{ id: string; slug: string }>(
-          rawSql`SELECT id::text, slug FROM organizacoes`);
-        for (const org of orgs) {
-          const ident = await resolverIdentidades(org.id);
-          if (!ident.ok) {
-            console.warn(`[callface-ai-sync] ${org.slug}: identidades NÃO sincronizaram — ${ident.naoConfigurado ? "CALLFACE_AI_DATABASE_URL ausente" : (ident.erro || "banco do SaaS não respondeu")}`);
-            continue;
-          }
-          const r = await sincronizarCallfaceAi(org.id);
-          console.log(`[callface-ai-sync] ${org.slug}: ${ident.vinculadas} identidade(s) nova(s), ${r.tenants} tenant(s), ${r.snapshots} snapshot(s), ${r.detalhes} detalhe(s), ${r.diasDeUso} dia(s) de uso${r.erro ? ` — erro: ${r.erro}` : ""}`);
-        }
-      } finally {
-        await fecharConexao().catch(() => undefined);
       }
       return;
     }
@@ -4074,7 +4103,7 @@ const SCHEDULERS_JOBS_AGENDADOS = [
   "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep", "calendar-sync-retry",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
   "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min", "fluxos-sweep",
-  "catalogo-stripe-sync", "callface-ai-sync", "campanha-sweep",
+  "catalogo-stripe-sync", "campanha-sweep",
 ];
 
 // Schedule recurring jobs
@@ -4096,7 +4125,8 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("cs-sweep", { every: 60 * 60 * 1000 }, { name: "cs-sweep" });
   // A cada 6 h: o snapshot do Callface AI é uso agregado por tenant, não muda de
   // minuto a minuto, e a leitura atravessa um túnel para fora da VPC.
-  await scheduledQueue.upsertJobScheduler("callface-ai-sync", { every: 6 * 60 * 60 * 1000 }, { name: "callface-ai-sync" });
+  await callfaceAiQueue.upsertJobScheduler("callface-ai-sync", { every: 6 * 60 * 60 * 1000 }, { name: "callface-ai-sync" });
+  await enfileirarSyncCallfaceAiSeAtrasado();
   // A cada 10 min: falha de calendário é quase sempre transitória, e o
   // convite atrasado perde valor rápido.
   await scheduledQueue.upsertJobScheduler("calendar-sync-retry", { every: 10 * 60 * 1000 }, { name: "calendar-sync-retry" });
@@ -4125,6 +4155,7 @@ async function setupScheduledJobs() {
   // Só DEPOIS de todos os upserts: tira o que sobrou de versões anteriores.
   await removerSchedulersObsoletos(scheduledQueue, SCHEDULERS_JOBS_AGENDADOS);
   await removerSchedulersObsoletos(emailSyncQueue, ["email-sync-trigger"]);
+  await removerSchedulersObsoletos(callfaceAiQueue, ["callface-ai-sync"]);
   await removerSchedulersObsoletos(seqQueue, ["check-sequences"]);
 
   await seqQueue.close();
@@ -4390,7 +4421,7 @@ const shutdown = async () => {
   await Promise.all([
     scoringWorker.close(),
     notificationWorker.close(), whatsappIncomingWorker.close(), whatsappOutgoingWorker.close(),
-    whatsappStatusWorker.close(), slaWorker.close(), enrichmentWorker.close(), scheduledQueue.close(),
+    whatsappStatusWorker.close(), slaWorker.close(), enrichmentWorker.close(), scheduledQueue.close(), callfaceAiWorker.close(), callfaceAiQueue.close(),
     emailSyncWorker.close(), emailSequenceWorker.close(), emailSyncQueue.close(),
     siteLeadQualifyWorker.close(), callfaceCallEventsWorker.close(),
   ]);

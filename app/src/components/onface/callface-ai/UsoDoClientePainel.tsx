@@ -37,6 +37,8 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { projecaoDoMes, sinaisComplementares, variacao, type Sinal } from "@/lib/callface-ai/sinais-de-uso";
+import { LIMIARES_USO } from "@/lib/callface-ai/uso-regras";
+import { LIMIARES_SAUDE } from "@/lib/callface-ai/saude-regras";
 import { SerieDeUso } from "./SerieDeUso";
 import { haQuanto, inteiro, pct } from "./formato";
 import type { AcoesDeVinculo, ResultadoVinculo, SugestaoDeVinculo, UsoDoCliente, VinculoCallfaceAi } from "./tipos";
@@ -70,6 +72,7 @@ export function UsoDoClientePainel({ uso, erro, acoes, aoMudar, agora: agoraFixo
   return (
     <div className="flex flex-col gap-3">
       <FaixaDoVinculo uso={uso} agora={agora} acoes={acoes} aoMudar={aoMudar} />
+      {temDado ? <FaixaDeSaude uso={uso} agora={agora} /> : null}
       {temDado ? <Conteudo uso={uso as ComDado} agora={agora} /> : <AguardandoSync nomeOrg={v.nomeOrg} />}
     </div>
   );
@@ -84,7 +87,7 @@ function Conteudo({ uso, agora }: { uso: ComDado; agora: Date }) {
   const sinais: Sinal[] = [
     ...uso.flags.map((f): Sinal => ({
       chave: f.codigo, titulo: f.rotulo, porque: f.detalhe,
-      tom: f.codigo === "perto_do_limite" ? "expansao" : f.gravidade,
+      tom: f.gravidade === "oportunidade" ? "expansao" : f.gravidade,
     })),
     ...sinaisComplementares({
       agora, flags: uso.flags.map((f) => f.codigo), minutosMes: uso.minutos.mesCorrente, minutos30d: uso.minutos.d30,
@@ -137,7 +140,7 @@ function Destaque({ uso, agora, lig7, lig30 }: {
   const contratado = uso.minutos.contratadosMes;
   const consumo = uso.minutos.percentualDoLimite;
   const proj = projecaoDoMes(uso.minutos.mesCorrente, agora);
-  const tom = consumo == null ? "padrao" : consumo >= 100 ? "perigo" : consumo >= 85 ? "atencao" : "padrao";
+  const tom = consumo == null ? "padrao" : consumo >= 100 ? "perigo" : consumo >= LIMIARES_USO.pertoDoLimitePct ? "atencao" : "padrao";
   const lic = uso.plano.licencas;
   const parado = uso.diasSemAtividade;
   const mes = agora.toLocaleDateString("pt-BR", { month: "long" });
@@ -172,7 +175,7 @@ function Destaque({ uso, agora, lig7, lig30 }: {
           apoio={lic.contratadas ? `${uso.usuarios.comAtividade7d} ligaram em 7 dias` : "usuários com ligação em 30 dias"} />
         <Apoio rotulo="Última atividade" valor={haQuanto(uso.ultimaAtividadeEm, agora)}
           apoio={uso.ultimaAtividadeEm ? new Date(uso.ultimaAtividadeEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "sem registro"}
-          alerta={parado != null && parado > 14} />
+          alerta={parado != null && parado >= LIMIARES_SAUDE.silencioDias} />
       </dl>
     </section>
   );
@@ -197,6 +200,73 @@ function Apoio({ rotulo, valor, apoio, delta, base, alerta }: {
         ) : base ? <span className="truncate">sem base de comparação</span> : <span className="truncate">{apoio}</span>}
       </dd>
     </div>
+  );
+}
+
+const SEMAFORO_UI = {
+  verde: { badge: "success", rotulo: "Saudável", frase: "Usando e dentro do direito contratado." },
+  amarelo: { badge: "warning", rotulo: "Atenção", frase: "Um sinal pede acompanhamento do CS." },
+  vermelho: { badge: "danger", rotulo: "Em risco", frase: "O CS precisa agir agora." },
+  sem_dado: { badge: "info", rotulo: "Sem dado", frase: "Ainda sem leitura suficiente." },
+} as const;
+
+/**
+ * O semáforo do dia e o que o CS tem a fazer. Vem de `saude-regras` (a mesma
+ * função da carteira, do Início e do NEXO); aqui só se desenha.
+ */
+function FaixaDeSaude({ uso, agora }: { uso: UsoDoCliente; agora: Date }) {
+  const s = uso.saude;
+  if (!s) {
+    return (
+      <section aria-label="Saúde do uso" className={`${CARTAO} flex items-start gap-3 p-4`}>
+        <Clock aria-hidden className="mt-0.5 size-5 text-tinta-suave" />
+        <p className="text-apoio text-tinta-suave">O semáforo deste cliente ainda não foi calculado. Ele nasce na próxima rodada do sincronizador, junto com a última atividade.</p>
+      </section>
+    );
+  }
+  const ui = SEMAFORO_UI[s.semaforo];
+  const fontes = [
+    { rotulo: "Chamada", quando: s.ultimaChamadaEm }, { rotulo: "Copiloto", quando: s.ultimaCopilotoEm }, { rotulo: "Reunião", quando: s.ultimaReuniaoEm },
+  ];
+  const velha = s.idadeHoras != null && s.idadeHoras > 36;
+  return (
+    <section aria-label="Saúde do uso" className={`${CARTAO} flex flex-col gap-3 p-4`}>
+      <div className="flex flex-wrap items-center gap-3">
+        <Badge variant={ui.badge} className="h-6">{ui.rotulo}</Badge>
+        <p className="text-corpo font-semibold text-tinta">{ui.frase}</p>
+        {velha ? <span className="ml-auto text-micro text-[var(--onface-coral-texto)]">Cálculo de {haQuanto(new Date(agora.getTime() - s.idadeHoras! * 3600e3).toISOString(), agora)}: o sincronizador pode estar parado.</span> : null}
+      </div>
+      <p className="text-apoio text-tinta-suave" suppressHydrationWarning>
+        Última atividade: <strong className="text-tinta">{haQuanto(uso.ultimaAtividadeEm, agora)}</strong>
+        {" "}({fontes.map((f) => `${f.rotulo} ${f.quando ? haQuanto(f.quando, agora) : "nunca"}`).join(" · ")}).
+        {" "}O SaaS não guarda login; a atividade é derivada do uso real.
+      </p>
+      {s.copiloto.sessoes30d > 0 ? (
+        <p className="text-apoio text-tinta-suave">
+          Copiloto: {s.copiloto.sessoes30d} sessões em 30 dias{s.copiloto.adocaoPct != null ? `, ${s.copiloto.adocaoPct.toLocaleString("pt-BR")}% das sugestões aproveitadas` : ""}.
+        </p>
+      ) : null}
+      {s.assinaturas.canceladas > 0 ? (
+        <p className="text-apoio text-tinta-suave">
+          Assinaturas: {s.assinaturas.canceladas} de {s.assinaturas.total} canceladas{s.assinaturas.canceladaEm ? `, a última ${haQuanto(s.assinaturas.canceladaEm, agora)}` : ""}{s.assinaturas.motivo ? ` (${s.assinaturas.motivo})` : ""}.
+        </p>
+      ) : null}
+      {uso.tarefas.length > 0 ? (
+        <div className="border-t border-linha pt-3">
+          <p className="text-micro font-semibold text-tinta-suave">Tarefas de CS abertas por este sinal</p>
+          <ul className="mt-1 flex flex-col gap-1">
+            {uso.tarefas.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-baseline gap-x-2 text-apoio">
+                <Link href="/tarefas" className="font-semibold text-tinta underline-offset-2 hover:underline">{t.titulo}</Link>
+                <span className="text-tinta-suave" suppressHydrationWarning>
+                  {t.responsavel ?? "sem CS responsável (fila da gestão)"}{t.venceEm ? ` · vence ${new Date(t.venceEm).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
