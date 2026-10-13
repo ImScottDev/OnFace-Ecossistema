@@ -10,16 +10,17 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BellRing,
-  CalendarDays, CheckCircle2, ChevronRight, CircleHelp, Clock3,
-  Command, Compass, LayoutDashboard, Plus, RefreshCw, Sparkles,
-  Target, TrendingUp, Users, Workflow, Zap,
+  Activity, ArrowRight, ArrowUpRight, BellRing, CalendarDays, CheckCircle2,
+  CircleHelp, Clock3, Compass, LayoutDashboard, Plus, RefreshCw, Sparkles,
+  Target, TrendingUp, Users, Workflow,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { Bloco, PainelInicio } from "@/lib/inicio/tipos";
 import { atualizarInicio } from "@/app/(produto)/inicio/actions";
 import { BlocoComErro } from "./compartilhado";
-import { HeroDeEntrega, HeroDeFila, HeroDeMeta, HeroDeMrr } from "./herois";
+import { HeroDeEntrega, HeroDeFila, HeroDeMeta, HeroDeFaturamento } from "./herois";
 import { FaixaDeKpis } from "./kpis";
 import { AgendaDoDia, Atalhos, PrecisaDeVoce } from "./listas";
 import { CartaoDeEntrega, CartaoFinanceiro, FunilComercial, SaudeDasIntegracoes } from "./cartoes";
@@ -48,17 +49,16 @@ function ModuloErro({ titulo, tentar }: { titulo: string; tentar: () => void }) 
 }
 
 function Secao({
-  id, numero, titulo, descricao, extra, children,
+  titulo, descricao, extra, children,
 }: {
-  id: string; numero: string; titulo: string; descricao: string;
-  extra?: React.ReactNode; children: React.ReactNode;
+  titulo: string; descricao: string; extra?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
-    <section className="ic-secao" id={id} aria-labelledby={id + "-titulo"}>
+    <section className="ic-secao">
       <div className="ic-secao-topo">
-        <div className="ic-secao-copy">
-          <span className="ic-secao-numero">{numero}</span>
-          <div><h2 id={id + "-titulo"}>{titulo}</h2><p>{descricao}</p></div>
+        <div>
+          <h2>{titulo}</h2>
+          <p>{descricao}</p>
         </div>
         {extra ? <div className="ic-secao-extra">{extra}</div> : null}
       </div>
@@ -67,20 +67,16 @@ function Secao({
   );
 }
 
-function SituacaoDoDia({ painel }: { painel: PainelInicio }) {
+function SituacaoDoDia({ painel, irParaMeuDia }: { painel: PainelInicio; irParaMeuDia: () => void }) {
   const quantidade = painel.atencao?.ok ? painel.atencao.dados.total : null;
   const criticos = painel.atencao?.ok ? painel.atencao.dados.porSeveridade.critico : null;
   const reunioes = painel.agenda?.ok ? painel.agenda.dados.reunioes : null;
-  const agendaDisponivel = painel.agenda !== null;
   const vazio = quantidade === 0 && (reunioes === 0 || reunioes === null);
+  const numero = (n: number | null) => (n === null ? "—" : n.toLocaleString("pt-BR"));
   return (
-    <aside className="ic-brief" aria-label="Resumo de prioridades do dia">
-      <div className="ic-brief-top">
-        <span className="ic-brief-kicker"><Zap size={13} aria-hidden="true" /> SEU PONTO DE PARTIDA</span>
-        <span className="ic-live"><i aria-hidden="true" /> Dados reais</span>
-      </div>
+    <aside className="ini-cartao ic-brief" aria-label="Resumo de prioridades do dia">
       <div className="ic-brief-head">
-        <span className="ic-brief-icon">{vazio ? <CheckCircle2 aria-hidden="true" /> : <BellRing aria-hidden="true" />}</span>
+        <span className="ic-brief-icone">{vazio ? <CheckCircle2 aria-hidden="true" /> : <BellRing aria-hidden="true" />}</span>
         <div>
           <h2>{vazio ? "Tudo sob controle." : "O que merece atenção."}</h2>
           <p>{painel.foco?.frases.length ? painel.foco.frases.join(" · ") : "Confira seus compromissos e indicadores de hoje."}</p>
@@ -88,29 +84,23 @@ function SituacaoDoDia({ painel }: { painel: PainelInicio }) {
       </div>
       <div className="ic-brief-numeros">
         {painel.atencao !== null ? (
-          <a href="#prioridades" className="ic-brief-num">
-            <strong>{quantidade === null ? "—" : quantidade.toLocaleString("pt-BR")}</strong>
-            <span>itens na fila</span>
-            <ArrowUpRight size={15} aria-hidden="true" />
-          </a>
+          <button type="button" className="ic-brief-num" onClick={irParaMeuDia}>
+            <strong>{numero(quantidade)}</strong><span>itens na fila</span>
+          </button>
         ) : null}
         {painel.atencao !== null ? (
-          <a href="#prioridades" className="ic-brief-num" data-risco={criticos !== null && criticos > 0 ? "true" : undefined}>
-            <strong>{criticos === null ? "—" : criticos.toLocaleString("pt-BR")}</strong>
-            <span>críticos</span>
-            <ArrowUpRight size={15} aria-hidden="true" />
-          </a>
+          <button type="button" className="ic-brief-num" data-risco={criticos !== null && criticos > 0 ? "true" : undefined} onClick={irParaMeuDia}>
+            <strong>{numero(criticos)}</strong><span>críticos</span>
+          </button>
         ) : null}
-        {agendaDisponivel ? (
-          <a href="#prioridades" className="ic-brief-num">
-            <strong>{reunioes === null ? "—" : reunioes.toLocaleString("pt-BR")}</strong>
-            <span>reuniões hoje</span>
-            <ArrowUpRight size={15} aria-hidden="true" />
-          </a>
+        {painel.agenda !== null ? (
+          <button type="button" className="ic-brief-num" onClick={irParaMeuDia}>
+            <strong>{numero(reunioes)}</strong><span>reuniões hoje</span>
+          </button>
         ) : null}
       </div>
       <div className="ic-brief-links">
-        {painel.atencao ? <a href="#prioridades">Ver prioridades <ArrowRight size={14} aria-hidden="true" /></a> : null}
+        {painel.atencao ? <button type="button" onClick={irParaMeuDia}>Ver prioridades <ArrowRight size={14} aria-hidden="true" /></button> : null}
         {painel.agenda ? <Link href="/calendario">Abrir calendário <ArrowRight size={14} aria-hidden="true" /></Link> : null}
       </div>
     </aside>
@@ -124,16 +114,27 @@ const JORNADA = [
   { nome: "Clientes", subtitulo: "Da adoção à expansão", href: "/clientes", icon: Activity },
 ] as const;
 
+type AbaId = "panorama" | "meu-dia" | "jornada" | "operacao";
+
 export function Inicio({ painel, tomInicial }: { painel: PainelInicio; tomInicial: TomDoInicio }) {
   const router = useRouter();
   const [tom, setTom] = React.useState<TomDoInicio>(tomInicial);
+  const [aba, setAba] = React.useState<AbaId>("panorama");
   const [carregando, iniciar] = React.useTransition();
   const lente = ROTULOS[painel.lente];
   const LenteIcon = lente.icone;
   const comLinks = painel.lente !== "leitor";
-  const gestao = painel.lente === "gestao";
-  const mostrarJornada = gestao;
-  const mostrarOperacao = Boolean(painel.entrega || painel.financeiro || painel.saude);
+  const mostrarJornada = painel.lente === "gestao";
+  const temMeuDia = Boolean(painel.atencao || painel.agenda);
+
+  // Abas de verdade (estado, não âncora): âncora fazia o navegador rolar a casca
+  // inteira para cima e escondia a barra do topo.
+  const abas = [
+    { id: "panorama" as const, rotulo: "Panorama", Icone: LayoutDashboard, existe: true },
+    { id: "meu-dia" as const, rotulo: "Meu dia", Icone: BellRing, existe: temMeuDia },
+    { id: "jornada" as const, rotulo: "Jornada comercial", Icone: TrendingUp, existe: Boolean(painel.funil) },
+    { id: "operacao" as const, rotulo: "Operação", Icone: Activity, existe: Boolean(painel.entrega || painel.financeiro || painel.saude) },
+  ].filter((x) => x.existe);
 
   const atualizar = React.useCallback(() => {
     iniciar(async () => {
@@ -147,15 +148,20 @@ export function Inicio({ painel, tomInicial }: { painel: PainelInicio; tomInicia
     });
   }, [router]);
 
-  const trocarTom = React.useCallback((novo: TomDoInicio) => {
-    setTom(novo);
-    document.cookie = COOKIE_TOM + "=" + novo + "; path=/; max-age=31536000; samesite=lax";
-  }, []);
+  const trocarTom = (v: string) => {
+    if (v !== "claro" && v !== "escuro") return;
+    setTom(v);
+    // Cookie, não localStorage: o servidor lê no próximo carregamento e a página
+    // já nasce no tom certo, sem piscar o claro antes do escuro.
+    document.cookie = `${COOKIE_TOM}=${v}; path=/; max-age=31536000; samesite=lax`;
+  };
 
   function renderBloco<T>(bloco: Bloco<T> | null, titulo: string, desenhar: (d: T) => React.ReactNode) {
     if (!bloco) return null;
     return bloco.ok ? desenhar(bloco.dados) : <ModuloErro titulo={titulo} tentar={atualizar} />;
   }
+
+  const nColunasOperacao = [painel.entrega, painel.financeiro, painel.saude].filter(Boolean).length;
 
   return (
     <main
@@ -166,108 +172,109 @@ export function Inicio({ painel, tomInicial }: { painel: PainelInicio; tomInicia
       aria-busy={carregando}
     >
       <header className="ic-header">
-        <div className="ic-header-content">
-          <div className="ic-overline"><span className="ic-monograma">O</span><span>ONFACE</span><ChevronRight size={13} aria-hidden="true" /><span>{lente.nome}</span></div>
+        <div className="ic-header-id">
           <h1>{painel.saudacao}</h1>
           <p className="ic-subtitulo">{lente.descricao}</p>
           <div className="ic-contexto">
-            <span><CalendarDays size={14} aria-hidden="true" />{painel.data}</span>
-            {painel.organizacao ? <span><LenteIcon size={14} aria-hidden="true" />{painel.organizacao}</span> : null}
+            <span><CalendarDays aria-hidden="true" />{painel.data}</span>
+            {painel.organizacao ? <span><LenteIcon aria-hidden="true" />{painel.organizacao}</span> : null}
             {painel.lente === "leitor" ? <span>Somente leitura</span> : null}
+            <span><Clock3 aria-hidden="true" />Atualizado às {marcoDoDia(painel.geradoEm)}</span>
           </div>
         </div>
-        <div className="ic-header-actions">
-          <span className="ic-atualizado"><Clock3 size={13} aria-hidden="true" /> Atualizado às {marcoDoDia(painel.geradoEm)}</span>
-          <button className="ic-ghost-btn" type="button" onClick={atualizar} disabled={carregando} aria-label="Atualizar dados do painel" title="Atualizar dados">
-            <RefreshCw size={16} className={carregando ? "ic-spin" : ""} aria-hidden="true" />
-            <span>Atualizar</span>
-          </button>
-          <div className="ic-tema" role="group" aria-label="Aparência da página">
-            <button type="button" aria-pressed={tom === "claro"} onClick={() => trocarTom("claro")}>Claro</button>
-            <button type="button" aria-pressed={tom === "escuro"} onClick={() => trocarTom("escuro")}>Escuro</button>
-          </div>
-          {painel.podeAgir ? <Button asChild size="sm" className="ic-nova"><Link href="/tarefas?nova=1"><Plus size={16} aria-hidden="true" />Nova atividade</Link></Button> : null}
+        <div className="ini-cab-acoes">
+          <Button type="button" variant="ghost" size="sm" onClick={atualizar} disabled={carregando} aria-label="Atualizar o Início agora">
+            <RefreshCw data-girando={carregando ? "true" : undefined} aria-hidden="true" />Atualizar
+          </Button>
+          <ToggleGroup type="single" value={tom} onValueChange={trocarTom} aria-label="Tom do painel" size="sm">
+            <ToggleGroupItem value="claro" className="px-3">Claro</ToggleGroupItem>
+            <ToggleGroupItem value="escuro" className="px-3">Escuro</ToggleGroupItem>
+          </ToggleGroup>
+          {painel.podeAgir ? <Button asChild size="sm" className="ini-cta"><Link href="/tarefas?nova=1"><Plus aria-hidden="true" />Nova atividade</Link></Button> : null}
         </div>
       </header>
 
-      <nav className="ic-menu" aria-label="Navegação desta página">
-        <div className="ic-menu-itens">
-          <a href="#panorama"><LayoutDashboard size={16} aria-hidden="true" /> Panorama</a>
-          {painel.atencao || painel.agenda ? <a href="#prioridades"><BellRing size={16} aria-hidden="true" /> Meu dia</a> : null}
-          {painel.funil ? <a href="#jornada"><TrendingUp size={16} aria-hidden="true" /> Jornada comercial</a> : null}
-          {mostrarOperacao ? <a href="#operacao"><Activity size={16} aria-hidden="true" /> Operação</a> : null}
+      <Tabs value={aba} onValueChange={(v) => setAba(v as AbaId)} className="ic-tabs">
+        <div className="ic-menu">
+          <TabsList variant="line" className="ic-abas" aria-label="Seções do Início">
+            {abas.map(({ id, rotulo, Icone }) => (
+              <TabsTrigger key={id} value={id}><Icone aria-hidden="true" />{rotulo}</TabsTrigger>
+            ))}
+          </TabsList>
+          {painel.podeAgir ? (
+            <button type="button" onClick={() => abrirNexo()} className="ic-pergunte"><Sparkles aria-hidden="true" /><span className="ic-pergunte-texto">Perguntar ao NEXO</span><kbd>⌘J</kbd></button>
+          ) : <span className="ic-somente"><CircleHelp aria-hidden="true" />Visão consolidada</span>}
         </div>
-        {painel.podeAgir ?
-          <button type="button" onClick={() => abrirNexo()} className="ic-pergunte"><Sparkles size={15} aria-hidden="true" /> Perguntar ao NEXO <span>⌘J</span></button>
-          : <span className="ic-somente"><CircleHelp size={14} aria-hidden="true" /> Visão consolidada</span>}
-      </nav>
 
       <div className="ic-conteudo" data-atualizando={carregando ? "true" : undefined}>
-        <section className="ic-top" id="panorama" aria-label="Panorama principal">
-          <div className="ic-painel-principal">
-            <div className="ic-painel-selo"><span className="ic-selo-ponto" /> RESULTADO EM FOCO <span className="ic-painel-separador" /> {lente.nome}</div>
-            {renderBloco(painel.hero, "destaque do dia", (h) =>
-              h.tipo === "mrr" ? <HeroDeMrr d={h} geradoEm={painel.geradoEm} comLinks={comLinks} />
-                : h.tipo === "meta" ? <HeroDeMeta d={h} geradoEm={painel.geradoEm} />
-                  : h.tipo === "fila" ? <HeroDeFila d={h} />
-                    : <HeroDeEntrega d={h} />)}
-          </div>
-          {painel.atencao || painel.agenda ? <SituacaoDoDia painel={painel} /> : (
-            <div className="ic-leitor-card">
-              <Compass size={23} aria-hidden="true" />
-              <strong>Panorama consolidado</strong>
-              <p>Os dados refletem a visão autorizada para o seu perfil.</p>
-              <Link href="/relatorios">Explorar relatórios <ArrowRight size={15} aria-hidden="true" /></Link>
-            </div>
-          )}
-        </section>
+          <TabsContent value="panorama" className="ic-painel">
+              <section className="ic-top" aria-label="Panorama principal">
+                <div className="ic-painel-principal">
+                  {renderBloco(painel.hero, "destaque do dia", (h) =>
+                    h.tipo === "faturamento" ? <HeroDeFaturamento d={h} geradoEm={painel.geradoEm} comLinks={comLinks} />
+                      : h.tipo === "meta" ? <HeroDeMeta d={h} geradoEm={painel.geradoEm} />
+                        : h.tipo === "fila" ? <HeroDeFila d={h} />
+                          : <HeroDeEntrega d={h} />)}
+                </div>
+                {temMeuDia ? <SituacaoDoDia painel={painel} irParaMeuDia={() => setAba("meu-dia")} /> : (
+                  <div className="ini-cartao ic-leitor-card">
+                    <Compass aria-hidden="true" />
+                    <strong>Panorama consolidado</strong>
+                    <p>Os dados refletem a visão autorizada para o seu perfil.</p>
+                    <Link href="/relatorios">Explorar relatórios <ArrowRight size={15} aria-hidden="true" /></Link>
+                  </div>
+                )}
+              </section>
+              <section className="ic-indicadores" aria-label="Indicadores">
+                <div className="ic-indicadores-topo"><h2>Indicadores</h2><small>Comparativo e tendência do período informado em cada métrica</small></div>
+                {renderBloco(painel.kpis, "indicadores", (k) => <FaixaDeKpis kpis={k} />)}
+              </section>
+          </TabsContent>
 
-        <div className="ic-indicadores">
-          <div className="ic-indicadores-label"><span>INDICADORES</span><small>Comparativos e tendência do período informado em cada métrica</small></div>
-          {renderBloco(painel.kpis, "indicadores", (k) => <FaixaDeKpis kpis={k} />)}
-        </div>
-
-        {painel.atencao || painel.agenda ? (
-          <Secao id="prioridades" numero="01" titulo={painel.lente === "leitor" ? "Agenda e atividades" : "Seu dia, em ordem de prioridade"} descricao="O que precisa de uma decisão ou ação agora — sem perder o contexto.">
-            <div className="ic-duas-colunas" data-sozinha={!painel.atencao || !painel.agenda ? "true" : undefined}>
-              {renderBloco(painel.atencao, "prioridades", (a) => <PrecisaDeVoce a={a} />)}
-              {renderBloco(painel.agenda, "agenda de hoje", (a) => <AgendaDoDia a={a} />)}
-            </div>
-          </Secao>
-        ) : null}
-
-        {painel.funil ? (
-          <Secao id="jornada" numero={painel.atencao || painel.agenda ? "02" : "01"} titulo="Da oportunidade ao resultado" descricao="Os estágios do fluxo comercial, com volume e valores reais." extra={comLinks ? <Link href="/pipeline" className="ic-secao-link">Abrir pipeline <ArrowUpRight size={15} aria-hidden="true" /></Link> : null}>
-            <div className="ic-pipeline-coluna">{renderBloco(painel.funil, "funil comercial", (f) => <FunilComercial f={f} comLinks={comLinks} />)}</div>
-            {mostrarJornada ? (
-              <div className="ic-jornada" aria-label="Jornada comercial e operacional">
-                {JORNADA.map((etapa, index) => {
-                  const Icone = etapa.icon;
-                  return <Link href={etapa.href} key={etapa.nome} className="ic-jornada-etapa">
-                    <span className="ic-jornada-index">0{index + 1}</span><Icone size={18} aria-hidden="true" />
-                    <span><strong>{etapa.nome}</strong><small>{etapa.subtitulo}</small></span><ArrowRight size={16} aria-hidden="true" />
-                  </Link>;
-                })}
+          <TabsContent value="meu-dia" className="ic-painel">
+            <Secao titulo={painel.lente === "leitor" ? "Agenda e atividades" : "Seu dia, em ordem de prioridade"} descricao="O que precisa de uma decisão ou ação agora, sem perder o contexto.">
+              <div className="ic-duas-colunas" data-sozinha={!painel.atencao || !painel.agenda ? "true" : undefined}>
+                {renderBloco(painel.atencao, "prioridades", (a) => <PrecisaDeVoce a={a} />)}
+                {renderBloco(painel.agenda, "agenda de hoje", (a) => <AgendaDoDia a={a} />)}
               </div>
-            ) : null}
-          </Secao>
-        ) : null}
+            </Secao>
+          </TabsContent>
 
-        {mostrarOperacao ? (
-          <Secao id="operacao" numero={painel.funil ? (painel.atencao || painel.agenda ? "03" : "02") : "02"} titulo="Saúde do negócio" descricao="Acompanhe a execução, os riscos e as integrações que sustentam a operação.">
-            <div className="ic-operacao-grid" data-colunas={[painel.entrega,painel.financeiro,painel.saude].filter(Boolean).length}>
-              {renderBloco(painel.entrega, "implantação e retenção", (e) => <CartaoDeEntrega e={e} />)}
-              {renderBloco(painel.financeiro, "financeiro", (f) => <CartaoFinanceiro f={f} />)}
-              {renderBloco(painel.saude, "integrações", (s) => <SaudeDasIntegracoes s={s} />)}
-            </div>
-          </Secao>
-        ) : null}
+          <TabsContent value="jornada" className="ic-painel">
+            <Secao titulo="Da oportunidade ao resultado" descricao="Os estágios do fluxo comercial, com volume e valores reais." extra={comLinks ? <Link href="/pipeline" className="ini-link">Abrir pipeline <ArrowUpRight aria-hidden="true" /></Link> : null}>
+              {renderBloco(painel.funil, "funil comercial", (f) => <FunilComercial f={f} comLinks={comLinks} />)}
+              {mostrarJornada ? (
+                <div className="ic-jornada" aria-label="Jornada comercial e operacional">
+                  {JORNADA.map((etapa) => {
+                    const Icone = etapa.icon;
+                    return (
+                      <Link href={etapa.href} key={etapa.nome} className="ic-jornada-etapa">
+                        <span className="ic-jornada-icone"><Icone aria-hidden="true" /></span>
+                        <span className="ic-jornada-texto"><strong>{etapa.nome}</strong><small>{etapa.subtitulo}</small></span>
+                        <ArrowRight className="ic-jornada-seta" aria-hidden="true" />
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </Secao>
+          </TabsContent>
 
-        <Secao id="atalhos" numero="↗" titulo="Continue de onde precisa" descricao="Acesso direto aos módulos do seu perfil.">
+          <TabsContent value="operacao" className="ic-painel">
+            <Secao titulo="Saúde do negócio" descricao="Acompanhe a execução, os riscos e as integrações que sustentam a operação.">
+              <div className="ic-operacao-grid" data-colunas={nColunasOperacao}>
+                {renderBloco(painel.entrega, "implantação e retenção", (e) => <CartaoDeEntrega e={e} />)}
+                {renderBloco(painel.financeiro, "financeiro", (f) => <CartaoFinanceiro f={f} />)}
+                {renderBloco(painel.saude, "integrações", (s) => <SaudeDasIntegracoes s={s} />)}
+              </div>
+            </Secao>
+          </TabsContent>
+
+        <Secao titulo="Continue de onde precisa" descricao="Acesso direto aos módulos do seu perfil.">
           <Atalhos atalhos={painel.atalhos} comNexo={painel.podeAgir} />
         </Secao>
-        <footer className="ic-rodape"><span><span className="ic-rodape-marca">ONFACE</span> · Seu workspace, de ponta a ponta.</span><span>Dados conforme permissões do seu perfil · {marcoDoDia(painel.geradoEm)}</span></footer>
       </div>
+      </Tabs>
     </main>
   );
 }

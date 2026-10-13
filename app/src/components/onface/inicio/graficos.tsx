@@ -4,7 +4,7 @@
  * Gráficos do Início.
  *
  * Três formas, cada uma escolhida pelo trabalho do dado:
- *   BarrasDeMrr   polaridade (entrou × saiu) por mês: barras divergentes sobre uma base
+ *   BarrasDeFaturamento   magnitude por mês: uma barra por mês sobre uma base
  *   AreaDeMeta    progresso acumulado contra o ritmo da meta: duas linhas
  *   Spark         tendência diária de um número: uma linha, sem eixo
  *
@@ -16,82 +16,58 @@
  */
 import * as React from "react";
 import { brlInteiro, caminhoDeSerie, moedaCompacta } from "@/lib/inicio/lente";
-import type { MesDeMrr } from "@/lib/inicio/tipos";
+import type { MesDeFaturamento } from "@/lib/inicio/tipos";
 
-const numero = (v: number) => Math.abs(v).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-const compacto = (v: number) => {
-  const a = Math.abs(v);
-  const s = v < 0 ? "−" : v > 0 ? "+" : "";
-  if (a < 1000) return `${s}${numero(a)}`;
-  if (a < 1_000_000) return `${s}${(a / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`;
-  return `${s}${(a / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} mi`;
-};
+/* ═══ Barras: faturamento por mês ═════════════════════════════════════════ */
 
-/* ═══ Barras divergentes: movimento de MRR ════════════════════════════════ */
-
-export function BarrasDeMrr({ meses }: { meses: MesDeMrr[] }) {
+export function BarrasDeFaturamento({ meses }: { meses: MesDeFaturamento[] }) {
   const [ativo, setAtivo] = React.useState<number | null>(null);
-  // Mesma escala dos dois lados: barra de entrada e de saída são comparáveis.
-  const teto = Math.max(1, ...meses.flatMap((m) => [m.entrou, Math.abs(m.saiu)]));
-  const vazio = meses.every((m) => m.entrou === 0 && m.saiu === 0);
+  const teto = Math.max(1, ...meses.map((m) => m.valor));
   const ultimo = meses.length - 1;
 
-  if (vazio) {
+  if (meses.every((m) => m.valor === 0)) {
     return (
       <div className="ini-grafico-vazio">
-        <strong>Sem movimento de MRR nos últimos seis meses</strong>
-        <span>O ledger de MRR não registrou entrada nem saída no período.</span>
+        <strong>Nada faturado nos últimos seis meses</strong>
+        <span>O gráfico aparece com o primeiro negócio ganho.</span>
       </div>
     );
   }
 
   return (
-    <figure className="ini-barras" aria-label="Movimento de MRR por mês: o que entrou e o que saiu">
-      <div className="ini-barras-corpo" onPointerLeave={() => setAtivo(null)}>
+    <figure className="ini-fat" aria-label="Faturamento por mês, últimos seis meses">
+      <div className="ini-fat-corpo" onPointerLeave={() => setAtivo(null)}>
         {meses.map((m, i) => (
           <div
-            key={m.rotulo}
-            className="ini-barras-coluna"
+            key={m.rotulo + i}
+            className="ini-fat-coluna"
             data-ativo={ativo === i ? "true" : undefined}
             data-atual={i === ultimo ? "true" : undefined}
             tabIndex={0}
             role="group"
-            aria-label={`${m.rotulo}: entrou ${brlInteiro(m.entrou)}, saiu ${brlInteiro(Math.abs(m.saiu))}, líquido ${brlInteiro(m.liquido)}`}
+            aria-label={`${m.rotulo}${i === ultimo ? " (até hoje)" : ""}: ${brlInteiro(m.valor)}`}
             onPointerEnter={() => setAtivo(i)}
             onFocus={() => setAtivo(i)}
             onBlur={() => setAtivo(null)}
           >
-            <div className="ini-barras-metade ini-barras-cima">
-              <span className="ini-barra" data-lado="entrou" style={{ height: `${(m.entrou / teto) * 100}%`, "--atraso": `${i * 45}ms` } as React.CSSProperties} />
+            <span className="ini-fat-valor">{m.valor > 0 ? moedaCompacta(m.valor).replace("R$ ", "") : "0"}</span>
+            <div className="ini-fat-trilho">
+              <span className="ini-fat-barra" style={{ height: `${Math.max(m.valor > 0 ? 2 : 0, (m.valor / teto) * 100)}%`, "--atraso": `${i * 45}ms` } as React.CSSProperties} />
             </div>
-            <div className="ini-barras-metade ini-barras-baixo">
-              <span className="ini-barra" data-lado="saiu" style={{ height: `${(Math.abs(m.saiu) / teto) * 100}%`, "--atraso": `${i * 45}ms` } as React.CSSProperties} />
-            </div>
-            <span className="ini-barras-mes">{m.rotulo}</span>
-            <span className="ini-barras-liquido" data-sinal={m.liquido < 0 ? "negativo" : "neutro"}>{compacto(m.liquido)}</span>
+            <span className="ini-fat-mes">{m.rotulo}</span>
             {ativo === i ? (
-              <div className="ini-dica" role="status" data-borda={i === 0 ? "esq" : i === ultimo ? "dir" : undefined}>
+              <div className="ini-dica ini-dica-barra" role="status" data-borda={i === 0 ? "esq" : i === ultimo ? "dir" : undefined}>
                 <b>{m.rotulo}{i === ultimo ? " (até hoje)" : ""}</b>
-                <span><i data-lado="entrou" />Entrou<em>{moedaCompacta(m.entrou)}</em></span>
-                <span><i data-lado="saiu" />Saiu<em>{moedaCompacta(m.saiu)}</em></span>
-                <span className="ini-dica-total">Líquido<em>{moedaCompacta(m.liquido)}</em></span>
+                <span>Faturamento<em>{brlInteiro(m.valor)}</em></span>
               </div>
             ) : null}
           </div>
         ))}
       </div>
-      <figcaption className="ini-legenda">
-        <span><i data-lado="entrou" />Entrou: novo, reativação e expansão</span>
-        <span><i data-lado="saiu" />Saiu: contração e churn</span>
-      </figcaption>
       <table className="sr-only">
-        <caption>Movimento de MRR por mês</caption>
-        <thead><tr><th>Mês</th><th>Entrou</th><th>Saiu</th><th>Líquido</th></tr></thead>
-        <tbody>
-          {meses.map((m) => (
-            <tr key={m.rotulo}><td>{m.rotulo}</td><td>{brlInteiro(m.entrou)}</td><td>{brlInteiro(m.saiu)}</td><td>{brlInteiro(m.liquido)}</td></tr>
-          ))}
-        </tbody>
+        <caption>Faturamento por mês</caption>
+        <thead><tr><th>Mês</th><th>Faturamento</th></tr></thead>
+        <tbody>{meses.map((m, i) => <tr key={m.rotulo + i}><td>{m.rotulo}</td><td>{brlInteiro(m.valor)}</td></tr>)}</tbody>
       </table>
     </figure>
   );

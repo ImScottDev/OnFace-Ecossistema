@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   caminhoDeSerie, classificarFila, contarPorSeveridade, deltaDe, deltaDePct, diasUteisAteOFimDoMes,
-  duracaoCurta, focoDoDia, lenteDoPapel, mesesDeMrr, moedaCompacta, ordenarPorUrgencia,
+  duracaoCurta, focoDoDia, lenteDoPapel, mesesDeFaturamento, mesesDeMrr, moedaCompacta, ordenarPorUrgencia,
   permissoesDaLente, pctDaMeta, ritmoPorDia, saudacaoDaHora,
 } from "./lente";
 
@@ -166,4 +166,11 @@ test("formatação: moeda compacta, duração e saudação", () => {
   assert.equal(saudacaoDaHora(8), "Bom dia");
   assert.equal(saudacaoDaHora(12), "Boa tarde");
   assert.equal(saudacaoDaHora(19), "Boa noite");
+});
+
+test("os seis meses de faturamento terminam no mês de hoje, viram o ano e zeram o mês sem venda", () => {
+  const meses = mesesDeFaturamento(new Map([["2026-01", 100.4], ["2025-11", 50]]), "2026-02-03", 6);
+  assert.deepEqual(meses.map((m) => m.chave), ["2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02"]);
+  assert.deepEqual(meses.map((m) => m.valor), [0, 0, 50, 0, 100, 0]);
+  assert.equal(meses[5].rotulo, "Fev");
 });

@@ -27,10 +27,10 @@ import { visaoGeralVendasMes } from "@/lib/vendas/visao-geral";
 import { resumoSlaPreVendas } from "@/lib/vendas/sla-lead";
 import {
   brlInteiro, chaveDoDia, classificarFila, deltaDe, deltaDePct, diasUteisAteOFimDoMes, duracaoCurta,
-  mesesDeMrr, moedaCompacta, pctDaMeta, ritmoPorDia, ultimosDias, type LinhaLedger,
+  mesesDeFaturamento, mesesDeMrr, moedaCompacta, pctDaMeta, ritmoPorDia, ultimosDias, type LinhaLedger,
 } from "./lente";
 import type {
-  Agenda, Atencao, Entrega, EstadoSaude, EtapaFunil, Financeiro, Funil, HeroEntrega, HeroFila, HeroMeta, HeroMrr,
+  Agenda, Atencao, Entrega, EstadoSaude, EtapaFunil, Financeiro, Funil, HeroEntrega, HeroFila, HeroFaturamento, HeroMeta,
   ItemAgenda, ItemAtencao, ItemSaude, Kpi, Saude,
 } from "./tipos";
 import { contarPorSeveridade, ordenarPorUrgencia } from "./lente";
@@ -88,7 +88,14 @@ function kpiDeSerie(opts: {
   };
 }
 
-const FATURAMENTO = sql`COALESCE(n.mrr_fechado,0)::numeric + COALESCE(n.valor_setup,0)::numeric`;
+/* Definição de faturamento do Início: a MESMA de Relatórios > Comercial
+ * (`getFechadoPeriodo`, lib/relatorios/comercial.ts): negócio ganho, no mês de
+ * `ganho_at`; recorrente e híbrido contam a mensalidade (`mrr_fechado`), avulso e
+ * projeto contam o valor cheio (`valor_total`). O setup de negócio híbrido NÃO
+ * entra. Duas telas com o mesmo nome e contas diferentes foi o defeito de
+ * setembro (R$ 88,4 mil aqui contra R$ 61,3 mil lá, por causa do setup).
+ * A META segue a definição das Metas (mensalidade + setup, `lib/metas.ts`). */
+const FATURAMENTO = sql`CASE WHEN n.tipo_receita IN ('avulso','projeto') THEN COALESCE(n.valor_total,0)::numeric ELSE COALESCE(n.mrr_fechado,0)::numeric END`;
 const APOIO_JANELA = "últimos 30 dias · vs 30 anteriores";
 
 const faturamentoPorDia = (orgId: string, agora: Date, responsavelId: string | null) =>
@@ -155,34 +162,55 @@ async function conversasAguardando(orgId: string, userId: string | null, limite:
 
 /* ═══ Heróis ═══════════════════════════════════════════════════════════════ */
 
-export async function heroMrr(ctx: Ctx): Promise<HeroMrr> {
+export async function heroFaturamento(ctx: Ctx): Promise<HeroFaturamento> {
   const { orgId, agora } = ctx;
-  const inicio = new Date(agora.getFullYear(), agora.getMonth() - 5, 1).toISOString();
-  const [mrr, ledger, meta] = await Promise.all([
+  const hoje = chaveDoDia(agora);
+  const diaHoje = Number(hoje.slice(8, 10));
+  const grade = mesesDeFaturamento(new Map(), hoje, 6);
+  const [mrr, linhas, ledger, meta] = await Promise.all([
     getMrrAtivo(orgId),
-    db.execute<{ mes: string; tipo: string; delta: string }>(sql`
-      SELECT to_char(ocorrido_em AT TIME ZONE ${FUSO}, 'YYYY-MM') AS mes, tipo, COALESCE(SUM(delta), 0)::text AS delta
+    // Mesma conta de Relatórios > Comercial e do KPI "Faturamento" (ver FATURAMENTO),
+    // agrupada por mês de São Paulo. `ate_hoje` é o mês só até
+    // o dia de hoje: comparar o mês parcial com o anterior inteiro mente no dia 3.
+    db.execute<{ mes: string; v: string; n: number; ate_hoje: string }>(sql`
+      SELECT to_char(n.ganho_at AT TIME ZONE ${FUSO}, 'YYYY-MM') AS mes, SUM(${FATURAMENTO})::text AS v, count(*)::int AS n,
+             COALESCE(SUM(${FATURAMENTO}) FILTER (WHERE EXTRACT(day FROM n.ganho_at AT TIME ZONE ${FUSO}) <= ${diaHoje}), 0)::text AS ate_hoje
+        FROM negocios n
+       WHERE n.organizacao_id = ${orgId}::uuid AND n.status = 'ganho'
+         AND n.ganho_at >= ${inicioDoDia(`${grade[0].chave}-01`)}::timestamptz
+       GROUP BY 1`),
+    db.execute<{ tipo: string; delta: string }>(sql`
+      SELECT tipo, COALESCE(SUM(delta), 0)::text AS delta
         FROM mrr_movimentos
-       WHERE organizacao_id = ${orgId}::uuid AND ocorrido_em >= ${inicio}::timestamptz
-       GROUP BY 1, 2`),
+       WHERE organizacao_id = ${orgId}::uuid AND ocorrido_em >= ${inicioDoDia(`${grade[5].chave}-01`)}::timestamptz
+       GROUP BY 1`),
     getMetaComercialAgregada(orgId, agora),
   ]);
-  const linhas: LinhaLedger[] = ledger.map((l) => ({ mes: l.mes, tipo: l.tipo, delta: Number(l.delta) || 0 }));
+  const porMes = new Map(linhas.map((l) => [l.mes, Number(l.v) || 0]));
+  const meses = mesesDeFaturamento(porMes, hoje, 6);
+  const atual = linhas.find((l) => l.mes === grade[5].chave);
+  const anterior = linhas.find((l) => l.mes === grade[4].chave);
+  const realizado = Math.round(meses[5].valor);
+  const anteriorAteHoje = Number(anterior?.ate_hoje) || 0;
+  const mov = mesesDeMrr(ledger.map((l) => ({ mes: grade[5].chave, tipo: l.tipo, delta: Number(l.delta) || 0 })), new Date(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)) - 1, 15), 1)[0];
   const dias = diasUteisAteOFimDoMes(agora);
   return {
-    tipo: "mrr",
-    mrrAtual: mrr.atual,
-    deltaPct: mrr.deltaPct,
-    janelaDias: mrr.janelaDias,
-    meses: mesesDeMrr(linhas, agora, 6),
+    tipo: "faturamento",
+    realizado,
+    deltaPct: anteriorAteHoje > 0 ? ((realizado - anteriorAteHoje) / anteriorAteHoje) * 100 : null,
+    mesAnterior: meses[4].valor,
+    ganhos: Number(atual?.n) || 0,
+    meses,
     metaMes: meta.valorAlvo > 0
       ? {
-          alvo: meta.valorAlvo, realizado: meta.realizado,
+          alvo: meta.valorAlvo,
+          realizado: meta.realizado,
           pct: pctDaMeta(meta.valorAlvo, meta.realizado) ?? 0,
           diasUteisRestantes: dias,
           ritmoPorDia: ritmoPorDia(meta.valorAlvo, meta.realizado, dias),
         }
       : null,
+    mrr: { atual: mrr.atual, deltaPct: mrr.deltaPct, janelaDias: mrr.janelaDias, liquidoMes: mov.liquido },
   };
 }
 
@@ -318,7 +346,7 @@ export async function kpis(ctx: Ctx, lente: "gestao" | "operacao" | "closer" | "
     ]);
     const href = (h: string) => (lente === "leitor" ? null : h);
     return [
-      kpiDeSerie({ chave: "faturamento", rotulo: "Faturamento fechado", serie: fat, formato: brlInteiro, apoio: APOIO_JANELA, href: href("/vendas"), agora }),
+      kpiDeSerie({ chave: "faturamento", rotulo: "Faturamento, 30 dias", serie: fat, formato: brlInteiro, apoio: APOIO_JANELA, href: href("/vendas"), agora }),
       kpiDeSerie({ chave: "leads", rotulo: "Leads novos", serie: leads, formato: inteiro, apoio: APOIO_JANELA, href: href("/pre-vendas"), agora }),
       kpiDeSerie({ chave: "propostas", rotulo: "Propostas enviadas", serie: props, formato: inteiro, apoio: APOIO_JANELA, href: href("/propostas"), agora }),
       { chave: "clientes", rotulo: "Clientes ativos", valor: inteiro(clientes), apoio: "com serviço ativo", delta: null, serie: null, serieRotulo: null, serieFim: null, href: href("/clientes") },

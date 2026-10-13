@@ -219,6 +219,24 @@ export function mesesDeMrr(linhas: LinhaLedger[], hoje: Date, n = 6): MesDeMrr[]
   return saida;
 }
 
+/**
+ * Os `n` meses terminando no de `chaveHoje` (YYYY-MM-DD, São Paulo), do mais
+ * antigo para o atual, com valor zero no mês sem registro. Sai do dia de São
+ * Paulo e não de `Date#getMonth()`: o servidor não tem o fuso do time.
+ */
+export function mesesDeFaturamento(
+  porMes: Map<string, number>, chaveHoje: string, n = 6,
+): Array<{ chave: string; rotulo: string; valor: number }> {
+  const ano = Number(chaveHoje.slice(0, 4));
+  const mes = Number(chaveHoje.slice(5, 7));
+  return Array.from({ length: n }, (_, i) => {
+    const ref = new Date(Date.UTC(ano, mes - 1 - (n - 1 - i), 15));
+    const chave = ref.toISOString().slice(0, 7);
+    const nome = ref.toLocaleDateString("pt-BR", { timeZone: "UTC", month: "short" }).replace(".", "");
+    return { chave, rotulo: nome.charAt(0).toUpperCase() + nome.slice(1), valor: Math.round(porMes.get(chave) ?? 0) };
+  });
+}
+
 /* ═══ Série → SVG ═════════════════════════════════════════════════════════ */
 
 export interface CaminhoDeSerie {

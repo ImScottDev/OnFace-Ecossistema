@@ -109,7 +109,7 @@ async function montar(entrada: EntradaDoPainel, lente: Lente, agora: Date): Prom
     lente === "closer" ? C.heroMetaCloser(ctx)
       : lente === "sdr" ? C.heroFila(ctx)
       : lente === "operacao" ? C.heroEntrega(ctx)
-      : C.heroMrr(ctx));
+      : C.heroFaturamento(ctx));
 
   const kpis = bloco("kpis", () => C.kpis(ctx, lente));
 

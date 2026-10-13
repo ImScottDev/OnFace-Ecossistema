@@ -4,7 +4,7 @@
  * Os heróis do Início: um por lente, sempre o único momento grafite da tela.
  *
  * Um herói é UM número que decide o dia de quem abriu a tela:
- *   gestão e leitor   MRR ativo, com o movimento dos últimos seis meses
+ *   gestão e leitor   faturamento do mês, com os últimos seis meses (o MRR fica no rodapé)
  *   closer            quanto falta para a meta do mês e se o ritmo dá
  *   sdr               quantos leads esperam o 1º contato e há quanto tempo
  *   operação          quantas entregas estão abertas e o que as trava
@@ -14,14 +14,14 @@
 import Link from "next/link";
 import { brlInteiro, moedaCompacta } from "@/lib/inicio/lente";
 import { deltaDePct } from "@/lib/inicio/lente";
-import type { HeroEntrega, HeroFila, HeroMeta, HeroMrr } from "@/lib/inicio/tipos";
-import { AreaDeMeta, BarrasDeMrr } from "./graficos";
+import type { HeroEntrega, HeroFaturamento, HeroFila, HeroMeta } from "@/lib/inicio/tipos";
+import { AreaDeMeta, BarrasDeFaturamento } from "./graficos";
 import { SeloDelta, horasLegivel, inteiro } from "./compartilhado";
 
 const mesPorExtenso = (iso: string) =>
   new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", month: "long" });
 
-function Rodape({ itens }: { itens: Array<{ rotulo: string; valor: string; tom?: "risco"; href?: string | null }> }) {
+function Rodape({ itens }: { itens: Array<{ rotulo: string; valor: string; apoio?: string; tom?: "risco"; href?: string | null }> }) {
   return (
     <dl className="ini-hero-rodape">
       {itens.map((i) => {
@@ -29,6 +29,7 @@ function Rodape({ itens }: { itens: Array<{ rotulo: string; valor: string; tom?:
           <>
             <dt>{i.rotulo}</dt>
             <dd data-tom={i.tom}>{i.valor}</dd>
+            {i.apoio ? <small>{i.apoio}</small> : null}
           </>
         );
         return i.href
@@ -50,19 +51,19 @@ function BarraDeMeta({ pct, rotulo }: { pct: number; rotulo: string }) {
 
 /* ═══ Gestão e leitor ═════════════════════════════════════════════════════ */
 
-export function HeroDeMrr({ d, geradoEm, comLinks }: { d: HeroMrr; geradoEm: string; comLinks: boolean }) {
+export function HeroDeFaturamento({ d, geradoEm, comLinks }: { d: HeroFaturamento; geradoEm: string; comLinks: boolean }) {
   const delta = deltaDePct(d.deltaPct);
-  const mes = d.meses[d.meses.length - 1];
   const mesNome = mesPorExtenso(geradoEm);
+  const mrrDelta = deltaDePct(d.mrr.deltaPct);
   return (
-    <section className="ini-hero" data-onface-superficie="escura" data-tipo="mrr" aria-labelledby="ini-h-mrr">
+    <section className="ini-hero" data-onface-superficie="escura" data-tipo="faturamento" aria-labelledby="ini-h-fat">
       <div className="ini-hero-corpo">
         <div className="ini-hero-principal">
-          <h2 id="ini-h-mrr" className="ini-hero-rotulo">MRR ativo</h2>
-          <p className="ini-hero-valor">{brlInteiro(d.mrrAtual)}</p>
+          <h2 id="ini-h-fat" className="ini-hero-rotulo">Faturamento de {mesNome}</h2>
+          <p className="ini-hero-valor">{brlInteiro(d.realizado)}</p>
           <p className="ini-hero-apoio">
             <SeloDelta delta={delta} />
-            <span>{d.deltaPct === null ? "sem movimento na janela de 30 dias" : `em ${d.janelaDias} dias`}</span>
+            <span>{d.deltaPct === null ? "sem base no mesmo período do mês anterior" : "contra o mesmo período do mês anterior"}</span>
           </p>
           {d.metaMes ? (
             <div className="ini-hero-meta">
@@ -83,15 +84,20 @@ export function HeroDeMrr({ d, geradoEm, comLinks }: { d: HeroMrr; geradoEm: str
           )}
         </div>
         <div className="ini-hero-grafico">
-          <h3 className="ini-hero-subtitulo">Movimento de MRR, 6 meses</h3>
-          <BarrasDeMrr meses={d.meses} />
+          <h3 className="ini-hero-subtitulo">Faturamento por mês, 6 meses</h3>
+          <BarrasDeFaturamento meses={d.meses} />
         </div>
       </div>
       <Rodape
         itens={[
-          { rotulo: `Entrou em ${mesNome}`, valor: moedaCompacta(mes.entrou) },
-          { rotulo: `Saiu em ${mesNome}`, valor: moedaCompacta(mes.saiu), tom: mes.saiu < 0 && Math.abs(mes.saiu) > mes.entrou ? "risco" : undefined },
-          { rotulo: "Líquido do mês", valor: moedaCompacta(mes.liquido), tom: mes.liquido < 0 ? "risco" : undefined, href: comLinks ? "/clientes" : null },
+          { rotulo: "Vendas ganhas", valor: inteiro(d.ganhos), apoio: `em ${mesNome}, até hoje`, href: comLinks ? "/vendas" : null },
+          { rotulo: "Mês anterior", valor: moedaCompacta(d.mesAnterior), apoio: "fechado inteiro" },
+          {
+            rotulo: "MRR ativo",
+            valor: moedaCompacta(d.mrr.atual),
+            apoio: `${mrrDelta.texto} em ${d.mrr.janelaDias} dias`,
+            href: comLinks ? "/clientes" : null,
+          },
         ]}
       />
     </section>

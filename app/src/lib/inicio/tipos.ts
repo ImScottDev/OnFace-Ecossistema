@@ -50,14 +50,27 @@ export interface MesDeMrr {
   liquido: number;
 }
 
-export interface HeroMrr {
-  tipo: "mrr";
-  mrrAtual: number;
-  /** Variação do MRR ativo na janela; null sem movimento ou sem base. */
+export interface MesDeFaturamento {
+  rotulo: string;
+  /** Mensalidade fechada + setup dos negócios ganhos no mês (mesma conta do KPI e da meta). */
+  valor: number;
+}
+
+export interface HeroFaturamento {
+  tipo: "faturamento";
+  /** Faturamento do mês corrente, do dia 1 até hoje. */
+  realizado: number;
+  /** Variação contra o mesmo período do mês anterior; null sem base. */
   deltaPct: number | null;
-  janelaDias: number;
-  meses: MesDeMrr[];
+  /** Quanto o mês anterior fechou inteiro. */
+  mesAnterior: number;
+  /** Negócios ganhos no mês corrente. */
+  ganhos: number;
+  /** Seis meses, o último é o corrente (parcial). */
+  meses: MesDeFaturamento[];
   metaMes: { alvo: number; realizado: number; pct: number; diasUteisRestantes: number; ritmoPorDia: number | null } | null;
+  /** A base recorrente, que deixou de ser o número principal mas continua visível. */
+  mrr: { atual: number; deltaPct: number | null; janelaDias: number; liquidoMes: number };
 }
 
 export interface HeroMeta {
@@ -106,7 +119,7 @@ export interface HeroEntrega {
   mrrAtual: number;
 }
 
-export type Hero = HeroMrr | HeroMeta | HeroFila | HeroEntrega;
+export type Hero = HeroFaturamento | HeroMeta | HeroFila | HeroEntrega;
 
 /* ── Precisa de você ────────────────────────────────────────────────────── */
 
