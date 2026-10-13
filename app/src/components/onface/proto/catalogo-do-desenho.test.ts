@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { catalogoDoDesenho } from "./catalogo-do-desenho";
+import { catalogoDoDesenho, catalogoDoSeletor } from "./catalogo-do-desenho";
 import type { ItemCatalogo } from "@/lib/vendas/propostas";
 
 /** Um item do catálogo como o banco entrega. */
@@ -122,5 +122,49 @@ describe("variações com nome amigável", () => {
       item({ catalogoPrecoId: "b", naturezaReceita: "ONE_TIME", variacao: "Avulso" }),
     ] });
     assert.equal(c.PABX[0].precos.length, 1);
+  });
+});
+
+describe("seletor do catálogo em sanfona", () => {
+  const cat = catalogoDoDesenho({ PABX: [
+    item({ servicoCatalogoId: "canais", catalogoPrecoId: "c4", nome: "PABX - Canais", variacao: "PABX - Canais — 04 Canais", periodo: "mensal", descricao: "Chamadas simultâneas" }),
+    item({ servicoCatalogoId: "canais", catalogoPrecoId: "c8", nome: "PABX - Canais", variacao: "PABX - Canais — 08 Canais", periodo: "mensal" }),
+    item({ servicoCatalogoId: "hw", catalogoPrecoId: "hw1", nome: "PABX - Hardware", variacao: "PABX - Hardware — Telefone Fanvil X3", naturezaReceita: "HARDWARE", periodo: "mensal" }),
+    item({ servicoCatalogoId: "lin", catalogoPrecoId: "l1", nome: "PABX - Linhas", variacao: "PABX - Linha 4004 — Linha 4004 | Até 800min", periodo: "mensal" }),
+  ] }).PABX;
+
+  it("a variação aparece com nome amigável, sem repetir o produto", () => {
+    const linhas = cat.find((p) => p.id === "lin")!;
+    assert.equal(linhas.precos[0].variacao, "Linha 4004 · Até 800min");
+    assert.equal(cat.find((p) => p.id === "canais")!.precos[0].variacao, "04 Canais");
+  });
+
+  it("locação de hardware é mensal: o período do Price manda, não a natureza", () => {
+    assert.equal(cat.find((p) => p.id === "hw")!.precos[0].int, "mes");
+  });
+
+  it("sem busca: tudo fechado, agrupado pelo tipo; só o produto aberto abre", () => {
+    const g = catalogoDoSeletor(cat, "", "canais");
+    assert.deepEqual(g.map((x) => x.titulo), ["Planos e serviços recorrentes", "Equipamentos"]);
+    const todos = g.flatMap((x) => x.produtos);
+    assert.deepEqual(todos.filter((x) => x.aberto).map((x) => x.produto.id), ["canais"]);
+    assert.equal(todos.find((x) => x.produto.id === "canais")!.precos.length, 2);
+  });
+
+  it("busca pela variação abre o produto só com as variações que casam", () => {
+    const g = catalogoDoSeletor(cat, "08 canais", null);
+    const todos = g.flatMap((x) => x.produtos);
+    assert.deepEqual(todos.map((x) => [x.produto.id, x.aberto, x.precos.map((p) => p.id)]), [["canais", true, ["c8"]]]);
+  });
+
+  it("busca pelo produto ou descrição traz todas as variações, sem diferenciar acento e caixa", () => {
+    const todos = catalogoDoSeletor(cat, "CHAMADAS simultaneas", null).flatMap((x) => x.produtos);
+    assert.equal(todos.length, 1);
+    assert.equal(todos[0].precos.length, 2);
+    assert.equal(catalogoDoSeletor(cat, "ate 800", null).flatMap((x) => x.produtos)[0].produto.id, "lin");
+  });
+
+  it("busca sem resultado devolve lista vazia (o seletor mostra o estado vazio)", () => {
+    assert.deepEqual(catalogoDoSeletor(cat, "geladeira", null), []);
   });
 });

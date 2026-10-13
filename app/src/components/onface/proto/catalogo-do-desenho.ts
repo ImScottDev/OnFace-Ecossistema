@@ -11,6 +11,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import type { ItemCatalogo } from "@/lib/vendas/propostas";
+import { variacaoAmigavel } from "@/lib/catalogo/rotulos";
 
 /** Um preço na forma do desenho. */
 export interface PrecoDoDesenho {
@@ -20,6 +21,8 @@ export interface PrecoDoDesenho {
   /** "mes" | "ano" | "avulso" — o desenho decide o rótulo e a natureza por aqui. */
   int: "mes" | "ano" | "avulso";
   d: string;
+  /** A variação sem a recorrência ("04 Canais"): o seletor mostra a recorrência num selo à parte. */
+  variacao?: string;
   padrao: 0 | 1;
   min: number | null;
   max: number | null;
@@ -45,6 +48,10 @@ export interface ProdutoDoDesenho {
  * é o texto da variação, então é dele que o intervalo sai.
  */
 function intervaloDe(item: ItemCatalogo): PrecoDoDesenho["int"] {
+  // O período do Price manda: locação de hardware é HARDWARE e mesmo assim é cobrada todo mês.
+  if (item.periodo === "anual") return "ano";
+  if (item.periodo === "mensal") return "mes";
+  if (item.periodo === "unico") return "avulso";
   // `MRR` é a ÚNICA natureza recorrente do domínio (`NATUREZAS_RECEITA`): o
   // anual também é MRR, e o que o distingue é a variação, não a natureza.
   if (item.naturezaReceita !== "MRR") return "avulso";
@@ -68,17 +75,19 @@ function tipoDe(natureza: ItemCatalogo["naturezaReceita"]): ProdutoDoDesenho["ti
  * ("Callface AI - Full — Mensal"). Dentro do cartão do produto, que já mostra
  * o nome, isso vira ruído — fica só o que distingue um preço do outro.
  */
-export function rotuloDoPreco(item: ItemCatalogo): string {
+export function variacaoDoPreco(item: ItemCatalogo): string {
   const bruto = (item.variacao ?? "").trim();
   const chave = (item.lookupKey ?? "").replace(/_/g, " ").trim().toLowerCase();
   // Variação que é o lookup_key cru nunca vai para a tela: o período diz o que ela é.
   if (!bruto || (chave && bruto.toLowerCase() === chave)) {
     return item.periodo === "anual" ? "Anual" : item.periodo === "mensal" ? "Mensal" : item.periodo === "unico" ? "Avulso" : "Padrão";
   }
-  const semONome = bruto.startsWith(item.nome)
-    ? bruto.slice(item.nome.length).replace(/^\s*[—–-]\s*/, "").trim()
-    : bruto;
-  const rotulo = semONome || bruto;
+  return variacaoAmigavel(item.nome, bruto) || bruto;
+}
+
+export function rotuloDoPreco(item: ItemCatalogo): string {
+  const rotulo = variacaoDoPreco(item);
+  if (rotulo === "Padrão") return rotulo;
   // Recorrente vs avulso sempre visível: setup/one-time não é MRR.
   if (/mensal|anual|avulso|\bano\b|\bm[eê]s\b/i.test(rotulo)) return rotulo;
   const int = intervaloDe(item);
@@ -124,6 +133,7 @@ export function catalogoDoDesenho(
         v: Number(item.valor),
         int: intervaloDe(item),
         d: rotuloDoPreco(item),
+        variacao: variacaoDoPreco(item),
         padrao: 0 as const,
         min: null,
         max: null,
@@ -145,4 +155,53 @@ export function catalogoDoDesenho(
   }
 
   return saida;
+}
+
+/* ── O seletor do catálogo (sanfona) ───────────────────────────────────── */
+
+/** Os grupos do seletor, na ordem em que se vende: plano, adicional, setup, equipamento. */
+export const GRUPOS_DO_SELETOR: Array<{ tipo: ProdutoDoDesenho["tipo"]; titulo: string }> = [
+  { tipo: "plano", titulo: "Planos e serviços recorrentes" },
+  { tipo: "pacote", titulo: "Adicionais e consumo" },
+  { tipo: "setup", titulo: "Setup e implantação" },
+  { tipo: "hardware", titulo: "Equipamentos" },
+];
+
+const normal = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+export interface ProdutoNoSeletor {
+  produto: ProdutoDoDesenho;
+  /** As variações que aparecem: todas, ou só as que casam com a busca. */
+  precos: PrecoDoDesenho[];
+  /** Busca ativa abre o produto que casou, para a variação ficar à mão. */
+  aberto: boolean;
+}
+
+/**
+ * Filtra e agrupa o catálogo para o seletor.
+ *
+ * Sem busca: todos os produtos, fechados, agrupados pelo tipo. Com busca: o
+ * produto que casa pelo nome ou pela descrição entra com todas as variações; o
+ * que casa só por uma variação entra com as variações que casaram. Os dois
+ * entram abertos. Cada palavra da busca precisa aparecer (sem acento, sem caixa).
+ */
+export function catalogoDoSeletor(
+  produtos: ProdutoDoDesenho[],
+  busca: string,
+  abertoId: string | null,
+): Array<{ titulo: string; produtos: ProdutoNoSeletor[] }> {
+  const termos = normal(busca).split(/\s+/).filter(Boolean);
+  const casa = (texto: string) => termos.every((t) => normal(texto).includes(t));
+
+  const visiveis: ProdutoNoSeletor[] = [];
+  for (const p of produtos) {
+    if (!termos.length) { visiveis.push({ produto: p, precos: p.precos, aberto: p.id === abertoId }); continue; }
+    if (casa(`${p.nome} ${p.desc}`)) { visiveis.push({ produto: p, precos: p.precos, aberto: true }); continue; }
+    const precos = p.precos.filter((x) => casa(`${p.nome} ${x.variacao ?? x.d}`));
+    if (precos.length) visiveis.push({ produto: p, precos, aberto: true });
+  }
+
+  return GRUPOS_DO_SELETOR
+    .map((g) => ({ titulo: g.titulo, produtos: visiveis.filter((v) => v.produto.tipo === g.tipo) }))
+    .filter((g) => g.produtos.length > 0);
 }

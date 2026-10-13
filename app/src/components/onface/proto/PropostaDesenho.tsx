@@ -1204,35 +1204,9 @@ Adicionar item do catálogo
 </svg>
 </button>
 {(f1.catAberto) ? (<>
-<div style={{ borderTop: "1px solid #eef1f1" }}>
-{(f1.catalogo ?? []).map((cg: any, i1: number) => (
-<Fragment key={cg?.id ?? cg?.chave ?? i1}>
-<button onClick={cg.add} title={cg.dica} style={estilo(cg.linha)} className={[hover(cg.hover)].filter(Boolean).join(" ")}>
-<span style={{ flex: "1", minWidth: "0" }}>
-<span style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "#12171d", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-{cg.nome}
-</span>
-<span style={{ display: "block", fontSize: "12px", color: "#67787c", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-{cg.desc}
-</span>
-</span>
-<span style={{ flex: "0 0 auto", textAlign: "right" }}>
-<span style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "#12171d", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-{cg.preco}
-</span>
-<span style={{ display: "block", fontSize: "11px", color: "#8b949e", marginTop: "2px", whiteSpace: "nowrap" }}>
-{cg.precoSub}
-</span>
-</span>
-<span style={estilo(cg.addStyle)}>
-<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-<path d={cg.addD} />
-</svg>
-</span>
-</button>
-</Fragment>
-))}
-</div>
+{/* ENCAIXE à mão (13/10, pedido do Scott): o seletor do catálogo é o componente do Design System
+    SeletorCatalogo, montado em PropostaLiga (f1.seletorCatalogo). Ao regenerar este arquivo, manter este encaixe. */}
+{f1.seletorCatalogo}
 </>) : null}
 </div>
 </div>

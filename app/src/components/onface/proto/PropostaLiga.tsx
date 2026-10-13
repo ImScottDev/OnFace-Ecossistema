@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import { PropostaDesenho } from "./PropostaDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 import { nomeAposTrocarVariante, nomeDaLinha, precoDaNovaLinha } from "./linhas-da-proposta";
+import { SeletorCatalogo } from "./SeletorCatalogo";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -517,6 +518,19 @@ class Logica extends React.Component<any, any> {
               style: "display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 4px;border-radius:7px;border:0;cursor:pointer;font-size:11.5px;white-space:nowrap;background:" + (on ? "#fafafa" : "#fff") + ";box-shadow:inset 0 0 0 1px " + (on ? "#12171d" : "#e3e7e8"),
               onClick: () => addPr(pr, tier ? Math.max(pr.min || 1, pr.min === 1 ? p.qtd : pr.min) : undefined) }; })
         };
+      }),
+      /* O seletor em sanfona (Design System): o produto abre e o vendedor escolhe a variação ANTES
+         de a linha nascer. A linha entra com quantidade 1 e o resto se ajusta no item, como antes. */
+      seletorCatalogo: React.createElement(SeletorCatalogo, {
+        familia: FAM[catFam],
+        produtos: CAT[catFam] || [],
+        noProposta: d.itens.reduce((m, x) => { if (x.preco) m[x.preco] = (m[x.preco] || 0) + 1; return m; }, {}),
+        onAdicionar: (prodId, precoId) => {
+          const p = (CAT[catFam] || []).find(x => x.id === prodId); const pr = p && p.precos.find(x => x.id === precoId);
+          if (!p || !pr) return;
+          this.setState(s => ({ d: Object.assign({}, s.d, { itens: s.d.itens.concat(this.novoItem(p, pr, 1)) }), sujo: true, catAberto: true }));
+          this.diz(p.nome + (p.precos.length > 1 ? " · " + (pr.variacao || pr.d) : "") + " adicionado", "ok");
+        }
       }),
       addLivre: () => this.setState(s => ({ d: Object.assign({}, s.d, { itens: s.d.itens.concat({ nome: "", desc: "", natureza: "ONE_TIME", valor: "", qtd: "1" }) }), sujo: true }))
     };
