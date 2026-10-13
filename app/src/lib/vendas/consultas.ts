@@ -1852,6 +1852,20 @@ export function respostasDoFormulario(
   return saida;
 }
 
+/** Um envio da Meta vira dois leads com o mesmo e-mail: o do webhook da Meta (com as
+ *  respostas e o rastreio em `campos_custom`) e, minutos depois, o do RD Station
+ *  (utm ig/fb, `campos_custom` vazio). A ficha do segundo mostrava um formulário
+ *  vazio. Sem resposta própria, ela passa a mostrar a do lead irmão (mesmo
+ *  e-mail) mais recente que tenha; a resposta própria, quando existe, manda. */
+export function camposComRespostasDoIrmao(
+  proprios: Record<string, unknown> | null,
+  irmaos: Array<Record<string, unknown> | null>,
+): Record<string, unknown> | null {
+  if (respostasDoFormulario(proprios).length > 0) return proprios;
+  const irmao = irmaos.find((c) => respostasDoFormulario(c).length > 0);
+  return irmao ? { ...irmao, ...(proprios ?? {}) } : proprios;
+}
+
 /** Campos custom ativos do lead, na ordem definida em Ajustes > Campos custom. */
 async function camposCustomDoLead(organizacaoId: string): Promise<Array<{ nome: string; label: string }>> {
   const r = await db.execute<{ nome: string; label: string }>(sql`
@@ -1998,6 +2012,15 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
      "qualificacao" (mesma regra de `boardPreVendas`). Antes o detalhe lia só o
      campo legado, que 3 leads locais tinham defasado: o cartão dizia Qualificado
      e a ficha dizia Em contato. */
+  const irmaos = l.email
+    ? await db.execute<{ campos_custom: Record<string, unknown> | null }>(sql`
+        SELECT campos_custom FROM leads
+         WHERE organizacao_id = ${organizacaoId}::uuid AND id <> ${leadId}::uuid
+           AND lower(email) = lower(${l.email}) AND campos_custom IS NOT NULL
+         ORDER BY created_at DESC LIMIT 5`)
+    : [];
+  const camposDoFormulario = camposComRespostasDoIrmao(l.campos_custom, [...irmaos].map((r) => r.campos_custom));
+
   const etapa = (l.etapa === "qualificacao" ? "qualificacao" : (l.etapa_canonica ?? l.etapa ?? "novo")) as EstagioPreVendas;
 
   return {
@@ -2035,10 +2058,10 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
       metaAdId: l.meta_ad_id, metaAdsetId: l.meta_adset_id, metaCampaignId: l.meta_campaign_id,
     },
     respostasFormulario: comIdentidadeDoFormulario(
-      respostasDoFormulario(l.campos_custom, await camposCustomDoLead(organizacaoId)),
+      respostasDoFormulario(camposDoFormulario, await camposCustomDoLead(organizacaoId)),
       { nome: l.nome, sobrenome: l.sobrenome, email: l.email, telefone: l.telefone, empresa: l.empresa_nome, cargo: l.cargo },
     ),
-    metaRastreio: rastreioMetaDeCampos(l.campos_custom),
+    metaRastreio: rastreioMetaDeCampos(camposDoFormulario),
     responsavel: { id: l.responsavel_id, nome: l.responsavel },
     servicos: comoLista(l.servicos),
     tags: tags.map((t) => ({ id: t.id, nome: t.nome })),
