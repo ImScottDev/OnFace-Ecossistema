@@ -2,7 +2,7 @@
  * O PLANO de cada tarefa de CS da saúde de uso: título, corpo, prioridade e prazo
  * por motivo. Puro (sem banco): o gerador (`tarefas-saude.ts`) só aplica.
  */
-import type { CodigoMotivo, MotivoSaude } from "./saude-regras";
+import { LIMIARES_SAUDE, type CodigoMotivo, type MotivoSaude } from "./saude-regras";
 
 /** Motivos que viram tarefa. `copiloto_baixo` é só leitura (amarelo na tela). */
 export const MOTIVOS_COM_TAREFA: readonly CodigoMotivo[] = [
@@ -79,3 +79,64 @@ export function planejarTarefa(empresaNome: string, m: MotivoSaude, agora: Date)
   }
 }
 
+
+/** Uma linha da saúde diária, só o que o marco zero precisa: o dia civil (SP) e os motivos ativos. */
+export interface DiaDeSaude { dia: string; codigos: readonly CodigoMotivo[] }
+
+const MS_DIA = 86_400_000;
+export const diaCivilSp = (d: Date): string => new Date(d.getTime() - 3 * 3600_000).toISOString().slice(0, 10);
+
+/**
+ * MARCO ZERO: nenhuma tarefa de CS nasce de um fato anterior ao primeiro sync
+ * bem-sucedido da organização. O fato continua na tela (semáforo, motivos); só
+ * não vira tarefa. Responde "este motivo pode ABRIR tarefa agora?".
+ *
+ * Regra por sinal. Instante: vale se o instante >= marco.
+ *   - cancelamento: `canceladaEm` >= marco (a última assinatura cancelada).
+ *   - desativada:   `desativadaEm` >= marco.
+ *   - vencimento:   o instante é a ENTRADA na janela de aviso (venceEm - 60 dias),
+ *                   não o vencimento: licença que já estava dentro da janela no
+ *                   marco é história represada; a que entra depois, é fato novo.
+ * Estado contínuo com data de início conhecida: o instante é quando o limiar
+ * foi cruzado, não a última atividade em si.
+ *   - silencio:   última atividade + `silencioDias` >= marco. Quem já estava
+ *                 mudo no marco e segue mudo nunca passa; se voltar a usar e
+ *                 parar de novo, a nova última atividade já é posterior.
+ *   - nunca_usou: início + `nuncaUsouAposDias` >= marco (mesma ideia).
+ * Estado contínuo SEM data de início (queda, licença ociosa, teto): a única
+ * memória é o histórico diário. O "episódio" é a sequência de dias ininterrupta
+ * com o motivo ativo até hoje; só abre tarefa se o episódio COMEÇOU depois do
+ * dia civil do marco, isto é, houve um dia sem o motivo e ele voltou. Episódio
+ * que já estava ativo no dia do marco é herdado e nunca gera tarefa, nem que dure
+ * meses. Dias sem linha não interrompem o episódio (sync parado não "limpa" o
+ * motivo). Sem histórico nenhum: não abre (na dúvida, não cria).
+ *   - queda / licenca_ociosa / no_teto: pelo histórico.
+ * `copiloto_baixo` não vira tarefa. Ordem do histórico: dia crescente, o último
+ * é o de hoje (o motivo ativo agora).
+ */
+export function podeAbrirTarefaPosMarco(m: MotivoSaude, marco: Date, historico: readonly DiaDeSaude[]): boolean {
+  const t = marco.getTime();
+  const depoisDoMarco = (iso: unknown, somarDias = 0): boolean => {
+    const x = typeof iso === "string" ? Date.parse(iso) : NaN;
+    return Number.isFinite(x) && x + somarDias * MS_DIA >= t;
+  };
+  switch (m.codigo) {
+    case "cancelamento": return depoisDoMarco(m.numeros.canceladaEm);
+    case "desativada": return depoisDoMarco(m.numeros.desativadaEm);
+    case "vencimento": {
+      const venc = typeof m.numeros.venceEm === "string" ? Date.parse(m.numeros.venceEm) : NaN;
+      return Number.isFinite(venc) && venc - LIMIARES_SAUDE.vencimentoAvisoDias * MS_DIA >= t;
+    }
+    case "silencio": return depoisDoMarco(m.numeros.ultimaAtividadeEm, LIMIARES_SAUDE.silencioDias);
+    case "nunca_usou": return depoisDoMarco(m.numeros.inicioEm, LIMIARES_SAUDE.nuncaUsouAposDias);
+    case "queda": case "licenca_ociosa": case "no_teto": {
+      const diaMarco = diaCivilSp(marco);
+      let inicio: string | null = null; // primeiro dia do episódio corrente
+      for (const h of historico) {
+        if (h.codigos.includes(m.codigo)) inicio ??= h.dia; else inicio = null;
+      }
+      return inicio != null && inicio > diaMarco;
+    }
+    default: return false;
+  }
+}

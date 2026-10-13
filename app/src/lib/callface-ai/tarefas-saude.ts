@@ -26,7 +26,7 @@ import {
   tarefaAutomaticaAberta,
 } from "@/lib/cs/tarefas";
 import type { MotivoSaude } from "./saude-regras";
-import { MOTIVOS_COM_TAREFA, RESPIRO_DIAS, planejarTarefa, tipoDaTarefa } from "./tarefas-saude-plano";
+import { MOTIVOS_COM_TAREFA, RESPIRO_DIAS, diaCivilSp, planejarTarefa, podeAbrirTarefaPosMarco, tipoDaTarefa, type DiaDeSaude } from "./tarefas-saude-plano";
 
 export { MOTIVOS_COM_TAREFA, RESPIRO_DIAS, planejarTarefa, tipoDaTarefa, fimDoDiaSp, prioridadeDoSilencio } from "./tarefas-saude-plano";
 
@@ -35,7 +35,7 @@ const PREFIXO_SEM_DONO = "[Sem CS responsável nesta conta: fila da gestão de C
 const RODAPE = "\n\nGerada pela saúde de uso do Callface AI. Se o motivo acabar (o cliente voltar a usar), esta tarefa se fecha sozinha.";
 
 export interface ResultadoTarefasSaude {
-  criadas: number; atualizadas: number; fechadas: number; emRespiro: number; semResponsavel: number;
+  criadas: number; atualizadas: number; fechadas: number; emRespiro: number; semResponsavel: number; antesDoMarco: number;
 }
 
 interface LinhaSaude extends Record<string, unknown> {
@@ -59,13 +59,54 @@ async function avisarCloser(empresaId: string, empresaNome: string, titulo: stri
   }
 }
 
+const PROVIDER = "callface_ai";
+const RECURSO_MARCO = "marco_zero_tarefas_cs";
+
+/**
+ * Marco zero da organização: o instante do primeiro sync bem-sucedido. Fica em
+ * `integracao_sync_estado` (recurso próprio, `cursor` = ISO), gravado UMA vez.
+ * Na primeira chamada deriva do histórico já espelhado (a linha de saúde mais
+ * antiga), que é quando o primeiro sync de fato rodou; sem histórico, agora.
+ * Chamar a cada sync, também com a trava `off` ligada, para o marco ficar
+ * fixado antes de a trava ser retirada.
+ */
+export async function garantirMarcoZero(organizacaoId: string): Promise<Date> {
+  const [h] = await db.execute<{ t: Date | null }>(sql`
+    SELECT min(s.calculado_em) AS t FROM callface_ai_saude_diaria s
+      JOIN callface_ai_external_identities i ON i.id = s.external_identity_id
+      JOIN empresas e ON e.id = i.entity_id AND e.organizacao_id = ${organizacaoId}::uuid
+     WHERE i.entity_type = 'empresa'`);
+  const inicial = (h?.t ? new Date(h.t) : new Date()).toISOString();
+  await db.execute(sql`
+    INSERT INTO integracao_sync_estado (organizacao_id, provider, recurso, cursor, status, ultimo_sync_em)
+    VALUES (${organizacaoId}::uuid, ${PROVIDER}, ${RECURSO_MARCO}, ${inicial}, 'ok', now())
+    ON CONFLICT (organizacao_id, provider, recurso) DO NOTHING`);
+  const [r] = await db.execute<{ cursor: string }>(sql`
+    SELECT cursor FROM integracao_sync_estado
+     WHERE organizacao_id = ${organizacaoId}::uuid AND provider = ${PROVIDER} AND recurso = ${RECURSO_MARCO}`);
+  return new Date(r.cursor);
+}
+
 /**
  * Concilia as tarefas com a saúde de HOJE (a linha mais recente de cada
  * cliente em `callface_ai_saude_diaria`). Só olha linha fresca (últimos 2
  * dias): saúde velha, de sync parado, não pode fechar nem abrir tarefa.
  */
 export async function sincronizarTarefasDeSaude(organizacaoId: string, agora = new Date()): Promise<ResultadoTarefasSaude> {
-  const r: ResultadoTarefasSaude = { criadas: 0, atualizadas: 0, fechadas: 0, emRespiro: 0, semResponsavel: 0 };
+  const r: ResultadoTarefasSaude = { criadas: 0, atualizadas: 0, fechadas: 0, emRespiro: 0, semResponsavel: 0, antesDoMarco: 0 };
+  const marco = await garantirMarcoZero(organizacaoId);
+  const hist = new Map<string, DiaDeSaude[]>();
+  for (const h of await db.execute<{ empresa_id: string; dia: string; motivos: MotivoSaude[] }>(sql`
+    SELECT DISTINCT ON (i.entity_id, s.dia) i.entity_id::text AS empresa_id, s.dia::text AS dia, s.motivos
+      FROM callface_ai_saude_diaria s
+      JOIN callface_ai_external_identities i ON i.id = s.external_identity_id
+      JOIN empresas e ON e.id = i.entity_id AND e.organizacao_id = ${organizacaoId}::uuid
+     WHERE i.entity_type = 'empresa' AND s.semaforo <> 'sem_dado' AND s.dia >= ${diaCivilSp(marco)}::date
+     ORDER BY i.entity_id, s.dia, s.calculado_em DESC`)) {
+    const l = hist.get(h.empresa_id) ?? [];
+    l.push({ dia: String(h.dia).slice(0, 10), codigos: (h.motivos ?? []).map((m) => m.codigo) });
+    hist.set(h.empresa_id, l);
+  }
   const linhas = await db.execute<LinhaSaude>(sql`
     SELECT DISTINCT ON (i.entity_id) i.entity_id::text AS empresa_id, e.nome AS empresa_nome,
            s.semaforo, s.motivos, s.dias_silencio
@@ -101,6 +142,8 @@ export async function sincronizarTarefasDeSaude(organizacaoId: string, agora = n
         if (await atualizarTarefaAutomatica(organizacaoId, aberta, { titulo: plano.titulo, descricao: prefixo + plano.descricao + RODAPE, prioridade })) r.atualizadas++;
         continue;
       }
+      // Fato anterior ao primeiro sync fica visível na tela, mas não vira tarefa.
+      if (!podeAbrirTarefaPosMarco(motivo, marco, hist.get(l.empresa_id) ?? [])) { r.antesDoMarco++; continue; }
       if (await fechadaPorPessoaRecentemente(organizacaoId, l.empresa_id, tipo, RESPIRO_DIAS[codigo])) { r.emRespiro++; continue; }
 
       const { criada, id } = await criarTarefaCs({

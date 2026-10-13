@@ -24,7 +24,7 @@ import { sql } from "drizzle-orm";
 import { lerComTransacao, lerDetalhe, lerSaude, lerTenants, lerUso, lerUsoDiario, medirAmbiguidade, type UsoDiarioCallfaceAi } from "@onface/integrations-callface-ai";
 import { resolverIdentidades, tenantsVinculados } from "./identidade";
 import { gravarSaudeDoDia } from "./saude-espelho";
-import { sincronizarTarefasDeSaude, type ResultadoTarefasSaude } from "@/lib/callface-ai/tarefas-saude";
+import { garantirMarcoZero, sincronizarTarefasDeSaude, type ResultadoTarefasSaude } from "@/lib/callface-ai/tarefas-saude";
 
 export const PROVIDER = "callface_ai";
 export const RECURSO_SNAPSHOT = "tenant_snapshot";
@@ -317,6 +317,7 @@ export async function sincronizarCallfaceAi(
     const g = await gravarSaudeDoDia(organizacaoId, saude);
     saudeGravada = { linhas: g.linhas, mudancasDeSemaforo: g.mudancas.filter((m) => m.de !== null).length };
     falhas += g.falhas;
+    await garantirMarcoZero(organizacaoId); // fixa o marco zero mesmo com a trava ligada
     // Trava de emergência: CALLFACE_AI_TAREFAS_CS=off mantém espelho e semáforo, mas não abre nem fecha tarefa.
     if (process.env.CALLFACE_AI_TAREFAS_CS?.trim().toLowerCase() !== "off") tarefas = await sincronizarTarefasDeSaude(organizacaoId);
   } catch (e) {

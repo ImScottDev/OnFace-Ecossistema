@@ -41,7 +41,7 @@ async function main() {
     console.log(`  status ${r.status} em ${r.duracaoMs}ms`);
     console.log(`  tenants ${r.tenants} · snapshots ${r.snapshots} · detalhes ${r.detalhes} · dias de uso ${r.diasDeUso} · identidades novas ${r.identidadesNovas}`);
     if (r.saude) console.log(`  saúde do dia ${r.saude.linhas} linha(s) · mudanças de semáforo ${r.saude.mudancasDeSemaforo}`);
-    if (r.tarefas) console.log(`  tarefas de CS: ${r.tarefas.criadas} criada(s) · ${r.tarefas.atualizadas} atualizada(s) · ${r.tarefas.fechadas} fechada(s) · ${r.tarefas.emRespiro} em respiro · ${r.tarefas.semResponsavel} sem CS responsável`);
+    if (r.tarefas) console.log(`  tarefas de CS: ${r.tarefas.criadas} criada(s) · ${r.tarefas.atualizadas} atualizada(s) · ${r.tarefas.fechadas} fechada(s) · ${r.tarefas.emRespiro} em respiro · ${r.tarefas.semResponsavel} sem CS responsável · ${r.tarefas.antesDoMarco} anterior(es) ao marco zero`);
     if (r.ambiguidade) {
       const a = r.ambiguidade;
       const pct = (n: number) => a.chamadasTotal ? ((n / a.chamadasTotal) * 100).toFixed(2) : "0";
