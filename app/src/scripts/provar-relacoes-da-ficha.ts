@@ -34,6 +34,8 @@ async function main() {
        AND NOT EXISTS (SELECT 1 FROM servicos_canonicos s WHERE s.empresa_id = l.empresa_id)
        AND NOT EXISTS (SELECT 1 FROM oportunidades o WHERE o.lead_id = l.id)
        AND l.empresa_id IS NOT NULL
+       -- Lead de verdade em Pré-vendas tem aquisição aberta; o inserido cru por outro teste não tem e não é o que se prova aqui.
+       AND EXISTS (SELECT 1 FROM aquisicoes a WHERE a.lead_legado_id = l.id AND a.closed_at IS NULL)
      ORDER BY l.created_at DESC LIMIT 1`);
   const cliente = await um(sql`
     SELECT l.id::text, l.empresa_id::text FROM leads l

@@ -39,7 +39,10 @@ import type { AquisicaoDaPessoa, CadenciaDoLead, EmpresaExtraDaPessoa, Oportunid
  * vê. Quando o handoff parar de inventar, isto fica inerte sozinho.
  */
 function corrigirInventados(vals: any, reais: Record<string, string | null>): any {
-  const visto = new Set<any>();
+  /* O formulário de edição (`ed`) é entrada, não exibição: sobrescrever `valor` dos campos "E-mail",
+     "Telefone", "WhatsApp" e "LinkedIn" pelo dado gravado deixava esses quatro campos impossíveis de
+     editar (a digitação ia para o estado e a tela voltava ao valor antigo). */
+  const visto = new Set<any>(vals?.ed ? [vals.ed] : []);
 
   const anda = (no: any): void => {
     if (!no || typeof no !== "object" || visto.has(no)) return;
