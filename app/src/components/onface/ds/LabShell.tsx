@@ -26,6 +26,7 @@ import { SecaoAgenda } from "./secoes/Agenda";
 import { SecaoFluxos } from "./secoes/Fluxos";
 import { SecaoPadroes } from "./secoes/Padroes";
 import { SecaoLayouts } from "./secoes/Layouts";
+import { SecaoUsoCallfaceAi } from "./secoes/UsoCallfaceAi";
 
 
 function conteudo(secao: string) {
@@ -38,6 +39,7 @@ function conteudo(secao: string) {
     case "graficos": return <SecaoGraficos />;
     case "quadro": return <SecaoQuadro />;
     case "registro": return <SecaoRegistro />;
+    case "uso-callface-ai": return <SecaoUsoCallfaceAi />;
     case "nexo": return <SecaoNexo />;
     case "agenda": return <SecaoAgenda />;
     case "fluxos": return <SecaoFluxos />;

@@ -1,5 +1,5 @@
 import {
-  Boxes, CalendarDays, ChartArea, Database, Kanban, LayoutGrid, LayoutTemplate, Palette, Shapes,
+  Activity, Boxes, CalendarDays, ChartArea, Database, Kanban, LayoutGrid, LayoutTemplate, Palette, Shapes,
   Sparkles, Target, Waves, Workflow, BookOpen,
   type LucideIcon,
 } from "lucide-react";
@@ -36,6 +36,7 @@ export const NAVEGACAO: { grupo: string; itens: ItemNavegacao[] }[] = [
     grupo: "Produto",
     itens: [
       { slug: "registro", rotulo: "Registro e CRM", icone: Target },
+      { slug: "uso-callface-ai", rotulo: "Uso da Callface AI", icone: Activity },
       { slug: "nexo", rotulo: "NEXO e IA", icone: Sparkles },
       { slug: "agenda", rotulo: "Agenda", icone: CalendarDays },
       { slug: "fluxos", rotulo: "Fluxos e passos", icone: Workflow },
