@@ -5,7 +5,7 @@
 #   ./scripts/carga-aditiva/aplicar-no-dev.sh [--parar-apps]
 set -euo pipefail
 K="$HOME/.ssh/infra_callface.pem"; H="ubuntu@34.204.200.52"; PG=callface-crm2-dev-postgres; DB=callface_crm_mz
-TS=$(date +%Y%m%d-%H%M); SCR="callface_freshprod_$TS"; D="$HOME/callface-virada"
+TS=$(date +%Y%m%d_%H%M); SCR="callface_freshprod_$TS"; D="$HOME/callface-virada"
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"; PLAN="${PLANILHA:-$HOME/Downloads/Faturamento callface 09-2026-(Planilha1).csv}"
 export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"; mkdir -p "$D"
 sh() { ssh -i "$K" "$H" "$@"; }; dpsql() { sh "docker exec -i $PG psql -U callface -X -q -v ON_ERROR_STOP=1 $(printf '%q ' "$@")"; }
