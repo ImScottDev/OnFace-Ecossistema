@@ -12,8 +12,8 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { MOTIVOS_DESQUALIFICACAO, MOTIVOS_NUTRICAO, MOTIVOS_PERDA } from "./dominio";
 
-export type Classe = "cliente" | "lead" | "prospect" | "contato";
-export const ROTULO_CLASSE: Record<Classe, string> = { cliente: "Cliente", lead: "Lead", prospect: "Prospect", contato: "Contato" };
+import type { Classe } from "./classificacao-rotulos";
+export { ROTULO_CLASSE, type Classe } from "./classificacao-rotulos";
 
 export interface FatosDeClassificacao {
   /** Conta com serviço ativo (da pessoa ou da empresa dela). */

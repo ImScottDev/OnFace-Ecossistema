@@ -7,7 +7,7 @@
  * tentar encaixar `Empresa360` num molde que não é o dela.
  * ───────────────────────────────────────────────────────────────────────── */
 
-import { ROTULO_CLASSE } from "@/lib/vendas/classificacao";
+import { ROTULO_CLASSE } from "@/lib/vendas/classificacao-rotulos";
 import { formatarTelefone } from "@/lib/telefone";
 import type { DetalheLead } from "@/lib/vendas/consultas";
 import { qualDoDesenho } from "./qual-do-desenho";
