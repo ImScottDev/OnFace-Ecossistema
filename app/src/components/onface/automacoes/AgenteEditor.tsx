@@ -76,7 +76,7 @@ interface Form {
   porHora: number; porDia: number; semRetorno: number;
   maxRetomadas: number; janelaDias: number; maxDiasRetomada: number; exigirOutlook: boolean;
   canalWhats: boolean; sessoes: string[];
-  handoffEnabled: boolean; handoffKeywords: string[]; mensagemTransicao: string; resumoObrigatorio: boolean; prioridadeHandoff: string; copilotoApos: boolean; retomada: string;
+  handoffEnabled: boolean; handoffKeywords: string[]; mensagemTransicao: string; resumoObrigatorio: boolean; prioridadeHandoff: string; copilotoApos: boolean; retomada: string; retomadaHoras: number;
 }
 
 const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
@@ -113,7 +113,7 @@ function formDe(a: DadosEditorAgente["agente"], v: VersaoDoEditor): Form {
     handoffEnabled: h.enabled !== false, handoffKeywords: strs(h.keywords),
     mensagemTransicao: typeof h.mensagemTransicao === "string" ? h.mensagemTransicao : "", resumoObrigatorio: h.resumoObrigatorio === true,
     prioridadeHandoff: PRIORIDADES.some((p) => p.id === h.prioridade) ? String(h.prioridade) : "normal", copilotoApos: h.copilotoAposHandoff === true,
-    retomada: typeof h.retomada === "string" ? h.retomada : "somente_humano",
+    retomada: typeof h.retomada === "string" ? h.retomada : "somente_humano", retomadaHoras: nOu(h.retomadaHoras, 24),
   };
 }
 
@@ -135,7 +135,7 @@ function corpoDaVersao(f: Form, base: VersaoDoEditor) {
     triggerConfig: { ...trigger, events: f.events },
     handoffConfig: {
       ...base.handoffConfig, enabled: f.handoffEnabled, keywords: f.handoffKeywords, mensagemTransicao: f.mensagemTransicao.trim() || null,
-      resumoObrigatorio: f.resumoObrigatorio, prioridade: f.prioridadeHandoff, copilotoAposHandoff: f.copilotoApos, retomada: f.retomada,
+      resumoObrigatorio: f.resumoObrigatorio, prioridade: f.prioridadeHandoff, copilotoAposHandoff: f.copilotoApos, retomada: f.retomada, retomadaHoras: f.retomadaHoras,
     },
     knowledgeConfig: { ...base.knowledgeConfig, ativo: f.conhAtivo, categorias: f.conhCategorias, maxTrechos: f.maxTrechos },
     guardrailConfig: {
@@ -802,11 +802,12 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
                   <label>Regra de retomada
                     <select value={f.retomada} onChange={(e) => set({ retomada: e.target.value })} disabled={travado}>
                       <option value="somente_humano">Só uma pessoa devolve o atendimento ao agente</option>
-                      <option value="automatica" disabled>Automática (ainda não disponível)</option>
+                      <option value="automatica">Automática: o agente reassume se ninguém responder</option>
                       {f.retomada !== "somente_humano" && f.retomada !== "automatica" ? <option value={f.retomada}>{f.retomada}</option> : null}
                     </select>
-                    <small className="age-ajuda">Hoje, depois do handoff o agente só volta a conduzir quando alguém usa Retomar no Atendimento.</small>
+                    <small className="age-ajuda">{f.retomada === "automatica" ? "Se o contato escrever depois do handoff e nenhuma pessoa responder dentro do prazo, o atendimento volta ao agente." : "O agente só volta a conduzir quando alguém usa Retomar no Atendimento."}</small>
                   </label>
+                  {f.retomada === "automatica" ? <div style={{ maxWidth: 280 }}><Num rotulo="Devolver ao agente após (horas)" valor={f.retomadaHoras} min={1} max={720} desligado={travado} onChange={(n) => set({ retomadaHoras: n })} ajuda="Sem resposta humana. 1 a 720." /></div> : null}
                 </div>
               </Secao>
             </>

@@ -160,6 +160,8 @@ export async function validarConfiguracaoDaVersao(organizacaoId: string, v: z.in
   if (g.memoria !== undefined && typeof rec(g.memoria).ativa !== "boolean" && rec(g.memoria).ativa !== undefined) return "Memória ligada deve ser sim ou não.";
   const ho = rec(v.handoffConfig);
   if (ho.prioridade !== undefined && !["normal", "alta", "urgente"].includes(String(ho.prioridade))) return "Prioridade do handoff inválida (normal, alta ou urgente).";
+  if (ho.retomada !== undefined && !["somente_humano", "automatica"].includes(String(ho.retomada))) return "Regra de retomada inválida.";
+  if (ho.retomadaHoras !== undefined && !inteiroEntre(ho.retomadaHoras, 1, 720)) return "Devolver ao agente após deve ser um número inteiro de horas, de 1 a 720.";
   if (ho.mensagemTransicao !== undefined && ho.mensagemTransicao !== null && (typeof ho.mensagemTransicao !== "string" || ho.mensagemTransicao.length > 600)) return "A mensagem de transição deve ter até 600 caracteres.";
   const kc = rec(v.knowledgeConfig);
   if (kc.maxTrechos !== undefined && !inteiroEntre(kc.maxTrechos, 1, 8)) return "Máximo de trechos de conhecimento deve ser de 1 a 8.";
