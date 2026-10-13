@@ -28,11 +28,15 @@ export interface EventoParaCriar {
   corpo?: string | null;
   /** E-mail do cliente. Sem ele o evento existe e ninguém é convidado. */
   convidadoEmail?: string | null;
+  /** Todos os convidados (participantes da reunião). Inclui `convidadoEmail`. */
+  convidados?: string[];
   /** Gera link de reunião online quando o provedor suporta. */
   online?: boolean;
 }
 
 export interface EventoParaAtualizar {
+  /** Lista completa de convidados: quando vem, SUBSTITUI a do evento (participante removido sai do convite). */
+  convidados?: string[] | null;
   titulo?: string | null;
   inicioISO?: string | null;
   fimISO?: string | null;
@@ -83,10 +87,10 @@ export type OcupadosResultado =
  */
 export const FRASE_DA_FALHA: Record<MotivoFalha, string> = {
   sem_conta:
-    "Reunião salva no ONFACE, mas NÃO entrou na agenda: você não tem calendário conectado. " +
+    "Reunião salva no ONFACE, mas NÃO entrou na agenda: o responsável pela reunião não tem calendário conectado. " +
     "Conecte em Ajustes > Integrações.",
   token_expirado:
-    "Reunião salva no ONFACE, mas NÃO entrou na agenda: sua conexão com o calendário expirou. " +
+    "Reunião salva no ONFACE, mas NÃO entrou na agenda: a conexão do responsável com o calendário expirou. " +
     "Reconecte em Ajustes > Integrações.",
   nao_configurado:
     "Reunião salva no ONFACE. A integração de calendário não está configurada neste ambiente, " +

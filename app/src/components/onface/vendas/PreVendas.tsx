@@ -88,7 +88,7 @@ export interface AcoesPreVendas {
   reativar: (leadId: string) => Promise<Resultado>;
   registrarContato: (leadId: string, canal: "whatsapp" | "email" | "ligacao") => Promise<Resultado>;
   atribuir: (leadId: string, responsavelId: string | null) => Promise<Resultado>;
-  criarOportunidade: (e: { leadId: string; familias: Familia[]; responsavelId: string; reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; closerId?: string } | null }) => Promise<Resultado<{ ids: string[] }>>;
+  criarOportunidade: (e: { leadId: string; familias: Familia[]; responsavelId: string; reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; closerId?: string } | null }) => Promise<Resultado<{ ids: string[]; aviso?: string | null }>>;
   criarLead: (e: EntradaNovoLead) => Promise<Resultado<{ leadId: string }>>;
   associarEmpresa: (leadId: string, nome: string, cnpj: string | null) => Promise<Resultado>;
   detalhe: (leadId: string) => Promise<Resultado<{ lead: DetalheLead | null; timeline: LinhaDoTempo[] }>>;

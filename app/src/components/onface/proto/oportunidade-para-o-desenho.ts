@@ -100,7 +100,7 @@ export function oportunidadeParaODesenho(o: DetalheOportunidade, timeline: Linha
       };
     }) as Array<Record<string, unknown>>).concat(o.reunioes.map((r) => ({
       /* A reunião é atividade (a peça tem a aba Reunião); a situação vem do status real dela. */
-      id: r.id, historico: true, tipo: "Reunião", titulo: r.titulo, desc: "", autor: o.responsavel.nome ?? "Sem responsável",
+      id: r.id, reuniaoId: r.id, historico: true, tipo: "Reunião", titulo: r.titulo, desc: "", autor: o.responsavel.nome ?? "Sem responsável",
       quando: quando(r.data), situacao: r.status === "realizada" ? "Feita" : r.status === "agendada" ? "A fazer" : "Declinada",
       feita: r.status !== "agendada",
     }))).concat(o.atividades.map((a) => ({

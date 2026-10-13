@@ -129,12 +129,13 @@ export async function acaoTentarGanhar(negocioId: string): Promise<Resultado<{ g
 
 export async function acaoAgendarReuniao(
   negocioId: string, data: string, tipo: "call" | "presencial" | "video",
-): Promise<Resultado> {
+): Promise<Resultado<{ aviso: string | null }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("agendar reunião", async () => {
-    await pipeline.agendarReuniao({ organizacaoId: ctx.organizacaoId, negocioId, data, tipo, ator: ctx.ator });
+    const { aviso } = await pipeline.agendarReuniao({ organizacaoId: ctx.organizacaoId, negocioId, data, tipo, ator: ctx.ator });
     revalidatePath(ROTA);
+    return { aviso };
   });
 }
 
@@ -148,12 +149,13 @@ export async function acaoNoShow(negocioId: string, reuniaoId: string | null): P
   });
 }
 
-export async function acaoReagendar(negocioId: string, data: string): Promise<Resultado> {
+export async function acaoReagendar(negocioId: string, data: string): Promise<Resultado<{ aviso: string | null }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("reagendar reunião", async () => {
-    await pipeline.reagendarAposNoShow({ organizacaoId: ctx.organizacaoId, negocioId, data, ator: ctx.ator });
+    const { aviso } = await pipeline.reagendarAposNoShow({ organizacaoId: ctx.organizacaoId, negocioId, data, ator: ctx.ator });
     revalidatePath(ROTA);
+    return { aviso };
   });
 }
 

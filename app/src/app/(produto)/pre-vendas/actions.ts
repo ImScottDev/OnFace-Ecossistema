@@ -147,7 +147,7 @@ export async function acaoCriarOportunidade(entrada: {
   familias: Familia[];
   responsavelId: string;
   reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; closerId?: string } | null;
-}): Promise<Resultado<{ ids: string[] }>> {
+}): Promise<Resultado<{ ids: string[]; aviso?: string | null }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("criar oportunidade", async () => {
@@ -161,7 +161,7 @@ export async function acaoCriarOportunidade(entrada: {
     });
     revalidarLead();
     revalidatePath("/pipeline");
-    return { ids: resultado.oportunidades.map((o) => o.id) };
+    return { ids: resultado.oportunidades.map((o) => o.id), aviso: resultado.reuniaoAviso ?? null };
   });
 }
 

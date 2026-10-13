@@ -6,7 +6,7 @@
  * `ReuniaoDesenho` (markup) e `ReuniaoLiga` (lógica) são GERADOS. Aqui a
  * tabela `reunioes` vira a lista que a Liga lia do store, e o que ela gravava
  * no localStorage vira a rota que o Calendário e o CRM já usam:
- *   criar     → POST  /api/reunioes        (cria e tenta o Outlook do responsável)
+ *   criar     → POST  /api/reunioes        (cria e sincroniza pela porta de calendário)
  *   editar    → PATCH /api/reunioes/:id    (reagenda/renomeia e sincroniza)
  *   situação  → PATCH /api/reunioes/:id    (status; cancelar cancela no Outlook)
  *
@@ -330,7 +330,7 @@ export default function ReuniaoPecaProto({ peca, id, contexto, fechar, gravou }:
         if (!r2.ok) toast.error(`No-show gravado na reunião, mas o evento falhou: ${r2.erro}`);
       }
       if (j.avisoAgenda) toast(j.avisoAgenda);
-      else if (tipo === "participantes") toast.success("Participantes salvos no CRM. O convite do Outlook não é reenviado por aqui.");
+      else if (tipo === "participantes") toast.success("Participantes salvos. O convite no Outlook foi atualizado.");
       else toast.success(corpo.status === "cancelada" ? "Reunião cancelada." : "Situação da reunião atualizada.");
     } catch (e) {
       toast.error(`Não consegui atualizar a reunião. Nada mudou. (${(e as Error).message})`);
@@ -352,7 +352,7 @@ export default function ReuniaoPecaProto({ peca, id, contexto, fechar, gravou }:
       } else {
         const o = j.outlook as { criado: boolean; motivo: string | null } | undefined;
         if (o?.criado && !o.motivo) toast.success("Reunião agendada. Convite enviado pelo Outlook.");
-        else toast(o?.motivo ? MOTIVO_OUTLOOK[o.motivo] ?? MOTIVO_OUTLOOK.erro_graph : "Reunião agendada no CRM.");
+        else toast(j.avisoAgenda ?? (o?.motivo ? MOTIVO_OUTLOOK[o.motivo] ?? MOTIVO_OUTLOOK.erro_graph : "Reunião agendada no CRM."), { duration: 9000 });
       }
       const id2 = (rid ?? j.id) as string;
       await carregarReuniao(id2);

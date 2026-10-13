@@ -229,6 +229,8 @@ export async function executarIntencao(
         leadId: i.leadId, familias: familia ? [familia] : [], responsavelId, reuniao,
       });
       if (!r.ok) return r.erro ?? "Não foi possível criar a oportunidade.";
+      // A oportunidade e a reunião estão salvas; se o convite não saiu, a tela diz (nunca silencioso).
+      if (r.dados?.aviso) toast(r.dados.aviso, { duration: 9000 });
       /* WhatsApp, Ligação, E-mail e Outro viram a PRÓXIMA AÇÃO: uma tarefa com
          prazo. Antes o desenho coletava título/data/hora e nada era gravado. */
       if (!ehReuniao && o.avanco) {

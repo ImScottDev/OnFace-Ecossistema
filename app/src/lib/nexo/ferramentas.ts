@@ -317,7 +317,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
       if (!n) return { ok: false, error: "oportunidade não encontrada" };
       if (!meuAlvo(u, n.responsavel_id)) return alheio();
       const r = await pipeline.agendarReuniao({ organizacaoId: ctx.organizacaoId, negocioId: String(i.negocio_id), leadId: n.lead_id, data: String(i.data), titulo: i.titulo as string | undefined, duracao: i.duracao as number | undefined, tipo: i.tipo as never, notas: i.notas as string | undefined, responsavelId: n.responsavel_id ?? u.userId, ator: ator(ctx, u) });
-      return resumo("Reunião agendada.", `/pipeline/${i.negocio_id}`, { reuniaoId: r.reuniaoId });
+      return resumo(r.aviso ? `Reunião agendada no CRM. Atenção: ${r.aviso}` : "Reunião agendada, com evento na agenda do responsável.", `/pipeline/${i.negocio_id}`, { reuniaoId: r.reuniaoId });
     })),
   escrita("criar_nota", "REGISTRA uma nota na timeline de um lead, oportunidade ou empresa.", { entidade: { type: "string", enum: ["lead", "negocio", "empresa"] }, id: str("uuid"), titulo: str("título"), texto: str("conteúdo") }, ["entidade", "id", "titulo"],
     async (ctx, u, i) => falta(ctx, "acquisition.manage") ?? agir(ctx, "criar_nota", i, async () => {

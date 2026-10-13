@@ -98,6 +98,8 @@ export interface OportunidadeCriada {
   oportunidades: Array<{ id: string; familia: Familia | null; titulo: string }>;
   bundleId: string | null;
   reuniaoId: string | null;
+  /** Convite que não saiu (sem Outlook, token expirado…): a tela mostra, a reunião segue salva. */
+  reuniaoAviso?: string | null;
 }
 
 /**
@@ -226,6 +228,7 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
   // A reunião é agendada na PRIMEIRA oportunidade quando há irmãs: uma reunião
   // única não deve ser duplicada só porque a venda tem duas linhas.
   let reuniaoId: string | null = null;
+  let reuniaoAviso: string | null = null;
   if (entrada.reuniao?.data) {
     const resultado = await agendarReuniao({
       organizacaoId: entrada.organizacaoId,
@@ -240,6 +243,7 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
       ator,
     });
     reuniaoId = resultado.reuniaoId;
+    reuniaoAviso = resultado.aviso;
   }
 
   // Bloco 01 §11-12: o Lead conclui o handoff e passa a espelhar o Pipeline.
@@ -276,7 +280,7 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
 
   await espelharNoDominioV2(criadas.map((c) => c.id));
 
-  return { oportunidades: criadas, bundleId, reuniaoId };
+  return { oportunidades: criadas, bundleId, reuniaoId, reuniaoAviso };
 }
 
 /**
@@ -792,7 +796,7 @@ export async function agendarReuniao(params: {
   link?: string;
   responsavelId?: string | null;
   ator: Ator;
-}): Promise<{ reuniaoId: string }> {
+}): Promise<{ reuniaoId: string; aviso: string | null }> {
   const data = new Date(params.data);
   if (Number.isNaN(data.getTime())) {
     throw new RegraDeNegocio("reuniao_data_invalida", "Data da reunião inválida.");
@@ -823,7 +827,17 @@ export async function agendarReuniao(params: {
     },
   });
 
-  return { reuniaoId: reuniao.id };
+  /* Toda reunião nasce com o evento na agenda do responsável (e convite aos participantes). Pela porta
+     única de calendário: falha não derruba o agendamento, mas volta como aviso e fica em
+     `calendar_sync_status` — nunca silenciosa. */
+  const { criarNaAgenda, FRASE_SEM_CONVIDADO } = await import("@/lib/calendario/sincronizar");
+  const sync = await criarNaAgenda(params.organizacaoId, reuniao.id).catch((e) => {
+    console.error(`[agendarReuniao] sincronização da reunião ${reuniao.id} falhou:`, e);
+    return { sincronizado: false, aviso: "A reunião foi salva no CRM, mas não consegui criar o evento na agenda. Tente de novo pela reunião." };
+  });
+  const aviso = sync.aviso ?? (sync.sincronizado && "semConvidado" in sync && sync.semConvidado ? FRASE_SEM_CONVIDADO : null);
+
+  return { reuniaoId: reuniao.id, aviso };
 }
 
 /**
@@ -920,7 +934,7 @@ export async function reagendarAposNoShow(params: {
   duracao?: number;
   tipo?: "call" | "presencial" | "video";
   ator: Ator;
-}): Promise<{ reuniaoId: string }> {
+}): Promise<{ reuniaoId: string; aviso: string | null }> {
   const op = await carregarOportunidade(params.organizacaoId, params.negocioId);
 
   const reuniao = await agendarReuniao({

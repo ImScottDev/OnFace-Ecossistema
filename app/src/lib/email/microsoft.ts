@@ -338,6 +338,8 @@ export interface CriarEventoParams {
   inicioISO: string;
   fimISO: string;
   attendeeEmail?: string | null;
+  /** Vários convidados; soma-se a `attendeeEmail`. */
+  attendeeEmails?: string[] | null;
   corpo?: string | null;
   // Bloqueio de agenda (férias/folga/compromisso) não é reunião — sem Teams,
   // só ocupa o horário. Default false preserva todo call site existente.
@@ -360,8 +362,9 @@ export async function createOutlookEvent(params: CriarEventoParams): Promise<Eve
     ...(params.semTeams ? { showAs: "busy" } : { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" }),
   };
   if (params.corpo) body.body = { contentType: "text", content: params.corpo };
-  if (params.attendeeEmail) {
-    body.attendees = [{ emailAddress: { address: params.attendeeEmail }, type: "required" }];
+  const convidados = [...new Set([params.attendeeEmail, ...(params.attendeeEmails ?? [])].filter((e): e is string => !!e))];
+  if (convidados.length) {
+    body.attendees = convidados.map((address) => ({ emailAddress: { address }, type: "required" }));
   }
 
   const created = await graphFetch(accessToken, "/me/events", { method: "POST", body: JSON.stringify(body) });
@@ -389,6 +392,8 @@ export async function updateOutlookEvent(params: {
   inicioISO?: string | null;
   fimISO?: string | null;
   corpo?: string | null;
+  /** Lista completa: substitui os convidados do evento (o Outlook avisa quem entrou e quem saiu). */
+  attendeeEmails?: string[] | null;
 }): Promise<{ atualizado: boolean; naoExiste?: boolean }> {
   const accessToken = await getValidAccessToken(params.contaId);
   const body: Record<string, unknown> = {};
@@ -396,6 +401,7 @@ export async function updateOutlookEvent(params: {
   if (params.inicioISO) body.start = { dateTime: params.inicioISO, timeZone: "UTC" };
   if (params.fimISO) body.end = { dateTime: params.fimISO, timeZone: "UTC" };
   if (params.corpo) body.body = { contentType: "text", content: params.corpo };
+  if (params.attendeeEmails) body.attendees = params.attendeeEmails.map((address) => ({ emailAddress: { address }, type: "required" }));
   if (Object.keys(body).length === 0) return { atualizado: false };
 
   const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${params.eventId}`, {

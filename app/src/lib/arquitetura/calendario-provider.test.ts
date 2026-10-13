@@ -56,10 +56,7 @@ test("nenhuma rota nova chama o Graph direto", () => {
   // que existia para deduplicar os três primeiros terminou sem nenhum chamador,
   // e cada rota nova reescreveu a chamada por conta própria.
   const conhecidas = [
-    "api-server/routes/reunioes.ts",
-    "api-server/routes/leads.ts",
-    "api-server/routes/agenda.ts",
-    "lib/integrations/callface.ts",
+    "api-server/routes/agenda.ts", // bloqueio de agenda (não é reunião)
   ];
   const infratores: string[] = [];
   for (const f of arquivos(SRC)) {

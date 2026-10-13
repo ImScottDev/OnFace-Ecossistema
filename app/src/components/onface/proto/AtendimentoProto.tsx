@@ -985,8 +985,9 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
     if (Number.isNaN(quando.getTime())) return toast.error("Data ou horário inválido.");
     const duracao = X.dur === "1 hora" ? 60 : parseInt(String(X.dur), 10) || 30;
     const convidados: string[] = [...(X.convidados ?? []), ...(a.email && !(X.convidados ?? []).includes(a.email) ? [a.email] : [])];
+    let sync: { avisoAgenda?: string | null } = {};
     try {
-      await chamar("/api/reunioes", {
+      sync = await chamar("/api/reunioes", {
         method: "POST",
         body: JSON.stringify({
           titulo: String(X.titulo).trim(), data: quando.toISOString(), duracao,
@@ -997,6 +998,7 @@ export function AtendimentoProto({ dados, contexto, cadencias = {}, leadInicial 
       }, "A reunião não foi agendada.");
     } catch (e) { return toast.error((e as Error).message); }
     const dia = quando.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: TZ });
+    if (sync.avisoAgenda) toast(sync.avisoAgenda, { duration: 9000 });
     toast.success(`Reunião agendada para ${dia} às ${X.hora}`);
     if (!X.enviar) return;
     try {

@@ -19,7 +19,7 @@ import {
 import { normalizePhone, phoneLastDigits, formatPhoneDisplay } from "@/lib/whatsapp/phone-utils";
 import { pickNextCloserLocked, closerTemConflito } from "@/lib/crm/agenda-closers";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
-import { createOutlookEvent, getBusyTimes } from "@/lib/email/microsoft";
+import { getBusyTimes } from "@/lib/email/microsoft";
 
 /**
  * Integração Callface (telefonia/IA) ↔ CRM.
@@ -259,33 +259,16 @@ async function tentarAutoAgendar(
   let outlookCriado = false;
   if (result.reuniaoId && result.closerId) {
     try {
-      const [conta] = await db
-        .select({ id: emailContas.id })
-        .from(emailContas)
-        .where(and(eq(emailContas.usuarioId, result.closerId), eq(emailContas.tipo, "microsoft"), eq(emailContas.syncStatus, "active")))
-        .limit(1);
-      if (conta) {
-        const evento = await createOutlookEvent({
-          contaId: conta.id,
-          titulo: `Reunião — ${lead.empresa || lead.nome} x Callface`,
-          inicioISO: dataReuniao.toISOString(),
-          fimISO: fimReuniao.toISOString(),
-          attendeeEmail: lead.email || null,
-          corpo: contexto.resumo ? String(contexto.resumo).slice(0, 1000) : null,
-        });
-        await db
-          .update(reunioes)
-          .set({
-            link: evento.joinUrl || evento.webLink,
-            outlookEventId: evento.eventId,
-            participantes: lead.email ? [lead.email] : undefined,
-            updatedAt: new Date(),
-          })
-          .where(eq(reunioes.id, result.reuniaoId));
-        outlookCriado = true;
+      // Porta única de calendário: o lead entra como participante e o convite sai pelo provedor do closer.
+      if (lead.email) {
+        await db.execute(sql`UPDATE reunioes SET participantes = ARRAY[${lead.email}]::text[] WHERE id = ${result.reuniaoId}::uuid AND coalesce(cardinality(participantes), 0) = 0`);
       }
+      const { criarNaAgenda } = await import("@/lib/calendario/sincronizar");
+      const sync = await criarNaAgenda(orgId, result.reuniaoId);
+      outlookCriado = sync.sincronizado;
+      if (!sync.sincronizado) console.warn(`[Callface] auto-agendamento: evento não entrou na agenda: ${sync.aviso}`);
     } catch (e) {
-      console.error("[Callface] auto-agendamento: falha ao criar evento Outlook:", e);
+      console.error("[Callface] auto-agendamento: falha ao criar evento na agenda:", e);
     }
   }
 

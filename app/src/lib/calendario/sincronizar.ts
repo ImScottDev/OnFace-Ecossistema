@@ -56,7 +56,12 @@ export interface ResultadoSync {
   link?: string | null;
   /** Frase pronta para a tela. Nula quando deu certo. */
   aviso?: string | null;
+  /** O evento existe, mas ninguém foi convidado: não há e-mail nos participantes nem no contato. */
+  semConvidado?: boolean;
 }
+
+/** Frase para quando o evento saiu na agenda do responsável, sem convite a ninguém. */
+export const FRASE_SEM_CONVIDADO = "Reunião criada na agenda, mas sem convite: nenhum participante com e-mail. Inclua os participantes para o convite sair.";
 
 interface LinhaReuniao extends Record<string, unknown> {
   id: string;
@@ -68,6 +73,13 @@ interface LinhaReuniao extends Record<string, unknown> {
   calendar_provider: string | null;
   calendar_event_id: string | null;
   convidado_email: string | null;
+  participantes: string[] | null;
+}
+
+/** Convidados = participantes com e-mail + o contato do processo, sem repetir. */
+export function convidadosDe(r: Pick<LinhaReuniao, "participantes" | "convidado_email">): string[] {
+  const todos = [...(r.participantes ?? []), r.convidado_email].map((e) => (e ?? "").trim().toLowerCase());
+  return [...new Set(todos.filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))];
 }
 
 async function carregar(organizacaoId: string, reuniaoId: string): Promise<LinhaReuniao | null> {
@@ -86,7 +98,8 @@ async function carregar(organizacaoId: string, reuniaoId: string): Promise<Linha
            COALESCE(r.calendar_event_id, r.outlook_event_id) AS calendar_event_id,
            -- O convidado é o contato do processo: pessoa canônica primeiro,
            -- lead legado como ponte enquanto ele existir.
-           COALESCE(p.email, l.email) AS convidado_email
+           COALESCE(p.email, l.email) AS convidado_email,
+           coalesce(to_jsonb(r.participantes), '[]'::jsonb) AS participantes
       FROM reunioes r
       LEFT JOIN leads l ON l.id = r.lead_id
       LEFT JOIN pessoas p ON p.lead_id_legado = r.lead_id
@@ -145,9 +158,10 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
 
   const inicio = new Date(r.data);
   const fim = new Date(inicio.getTime() + (r.duracao || 30) * 60_000);
+  const convidados = convidadosDe(r);
   const res = await escolha.provider.criar(escolha.contaId, {
     titulo: r.titulo, inicioISO: inicio.toISOString(), fimISO: fim.toISOString(),
-    corpo: r.notas, convidadoEmail: r.convidado_email, online: true,
+    corpo: r.notas, convidadoEmail: convidados[0] ?? null, convidados, online: true,
   });
 
   if (!res.ok) {
@@ -160,6 +174,10 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
   for (let tentativa = 1; ; tentativa++) {
     try {
       await gravarEstado(reuniaoId, { provider: escolha.provider.nome, eventId: res.eventId, status: "ok", link });
+      // Quem foi convidado fica na reunião: o card mostra os participantes que o convite levou.
+      if (!(r.participantes ?? []).length && convidados.length) {
+        await db.execute(sql`UPDATE reunioes SET participantes = ARRAY[${sql.join(convidados.map((e) => sql`${e}`), sql`, `)}]::text[] WHERE id = ${reuniaoId}::uuid`);
+      }
       break;
     } catch (e) {
       if (tentativa < 3) { await new Promise((ok) => setTimeout(ok, 200 * tentativa)); continue; }
@@ -168,7 +186,7 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
       return { sincronizado: false, provider: escolha.provider.nome, aviso: "O convite foi criado, mas não deu para registrá-lo no CRM; foi desfeito para não duplicar. Tente de novo." };
     }
   }
-  return { sincronizado: true, provider: escolha.provider.nome, eventId: res.eventId, aviso: null, link };
+  return { sincronizado: true, provider: escolha.provider.nome, eventId: res.eventId, aviso: null, link, semConvidado: convidados.length === 0 };
 }
 
 /**
@@ -177,6 +195,8 @@ export async function criarNaAgenda(organizacaoId: string, reuniaoId: string): P
  */
 export async function atualizarNaAgenda(
   organizacaoId: string, reuniaoId: string,
+  /** `convidados: true` quando os participantes mudaram: a lista do evento passa a ser a da reunião. */
+  opcoes: { convidados?: boolean } = {},
 ): Promise<ResultadoSync> {
   const r = await carregar(organizacaoId, reuniaoId);
   if (!r) return { sincronizado: false, provider: null, aviso: "Reunião não encontrada." };
@@ -192,8 +212,10 @@ export async function atualizarNaAgenda(
 
   const inicio = new Date(r.data);
   const fim = new Date(inicio.getTime() + (r.duracao || 30) * 60_000);
+  const convidados = convidadosDe(r);
   const res = await escolha.provider.atualizar(escolha.contaId, r.calendar_event_id, {
     titulo: r.titulo, inicioISO: inicio.toISOString(), fimISO: fim.toISOString(), corpo: r.notas,
+    ...(opcoes.convidados ? { convidados } : {}),
   });
 
   if (!res.ok) {
@@ -206,7 +228,7 @@ export async function atualizarNaAgenda(
     return criarNaAgenda(organizacaoId, reuniaoId);
   }
   await gravarEstado(reuniaoId, { provider: escolha.provider.nome, status: "ok" });
-  return { sincronizado: true, provider: escolha.provider.nome, eventId: r.calendar_event_id, aviso: null };
+  return { sincronizado: true, provider: escolha.provider.nome, eventId: r.calendar_event_id, aviso: null, semConvidado: convidados.length === 0 };
 }
 
 export async function cancelarNaAgenda(organizacaoId: string, reuniaoId: string): Promise<ResultadoSync> {

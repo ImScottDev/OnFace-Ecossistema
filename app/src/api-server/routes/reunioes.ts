@@ -1,70 +1,27 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { reunioes, usuarios, emailContas, leads } from "@/lib/db/schema";
+import { reunioes, usuarios } from "@/lib/db/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
-import { deleteOutlookEvent, createOutlookEvent } from "@/lib/email/microsoft";
-import { atualizarNaAgenda, cancelarNaAgenda } from "@/lib/calendario/sincronizar";
+import { criarNaAgenda, atualizarNaAgenda, cancelarNaAgenda, FRASE_SEM_CONVIDADO, type ResultadoSync } from "@/lib/calendario/sincronizar";
 import { registrarEvento, type TipoEventoVendas } from "@/lib/vendas/eventos";
 
 type OutlookResultado = { criado: boolean; motivo: string | null };
 
 /**
- * Cria o evento de verdade no Outlook do responsável, mesmo padrão já usado
- * em `leads.ts` (fluxo de converter oportunidade) — resultado estruturado,
- * nunca falha silenciosa, nunca trava a criação da reunião no CRM (best-effort).
+ * Resultado do evento na agenda no formato que as telas já leem (`outlook`),
+ * mais a frase pronta (`aviso`). Quem cria passa pela porta única de calendário
+ * (`criarNaAgenda`): ela escolhe Microsoft ou Google, grava o vínculo e o estado
+ * da sincronização, e nunca falha em silêncio.
  */
-async function criarEventoOutlookSeConectado(reuniaoId: string, responsavelId: string, attendeeEmailInformado: string | null): Promise<OutlookResultado> {
-  const [conta] = await db
-    .select({ id: emailContas.id })
-    .from(emailContas)
-    .where(and(eq(emailContas.usuarioId, responsavelId), eq(emailContas.tipo, "microsoft"), eq(emailContas.syncStatus, "active")))
-    .limit(1);
-
-  if (!conta) return { criado: false, motivo: "closer_sem_outlook" };
-
-  try {
-    const [reuniao] = await db
-      .select({ titulo: reunioes.titulo, data: reunioes.data, duracao: reunioes.duracao, notas: reunioes.notas, leadId: reunioes.leadId })
-      .from(reunioes)
-      .where(eq(reunioes.id, reuniaoId))
-      .limit(1);
-    if (!reuniao) return { criado: false, motivo: "erro_graph" };
-
-    let attendee = attendeeEmailInformado;
-    if (!attendee && reuniao.leadId) {
-      const [lead] = await db.select({ email: leads.email }).from(leads).where(eq(leads.id, reuniao.leadId)).limit(1);
-      attendee = lead?.email || null;
-    }
-
-    const inicio = new Date(reuniao.data);
-    const fim = new Date(inicio.getTime() + (reuniao.duracao || 30) * 60000);
-    const evento = await createOutlookEvent({
-      contaId: conta.id,
-      titulo: reuniao.titulo,
-      inicioISO: inicio.toISOString(),
-      fimISO: fim.toISOString(),
-      attendeeEmail: attendee,
-      corpo: reuniao.notas || null,
-    });
-
-    await db
-      .update(reunioes)
-      .set({
-        link: evento.joinUrl || evento.webLink,
-        outlookEventId: evento.eventId,
-        participantes: attendee ? [attendee] : undefined,
-        updatedAt: new Date(),
-      })
-      .where(eq(reunioes.id, reuniaoId));
-
-    return { criado: true, motivo: attendee ? null : "sem_email_destinatario" };
-  } catch (e) {
-    const msg = String(e);
-    console.error(`[Reunioes] falha ao criar evento no Outlook (reunião ${reuniaoId}):`, e);
-    return { criado: false, motivo: /401|invalid_grant|token|expirad/i.test(msg) ? "token_expirado" : "erro_graph" };
+function resultadoOutlook(r: ResultadoSync): OutlookResultado & { aviso: string | null } {
+  if (r.sincronizado) {
+    return { criado: true, motivo: r.semConvidado ? "sem_email_destinatario" : null, aviso: r.semConvidado ? FRASE_SEM_CONVIDADO : null };
   }
+  const aviso = r.aviso ?? null;
+  const motivo = /não tem calendário conectado/i.test(aviso ?? "") ? "closer_sem_outlook" : /expirou/i.test(aviso ?? "") ? "token_expirado" : "erro_graph";
+  return { criado: false, motivo, aviso };
 }
 
 /**
@@ -101,27 +58,6 @@ async function eventoDaReuniao(
 
 const app = new Hono();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Cancela o evento no Outlook do responsável pela reunião, se existir. Best-effort. */
-async function cancelarEventoOutlookSeExistir(reuniaoId: string) {
-  const [reuniao] = await db
-    .select({ outlookEventId: reunioes.outlookEventId, responsavelId: reunioes.responsavelId })
-    .from(reunioes)
-    .where(eq(reunioes.id, reuniaoId))
-    .limit(1);
-  if (!reuniao?.outlookEventId || !reuniao.responsavelId) return;
-
-  const [conta] = await db
-    .select({ id: emailContas.id })
-    .from(emailContas)
-    .where(and(eq(emailContas.usuarioId, reuniao.responsavelId), eq(emailContas.tipo, "microsoft"), eq(emailContas.syncStatus, "active")))
-    .limit(1);
-  if (!conta) return;
-
-  await deleteOutlookEvent(conta.id, reuniao.outlookEventId).catch((e) => {
-    console.error(`[Reunioes] falha ao cancelar evento Outlook da reunião ${reuniaoId}:`, e);
-  });
-}
 
 const createSchema = z.object({
   negocioId: z.string().uuid().optional().nullable(),
@@ -208,6 +144,8 @@ app.post("/reunioes", async (c) => {
     const data = createSchema.parse(body);
 
     const responsavelId = data.responsavelId || ctx.userId;
+    // Quem recebe o convite fica gravado na reunião: o e-mail do cliente entra nos participantes.
+    const participantesIniciais = [...new Set([data.attendeeEmail, ...(data.participantes ?? [])].filter((e): e is string => !!e))];
 
     const [reuniao] = await db
       .insert(reunioes)
@@ -220,7 +158,7 @@ app.post("/reunioes", async (c) => {
         duracao: data.duracao || null,
         tipo: data.tipo || "call",
         status: data.status || "agendada",
-        participantes: data.participantes || null,
+        participantes: participantesIniciais.length ? participantesIniciais : null,
         notas: data.notas || null,
         transcript: data.transcript || null,
         resumoTranscript: data.resumoTranscript || null,
@@ -233,22 +171,18 @@ app.post("/reunioes", async (c) => {
     // Outlook é opt-in por evento (compromisso interno não precisa gerar
     // Teams nem convite) — default true pra reunião/ligação/follow-up fazer
     // sentido sem o usuário precisar lembrar de marcar.
-    let outlook: OutlookResultado = { criado: false, motivo: null };
+    let outlook: OutlookResultado & { aviso: string | null } = { criado: false, motivo: null, aviso: null };
     let reuniaoFinal = reuniao;
-    if (data.criarNoOutlook !== false) {
-      // Fallback vindo de produção: quando o chamador não manda attendeeEmail,
-      // procura um e-mail na lista de participantes antes de desistir.
-      const attendee = data.attendeeEmail
-        || (Array.isArray(data.participantes) ? data.participantes.find((p: string) => p.includes("@")) : null)
-        || null;
-      outlook = await criarEventoOutlookSeConectado(reuniao.id, responsavelId, attendee);
-      if (outlook.criado) {
-        const [atualizada] = await db.select().from(reunioes).where(eq(reunioes.id, reuniao.id)).limit(1);
-        if (atualizada) reuniaoFinal = atualizada;
-      }
+    if (data.criarNoOutlook !== false && reuniao.status === "agendada") {
+      outlook = resultadoOutlook(await criarNaAgenda(ctx.organizacaoId, reuniao.id).catch((e) => {
+        console.error(`[Reunioes] sincronização da reunião ${reuniao.id} falhou:`, e);
+        return { sincronizado: false, provider: null, aviso: "Reunião salva no CRM, mas não consegui criar o evento na agenda. Abra a reunião e tente de novo." } as ResultadoSync;
+      }));
+      const [atualizada] = await db.select().from(reunioes).where(eq(reunioes.id, reuniao.id)).limit(1);
+      if (atualizada) reuniaoFinal = atualizada;
     }
 
-    return c.json({ ...reuniaoFinal, outlook }, 201);
+    return c.json({ ...reuniaoFinal, outlook, avisoAgenda: outlook.aviso }, 201);
   } catch (err) {
     if (err instanceof z.ZodError) {
       return c.json({ error: err.issues[0].message }, 400);
@@ -324,12 +258,18 @@ app.patch("/reunioes/:id", async (c) => {
     // ninguém ser avisado. Agora reagendar, renomear e mudar duração chegam
     // no provedor — e quando não chegam, a tela recebe o motivo.
     let avisoAgenda: string | null = null;
+    const porta = async (f: () => Promise<ResultadoSync>) => {
+      try { const r = await f(); return r.aviso ?? (r.sincronizado && r.semConvidado && data.participantes !== undefined ? FRASE_SEM_CONVIDADO : null); }
+      catch (e) { console.error(`[Reunioes] sincronização da reunião ${id} falhou:`, e); return "Alteração salva no CRM, mas não consegui atualizar a agenda. Tente de novo."; }
+    };
     if (data.status === "cancelada") {
-      const r = await cancelarNaAgenda(ctx.organizacaoId, id);
-      avisoAgenda = r.aviso ?? null;
-    } else if (data.data !== undefined || data.titulo !== undefined || data.duracao !== undefined) {
-      const r = await atualizarNaAgenda(ctx.organizacaoId, id);
-      avisoAgenda = r.aviso ?? null;
+      avisoAgenda = await porta(() => cancelarNaAgenda(ctx.organizacaoId, id));
+    } else if (updated.status === "agendada" && (data.data !== undefined || data.titulo !== undefined || data.duracao !== undefined || data.notas !== undefined || data.participantes !== undefined)) {
+      // Participantes mudaram: a lista de convidados do evento passa a ser a da reunião (entra e sai gente).
+      avisoAgenda = await porta(() => atualizarNaAgenda(ctx.organizacaoId, id, { convidados: data.participantes !== undefined }));
+    } else if (data.status === "agendada") {
+      // Reaberta (ex.: no-show corrigido): garante o evento.
+      avisoAgenda = await porta(() => atualizarNaAgenda(ctx.organizacaoId, id));
     }
 
     return c.json({ ...updated, avisoAgenda });
@@ -353,7 +293,8 @@ app.delete("/reunioes/:id", async (c) => {
   const [daOrg] = await db.select({ id: reunioes.id }).from(reunioes)
     .where(and(eq(reunioes.id, id), eq(reunioes.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!daOrg) return c.json({ error: "Reunião não encontrada" }, 404);
-  await cancelarEventoOutlookSeExistir(id);
+  // Cancela o evento (e o convite) na agenda do responsável antes de apagar a linha.
+  await cancelarNaAgenda(ctx.organizacaoId, id).catch((e) => console.error(`[Reunioes] falha ao cancelar evento da reunião ${id}:`, e));
 
   const [deleted] = await db
     .delete(reunioes)

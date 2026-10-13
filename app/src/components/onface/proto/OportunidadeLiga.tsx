@@ -280,6 +280,8 @@ class Logica extends React.Component<any, any> {
       if (x && Es3 && O.leadId && x.tipo === "Ligação" && /^Liga[cç][aã]o/i.test(x.titulo || "")) return Es3.abrir("relatorio", { leadId: O.leadId, audioUrl: x.audioUrl || "" });
       if (x && x.tarefaId && Es3) return Es3.abrir("verAtividade", "p:" + x.tarefaId);
       return abrirModal({ k: "atvver", i });
+      /* Reunião: a peça ÚNICA de Reunião (reagendar, cancelar, participantes, link, situação, notas). Nunca o cartão de leitura. */
+      if (x && x.reuniaoId && Es3) return Es3.abrir("reuniao", x.reuniaoId, { oppId: O.id, leadId: O.leadId || null });
     };
     const novaProposta = () => ir("/onface-preview/proposta", "Proposta", { opp: O.id, ver: "" });
     const novaPropostaModal = () => abrirModal({ k: "proposta" }, { modo: P ? P.modo : "CONTRACT", validade: String(P && P.validade ? P.validade : 14), itens: (P && P.itens && P.itens.length ? P.itens : [{ nome: "", natureza: "MRR", valor: "", qtd: 1 }]).map(x => Object.assign({}, x, { valor: String(x.valor), qtd: String(x.qtd || 1) })) });

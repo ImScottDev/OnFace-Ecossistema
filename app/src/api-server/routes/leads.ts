@@ -33,7 +33,6 @@ import {
   emailSequenciaExecucoes,
   usuarios,
   pipelines,
-  emailContas,
   auditLog,
   entityLabels,
   ligacoes,
@@ -70,7 +69,6 @@ import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
 import { downloadAndSaveAvatar, sessionToConfig } from "@/lib/whatsapp/client";
 import { getSdrStatusInfo } from "@/lib/crm/pipeline";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
-import { createOutlookEvent } from "@/lib/email/microsoft";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
 import { concluirAtividadePrimeiroContato, registrarPrimeiroContato } from "@/lib/vendas/pre-vendas";
 import { registrarEvento } from "@/lib/vendas/eventos";
@@ -2044,61 +2042,30 @@ app.post("/leads/:id/converter-oportunidade", async (c) => {
   // A reunião do CRM já existe de qualquer jeito; o resultado do Outlook volta
   // ESTRUTURADO pro modal avisar quem agendou (nada de falha silenciosa).
   let outlook: { criado: boolean; motivo: string | null } = { criado: false, motivo: null };
+  let avisoAgenda: string | null = null;
   if (result.reuniaoId && result.closerId && !result.recovered && !result.alreadyConverted) {
-    const [conta] = await db
-      .select({ id: emailContas.id })
-      .from(emailContas)
-      .where(and(eq(emailContas.usuarioId, result.closerId), eq(emailContas.tipo, "microsoft"), eq(emailContas.syncStatus, "active")))
-      .limit(1);
-
-    if (!conta) {
-      outlook = { criado: false, motivo: "closer_sem_outlook" };
-    } else {
-      try {
-        const [lead] = await db.select({ email: leads.email, nome: leads.nome }).from(leads).where(eq(leads.id, id)).limit(1);
-        const [reuniao] = await db
-          .select({ titulo: reunioes.titulo, data: reunioes.data, duracao: reunioes.duracao, notas: reunioes.notas })
-          .from(reunioes)
-          .where(eq(reunioes.id, result.reuniaoId))
-          .limit(1);
-
-        if (reuniao) {
-          const attendee = leadEmail || lead?.email || null;
-          const inicio = new Date(reuniao.data);
-          const fim = new Date(inicio.getTime() + (reuniao.duracao || 30) * 60000);
-          const evento = await createOutlookEvent({
-            contaId: conta.id,
-            titulo: reuniao.titulo,
-            inicioISO: inicio.toISOString(),
-            fimISO: fim.toISOString(),
-            attendeeEmail: attendee,
-            corpo: reuniao.notas || null,
-          });
-          await db
-            .update(reunioes)
-            .set({
-              link: evento.joinUrl || evento.webLink,
-              outlookEventId: evento.eventId,
-              participantes: attendee ? [attendee] : undefined,
-              updatedAt: new Date(),
-            })
-            .where(eq(reunioes.id, result.reuniaoId));
-          outlook = { criado: true, motivo: attendee ? null : "lead_sem_email" };
-        }
-      } catch (e) {
-        const msg = String(e);
-        outlook = {
-          criado: false,
-          motivo: /401|invalid_grant|token|expirad/i.test(msg) ? "token_expirado" : "erro_graph",
-        };
-        console.error(`[ConverterOportunidade] falha ao criar evento no Outlook (closer ${result.closerId}, reunião ${result.reuniaoId}):`, e);
+    // Porta única de calendário: escolhe o provedor, convida os participantes e grava o estado da sincronização.
+    try {
+      if (leadEmail) {
+        // E-mail informado no modal vira participante: é quem o convite alcança.
+        await db.execute(sql`UPDATE reunioes SET participantes = ARRAY[${leadEmail}]::text[] WHERE id = ${result.reuniaoId}::uuid AND coalesce(cardinality(participantes), 0) = 0`);
       }
+      const { criarNaAgenda, FRASE_SEM_CONVIDADO } = await import("@/lib/calendario/sincronizar");
+      const sync = await criarNaAgenda(ctx.organizacaoId, result.reuniaoId);
+      avisoAgenda = sync.aviso ?? (sync.semConvidado ? FRASE_SEM_CONVIDADO : null);
+      outlook = sync.sincronizado
+        ? { criado: true, motivo: sync.semConvidado ? "lead_sem_email" : null }
+        : { criado: false, motivo: /não tem calendário conectado/i.test(sync.aviso ?? "") ? "closer_sem_outlook" : /expirou/i.test(sync.aviso ?? "") ? "token_expirado" : "erro_graph" };
+    } catch (e) {
+      outlook = { criado: false, motivo: "erro_graph" };
+      avisoAgenda = "Reunião salva no CRM, mas não consegui criar o evento na agenda. Abra a reunião e tente de novo.";
+      console.error(`[ConverterOportunidade] falha ao criar evento na agenda (closer ${result.closerId}, reunião ${result.reuniaoId}):`, e);
     }
   }
 
   const status = result.recovered || result.alreadyConverted ? 200 : 201;
   // outlookEventoCriado mantido por compatibilidade com quem já lê o campo antigo.
-  return c.json({ ...result, outlook, outlookEventoCriado: outlook.criado }, status);
+  return c.json({ ...result, outlook, avisoAgenda, outlookEventoCriado: outlook.criado }, status);
 });
 
 // ---------------------------------------------------------------------------

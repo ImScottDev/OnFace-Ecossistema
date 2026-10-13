@@ -106,7 +106,8 @@ export const googleCalendar: CalendarProvider = {
         end: { dateTime: ev.fimISO, timeZone: "UTC" },
       };
       if (ev.corpo) corpo.description = ev.corpo;
-      if (ev.convidadoEmail) corpo.attendees = [{ email: ev.convidadoEmail }];
+      const convidados = [...new Set([ev.convidadoEmail, ...(ev.convidados ?? [])].filter((e): e is string => !!e))];
+      if (convidados.length) corpo.attendees = convidados.map((email) => ({ email }));
       if (ev.online !== false) {
         corpo.conferenceData = {
           createRequest: { requestId: `onface-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } },
@@ -136,6 +137,7 @@ export const googleCalendar: CalendarProvider = {
       if (m.inicioISO) corpo.start = { dateTime: m.inicioISO, timeZone: "UTC" };
       if (m.fimISO) corpo.end = { dateTime: m.fimISO, timeZone: "UTC" };
       if (m.corpo) corpo.description = m.corpo;
+      if (m.convidados) corpo.attendees = m.convidados.map((email) => ({ email }));
       if (Object.keys(corpo).length === 0) return { ok: true, eventId };
 
       // PATCH, não PUT: PUT substituiria o evento inteiro e apagaria o que o

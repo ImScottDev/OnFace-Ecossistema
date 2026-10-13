@@ -57,6 +57,7 @@ export const microsoftCalendar: CalendarProvider = {
         fimISO: ev.fimISO,
         corpo: ev.corpo ?? undefined,
         attendeeEmail: ev.convidadoEmail ?? undefined,
+        attendeeEmails: ev.convidados,
         semTeams: ev.online === false,
       });
       return { ok: true, eventId: criado.eventId, link: criado.webLink, joinUrl: criado.joinUrl };
@@ -70,7 +71,7 @@ export const microsoftCalendar: CalendarProvider = {
     try {
       const r = await updateOutlookEvent({
         contaId, eventId,
-        titulo: m.titulo, inicioISO: m.inicioISO, fimISO: m.fimISO, corpo: m.corpo,
+        titulo: m.titulo, inicioISO: m.inicioISO, fimISO: m.fimISO, corpo: m.corpo, attendeeEmails: m.convidados,
       });
       // Evento apagado no Outlook não é erro de integração: é estado. Quem
       // chama decide se recria em vez de repetir um PATCH que nunca vai passar.
