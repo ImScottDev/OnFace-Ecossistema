@@ -323,7 +323,13 @@ export async function criarPosVendaDoNegocio(
         contratoId: contrato?.id ?? null,
         canonicalKey,
         serviceFamily: familia,
-        canonicalProduct: negocio.titulo,
+        // Produto é o que o cliente contratou, não o título do negócio. Gravar
+        // `negocio.titulo` aqui enchia a coluna com nome de cliente e título de
+        // card ("VECTORUN I S I S", "HUBMAISTEC | CALLFACE AI | MAYRA | STRIPE —
+        // Negócio") e a ficha do cliente mostrava isso como produto. Nulo é
+        // honesto: quem sabe o produto é a assinatura do Stripe, e o sync a
+        // preenche quando existe.
+        canonicalProduct: null,
         revenueNature: "UNKNOWN",
         billingSource: "CRM_POSVENDA",
         commercialLifecycle: "ACTIVE",
