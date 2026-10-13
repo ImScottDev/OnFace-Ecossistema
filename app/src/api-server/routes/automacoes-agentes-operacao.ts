@@ -78,6 +78,13 @@ app.get(`${AO}/apoio`, async (c) => {
 app.patch(`${AO}/conhecimento/:id`, async (c) => {
   const ctx = await exigirCtx(c, "ai.configure");
   const b = await corpo(c, z.object({ governanca: z.enum(["aprovado", "rascunho", "historico"]).optional(), categoria: z.string().max(40).nullable().optional() }));
+  // Não aprovar documento ainda não indexado: evita orientar o agente com versão inválida.
+  if (b.governanca === "aprovado") {
+    const [fonte] = await db.select({ status: aiKnowledgeSources.status }).from(aiKnowledgeSources)
+      .where(and(eq(aiKnowledgeSources.id, c.req.param("id")), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId))).limit(1);
+    if (!fonte) return c.json({ error: "Fonte não encontrada" }, 404);
+    if (fonte.status !== "ready") return c.json({ error: "Só é possível aprovar fonte indexada e pronta." }, 409);
+  }
   const [f] = await db.update(aiKnowledgeSources).set({ ...(b.governanca ? { governanca: b.governanca } : {}), ...(b.categoria !== undefined ? { categoria: b.categoria } : {}), updatedAt: new Date() })
     .where(and(eq(aiKnowledgeSources.id, c.req.param("id")), eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId))).returning();
   if (!f) return c.json({ error: "Fonte não encontrada" }, 404);
