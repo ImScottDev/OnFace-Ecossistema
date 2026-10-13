@@ -4,7 +4,7 @@
  * Os itens passam pelo mesmo montador de linhas do contrato real.
  */
 import { VARIAVEIS_EXEMPLO } from "@/lib/crm/contrato-variaveis";
-import { linhasDeItens, moeda, type ItemContrato } from "@/lib/crm/contrato-itens";
+import { linhasDeItens, linhasSetupResumoHtml, quadroSetupHtml, moeda, type ItemContrato } from "@/lib/crm/contrato-itens";
 
 const ITENS: Record<string, ItemContrato[]> = {
   WHITE_LABEL: [
@@ -35,6 +35,8 @@ export function variaveisDeExemplo(familia: string | null | undefined, nItens?: 
     setup_total: moeda(total(["setup"])),
     valor_total: moeda(total(["recorrente", "avulso", "setup"])),
     forma_pagamento_setup: "À vista, no cartão de crédito",
+    linhas_setup_resumo_html: linhasSetupResumoHtml(moeda(total(["setup"])), "À vista, no cartão de crédito", total(["setup"]) > 0),
+    quadro_setup_html: quadroSetupHtml(linhasDeItens(itens, ["setup"], { comRecorrencia: false, familia }), moeda(total(["setup"])), "À vista, no cartão de crédito", total(["setup"]) > 0),
     dia_vencimento: "10 dias após a emissão da cobrança",
     percentual_multa: "30%",
     percentual_multa_numero: "30",

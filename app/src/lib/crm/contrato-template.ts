@@ -22,7 +22,7 @@ import { getSignatureProvider } from "@/lib/crm/signature";
 import { determinarProdutoProposta } from "@/lib/crm/proposta-fluxo";
 import { calcularFamiliaDoGrupo } from "@/lib/crm/politica-familia";
 import { tipoDocumentoDoContratual } from "@/lib/vendas/dominio";
-import { linhasDeItens, moeda } from "@/lib/crm/contrato-itens";
+import { linhasDeItens, linhasSetupResumoHtml, quadroSetupHtml, moeda } from "@/lib/crm/contrato-itens";
 import { politicaContratual } from "@/lib/crm/contrato-politica";
 import { ehCliente } from "@/lib/crm/proposta-signatarios";
 import { renderizarCorpo, variaveisFaltando } from "@/lib/crm/contrato-variaveis";
@@ -277,6 +277,8 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
     itens_setup_html: linhas(["setup"], false),
     mrr_total: moeda(mrr, codigoMoeda),
     setup_total: moeda(setup, codigoMoeda),
+    linhas_setup_resumo_html: linhasSetupResumoHtml(moeda(setup, codigoMoeda), daCondicao.forma_pagamento_setup, setup > 0),
+    quadro_setup_html: quadroSetupHtml(linhas(["setup"], false), moeda(setup, codigoMoeda), daCondicao.forma_pagamento_setup, setup > 0),
     prazo_meses: proposta.prazoContratoMeses ? String(proposta.prazoContratoMeses) : "",
     prazo_descricao: proposta.prazoContratoMeses ? `${proposta.prazoContratoMeses} meses` : "",
     signatarios: doCliente.map((s) => `${String(s.nome || "")} <${String(s.email || "")}>`).join(", "),

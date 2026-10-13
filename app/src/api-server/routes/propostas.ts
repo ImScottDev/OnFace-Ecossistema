@@ -443,6 +443,8 @@ app.get("/propostas/:id/pdf", async (c) => {
       dataEmissao: propostas.dataEmissao,
       dataValidade: propostas.dataValidade,
       condicoesPagamento: propostas.condicoesPagamento,
+      condicaoPagamentoTipo: propostas.condicaoPagamentoTipo,
+      parcelas: propostas.parcelas,
       prazoContratoMeses: propostas.prazoContratoMeses,
       trialDias: propostas.trialDias,
       totalRecorrente: propostas.totalRecorrente,

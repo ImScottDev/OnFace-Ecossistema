@@ -823,3 +823,284 @@ export async function lerFaturasDeParceiro(sql: Sql): Promise<FaturaParceiroCall
     };
   });
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Retrato do cliente na plataforma (Fase 6): plano, Stripe, licenças por tipo,
+// usuários por papel e estado, workspaces, equipes e receptivos.
+//
+// SOMENTE SELECT. Nenhuma credencial, nenhum e-mail, nenhum nome de pessoa.
+//
+// O que foi confirmado pelo dono do schema: `plans` (stripe_price_id e preço),
+// `organizations.stripe_customer_id` / `has_stripe_migrated`, `users_organizations`
+// (kind, acceptance_status, invite_status, deactivated_at, crm_user_id),
+// `license.reason` / `expires_at` / `plan_id`.
+// O que NÃO foi confirmado: o nome da coluna de preço e de intervalo de `plans`,
+// as colunas de `workspaces` além de id/organization_id/status, e a existência e o
+// nome das tabelas de equipes e de receptivos (DIDs). Esses blocos leem a linha
+// inteira com `to_jsonb`, exigem só o que identifica a linha e, se a tabela ou a
+// coluna obrigatória não existir, FALHAM dizendo o que existe. Cada bloco falha
+// sozinho (`Bloco`): o erro viaja até o estado do sync, nunca vira lista vazia.
+// ───────────────────────────────────────────────────────────────────────────
+
+export type Bloco<T> = { ok: true; dados: T } | { ok: false; erro: string };
+
+export interface PlanoCallfaceAi {
+  planId: string;
+  nome: string | null;
+  /** Preço de tabela do plano, em reais. null = nenhuma coluna de preço reconhecida. */
+  preco: number | null;
+  /** Coluna de onde o preço saiu (a conferência humana do primeiro sync). */
+  precoColuna: string | null;
+  stripePriceId: string | null;
+  intervalo: string | null;
+}
+
+const PRECO_DIRETO = ["price", "amount", "unit_amount", "monthly_price", "value"];
+const PRECO_EM_CENTAVOS = ["price_in_cents", "amount_in_cents", "price_cents", "unit_amount_cents"];
+
+export async function lerPlanos(sql: Sql): Promise<PlanoCallfaceAi[]> {
+  const linhas = await sql<Array<{ r: Linha }>>`SELECT to_jsonb(p) AS r FROM plans p`;
+  return linhas.map(({ r }) => {
+    const centavosCol = PRECO_EM_CENTAVOS.find((c) => numero(r[c]) !== null) ?? null;
+    const diretoCol = PRECO_DIRETO.find((c) => numero(r[c]) !== null) ?? null;
+    const col = diretoCol ?? centavosCol;
+    const bruto = col ? numero(r[col]) : null;
+    return {
+      planId: String(obrigatorio(r, ["id"], "plans")),
+      nome: texto(achar(r, ["name", "title", "slug"])),
+      preco: bruto === null ? null : col === diretoCol ? bruto : bruto / 100,
+      precoColuna: col,
+      stripePriceId: texto(achar(r, ["stripe_price_id"])),
+      intervalo: texto(achar(r, ["interval", "billing_interval", "billing_period", "period", "recurrence"])),
+    };
+  });
+}
+
+export interface StripeOrgCallfaceAi {
+  organizationId: string;
+  stripeCustomerId: string | null;
+  /** has_stripe_migrated. null = a coluna veio nula. */
+  migrado: boolean | null;
+}
+
+export async function lerStripeDasOrganizacoes(sql: Sql, organizationIds: string[]): Promise<StripeOrgCallfaceAi[]> {
+  if (!organizationIds.length) return [];
+  const linhas = await sql<Array<Record<string, unknown>>>`
+    SELECT id, stripe_customer_id, has_stripe_migrated
+      FROM organizations WHERE id IN ${sql(organizationIds)}`;
+  return linhas.map((l) => ({
+    organizationId: String(l.id),
+    stripeCustomerId: l.stripe_customer_id ? String(l.stripe_customer_id).trim() || null : null,
+    migrado: booleano(l.has_stripe_migrated),
+  }));
+}
+
+export interface LicencaOrgCallfaceAi {
+  licenseId: string;
+  organizationId: string;
+  planId: string | null;
+  /** license.reason: TRIAL, SUBSCRIPTION_PAID, INTERNAL, PARTNER_WHITE_LABEL... */
+  motivo: string;
+  inicioEm: Date | null;
+  revogadaEm: Date | null;
+  expiraEm: Date | null;
+  /** Tem usuário (direto ou pela assinatura). Slot de organização = false. */
+  atribuida: boolean;
+}
+
+export async function lerLicencasDasOrganizacoes(sql: Sql, organizationIds: string[]): Promise<LicencaOrgCallfaceAi[]> {
+  if (!organizationIds.length) return [];
+  const linhas = await sql<Array<Record<string, unknown>>>`
+    SELECT l.id, l.organization_id, l.plan_id, l.reason::text AS motivo,
+           l.start_at AT TIME ZONE 'UTC' AS inicio,
+           l.revoked_at AT TIME ZONE 'UTC' AS revogada,
+           l.expires_at AT TIME ZONE 'UTC' AS expira,
+           (coalesce(l.user_id, uo.user_id) IS NOT NULL) AS atribuida
+      FROM license l
+      LEFT JOIN user_subscriptions us ON us.id = l.user_subscription_id
+      LEFT JOIN users_organizations uo ON uo.id = us.user_organization_id
+     WHERE l.organization_id IN ${sql(organizationIds)}
+     ORDER BY l.organization_id, l.start_at, l.id`;
+  return linhas.map((l) => ({
+    licenseId: String(l.id),
+    organizationId: String(l.organization_id),
+    planId: l.plan_id == null ? null : String(l.plan_id),
+    motivo: String(l.motivo ?? ""),
+    inicioEm: (l.inicio as Date) ?? null,
+    revogadaEm: (l.revogada as Date) ?? null,
+    expiraEm: (l.expira as Date) ?? null,
+    atribuida: Boolean(l.atribuida),
+  }));
+}
+
+export interface UsuarioOrgCallfaceAi {
+  vinculoId: string;
+  organizationId: string;
+  /** CREATOR, ADMIN, MANAGER, EMPLOYEE */
+  papel: string;
+  aceite: string | null;
+  convite: string | null;
+  desativadoEm: Date | null;
+  /** users.active */
+  usuarioAtivo: boolean;
+  /** O vínculo direto com o usuário do ONFACE, quando existe. */
+  crmUserId: string | null;
+}
+
+export async function lerUsuariosDasOrganizacoes(sql: Sql, organizationIds: string[]): Promise<UsuarioOrgCallfaceAi[]> {
+  if (!organizationIds.length) return [];
+  const linhas = await sql<Array<Record<string, unknown>>>`
+    SELECT uo.id, uo.organization_id, uo.kind::text AS papel,
+           uo.acceptance_status::text AS aceite, uo.invite_status::text AS convite,
+           uo.deactivated_at AT TIME ZONE 'UTC' AS desativado,
+           u.active AS usuario_ativo, uo.crm_user_id::text AS crm_user_id
+      FROM users_organizations uo JOIN users u ON u.id = uo.user_id
+     WHERE uo.organization_id IN ${sql(organizationIds)}`;
+  return linhas.map((l) => ({
+    vinculoId: String(l.id),
+    organizationId: String(l.organization_id),
+    papel: String(l.papel ?? ""),
+    aceite: texto(l.aceite),
+    convite: texto(l.convite),
+    desativadoEm: (l.desativado as Date) ?? null,
+    usuarioAtivo: Boolean(l.usuario_ativo),
+    crmUserId: texto(l.crm_user_id),
+  }));
+}
+
+export interface EquipeCallfaceAi {
+  tipo: "workspace" | "equipe";
+  refId: string;
+  organizationId: string;
+  nome: string | null;
+  status: string | null;
+}
+
+/** Primeira tabela da lista que existe; se nenhuma, falha listando as de nome parecido. */
+async function tabelaExistente(sql: Sql, candidatas: string[], parecidas: string, rotulo: string): Promise<string> {
+  const achadas = await sql<Array<{ table_name: string }>>`
+    SELECT table_name FROM information_schema.tables
+     WHERE table_schema = current_schema() AND table_name IN ${sql(candidatas)}`;
+  const nomes = new Set(achadas.map((a) => a.table_name));
+  const escolhida = candidatas.find((c) => nomes.has(c));
+  if (escolhida) return escolhida;
+  const similares = await sql<Array<{ table_name: string }>>`
+    SELECT table_name FROM information_schema.tables
+     WHERE table_schema = current_schema() AND table_name ~ ${parecidas} ORDER BY 1`;
+  throw new Error(`${rotulo}: nenhuma das tabelas [${candidatas.join(", ")}] existe. Tabelas de nome parecido: ${similares.map((s) => s.table_name).join(", ") || "(nenhuma)"}`);
+}
+
+/** Workspaces (confirmados) e equipes (tabela não confirmada: descoberta, ou falha alto). */
+export async function lerEquipes(sql: Sql, organizationIds: string[]): Promise<EquipeCallfaceAi[]> {
+  if (!organizationIds.length) return [];
+  const ids = new Set(organizationIds);
+  const ws = await sql<Array<{ r: Linha }>>`
+    SELECT to_jsonb(w) AS r FROM workspaces w WHERE w.organization_id IN ${sql(organizationIds)}`;
+  const saida: EquipeCallfaceAi[] = ws.map(({ r }) => ({
+    tipo: "workspace" as const,
+    refId: String(obrigatorio(r, ["id"], "workspaces")),
+    organizationId: String(obrigatorio(r, ["organization_id"], "workspaces")),
+    nome: texto(achar(r, ["name", "title"])),
+    status: texto(achar(r, ["status"])),
+  }));
+  const orgDoWorkspace = new Map(saida.map((w) => [w.refId, w.organizationId]));
+
+  const tabela = await tabelaExistente(sql, ["teams", "organization_teams", "workspace_teams", "equipes"], "team|equipe", "equipes");
+  const times = await sql<Array<{ r: Linha }>>`SELECT to_jsonb(t) AS r FROM ${sql(tabela)} t`;
+  for (const { r } of times) {
+    const viaWs = achar(r, ["workspace_id"]);
+    const org = texto(achar(r, ["organization_id"])) ?? (viaWs !== null ? orgDoWorkspace.get(String(viaWs)) ?? null : null);
+    if (org === null && achar(r, ["organization_id", "workspace_id"]) === null) {
+      obrigatorio(r, ["organization_id", "workspace_id"], tabela); // sem como saber de quem é: falha alto
+    }
+    if (!org || !ids.has(org)) continue;
+    saida.push({
+      tipo: "equipe", refId: String(obrigatorio(r, ["id"], tabela)), organizationId: org,
+      nome: texto(achar(r, ["name", "title"])), status: texto(achar(r, ["status"])),
+    });
+  }
+  return saida;
+}
+
+export interface ReceptivoCallfaceAi {
+  didId: string;
+  organizationId: string;
+  numero: string;
+  /** usuario | ura | workspace | outro | null (sem destino) */
+  destinoTipo: string | null;
+  destinoId: string | null;
+  /** null = a plataforma não informa de forma reconhecível. */
+  disponivel: boolean | null;
+  status: string | null;
+}
+
+const DESTINOS: Array<[string, string[]]> = [
+  ["usuario", ["user_id"]], ["ura", ["ivr_id", "ura_id", "menu_id"]], ["workspace", ["workspace_id"]],
+];
+
+/** Números receptivos (DIDs) e para onde tocam. Tabela não confirmada: descoberta, ou falha alto. */
+export async function lerReceptivos(sql: Sql, organizationIds: string[]): Promise<ReceptivoCallfaceAi[]> {
+  if (!organizationIds.length) return [];
+  const ids = new Set(organizationIds);
+  const tabela = await tabelaExistente(
+    sql, ["inbound_numbers", "inbound_dids", "dids", "did_numbers", "receptive_numbers", "receptivos"],
+    "did|inbound|receptiv|ura|ivr", "receptivos");
+  const linhas = await sql<Array<{ r: Linha }>>`SELECT to_jsonb(d) AS r FROM ${sql(tabela)} d`;
+  const saida: ReceptivoCallfaceAi[] = [];
+  for (const { r } of linhas) {
+    const org = String(obrigatorio(r, ["organization_id"], tabela));
+    if (!ids.has(org)) continue;
+    const genericoTipo = texto(achar(r, ["destination_type", "target_type"]));
+    const genericoId = texto(achar(r, ["destination_id", "target_id"]));
+    let destinoTipo: string | null = genericoTipo ? genericoTipo.toLowerCase() : null;
+    let destinoId: string | null = genericoId;
+    if (!destinoTipo) {
+      for (const [tipo, colunas] of DESTINOS) {
+        const v = achar(r, colunas);
+        if (v !== null) { destinoTipo = tipo; destinoId = String(v); break; }
+      }
+    }
+    const status = texto(achar(r, ["status"]));
+    const flag = booleano(achar(r, ["is_available", "available", "is_active", "active", "enabled"]));
+    const disponivel = flag ?? (status
+      ? /^(unavailable|inactive|blocked|released|deleted|disabled)$/i.test(status) ? false
+        : /^(available|active|free|enabled|assigned)$/i.test(status) ? true : null
+      : null);
+    saida.push({
+      didId: String(obrigatorio(r, ["id"], tabela)),
+      organizationId: org,
+      numero: String(obrigatorio(r, ["number", "phone_number", "did", "e164", "phone", "msisdn"], tabela)),
+      destinoTipo, destinoId, disponivel, status,
+    });
+  }
+  return saida;
+}
+
+export interface RetratoBrutoCallfaceAi {
+  planos: Bloco<PlanoCallfaceAi[]>;
+  stripe: Bloco<StripeOrgCallfaceAi[]>;
+  licencas: Bloco<LicencaOrgCallfaceAi[]>;
+  usuarios: Bloco<UsuarioOrgCallfaceAi[]>;
+  equipes: Bloco<EquipeCallfaceAi[]>;
+  receptivos: Bloco<ReceptivoCallfaceAi[]>;
+}
+
+async function bloco<T>(f: () => Promise<T>): Promise<Bloco<T>> {
+  try {
+    return { ok: true, dados: await f() };
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Todos os blocos, cada um isolado: o que não deu para ler vem com o motivo, nunca vazio. */
+export async function lerRetratoBruto(sql: Sql, organizationIds: string[]): Promise<RetratoBrutoCallfaceAi> {
+  return {
+    planos: await bloco(() => lerPlanos(sql)),
+    stripe: await bloco(() => lerStripeDasOrganizacoes(sql, organizationIds)),
+    licencas: await bloco(() => lerLicencasDasOrganizacoes(sql, organizationIds)),
+    usuarios: await bloco(() => lerUsuariosDasOrganizacoes(sql, organizationIds)),
+    equipes: await bloco(() => lerEquipes(sql, organizationIds)),
+    receptivos: await bloco(() => lerReceptivos(sql, organizationIds)),
+  };
+}

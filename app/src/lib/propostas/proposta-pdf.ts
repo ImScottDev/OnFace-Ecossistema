@@ -1,6 +1,7 @@
 // Geração do PDF da Proposta Comercial (moldes Zoho) via HTML + Chrome headless.
 // Renderiza no container `api` (Hono). Requer chromium (PUPPETEER_EXECUTABLE_PATH).
 import { periodoDoItem, totaisPorPeriodo } from "@/lib/crm/periodo-cobranca";
+import { formaPagamentoSetup } from "@/lib/crm/condicoes-comerciais";
 import puppeteer from "puppeteer";
 import { existsSync } from "node:fs";
 import { LOGO_WHITE, LOGO_COLOR } from "./pdf-assets";
@@ -43,6 +44,8 @@ export interface PropostaPdfData {
   dataValidade?: string | Date | null;
   prazoContratoMeses?: number | null;
   condicoesPagamento?: string | null;
+  condicaoPagamentoTipo?: string | null;
+  parcelas?: number | null;
   totalRecorrente?: string | number | null;
   totalAvulso?: string | number | null;
   totalGeral?: string | number | null;
@@ -320,7 +323,7 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
     <h2>6. Mapa de investimento</h2>
     ${itensTabela(recorrentes, moeda, "Investimento mensal", totais.mensal)}
     ${anuais.length ? `<div style="margin-top:12px">${itensTabela(anuais, moeda, "Investimento anual", totais.anual)}</div>` : ""}
-    ${setups.length ? `<h2 style="margin-top:16px">7. Setup e itens avulsos</h2>${itensTabela(setups, moeda, "Setup", totais.unico)}` : ""}
+    ${setups.length ? `<h2 style="margin-top:16px">7. Setup e itens avulsos</h2>${itensTabela(setups, moeda, "Setup", totais.unico)}<p class="muted" style="margin-top:8px"><strong>Forma de pagamento do setup:</strong> ${esc(formaPagamentoSetup({ condicaoPagamentoTipo: p.condicaoPagamentoTipo ?? null, parcelas: p.parcelas ?? null, condicoesPagamento: p.condicoesPagamento ?? null }, totais.unico) || "a combinar")}</p>` : ""}
     <table class="mapa" style="margin-top:14px">
       <tbody>
         <tr class="mapa-total"><td class="rgt" style="font-size:12px">Total geral${recorrentes.length || anuais.length ? " (1ª cobrança)" : ""}</td><td class="rgt" style="font-size:12px">${money(p.totalGeral, moeda)}</td></tr>

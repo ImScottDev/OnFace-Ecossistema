@@ -62,6 +62,29 @@ jobs:
         working-directory: app
         run: pnpm exec tsx --test "src/lib/arquitetura/*.test.ts"
 
+      # O fluxo que fecha venda — proposta, contrato, condições, retomada,
+      # entrega de e-mail e catálogo — provado a cada commit. São testes de
+      # regra pura: leem os modelos reais e as funções de decisão, sem tocar
+      # banco. Rodam em menos de 1 s, então o portão não fica mais lento.
+      #
+      # A lista é explícita de propósito: teste que precisa de banco NUNCA pode
+      # entrar aqui, ou o portão vira vermelho permanente (ver o cabeçalho
+      # deste arquivo). Para incluir um novo, confira antes que ele passa com
+      # DATABASE_URL ausente.
+      - name: fluxo comercial (proposta, contrato e catálogo)
+        if: always()
+        working-directory: app
+        run: |
+          pnpm exec tsx --test \
+            src/lib/crm/fluxo-comercial-contrato.test.ts \
+            src/lib/crm/contrato-setup.test.ts \
+            src/lib/crm/contrato-variaveis.test.ts \
+            src/lib/crm/condicoes-comerciais.test.ts \
+            src/lib/crm/decisao-fechamento.test.ts \
+            src/lib/crm/retomada-aceite.test.ts \
+            src/lib/email/entrega.test.ts \
+            src/lib/catalogo/sincronizar-stripe.test.ts
+
   # ─── Imagens de deploy (só push na main) ───────────────────────────────────
   # Até 12/10/2026 a imagem era construída NA EC2: ~48 min por deploy. Agora o
   # build roda aqui, EM PARALELO ao portão acima, e publica uma imagem

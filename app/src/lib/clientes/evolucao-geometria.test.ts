@@ -2,7 +2,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { geometriaFaturamento, passoDoEixo } from "./evolucao-geometria";
 
-const mes = (competencia: string, mrr: number, avulso = 0) => ({ competencia, mrr, avulso, debito: 0, semClasse: 0, total: mrr + avulso });
+const mes = (competencia: string, mrr: number, avulso = 0) =>
+  // `avulso` segue sendo a soma de setup + pontual + uso; aqui o avulso entra todo como pontual.
+  ({ competencia, mrr, avulso, setup: 0, pontual: avulso, uso: 0, debito: 0, semClasse: 0, total: mrr + avulso });
 
 describe("geometria da evolução de faturamento", () => {
   it("empilha por natureza e o topo da pilha é o total faturado", () => {

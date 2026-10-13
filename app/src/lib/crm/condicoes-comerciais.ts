@@ -115,6 +115,14 @@ export interface CondicoesDaProposta {
 
 const dataCurta = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
+/** "À vista, boleto bancário" / "Em 3x, cartão de crédito". Fonte única de contrato e PDF da proposta. */
+export function formaPagamentoSetup(p: Pick<CondicoesDaProposta, "condicaoPagamentoTipo" | "parcelas" | "condicoesPagamento">, setup: number): string {
+  if (setup <= 0) return "Sem setup";
+  const tipoPag = p.condicaoPagamentoTipo ? FORMA_PAGAMENTO[p.condicaoPagamentoTipo] : undefined;
+  const parcelas = p.parcelas && p.parcelas > 1 ? p.parcelas : 1;
+  return tipoPag ? (parcelas > 1 ? `Em ${parcelas}x, ${tipoPag}` : `À vista, ${tipoPag}`) : (p.condicoesPagamento || "").trim();
+}
+
 /**
  * As variáveis de contrato que vêm das condições negociadas. Pura: o contrato lê as COLUNAS gravadas por
  * `condicoesDoEditor`, e o teste prova o caminho editor -> coluna -> variável sem banco.
@@ -127,11 +135,7 @@ export function variaveisDeCondicoes(p: CondicoesDaProposta, setup: number, hoje
   const inicioVigencia = dataEscolhida ?? hoje;
   const inicioCobranca = dataEscolhida ?? (p.trialDias && p.trialDias > 0 ? new Date(hoje.getTime() + p.trialDias * 864e5) : hoje);
 
-  const tipoPag = p.condicaoPagamentoTipo ? FORMA_PAGAMENTO[p.condicaoPagamentoTipo] : undefined;
-  const parcelas = p.parcelas && p.parcelas > 1 ? p.parcelas : 1;
-  const formaSetup = setup <= 0 ? "Sem setup"
-    : tipoPag ? (parcelas > 1 ? `Em ${parcelas}x, ${tipoPag}` : `À vista, ${tipoPag}`)
-    : (p.condicoesPagamento || "").trim();
+  const formaSetup = formaPagamentoSetup(p, setup);
 
   return {
     inicioVigencia,
