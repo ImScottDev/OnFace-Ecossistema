@@ -6,7 +6,9 @@ import { clienteParaODesenho } from "@/lib/clientes/cliente-para-o-desenho";
 /* A tela é o desenho do handoff, convertido por máquina. `Cf2Cliente360`
    (crm2/clientes/Cliente360) era a versão anterior e sai da rota — o
    componente continua no repo para comparação. */
-import { ClienteProto } from "@/components/onface/proto/ClienteProto";
+import { ClienteProto, type UsoCallfaceAiDoCliente } from "@/components/onface/proto/ClienteProto";
+import { usoDoCliente } from "@/lib/callface-ai/uso";
+import { confirmarVinculo, removerVinculo } from "@/lib/callface-ai/vinculo-actions";
 
 export const metadata = { title: "Cliente" };
 export const dynamic = "force-dynamic";
@@ -35,5 +37,22 @@ export default async function ClienteDetalhePage({ params }: { params: Promise<{
   }
   if (!cliente) notFound();
 
-  return <ClienteProto cliente={cliente} />;
+  return <ClienteProto cliente={cliente} usoCallfaceAi={await lerUsoCallfaceAi(ctx.organizacaoId, cliente)} />;
+}
+
+/* Aba "Uso da Callface AI": aparece para quem contratou Callface AI ou já tem
+   vínculo/sugestão com uma organização do SaaS. Para conta só de PABX, uma
+   aba dizendo "sem vínculo" seria ruído. A falha de leitura NÃO derruba o
+   360: vira o estado de erro da aba. */
+async function lerUsoCallfaceAi(organizacaoId: string, cliente: NonNullable<Awaited<ReturnType<typeof clienteParaODesenho>>>): Promise<UsoCallfaceAiDoCliente | undefined> {
+  const acoes = { confirmar: confirmarVinculo, remover: removerVinculo };
+  const contratou = cliente.servicos.some((s) => s.familia === "CALLFACE_AI");
+  try {
+    const uso = await usoDoCliente(organizacaoId, cliente.empresa.id);
+    if (!contratou && (!uso || uso.vinculo.estado === "sem")) return undefined;
+    return { uso, acoes };
+  } catch (e) {
+    console.error("[cliente 360] uso da Callface AI", e);
+    return contratou ? { uso: null, erro: "A leitura do uso falhou no servidor. Recarregue; se continuar, o sincronizador pode estar sem tabela ou fora do ar.", acoes } : undefined;
+  }
 }

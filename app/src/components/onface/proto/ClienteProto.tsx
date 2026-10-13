@@ -18,6 +18,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import {
@@ -32,6 +33,10 @@ import { geometriaFaturamento } from "@/lib/clientes/evolucao-geometria";
 import { ClienteLiga } from "./ClienteLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
+import { UsoDoClientePainel, type PropsUsoDoCliente } from "@/components/onface/callface-ai/UsoDoClientePainel";
+
+/** Leitura da Callface AI que a página entrega pronta (Server Component). */
+export type UsoCallfaceAiDoCliente = Pick<PropsUsoDoCliente, "uso" | "erro" | "acoes">;
 
 /* ── Vocabulário visual do protótipo ───────────────────────────────────────
  * Cópia CONSCIENTE das constantes de estilo do ClienteLiga. Elas vivem dentro
@@ -129,6 +134,51 @@ class ClienteLigada extends ClienteLiga {
       setTimeout(() => { self._semEco = false; }, 0);
       return self.props.gravar?.(patch);
     };
+  }
+
+  /* ── Aba "Uso da Callface AI" ────────────────────────────────────────
+     O desenho gerado não tem essa aba e não se edita. Ela entra pelo
+     adaptador: a aba vai na lista `abas` (o markup já itera), o `vis` do
+     Liga zera todos os blocos quando a aba é "uso", e o painel é montado por
+     portal num invólucro `display: contents` no fim da coluna da página —
+     sem caixa própria, então não ganha gap nem desloca nada nas outras abas. */
+  _alvoUso: HTMLDivElement | null = null;
+
+  componentDidMount() {
+    super.componentDidMount?.();
+    const P: any = (this as any).props;
+    if (!P.usoCallfaceAi) return;
+    const coluna = P.raiz?.current?.querySelector('[data-r="pagina"] > div');
+    if (coluna) {
+      const el = document.createElement("div");
+      el.style.display = "contents";
+      coluna.appendChild(el);
+      this._alvoUso = el;
+    }
+    const aba = new URLSearchParams(window.location.search).get("aba");
+    if (aba === "uso") (this as any).setState({ aba: "uso" });
+    else this.forceUpdate();
+  }
+
+  componentWillUnmount() {
+    super.componentWillUnmount?.();
+    this._alvoUso?.remove();
+    this._alvoUso = null;
+  }
+
+  render() {
+    const el = super.render();
+    const P: any = (this as any).props;
+    if ((this as any).state.aba !== "uso" || !this._alvoUso || !P.usoCallfaceAi) return el;
+    return (
+      <>
+        {el}
+        {createPortal(
+          <UsoDoClientePainel {...P.usoCallfaceAi} aoMudar={P.refresh} />,
+          this._alvoUso,
+        )}
+      </>
+    );
   }
 
   /** O Liga chama `this.diz` (via E.avisar) mas não define o método. */
@@ -573,6 +623,12 @@ class ClienteLigada extends ClienteLiga {
 
     const statusC = fams.length && fams.every((f) => f.st === "Encerrado") ? ["Cobrança encerrada", "neutro"] : R.fulfillmentAberto ? ["Em implantação", "coral"] : ["Cliente ativo", "ok"];
     const ABAS: Array<[string, string, number | null, boolean?]> = [["geral", "Visão geral", null], ["produtos", "Produtos", nItens], ["financeiro", "Financeiro", vencidas.length || null, !!vencidas.length], ["pessoas", "Pessoas", pessoas.length], ["documentos", "Documentos", docsTodos.length], ["historico", "Histórico", null]];
+    /* Aba de uso só existe quando a página trouxe a leitura da Callface AI.
+       Vínculo pendente acende a contagem em coral: há uma decisão esperando. */
+    if (P.usoCallfaceAi) {
+      const pend = P.usoCallfaceAi.uso?.vinculo.estado === "pendente";
+      ABAS.splice(2, 0, ["uso", "Uso da Callface AI", pend ? 1 : null, pend]);
+    }
 
     return {
       ...v,
@@ -728,8 +784,9 @@ function clienteDoSeed(R: ClienteDoDesenho) {
 
 /* ── A tela ─────────────────────────────────────────────────────────────── */
 
-export function ClienteProto({ cliente }: { cliente: ClienteDoDesenho }) {
+export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDesenho; usoCallfaceAi?: UsoCallfaceAiDoCliente }) {
   const router = useRouter();
+  const raiz = React.useRef<HTMLDivElement>(null);
   const seed = React.useMemo(() => clienteDoSeed(cliente), [cliente]);
 
   const catalogo = React.useMemo(() => ({
@@ -828,9 +885,11 @@ export function ClienteProto({ cliente }: { cliente: ClienteDoDesenho }) {
   }, [router]);
 
   return (
-    <div data-workspace="desenho">
+    <div data-workspace="desenho" ref={raiz}>
       <ClienteLigada
         real={cliente}
+        raiz={raiz}
+        usoCallfaceAi={usoCallfaceAi}
         dados={{ leads: catalogo.LEADS, opps: [] }}
         catalogo={catalogo}
         abrir={abrir}
