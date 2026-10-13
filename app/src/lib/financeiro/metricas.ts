@@ -16,6 +16,7 @@
  *  - Churn voluntário × involuntário: prefixo de motivo_cancelamento
  *    ("payment_failed" = involuntário; "cancellation_requested" = voluntário).
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 
@@ -101,7 +102,7 @@ function mrrOficialPorFamilia(orgId: string) {
       UNION ALL
       SELECT NULL, a.mrr, a.empresa_id
         FROM assinaturas a
-       WHERE a.organizacao_id = ${orgId} AND a.status = 'active' AND a.empresa_id IS NOT NULL
+       WHERE a.organizacao_id = ${orgId} AND ${doCrm("a")} AND a.status = 'active' AND a.empresa_id IS NOT NULL
          AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${orgId})
          AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc
                           WHERE r2.organizacao_id = ${orgId} AND r2.empresa_id = a.empresa_id
@@ -205,7 +206,7 @@ export async function getChurnStats(orgId: string, p: PeriodoFin): Promise<Churn
       count(*) FILTER (WHERE a.motivo_cancelamento LIKE 'cancellation_requested%')::int AS vol_n,
       COALESCE(sum(a.mrr) FILTER (WHERE a.motivo_cancelamento LIKE 'cancellation_requested%'), 0)::float AS vol_mrr
     FROM assinaturas a
-    WHERE ${orgFilter("a.organizacao_id", orgId)} AND a.status = 'canceled'
+    WHERE ${orgFilter("a.organizacao_id", orgId)} AND ${doCrm("a")} AND a.status = 'canceled'
       AND a.cancelada_em >= ${p.inicio.toISOString()} AND a.cancelada_em < ${p.fim.toISOString()}
   `)) as unknown as { logos: number; mrr: number; invol_n: number; invol_mrr: number; vol_n: number; vol_mrr: number }[];
   const c = canceladas[0] || { logos: 0, mrr: 0, invol_n: 0, invol_mrr: 0, vol_n: 0, vol_mrr: 0 };
@@ -231,7 +232,7 @@ export async function getChurnStats(orgId: string, p: PeriodoFin): Promise<Churn
                          ELSE 'não informado' END) AS motivo,
            count(*)::int AS count
     FROM assinaturas a
-    WHERE ${orgFilter("a.organizacao_id", orgId)} AND a.status = 'canceled'
+    WHERE ${orgFilter("a.organizacao_id", orgId)} AND ${doCrm("a")} AND a.status = 'canceled'
       AND a.cancelada_em >= ${p.inicio.toISOString()} AND a.cancelada_em < ${p.fim.toISOString()}
     GROUP BY 1 ORDER BY 2 DESC
   `)) as unknown as { motivo: string; count: number }[];
@@ -286,8 +287,8 @@ export async function getUnitEconomics(orgId: string, p: PeriodoFin, gastoMidia:
            round((COALESCE(sum(f.valor) FILTER (WHERE f.status = 'paga'), 0) / GREATEST(count(DISTINCT a.id), 1))::numeric, 2)::float AS ltv_medio,
            round(avg(a.mrr)::numeric, 2)::float AS mrr_medio
     FROM assinaturas a
-    LEFT JOIN faturas f ON f.assinatura_id = a.id
-    WHERE ${orgFilter("a.organizacao_id", orgId)}
+    LEFT JOIN faturas f ON f.assinatura_id = a.id AND ${doCrm("f")}
+    WHERE ${orgFilter("a.organizacao_id", orgId)} AND ${doCrm("a")}
     GROUP BY 1 ORDER BY 3 DESC
   `)) as unknown as { plano: string; clientes: number; ltv_medio: number; mrr_medio: number }[];
 
@@ -322,7 +323,7 @@ export async function getAging(orgId: string, produto?: string): Promise<{ faixa
     FROM faturas f
     -- Só VENCIDAS: fatura aberta com vencimento no futuro não está em atraso, e
     -- com intervalo negativo caía na faixa 0-15 inflando o aging (mesma regra de resumo-pagina).
-    WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status IN ('aberta', 'uncollectible')
+    WHERE ${orgFilter("f.organizacao_id", orgId)} AND ${doCrm("f")} AND f.status IN ('aberta', 'uncollectible')
       AND COALESCE(f.vencimento, f.emitida_em) < now()${prodSql}
     GROUP BY 1
   `)) as unknown as AgingFaixa[];
@@ -370,7 +371,7 @@ export async function getFilaCobranca(orgId: string, limite = 100): Promise<Fila
     LEFT JOIN empresas e ON e.id = COALESCE(l.empresa_id, f.empresa_id)
     LEFT JOIN usuarios u ON u.id = f.acionado_por
     -- Só vencidas: fatura que ainda não venceu não entra na fila de cobrança.
-    WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.status IN ('aberta', 'uncollectible')
+    WHERE ${orgFilter("f.organizacao_id", orgId)} AND ${doCrm("f")} AND f.status IN ('aberta', 'uncollectible')
       AND COALESCE(f.vencimento, f.emitida_em) < now()
     ORDER BY
       -- prioridade: atraso recente (recuperável) com valor alto primeiro; 60+ vai pro fim
@@ -409,7 +410,7 @@ export async function getRecuperacao(orgId: string, p: PeriodoFin): Promise<Recu
       count(*) FILTER (WHERE f.status = 'paga')::int AS recuperadas,
       COALESCE(sum(f.valor) FILTER (WHERE f.status = 'paga'), 0)::float AS valor_recuperado
     FROM faturas f
-    WHERE ${orgFilter("f.organizacao_id", orgId)} AND f.origem = 'stripe' AND f.tentativas >= 2
+    WHERE ${orgFilter("f.organizacao_id", orgId)} AND ${doCrm("f")} AND f.origem = 'stripe' AND f.tentativas >= 2
       AND f.emitida_em >= ${p.inicio.toISOString()} AND f.emitida_em < ${p.fim.toISOString()}
   `)) as unknown as { falhadas: number; recuperadas: number; valor_recuperado: number }[];
   const r = row || { falhadas: 0, recuperadas: 0, valor_recuperado: 0 };
@@ -472,7 +473,7 @@ export async function getCalendarioRenovacao(orgId: string, dias = 90): Promise<
     FROM contratos c
     LEFT JOIN leads l ON l.id = c.lead_id
     LEFT JOIN empresas e ON e.id = COALESCE(l.empresa_id, c.empresa_id)
-    LEFT JOIN assinaturas a ON a.contrato_id = c.id
+    LEFT JOIN assinaturas a ON a.contrato_id = c.id AND ${doCrm("a")}
     WHERE ${orgFilter("c.organizacao_id", orgId)} AND c.status = 'ativo'
       AND (
         (c.vencimento IS NOT NULL AND c.vencimento <= (now() + make_interval(days => ${dias}))::date)
@@ -509,7 +510,7 @@ export async function getClientesRisco(orgId: string): Promise<ClienteRisco[]> {
     WITH retries_90d AS (
       SELECT f.lead_id, count(*)::int AS n
       FROM faturas f
-      WHERE f.origem = 'stripe' AND f.tentativas >= 2 AND f.emitida_em >= now() - interval '90 days'
+      WHERE ${doCrm("f")} AND f.origem = 'stripe' AND f.tentativas >= 2 AND f.emitida_em >= now() - interval '90 days'
       GROUP BY f.lead_id
     )
     -- Uma linha por CLIENTE, não por assinatura: lead com várias assinaturas
@@ -523,7 +524,7 @@ export async function getClientesRisco(orgId: string): Promise<ClienteRisco[]> {
     JOIN leads l ON l.id = a.lead_id
     LEFT JOIN empresas e ON e.id = l.empresa_id
     LEFT JOIN retries_90d r ON r.lead_id = l.id
-    WHERE ${orgFilter("a.organizacao_id", orgId)}
+    WHERE ${orgFilter("a.organizacao_id", orgId)} AND ${doCrm("a")}
       AND a.status IN ('active', 'past_due')
     GROUP BY l.id, l.nome, e.nome
     HAVING bool_or(a.status = 'past_due') OR MAX(COALESCE(r.n, 0)) >= 2
@@ -596,23 +597,23 @@ export async function getFluxoMes(orgId: string, produto?: string): Promise<Flux
     db.execute<{ faturado: string; recebido: string; aberto: string; rec_n: string; rec_valor: string }>(sql`
       SELECT
         (SELECT COALESCE(sum(f.valor), 0) FROM faturas f
-          WHERE ${orgFilter("f.organizacao_id", orgId)}
+          WHERE ${orgFilter("f.organizacao_id", orgId)} AND ${doCrm("f")}
             AND COALESCE(f.emitida_em, f.created_at) >= date_trunc('month', now())${prodFat})::text AS faturado,
         -- CAIXA: o pagamento é quem prova que o dinheiro entrou.
         (SELECT COALESCE(sum(pg.amount), 0) FROM pagamentos pg
            JOIN faturas f ON f.id = pg.fatura_id
-          WHERE ${orgFilter("f.organizacao_id", orgId)}
+          WHERE ${orgFilter("f.organizacao_id", orgId)} AND ${doCrm("f")}
             AND upper(pg.status) IN ('PAGO','PAID','SUCCEEDED')
             AND pg.paid_at >= date_trunc('month', now())${prodFat})::text AS recebido,
         (SELECT COALESCE(sum(f.valor), 0) FROM faturas f
-          WHERE ${orgFilter("f.organizacao_id", orgId)}
+          WHERE ${orgFilter("f.organizacao_id", orgId)} AND ${doCrm("f")}
             AND f.status IN ('aberta', 'uncollectible')${prodFat})::text AS aberto,
         (SELECT count(*) FROM faturas f
-          WHERE ${orgFilter("f.organizacao_id", orgId)}
+          WHERE ${orgFilter("f.organizacao_id", orgId)} AND ${doCrm("f")}
             AND f.status = 'paga' AND f.paga_em >= date_trunc('month', now())${prodFat}
             AND NOT EXISTS (SELECT 1 FROM pagamentos pg WHERE pg.fatura_id = f.id))::text AS rec_n,
         (SELECT COALESCE(sum(f.valor), 0) FROM faturas f
-          WHERE ${orgFilter("f.organizacao_id", orgId)}
+          WHERE ${orgFilter("f.organizacao_id", orgId)} AND ${doCrm("f")}
             AND f.status = 'paga' AND f.paga_em >= date_trunc('month', now())${prodFat}
             AND NOT EXISTS (SELECT 1 FROM pagamentos pg WHERE pg.fatura_id = f.id))::text AS rec_valor`),
   ]);

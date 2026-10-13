@@ -1,3 +1,4 @@
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { sql } from "drizzle-orm";
 import { nomeEmpresaSql } from "@/lib/vendas/texto";
 import { db } from "@/lib/db";
@@ -175,7 +176,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
       -- assinatura ativa. A mesma regra está em mrr_atual (lib/metricas/catalogo.ts).
       SELECT a.empresa_id, SUM(a.mrr)
         FROM assinaturas a
-       WHERE a.organizacao_id = ${organizacaoId}
+       WHERE a.organizacao_id = ${organizacaoId} AND ${doCrm("a")}
          AND a.status = 'active' AND a.empresa_id IS NOT NULL
          AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${organizacaoId})
          AND NOT EXISTS (
@@ -216,7 +217,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
       SELECT COALESCE(f.empresa_id, a.empresa_id) AS empresa_id,
         COUNT(*) FILTER (WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now())::int AS n_atrasadas,
         MIN(COALESCE(f.vencimento, f.emitida_em)) AS primeira
-      FROM faturas f LEFT JOIN assinaturas a ON a.id = f.assinatura_id GROUP BY 1
+      FROM faturas f LEFT JOIN assinaturas a ON a.id = f.assinatura_id WHERE ${doCrm("f")} GROUP BY 1
     ),
     ultima_atividade_agg AS (
       -- Mesma regra do CS (lib/cs/tela-cs.ts): atividade da EMPRESA ou do lead dela. Só pelo lead,
@@ -238,7 +239,7 @@ export async function carteiraParaODesenho(organizacaoId: string): Promise<Carte
     -- carimbo de 2026-08-16), não data de cliente.
     inicio_fontes AS (
       SELECT empresa_id, ganho_at AS d FROM negocios WHERE ganho_at IS NOT NULL AND empresa_id IS NOT NULL
-      UNION ALL SELECT empresa_id, iniciada_em FROM assinaturas WHERE iniciada_em IS NOT NULL AND empresa_id IS NOT NULL
+      UNION ALL SELECT empresa_id, iniciada_em FROM assinaturas WHERE ${doCrm("assinaturas")} AND iniciada_em IS NOT NULL AND empresa_id IS NOT NULL
       UNION ALL SELECT COALESCE(c.empresa_id, l.empresa_id), c.inicio::timestamptz
         FROM contratos c LEFT JOIN leads l ON l.id = c.lead_id WHERE c.inicio IS NOT NULL
       UNION ALL SELECT empresa_id, primeira FROM faturas_agg WHERE primeira IS NOT NULL

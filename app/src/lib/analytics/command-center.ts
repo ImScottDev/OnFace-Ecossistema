@@ -6,6 +6,7 @@
  * do MRR já corrigido) em vez de reimplementar — mesmo princípio de Data
  * Governance do resto do projeto.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { leads, negocios, ligacoes, whatsappMensagens, emails, contatos, usuarios, tarefas, mrrMovimentos, clientes } from "@/lib/db/schema";
 import { eq, and, gte, lt, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
@@ -659,7 +660,7 @@ export async function getFinanceiroResumo(orgId: string): Promise<FinanceiroResu
   const [row] = await db.execute<{ n: number; valor: string }>(sql`
     SELECT COUNT(*)::int AS n, COALESCE(SUM(f.valor), 0) AS valor
     FROM faturas f
-    WHERE f.organizacao_id = ${orgId} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
+    WHERE f.organizacao_id = ${orgId} AND ${doCrm("f")} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
   `);
   return {
     recebidoMes: fluxo.recebidoMes,

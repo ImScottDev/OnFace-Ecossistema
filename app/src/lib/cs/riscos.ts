@@ -11,6 +11,7 @@
  * Quando o dado existir, entra como mais um `AvaliadorRisco` — a lista é
  * aberta justamente pra isso.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { csRiscos } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
@@ -90,7 +91,7 @@ async function detectarSinais(organizacaoId: string, empresaId?: string): Promis
            MIN(COALESCE(f.vencimento, f.emitida_em))::text AS mais_antiga
       FROM alvo
       JOIN faturas f ON f.empresa_id = alvo.empresa_id
-     WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
+     WHERE ${doCrm("f")} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
        ${filtroEmpresa}
      GROUP BY alvo.empresa_id`);
   for (const r of faturas) {
@@ -275,7 +276,7 @@ async function detectarSinais(organizacaoId: string, empresaId?: string): Promis
            MAX(a.produto) AS produto, COALESCE(SUM(a.mrr), 0)::text AS mrr
       FROM alvo
       JOIN assinaturas a ON a.empresa_id = alvo.empresa_id
-     WHERE a.status IN ('past_due', 'unpaid')
+     WHERE ${doCrm("a")} AND a.status IN ('past_due', 'unpaid')
        ${filtroEmpresa}
      GROUP BY alvo.empresa_id, a.status`);
   for (const r of assinaturasIrregulares) {

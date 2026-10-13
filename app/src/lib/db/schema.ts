@@ -833,6 +833,9 @@ export const assinaturas = pgTable(
     commercialLifecycle: text("commercial_lifecycle"),
     semanticConfidence: text("semantic_confidence"),
     semanticEvidence: jsonb("semantic_evidence"),
+    // 0119: NULL = é do CRM. Preenchida = objeto do SaaS Callface na conta Stripe compartilhada.
+    foraDoEspelhoEm: timestamp("fora_do_espelho_em", { withTimezone: true }),
+    foraDoEspelhoMotivo: text("fora_do_espelho_motivo"),
   },
   (table) => [
     uniqueIndex("idx_assinaturas_stripe_id").on(table.stripeSubscriptionId),
@@ -975,6 +978,9 @@ export const faturas = pgTable(
     receivableState: text("receivable_state"),
     semanticConfidence: text("semantic_confidence"),
     semanticEvidence: jsonb("semantic_evidence"),
+    // 0119: NULL = é do CRM. Preenchida = objeto do SaaS Callface na conta Stripe compartilhada.
+    foraDoEspelhoEm: timestamp("fora_do_espelho_em", { withTimezone: true }),
+    foraDoEspelhoMotivo: text("fora_do_espelho_motivo"),
   },
   (table) => [
     index("idx_faturas_org").on(table.organizacaoId),

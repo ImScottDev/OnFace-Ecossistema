@@ -1,5 +1,6 @@
 // Fulfillment — entrega/implantação pós-Won (19/08, correção de escopo).
 // Ver lib/crm/fulfillment.ts pra contexto completo do modelo.
+import { assinaturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { fulfillments, fulfillmentItens, servicosCanonicos, contratos, negocios, usuarios, empresas, fulfillmentFormularios, tarefas, leads, propostas, atividades, fulfillmentLinhasPortabilidade, fulfillmentRamais, assinaturas, reunioes, negocioLeads, whatsappMensagens } from "@/lib/db/schema";
@@ -372,7 +373,7 @@ app.get("/fulfillments/:id", async (c) => {
     // Produção não tem `assinaturas.servico_id` (coluna que só existe no
     // schema do CRM2, ver schema.ts:814) — referenciá-la aqui quebra em prod.
     // A ligação que existe nos dois bancos é pelo CONTRATO do serviço canônico.
-    .where(sql`${assinaturas.contratoId} = (select contrato_id from servicos_canonicos where id = ${carregado.fulfillment.servicoCanonicoId})`)
+    .where(and(assinaturaDoCrm, sql`${assinaturas.contratoId} = (select contrato_id from servicos_canonicos where id = ${carregado.fulfillment.servicoCanonicoId})`))
     .orderBy(desc(assinaturas.createdAt))
     .limit(1);
 

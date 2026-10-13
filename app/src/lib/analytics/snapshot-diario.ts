@@ -19,6 +19,7 @@
  * projeção. Trocar o dashboard pra ler daqui é um passo futuro separado,
  * depois de rodar de verdade por um tempo.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { metricasDiarias } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
@@ -36,11 +37,11 @@ export async function calcularSnapshotDiario(organizacaoId: string) {
     getFechadoPeriodo(organizacaoId, thisMonthStart, now, undefined),
     db.execute(sql`
       SELECT COALESCE(sum(mrr::numeric),0) AS mrr, count(DISTINCT lead_id) AS clientes
-      FROM assinaturas WHERE organizacao_id = ${organizacaoId} AND status IN ('active','trialing','past_due')
+      FROM assinaturas WHERE organizacao_id = ${organizacaoId} AND ${doCrm("assinaturas")} AND status IN ('active','trialing','past_due')
     `),
     db.execute(sql`
       SELECT COALESCE(sum(mrr::numeric),0) AS mrr, count(*) AS qtd
-      FROM assinaturas WHERE organizacao_id = ${organizacaoId} AND status = 'unpaid'
+      FROM assinaturas WHERE organizacao_id = ${organizacaoId} AND ${doCrm("assinaturas")} AND status = 'unpaid'
     `),
   ]);
 

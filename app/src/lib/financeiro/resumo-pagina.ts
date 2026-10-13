@@ -1,3 +1,4 @@
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getMrrAtual } from "@/lib/financeiro/metricas";
@@ -45,14 +46,14 @@ export async function getResumoFinanceiro(orgId: string): Promise<ResumoFinancei
              (date_trunc('month', now()) - interval '1 month')::date::text AS inicio,
              MAX(f.synced_at) FILTER (WHERE f.origem = 'stripe')::text AS sync
         FROM faturas f
-       WHERE f.organizacao_id = ${orgId}`),
+       WHERE f.organizacao_id = ${orgId} AND ${doCrm("f")}`),
     // `origem = 'stripe'` nos dois números porque a legenda promete "só Stripe":
     // hoje as zoho_legado têm paga_em NULL e nenhuma aberta, mas não por regra.
     // Mesma regra de atraso do módulo: COALESCE(vencimento, emitida_em), nunca coluna.
     db.execute<{ valor: string; n: string }>(sql`
       SELECT COALESCE(SUM(valor), 0)::text AS valor, COUNT(*)::text AS n
         FROM faturas
-       WHERE organizacao_id = ${orgId}
+       WHERE organizacao_id = ${orgId} AND ${doCrm("faturas")}
          AND origem = 'stripe'
          AND status IN ('aberta', 'uncollectible')
          AND COALESCE(vencimento, emitida_em) < now()`),

@@ -5,6 +5,7 @@
 // carrega até hoje; não corrigido aqui de propósito, fora de escopo tocar
 // legado que já está no ar — este é o substrato novo, correto desde o
 // nascimento).
+import { doCrm, assinaturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import {
@@ -90,7 +91,7 @@ app.get("/clientes-crm2/resumo", async (c) => {
       SELECT COALESCE(f.empresa_id, a.empresa_id) AS empresa_id, COUNT(*)::int AS n
       FROM faturas f
       LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-      WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
+      WHERE ${doCrm("f")} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
       GROUP BY 1
     ),
     familias AS (
@@ -318,7 +319,7 @@ app.get("/clientes-crm2", async (c) => {
         (NOT EXISTS (SELECT 1 FROM servicos_canonicos sc WHERE sc.empresa_id = e.id AND sc.portfolio_included = true)) AS cancelado_calc,
         EXISTS (
           SELECT 1 FROM faturas f LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-          WHERE (f.empresa_id = e.id OR a.empresa_id = e.id) AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
+          WHERE ${doCrm("f")} AND (f.empresa_id = e.id OR a.empresa_id = e.id) AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
         ) AS em_risco_calc,
         EXISTS (
           SELECT 1 FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
@@ -379,6 +380,7 @@ app.get("/clientes-crm2", async (c) => {
         MIN(COALESCE(f.vencimento, f.emitida_em)) FILTER (WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()) AS venceu_em
       FROM faturas f
       LEFT JOIN assinaturas a ON a.id = f.assinatura_id
+      WHERE ${doCrm("f")}
       GROUP BY 1
     ),
     -- Última atividade real por empresa (referência de UX, 18/08): mesma
@@ -613,7 +615,7 @@ app.get("/clientes-crm2/sucesso", async (c) => {
         COUNT(*)::int AS n, SUM(f.valor) AS valor
       FROM faturas f
       LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-      WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
+      WHERE ${doCrm("f")} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
       GROUP BY 1
     ),
     ultima_atividade_agg AS (
@@ -736,7 +738,7 @@ app.get("/clientes-crm2/financeiro/operacional", async (c) => {
       COALESCE(SUM(a.mrr), 0)::numeric AS mrr,
       COUNT(*) FILTER (WHERE a.servico_id IS NOT NULL)::int AS linked_services
     FROM assinaturas a
-    WHERE a.organizacao_id = ${ctx.organizacaoId}
+    WHERE a.organizacao_id = ${ctx.organizacaoId} AND ${doCrm("a")}
     GROUP BY a.status
     ORDER BY a.status
   `);
@@ -750,7 +752,7 @@ app.get("/clientes-crm2/financeiro/operacional", async (c) => {
     SELECT f.origem, f.status, COUNT(*)::int AS invoices,
       COALESCE(SUM(f.valor), 0)::numeric AS total
     FROM faturas f
-    WHERE f.organizacao_id = ${ctx.organizacaoId}
+    WHERE f.organizacao_id = ${ctx.organizacaoId} AND ${doCrm("f")}
     GROUP BY f.origem, f.status
     ORDER BY f.origem, f.status
   `);
@@ -903,14 +905,14 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
           id: assinaturas.id, servicoId: assinaturas.servicoId, contratoId: assinaturas.contratoId,
           stripeSubscriptionId: assinaturas.stripeSubscriptionId, status: assinaturas.status,
           billingStatus: assinaturas.billingStatus, syncedAt: assinaturas.syncedAt,
-        }).from(assinaturas).where(inArray(assinaturas.servicoId, servicoIds))
+        }).from(assinaturas).where(and(inArray(assinaturas.servicoId, servicoIds), assinaturaDoCrm))
       : Promise.resolve([]),
     contratoIds.length > 0
       ? db.select({
           id: assinaturas.id, servicoId: assinaturas.servicoId, contratoId: assinaturas.contratoId,
           stripeSubscriptionId: assinaturas.stripeSubscriptionId, status: assinaturas.status,
           billingStatus: assinaturas.billingStatus, syncedAt: assinaturas.syncedAt,
-        }).from(assinaturas).where(inArray(assinaturas.contratoId, contratoIds))
+        }).from(assinaturas).where(and(inArray(assinaturas.contratoId, contratoIds), assinaturaDoCrm))
       : Promise.resolve([]),
   ]);
   const prioridadeBilling: Record<string, number> = {
@@ -1060,7 +1062,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     SELECT f.valor, COALESCE(f.vencimento, f.emitida_em) AS vencimento
     FROM faturas f
     LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-    WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) >= now()
+    WHERE ${doCrm("f")} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) >= now()
       AND (f.empresa_id = ${empresaId} OR a.empresa_id = ${empresaId})
     ORDER BY COALESCE(f.vencimento, f.emitida_em) ASC
     LIMIT 1
@@ -1070,7 +1072,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     SELECT COUNT(*)::int AS n
     FROM faturas f
     LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-    WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
+    WHERE ${doCrm("f")} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()
       AND (f.empresa_id = ${empresaId} OR a.empresa_id = ${empresaId})
   `);
 
@@ -1085,7 +1087,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
     SELECT COUNT(*)::int AS n, COALESCE(SUM(f.valor), 0) AS valor
     FROM faturas f
     LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-    WHERE f.status = 'aberta'
+    WHERE ${doCrm("f")} AND f.status = 'aberta'
       AND (f.empresa_id = ${empresaId} OR a.empresa_id = ${empresaId})
   `);
 
@@ -1292,7 +1294,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
         stripeSubscriptionId: assinaturas.stripeSubscriptionId,
         status: assinaturas.status, mrr: assinaturas.mrr,
         currentPeriodEnd: assinaturas.currentPeriodEnd, syncedAt: assinaturas.syncedAt,
-      }).from(assinaturas).where(inArray(assinaturas.contratoId, contratoIdsParaConciliacao))
+      }).from(assinaturas).where(and(inArray(assinaturas.contratoId, contratoIdsParaConciliacao), assinaturaDoCrm))
     : [];
   const prioridadeStatusAssinatura: Record<string, number> = { active: 4, past_due: 3, trialing: 3, incomplete: 2, canceled: 1 };
   const assinaturaPorContrato = new Map<string, (typeof assinaturasDosContratos)[number]>();
@@ -1312,7 +1314,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
           COUNT(*) FILTER (WHERE f.status = 'paga')::int AS pagas
         FROM faturas f
         LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-        WHERE COALESCE(f.contrato_id, a.contrato_id) IN (${sql.join(contratoIdsParaConciliacao.map((id) => sql`${id}`), sql`, `)})
+        WHERE ${doCrm("f")} AND COALESCE(f.contrato_id, a.contrato_id) IN (${sql.join(contratoIdsParaConciliacao.map((id) => sql`${id}`), sql`, `)})
         GROUP BY COALESCE(f.contrato_id, a.contrato_id)
       `)
     : [];
@@ -1434,7 +1436,7 @@ app.get("/clientes-crm2/:empresaId", async (c) => {
         SELECT f.id, f.valor, f.paga_em
         FROM faturas f
         LEFT JOIN assinaturas a ON a.id = f.assinatura_id
-        WHERE f.status = 'paga' AND f.paga_em IS NOT NULL
+        WHERE ${doCrm("f")} AND f.status = 'paga' AND f.paga_em IS NOT NULL
           AND (f.empresa_id = ${empresaId} OR a.empresa_id = ${empresaId})
         ORDER BY f.paga_em DESC
         LIMIT 30

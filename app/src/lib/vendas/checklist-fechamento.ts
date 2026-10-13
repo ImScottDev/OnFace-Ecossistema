@@ -18,6 +18,7 @@
  * de Won, que é exatamente o que o Módulo 04 proíbe: "Nenhuma UI, webhook,
  * worker ou integração decide Won por regra própria."
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { avaliarGanho, type CondicaoGanho } from "@onface/catalog";
@@ -99,7 +100,7 @@ export async function checklistDeFechamento(
                       AND lower(coalesce(c.status,'')) IN ('fully_signed','assinado','ativo')) AS contrato_assinado,
            EXISTS (SELECT 1 FROM pagamentos pg
                      JOIN faturas f ON f.id = pg.fatura_id
-                    WHERE f.empresa_id = o.empresa_id
+                    WHERE f.empresa_id = o.empresa_id AND ${doCrm("f")}
                       AND upper(coalesce(pg.status,'')) IN ('PAGO','PAID','SUCCEEDED')) AS pagamento_confirmado,
            EXISTS (SELECT 1 FROM comercial_evidencia ce
                     WHERE ce.negocio_id = ${negocioId}::uuid

@@ -11,6 +11,7 @@
  * chamada em leads.ts/negocios.ts/worker (dual-write de F1/F2 é o precedente
  * do mesmo padrão: sincronizar no ponto real de escrita, best-effort).
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { automacoes, automacaoExecucoes, notificacoes, leads, labels, assinaturas, faturas, auditLog } from "@/lib/db/schema";
 import { eq, and, or, isNull, sql } from "drizzle-orm";
@@ -277,10 +278,10 @@ export async function dispararAutomacoesFinanceiras(params: {
            COALESCE(f.lead_id, a.lead_id) AS lead_id,
            a.servico_id AS servico_id
     FROM (SELECT 1) seed
-    LEFT JOIN faturas f ON f.organizacao_id = ${params.organizacaoId}
+    LEFT JOIN faturas f ON f.organizacao_id = ${params.organizacaoId} AND ${doCrm("f")}
       AND ${stripeInvoiceId} <> ''
       AND f.origem = 'stripe' AND f.external_id = ${stripeInvoiceId}
-    LEFT JOIN assinaturas a ON a.organizacao_id = ${params.organizacaoId}
+    LEFT JOIN assinaturas a ON a.organizacao_id = ${params.organizacaoId} AND ${doCrm("a")}
       AND (
         (${stripeSubscriptionId} <> '' AND a.stripe_subscription_id = ${stripeSubscriptionId})
         OR (${stripeCustomerId} <> '' AND a.stripe_customer_id = ${stripeCustomerId})

@@ -14,6 +14,7 @@
 // vencimento/data de referência já passou. Cobrança automática não tem
 // due_date (vencimento null) — aging usa COALESCE(vencimento, emitida_em),
 // mesmo padrão documentado no schema de faturas.
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { Hono } from "hono";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -32,7 +33,7 @@ app.get("/clientes-crm2/:empresaId/financeiro", async (c) => {
     SELECT id, produto, status, mrr, moeda, stripe_subscription_id, iniciada_em,
       cancelada_em, motivo_cancelamento, current_period_end
     FROM assinaturas
-    WHERE organizacao_id = ${ctx.organizacaoId} AND empresa_id = ${empresaId}
+    WHERE organizacao_id = ${ctx.organizacaoId} AND empresa_id = ${empresaId} AND ${doCrm("assinaturas")}
     ORDER BY status = 'active' DESC, current_period_end DESC
   `);
 
@@ -49,10 +50,10 @@ app.get("/clientes-crm2/:empresaId/financeiro", async (c) => {
       f.paga_em, f.tentativas, f.acionado_cobranca,
       (f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()) AS atrasada
     FROM faturas f
-    WHERE f.organizacao_id = ${ctx.organizacaoId}
+    WHERE f.organizacao_id = ${ctx.organizacaoId} AND ${doCrm("f")}
       AND (
         f.empresa_id = ${empresaId}
-        OR f.assinatura_id IN (SELECT id FROM assinaturas WHERE empresa_id = ${empresaId})
+        OR f.assinatura_id IN (SELECT id FROM assinaturas WHERE empresa_id = ${empresaId} AND ${doCrm("assinaturas")})
         ${contratoIds.length > 0 ? sql`OR f.contrato_id IN (${sql.join(contratoIds.map((id) => sql`${id}`), sql`, `)})` : sql``}
       )
     ORDER BY COALESCE(f.vencimento, f.emitida_em) DESC

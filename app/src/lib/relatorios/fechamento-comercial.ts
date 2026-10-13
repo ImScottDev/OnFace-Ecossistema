@@ -21,6 +21,7 @@
  * documentado em docs/produto/relatorios-sdr.md (21-22/07). `leads.agenda_closer_id`
  * existe no schema mas tem 0% de cobertura em produção — não é usado aqui.
  */
+import { assinaturaDoCrm, faturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { negocios, leads, empresas, usuarios, contratos, propostas, assinaturas, statusChanges, faturas } from "@/lib/db/schema";
 import { eq, and, gte, lt, inArray, sql, asc, desc } from "drizzle-orm";
@@ -180,7 +181,7 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
   const stripeSubIds = [...new Set([...contratoPorNegocio.values()].map((c) => c.stripeSubscriptionId).filter((v): v is string => !!v))];
   const assinaturasRows = stripeSubIds.length > 0
     ? await db.select({ stripeSubscriptionId: assinaturas.stripeSubscriptionId, stripeCustomerId: assinaturas.stripeCustomerId })
-        .from(assinaturas).where(inArray(assinaturas.stripeSubscriptionId, stripeSubIds))
+        .from(assinaturas).where(and(inArray(assinaturas.stripeSubscriptionId, stripeSubIds), assinaturaDoCrm))
     : [];
   const assinaturaPorStripeSub = new Map(assinaturasRows.map((a) => [a.stripeSubscriptionId, a]));
 
@@ -193,6 +194,7 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
     ? await db.select({ contratoId: faturas.contratoId, leadId: faturas.leadId, hostedInvoiceUrl: faturas.hostedInvoiceUrl, createdAt: faturas.createdAt })
         .from(faturas)
         .where(and(
+          faturaDoCrm,
           sql`${faturas.hostedInvoiceUrl} IS NOT NULL`,
           sql`(${contratoIds.length > 0 ? inArray(faturas.contratoId, contratoIds) : sql`false`} OR ${leadIds.length > 0 ? inArray(faturas.leadId, leadIds) : sql`false`})`,
         ))

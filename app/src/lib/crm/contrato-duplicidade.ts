@@ -17,6 +17,7 @@
  * local do Stripe) é quem desempata, nunca uma heurística "manter o mais
  * recente" aplicada sem evidência.
  */
+import { assinaturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { contratos, assinaturas } from "@/lib/db/schema";
 import { eq, and, isNull, sql } from "drizzle-orm";
@@ -65,7 +66,7 @@ export async function avaliarContratosAtivosDuplicados(
     const assinaturasDoContrato = await db
       .select({ status: assinaturas.status })
       .from(assinaturas)
-      .where(eq(assinaturas.contratoId, contrato.id));
+      .where(and(eq(assinaturas.contratoId, contrato.id), assinaturaDoCrm));
 
     if (assinaturasDoContrato.length === 0) {
       resultado.push({ contrato, classificacao: "ambiguo" });

@@ -7,6 +7,7 @@
  * negócio nova mora aqui — tudo sai das mesmas tabelas e dos mesmos
  * critérios já usados por fila, riscos, renovação e jornada.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { nomeEmpresaSql } from "@/lib/vendas/texto";
@@ -101,7 +102,7 @@ export async function painelCs(organizacaoId: string, responsavelId?: string | n
       -- se a inadimplência virar churn, que é a pergunta que o CS faz.
       COALESCE((SELECT SUM(c.mrr::numeric) FROM conta c JOIN afetadas a ON a.empresa_id = c.empresa_id), 0)::text AS mrr,
       COALESCE((SELECT SUM(f.valor) FROM faturas f JOIN afetadas a ON a.empresa_id = f.empresa_id
-                 WHERE f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()), 0)::text AS aberto`);
+                 WHERE ${doCrm("f")} AND f.status = 'aberta' AND COALESCE(f.vencimento, f.emitida_em) < now()), 0)::text AS aberto`);
 
   // ─── Checkpoints ───
   const checkRows = await db.execute<Record<string, string | number | null>>(sql`

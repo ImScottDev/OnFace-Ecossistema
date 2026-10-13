@@ -8,6 +8,7 @@
  * vira `commercial_lifecycle = 'CHURNED'`, que é o estado canônico que o
  * resto do CRM já entende, nunca um DELETE.
  */
+import { faturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { csCancelamentos, servicosCanonicos, contratos, faturas, clientes } from "@/lib/db/schema";
 import { and, eq, sql, inArray } from "drizzle-orm";
@@ -59,6 +60,7 @@ async function levantarChecagens(empresaId: string, contratoId: string | null) {
   const [pend] = await db.select({
     valor: sql<string>`COALESCE(SUM(${faturas.valor}), 0)::text`,
   }).from(faturas).where(and(
+    faturaDoCrm,
     eq(faturas.empresaId, empresaId),
     eq(faturas.status, "aberta"),
   ));

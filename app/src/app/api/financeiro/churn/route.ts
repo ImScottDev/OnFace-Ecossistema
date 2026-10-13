@@ -1,3 +1,4 @@
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
@@ -32,11 +33,11 @@ export async function GET(request: NextRequest) {
         WHEN a.motivo_cancelamento LIKE 'cancellation_requested%' THEN 'voluntario'
         ELSE 'sem_motivo' END AS categoria,
       GREATEST(0, EXTRACT(day FROM a.cancelada_em - a.iniciada_em) / 30.0)::float AS meses_de_vida,
-      COALESCE((SELECT sum(f.valor) FROM faturas f WHERE f.assinatura_id = a.id AND f.status = 'paga'), 0)::float AS total_pago
+      COALESCE((SELECT sum(f.valor) FROM faturas f WHERE f.assinatura_id = a.id AND ${doCrm("f")} AND f.status = 'paga'), 0)::float AS total_pago
     FROM assinaturas a
     LEFT JOIN leads l ON l.id = a.lead_id
     LEFT JOIN empresas e ON e.id = l.empresa_id
-    WHERE (a.organizacao_id = ${orgId} OR a.organizacao_id IS NULL)
+    WHERE (a.organizacao_id = ${orgId} OR a.organizacao_id IS NULL) AND ${doCrm("a")}
       AND a.status = 'canceled' AND a.cancelada_em IS NOT NULL
     ORDER BY a.cancelada_em DESC
     LIMIT 300
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
       count(*) FILTER (WHERE a.motivo_cancelamento LIKE 'payment_failed%')::int AS involuntarios,
       count(*) FILTER (WHERE a.motivo_cancelamento LIKE 'cancellation_requested%')::int AS voluntarios
     FROM assinaturas a
-    WHERE (a.organizacao_id = ${orgId} OR a.organizacao_id IS NULL)
+    WHERE (a.organizacao_id = ${orgId} OR a.organizacao_id IS NULL) AND ${doCrm("a")}
       AND a.status = 'canceled'
       AND a.cancelada_em >= date_trunc('month', now()) - make_interval(months => ${meses - 1})
     GROUP BY 1 ORDER BY 1

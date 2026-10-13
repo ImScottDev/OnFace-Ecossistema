@@ -30,6 +30,7 @@
  * O prazo de implantação é o único que hoje vem vazio em 100% dos registros:
  * `target_at` nunca é preenchido na criação. Ver PRAZO_PADRAO_FAMILIA abaixo.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ROTULO_ETAPA_PIPELINE } from "@/lib/vendas/dominio";
@@ -227,7 +228,7 @@ export async function getJornadaEtapas(orgId: string, hoje = new Date()): Promis
              COALESCE(SUM(valor), 0) AS valor,
              COUNT(*) FILTER (WHERE vencimento IS NOT NULL AND vencimento < now())::int AS vencidas
         FROM faturas
-       WHERE organizacao_id = ${orgId} AND status IN ('aberta','falhou')
+       WHERE organizacao_id = ${orgId} AND ${doCrm("faturas")} AND status IN ('aberta','falhou')
     `),
   ]);
 
@@ -325,7 +326,7 @@ export async function getOperacoesPrioritarias(orgId: string, limite = 8): Promi
              fa.vencimento
         FROM faturas fa
         LEFT JOIN empresas e ON e.id = fa.empresa_id
-       WHERE fa.organizacao_id = ${orgId}
+       WHERE fa.organizacao_id = ${orgId} AND ${doCrm("fa")}
          AND fa.status IN ('aberta','falhou')
          AND fa.vencimento IS NOT NULL AND fa.vencimento < now()
     )
@@ -484,7 +485,7 @@ export async function getOperacaoDetalhe(orgId: string, fulfillmentId: string): 
     cab.empresa_id
       ? db.execute<{ n: number }>(sql`
           SELECT COUNT(*)::int AS n FROM faturas
-           WHERE organizacao_id = ${orgId} AND empresa_id = ${cab.empresa_id}
+           WHERE organizacao_id = ${orgId} AND empresa_id = ${cab.empresa_id} AND ${doCrm("faturas")}
              AND status IN ('aberta','falhou') AND vencimento IS NOT NULL AND vencimento < now()
         `)
       : Promise.resolve([{ n: 0 }]),

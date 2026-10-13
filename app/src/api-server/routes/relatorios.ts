@@ -1,3 +1,4 @@
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { negocios, leads, campanhas, contratos, npsRespostas, atividades, statusChanges, usuarios, reunioes, notas, ligacoes, tarefas, whatsappMensagens } from "@/lib/db/schema";
@@ -1120,7 +1121,7 @@ app.get("/pos-venda", async (c) => {
       UNION ALL
       SELECT 'Assinatura ativa, ainda sem fechamento', COALESCE(sum(a.mrr), 0)::text, count(*)::text
         FROM assinaturas a, uc
-       WHERE a.organizacao_id = ${orgPv}::uuid AND a.status = 'active' AND a.empresa_id IS NOT NULL
+       WHERE a.organizacao_id = ${orgPv}::uuid AND a.status = 'active' AND a.empresa_id IS NOT NULL AND ${doCrm("a")}
          AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${orgPv}::uuid)
          AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2
                           WHERE r2.organizacao_id = ${orgPv}::uuid AND r2.empresa_id = a.empresa_id
@@ -1192,7 +1193,7 @@ app.get("/tracking", async (c) => {
           count(DISTINCT l.id) FILTER (WHERE a.id IS NOT NULL) AS clientes,
           COALESCE(sum(a.mrr) FILTER (WHERE a.id IS NOT NULL), 0) AS mrr_real
         FROM leads l
-        LEFT JOIN assinaturas a ON a.lead_id = l.id AND a.status IN ('active','trialing','past_due')
+        LEFT JOIN assinaturas a ON a.lead_id = l.id AND a.status IN ('active','trialing','past_due') AND ${doCrm("a")}
         WHERE l.organizacao_id = ${org} AND ${colL} IS NOT NULL AND ${colL} <> ''
         ${dateLeadsL}
         GROUP BY ${colL}
@@ -1282,7 +1283,7 @@ app.get("/tracking", async (c) => {
          WHERE t.empresa_id = a.empresa_id AND t.campaign IS NOT NULL
          ORDER BY t.is_first_touch DESC, t.ocorrido_em ASC LIMIT 1
       ) pc_empresa ON TRUE
-     WHERE a.organizacao_id = ${org} AND a.status IN ('active','trialing','past_due')
+     WHERE a.organizacao_id = ${org} AND a.status IN ('active','trialing','past_due') AND ${doCrm("a")}
   `)) as unknown as { lead_id: string; utm_campaign: string | null; mrr: unknown }[];
 
   // ── Meta Ads: gasto/CPL/CAC/ROAS por campanha (cruza por nome normalizado) ──

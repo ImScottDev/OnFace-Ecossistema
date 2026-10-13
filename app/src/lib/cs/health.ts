@@ -19,6 +19,7 @@
  * parecer doente; contar como saúde faria o oposto. As duas mentem. O fator
  * aparece no snapshot dizendo que não sabe, e a cobertura fica visível.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 
@@ -93,7 +94,7 @@ async function observar(organizacaoId: string): Promise<LinhaConta[]> {
       ) r ON TRUE
       LEFT JOIN LATERAL (
         SELECT count(*) AS vencidas FROM faturas fx
-         WHERE fx.empresa_id = cli.empresa_id
+         WHERE fx.empresa_id = cli.empresa_id AND ${doCrm("fx")}
            AND COALESCE(fx.status, '') NOT IN ('paga','cancelada')
            AND fx.vencimento < now()
       ) f ON TRUE

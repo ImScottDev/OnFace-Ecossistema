@@ -8,6 +8,7 @@
  * mas a forma de saída é a do protótipo, e misturar as duas formas num
  * arquivo compartilhado obrigaria todo consumidor a carregar a outra.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { nomeEmpresaSql } from "@/lib/vendas/texto";
@@ -100,7 +101,7 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
         SELECT f.empresa_id, COUNT(*)::int AS n, SUM(f.valor)::float AS valor,
                EXTRACT(DAY FROM now() - MIN(f.vencimento))::int AS dias
           FROM faturas f JOIN conta c ON c.empresa_id = f.empresa_id
-         WHERE f.status = 'aberta' AND f.vencimento < now()
+         WHERE ${doCrm("f")} AND f.status = 'aberta' AND f.vencimento < now()
          GROUP BY 1
       ),
       health AS (
@@ -121,7 +122,7 @@ export async function dadosTelaCs(organizacaoId: string): Promise<DadosTelaCs> {
       pos_fechamento AS (
         SELECT a.empresa_id, SUM(a.mrr)::float AS v
           FROM assinaturas a
-         WHERE a.organizacao_id = ${organizacaoId} AND a.status = 'active' AND a.empresa_id IN (SELECT empresa_id FROM conta)
+         WHERE a.organizacao_id = ${organizacaoId} AND ${doCrm("a")} AND a.status = 'active' AND a.empresa_id IN (SELECT empresa_id FROM conta)
            AND NOT EXISTS (SELECT 1 FROM fat WHERE fat.empresa_id = a.empresa_id)
          GROUP BY 1
       )

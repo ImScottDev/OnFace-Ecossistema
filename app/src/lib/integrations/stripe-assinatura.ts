@@ -17,6 +17,7 @@
  * default do Stripe (`create_prorations`) só cobraria na renovação seguinte —
  * e aí a venda de hoje não vira caixa nem ganho hoje.
  */
+import { assinaturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db";
 import { assinaturas, assinaturaItens } from "../db/schema";
@@ -101,6 +102,7 @@ export async function assinaturaAtivaDaEmpresa(
     .where(and(
       eq(assinaturas.organizacaoId, organizacaoId),
       eq(assinaturas.empresaId, empresaId),
+      assinaturaDoCrm,
     ))
     .orderBy(desc(assinaturas.currentPeriodEnd), desc(assinaturas.createdAt));
   const alvo = todas.find((x) => x.status === "active" || x.status === "trialing");

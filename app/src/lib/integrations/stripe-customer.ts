@@ -35,6 +35,7 @@
  * em incidente até 1 h). Para o Customer recém-criado quem garante é o banco +
  * a chave de idempotência; o search serve ao Customer antigo.
  */
+import { assinaturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
@@ -188,7 +189,7 @@ function vinculosDoBanco(tx: Tx): VinculosCustomer {
 
     async doEspelho(organizacaoId, empresaId) {
       const [r] = await tx.select({ id: assinaturas.stripeCustomerId }).from(assinaturas)
-        .where(and(eq(assinaturas.organizacaoId, organizacaoId), eq(assinaturas.empresaId, empresaId), isNotNull(assinaturas.stripeCustomerId)))
+        .where(and(eq(assinaturas.organizacaoId, organizacaoId), eq(assinaturas.empresaId, empresaId), isNotNull(assinaturas.stripeCustomerId), assinaturaDoCrm))
         .orderBy(sql`(${assinaturas.status} IN ${VIVA}) desc`, desc(assinaturas.createdAt))
         .limit(1);
       return r?.id ?? null;

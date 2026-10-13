@@ -17,6 +17,7 @@
  * Mesma regra de sempre do projeto: métrica sem fonte real não é fabricada
  * — some da tela (lista vazia) em vez de virar número inventado.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 // Só as tabelas usadas pelo query builder — o resto (fulfillments, contratos,
 // servicos_canonicos, propostas, faturas, mrr_movimentos) é acessado por SQL
@@ -334,7 +335,7 @@ export async function getPrecisaAtencao(
         ? Promise.resolve([] as Array<{ n: number; valor: string }>)
         : db.execute<{ n: number; valor: string }>(sql`
         SELECT COUNT(*)::int AS n, COALESCE(SUM(valor), 0) AS valor FROM faturas
-         WHERE organizacao_id = ${orgId} AND status = 'aberta'
+         WHERE organizacao_id = ${orgId} AND ${doCrm("faturas")} AND status = 'aberta'
            AND COALESCE(vencimento, emitida_em) < ${d3.toISOString()}
       `),
       db.execute<{ n: number }>(sql`

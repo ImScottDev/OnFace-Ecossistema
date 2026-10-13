@@ -9,6 +9,7 @@
 // Permissão: `finance.manage`, a mesma de abrir o portal — quem mexe no que o
 // cliente paga. Passar por cima da regra (upgrade imediato / downgrade no
 // próximo ciclo) é `sobrescrever: true` com motivo, e fica no audit_log.
+import { assinaturaDoCrm, faturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -47,7 +48,7 @@ const alterarSchema = corpoSchema.extend({ chave: z.string().regex(/^[A-Za-z0-9_
 async function assinaturaDaEmpresa(organizacaoId: string, empresaId: string, assinaturaId: string) {
   if (!UUID_RE.test(empresaId) || !UUID_RE.test(assinaturaId)) return null;
   const [a] = await db.select().from(assinaturas).where(and(
-    eq(assinaturas.id, assinaturaId), eq(assinaturas.empresaId, empresaId), eq(assinaturas.organizacaoId, organizacaoId),
+    eq(assinaturas.id, assinaturaId), eq(assinaturas.empresaId, empresaId), eq(assinaturas.organizacaoId, organizacaoId), assinaturaDoCrm,
   )).limit(1);
   return a ?? null;
 }
@@ -84,7 +85,7 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
   if (!empresa) return c.json({ error: "Empresa não encontrada" }, 404);
 
   const subs = await db.select().from(assinaturas).where(and(
-    eq(assinaturas.empresaId, empresaId), eq(assinaturas.organizacaoId, ctx.organizacaoId),
+    eq(assinaturas.empresaId, empresaId), eq(assinaturas.organizacaoId, ctx.organizacaoId), assinaturaDoCrm,
   )).orderBy(desc(assinaturas.createdAt)); // histórico inteiro: canceladas, vencidas e pausadas também aparecem
   const itens = subs.length
     ? await db.select().from(assinaturaItens).where(inArray(assinaturaItens.assinaturaId, subs.map((s) => s.id)))
@@ -94,7 +95,7 @@ app.get("/clientes/:empresaId/assinaturas-stripe", async (c) => {
     ? await db.select({
         id: faturas.id, assinaturaId: faturas.assinaturaId, valor: faturas.valor, status: faturas.status,
         emitidaEm: faturas.emitidaEm, vencimento: faturas.vencimento, pagaEm: faturas.pagaEm, hostedInvoiceUrl: faturas.hostedInvoiceUrl,
-      }).from(faturas).where(and(eq(faturas.organizacaoId, ctx.organizacaoId), inArray(faturas.assinaturaId, subs.map((s) => s.id))))
+      }).from(faturas).where(and(eq(faturas.organizacaoId, ctx.organizacaoId), faturaDoCrm, inArray(faturas.assinaturaId, subs.map((s) => s.id))))
       .orderBy(desc(faturas.emitidaEm))
     : [];
   /* Nome e variação do item pelo espelho do catálogo (o mesmo da proposta), nunca o id do Price. */

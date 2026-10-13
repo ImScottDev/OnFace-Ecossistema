@@ -12,6 +12,7 @@
  *      execução em `billing_audit_runs`. Uma pessoa decide; nada é apagado.
  * Sem `aplicar` não escreve em lugar nenhum.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { sql } from "drizzle-orm";
 import { montarCaso } from "./stripe-caso-cobranca";
 import { db } from "../db";
@@ -85,14 +86,14 @@ export async function lerStripe(): Promise<SnapshotStripe> {
 
 export async function lerOnface(organizacaoId: string): Promise<SnapshotOnface> {
   const subs = linhas<{ id: string; status: string; mrr: string | null }>(await db.execute(sql`
-    SELECT stripe_subscription_id AS id, status, mrr::text FROM assinaturas WHERE organizacao_id = ${organizacaoId}::uuid`));
+    SELECT stripe_subscription_id AS id, status, mrr::text FROM assinaturas WHERE organizacao_id = ${organizacaoId}::uuid AND ${doCrm("assinaturas")}`));
   const faturas = linhas<{ id: string; status: string; valor: string }>(await db.execute(sql`
     SELECT external_id AS id, status, valor::text FROM faturas
-     WHERE organizacao_id = ${organizacaoId}::uuid AND origem = 'stripe' AND external_id IS NOT NULL`));
+     WHERE organizacao_id = ${organizacaoId}::uuid AND ${doCrm("faturas")} AND origem = 'stripe' AND external_id IS NOT NULL`));
   const pagamentos = linhas<{ fatura: string | null; status: string; valor: string; ext: string | null }>(await db.execute(sql`
     SELECT f.external_id AS fatura, p.status, p.amount::text AS valor, p.external_payment_id AS ext
       FROM pagamentos p JOIN faturas f ON f.id = p.fatura_id
-     WHERE p.organizacao_id = ${organizacaoId}::uuid AND p.provider = 'stripe' AND f.origem = 'stripe'`));
+     WHERE p.organizacao_id = ${organizacaoId}::uuid AND p.provider = 'stripe' AND f.origem = 'stripe' AND ${doCrm("f")}`));
   return {
     assinaturas: subs.map((s) => ({ stripeSubscriptionId: s.id, status: s.status, mrr: s.mrr == null ? null : Number(s.mrr) })),
     faturas: faturas.map((f) => ({ externalId: f.id, status: f.status, valor: Number(f.valor) })),

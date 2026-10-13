@@ -1,3 +1,4 @@
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
       FROM faturas f
       JOIN leads l ON l.id = f.lead_id
       LEFT JOIN empresas e ON e.id = l.empresa_id
-      WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL)${prodFat}${statusFat}${buscaSql}
+      WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND ${doCrm("f")}${prodFat}${statusFat}${buscaSql}
       ORDER BY f.emitida_em DESC NULLS LAST
       LIMIT 1000
     `)) as unknown as Record<string, unknown>[];
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
     FROM faturas f
     JOIN leads l ON l.id = f.lead_id
     LEFT JOIN empresas e ON e.id = l.empresa_id
-    WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL)${prodFat}${statusFat}${buscaSql}
+    WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND ${doCrm("f")}${prodFat}${statusFat}${buscaSql}
     GROUP BY l.id, l.nome, l.email, e.nome, f.origem
     ORDER BY valor_total DESC
     LIMIT 1000

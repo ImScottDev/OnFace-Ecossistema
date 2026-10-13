@@ -16,6 +16,7 @@
  * Esses campos são declarados como indisponíveis em vez de estimados. Ver
  * `INDISPONIVEL` abaixo — a UI mostra o motivo, não um traço mudo.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import {
@@ -132,7 +133,7 @@ export async function billingDaConta(organizacaoId: string, empresaId: string): 
            to_json(a.current_period_end)#>>'{}' AS periodo_fim,
            COALESCE((a.raw->>'cancela_no_fim')::boolean, (a.raw->>'cancel_at_period_end')::boolean) AS cancela_no_fim
       FROM assinaturas a
-     WHERE a.organizacao_id = ${organizacaoId} AND a.empresa_id = ${empresaId}
+     WHERE a.organizacao_id = ${organizacaoId} AND a.empresa_id = ${empresaId} AND ${doCrm("a")}
      ORDER BY a.status = 'active' DESC, a.updated_at DESC`);
 
   const itensRows = await db.execute<Record<string, string | number | null>>(sql`
@@ -140,7 +141,7 @@ export async function billingDaConta(organizacaoId: string, empresaId: string): 
            i.recurring_interval, i.status, to_json(i.current_period_end)#>>'{}' AS periodo_fim
       FROM assinatura_itens i
      WHERE i.organizacao_id = ${organizacaoId}
-       AND i.assinatura_id IN (SELECT id FROM assinaturas WHERE organizacao_id = ${organizacaoId} AND empresa_id = ${empresaId})`);
+       AND i.assinatura_id IN (SELECT id FROM assinaturas WHERE organizacao_id = ${organizacaoId} AND empresa_id = ${empresaId} AND ${doCrm("assinaturas")})`);
 
   const pagRows = await db.execute<Record<string, string | number | null>>(sql`
     SELECT fatura_id,
@@ -157,7 +158,7 @@ export async function billingDaConta(organizacaoId: string, empresaId: string): 
            f.hosted_invoice_url, f.origem,
            to_json(f.emitida_em)#>>'{}' AS emitida_em, to_json(f.vencimento)#>>'{}' AS vencimento_iso
       FROM faturas f
-     WHERE f.organizacao_id = ${organizacaoId} AND f.empresa_id = ${empresaId}
+     WHERE f.organizacao_id = ${organizacaoId} AND f.empresa_id = ${empresaId} AND ${doCrm("f")}
      ORDER BY COALESCE(f.competencia, f.emitida_em::date) DESC NULLS LAST
      LIMIT 200`);
 

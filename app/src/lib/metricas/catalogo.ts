@@ -22,6 +22,7 @@
  *
  * Toda métrica tem drill-down: o Módulo 12 exige chegar aos registros reais.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql, type SQL } from "drizzle-orm";
 import { janelaDoPeriodo } from "@/lib/metricas/janela";
@@ -169,7 +170,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
         FROM assinaturas a
         JOIN empresas e ON e.id = a.empresa_id
         LEFT JOIN servicos_canonicos sc ON sc.id = a.servico_id
-       WHERE a.organizacao_id = ${org}::uuid AND a.status = 'active' AND a.empresa_id IS NOT NULL
+       WHERE a.organizacao_id = ${org}::uuid AND ${doCrm("a")} AND a.status = 'active' AND a.empresa_id IS NOT NULL
          AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${org}::uuid)
          AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc
                           WHERE r2.organizacao_id = ${org}::uuid AND r2.empresa_id = a.empresa_id
@@ -231,7 +232,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
                f.status, COALESCE(f.emitida_em, f.created_at) AS emitida_em, f.empresa_id::text AS empresa_id
           FROM faturas f
           LEFT JOIN empresas e ON e.id = f.empresa_id
-         WHERE f.organizacao_id = ${org}::uuid
+         WHERE f.organizacao_id = ${org}::uuid AND ${doCrm("f")}
            AND COALESCE(f.emitida_em, f.created_at) >= ${de}::timestamptz
            AND COALESCE(f.emitida_em, f.created_at) < ${ate}::timestamptz
            AND COALESCE(f.status, '') <> 'cancelada'
@@ -435,7 +436,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
           FROM faturas f
           JOIN empresas e ON e.id = f.empresa_id
           CROSS JOIN LATERAL (SELECT date_trunc('month', coalesce(f.emitida_em, f.created_at) AT TIME ZONE 'America/Sao_Paulo')::date AS mes) m
-         WHERE f.organizacao_id = ${org}::uuid AND f.origem = 'stripe' AND f.status IN ('paga', 'aberta') AND f.empresa_id IS NOT NULL
+         WHERE f.organizacao_id = ${org}::uuid AND ${doCrm("f")} AND f.origem = 'stripe' AND f.status IN ('paga', 'aberta') AND f.empresa_id IS NOT NULL
            AND m.mes >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
            AND m.mes <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
            AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r

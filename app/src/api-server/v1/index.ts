@@ -14,6 +14,7 @@
  * Todo pedido passa por: autenticação, tenant do token, escopo, consulta de
  * domínio, resposta. Nessa ordem.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { db } from "@/lib/db";
@@ -170,7 +171,7 @@ app.get("/v1/invoices", rota("finance.read", async (c, ator) => {
            f.vencimento::text AS "dueAt", f.paga_em::text AS "paidAt",
            f.empresa_id::text AS "companyId", f.created_at::text AS "createdAt"
       FROM faturas f
-     WHERE f.organizacao_id = ${ator.organizacaoId}::uuid
+     WHERE f.organizacao_id = ${ator.organizacaoId}::uuid AND ${doCrm("f")}
        AND (${status}::text IS NULL OR f.status = ${status})
      ORDER BY f.created_at DESC LIMIT ${limite} OFFSET ${offset}`);
   return { data: linhas, page: { limit: limite, offset } };

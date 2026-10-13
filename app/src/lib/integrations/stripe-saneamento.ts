@@ -10,6 +10,7 @@
  * `--aplicar`. A conta Stripe é COMPARTILHADA com o SaaS Callface: Customer ou
  * assinatura com marca do SaaS é sempre pulado.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { idsDaMetadataStripe, metadataFaltante, metadataStripe } from "../crm/metadata-comercial";
@@ -65,7 +66,7 @@ export async function carregarBaseOnface(): Promise<BaseOnface> {
       from empresas where stripe_customer_id is not null and stripe_customer_id <> ''
     union
     select organizacao_id, empresa_id, stripe_customer_id, 'espelho'
-      from assinaturas where empresa_id is not null and stripe_customer_id is not null
+      from assinaturas where ${doCrm("assinaturas")} and empresa_id is not null and stripe_customer_id is not null
     union
     select organizacao_id, empresa_id, stripe_customer_id, 'lead'
       from leads where empresa_id is not null and stripe_customer_id is not null and stripe_customer_id <> ''
@@ -84,7 +85,7 @@ export async function carregarBaseOnface(): Promise<BaseOnface> {
     await db.execute(sql`
       select a.stripe_subscription_id, a.organizacao_id, a.empresa_id, a.stripe_customer_id, a.status, c.negocio_id
         from assinaturas a left join contratos c on c.id = a.contrato_id
-       where a.empresa_id is not null
+       where ${doCrm("a")} and a.empresa_id is not null
     `),
   ).map((a) => ({
     stripeSubscriptionId: a.stripe_subscription_id, organizacaoId: a.organizacao_id, empresaId: a.empresa_id,

@@ -1,3 +1,4 @@
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
@@ -41,13 +42,13 @@ export async function GET(request: NextRequest) {
   // KPIs (faturas = fonte de atraso; contratos = base ativa)
   const kpis = (await db.execute(sql`
     SELECT
-      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId} AND a.status IN ('active', 'trialing', 'past_due')${prodAss})::int AS ativos,
-      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId}${prodAss})::int AS total,
-      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em >= date_trunc('month', now())${prodFat})::float AS valor_atraso,
-      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em < date_trunc('month', now())${prodFat})::float AS nao_cobrado,
-      (SELECT count(DISTINCT f.lead_id) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em >= date_trunc('month', now())${prodFat})::int AS clientes_atraso,
-      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId} AND a.status = 'canceled' AND a.cancelada_em >= date_trunc('month', now())${prodAss})::int AS churns_mes,
-      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND f.status = 'emitida' AND f.competencia >= (date_trunc('month', now()) - interval '1 month')${prodFat})::float AS em_aberto_wevy
+      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId} AND ${doCrm("a")} AND a.status IN ('active', 'trialing', 'past_due')${prodAss})::int AS ativos,
+      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId} AND ${doCrm("a")}${prodAss})::int AS total,
+      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND ${doCrm("f")} AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em >= date_trunc('month', now())${prodFat})::float AS valor_atraso,
+      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND ${doCrm("f")} AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em < date_trunc('month', now())${prodFat})::float AS nao_cobrado,
+      (SELECT count(DISTINCT f.lead_id) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND ${doCrm("f")} AND f.status IN ('aberta', 'uncollectible') AND f.emitida_em >= date_trunc('month', now())${prodFat})::int AS clientes_atraso,
+      (SELECT count(*) FROM assinaturas a WHERE a.organizacao_id = ${orgId} AND ${doCrm("a")} AND a.status = 'canceled' AND a.cancelada_em >= date_trunc('month', now())${prodAss})::int AS churns_mes,
+      (SELECT COALESCE(sum(f.valor), 0) FROM faturas f WHERE (f.organizacao_id = ${orgId} OR f.organizacao_id IS NULL) AND ${doCrm("f")} AND f.status = 'emitida' AND f.competencia >= (date_trunc('month', now()) - interval '1 month')${prodFat})::float AS em_aberto_wevy
   `)) as unknown as {
     ativos: number; total: number; valor_atraso: number; nao_cobrado: number; clientes_atraso: number; churns_mes: number;
     em_aberto_wevy: number;
@@ -82,9 +83,9 @@ export async function GET(request: NextRequest) {
         max(GREATEST(COALESCE(f.paga_em, 'epoch'), COALESCE(f.emitida_em, 'epoch'))) AS ultima_atividade,
         COALESCE(max(EXTRACT(day FROM now() - COALESCE(f.vencimento, f.emitida_em))) FILTER (WHERE f.status IN ('aberta', 'uncollectible')), 0)::int AS dias_atraso
       FROM faturas f
-      WHERE f.assinatura_id = a.id
+      WHERE f.assinatura_id = a.id AND ${doCrm("f")}
     ) fat ON true
-    WHERE a.organizacao_id = ${orgId}${prodAss}
+    WHERE a.organizacao_id = ${orgId} AND ${doCrm("a")}${prodAss}
       AND a.status IN ('active', 'trialing', 'past_due', 'unpaid')
     ORDER BY COALESCE(fat.em_atraso, 0) DESC, COALESCE(fat.nao_cobrado, 0) DESC, a.mrr DESC NULLS LAST
     LIMIT 1000

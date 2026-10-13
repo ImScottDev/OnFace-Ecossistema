@@ -21,6 +21,7 @@
  * é o que faz o time atacar 249 "sem próxima ação" e não ver as 15 contas
  * prestes a cair por cartão recusado.
  */
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { nomeEmpresaSql } from "@/lib/vendas/texto";
@@ -102,7 +103,7 @@ export async function carteiraEmRisco(organizacaoId: string, responsavelId?: str
                                                            WHERE organizacao_id = ${organizacaoId}::uuid))
                     THEN 0
                     ELSE (SELECT COALESCE(sum(a.mrr), 0) FROM assinaturas a
-                           WHERE a.empresa_id = r.empresa_id AND a.status = 'active') END)::text AS mrr,
+                           WHERE a.empresa_id = r.empresa_id AND a.status = 'active' AND ${doCrm("a")}) END)::text AS mrr,
            r.responsavel_id::text, u.nome AS responsavel_nome
       FROM cs_riscos r
       LEFT JOIN empresas e ON e.id = r.empresa_id
