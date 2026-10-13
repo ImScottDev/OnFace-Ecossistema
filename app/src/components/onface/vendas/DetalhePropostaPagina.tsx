@@ -10,6 +10,7 @@ import {
 import { VALIDADES_PROPOSTA } from "@/lib/vendas/dominio";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -91,19 +92,22 @@ function EnviarDialog({ proposta, aberto, fechar, completarJuridicos }: {
   const [validade, setValidade] = React.useState(String(proposta.validadeDias ?? 14));
   const [salvando, setSalvando] = React.useState(false);
   const [erro, setErro] = React.useState<{ texto: string; juridicos: boolean } | null>(null);
+  const emailDoContato = proposta.contato?.email ?? null;
+  const [porEmail, setPorEmail] = React.useState(!!emailDoContato);
 
   const enviar = async () => {
     setSalvando(true); setErro(null);
     const r = await acaoEnviar({
       propostaId: proposta.id, modoFechamento: modo, validadeDias: Number(validade),
       tipoContratual: modo === "CONTRACT" ? "NOVO_CONTRATO" : null,
-      para: proposta.contato?.email ?? null,
+      enviarEmail: porEmail, destinatarioEmail: porEmail ? emailDoContato : null,
     });
     setSalvando(false);
     if (!r.ok) { setErro({ texto: r.erro, juridicos: r.acao?.tipo === "completar_dados_empresa" }); return; }
     // Diz o que de fato aconteceu com o e-mail: prometer "avisa o cliente" sem avisar era o defeito.
     const email = r.dados?.email;
-    if (email === "enviado") toast.success(`Proposta #${proposta.numero} enviada por e-mail para ${proposta.contato?.email}.`);
+    if (email === "enviado") toast.success(`Proposta #${proposta.numero} enviada por e-mail para ${r.dados?.destinatario}.`);
+    else if (email === "nao_solicitado") toast.success(`Proposta #${proposta.numero} enviada. Nenhum e-mail foi enviado: copie o link na lateral e mande ao cliente.`);
     else toast.warning(`Proposta #${proposta.numero} enviada, mas o e-mail não saiu (${
       email === "sem_destinatario" ? "o contato não tem e-mail" : email === "sem_provedor" ? "provedor de e-mail não configurado" : "falha no envio"
     }). Copie o link na lateral e mande ao cliente.`);
@@ -116,7 +120,7 @@ function EnviarDialog({ proposta, aberto, fechar, completarJuridicos }: {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Enviar proposta #{proposta.numero} · v{proposta.versao}</DialogTitle>
-          <DialogDescription>O envio manda o link por e-mail ao contato e leva a oportunidade para Proposta.</DialogDescription>
+          <DialogDescription>O envio leva a oportunidade para Proposta. O e-mail ao contato só sai se estiver marcado.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <label className="grid gap-1 text-sm">
@@ -131,6 +135,10 @@ function EnviarDialog({ proposta, aberto, fechar, completarJuridicos }: {
             <NativeSelect value={validade} onChange={(e) => setValidade(e.target.value)}>
               {VALIDADES_PROPOSTA.map((d) => <NativeSelectOption key={d} value={d}>{d} dias</NativeSelectOption>)}
             </NativeSelect>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={porEmail} disabled={!emailDoContato} onCheckedChange={(v) => setPorEmail(v === true)} />
+            {emailDoContato ? `Enviar o link por e-mail para ${emailDoContato}` : "O contato não tem e-mail: só o link será gerado"}
           </label>
           {erro ? (
             <div role="alert" className="rounded-md border border-destructive/40 p-3 text-sm">

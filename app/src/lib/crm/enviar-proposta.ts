@@ -50,6 +50,18 @@ export async function dispararEmailDaProposta(p: {
   return sendResendEmail({ to: p.para, subject, html });
 }
 
+export type ResultadoEmail = "enviado" | "nao_solicitado" | "sem_destinatario" | "sem_provedor" | "falhou";
+
+/**
+ * Quem recebe o e-mail. `enviarEmail=false` é "só o link": nunca há destino, nem
+ * o e-mail do lead entra como reserva. Com `enviarEmail=true`, vale o destinatário
+ * escolhido e, só então, o e-mail do contato.
+ */
+export function decidirDestinoEmail(o: { enviarEmail: boolean; destinatarioEmail?: string | null; emailDoLead?: string | null }): string {
+  if (!o.enviarEmail) return "";
+  return (o.destinatarioEmail || o.emailDoLead || "").trim();
+}
+
 /**
  * Depois de `lib/vendas/propostas.enviarProposta` marcar a proposta como
  * enviada: manda o e-mail com o link e registra na timeline o que de fato
@@ -57,20 +69,22 @@ export async function dispararEmailDaProposta(p: {
  * destinatário). Nunca lança: o envio da proposta já aconteceu.
  */
 export async function avisarClienteDaPropostaEnviada(opts: {
-  propostaId: string; organizacaoId: string; userId: string; userName?: string | null; para?: string | null;
-}): Promise<{ link: string; email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou"; erro: string | null }> {
+  propostaId: string; organizacaoId: string; userId: string; userName?: string | null;
+  /** Obrigatório: o vendedor escolheu e-mail ou só o link. Não há valor padrão. */
+  enviarEmail: boolean; destinatarioEmail?: string | null;
+}): Promise<{ link: string; email: ResultadoEmail; erro: string | null; destinatario: string | null }> {
   const link = `${appUrl()}/p/${opts.propostaId}`;
   try {
     const [proposta] = await db.select().from(propostas)
       .where(and(eq(propostas.id, opts.propostaId), eq(propostas.organizacaoId, opts.organizacaoId))).limit(1);
-    if (!proposta) return { link, email: "falhou", erro: "Proposta não encontrada" };
+    if (!proposta) return { link, email: "falhou", erro: "Proposta não encontrada", destinatario: null };
     const [lead] = await db.select({ nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email })
       .from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
-    const destino = (opts.para || lead?.email || "").trim();
+    const destino = decidirDestinoEmail({ enviarEmail: opts.enviarEmail, destinatarioEmail: opts.destinatarioEmail, emailDoLead: lead?.email });
     const itens = await db.select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal })
       .from(propostaItens).where(eq(propostaItens.propostaId, opts.propostaId)).orderBy(asc(propostaItens.ordem));
 
-    let email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou" = "sem_destinatario";
+    let email: ResultadoEmail = opts.enviarEmail ? "sem_destinatario" : "nao_solicitado";
     let erro: string | null = null;
     if (destino) {
       const r = await dispararEmailDaProposta({
@@ -87,14 +101,15 @@ export async function avisarClienteDaPropostaEnviada(opts: {
       tipo: "proposta_enviada",
       titulo: `Link da proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao}: ${
         email === "enviado" ? `e-mail enviado para ${destino}` : email === "sem_provedor" ? "e-mail não disparado (provedor de e-mail não configurado)"
-        : email === "falhou" ? "falha ao enviar o e-mail" : "sem e-mail do contato, envie o link manualmente"}`,
+        : email === "falhou" ? "falha ao enviar o e-mail" : email === "nao_solicitado" ? "somente o link, nenhum e-mail enviado"
+        : "sem e-mail do contato, envie o link manualmente"}`,
       descricao: erro ?? link,
       dados: { propostaId: proposta.id, linkPublico: link, email, para: destino || null },
     });
-    return { link, email, erro };
+    return { link, email, erro, destinatario: destino || null };
   } catch (e) {
     console.error("[enviar-proposta] aviso ao cliente falhou:", e);
-    return { link, email: "falhou", erro: e instanceof Error ? e.message : String(e) };
+    return { link, email: "falhou", erro: e instanceof Error ? e.message : String(e), destinatario: null };
   }
 }
 

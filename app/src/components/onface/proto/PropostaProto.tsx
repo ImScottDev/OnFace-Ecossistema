@@ -95,8 +95,9 @@ export interface AcoesProposta {
     modoFechamento: "PREPAID" | "CONTRACT";
     validadeDias: number;
     tipoContratual?: "NOVO_CONTRATO" | "ADITIVO" | "UPGRADE" | "DOWNGRADE" | null;
-    para?: string | null;
-  }) => Promise<Resultado<{ link: string; email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou" }>>;
+    enviarEmail: boolean;
+    destinatarioEmail?: string | null;
+  }) => Promise<Resultado<{ link: string; email: "enviado" | "nao_solicitado" | "sem_destinatario" | "sem_provedor" | "falhou"; destinatario: string | null }>>;
 }
 
 /* A conversão das linhas do desenho para o command (`itensParaCriar`) mora em linhas-da-proposta.ts: é conta pura e tem teste. */
@@ -303,7 +304,8 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
         validadeDias: Number(proposta.validade) || 14,
         tipoContratual: proposta.modo === "PREPAID" ? null : "NOVO_CONTRATO",
         /* Só dispara e-mail se o canal "e-mail" ficou marcado no fluxo; "só o link" não manda nada. */
-        para: (proposta.editor?.canais ?? []).includes("email") ? (proposta.editor?.para || null) : null,
+        enviarEmail: (proposta.editor?.canais ?? []).includes("email"),
+        destinatarioEmail: proposta.editor?.para || null,
       });
       if (!enviada.ok) {
         toast.error(`Proposta criada, mas não enviada: ${enviada.erro}`, {
@@ -311,10 +313,10 @@ export function PropostaProto({ oportunidade, catalogo, acoes, repPadrao }: {
         });
         return;
       }
-      const querEmail = (proposta?.editor?.canais ?? []).includes("email");
-      if (querEmail && enviada.dados?.email && enviada.dados.email !== "enviado") {
-        toast.warning("Proposta enviada, mas o e-mail não saiu. Copie o link na página da proposta e mande ao cliente.");
-      }
+      const mail = enviada.dados?.email;
+      if (mail === "enviado") toast.success(`E-mail enviado para ${enviada.dados?.destinatario}.`);
+      else if (mail === "nao_solicitado") toast.info("Nenhum e-mail enviado: só o link. Copie o link na página da proposta.");
+      else if (mail) toast.warning("Proposta enviada, mas o e-mail não saiu. Copie o link na página da proposta e mande ao cliente.");
     }
 
     /* "#nova-v1" é o código provisório do desenho; o número real nasce no banco. */

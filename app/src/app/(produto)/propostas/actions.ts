@@ -11,7 +11,7 @@ import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as propostas from "@/lib/vendas/propostas";
 import { atualizarItensDoRascunho, criarPropostaComItens, type ItemEntrada } from "@/lib/crm/proposta-criacao";
 import { lerLinhaDoTempo, registrarEvento, type LinhaDoTempo } from "@/lib/vendas/eventos";
-import { avisarClienteDaPropostaEnviada } from "@/lib/crm/enviar-proposta";
+import { avisarClienteDaPropostaEnviada, type ResultadoEmail } from "@/lib/crm/enviar-proposta";
 
 const ROTA = "/propostas";
 
@@ -577,9 +577,11 @@ export async function acaoEnviar(entrada: {
   validadeDias: number;
   tipoContratual?: TipoContratual | null;
   contratoBaseId?: string | null;
-  /** E-mail do destinatário escolhido no fluxo de envio; sem ele vale o e-mail do contato. */
-  para?: string | null;
-}): Promise<Resultado<{ link: string; email: "enviado" | "sem_destinatario" | "sem_provedor" | "falhou" }>> {
+  /** Escolha explícita do vendedor: true manda e-mail, false é só o link (nada sai). */
+  enviarEmail: boolean;
+  /** E-mail escolhido no fluxo; só vale com `enviarEmail`. Vazio = e-mail do contato. */
+  destinatarioEmail?: string | null;
+}): Promise<Resultado<{ link: string; email: ResultadoEmail; destinatario: string | null }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("enviar proposta", async () => {
@@ -594,11 +596,12 @@ export async function acaoEnviar(entrada: {
     });
     // O envio já aconteceu (status, validade, evento). Agora o link chega ao cliente.
     const aviso = await avisarClienteDaPropostaEnviada({
-      propostaId: entrada.propostaId, organizacaoId: ctx.organizacaoId, userId: ctx.usuarioId, para: entrada.para ?? null,
+      propostaId: entrada.propostaId, organizacaoId: ctx.organizacaoId, userId: ctx.usuarioId,
+      enviarEmail: entrada.enviarEmail === true, destinatarioEmail: entrada.destinatarioEmail ?? null,
     });
     revalidatePath(ROTA);
     revalidatePath("/pipeline");
-    return { link: aviso.link, email: aviso.email };
+    return { link: aviso.link, email: aviso.email, destinatario: aviso.destinatario };
   });
 }
 
