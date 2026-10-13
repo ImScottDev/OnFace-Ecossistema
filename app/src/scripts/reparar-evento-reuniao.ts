@@ -55,12 +55,15 @@ async function main() {
     SELECT id::text, email FROM email_contas WHERE tipo = 'microsoft' AND sync_status = 'active' AND usuario_id = ${r.responsavel_id}::uuid`);
   if (keeper && !(await lerEvento(conta.id, keeper))) console.log("AVISO: o evento vinculado não existe no Outlook (será recriado ao aplicar).");
   let achou = 0;
+  const vistos = new Set<string>(keeper ? [keeper] : []); // o vinculado nunca é duplicata; a mesma caixa pode estar em várias contas
   for (const c of contas) {
     const eventos = await eventosNaJanela(c.id, ini.toISOString(), janelaFim.toISOString());
     const duplicados = eventos.filter((e) =>
-      !(c.id === conta.id && e.id === keeper) && !e.isCancelled && norm(e.subject) === norm(r.titulo)
+      !vistos.has(e.id) && !e.isCancelled && norm(e.subject) === norm(r.titulo)
       && (!e.organizer?.emailAddress?.address || norm(e.organizer.emailAddress.address) === norm(c.email)));
     for (const d of duplicados) {
+      if (vistos.has(d.id)) continue;
+      vistos.add(d.id);
       achou++;
       console.log(`${aplicar ? "cancelando" : "[plano] cancelar"} duplicata ${d.id} em ${c.email} (${d.start?.dateTime} ${d.start?.timeZone ?? ""})`);
       if (aplicar) await cancelOutlookEvent(c.id, d.id, "Evento duplicado removido pelo ONFACE.");
