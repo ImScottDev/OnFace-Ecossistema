@@ -116,7 +116,8 @@ export async function esquemaLocalCompleto(): Promise<{ ok: true } | { ok: false
   ];
   const linhas = await db.execute<{ t: string; c: string }>(sql`
     SELECT table_name AS t, column_name AS c FROM information_schema.columns
-     WHERE table_schema = current_schema() AND table_name = ANY(${exigidas.map(([t]) => t)}::text[])`);
+     WHERE table_schema = current_schema()
+       AND table_name = ANY(${`{${exigidas.map(([t]) => t).join(",")}}`}::text[])`);
   const tem = new Set(linhas.map((l) => `${l.t}.${l.c}`));
   const falta = exigidas.flatMap(([t, cs]) => cs.filter((c) => !tem.has(`${t}.${c}`)).map((c) => `${t}.${c}`));
   return falta.length ? { ok: false, falta } : { ok: true };
