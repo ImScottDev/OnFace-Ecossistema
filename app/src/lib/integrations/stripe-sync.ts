@@ -28,6 +28,7 @@ import { resolveBillingCustomer, type BillingResolution } from "./billing-identi
 import { negocioDaMetadataStripe } from "../crm/metadata-comercial";
 import { resumoDeCancelamento } from "./stripe-portal-retorno";
 import { periodoCorrente } from "./stripe-financeiro";
+import { MARCA_AUTOMATICA, produtoDaSubscriptionDoSync } from "./stripe-produto-do-servico";
 
 const seg = (n: number | null | undefined) => (n ? new Date(n * 1000) : null);
 
@@ -404,6 +405,36 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
                 updatedAt: new Date(),
               },
             });
+        }
+
+        // Produto do serviço canônico: o nome do produto desta subscription, pela regra única de
+        // stripe-produto-do-servico.ts (era a coluna que ficava vazia e a tela mostrava a FAMÍLIA).
+        // Só grava quando TODOS os itens têm nome (produto apagado no Stripe não vem em `productName`),
+        // só onde está vazio ou foi escrito por esta mesma regra, e nunca por cima de valor humano/bom.
+        const nomeProduto = produtoDaSubscriptionDoSync(
+          itens.map((item) => ({
+            productId: typeof item.price.product === "string" ? item.price.product : item.price.product?.id || null,
+            priceId: item.price.id,
+            quantidade: item.quantity || 1,
+            precoUnitario: item.price.unit_amount == null ? null : item.price.unit_amount / 100,
+          })),
+          productName,
+        );
+        if (nomeProduto) {
+          const marca = JSON.stringify({ [MARCA_AUTOMATICA]: true, fonte: "stripe_sync", regra: "stripe-produto-do-servico" });
+          await tx.update(servicosCanonicos)
+            .set({
+              canonicalProduct: nomeProduto,
+              evidence: sql`coalesce(${servicosCanonicos.evidence}, '{}'::jsonb) || jsonb_build_object('produto_canonico', ${marca}::jsonb)`,
+            })
+            .where(and(
+              eq(servicosCanonicos.organizacaoId, org.id),
+              servicoCanonicoId
+                ? sql`(${servicosCanonicos.id} = ${servicoCanonicoId} OR ${servicosCanonicos.currentSubscriptionId} = ${s.id})`
+                : eq(servicosCanonicos.currentSubscriptionId, s.id),
+              sql`(${servicosCanonicos.canonicalProduct} IS NULL OR ${servicosCanonicos.evidence} -> 'produto_canonico' ->> 'automatico' = 'true')`,
+              sql`${servicosCanonicos.canonicalProduct} IS DISTINCT FROM ${nomeProduto}`,
+            ));
         }
       };
 
