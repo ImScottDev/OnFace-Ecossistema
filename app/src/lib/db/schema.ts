@@ -1960,6 +1960,10 @@ export const reunioes = pgTable(
     /** pendente | ok | falhou | sem_provedor — falha visível e reprocessável. */
     calendarSyncStatus: text("calendar_sync_status"),
     calendarSyncErro: text("calendar_sync_erro"),
+    /** Conta (email_contas) em que o evento vive: atualizar/cancelar usam esta (migration 0110). */
+    calendarContaId: uuid("calendar_conta_id"),
+    /** Resposta de cada convidado lida do Outlook: {email: accepted|declined|tentativelyAccepted|none}. */
+    participantesRespostas: jsonb("participantes_respostas").$type<Record<string, string>>().notNull().default({}),
     calendarSyncEm: timestamp("calendar_sync_em", { withTimezone: true }), // id do evento no Outlook do closer (Graph), pra permitir cancelar/atualizar depois
     notas: text("notas"),
     transcript: text("transcript"),
@@ -2002,10 +2006,6 @@ export const closerDisponibilidade = pgTable(
   },
   (table) => [
     uniqueIndex("uq_closer_disponibilidade_usuario").on(table.usuarioId),
-    /** Conta (email_contas) em que o evento vive: atualizar/cancelar usam esta (migration 0110). */
-    calendarContaId: uuid("calendar_conta_id"),
-    /** Resposta de cada convidado lida do Outlook: {email: accepted|declined|tentativelyAccepted|none}. */
-    participantesRespostas: jsonb("participantes_respostas").$type<Record<string, string>>().notNull().default({}),
     index("idx_closer_disponibilidade_org").on(table.organizacaoId),
   ]
 );
