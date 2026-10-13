@@ -121,6 +121,11 @@ export interface CardPreVendas {
   temWhatsapp: boolean;
   temEmail: boolean;
   temTelefone: boolean;
+  /* O valor, não só o "tem": a exportação do board precisa dele. Antes só
+     vinha o sim/não, e a planilha saía com E-mail e Telefone em branco. */
+  email: string | null;
+  telefone: string | null;
+  whatsapp: string | null;
   /** Horas desde a última interação: é daqui que sai o sinal de SLA. */
   horasSemInteracao: number | null;
   horasNaEtapa: number | null;
@@ -402,6 +407,9 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
         temWhatsapp: Boolean(l?.whatsapp || c.telefone),
         temEmail: Boolean(c.email),
         temTelefone: Boolean(c.telefone),
+        email: c.email ?? null,
+        telefone: c.telefone ?? null,
+        whatsapp: (l?.whatsapp as string | null) ?? c.telefone ?? null,
         horasSemInteracao: horasDesde(c.ultimoToque ?? c.criadoEm),
         horasNaEtapa: horasDesde(l?.etapa_desde ?? c.criadoEm),
         noShow: Boolean(c.leadId && noShowPorLead.has(c.leadId)),

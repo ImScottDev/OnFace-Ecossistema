@@ -88,9 +88,12 @@ function paraODesenho(c: CardPreVendas, cadencia: string | null = null): LeadDoD
      * da base têm o campo, então na prática quem aparece é a origem. */
     tag: (c.servicos && c.servicos.length > 1 ? c.servicos[1] : null)
       ?? (c.campanha ? origemCanonica(c.origem) : null),
-    telefone: c.temTelefone ? "sim" : null,
-    whatsapp: c.temWhatsapp ? "sim" : null,
-    email: c.temEmail ? "sim" : null,
+    /* O valor real, não o "sim": o cartão só precisa saber SE existe, mas a
+       exportação e o botão de ligar/enviar precisam do número e do e-mail.
+       Enquanto aqui vinha "sim", a planilha saía com as colunas em branco. */
+    telefone: c.telefone ?? (c.temTelefone ? "sim" : null),
+    whatsapp: c.whatsapp ?? (c.temWhatsapp ? "sim" : null),
+    email: c.email ?? (c.temEmail ? "sim" : null),
     empresaId: c.empresaId,
     acao: c.proximaAcao?.titulo ?? null,
     venceEm: c.proximaAcao?.venceEm ? quando(c.proximaAcao.venceEm) : null,
