@@ -1,7 +1,11 @@
 # Noite de 13→14/10 — o que está pronto, o que depende de você
 
-Tudo abaixo está em **homologação** (`https://dev.crm.callface.io`), no sha `aaa5918`.
-**Produção continua em `541f8cd`** e nada foi promovido, conforme sua determinação.
+> **Atualização de 14/10, manhã — o Scott liberou tudo.** Produção foi promovida para
+> `94ee0ad` (passando por `08bccfb`), a regra nova de conversa está valendo com a queda
+> de acesso dos admins aceita por ele, e a reconciliação do legado foi executada nos dois
+> ambientes. O que sobra está no fim deste documento.
+
+Tudo abaixo estava em **homologação** quando foi escrito, no sha `aaa5918`.
 
 ---
 
@@ -159,3 +163,41 @@ dentro do repositório — é mudança visível na casca, então é sua.
 no mesmo trem; não passaram por mim.
 
 Detalhe de cada defeito: [`matriz-jornada-comercial.md`](./matriz-jornada-comercial.md).
+
+---
+
+## 8. O que o Scott liberou em 14/10, e o que foi feito
+
+| Pedido dele | Feito |
+|---|---|
+| "pode fazer commit e deploy" em produção | Produção em **`94ee0ad`**. Os 499 do Stripe param hoje. |
+| Supervisão dos cinco admins: "pode mudar, é isso mesmo" | Valendo. Em produção há **7 números privados** (um mais que em homologação, porque a cópia do banco era de ontem) — vale um olho na lista. |
+| P2 sem prova de tela: "pode subir que eu testo" | No ar nos dois ambientes. |
+| Recusa e pedido de ajuste: "eu testo aqui" | No ar. |
+| n8n: "você tem acesso, faz tudo aí" | Chaves nos dois ambientes (copiadas dentro do servidor, impressão digital idêntica). O defeito real não era a chave: **publicar e pular eram silenciosos**, e com 630 eventos `processed` ninguém sabia se algum chegou. Agora o sweep diz. E o evento carrega `ambiente`, senão teste de homologação viraria e-mail e WhatsApp reais. |
+| Reconciliação do legado: "você poderia ter feito" | Executada nos dois: **0 ganhos sem família** (eram 622), 1.489 propostas classificadas, 310 ganhos com evidência. |
+
+### A reconciliação, em número
+
+| | Antes | Depois |
+|---|---:|---:|
+| Ganhos sem família | 622 | **0** |
+| Propostas sem família | 1.489 | 108 |
+| Ganhos com evidência | 0 | **310** |
+| Casos abertos para revisão humana | 0 | 864 |
+
+**Nada foi chutado.** Dos 623 ganhos, 126 ficaram `UNKNOWN` explícito ("perguntei e não
+sei") e as 108 propostas sem família viraram caso de revisão. Sua pergunta sobre contrato
+antigo valer como evidência: **valeu para 228 ganhos** (contrato manual), mais 116 por
+assinatura no Stripe e 106 por pagamento. Os 314 sem documento nenhum viraram caso de
+revisão, não ganho inventado. Backup em `negocios_bkp_familia_20261014*`.
+
+### Ainda seu
+
+1. **Os três contratos assinados com você nos dois lados** — você não respondeu, e eu não
+   toquei neles.
+2. **Rotacionar os segredos**, inclusive o do banco do SaaS que eu expus.
+3. **O primeiro evento real no n8n** — agora o log diz; é olhar `[barramento]` no worker.
+4. **Conferir item a item a fatura de parceiro** exige saber a forma da linha em
+   `partner_invoice_items`.
+5. **Franquia de minutos** e **preço por licença do White Label**.
