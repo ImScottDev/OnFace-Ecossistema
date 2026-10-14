@@ -327,15 +327,22 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       pre_qualificado: boolean; whatsapp: string | null; etapa_desde: string | null;
       negocio_ativo_id: string | null; qualificacao: Record<string, unknown> | null;
     }>(sql`
-      SELECT id::text, estagio_pre_vendas AS estagio,
-             servicos_interesse AS servicos, pre_qualificado, whatsapp,
+      SELECT l.id::text, l.estagio_pre_vendas AS estagio,
+             l.servicos_interesse AS servicos, l.pre_qualificado, l.whatsapp,
              /* Quando entrou na etapa ATUAL: a última mudança para ela. Sem histórico
-                (lead que nunca mudou), vale o primeiro contato ou a criação. */
-             COALESCE((SELECT max(sc.created_at) FROM status_changes sc
-                        WHERE sc.lead_id = leads.id AND sc.para_status = leads.estagio_pre_vendas),
-                      contato_desde_at, created_at)::text AS etapa_desde,
-             negocio_ativo_id::text, qualificacao
-        FROM leads WHERE id = ANY(${literalDeArray(leadIds)}::uuid[])`);
+                (lead que nunca mudou), vale o primeiro contato ou a criação.
+                A última mudança por (lead, etapa) é agregada UMA vez: status_changes
+                não tem índice por lead, e a subconsulta correlata por linha varria a
+                tabela inteira para cada cartão (1,9 s para ~1.700 cartões). */
+             COALESCE(sc.ultima, l.contato_desde_at, l.created_at)::text AS etapa_desde,
+             l.negocio_ativo_id::text, l.qualificacao
+        FROM leads l
+        LEFT JOIN (
+          SELECT lead_id, para_status, max(created_at) AS ultima FROM status_changes
+           WHERE lead_id = ANY(${literalDeArray(leadIds)}::uuid[])
+           GROUP BY lead_id, para_status
+        ) sc ON sc.lead_id = l.id AND sc.para_status = l.estagio_pre_vendas
+       WHERE l.id = ANY(${literalDeArray(leadIds)}::uuid[])`);
     for (const l of linhas) legado.set(l.id, l);
   }
 

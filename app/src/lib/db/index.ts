@@ -33,6 +33,11 @@ function conectar() {
       connect_timeout: 10,
       max_lifetime: 60 * 10,       // recycle connections every 10min (prevents stale)
       fetch_types: false,           // skip type fetching (faster cold start)
+      // JIT do Postgres desligado: as telas pesadas (Pré-vendas, Pipeline,
+      // Contatos) têm custo ESTIMADO acima de 100.000 por causa dos LATERAL e
+      // EXISTS, o planner liga o JIT, e compilar levava 180-250 ms por
+      // consulta para executar 5-40 ms. Medido em homologação (14/10/2026).
+      connection: { jit: "off" },
     });
     instancia = drizzle(clientPool, { schema });
   }
