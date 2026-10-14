@@ -16,6 +16,7 @@ import { nomesDeAgentesDaOrg } from "@/lib/agentes/nomes-de-agentes";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { MotionDoProto } from "@/components/onface/proto/MotionDoProto";
+import { AvisoVersaoNova } from "@/components/onface/AvisoVersaoNova";
 
 export const dynamic = "force-dynamic";
 
@@ -160,6 +161,7 @@ export default async function ProdutoLayout({
             transcrição que este caminho evita — e ele já respeita
             prefers-reduced-motion. */}
         <MotionDoProto />
+        <AvisoVersaoNova />
 
         <Cf2SidebarProvider className="contents">
           <CascaProto naoLidas={naoLidas} usuario={usuario} agentes={agentes} areasEmBreve={areasEmBreve()}>{children}</CascaProto>
