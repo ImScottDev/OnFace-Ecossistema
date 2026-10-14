@@ -28,11 +28,27 @@ para destinatário de verdade.
 | 11 | Eventos no n8n | Evento real do ONFACE chega e é idempotente | Barramento provado com evento sintético; **falta evento real** | — | 77460f9 | 541f8cd | **a comprovar** |
 | 12 | Sincronismos Callface AI | Parceiro, licença, fatura e retrato espelhados | Tabelas criadas e **vazias**: sync nunca rodou | — | 864ea2b | 541f8cd | **a comprovar** |
 
-## Correção de rumo registrada (13/10/2026)
+## Regra esclarecida pelo Scott (13/10/2026): não existe venda mista
 
-O commit `1508bb3` criou **uma entrega por venda e por família**. A decisão do Scott é
-**uma jornada principal por venda**, com trilhas e checklists por família dentro dela.
-A diferença aparece em venda mista: hoje nascem dois boards, e deveria nascer um, com
-duas trilhas. A ser corrigido sem perder as regras de cada família — que existem porque
-cada uma tem fases e vocabulário próprios, e misturá-las sem trilha deixa a entrega
-presa sem dar erro.
+> "na real nem existe venda mista. Se uma oportunidade contempla apenas uma família,
+> então não tem venda mista."
+
+Com isso, **uma entrega por venda e família É uma entrega por venda**, e o que o commit
+`1508bb3` entregou está correto. O board duplo que eu temia não acontece numa venda
+legítima.
+
+**Mas o dado discorda da regra, e isso vira trabalho:**
+
+| Combinação | Propostas |
+|---|---:|
+| Callface AI + PABX | 40 |
+| Callface AI + White Label | 6 |
+| PABX + White Label | 2 |
+| **Total** | **48** |
+
+Pela regra, essas 48 são **erro de cadastro do histórico**, não venda legítima. Entram
+na reconciliação do legado (cenário 10), não na mudança da regra.
+
+**Melhoria que isso revela:** nada hoje impede uma oportunidade de receber itens de
+famílias diferentes. O sistema aceita calado e só o pós-venda descobre. Vale uma trava
+na criação da oportunidade — proposta, não feita.
