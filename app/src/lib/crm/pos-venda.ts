@@ -26,6 +26,7 @@
  */
 import { db } from "@/lib/db";
 import { and, eq, sql } from "drizzle-orm";
+import { ehRenovacao } from "@/lib/crm/servico-canonico";
 import {
   negocios,
   contratos,
@@ -221,6 +222,9 @@ export async function criarPosVendaDoNegocio(
     if (negocio.status !== "ganho") {
       return { criado: false, motivo: `negócio não está ganho (status=${negocio.status})` };
     }
+
+    // Renovação não cria serviço, entrega nem onboarding: o cliente continua com o que já tem.
+    if (await ehRenovacao(negocioId)) return { criado: false, motivo: "renovação: não cria serviço nem entrega" };
 
     // Camada 1 de idempotência: já existe serviço deste negócio?
     const [jaExiste] = await db

@@ -30,6 +30,7 @@ import {
 import { publicarEvento } from "@/lib/events/outbox";
 import { resolverVencimentoDoGrupo } from "@/lib/crm/politica-familia";
 import { linhasDoRecebivel } from "@/lib/crm/pendencia-linhas";
+import { ehRenovacao } from "@/lib/crm/servico-canonico";
 
 const ORIGEM_CRM2 = "crm2_comercial";
 
@@ -55,6 +56,8 @@ export async function registrarPendenciaFinanceira(opts: {
     const [grupo] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, opts.grupoId)).limit(1);
     if (!grupo) return null;
     if (grupo.pagamentoStatus === "confirmado") return null;
+    // Renovação não gera recebível novo: a mensalidade segue na cobrança que já existe.
+    if (await ehRenovacao(grupo.negocioId, grupo.propostaId)) return null;
 
     // Idempotência: qualquer linha já gravada para o grupo (a legada mista
     // `CRM2:<grupo>` ou as separadas `CRM2:<grupo>:<natureza>`) vale como "já existe".

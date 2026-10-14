@@ -57,16 +57,37 @@ export function uniaoChecklists(listas: ChecklistSeed[]): ChecklistSeed {
   return uniao;
 }
 
-/** Upgrade: separa o que falta fazer do que o cliente já cumpriu numa entrega anterior do mesmo produto. */
+/** Quem cumpriu a etapa e quando, na entrega anterior. */
+export interface EtapaCumprida {
+  workstream: string;
+  titulo: string;
+  concluidaEm?: string | null;
+  concluidaPor?: string | null;
+  responsavelId?: string | null;
+  /** Entrega onde ela foi cumprida. */
+  fulfillmentId?: string | null;
+}
+
+/**
+ * Upgrade: separa o que falta fazer do que o cliente já cumpriu numa entrega anterior do mesmo produto.
+ * `herdadas` carrega data e responsável ORIGINAIS (se a etapa foi cumprida em mais de uma entrega, vale a
+ * primeira vez), para a entrega nova registrá-la como cumprida, não em branco.
+ */
 export function complementoDoUpgrade(
   checklist: ChecklistSeed,
-  concluidas: { workstream: string; titulo: string }[],
-): { pendentes: ChecklistSeed; herdadas: { workstream: string; titulo: string }[] } {
-  const feitas = new Set(concluidas.map(chaveEtapa));
+  concluidas: EtapaCumprida[],
+): { pendentes: ChecklistSeed; herdadas: (EtapaCumprida & { item: ChecklistSeed[number] })[] } {
+  const feitas = new Map<string, EtapaCumprida>();
+  for (const c of concluidas) {
+    const k = chaveEtapa(c);
+    const atual = feitas.get(k);
+    if (!atual || (c.concluidaEm && (!atual.concluidaEm || c.concluidaEm < atual.concluidaEm))) feitas.set(k, c);
+  }
   const pendentes: ChecklistSeed = [];
-  const herdadas: { workstream: string; titulo: string }[] = [];
+  const herdadas: (EtapaCumprida & { item: ChecklistSeed[number] })[] = [];
   for (const item of checklist) {
-    if (feitas.has(chaveEtapa(item))) herdadas.push({ workstream: item.workstream, titulo: item.titulo });
+    const f = feitas.get(chaveEtapa(item));
+    if (f) herdadas.push({ ...f, workstream: item.workstream, titulo: item.titulo, item });
     else pendentes.push(item);
   }
   return { pendentes, herdadas };

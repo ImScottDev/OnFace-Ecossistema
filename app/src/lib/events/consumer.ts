@@ -207,7 +207,9 @@ for (const eventType of [
  */
 registrarConsumidorEvento("FulfillmentGroupCompleted", async (evento) => {
   const grupoComercialId = evento.aggregateId;
-  const { servicoIds } = await materializarServicosCanonicosDoGrupo(grupoComercialId);
+  const { servicoIds, renovacao } = await materializarServicosCanonicosDoGrupo(grupoComercialId);
+  // Renovação cobre serviço que já existe: não há serviço novo, entrega nem recebível a criar (e isso não é falha).
+  if (renovacao && servicoIds.length === 0) return;
   if (servicoIds.length === 0) {
     throw new Error(`materializarServicosCanonicosDoGrupo(${grupoComercialId}) não gerou nenhum serviço — grupo sem itens? investigar antes de aceitar como sucesso silencioso.`);
   }

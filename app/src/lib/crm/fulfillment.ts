@@ -31,7 +31,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { fulfillments, fulfillmentItens, fulfillmentServicos, tarefas } from "@/lib/db/schema";
-import { agruparServicosPorVenda, complementoDoUpgrade, uniaoChecklists, type ServicoDaVenda } from "@/lib/crm/entrega-da-venda";
+import { agruparServicosPorVenda, complementoDoUpgrade, uniaoChecklists, type EtapaCumprida, type ServicoDaVenda } from "@/lib/crm/entrega-da-venda";
 import { notificarFulfillmentOnboardingCriado } from "@/lib/crm/notificar";
 import { regraDaFamilia, FAMILIAS_POR_TRILHA } from "@/lib/crm/politica-familia";
 import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, type ChecklistSeed } from "@/lib/crm/pos-venda-checklists";
@@ -229,10 +229,11 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
 
       // Upgrade: o que este cliente já cumpriu desta família numa entrega de OUTRA venda não volta.
       let anteriorId: string | null = null;
-      let concluidas: { workstream: string; titulo: string }[] = [];
+      let concluidas: EtapaCumprida[] = [];
       if (principal.empresaId || principal.leadId) {
-        const anteriores = await db.execute<{ id: string; workstream: string | null; titulo: string | null }>(sql`
-          SELECT f.id::text AS id, fi.workstream, fi.titulo
+        const anteriores = await db.execute<{ id: string; workstream: string | null; titulo: string | null; concluida_em: string | null; concluida_por: string | null; responsavel_item: string | null }>(sql`
+          SELECT f.id::text AS id, fi.workstream, fi.titulo, to_char(fi.completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS concluida_em,
+                 fi.completed_by::text AS concluida_por, fi.responsavel_id::text AS responsavel_item
             FROM fulfillments f
             JOIN servicos_canonicos s ON s.id = f.servico_canonico_id
             LEFT JOIN fulfillment_itens fi ON fi.fulfillment_id = f.id AND fi.status = 'DONE'
@@ -249,7 +250,9 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
                OR (${principal.empresaId ?? null}::uuid IS NULL AND s.lead_id = ${principal.leadId ?? null}::uuid))
            ORDER BY f.created_at DESC`);
         anteriorId = anteriores[0]?.id ?? null;
-        concluidas = anteriores.flatMap((a) => (a.workstream && a.titulo ? [{ workstream: a.workstream, titulo: a.titulo }] : []));
+        concluidas = anteriores.flatMap((a) => (a.workstream && a.titulo
+          ? [{ workstream: a.workstream, titulo: a.titulo, concluidaEm: a.concluida_em, concluidaPor: a.concluida_por, responsavelId: a.responsavel_item, fulfillmentId: a.id }]
+          : []));
       }
       const { pendentes: checklist, herdadas } = complementoDoUpgrade(checklistCompleto, concluidas);
       // Upgrade que não traz nada novo (tudo já cumprido): a entrega nasce concluída, só para registrar a venda.
@@ -272,22 +275,34 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
         responsavelId,
         oportunidadeId: grupo.oportunidadeId,
         fulfillmentAnteriorId: anteriorId,
-        etapasHerdadas: herdadas.length > 0 ? herdadas : null,
+        etapasHerdadas: herdadas.length > 0 ? herdadas.map(({ item: _item, ...h }) => h) : null,
       }).onConflictDoNothing().returning({ id: fulfillments.id });
       if (!fulfillment) continue; // jornada já existia para esta venda/serviço e ciclo
 
       await db.insert(fulfillmentServicos).values(novos.map((id) => ({ fulfillmentId: fulfillment.id, servicoCanonicoId: id, organizacaoId }))).onConflictDoNothing();
 
-      if (checklist.length > 0) {
+      // O checklist inteiro nasce, na ordem de sempre. A etapa que o cliente já cumpriu numa entrega anterior
+      // nasce CUMPRIDA, com a data e o responsável originais: o board novo mostra o que já foi feito, não o repete.
+      if (checklistCompleto.length > 0) {
+        const herdadaPorEtapa = new Map(herdadas.map((h) => [`${h.workstream}\u0000${h.titulo}`, h]));
         await db.insert(fulfillmentItens).values(
-          checklist.map((item, i) => ({
-            organizacaoId,
-            fulfillmentId: fulfillment.id,
-            workstream: item.workstream,
-            titulo: item.titulo,
-            ordem: i,
-            metadata: item.metadata ?? null,
-          }))
+          checklistCompleto.map((item, i) => {
+            const h = herdadaPorEtapa.get(`${item.workstream}\u0000${item.titulo}`);
+            return {
+              organizacaoId,
+              fulfillmentId: fulfillment.id,
+              workstream: item.workstream,
+              titulo: item.titulo,
+              ordem: i,
+              metadata: h ? { ...(item.metadata ?? {}), herdadaDe: h.fulfillmentId ?? null } : (item.metadata ?? null),
+              ...(h ? {
+                status: "DONE",
+                completedAt: h.concluidaEm ? new Date(h.concluidaEm) : new Date(),
+                completedBy: h.concluidaPor ?? null,
+                responsavelId: h.responsavelId ?? null,
+              } : {}),
+            };
+          })
         );
       }
 

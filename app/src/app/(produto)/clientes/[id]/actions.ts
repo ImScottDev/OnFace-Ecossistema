@@ -18,7 +18,7 @@ import { criarOportunidade } from "@/lib/vendas/pipeline";
 import { RegraDeNegocio } from "@/lib/vendas/dominio";
 import type { Familia, Motion, ProcessoOrigem } from "@/lib/vendas/dominio";
 
-export type TipoDeVenda = "expansao" | "upgrade" | "crosssell" | "renovacao";
+export type TipoDeVenda = "expansao" | "upgrade" | "downgrade" | "crosssell" | "renovacao";
 
 /**
  * O tipo que o vendedor escolhe na modal → o vocabulário do domínio.
@@ -31,6 +31,7 @@ export type TipoDeVenda = "expansao" | "upgrade" | "crosssell" | "renovacao";
 const MOTION_POR_TIPO: Record<TipoDeVenda, Motion> = {
   expansao: "EXPANSION",
   upgrade: "EXPANSION",
+  downgrade: "EXPANSION",
   crosssell: "EXPANSION",
   renovacao: "RENEWAL",
 };
@@ -44,6 +45,8 @@ export interface NovaOportunidadeDoCliente {
   valorEstimado?: string | null;
   observacao?: string | null;
   pessoaId?: string | null;
+  /** Upgrade/downgrade: o serviço que a venda troca. Vazio = o Ganho resolve se houver um candidato inequívoco. */
+  servicoOrigemId?: string | null;
 }
 
 export type ResultadoNovaOportunidade =
@@ -73,6 +76,10 @@ export async function acaoNovaOportunidadeDoCliente(
         pessoaId: entrada.pessoaId ?? null,
         valorEstimado: entrada.valorEstimado ?? null,
         proximaAcao: entrada.observacao?.trim() || null,
+        /* O tipo escolhido na modal não pode se perder no `EXPANSION` do mapa: é ele que diz, no Ganho,
+           se o serviço soma (cross-sell), substitui (upgrade/downgrade) ou renova. */
+        tipoVenda: entrada.tipo,
+        servicoOrigemId: entrada.servicoOrigemId ?? null,
       },
       { tipo: "HUMAN", usuarioId: ctx.userId },
     );

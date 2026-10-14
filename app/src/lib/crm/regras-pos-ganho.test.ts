@@ -69,7 +69,7 @@ test("o serviço canônico nunca multiplica o valor pela quantidade nem se desdo
   assert.ok(!/valorTotal\s*\)?\s*\*\s*\(?\s*item\.quantidade|quantidade\s*\)?\s*\*\s*\(?\s*item\.valorTotal/.test(fonte), "valor × quantidade: o valor já é o total da linha");
   assert.ok(!/servicoPaiId|servico_pai_id|componente/i.test(fonte), "componente de serviço: dobraria o MRR nas leituras que somam current_recurring_value");
   // Uma linha por item: o resultado de materializar N itens são N serviços, não N × quantidade.
-  assert.match(fonte, /for \(const item of itens\) servicoIds\.push\(await materializarItem/);
+  assert.match(fonte, /for \(const item of aMaterializar\) feitos\.push\(\{ item, servicoId: await materializarItem/);
 });
 
 test("o Ganho automático grava o valor fechado: marcarNegocioGanhoSeAindaNao usa a regra no mesmo UPDATE do status", () => {

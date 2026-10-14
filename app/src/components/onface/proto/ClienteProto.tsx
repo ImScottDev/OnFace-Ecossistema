@@ -903,6 +903,16 @@ export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDes
        nome. Quem cria assume, e a reatribuição é um clique no Pipeline. */
     const valor = nova.itens?.[0]?.valor;
 
+    /* Upgrade e downgrade TROCAM um serviço: o servidor precisa saber qual, senão
+       soma e deixa pendência de substituição. O desenho da modal só oferece a
+       família, então aqui resolvemos pelo que está na tela: família com UM serviço
+       recorrente ativo não tem dúvida. Com mais de um, não adivinhamos — avisamos
+       quem está vendendo, com os candidatos pelo nome. */
+    const daFamilia: typeof cliente.servicos = tipo === "upgrade"
+      ? cliente.servicos.filter((sv) => (sv.familia ?? "") === (nova.familia ?? "") && sv.valor > 0)
+      : [];
+    const servicoOrigemId = daFamilia.length === 1 ? daFamilia[0].id : null;
+
     const r = await acaoNovaOportunidadeDoCliente({
       empresaId: cliente.empresa.id,
       tipo,
@@ -911,6 +921,7 @@ export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDes
       pessoaId: pessoa?.id ?? null,
       valorEstimado: valor ? String(valor) : null,
       observacao: nova.notas?.[0]?.texto ?? null,
+      servicoOrigemId,
     });
 
     if (!r.ok) {
@@ -920,6 +931,13 @@ export function ClienteProto({ cliente, usoCallfaceAi }: { cliente: ClienteDoDes
     }
     idsReais.current.set(nova.id, r.negocioId);
     toast.success(`${r.titulo} criada no Pipeline.`);
+    if (daFamilia.length > 1) {
+      toast.warning(
+        `Esta família tem ${daFamilia.length} serviços ativos, então o sistema não sabe qual este ${tipo} substitui: ` +
+        `${daFamilia.map((sv) => sv.produtoReal ?? sv.produto ?? sv.familia).join(", ")}. Diga qual na proposta, senão o novo soma ao antigo e o MRR conta os dois.`,
+        { duration: 14000 },
+      );
+    }
     router.refresh();
   }, [cliente.empresa.id, cliente.empresa.pessoas, router]);
 

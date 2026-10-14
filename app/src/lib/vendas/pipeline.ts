@@ -93,6 +93,8 @@ export interface CriarOportunidade {
   /** Agendar reunião junto. Bloco 02 §6: reunião NÃO é requisito. */
   reuniao?: { data: string; duracao?: number; tipo?: "call" | "presencial" | "video"; titulo?: string; notas?: string; closerId?: string } | null;
   servicoOrigemId?: string | null;
+  /** upgrade | downgrade | crosssell | expansao | renovacao: decide, no Ganho, se o serviço soma, substitui ou renova. */
+  tipoVenda?: string | null;
 }
 
 export interface OportunidadeCriada {
@@ -175,7 +177,7 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
         etapa, etapa_desde, status, source_process, commercial_motion,
         responsavel_id, pipeline_id, bundle_id, valor_total,
         previsao_fechamento, proxima_acao, proxima_acao_em, proxima_acao_responsavel_id,
-        origem_negocio, origem_qualificacao, servico_origem_id
+        origem_negocio, origem_qualificacao, servico_origem_id, campos_custom
       ) VALUES (
         ${entrada.organizacaoId}::uuid,
         ${entrada.leadId ?? null}::uuid,
@@ -195,7 +197,8 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
         ${entrada.proximaAcao ? entrada.responsavelId : null}::uuid,
         ${entrada.sourceProcess === "EXPANSION" ? "carteira" : "novo"},
         ${entrada.reuniao ? "reuniao" : "direta"},
-        ${entrada.servicoOrigemId ?? null}::uuid
+        ${entrada.servicoOrigemId ?? null}::uuid,
+        COALESCE(${entrada.tipoVenda ? JSON.stringify({ tipo_venda: entrada.tipoVenda }) : null}::jsonb, '{}'::jsonb)
       )
       RETURNING id::text
     `);
