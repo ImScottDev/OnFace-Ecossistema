@@ -19,7 +19,7 @@
  * e está provado". Fica registrado como possível evolução futura.
  */
 import { db } from "@/lib/db";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, sql } from "drizzle-orm";
 import {
   checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos, leads, empresas, negocios,
 } from "@/lib/db/schema";
@@ -76,9 +76,10 @@ export async function criarCheckoutParaGrupo(opts: {
     .select({
       nome: propostaItens.nome, tipo: propostaItens.tipo, quantidade: propostaItens.quantidade,
       subtotal: propostaItens.subtotal, servicoCatalogoId: propostaItens.servicoCatalogoId,
-      stripePriceId: catalogoPrecos.stripePriceId,
-      stripeProductId: servicosCatalogo.stripeProductId,
-      valorTabela: catalogoPrecos.valor,
+      // O Price e o valor de tabela do MOMENTO DA VENDA (copiados na linha); só a linha antiga lê o catálogo vivo.
+      stripePriceId: sql<string | null>`COALESCE(${propostaItens.stripePriceId}, ${catalogoPrecos.stripePriceId})`,
+      stripeProductId: sql<string | null>`COALESCE(${propostaItens.stripeProductId}, ${servicosCatalogo.stripeProductId})`,
+      valorTabela: sql<string | null>`COALESCE(${propostaItens.valorTabela}, ${catalogoPrecos.valor})`,
       moeda: catalogoPrecos.moeda,
       recorrente: catalogoPrecos.recorrente,
       precoAtivo: catalogoPrecos.ativo,

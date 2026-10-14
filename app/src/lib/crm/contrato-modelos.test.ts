@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { CATALOGO_MODELOS, lerModelo } from "./modelos-contrato.js";
 import { renderizarCorpo, variaveisFaltando, VARIAVEIS_CONTRATO } from "./contrato-variaveis.js";
 import { variaveisDeExemplo } from "./contrato-exemplo.js";
-import { linhasDeItens } from "./contrato-itens.js";
+import { linhasDeItens, mrrDosItens } from "./contrato-itens.js";
 import { contratoPdfHtml, renderContratoPdf, localizarAncoras } from "./contrato-pdf.js";
 
 for (const m of CATALOGO_MODELOS) {
@@ -74,3 +74,18 @@ for (const arquivo of ["pabx.html", "callface-ai.html", "pabx-aditivo.html"]) {
     assert.match(html, /PABX Plano Pro/);
   });
 }
+
+test("MRR do contrato é o valor mensal equivalente: trimestral e anual não viram mensalidade cheia", () => {
+  const itens = [
+    { nome: "Licença", tipo: "recorrente", subtotal: "100", periodo: "mensal" },
+    { nome: "Pacote trimestral", tipo: "recorrente", subtotal: "300", periodo: "trimestral" },
+    { nome: "Anuidade", tipo: "recorrente", subtotal: "1200", periodo: "anual" },
+    { nome: "Setup", tipo: "setup", subtotal: "500", periodo: "unico" },
+  ];
+  assert.equal(mrrDosItens(itens), 300);
+  assert.equal(mrrDosItens([{ nome: "Legado", tipo: "recorrente", subtotal: "80" }]), 80);
+  const html = linhasDeItens(itens, ["recorrente"], { comRecorrencia: true });
+  assert.match(html, /<td>Trimestral<\/td>/);
+  assert.match(html, /<td>Anual<\/td>/);
+  assert.match(html, /<td>Mensal<\/td>/);
+});

@@ -1,6 +1,6 @@
 // Geração do PDF da Proposta Comercial (moldes Zoho) via HTML + Chrome headless.
 // Renderiza no container `api` (Hono). Requer chromium (PUPPETEER_EXECUTABLE_PATH).
-import { periodoDoItem, totaisPorPeriodo } from "@/lib/crm/periodo-cobranca";
+import { periodoDoItem, totaisPorPeriodo, type PeriodoDeCobranca } from "@/lib/crm/periodo-cobranca";
 import { formaPagamentoSetup } from "@/lib/crm/condicoes-comerciais";
 import puppeteer from "puppeteer";
 import { existsSync } from "node:fs";
@@ -132,8 +132,10 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
   const cliente = p.leadEmpresa || p.leadNome || "Cliente";
   const numeroFmt = `PROP ${String(p.numero).padStart(4, "0")}${p.versao > 1 ? ` · v${p.versao}` : ""}`;
   // Cada linha no período de cobrança do Price: a anuidade não entra na tabela (nem no total) "mensal".
-  const doPeriodo = (per: "mensal" | "anual" | "unico") => p.itens.filter((i) => periodoDoItem(i).periodo === per);
+  const doPeriodo = (per: PeriodoDeCobranca) => p.itens.filter((i) => periodoDoItem(i).periodo === per);
   const recorrentes = doPeriodo("mensal");
+  const trimestrais = doPeriodo("trimestral");
+  const semestrais = doPeriodo("semestral");
   const anuais = doPeriodo("anual");
   const setups = doPeriodo("unico");
   const totais = totaisPorPeriodo(p.itens);
@@ -322,11 +324,13 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
   <div class="body">
     <h2>6. Mapa de investimento</h2>
     ${itensTabela(recorrentes, moeda, "Investimento mensal", totais.mensal)}
+    ${trimestrais.length ? `<div style="margin-top:12px">${itensTabela(trimestrais, moeda, "Investimento trimestral", totais.trimestral)}</div>` : ""}
+    ${semestrais.length ? `<div style="margin-top:12px">${itensTabela(semestrais, moeda, "Investimento semestral", totais.semestral)}</div>` : ""}
     ${anuais.length ? `<div style="margin-top:12px">${itensTabela(anuais, moeda, "Investimento anual", totais.anual)}</div>` : ""}
     ${setups.length ? `<h2 style="margin-top:16px">7. Setup e itens avulsos</h2>${itensTabela(setups, moeda, "Setup", totais.unico)}<p class="muted" style="margin-top:8px"><strong>Forma de pagamento do setup:</strong> ${esc(formaPagamentoSetup({ condicaoPagamentoTipo: p.condicaoPagamentoTipo ?? null, parcelas: p.parcelas ?? null, condicoesPagamento: p.condicoesPagamento ?? null }, totais.unico) || "a combinar")}</p>` : ""}
     <table class="mapa" style="margin-top:14px">
       <tbody>
-        <tr class="mapa-total"><td class="rgt" style="font-size:12px">Total geral${recorrentes.length || anuais.length ? " (1ª cobrança)" : ""}</td><td class="rgt" style="font-size:12px">${money(p.totalGeral, moeda)}</td></tr>
+        <tr class="mapa-total"><td class="rgt" style="font-size:12px">Total geral${recorrentes.length || trimestrais.length || semestrais.length || anuais.length ? " (1ª cobrança)" : ""}</td><td class="rgt" style="font-size:12px">${money(p.totalGeral, moeda)}</td></tr>
       </tbody>
     </table>
     ${p.condicoesPagamento ? `<p class="muted" style="margin-top:12px"><strong>Condições de pagamento:</strong> ${esc(p.condicoesPagamento)}</p>` : ""}

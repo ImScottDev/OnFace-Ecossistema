@@ -28,7 +28,7 @@
  * trilha de entrega o cliente vai.
  */
 import { db } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   oportunidadeItens, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos,
 } from "@/lib/db/schema";
@@ -165,7 +165,8 @@ export async function exigeContratoNoGrupoAsync(
   if (exigeContratoPorModelo(commercialModel as CommercialModel)) return true;
 
   const declaracoes = await db
-    .select({ exigeContrato: catalogoPrecos.exigeContrato })
+    // O valor congelado na linha manda (migration 0121); só a linha antiga cai no catálogo vivo.
+    .select({ exigeContrato: sql<boolean>`COALESCE(${propostaItens.exigeContrato}, ${catalogoPrecos.exigeContrato})` })
     .from(propostaGrupoComercialItens)
     .innerJoin(propostaItens, eq(propostaItens.id, propostaGrupoComercialItens.propostaItemId))
     .innerJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))

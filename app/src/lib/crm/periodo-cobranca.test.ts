@@ -12,7 +12,14 @@ describe("periodoDoItem", () => {
   it("sem Price, a linha legada cai no tipo e avisa que deduziu", () => {
     assert.deepEqual(periodoDoItem({ tipo: "recorrente" }), { periodo: "mensal", doPreco: false });
     assert.deepEqual(periodoDoItem({ tipo: "setup" }), { periodo: "unico", doPreco: false });
-    assert.deepEqual(periodoDoItem({ periodo: "trimestral", tipo: "avulso" }), { periodo: "unico", doPreco: false });
+    // contagem sem nome (a cada 2 meses) não é arredondada para mensal: cai no tipo e avisa
+    assert.deepEqual(periodoDoItem({ periodo: "2_meses", tipo: "recorrente" }), { periodo: "mensal", doPreco: false });
+  });
+  it("trimestral e semestral são períodos próprios, nunca viram mensal", () => {
+    assert.deepEqual(periodoDoItem({ periodo: "trimestral", tipo: "recorrente" }), { periodo: "trimestral", doPreco: true });
+    assert.deepEqual(periodoDoItem({ periodo: "semestral", tipo: "recorrente" }), { periodo: "semestral", doPreco: true });
+    assert.deepEqual(periodoDoItem({ periodo: "12_meses", tipo: "recorrente" }), { periodo: "anual", doPreco: true });
+    assert.deepEqual(periodoDoItem({ periodo: "1_anos", tipo: "recorrente" }), { periodo: "anual", doPreco: true });
   });
 });
 
@@ -24,10 +31,15 @@ describe("totaisPorPeriodo", () => {
       { subtotal: "29.9", periodo: "mensal", tipo: "recorrente" },
       { subtotal: 500, periodo: "unico", tipo: "setup" },
     ]);
-    assert.deepEqual(t, { mensal: 209.8, anual: 1799.9, unico: 500, deduzidos: 0 });
+    assert.deepEqual(t, { mensal: 209.8, trimestral: 0, semestral: 0, anual: 1799.9, unico: 500, deduzidos: 0 });
   });
   it("anuidade nunca entra na mensalidade", () => {
     assert.equal(totaisPorPeriodo([{ subtotal: 1200, periodo: "anual", tipo: "recorrente" }]).mensal, 0);
+  });
+  it("trimestral fica fora da mensalidade", () => {
+    const t = totaisPorPeriodo([{ subtotal: 300, periodo: "trimestral", tipo: "recorrente" }, { subtotal: 100, periodo: "mensal", tipo: "recorrente" }]);
+    assert.equal(t.mensal, 100);
+    assert.equal(t.trimestral, 300);
   });
   it("soma em centavos", () => {
     assert.equal(totaisPorPeriodo([{ subtotal: 0.1, periodo: "mensal", tipo: "recorrente" }, { subtotal: 0.2, periodo: "mensal", tipo: "recorrente" }]).mensal, 0.3);
@@ -38,8 +50,9 @@ describe("totaisPorPeriodo", () => {
 });
 
 describe("totalNoPrazo", () => {
-  const t = { mensal: 100, anual: 1200, unico: 500, deduzidos: 0 };
+  const t = { mensal: 100, trimestral: 0, semestral: 0, anual: 1200, unico: 500, deduzidos: 0 };
   it("12 meses: 12 mensalidades, 1 anuidade, os únicos", () => assert.equal(totalNoPrazo(t, 12), 2900));
   it("24 meses: 2 anuidades", () => assert.equal(totalNoPrazo(t, 24), 5300));
+  it("12 meses com trimestral: 4 cobranças", () => assert.equal(totalNoPrazo({ ...t, mensal: 0, anual: 0, unico: 0, trimestral: 300 }, 12), 1200));
   it("sem prazo não inventa total", () => { assert.equal(totalNoPrazo(t, null), null); assert.equal(totalNoPrazo(t, 0), null); });
 });

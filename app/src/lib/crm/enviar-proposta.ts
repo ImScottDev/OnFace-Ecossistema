@@ -22,6 +22,7 @@ import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercia
 import { formarGruposComerciais, vincularContratoPreparadoAoGrupo } from "@/lib/crm/grupo-comercial";
 import { exigeContrato } from "@/lib/crm/commercial-model";
 import { gerarContratoDeTemplate, conferirContratoDoGrupo } from "@/lib/crm/contrato-template";
+import { periodoDoItemSql } from "@/lib/catalogo/descricao-do-item";
 import { appUrl } from "@/lib/app-url";
 import { dataValidadePadrao } from "@/lib/crm/proposta-regras";
 
@@ -141,7 +142,7 @@ export async function avisarClienteDaPropostaEnviada(opts: {
     const [lead] = await db.select({ nome: leads.nome, sobrenome: leads.sobrenome, empresa: leads.empresa, email: leads.email })
       .from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
     const destino = decidirDestinoEmail({ enviarEmail: opts.enviarEmail, destinatarioEmail: opts.destinatarioEmail, emailDoLead: lead?.email });
-    const itens = await db.select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, periodo: catalogoPrecos.periodo })
+    const itens = await db.select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, periodo: periodoDoItemSql })
       .from(propostaItens).leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
       .where(eq(propostaItens.propostaId, opts.propostaId)).orderBy(asc(propostaItens.ordem));
     const clienteNome = [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "";
@@ -239,7 +240,7 @@ export async function enviarPropostaComCheckout(opts: {
   }
 
   const itens = await db
-    .select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, commercialModel: propostaItens.commercialModel, periodo: catalogoPrecos.periodo })
+    .select({ nome: propostaItens.nome, tipo: propostaItens.tipo, subtotal: propostaItens.subtotal, commercialModel: propostaItens.commercialModel, periodo: periodoDoItemSql })
     .from(propostaItens)
     .leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
     .where(eq(propostaItens.propostaId, propostaId))
@@ -328,10 +329,13 @@ export async function enviarPropostaComCheckout(opts: {
     leadId: proposta.leadId,
     usuarioId: userId,
     tipo: "proposta_enviada",
-    titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} ${skipEmail ? "ativada (link gerado)" : "enviada por email"}`,
+    // O que o provedor respondeu, não o que se pretendia: "enviada por email" com e-mail que falhou enganava a timeline.
+    titulo: `Proposta #P-${String(proposta.numero).padStart(3, "0")}-v${proposta.versao} ${skipEmail ? "ativada (link gerado)" : emailResult.sent ? "enviada por email" : "ativada, mas o e-mail NÃO saiu"}`,
     descricao: skipEmail
       ? `Link público gerado (${valorTimeline}). Email não disparado (Salvar).`
-      : `Enviada para ${lead?.email} (${valorTimeline}). Cliente decide o próximo passo na página pública.`,
+      : emailResult.sent
+        ? `Enviada para ${lead?.email} (${valorTimeline}). Cliente decide o próximo passo na página pública.`
+        : `E-mail para ${lead?.email} NÃO saiu (${emailResult.error ?? (emailResult.skipped ? "provedor de e-mail não configurado" : "falha no envio")}). Link público: ${linkPublico} (${valorTimeline}).`,
     dados: { propostaId: proposta.id, linkPublico, emailId: emailResult.id ?? null },
   });
 

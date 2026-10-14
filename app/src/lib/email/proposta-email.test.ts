@@ -36,3 +36,18 @@ describe("e-mail da proposta: totais por período", () => {
     assert.match(texto(html), /Total mensal R\$ 99,90 \/mês/);
   });
 });
+
+describe("e-mail da proposta: periodicidade trimestral", () => {
+  it("trimestral tem total próprio com /trimestre e não entra no total mensal", () => {
+    const { html } = buildPropostaEmail({
+      ...base,
+      itens: [
+        { nome: "Plano mensal", tipo: "recorrente", periodo: "mensal", subtotal: 100 },
+        { nome: "Pacote trimestral", tipo: "recorrente", periodo: "trimestral", subtotal: 300 },
+      ],
+    });
+    const t = texto(html);
+    assert.match(t, /Total mensal R\$ 100,00 \/mês/);
+    assert.match(t, /Total trimestral R\$ 300,00 \/trimestre/);
+  });
+});

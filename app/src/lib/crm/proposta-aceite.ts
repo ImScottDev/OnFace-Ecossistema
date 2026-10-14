@@ -194,14 +194,16 @@ async function concluirAceite(args: {
   const resultados: ResultadoGrupoAceite[] = [];
   const destravados: ResultadoGrupoAceite[] = [];
   for (const grupo of grupos) {
-    // Retomada: reserva o grupo (uma tentativa por vez). Botão e worker podem chegar juntos; quem perde a
-    // reserva não faz nada, e por isso nada se duplica.
-    if (opts.retomar && !(await reservarTentativa(grupo.id))) {
+    // Reserva o grupo (uma tentativa por vez), no aceite original TAMBÉM: o botão "Reprocessar aceite" aberto
+    // enquanto o aceite do cliente ainda envia o contrato ao provedor gerava um segundo documento (a trava de
+    // `enviarContratoParaAssinatura` só vale depois que o provedor responde). Quem perde a reserva não faz
+    // nada, e por isso nada se duplica.
+    if (!(await reservarTentativa(grupo.id))) {
       resultados.push({ grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "contrato", emAndamento: true });
       continue;
     }
     const r = await avancarGrupoAposAceite({ grupo, proposta, opts });
-    await registrarResultadoDoGrupo(grupo.id, r, opts.retomar === true);
+    await registrarResultadoDoGrupo(grupo.id, r);
     resultados.push(r);
     if (opts.retomar && grupo.fechamentoErro && !r.erro && !r.emAndamento) destravados.push(r);
   }
@@ -255,7 +257,7 @@ function resumoDoErro(erro: string | undefined): string {
 }
 
 /**
- * Reserva a tentativa de um grupo na retomada: só uma por vez a cada 2 minutos. O UPDATE é atômico, então
+ * Reserva a tentativa de um grupo (aceite original e retomada): só uma por vez a cada 2 minutos. O UPDATE é atômico, então
  * duas retomadas simultâneas (botão + worker) não passam as duas. `fechamento_tentativas` conta as tentativas.
  */
 async function reservarTentativa(grupoId: string): Promise<boolean> {
@@ -269,12 +271,11 @@ async function reservarTentativa(grupoId: string): Promise<boolean> {
 }
 
 /** Grava o desfecho: erro e tentativa quando falhou, limpa quando andou. É o que o botão e o worker leem. */
-async function registrarResultadoDoGrupo(grupoId: string, r: ResultadoGrupoAceite, retomada: boolean): Promise<void> {
+async function registrarResultadoDoGrupo(grupoId: string, r: ResultadoGrupoAceite): Promise<void> {
   if (r.erro) {
+    // A tentativa já foi contada pela reserva (original ou retomada).
     await db.update(propostaGrupoComercial).set({
       fechamentoErro: r.erro.slice(0, 1000), fechamentoUltimaTentativaEm: new Date(),
-      // A tentativa original (não retomada) ainda não foi contada pela reserva.
-      ...(retomada ? {} : { fechamentoTentativas: sql`${propostaGrupoComercial.fechamentoTentativas} + 1` }),
     }).where(eq(propostaGrupoComercial.id, grupoId));
   } else if (!r.emAndamento) {
     await db.update(propostaGrupoComercial).set({ fechamentoErro: null }).where(eq(propostaGrupoComercial.id, grupoId));

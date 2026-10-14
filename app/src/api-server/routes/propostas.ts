@@ -28,7 +28,7 @@ import {
 import { criarPropostaComItens, inserirItensDaProposta, prepararItensDaProposta } from "@/lib/crm/proposta-criacao";
 import { lerFotoComercial, registrarAlteracaoComercial } from "@/lib/vendas/auditoria-comercial-registro";
 import { atorHumano } from "@/lib/vendas/dominio";
-import { descricaoDoItemSql } from "@/lib/catalogo/descricao-do-item";
+import { descricaoDoItemSql, periodoDoItemSql } from "@/lib/catalogo/descricao-do-item";
 import { validarDataValidade, validarMoeda } from "@/lib/crm/proposta-regras";
 import { agruparItensPorLinhaComercial, organizarVendaMultiLinha } from "@/lib/crm/oportunidade-bundle";
 import { appUrl } from "@/lib/app-url";
@@ -468,7 +468,7 @@ app.get("/propostas/:id/pdf", async (c) => {
 
   const itens = await db
     .select({
-      nome: propostaItens.nome, descricao: descricaoDoItemSql, tipo: propostaItens.tipo, periodo: catalogoPrecos.periodo,
+      nome: propostaItens.nome, descricao: descricaoDoItemSql, tipo: propostaItens.tipo, periodo: periodoDoItemSql,
       quantidade: propostaItens.quantidade, valorUnitario: propostaItens.valorUnitario, subtotal: propostaItens.subtotal,
     })
     .from(propostaItens)
@@ -531,7 +531,7 @@ app.get("/propostas/:id/publica", async (c) => {
   const itens = await db
     .select({
       id: propostaItens.id, nome: propostaItens.nome, descricao: descricaoDoItemSql, tipo: propostaItens.tipo,
-      periodo: catalogoPrecos.periodo,
+      periodo: periodoDoItemSql,
       quantidade: propostaItens.quantidade, valorUnitario: propostaItens.valorUnitario, subtotal: propostaItens.subtotal,
       servicoCatalogoId: propostaItens.servicoCatalogoId, commercialModel: propostaItens.commercialModel,
     })

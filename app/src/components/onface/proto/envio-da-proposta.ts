@@ -56,8 +56,8 @@ export function resumoDoEnvio(a: AvisoDoEnvio | null | undefined): { linhas: str
   if (!a) return { linhas: ["Proposta enviada."], falhou: false };
   if (a.email === "enviado") {
     linhas.push(a.emailVia === "conta"
-      ? `E-mail enviado para ${a.destinatario} pela sua caixa${a.emailDe ? ` (${a.emailDe})` : ""}.`
-      : `E-mail enviado para ${a.destinatario} pelo e-mail do sistema: você não tem caixa conectada, e as respostas voltam para o seu e-mail.`);
+      ? `E-mail enviado para ${a.destinatario} pela sua caixa${a.emailDe ? ` (${a.emailDe})` : ""}. A entrega não é confirmada por esse tipo de caixa: se o cliente não responder, confira o endereço.`
+      : `E-mail aceito pelo provedor para ${a.destinatario}, pelo e-mail do sistema: você não tem caixa conectada, e as respostas voltam para o seu e-mail. A entrega (ou recusa) aparece na proposta em "E-mails enviados".`);
     if (a.avisoEmail) linhas.push(a.avisoEmail);
   } else if (a.email === "sem_destinatario") { linhas.push("E-mail NÃO enviado: o contato não tem e-mail."); falhou = true; }
   else if (a.email === "sem_provedor") { linhas.push("E-mail NÃO enviado: provedor de e-mail não configurado."); falhou = true; }

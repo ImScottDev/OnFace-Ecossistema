@@ -6,7 +6,7 @@
  * Tom: profissional e direto, sem travessão. Vai na cara do cliente.
  */
 
-import { periodoDoItem, SUFIXO_PERIODO, totaisPorPeriodo, type PeriodoDeCobranca } from "@/lib/crm/periodo-cobranca";
+import { periodoDoItem, PERIODOS_EM_ORDEM, SUFIXO_PERIODO, totaisPorPeriodo, type PeriodoDeCobranca } from "@/lib/crm/periodo-cobranca";
 
 export interface PropostaEmailItem {
   nome: string;
@@ -60,8 +60,9 @@ export function buildPropostaEmail(p: PropostaEmailParams): { subject: string; h
   // Cada linha no período de cobrança do Price: mensalidade, anuidade e itens únicos têm totais
   // SEPARADOS, e "/mês" nunca vai sobre uma anuidade.
   const tot = totaisPorPeriodo(p.itens);
-  const temRecorrente = tot.mensal > 0 || tot.anual > 0;
-  const periodos: Array<[PeriodoDeCobranca, string]> = [["mensal", "Mensalidade"], ["anual", "Anuidade"], ["unico", "Setup e itens únicos"]];
+  const temRecorrente = PERIODOS_EM_ORDEM.some((per) => per !== "unico" && tot[per] > 0);
+  const TITULO: Record<PeriodoDeCobranca, string> = { mensal: "Mensalidade", trimestral: "Cobrança trimestral", semestral: "Cobrança semestral", anual: "Anuidade", unico: "Setup e itens únicos" };
+  const periodos: Array<[PeriodoDeCobranca, string]> = PERIODOS_EM_ORDEM.map((per) => [per, TITULO[per]]);
   const comItens = periodos.filter(([per]) => p.itens.some((i) => periodoDoItem(i).periodo === per));
   const linha = (i: PropostaEmailItem) => {
     const suf = SUFIXO_PERIODO[periodoDoItem(i).periodo];
@@ -79,11 +80,8 @@ export function buildPropostaEmail(p: PropostaEmailParams): { subject: string; h
       return cabeca + p.itens.filter((i) => periodoDoItem(i).periodo === per).map(linha).join("");
     })
     .join("");
-  const totais: Array<[string, number, string]> = [
-    ["Total mensal", tot.mensal, SUFIXO_PERIODO.mensal],
-    ["Total anual", tot.anual, SUFIXO_PERIODO.anual],
-    [temRecorrente ? "Setup e itens únicos" : "Total", tot.unico, SUFIXO_PERIODO.unico],
-  ];
+  const ROTULO_TOTAL: Record<PeriodoDeCobranca, string> = { mensal: "Total mensal", trimestral: "Total trimestral", semestral: "Total semestral", anual: "Total anual", unico: temRecorrente ? "Setup e itens únicos" : "Total" };
+  const totais: Array<[string, number, string]> = PERIODOS_EM_ORDEM.map((per) => [ROTULO_TOTAL[per], tot[per], SUFIXO_PERIODO[per]]);
   const linhasTotais = totais
     .filter(([, valor]) => valor > 0)
     .map(([rotulo, valor, suf]) => `

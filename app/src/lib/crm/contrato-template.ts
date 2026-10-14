@@ -15,14 +15,14 @@ import { db } from "@/lib/db";
 import { eq, and, asc } from "drizzle-orm";
 import {
   contratoTemplates, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens,
-  propostas, leads, empresas, contratos, servicosCatalogo,
+  propostas, leads, empresas, contratos, servicosCatalogo, catalogoPrecos,
 } from "@/lib/db/schema";
-import { descricaoDoItemSql } from "@/lib/catalogo/descricao-do-item";
+import { descricaoDoItemSql, periodoDoItemSql } from "@/lib/catalogo/descricao-do-item";
 import { getSignatureProvider } from "@/lib/crm/signature";
 import { determinarProdutoProposta } from "@/lib/crm/proposta-fluxo";
 import { calcularFamiliaDoGrupo } from "@/lib/crm/politica-familia";
 import { tipoDocumentoDoContratual } from "@/lib/vendas/dominio";
-import { linhasDeItens, linhasSetupResumoHtml, quadroSetupHtml, moeda } from "@/lib/crm/contrato-itens";
+import { linhasDeItens, linhasSetupResumoHtml, mrrDosItens, quadroSetupHtml, moeda } from "@/lib/crm/contrato-itens";
 import { politicaContratual } from "@/lib/crm/contrato-politica";
 import { ehCliente } from "@/lib/crm/proposta-signatarios";
 import { renderizarCorpo, variaveisFaltando } from "@/lib/crm/contrato-variaveis";
@@ -158,7 +158,7 @@ interface VariaveisDoGrupo {
   grupo: typeof propostaGrupoComercial.$inferSelect;
   serviceFamily: string;
   tipoDocumento: string;
-  itens: { nome: string; tipo: string; subtotal: string | null; servicoCatalogoId: string | null }[];
+  itens: { nome: string; tipo: string; subtotal: string | null; servicoCatalogoId: string | null; periodo: string | null }[];
   mrr: number;
   /** Início real da vigência (ver `variaveisDeCondicoes`). */
   inicioVigencia: Date;
@@ -191,10 +191,12 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
       valorUnitario: propostaItens.valorUnitario,
       subtotal: propostaItens.subtotal,
       servicoCatalogoId: propostaItens.servicoCatalogoId,
+      periodo: periodoDoItemSql,
     })
     .from(propostaGrupoComercialItens)
     .innerJoin(propostaItens, eq(propostaGrupoComercialItens.propostaItemId, propostaItens.id))
     .leftJoin(servicosCatalogo, eq(servicosCatalogo.id, propostaItens.servicoCatalogoId))
+    .leftJoin(catalogoPrecos, eq(catalogoPrecos.id, propostaItens.catalogoPrecoId))
     .where(eq(propostaGrupoComercialItens.grupoId, grupoId))
     .orderBy(asc(propostaItens.ordem));
 
@@ -204,7 +206,7 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
   const codigoMoeda = proposta.moeda || "BRL";
 
   const valorTotal = itensDoGrupo.reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
-  const mrr = itensDoGrupo.filter((i) => i.tipo === "recorrente").reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
+  const mrr = mrrDosItens(itensDoGrupo);
   const setup = itensDoGrupo.filter((i) => i.tipo === "setup").reduce((s, i) => s + parseFloat(i.subtotal || "0"), 0);
   const itensDescricao = itensDoGrupo.map((i) => `${i.nome} (${i.tipo})`).join(", ");
   const doTipo = (tipos: string[]) => itensDoGrupo.filter((item) => tipos.includes(item.tipo));

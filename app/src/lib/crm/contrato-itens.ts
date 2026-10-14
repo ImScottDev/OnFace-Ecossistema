@@ -1,4 +1,5 @@
 import { escaparHtml } from "@/lib/crm/contrato-variaveis";
+import { MESES_DO_PERIODO, periodoDoItem } from "@/lib/crm/periodo-cobranca";
 
 export interface ItemContrato {
   nome: string;
@@ -7,6 +8,22 @@ export interface ItemContrato {
   quantidade?: string | number | null;
   valorUnitario?: string | number | null;
   subtotal?: string | number | null;
+  /** Período de cobrança do Price (mensal | trimestral | semestral | anual | unico). Sem ele, recorrente é mensal. */
+  periodo?: string | null;
+}
+
+const ROTULO_RECORRENCIA: Record<string, string> = { trimestral: "Trimestral", semestral: "Semestral", anual: "Anual" };
+
+/**
+ * Valor MENSAL equivalente das linhas recorrentes (o MRR do contrato). Uma cobrança trimestral de R$ 300
+ * é R$ 100 por mês; somar o subtotal cru chamava de "mensal" o valor de três meses (ou de doze).
+ */
+export function mrrDosItens(itens: ItemContrato[]): number {
+  return itens.filter((i) => i.tipo === "recorrente").reduce((soma, i) => {
+    const { periodo } = periodoDoItem({ periodo: i.periodo, tipo: i.tipo });
+    const meses = periodo === "unico" ? 1 : MESES_DO_PERIODO[periodo];
+    return soma + parseFloat(String(i.subtotal || "0")) / meses;
+  }, 0);
 }
 
 export function moeda(valor: number, codigo = "BRL"): string {
@@ -24,7 +41,7 @@ export function linhasDeItens(itens: ItemContrato[], tipos: string[], opts: { co
     .map((item) => `<tr>${[
       item.nome,
       item.descricao || "—",
-      ...(opts.comRecorrencia ? [item.tipo === "recorrente" ? (opts.familia === "WHITE_LABEL" ? "Mensal, por licença ativa" : "Mensal") : "Única"] : []),
+      ...(opts.comRecorrencia ? [item.tipo === "recorrente" ? (ROTULO_RECORRENCIA[periodoDoItem({ periodo: item.periodo, tipo: item.tipo }).periodo] ?? (opts.familia === "WHITE_LABEL" ? "Mensal, por licença ativa" : "Mensal")) : "Única"] : []),
       Number(item.quantidade || 1).toLocaleString("pt-BR"),
       moeda(parseFloat(String(item.valorUnitario || "0")), opts.moeda),
       moeda(parseFloat(String(item.subtotal || "0")), opts.moeda),

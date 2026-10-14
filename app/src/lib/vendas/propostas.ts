@@ -809,6 +809,10 @@ export interface ComposicaoFinanceira {
   recorrenteMensal: number;
   /** Anuidade: itens cobrados todo ano (período ANUAL do Price). Nunca entra na mensalidade. */
   recorrenteAnual: number;
+  /** Cobrança a cada 3 meses (período TRIMESTRAL do Price). Nunca entra na mensalidade. */
+  recorrenteTrimestral: number;
+  /** Cobrança a cada 6 meses (período SEMESTRAL do Price). */
+  recorrenteSemestral: number;
   /** Pagamento único: setup, hardware, avulsos. */
   naoRecorrente: number;
   porNatureza: Array<{ natureza: string; total: number }>;
@@ -831,7 +835,7 @@ export interface ComposicaoFinanceira {
  */
 export async function composicaoDaProposta(propostaId: string): Promise<ComposicaoFinanceira> {
   const itens = await db.execute<{ natureza: string | null; tipo: string; subtotal: string; periodo: string | null }>(sql`
-    SELECT i.revenue_nature AS natureza, i.tipo, i.subtotal::text, cp.periodo
+    SELECT i.revenue_nature AS natureza, i.tipo, i.subtotal::text, COALESCE(i.periodo, cp.periodo) AS periodo
       FROM proposta_itens i LEFT JOIN catalogo_precos cp ON cp.id = i.catalogo_preco_id
      WHERE i.proposta_id = ${propostaId}::uuid
   `);
@@ -854,6 +858,8 @@ export async function composicaoDaProposta(propostaId: string): Promise<Composic
   return {
     recorrenteMensal: totais.mensal,
     recorrenteAnual: totais.anual,
+    recorrenteTrimestral: totais.trimestral,
+    recorrenteSemestral: totais.semestral,
     naoRecorrente: totais.unico,
     porNatureza: [...porNatureza.entries()].map(([natureza, total]) => ({
       natureza, total: Math.round(total * 100) / 100,

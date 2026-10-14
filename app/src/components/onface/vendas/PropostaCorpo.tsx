@@ -158,10 +158,22 @@ export function CorpoProposta({ proposta, pendente, bloqueio, variante, acoes }:
           Somar tudo num total único engana, e dizer "/mês" sobre uma anuidade também. */}
       <Wrap titulo="Composição financeira">
         <div className="ov-composicao">
-          {proposta.composicao.recorrenteMensal > 0 || (proposta.composicao.recorrenteAnual === 0 && proposta.composicao.naoRecorrente === 0) ? (
+          {proposta.composicao.recorrenteMensal > 0 || (proposta.composicao.recorrenteAnual === 0 && proposta.composicao.recorrenteTrimestral === 0 && proposta.composicao.recorrenteSemestral === 0 && proposta.composicao.naoRecorrente === 0) ? (
             <div className="ov-composicao-item">
               <dt>Mensal / mês</dt>
               <dd>{moedaExata(proposta.composicao.recorrenteMensal)}</dd>
+            </div>
+          ) : null}
+          {proposta.composicao.recorrenteTrimestral > 0 ? (
+            <div className="ov-composicao-item">
+              <dt>Trimestral / trimestre</dt>
+              <dd>{moedaExata(proposta.composicao.recorrenteTrimestral)}</dd>
+            </div>
+          ) : null}
+          {proposta.composicao.recorrenteSemestral > 0 ? (
+            <div className="ov-composicao-item">
+              <dt>Semestral / semestre</dt>
+              <dd>{moedaExata(proposta.composicao.recorrenteSemestral)}</dd>
             </div>
           ) : null}
           {proposta.composicao.recorrenteAnual > 0 ? (
@@ -183,7 +195,7 @@ export function CorpoProposta({ proposta, pendente, bloqueio, variante, acoes }:
             </div>
           ) : null}
         </div>
-        {proposta.composicao.tcv === null && (proposta.composicao.recorrenteMensal > 0 || proposta.composicao.recorrenteAnual > 0) ? (
+        {proposta.composicao.tcv === null && (proposta.composicao.recorrenteMensal > 0 || proposta.composicao.recorrenteTrimestral > 0 || proposta.composicao.recorrenteSemestral > 0 || proposta.composicao.recorrenteAnual > 0) ? (
           <p className="ov-nota">Sem prazo contratual definido, o valor total do contrato não é calculado.</p>
         ) : null}
         {proposta.composicao.periodoDeduzido > 0 ? (
