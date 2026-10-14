@@ -30,12 +30,21 @@ type Familia = "CALLFACE_AI" | "PABX" | "WHITE_LABEL";
 
 /** Produto ATUAL: vendido hoje. A evidência é de 14/10/2026 (assinaturas vivas, proposta recente, linha de produto). */
 const PRODUTOS_ATUAIS: { stripeProductId: string; nome: string; familia: Familia; evidencia: string }[] = [
-  { stripeProductId: "prod_TmhIjJmYQ8NLvh", nome: "Callface Copilot", familia: "CALLFACE_AI", evidencia: "45 assinaturas vivas; 26 itens de proposta, o último em 13/10" },
-  { stripeProductId: "prod_TmhKZAEBYEdzrW", nome: "Callface Copilot - Semestral", familia: "CALLFACE_AI", evidencia: "variação do Copilot (6 x 161,90)" },
-  { stripeProductId: "prod_TmhMrJEQaPp4RD", nome: "Callface Copilot - Anual", familia: "CALLFACE_AI", evidencia: "variação do Copilot (12 x 143,90)" },
-  { stripeProductId: "prod_TnvNzLMtwIVJgt", nome: "Callface Copilot - (Parceiro)", familia: "CALLFACE_AI", evidencia: "variação do Copilot; 1 assinatura viva" },
-  { stripeProductId: "prod_UNoKkkQv0HQ6n9", nome: "Agente IA", familia: "CALLFACE_AI", evidencia: "8 assinaturas vivas; 81 itens de proposta, o último em 08/10; já era Callface AI no script de 25/08" },
-  { stripeProductId: "prod_UlpQ1bEc3Zknpd", nome: "Pacote 500min Adicionais", familia: "CALLFACE_AI", evidencia: "4 itens de proposta, o último em 30/09; já era Callface AI no script de 25/08" },
+  /*
+   * VAZIA DE PROPÓSITO desde 14/10/2026.
+   *
+   * Esta lista chegou a classificar o Callface Copilot e suas variações como CALLFACE_AI,
+   * por uso real (45 assinaturas vivas, 26 itens de proposta). O dono vetou na hora: o que
+   * entra no construtor de proposta é decisão COMERCIAL dele, não dedução de uso. O efeito
+   * foi despejar um grupo de produto inteiro na tela de quem monta proposta.
+   *
+   * O que ele pediu era outra coisa: UMA variação de R$ 199,90 dentro do "Callface AI - Full",
+   * que já era vendável. Isso virou Price no Stripe (`price_1UQWWSEd4dqxpSBfCJmZD48O`) e
+   * entrou pelo sync do catálogo — sem classificar produto nenhum.
+   *
+   * Produto novo no construtor entra por decisão escrita do dono. O script fica, porque a
+   * mecânica (backup, idempotência, só toca família vazia) é útil quando essa decisão vier.
+   */
 ];
 
 const args = process.argv.slice(2);
