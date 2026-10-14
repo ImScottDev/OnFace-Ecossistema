@@ -486,11 +486,24 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
           await registrarMovimento(mrr > mrrAntes ? "expansao" : "contracao", mrr - mrrAntes, mrrAntes, mrr, existing.id, existing.contratoId, existing.leadId, new Date(), donoDaAlteracao);
         }
 
-        // Cancelamento no Stripe também encerra o SERVIÇO da carteira. Sem isto (QA 06/10)
-        // a assinatura ia a canceled, o contrato a churned e o churn entrava no MRR, mas o
-        // serviço seguia ACTIVE/portfolio_included e o cliente nunca ia pra aba Cancelados.
-        // Mesma regra do cs/cancelamento.ts: cliente só vira 'churned' se não sobrar serviço.
-        if (s.status === "canceled" && existing.status !== "canceled") {
+        /*
+         * Cancelamento no Stripe também encerra o SERVIÇO da carteira. Sem isto (QA 06/10)
+         * a assinatura ia a canceled, o contrato a churned e o churn entrava no MRR, mas o
+         * serviço seguia ACTIVE/portfolio_included e o cliente nunca ia pra aba Cancelados.
+         * Mesma regra do cs/cancelamento.ts: cliente só vira 'churned' se não sobrar serviço.
+         *
+         * Condição por ESTADO, não por transição. Era `existing.status !== "canceled"`, e quem
+         * perdesse a borda ficava preso para sempre: medido em produção 14/10, **12 serviços de
+         * cliente cancelado seguiam ACTIVE e dentro do portfólio**, contando MRR (BUCCO,
+         * MERITUM, PONTUA, Fluari, Grupo Royal, Two Solution, JURIS EXPRESS, Knoa Rio...). É o
+         * rastro dos avisos do Stripe que voltaram 499 antes da correção de hoje: o status da
+         * assinatura chegou pelo sync, a borda já tinha passado, e o serviço nunca encerrou.
+         * Por estado é idempotente — se já está encerrado, o UPDATE não acha linha.
+         *
+         * `unpaid` entra junto: assinatura que o Stripe desistiu de cobrar não é cliente ativo.
+         * O MOVIMENTO de churn continua só na borda (acima), senão o MRR contaria duas vezes.
+         */
+        if (s.status === "canceled" || s.status === "unpaid") {
           const encerrados = await tx.update(servicosCanonicos)
             .set({ commercialLifecycle: "CHURNED", portfolioIncluded: false, billingStatus: "CANCELED", updatedAt: new Date() })
             .where(and(
@@ -498,6 +511,10 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
               existing.servicoId
                 ? sql`(${servicosCanonicos.id} = ${existing.servicoId} OR ${servicosCanonicos.currentSubscriptionId} = ${s.id})`
                 : eq(servicosCanonicos.currentSubscriptionId, s.id),
+              // Só o que ainda não foi encerrado: a condição agora é por estado e roda a cada
+              // sync, então sem isto a mesma linha seria reescrita de 30 em 30 minutos e o
+              // `updated_at` diria "mexido agora" para sempre.
+              sql`${servicosCanonicos.commercialLifecycle} IS DISTINCT FROM 'CHURNED'`,
             ))
             .returning({ empresaId: servicosCanonicos.empresaId });
           for (const empresaId of new Set(encerrados.map((e) => e.empresaId).filter((e): e is string => !!e))) {
