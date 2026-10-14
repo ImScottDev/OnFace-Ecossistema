@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { valoresFechadosDoGanho, chaveCanonicaDoItem, valoresDoServico } from "./regras-pos-ganho";
+import { valoresFechadosDoGanho, chaveCanonicaDoItem, valoresDoServico, valoresDoGanhoAntigo } from "./regras-pos-ganho";
 
 const neg = (o: Partial<Parameters<typeof valoresFechadosDoGanho>[0]> = {}) => ({ mrrFechado: null, mrrEstimado: null, valorSetup: null, valorProjeto: null, ...o });
 
@@ -78,4 +78,31 @@ test("o Ganho automático grava o valor fechado: marcarNegocioGanhoSeAindaNao us
   const corpo = fonte.slice(fonte.indexOf("export async function marcarNegocioGanhoSeAindaNao"), fonte.indexOf("export async function aplicarEfeitosPosGanho"));
   assert.match(corpo, /valoresFechadosDoGanho\(negocio\)/);
   assert.match(corpo, /status: "ganho"[^\n]*\.\.\.valoresFechados/);
+});
+
+/* ── Backfill do histórico de ganhos sem composição ──────────────────────────
+ * Um ÚNICO script (`backfill-valor-negocios.ts`) cobre os dois grupos de ganho vazio: os que têm
+ * estimativa (decompõe como o Ganho faz) e os do legado que só têm o total (recorrente puro). */
+const antigo = (o: Partial<Parameters<typeof valoresDoGanhoAntigo>[0]> = {}) =>
+  ({ mrrFechado: null, mrrEstimado: null, valorSetup: null, valorProjeto: null, valorTotal: null, tipoReceita: "recorrente", ...o });
+
+test("ganho antigo com estimativa decompõe em mensalidade e setup, sem usar o total (não conta o setup como mensalidade)", () => {
+  // JOAO PABX: total 305,90 = mensalidade 304,90 + setup 1,00. Gravar o total como mensalidade erraria os dois.
+  assert.deepEqual(valoresDoGanhoAntigo(antigo({ valorTotal: "305.90", mrrEstimado: "304.90", valorProjeto: "1.00" })),
+    { mrrFechado: "304.90", valorSetup: "1.00", regra: "decomposto" });
+});
+
+test("ganho antigo do legado, recorrente e só com o total, vira mensalidade", () => {
+  assert.deepEqual(valoresDoGanhoAntigo(antigo({ valorTotal: "1290.50" })), { mrrFechado: "1290.50", regra: "total_recorrente" });
+});
+
+test("ganho antigo híbrido/projeto sem decomposição não é adivinhado", () => {
+  assert.deepEqual(valoresDoGanhoAntigo(antigo({ tipoReceita: "hibrido", valorTotal: "5000" })), { regra: "nenhuma" });
+  assert.deepEqual(valoresDoGanhoAntigo(antigo({ tipoReceita: "recorrente", valorTotal: "-50" })), { regra: "nenhuma" });
+  assert.deepEqual(valoresDoGanhoAntigo(antigo()), { regra: "nenhuma" });
+});
+
+test("ganho antigo já preenchido não é tocado (idempotência)", () => {
+  assert.deepEqual(valoresDoGanhoAntigo(antigo({ mrrFechado: "100.00", valorTotal: "100" })), { regra: "nenhuma" });
+  assert.deepEqual(valoresDoGanhoAntigo(antigo({ valorSetup: "50.00", valorTotal: "50", mrrEstimado: "10" })), { regra: "nenhuma" });
 });

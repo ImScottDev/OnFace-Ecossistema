@@ -43,6 +43,30 @@ export function valoresFechadosDoGanho(n: {
 }
 
 /**
+ * Backfill do histórico: o que gravar num negócio GANHO que ficou sem `mrr_fechado` e `valor_setup`
+ * (anterior a `valoresFechadosDoGanho` no Ganho). Mesma regra do Ganho, com um degrau a mais:
+ *  1. há mensalidade/projeto estimados -> a decomposição do Ganho (`valoresFechadosDoGanho`);
+ *  2. senão, receita recorrente PURA com `valor_total > 0` -> o total é a mensalidade, por definição
+ *     (herança do diagnóstico do legado: ganho do Zoho só tem o total);
+ *  3. senão nada: híbrido/projeto sem decomposição vai para correção humana, não se adivinha.
+ * Só olha negócio com os dois componentes vazios; o resto o Ganho/PATCH já preencheu.
+ */
+export function valoresDoGanhoAntigo(n: {
+  mrrFechado: string | null;
+  mrrEstimado: string | null;
+  valorSetup: string | null;
+  valorProjeto: string | null;
+  valorTotal: string | null;
+  tipoReceita: string | null;
+}): { mrrFechado?: string; valorSetup?: string; regra: "decomposto" | "total_recorrente" | "nenhuma" } {
+  if (num(n.mrrFechado) > 0 || num(n.valorSetup) > 0) return { regra: "nenhuma" };
+  const dec = valoresFechadosDoGanho(n);
+  if (dec.mrrFechado || dec.valorSetup) return { ...dec, regra: "decomposto" };
+  if (n.tipoReceita === "recorrente" && num(n.valorTotal) > 0) return { mrrFechado: num(n.valorTotal).toFixed(2), regra: "total_recorrente" };
+  return { regra: "nenhuma" };
+}
+
+/**
  * Chave canônica do serviço de UM item.
  *  - MRR pago por assinatura Stripe: `STRIPE:<assinatura>` (mesma convenção da reconciliação,
  *    que guarda UMA linha por assinatura) — mas só quando é o ÚNICO item recorrente do lote;

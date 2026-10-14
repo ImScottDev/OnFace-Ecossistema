@@ -130,7 +130,11 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
     const linhas = await db.execute<{ id: string; service_family: string; contrato_id: string | null; lead_id: string | null; empresa_id: string | null; oportunidade_id: string | null }>(sql`
       SELECT s.id::text AS id, s.service_family, s.contrato_id::text AS contrato_id, s.lead_id::text AS lead_id,
              s.empresa_id::text AS empresa_id,
-             COALESCE((SELECT oi.oportunidade_id FROM oportunidade_itens oi WHERE oi.servico_canonico_id = s.id LIMIT 1),
+             COALESCE((SELECT oi.oportunidade_id FROM oportunidade_itens oi JOIN oportunidades op ON op.id = oi.oportunidade_id
+                        WHERE oi.servico_canonico_id = s.id
+                        -- Serviço ligado a mais de uma oportunidade (assinatura reaproveitada): vale a venda da
+                        -- MESMA família do serviço; depois a mais antiga. Sem ORDER BY o LIMIT 1 era sorteio.
+                        ORDER BY (op.service_family = s.service_family) DESC NULLS LAST, oi.created_at, oi.id LIMIT 1),
                       s.oportunidade_origem_id)::text AS oportunidade_id
         FROM servicos_canonicos s
        WHERE s.organizacao_id = ${organizacaoId}::uuid AND s.id IN (${ids})`);
@@ -235,7 +239,9 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
            WHERE f.organizacao_id = ${organizacaoId}::uuid
              AND f.service_family = ${grupo.serviceFamily} AND f.tipo = ${tipo}
              AND f.status <> 'CANCELED' AND f.cancelled_at IS NULL
-             AND f.oportunidade_id IS DISTINCT FROM ${grupo.oportunidadeId ?? null}::uuid
+             -- Serviço sem venda (legado sem vínculo) não é "a mesma venda" de entrega nenhuma: sem esta guarda,
+             -- NULL IS DISTINCT FROM NULL descartava justamente as entregas antigas, que também não têm venda.
+             AND (${grupo.oportunidadeId ?? null}::uuid IS NULL OR f.oportunidade_id IS DISTINCT FROM ${grupo.oportunidadeId ?? null}::uuid)
              AND NOT EXISTS (SELECT 1 FROM oportunidade_itens oi
                               WHERE oi.servico_canonico_id = f.servico_canonico_id
                                 AND oi.oportunidade_id = ${grupo.oportunidadeId ?? null}::uuid)

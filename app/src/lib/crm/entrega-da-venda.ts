@@ -71,3 +71,65 @@ export function complementoDoUpgrade(
   }
   return { pendentes, herdadas };
 }
+
+/* ── Consolidação do histórico (backfill) ─────────────────────────────────────
+ * A regra nova só vale para entrega que nasce depois. Aqui o plano para as antigas: uma entrega por
+ * (venda, família, tipo, ciclo), a mesma chave do índice `uq_fulfillment_venda`. Pura: o script lê o
+ * banco e grava; a DECISÃO (quem fica, quem é absorvida, quem não se mexe) mora aqui, testada. */
+export interface EntregaDoHistorico {
+  id: string;
+  /** Venda resolvida do serviço principal; NULL = sem venda (fica como está). */
+  oportunidadeId: string | null;
+  /** O serviço ligava a mais de uma oportunidade: não se adivinha a venda. */
+  vendaAmbigua: boolean;
+  /** Já tem `oportunidade_id` gravado (nasceu pela regra nova ou já foi consolidada). */
+  jaConsolidada: boolean;
+  serviceFamily: string;
+  tipo: string | null;
+  cycleNumber: number;
+  status: string;
+  /** Nenhum trabalho registrado: NOT_STARTED, etapas todas pendentes e sem formulário/ramal/portabilidade. Só esta pode ser absorvida. */
+  virgem: boolean;
+  /** Etapas tocadas; desempata quem sobrevive entre entregas com trabalho. */
+  progresso: number;
+  criadaEm: number;
+  servicoIds: string[];
+}
+
+export interface GrupoConsolidado {
+  oportunidadeId: string;
+  sobrevivente: string;
+  /** Virgens, apagadas depois de seus serviços passarem para o sobrevivente. */
+  absorvidas: string[];
+  /** Têm trabalho e a venda já tem outra entrega: ficam como estão, para decisão humana. */
+  conflitos: string[];
+  /** Todos os serviços que a entrega do grupo passa a cobrir. */
+  servicoIds: string[];
+  /** O sobrevivente precisa receber `oportunidade_id` (false = já tinha). */
+  gravarOportunidade: boolean;
+}
+
+export function planejarConsolidacao(entregas: EntregaDoHistorico[]): { grupos: GrupoConsolidado[]; semVenda: string[]; ambiguas: string[] } {
+  const semVenda: string[] = [];
+  const ambiguas: string[] = [];
+  const porChave = new Map<string, EntregaDoHistorico[]>();
+  for (const e of entregas) {
+    if (e.vendaAmbigua) { ambiguas.push(e.id); continue; }
+    if (!e.oportunidadeId || !e.tipo) { semVenda.push(e.id); continue; }
+    const k = [e.oportunidadeId, e.serviceFamily, e.tipo, e.cycleNumber].join("|");
+    (porChave.get(k) ?? porChave.set(k, []).get(k)!).push(e);
+  }
+  const grupos: GrupoConsolidado[] = [];
+  for (const [, membros] of porChave) {
+    const ordenados = [...membros].sort((a, b) =>
+      Number(b.jaConsolidada) - Number(a.jaConsolidada) || // quem já ocupa a chave única fica
+      Number(!b.virgem) - Number(!a.virgem) ||             // depois, quem tem trabalho
+      b.progresso - a.progresso || a.criadaEm - b.criadaEm || a.id.localeCompare(b.id));
+    const [sobrevivente, ...resto] = ordenados;
+    const absorvidas = resto.filter((e) => e.virgem).map((e) => e.id);
+    const conflitos = resto.filter((e) => !e.virgem).map((e) => e.id);
+    const servicoIds = [...new Set([sobrevivente, ...resto.filter((e) => e.virgem)].flatMap((e) => e.servicoIds))];
+    grupos.push({ oportunidadeId: sobrevivente.oportunidadeId!, sobrevivente: sobrevivente.id, absorvidas, conflitos, servicoIds, gravarOportunidade: !sobrevivente.jaConsolidada });
+  }
+  return { grupos, semVenda, ambiguas };
+}

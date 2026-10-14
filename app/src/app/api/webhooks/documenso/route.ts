@@ -45,6 +45,25 @@ function finalDocumentUrl(contractId: string, payload: DocumensoPayload["payload
   return `/api/contratos/${contractId}/pdf-final${providerUrl ? `?providerUrl=${encodeURIComponent(providerUrl)}` : ""}`;
 }
 
+/**
+ * O Documenso devolve só nome, e-mail e status de cada destinatário. O papel no contrato
+ * (contratante, representante legal, testemunha) e o link de assinatura são NOSSOS: sem
+ * esta mescla o primeiro DOCUMENT_SIGNED os apagava de `contratos.signatarios`, a página
+ * pública perdia o botão "Assinar" e o registro final não dizia quem assinou como quê.
+ * Mesmo e-mail em dois papéis chega como UM destinatário: guarda todos em `papeis`.
+ */
+function mesclarSignatarios(atuais: unknown, doProvedor: Recipient[]): Array<Record<string, unknown>> {
+  const nossos = Array.isArray(atuais) ? atuais.filter((x): x is Record<string, unknown> => !!x && typeof x === "object") : [];
+  return doProvedor.map((r) => {
+    const mail = String(r.email ?? "").trim().toLowerCase();
+    const meus = nossos.filter((n) => String(n.email ?? "").trim().toLowerCase() === mail);
+    if (meus.length === 0) return { ...r };
+    const papeis = [...new Set(meus.flatMap((m) => (Array.isArray(m.papeis) ? m.papeis : [m.papel]).filter(Boolean)))];
+    const link = meus.map((m) => m.signingUrl).find(Boolean);
+    return { ...meus[0], ...r, ...(papeis.length ? { papel: papeis[0], papeis } : {}), ...(link ? { signingUrl: link } : {}) };
+  });
+}
+
 export async function POST(request: NextRequest) {
   const configuredSecret = process.env.DOCUMENSO_WEBHOOK_SECRET;
   const receivedSecret = request.headers.get("x-documenso-secret");
@@ -93,7 +112,7 @@ export async function POST(request: NextRequest) {
     const allSigners = recipients.filter((r) => r.role !== "CC" && r.role !== "VIEWER");
     const signedCount = allSigners.filter((r) => r.signingStatus === "SIGNED" || r.signedAt).length;
     const status = signedCount > 0 ? (signedCount >= allSigners.length && allSigners.length > 0 ? "signed" : "partially_signed") : "opened";
-    await db.update(contratos).set({ signatureStatus: status, signatarios: recipients, updatedAt: new Date() }).where(and(eq(contratos.id, contract.id), ne(contratos.signatureStatus, "signed")));
+    await db.update(contratos).set({ signatureStatus: status, signatarios: mesclarSignatarios(contract.signatarios, recipients), updatedAt: new Date() }).where(and(eq(contratos.id, contract.id), ne(contratos.signatureStatus, "signed")));
     await publicarEvento({ organizacaoId: contract.organizacaoId, eventType: "SignerSigned", aggregateType: "contrato", aggregateId: contract.id, payload: commonPayload, idempotencyKey: eventKey });
   } else if (event === "DOCUMENT_COMPLETED") {
     // A atualização condicional transforma o retry do webhook em no-op real:
@@ -104,7 +123,7 @@ export async function POST(request: NextRequest) {
       signatureStatus: "signed",
       assinadoEm: payload?.completedAt ? new Date(payload.completedAt) : new Date(),
       assinadoNome: recipientNames(recipients) || null,
-      signatarios: recipients,
+      signatarios: mesclarSignatarios(contract.signatarios, recipients),
       documentoFinalUrl: finalDocumentUrl(contract.id, payload || {}),
       updatedAt: new Date(),
     }).where(and(eq(contratos.id, contract.id), ne(contratos.assinaturaStatus, "assinado"))).returning({ id: contratos.id });
