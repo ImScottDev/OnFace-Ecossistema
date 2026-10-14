@@ -4,10 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Pencil, Trash2, Eye, Bold, Italic, Underline, List, ListOrdered, Heading2, Pilcrow, AlignLeft, AlignCenter, AlignJustify,
-  Undo2, Redo2, Braces, Code2, Table2, Rows3, Columns3, Indent, Hash, FileDown, History, ArrowLeft, Save, RotateCcw,
+  Undo2, Redo2, Braces, TriangleAlert, FileSearch, Code2, Table2, Rows3, Columns3, Indent, Hash, FileDown, History, ArrowLeft, Save, RotateCcw, ArrowUp, ArrowDown, X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { VARIAVEIS_CONTRATO, VARIAVEIS_EXEMPLO, corpoEhHtml, renderizarCorpo, textoDoChip } from "@/lib/crm/contrato-variaveis";
+import { VARIAVEIS_CONTRATO, VARIAVEIS_EXEMPLO, corpoEhHtml, renderizarCorpo, textoDoChip, variaveisDesconhecidas } from "@/lib/crm/contrato-variaveis";
+import { PAPEL_REPRESENTANTE, PAPEL_TESTEMUNHA_VENDEDOR, PAPEL_TESTEMUNHA_2 } from "@/lib/crm/proposta-signatarios";
 import { cssContrato, ROXO_CONTRATO } from "@/lib/crm/contrato-estilo";
 
 interface Template {
@@ -49,7 +50,7 @@ import { LOGO_CONTRATO as LOGO } from "@/lib/crm/contrato-logo";
    (`<span data-var>`) com o nome que o time conhece do Zoho, e o chip volta a
    ser {{chave}} ao salvar. */
 const chipHtml = (chave: string) =>
-  `<span class="cf-chip" data-var="${chave}" contenteditable="false" title="${chave}">${textoDoChip(chave).replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`;
+  `<span class="cf-chip${VARIAVEIS_CONTRATO.some((v) => v.chave === chave) ? "" : " cf-chip-desc"}" data-var="${chave}" contenteditable="false" title="${chave}">${textoDoChip(chave).replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`;
 const paraEditor = (corpo: string) => corpo.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => chipHtml(k));
 function doEditor(raiz: HTMLElement): string {
   const c = raiz.cloneNode(true) as HTMLElement;
@@ -61,6 +62,7 @@ const CSS_FOLHA = `
 ${cssContrato(".cf-folha .cf-doc")}
 .cf-folha .cf-doc { outline: none; min-height: 230mm; }
 .cf-folha .cf-doc .cf-chip { background: #efe9f7; color: ${ROXO_CONTRATO}; border: 1px solid #d9cdea; border-radius: 4px; padding: 0 4px; font-size: 8pt; font-weight: 600; white-space: nowrap; user-select: all; }
+.cf-folha .cf-doc .cf-chip.cf-chip-desc { background: var(--cf2-danger-bg, #fde8e8); color: var(--cf2-danger-text, #b42318); border-color: var(--cf2-danger-text, #b42318); }
 .cf-folha .cf-doc table td, .cf-folha .cf-doc table th { min-width: 24px; }
 .cf-folha .cf-doc .cf-ancora { background: #f3f1f6; border: 1px dashed #b7a9cf; }
 `;
@@ -206,21 +208,34 @@ function Rot({ t, children }: { t: string; children: React.ReactNode }) {
   return <label className="flex flex-col gap-1 text-[11px] font-semibold" style={{ color: "var(--cf2-text-tertiary)" }}>{t}{children}</label>;
 }
 
+const PAPEIS_CF = [
+  { value: PAPEL_REPRESENTANTE, label: "Representante legal" },
+  { value: PAPEL_TESTEMUNHA_VENDEDOR, label: "Testemunha 1" },
+  { value: PAPEL_TESTEMUNHA_2, label: "Testemunha 2" },
+];
+type SigCf = { nome: string; email: string; papel: string };
+
 /* ── Parâmetros que valem para toda a organização ─────────────────────── */
 function ParametrosContrato() {
   const qc = useQueryClient();
-  const { data } = useQuery<{ multaRescisoriaPct: number | null; limiteGravacoes: string | null; representanteNome: string | null; representanteEmail: string | null }>({
+  const { data } = useQuery<{ multaRescisoriaPct: number | null; limiteGravacoes: string | null; representanteNome: string | null; representanteEmail: string | null; signatarios?: SigCf[] }>({
     queryKey: ["cf2-contrato-parametros"],
     queryFn: async () => (await fetch("/api/contrato-parametros")).json(),
   });
-  const [f, setF] = useState({ multa: "", limite: "", nome: "", email: "" });
+  const [f, setF] = useState({ multa: "", limite: "" });
+  const [sigs, setSigs] = useState<SigCf[]>([]);
   useEffect(() => {
-    if (data) setF({ multa: data.multaRescisoriaPct != null ? String(data.multaRescisoriaPct).replace(".", ",") : "", limite: data.limiteGravacoes ?? "", nome: data.representanteNome ?? "", email: data.representanteEmail ?? "" });
+    if (!data) return;
+    setF({ multa: data.multaRescisoriaPct != null ? String(data.multaRescisoriaPct).replace(".", ",") : "", limite: data.limiteGravacoes ?? "" });
+    // Organização que só tem o representante antigo (nome + e-mail) vê ele como primeira linha.
+    setSigs(data.signatarios?.length ? data.signatarios : data.representanteNome ? [{ nome: data.representanteNome, email: data.representanteEmail ?? "", papel: PAPEL_REPRESENTANTE }] : []);
   }, [data]);
+  const mudar = (i: number, patch: Partial<SigCf>) => setSigs((l) => l.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const mover = (i: number, d: -1 | 1) => setSigs((l) => { const j = i + d; if (j < 0 || j >= l.length) return l; const c = [...l]; [c[i], c[j]] = [c[j], c[i]]; return c; });
   const salvar = useMutation({
     mutationFn: async () => {
       const n = f.multa.trim() ? Number(f.multa.replace(",", ".")) : null;
-      const r = await fetch("/api/contrato-parametros", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ multaRescisoriaPct: n, limiteGravacoes: f.limite.trim() || null, representanteNome: f.nome.trim() || null, representanteEmail: f.email.trim() || null }) });
+      const r = await fetch("/api/contrato-parametros", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ multaRescisoriaPct: n, limiteGravacoes: f.limite.trim() || null, signatarios: sigs.map((x) => ({ ...x, nome: x.nome.trim(), email: x.email.trim() })) }) });
       if (!r.ok) throw new Error("falha");
     },
     onSuccess: () => { toast.success("Parâmetros salvos"); qc.invalidateQueries({ queryKey: ["cf2-contrato-parametros"] }); },
@@ -236,8 +251,33 @@ function ParametrosContrato() {
       <div className="grid gap-3 sm:grid-cols-2">
         <Rot t="Multa rescisória (%)"><input value={f.multa} onChange={(e) => setF({ ...f, multa: e.target.value })} inputMode="decimal" className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
         <Rot t="Limite de armazenamento de gravações"><input value={f.limite} onChange={(e) => setF({ ...f, limite: e.target.value })} placeholder="Ex.: 90 dias" className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
-        <Rot t="Representante da Callface (assina como CONTRATADA)"><input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
-        <Rot t="E-mail do representante"><input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} type="email" className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
+      </div>
+      <div className="flex flex-col gap-2 mt-4">
+        <p className="text-[12px] font-bold" style={{ color: "var(--cf2-text-primary)" }}>Quem assina pela Callface</p>
+        <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>
+          A ordem é a de oferta; o primeiro de cada papel é o padrão dele. Hoje só o representante legal padrão (com e-mail) é aplicado sozinho quando a proposta não traz um; a proposta pode trocar.
+        </p>
+        {sigs.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhum signatário cadastrado.</p>}
+        {sigs.map((x, i) => {
+          const padrao = sigs.findIndex((y) => y.papel === x.papel) === i;
+          return (
+            <div key={i} className="grid gap-2 items-end sm:grid-cols-[150px_1fr_1fr_auto]">
+              <Rot t={padrao ? "Papel (padrão)" : "Papel"}>
+                <select value={x.papel} onChange={(e) => mudar(i, { papel: e.target.value })} className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo}>{PAPEIS_CF.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}</select>
+              </Rot>
+              <Rot t="Nome"><input value={x.nome} onChange={(e) => mudar(i, { nome: e.target.value })} className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
+              <Rot t="E-mail"><input value={x.email} onChange={(e) => mudar(i, { email: e.target.value })} type="email" className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={campo} /></Rot>
+              <div className="flex gap-1">
+                <Acao titulo="Subir" onClick={() => mover(i, -1)} Icone={ArrowUp} />
+                <Acao titulo="Descer" onClick={() => mover(i, 1)} Icone={ArrowDown} />
+                <Acao titulo="Remover" onClick={() => setSigs((l) => l.filter((_, j) => j !== i))} Icone={X} perigo />
+              </div>
+            </div>
+          );
+        })}
+        <div>
+          <button type="button" onClick={() => setSigs((l) => [...l, { nome: "", email: "", papel: PAPEL_REPRESENTANTE }])} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface-muted)", color: "var(--cf2-text-secondary)" }}><Plus className="w-3 h-3" /> Adicionar signatário</button>
+        </div>
       </div>
       <div className="flex justify-end mt-3">
         <button onClick={() => salvar.mutate()} disabled={salvar.isPending} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>Salvar parâmetros</button>
@@ -257,7 +297,8 @@ function EditorDocumento({ inicial, salvando, onSalvar, onVoltar }: {
   const [tipoDocumento, setTipoDocumento] = useState(inicial?.tipoDocumento || "CONTRATO");
   const [corpo, setCorpo] = useState(inicial?.corpoTemplate || "");
   const [verHtml, setVerHtml] = useState(false);
-  const [painel, setPainel] = useState<"" | "variaveis" | "versoes">("");
+  const [painel, setPainel] = useState<"" | "variaveis" | "versoes" | "previa">("");
+  const [grupoId, setGrupoId] = useState("");
   const [busca, setBusca] = useState("");
   const selecao = useRef<Range | null>(null);
   const area = useRef<HTMLDivElement>(null);
@@ -328,6 +369,12 @@ function EditorDocumento({ inicial, salvando, onSalvar, onVoltar }: {
   );
   const Sep = () => <span className="w-px h-5 mx-1" style={{ background: "var(--cf2-border-default)" }} />;
   const sujo = corpo !== salvoCom.current;
+  const desconhecidas = useMemo(() => variaveisDesconhecidas(corpo), [corpo]);
+  const tentarSalvar = () => {
+    if (!nome.trim() || !corpo.trim()) return;
+    if (desconhecidas.length > 0 && !window.confirm(`Estas variáveis não existem no catálogo: ${desconhecidas.join(", ")}.\nO contrato que usar este modelo não poderá ser enviado até corrigir. Salvar mesmo assim?`)) return;
+    onSalvar({ nome: nome.trim(), commercialModel: commercialModel || null, serviceFamily: serviceFamily || null, tipoDocumento, corpoTemplate: corpo.trim() });
+  };
 
   const { data: versoes, refetch: recarregarVersoes } = useQuery<{ versoes: Template[] }>({
     queryKey: ["cf2-contrato-versoes", inicial?.id],
@@ -382,6 +429,7 @@ function EditorDocumento({ inicial, salvando, onSalvar, onVoltar }: {
         <span className="flex-1" />
         {inicial && <button type="button" onClick={() => setPainel(painel === "versoes" ? "" : "versoes")} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}><History className="w-3.5 h-3.5" /> Versões (v{inicial.versao} ativa)</button>}
         <button type="button" onClick={() => setVerHtml((v) => !v)} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}><Code2 className="w-3.5 h-3.5" /> {verHtml ? "Folha" : "HTML"}</button>
+        <button type="button" onClick={() => setPainel(painel === "previa" ? "" : "previa")} disabled={!corpo.trim()} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold disabled:opacity-50" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}><FileSearch className="w-3.5 h-3.5" /> Prévia com proposta</button>
         <button type="button" onClick={() => baixarPdfTeste(corpo, serviceFamily || null)} disabled={!corpo.trim()} className="flex items-center gap-1 px-2 h-7 rounded text-[11px] font-semibold disabled:opacity-50" style={{ background: "var(--cf2-bg-surface)", color: "var(--cf2-text-secondary)" }}><FileDown className="w-3.5 h-3.5" /> PDF de teste</button>
       </div>
 
@@ -408,6 +456,17 @@ function EditorDocumento({ inicial, salvando, onSalvar, onVoltar }: {
         </div>
       )}
 
+      {desconhecidas.length > 0 && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg p-2.5 text-[12px]" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-danger-text)", color: "var(--cf2-danger-text)" }}>
+          <TriangleAlert className="w-4 h-4 shrink-0 mt-px" aria-hidden />
+          <span>
+            Variável desconhecida: <b>{desconhecidas.join(", ")}</b>. Não existe no catálogo de contrato; ela sairia crua no documento e o envio seria bloqueado. Troque pelo botão Variável (aparece em vermelho no texto).
+          </span>
+        </div>
+      )}
+
+      {painel === "previa" && <PreviaComProposta corpo={corpo} grupoId={grupoId} setGrupoId={setGrupoId} />}
+
       {painel === "versoes" && (
         <div className="rounded-lg p-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
           {!versoes && <p className="text-[12px] p-2" style={{ color: "var(--cf2-text-tertiary)" }}>Carregando versões...</p>}
@@ -428,7 +487,7 @@ function EditorDocumento({ inicial, salvando, onSalvar, onVoltar }: {
         ) : (
           <Folha>
             <div ref={area} className="cf-doc" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="Corpo do contrato"
-              onInput={sincronizar} onBlur={sincronizar}
+              onInput={sincronizar}
               onKeyDown={(e) => {
                 // "#" abre a lista de variáveis (o gesto do editor do Zoho); o caractere não entra no texto.
                 if (e.key === "#") { e.preventDefault(); abrirVariaveis(); }
@@ -445,12 +504,54 @@ function EditorDocumento({ inicial, salvando, onSalvar, onVoltar }: {
         <div className="flex gap-2 shrink-0">
           <button onClick={onVoltar} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style={{ color: "var(--cf2-text-secondary)" }}>Cancelar</button>
           <button
-            onClick={() => nome.trim() && corpo.trim() && onSalvar({ nome: nome.trim(), commercialModel: commercialModel || null, serviceFamily: serviceFamily || null, tipoDocumento, corpoTemplate: corpo.trim() })}
+            onClick={tentarSalvar}
             disabled={salvando || !nome.trim() || !corpo.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50" style={{ background: "var(--cf2-accent)", color: "var(--cf2-text-on-accent)" }}>
             <Save className="w-3.5 h-3.5" /> {sujo || !inicial ? "Salvar nova versão" : "Salvar"}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Prévia do modelo em edição com os dados de uma proposta real (mesmo montador do contrato); mostra o que ainda faltaria para enviar. */
+function PreviaComProposta({ corpo: corpoAoVivo, grupoId, setGrupoId }: { corpo: string; grupoId: string; setGrupoId: (id: string) => void }) {
+  // Espera o usuário parar de digitar: cada prévia consulta o banco.
+  const [corpo, setCorpo] = useState(corpoAoVivo);
+  useEffect(() => { const t = setTimeout(() => setCorpo(corpoAoVivo), 700); return () => clearTimeout(t); }, [corpoAoVivo]);
+  const { data: lista } = useQuery<{ propostas: { grupoId: string; rotulo: string }[] }>({
+    queryKey: ["cf2-contrato-propostas-previa"],
+    queryFn: async () => { const r = await fetch("/api/contrato-templates/propostas-previa"); return r.ok ? r.json() : { propostas: [] }; },
+  });
+  const { data: previa, isFetching, isError } = useQuery<{ html: string; faltando: string[] }>({
+    queryKey: ["cf2-contrato-previa", grupoId, corpo],
+    enabled: !!grupoId && !!corpo.trim(),
+    queryFn: async () => {
+      const r = await fetch("/api/contrato-templates/previa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ corpoTemplate: corpo, grupoId }) });
+      if (!r.ok) throw new Error("falha");
+      return r.json();
+    },
+  });
+  return (
+    <div className="rounded-lg p-3 flex flex-col gap-2" style={{ background: "var(--cf2-bg-surface-muted)", border: "1px solid var(--cf2-border-default)" }}>
+      <Rot t="Proposta usada na prévia">
+        <select value={grupoId} onChange={(e) => setGrupoId(e.target.value)} className="px-3 py-2 rounded-lg text-[13px] outline-none font-normal" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" }}>
+          <option value="">Escolha uma proposta</option>
+          {(lista?.propostas ?? []).map((p) => <option key={p.grupoId} value={p.grupoId}>{p.rotulo}</option>)}
+        </select>
+      </Rot>
+      {isFetching && <p className="text-[12px]" style={{ color: "var(--cf2-text-tertiary)" }}>Montando a prévia...</p>}
+      {isError && <p className="text-[12px]" style={{ color: "var(--cf2-danger-text)" }}>Não foi possível montar a prévia com esta proposta.</p>}
+      {previa && previa.faltando.length > 0 && (
+        <p className="text-[12px]" style={{ color: "var(--cf2-warning-text)" }}>Com esta proposta o envio seria bloqueado: falta {previa.faltando.join("; ")}.</p>
+      )}
+      {previa && previa.faltando.length === 0 && <p className="text-[12px]" style={{ color: "var(--cf2-text-secondary)" }}>Todas as variáveis obrigatórias têm valor nesta proposta.</p>}
+      {previa && (
+        <div className="rounded-xl p-4 overflow-auto" style={{ background: "#e6e8ea", maxHeight: "60vh" }}>
+          <style>{CSS_FOLHA}</style>
+          <Folha>{corpoEhHtml(corpo) ? <div className="cf-doc" dangerouslySetInnerHTML={{ __html: previa.html }} /> : <div className="cf-doc" style={{ whiteSpace: "pre-wrap" }}>{previa.html}</div>}</Folha>
+        </div>
+      )}
     </div>
   );
 }

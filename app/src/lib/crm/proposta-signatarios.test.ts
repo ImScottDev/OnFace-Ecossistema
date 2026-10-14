@@ -46,3 +46,18 @@ test("endereco: ida e volta", () => {
   assert.deepEqual(separarEndereco("Rua das Flores"), { logradouro: "Rua das Flores", numero: "", complemento: "" });
   assert.equal(separarEndereco("Rua A s/n").numero, "s/n");
 });
+
+test("signatários da Callface: ordem preservada, papel inválido vira representante, e-mail ruim vira vazio e o padrão é o primeiro com e-mail", async () => {
+  const { normalizarSignatariosCallface, padraoDoPapel } = await import("./proposta-signatarios.js");
+  const l = normalizarSignatariosCallface([
+    { nome: "Sem Mail", papel: "representante_legal", email: "x" },
+    { nome: "Filipe Nascimento", email: "filipe@callface.io", papel: "coisa" },
+    { nome: "Filipe Nascimento", email: "dup@callface.io", papel: "representante_legal" },
+    { nome: "", email: "a@b.co" },
+    { nome: "Test", email: "t@callface.io", papel: "testemunha_2" },
+  ]);
+  assert.deepEqual(l.map((s) => s.nome), ["Sem Mail", "Filipe Nascimento", "Test"]);
+  assert.equal(l[0].email, "");
+  assert.equal(padraoDoPapel(l, "representante_legal")?.nome, "Filipe Nascimento");
+  assert.equal(padraoDoPapel(l, "testemunha_2")?.nome, "Test");
+});

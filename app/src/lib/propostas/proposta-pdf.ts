@@ -5,6 +5,8 @@ import { formaPagamentoSetup } from "@/lib/crm/condicoes-comerciais";
 import puppeteer from "puppeteer";
 import { existsSync } from "node:fs";
 import { LOGO_WHITE, LOGO_COLOR } from "./pdf-assets";
+import { conteudoDasFamilias, CONTEUDO_FAMILIA, type ConteudoFamilia } from "./conteudo-familia";
+import type { ModeloPdf } from "./modelos-pdf";
 
 /** Resolve o binário do Chromium (o caminho varia no Alpine). */
 function resolveChromePath(): string | undefined {
@@ -56,6 +58,12 @@ export interface PropostaPdfData {
   leadEmpresa?: string | null;
   leadEmail?: string | null;
   leadTelefone?: string | null;
+  /** Modelo do PDF. Ausente ou "padrao" = o PDF de sempre, sem nenhuma mudança. */
+  modelo?: ModeloPdf | null;
+  /** Famílias dos itens (CALLFACE_AI | PABX | WHITE_LABEL): escolhem o conteúdo dos modelos novos. */
+  familias?: string[] | null;
+  trialDias?: number | null;
+  reajusteIndice?: string | null;
   itens: PropostaPdfItem[];
 }
 
@@ -73,12 +81,13 @@ function qtd(v: unknown): string {
 }
 function dataBR(v: unknown): string {
   if (!v) return "—";
-  const d = new Date(v as string);
+  // `2026-10-13` (coluna date) sem hora vira meia-noite UTC e, em fuso a oeste, o dia anterior: ancora ao meio-dia.
+  const d = new Date(typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T12:00:00` : (v as string));
   if (isNaN(d.getTime())) return String(v);
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
 }
 function recorrenciaLabel(tipo: string, periodo?: string | null): string {
-  if (tipo === "recorrente") return periodo === "anual" ? "Anual" : "Mensal";
+  if (tipo === "recorrente") return periodo === "anual" ? "Anual" : periodo === "trimestral" ? "Trimestral" : periodo === "semestral" ? "Semestral" : "Mensal";
   if (tipo === "setup") return "Setup";
   return "Avulso";
 }
@@ -128,6 +137,14 @@ function header(): string {
 }
 
 export function propostaPdfHtml(p: PropostaPdfData): string {
+  if (p.modelo === "enxuto") return modeloEnxuto(p);
+  if (p.modelo === "completo") return modeloCompleto(p);
+  if (p.modelo === "white_label") return modeloWhiteLabel(p);
+  return modeloPadrao(p);
+}
+
+/** O PDF de sempre (moldes Zoho). Intocado: é o que toda proposta existente continua usando. */
+function modeloPadrao(p: PropostaPdfData): string {
   const moeda = p.moeda || "BRL";
   const cliente = p.leadEmpresa || p.leadNome || "Cliente";
   const numeroFmt = `PROP ${String(p.numero).padStart(4, "0")}${p.versao > 1 ? ` · v${p.versao}` : ""}`;
@@ -359,6 +376,336 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
 </section>
 
 </body></html>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Modelos novos (enxuto, completo, white_label). Mesmo motor do padrão: HTML + Chrome headless.
+// Compartilham CSS, tabela de investimento (`itensTabela`) e bloco de condições, para os três
+// parecerem a mesma marca. O PDF não enxerga os tokens do app, então as cores nascem aqui, num
+// só lugar, espelhando `onface-proto.css` (neutros) e a marca do PDF de sempre (carmim e roxo).
+// ═══════════════════════════════════════════════════════════════════════════
+const NEUTROS_PDF = { tinta: "#12171d", tinta2: "#4a5560", tinta3: "#67787c", linha: "#e3e7e8", fio: "#eef1f1", fundo: "#fafafa", marcaFundo: "#fdeef0" };
+
+function cssPremium(): string {
+  return `
+  :root { --marca:${CARMIM}; --acento:${ROXO}; --tinta:${NEUTROS_PDF.tinta}; --tinta-2:${NEUTROS_PDF.tinta2}; --tinta-3:${NEUTROS_PDF.tinta3};
+          --linha:${NEUTROS_PDF.linha}; --fio:${NEUTROS_PDF.fio}; --fundo:${NEUTROS_PDF.fundo}; --marca-fundo:${NEUTROS_PDF.marcaFundo}; --papel:#fff; }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:var(--tinta); font-size:11px; line-height:1.55; background:var(--papel); }
+  .pg { width:210mm; min-height:297mm; position:relative; page-break-after:always; }
+  .pg:last-child { page-break-after:auto; }
+  .corpo { padding:14mm 18mm 16mm; }
+  .topo { display:flex; justify-content:space-between; align-items:center; padding:9mm 18mm 5mm; border-bottom:3px solid var(--marca); }
+  .topo img { height:30px; }
+  .topo .quem { text-align:right; font-size:9px; color:var(--tinta-3); line-height:1.6; }
+  .topo .quem b { color:var(--tinta); font-size:10px; }
+  .rodape { position:absolute; left:18mm; right:18mm; bottom:9mm; display:flex; justify-content:space-between; font-size:8.5px; color:var(--tinta-3); border-top:1px solid var(--linha); padding-top:6px; }
+  .over { font-size:9px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:var(--marca); }
+  h1 { font-size:26px; line-height:1.1; font-weight:800; letter-spacing:-.4px; margin:6px 0 8px; }
+  h2 { font-size:15px; font-weight:800; margin:0 0 10px; letter-spacing:-.1px; }
+  h2 .n { color:var(--marca); margin-right:8px; font-variant-numeric:tabular-nums; }
+  h3 { font-size:11.5px; font-weight:700; margin:12px 0 4px; }
+  p { margin:0 0 8px; }
+  .lead { font-size:13px; color:var(--tinta-2); max-width:150mm; }
+  .muted { color:var(--tinta-3); }
+  .sec { margin-top:16px; }
+  .meta { display:flex; flex-wrap:wrap; gap:0; margin:14px 0 4px; border:1px solid var(--linha); border-radius:8px; overflow:hidden; }
+  .meta > div { flex:1 1 0; min-width:30mm; padding:8px 12px; border-right:1px solid var(--linha); }
+  .meta > div:last-child { border-right:0; }
+  .meta small { display:block; font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--tinta-3); font-weight:700; }
+  .meta b { font-size:11px; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; }
+  .ctr { text-align:center; } .rgt { text-align:right; }
+  .mapa { margin:8px 0 12px; font-size:10.5px; border:1px solid var(--linha); border-radius:8px; overflow:hidden; }
+  .mapa-title th { background:var(--tinta); color:#fff; font-weight:700; padding:8px 10px; font-size:10px; letter-spacing:.08em; text-transform:uppercase; text-align:left; }
+  .mapa-head th { background:var(--fundo); color:var(--tinta-2); border-bottom:1px solid var(--linha); padding:6px 10px; font-weight:700; font-size:9.5px; }
+  .mapa td { padding:9px 10px; border-bottom:1px solid var(--fio); vertical-align:top; }
+  .it-nome strong { color:var(--tinta); font-size:11px; }
+  .it-desc { color:var(--tinta-3); font-size:9px; }
+  .mapa-total td { border-top:1px solid var(--linha); border-bottom:none; background:var(--fundo); font-weight:800; padding:9px 10px; }
+  .total { display:flex; justify-content:space-between; align-items:center; background:var(--tinta); color:#fff; border-radius:10px; padding:14px 18px; margin:6px 0 4px; }
+  .total small { display:block; font-size:8.5px; letter-spacing:.12em; text-transform:uppercase; color:${NEUTROS_PDF.linha}; font-weight:700; }
+  .total b { font-size:22px; letter-spacing:-.4px; font-weight:800; }
+  .conds { display:grid; grid-template-columns:repeat(auto-fit, minmax(42mm, 1fr)); gap:8px; margin-top:10px; }
+  .cond { border:1px solid var(--linha); border-radius:8px; padding:8px 12px; background:var(--papel); }
+  .cond small { display:block; font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--tinta-3); font-weight:700; }
+  .cond b { font-size:11px; }
+  .cta { margin-top:16px; text-align:center; }
+  .cta a { display:inline-block; background:var(--marca); color:#fff; text-decoration:none; font-weight:700; font-size:13px; padding:13px 32px; border-radius:10px; }
+  .cta p { margin:8px 0 0; font-size:9.5px; color:var(--tinta-3); }
+  .grade { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+  .dif { border:1px solid var(--linha); border-left:3px solid var(--marca); border-radius:6px; padding:9px 12px; }
+  .dif b { display:block; font-size:10.5px; margin-bottom:2px; }
+  .dif span { font-size:9.5px; color:var(--tinta-2); line-height:1.5; }
+  .checks { list-style:none; margin:6px 0 0; }
+  .checks li { position:relative; padding:5px 0 5px 22px; border-bottom:1px solid var(--fio); font-size:10.5px; }
+  .checks li::before { content:""; position:absolute; left:2px; top:9px; width:8px; height:8px; border-radius:2px; background:var(--marca); }
+  .passos { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:8px; }
+  .passo { border:1px solid var(--linha); border-radius:8px; padding:10px; }
+  .passo i { display:block; font-style:normal; font-weight:800; font-size:16px; color:var(--marca); margin-bottom:2px; }
+  .passo b { display:block; font-size:10.5px; margin-bottom:2px; }
+  .passo span { font-size:9px; color:var(--tinta-2); line-height:1.45; }
+  .tbl { margin:8px 0 12px; font-size:10px; border:1px solid var(--linha); border-radius:8px; overflow:hidden; }
+  .tbl th { background:var(--fundo); color:var(--tinta-2); text-align:left; padding:7px 10px; font-weight:700; border-bottom:1px solid var(--linha); }
+  .tbl td { padding:7px 10px; border-bottom:1px solid var(--fio); vertical-align:top; }
+  .assin { margin-top:34px; display:flex; gap:40px; }
+  .assin div { flex:1; border-top:1px solid ${NEUTROS_PDF.tinta3}; padding-top:6px; text-align:center; font-size:10px; color:var(--tinta-3); }
+  /* capa */
+  .capa-topo { background:var(--marca); color:#fff; height:128mm; border-radius:0 0 50% 50% / 0 0 18% 18%; padding:22mm 22mm 0; position:relative; }
+  .capa-topo img { height:46px; }
+  .capa-topo .t { margin-top:26mm; font-size:42px; line-height:1.02; font-weight:800; letter-spacing:-.8px; }
+  .capa-topo .s { margin-top:10px; font-size:14px; opacity:.92; max-width:130mm; }
+  .capa-arco { position:absolute; left:50%; bottom:-1px; transform:translateX(-50%); }
+  .capa-meta { padding:16mm 22mm 0; }
+  .capa-meta .r { margin:0 0 8px; font-size:13px; }
+  .capa-meta .r b { color:var(--marca); font-weight:800; margin-right:6px; }
+  .capa-valid { text-align:center; color:var(--tinta-3); font-size:10.5px; margin-top:20mm; }
+  `;
+}
+
+/** Cada período num bloco próprio (a anuidade nunca entra na mensalidade), mais setup, total e condições. */
+function blocoInvestimento(p: PropostaPdfData, opts: { tituloSetup?: string } = {}): string {
+  const moeda = p.moeda || "BRL";
+  const doPeriodo = (per: PeriodoDeCobranca) => p.itens.filter((i) => periodoDoItem(i).periodo === per);
+  const mensais = doPeriodo("mensal");
+  const trimestrais = doPeriodo("trimestral");
+  const semestrais = doPeriodo("semestral");
+  const anuais = doPeriodo("anual");
+  const setups = doPeriodo("unico");
+  const totais = totaisPorPeriodo(p.itens);
+  const cobraRecorrente = mensais.length || trimestrais.length || semestrais.length || anuais.length;
+  const setupTxt = setups.length
+    ? formaPagamentoSetup({ condicaoPagamentoTipo: p.condicaoPagamentoTipo ?? null, parcelas: p.parcelas ?? null, condicoesPagamento: p.condicoesPagamento ?? null }, totais.unico) || "a combinar"
+    : null;
+  return `
+    ${itensTabela(mensais, moeda, "Investimento mensal", totais.mensal)}
+    ${itensTabela(trimestrais, moeda, "Investimento trimestral", totais.trimestral)}
+    ${itensTabela(semestrais, moeda, "Investimento semestral", totais.semestral)}
+    ${itensTabela(anuais, moeda, "Investimento anual", totais.anual)}
+    ${itensTabela(setups, moeda, opts.tituloSetup || "Setup e itens avulsos", totais.unico)}
+    ${setupTxt ? `<p class="muted"><b>Forma de pagamento do setup:</b> ${esc(setupTxt)}</p>` : ""}
+    <div class="total"><div><small>Total geral${cobraRecorrente ? " · 1ª cobrança" : ""}</small></div><b>${money(p.totalGeral, moeda)}</b></div>`;
+}
+
+/** Condições comerciais em cartões: só o que a proposta de fato tem. */
+function blocoCondicoes(p: PropostaPdfData): string {
+  const linhas: Array<[string, string]> = [];
+  if (p.condicoesPagamento) linhas.push(["Pagamento", p.condicoesPagamento]);
+  if (p.prazoContratoMeses) linhas.push(["Vigência", `${p.prazoContratoMeses} meses`]);
+  if (p.trialDias) linhas.push(["Período de teste", `${p.trialDias} dias`]);
+  if (p.reajusteIndice && p.reajusteIndice !== "nenhum") linhas.push(["Reajuste", p.reajusteIndice]);
+  linhas.push(["Validade da proposta", p.dataValidade ? dataBR(p.dataValidade) : "10 dias após o recebimento"]);
+  return `<div class="conds">${linhas.map(([k, v]) => `<div class="cond"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join("")}</div>`;
+}
+
+function blocoCta(p: PropostaPdfData): string {
+  return p.checkoutUrl
+    ? `<div class="cta"><a href="${esc(p.checkoutUrl)}">Contratar e pagar agora</a><p>Link de pagamento seguro · clique para finalizar</p></div>`
+    : "";
+}
+
+function numeroProposta(p: PropostaPdfData): string {
+  return `PROP ${String(p.numero).padStart(4, "0")}${p.versao > 1 ? ` · v${p.versao}` : ""}`;
+}
+
+function topoPremium(p: PropostaPdfData): string {
+  return `<div class="topo"><img src="${LOGO_COLOR}" alt="callface"/>
+    <div class="quem"><b>${esc(numeroProposta(p))}</b><br/>${p.criadoPorNome ? `${esc(p.criadoPorNome)}${p.criadoPorEmail ? ` · ${esc(p.criadoPorEmail)}` : ""}` : "+55 (11) 5199-7000"}</div></div>`;
+}
+
+function rodapePremium(p: PropostaPdfData, pagina: string): string {
+  return `<div class="rodape"><span>Callface · ${esc(numeroProposta(p))} · ${esc(p.leadEmpresa || p.leadNome || "Cliente")}</span><span>${pagina}</span></div>`;
+}
+
+function blocoMeta(p: PropostaPdfData): string {
+  const itens: Array<[string, string]> = [
+    ["Emissão", dataBR(p.dataEmissao || new Date())],
+    ["Válida até", p.dataValidade ? dataBR(p.dataValidade) : "10 dias após o recebimento"],
+  ];
+  if (p.prazoContratoMeses) itens.push(["Vigência", `${p.prazoContratoMeses} meses`]);
+  return `<div class="meta">${itens.map(([k, v]) => `<div><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join("")}</div>`;
+}
+
+function blocoDiferenciais(c: ConteudoFamilia): string {
+  return `<div class="grade">${c.diferenciais.map((d) => `<div class="dif"><b>${esc(d.titulo)}</b><span>${esc(d.texto)}</span></div>`).join("")}</div>`;
+}
+
+function blocoEntregas(c: ConteudoFamilia): string {
+  return `<ul class="checks">${c.entregas.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
+}
+
+function blocoPassos(passos: Array<[string, string]>): string {
+  return `<div class="passos">${passos.map(([t, d], i) => `<div class="passo"><i>${String(i + 1).padStart(2, "0")}</i><b>${esc(t)}</b><span>${esc(d)}</span></div>`).join("")}</div>`;
+}
+
+function blocoSla(): string {
+  return `<table class="tbl">
+      <thead><tr><th>Criticidade</th><th>Descrição</th><th>SLA resposta</th><th>SLA atendimento</th><th>Horário</th></tr></thead>
+      <tbody>
+        <tr><td>Crítico</td><td>Paralisação completa do sistema com impacto severo.</td><td>Até 30 min</td><td>2 horas</td><td>24x7</td></tr>
+        <tr><td>Alto</td><td>Sistema degradado, mas há alternativa aceitável.</td><td>Até 1 hora</td><td>4 horas</td><td>24x7</td></tr>
+        <tr><td>Médio</td><td>Problema sem impacto severo, com alternativa disponível.</td><td>Até 6 horas</td><td>12 horas</td><td>8x5</td></tr>
+        <tr><td>Baixo</td><td>Solicitação de informação ou sugestão de otimização.</td><td>Até 12 horas</td><td>24 horas</td><td>8x5</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="font-size:9px">8x5 = segunda a sexta, das 09:00 às 18:00. Abertura de chamados: ticket.callface.com.br ou 11 5199-7000, 24x7.</p>`;
+}
+
+function capaPremium(p: PropostaPdfData, titulo: string, subtitulo: string): string {
+  const cliente = p.leadEmpresa || p.leadNome || "Cliente";
+  return `<section class="pg">
+  <div class="capa-topo">
+    <img src="${LOGO_WHITE}" alt="callface"/>
+    <div class="t">${titulo}</div>
+    <div class="s">${esc(subtitulo)}</div>
+    <svg class="capa-arco" width="220" height="120" viewBox="0 0 220 120"><path d="M12 8 A100 100 0 0 0 208 8" fill="none" stroke="${ROXO}" stroke-width="14" stroke-linecap="round"/><circle cx="208" cy="14" r="12" fill="${ROXO}"/></svg>
+  </div>
+  <div class="capa-meta">
+    <div class="r"><b>Proposta</b>${esc(numeroProposta(p))}</div>
+    <div class="r"><b>Cliente</b>${esc(cliente)}</div>
+    <div class="r"><b>Data</b>${dataBR(p.dataEmissao || new Date())}</div>
+    <div class="r"><b>Responsável</b>${esc(p.criadoPorNome || "—")}${p.criadoPorEmail ? ` · ${esc(p.criadoPorEmail)}` : ""}</div>
+    <div class="capa-valid">Os dados desta proposta são válidos até ${p.dataValidade ? dataBR(p.dataValidade) : "10 dias após o recebimento"}</div>
+  </div>
+</section>`;
+}
+
+const docPremium = (corpo: string) => `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><style>${cssPremium()}</style></head><body>${corpo}</body></html>`;
+
+const PASSOS_PADRAO: Array<[string, string]> = [
+  ["Aceite", "Você confirma a proposta pelo link e a decisão fica registrada."],
+  ["Contrato", "Enviamos o contrato para assinatura eletrônica."],
+  ["Pagamento", "Link de pagamento seguro, por cartão ou boleto."],
+  ["Ativação", "O time de projetos agenda e acompanha a ativação."],
+];
+
+/** Uma página só: o que é, quanto custa e como fechar. Se a lista de itens for longa, continua na página seguinte em vez de cortar. */
+function modeloEnxuto(p: PropostaPdfData): string {
+  const cliente = p.leadEmpresa || p.leadNome || "Cliente";
+  const c = conteudoDasFamilias(p.familias);
+  return docPremium(`<section class="pg">
+  ${topoPremium(p)}
+  <div class="corpo">
+    <div class="over">Proposta comercial · ${esc(c.rotulo)}</div>
+    <h1>Proposta para ${esc(cliente)}</h1>
+    <p class="lead">${esc(c.promessa)}</p>
+    ${blocoMeta(p)}
+    <div class="sec">${blocoInvestimento(p)}</div>
+    ${blocoCondicoes(p)}
+    ${blocoCta(p)}
+    <p class="muted" style="margin-top:14px;font-size:9.5px">A proposta produz efeito com a formalização do pagamento, nos termos do contrato aplicável. ${c.garantias[0] ? esc(c.garantias[0]) + "." : ""}</p>
+  </div>
+  ${rodapePremium(p, "Callface")}
+</section>`);
+}
+
+/** Proposta completa: capa, apresentação, escopo e entregas, investimento, suporte e formalização. */
+function modeloCompleto(p: PropostaPdfData): string {
+  const cliente = p.leadEmpresa || p.leadNome || "Cliente";
+  const c = conteudoDasFamilias(p.familias);
+  return docPremium(`
+${capaPremium(p, "Proposta<br/>Comercial", c.rotulo)}
+
+<section class="pg">
+  ${topoPremium(p)}
+  <div class="corpo">
+    <div class="over">Apresentação</div>
+    <h1>${esc(c.rotulo)} para ${esc(cliente)}</h1>
+    <p class="lead">${esc(c.promessa)}</p>
+    <h2 class="sec"><span class="n">01</span>Por que a Callface</h2>
+    ${blocoDiferenciais(c)}
+    <h2 class="sec"><span class="n">02</span>Escopo e entregas</h2>
+    ${blocoEntregas(c)}
+    <p class="muted" style="margin-top:10px;font-size:9.5px">Os itens e quantidades contratados estão no mapa de investimento. Atividades fora do escopo contratado são tratadas como consultoria, não inclusas no valor desta proposta.</p>
+  </div>
+  ${rodapePremium(p, "2")}
+</section>
+
+<section class="pg">
+  ${topoPremium(p)}
+  <div class="corpo">
+    <h2><span class="n">03</span>Mapa de investimento</h2>
+    ${blocoInvestimento(p)}
+    <h2 class="sec"><span class="n">04</span>Condições comerciais</h2>
+    ${blocoCondicoes(p)}
+    ${blocoCta(p)}
+  </div>
+  ${rodapePremium(p, "3")}
+</section>
+
+<section class="pg">
+  ${topoPremium(p)}
+  <div class="corpo">
+    <h2><span class="n">05</span>Suporte e níveis de serviço</h2>
+    <p class="muted">A Callface mantém Service Desk 24 horas para as solicitações do escopo desta proposta.</p>
+    ${blocoSla()}
+    <h2 class="sec"><span class="n">06</span>Como fechamos</h2>
+    ${blocoPassos(PASSOS_PADRAO)}
+    <h2 class="sec"><span class="n">07</span>Formalização e validade</h2>
+    <p>A presente proposta somente produzirá efeito com a formalização de pagamento, contemplando as obrigações de cada parte, os níveis de serviço e os limites de responsabilidade da <b>CALLFACE</b> e de <b>${esc(cliente)}</b>. Serviço prestado no formato pré-pago, via cartão ou boleto.</p>
+    <p class="muted">É imprescindível a rubrica das páginas que correspondem ao resumo financeiro acordado: isso garante a veracidade das quantidades e valores firmados.</p>
+    <div class="assin"><div>Callface</div><div>${esc(cliente)}</div></div>
+  </div>
+  ${rodapePremium(p, "4")}
+</section>`);
+}
+
+/** Parceria de White Label: o parceiro compra licença e revende; a estrutura da página é a do completo, o conteúdo é o do parceiro. */
+function modeloWhiteLabel(p: PropostaPdfData): string {
+  const cliente = p.leadEmpresa || p.leadNome || "Parceiro";
+  const c = CONTEUDO_FAMILIA.WHITE_LABEL;
+  const passos: Array<[string, string]> = [
+    ["Aceite", "Você confirma a proposta de parceria pelo link."],
+    ["Contrato", "Assinatura eletrônica do contrato de parceria."],
+    ["Implantação", "Domínio, identidade e configuração inicial, com a Callface junto."],
+    ["Operação", "Licenças ativas, faturamento no ciclo combinado e suporte ao parceiro."],
+  ];
+  return docPremium(`
+${capaPremium(p, "Proposta de<br/>Parceria", "White Label · a plataforma Callface com a sua marca")}
+
+<section class="pg">
+  ${topoPremium(p)}
+  <div class="corpo">
+    <div class="over">A parceria</div>
+    <h1>${esc(cliente)} + Callface</h1>
+    <p class="lead">${esc(c.promessa)}</p>
+    <h2 class="sec"><span class="n">01</span>O que o parceiro recebe</h2>
+    ${blocoDiferenciais(c)}
+    <h2 class="sec"><span class="n">02</span>Entregas</h2>
+    ${blocoEntregas(c)}
+    <h2 class="sec"><span class="n">03</span>Como a parceria funciona</h2>
+    <p>O parceiro opera a plataforma com a própria marca e reserva licenças por usuário. A Callface mantém a tecnologia e fatura as licenças no ciclo definido em contrato; valores, dia de faturamento e prazo de pagamento constam nesta proposta e no contrato de parceria.</p>
+  </div>
+  ${rodapePremium(p, "2")}
+</section>
+
+<section class="pg">
+  ${topoPremium(p)}
+  <div class="corpo">
+    <h2><span class="n">04</span>Investimento da parceria</h2>
+    ${blocoInvestimento(p, { tituloSetup: "Implantação e itens únicos" })}
+    <h2 class="sec"><span class="n">05</span>Condições da parceria</h2>
+    ${blocoCondicoes(p)}
+    ${blocoCta(p)}
+  </div>
+  ${rodapePremium(p, "3")}
+</section>
+
+<section class="pg">
+  ${topoPremium(p)}
+  <div class="corpo">
+    <h2><span class="n">06</span>Próximos passos</h2>
+    ${blocoPassos(passos)}
+    <h2 class="sec"><span class="n">07</span>Suporte ao parceiro</h2>
+    <p class="muted">Service Desk 24 horas: ticket.callface.com.br ou 11 5199-7000.</p>
+    ${blocoSla()}
+    <h2 class="sec"><span class="n">08</span>Formalização e validade</h2>
+    <p>A parceria somente produzirá efeito com a assinatura do contrato e a formalização do pagamento, contemplando as obrigações de cada parte e os limites de responsabilidade da <b>CALLFACE</b> e de <b>${esc(cliente)}</b>.</p>
+    <div class="assin"><div>Callface</div><div>${esc(cliente)}</div></div>
+  </div>
+  ${rodapePremium(p, "4")}
+</section>`);
 }
 
 let _warned = false;

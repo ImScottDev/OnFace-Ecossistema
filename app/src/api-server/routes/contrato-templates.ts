@@ -5,15 +5,17 @@
 // escrever, placeholder honesto até existir texto real.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { contratoTemplates, organizacoes } from "@/lib/db/schema";
+import { contratoTemplates, organizacoes, propostaGrupoComercial, propostas, leads } from "@/lib/db/schema";
 import { eq, and, asc, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx, getGestaoCtx } from "../compat.js";
 import { sanitizarCorpoContrato } from "@/lib/crm/contrato-sanitize";
-import { converterVariaveisZoho, corpoEhHtml, renderizarCorpo } from "@/lib/crm/contrato-variaveis";
+import { converterVariaveisZoho, corpoEhHtml, renderizarCorpo, variaveisFaltando } from "@/lib/crm/contrato-variaveis";
 import { variaveisDeExemplo } from "@/lib/crm/contrato-exemplo";
 import { contratoPdfHtml, renderContratoPdf } from "@/lib/crm/contrato-pdf";
 import { politicaContratual } from "@/lib/crm/contrato-politica";
+import { variaveisReaisDoGrupo } from "@/lib/crm/contrato-template";
+import { normalizarSignatariosCallface, padraoDoPapel, PAPEL_REPRESENTANTE } from "@/lib/crm/proposta-signatarios";
 
 const app = new Hono();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -128,6 +130,33 @@ app.post("/contrato-templates/:id/restaurar", async (c) => {
   return c.json(novo, 201);
 });
 
+// Propostas que servem de base para pré-visualizar um modelo com dados reais (uma linha por grupo comercial).
+app.get("/contrato-templates/propostas-previa", async (c) => {
+  const ctx = await getGestaoCtx(c);
+  const linhas = await db.select({
+    grupoId: propostaGrupoComercial.id, numero: propostas.numero, versao: propostas.versao, familia: propostaGrupoComercial.serviceFamily,
+    empresa: leads.empresa, lead: leads.nome,
+  }).from(propostaGrupoComercial)
+    .innerJoin(propostas, eq(propostas.id, propostaGrupoComercial.propostaId))
+    .innerJoin(leads, eq(leads.id, propostas.leadId))
+    .where(eq(propostaGrupoComercial.organizacaoId, ctx.organizacaoId))
+    .orderBy(desc(propostaGrupoComercial.createdAt)).limit(40);
+  return c.json({ propostas: linhas.map((l) => ({ grupoId: l.grupoId, rotulo: `P-${String(l.numero).padStart(3, "0")}-v${l.versao} · ${l.empresa || l.lead || "sem nome"}${l.familia ? ` · ${l.familia}` : ""}` })) });
+});
+
+// Pré-visualização com os dados de uma proposta real: mesmo montador de variáveis do contrato.
+// Devolve também o que ainda faltaria para esse contrato sair (as mesmas regras do envio).
+app.post("/contrato-templates/previa", async (c) => {
+  const ctx = await getGestaoCtx(c);
+  const body = z.object({ corpoTemplate: z.string().min(1), grupoId: z.string().regex(UUID_RE) }).safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: "Dados inválidos" }, 400);
+  const v = await variaveisReaisDoGrupo(ctx.organizacaoId, body.data.grupoId);
+  if (!v) return c.json({ error: "Proposta não encontrada" }, 404);
+  const { corpo } = converterVariaveisZoho(body.data.corpoTemplate);
+  const limpo = corpoEhHtml(corpo) ? sanitizarCorpoContrato(corpo) : corpo;
+  return c.json({ html: renderizarCorpo(limpo, v), faltando: variaveisFaltando(limpo, v).map((f) => f.rotulo) });
+});
+
 // PDF de teste: o corpo do editor com dados [QA] fictícios, pelo mesmo motor do contrato real.
 app.post("/contrato-templates/pdf-teste", async (c) => {
   await getGestaoCtx(c);
@@ -151,11 +180,20 @@ app.put("/contrato-parametros", async (c) => {
     limiteGravacoes: z.string().max(120).nullable().optional(),
     representanteNome: z.string().max(120).nullable().optional(),
     representanteEmail: z.string().email().nullable().optional().or(z.literal("")),
+    signatarios: z.array(z.object({ nome: z.string().max(120), email: z.string().max(200).optional(), papel: z.string().max(40).optional() })).max(30).optional(),
   }).safeParse(await c.req.json());
   if (!p.success) return c.json({ error: "Dados inválidos", details: p.error.flatten() }, 400);
   const [org] = await db.select({ settings: organizacoes.settings }).from(organizacoes).where(eq(organizacoes.id, ctx.organizacaoId)).limit(1);
   const settings = (org?.settings ?? {}) as Record<string, unknown>;
   const atual = (settings.contrato ?? {}) as Record<string, unknown>;
+  // Lista de signatários: o primeiro representante legal com e-mail continua espelhado nos dois campos antigos.
+  if (p.data.signatarios) {
+    const lista = normalizarSignatariosCallface(p.data.signatarios);
+    const rep = padraoDoPapel(lista, PAPEL_REPRESENTANTE);
+    p.data.signatarios = lista;
+    p.data.representanteNome = rep?.nome ?? null;
+    p.data.representanteEmail = rep?.email ?? null;
+  }
   const limpo = Object.fromEntries(Object.entries(p.data).filter(([, v]) => v !== undefined).map(([k, v]) => [k, v === "" ? null : v]));
   await db.update(organizacoes).set({ settings: { ...settings, contrato: { ...atual, ...limpo } } }).where(eq(organizacoes.id, ctx.organizacaoId));
   return c.json(await politicaContratual(ctx.organizacaoId));

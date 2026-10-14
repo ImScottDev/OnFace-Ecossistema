@@ -46,6 +46,8 @@
 }
 .pp-sub { margin: 6px 0 0; font-size: 12.5px; color: var(--of-tinta-3); }
 
+.pp-promessa { margin: 12px 0 0; max-width: 52ch; font-size: 14.5px; line-height: 1.55; color: var(--of-tinta-2); text-wrap: pretty; }
+
 .pp-meta { flex: 1 1 220px; max-width: 320px; min-width: 0; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--of-fio); overflow: hidden; }
 .pp-meta div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 14px; font-size: 11.5px; border-bottom: 1px solid var(--of-fio-tenue); }
 .pp-meta div:last-child { border-bottom: 0; }
@@ -65,6 +67,7 @@
 .pp-tabela-cabeca { display: flex; justify-content: space-between; gap: 10px; padding: 10px 16px; background: var(--of-tinta-forte); color: var(--of-papel); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .pp-grupo { display: flex; align-items: center; gap: 8px; padding: 9px 16px; background: var(--of-papel-alterno); border-bottom: 1px solid var(--of-fio); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--of-tinta-2); }
 .pp-grupo::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--of-coral-marca); }
+.pp-grupo b { margin-left: auto; font-family: var(--of-fonte-titulo); font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--of-tinta-forte); font-variant-numeric: tabular-nums; }
 .pp-item { display: flex; align-items: flex-start; gap: 4px 16px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--of-fio-tenue); }
 .pp-tabela > .pp-item:last-child { border-bottom: 0; }
 .pp-item-nome { flex: 1 1 220px; min-width: 0; }
@@ -73,6 +76,20 @@
 .pp-item-valor { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
 .pp-item-valor strong { display: block; font-family: var(--of-fonte-titulo); font-size: 13.5px; font-weight: 700; color: var(--of-tinta-forte); white-space: nowrap; }
 .pp-item-valor small { display: block; margin-top: 2px; font-size: 11px; color: var(--of-tinta-3); white-space: nowrap; }
+
+/* Apresentação: por que a Callface, e o que está incluso. Mesma estrutura para toda família; muda o conteúdo. */
+.pp-difs { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.pp-dif { padding: 14px 16px; border-radius: 10px; background: var(--of-papel-alterno); box-shadow: inset 0 0 0 1px var(--of-fio); }
+.pp-dif strong { display: block; font-family: var(--of-fonte-titulo); font-size: 13px; font-weight: 700; color: var(--of-tinta-forte); }
+.pp-dif strong::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 2px; background: var(--of-coral-marca); }
+.pp-dif small { display: block; margin-top: 4px; font-size: 12px; line-height: 1.55; color: var(--of-tinta-3); }
+.pp-incluso { margin-top: 14px; padding: 16px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--of-linha); }
+.pp-incluso ul { margin: 10px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px 20px; }
+.pp-incluso li { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--of-tinta); }
+.pp-incluso li svg { flex-shrink: 0; margin-top: 3px; color: var(--of-coral-texto); }
+.pp-item-lista { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.pp-item-lista li { position: relative; padding-left: 12px; font-size: 11.5px; line-height: 1.45; color: var(--of-tinta-3); }
+.pp-item-lista li::before { content: ""; position: absolute; left: 0; top: .55em; width: 4px; height: 4px; border-radius: 1px; background: var(--of-tinta-4); }
 
 .pp-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .pp-cartao { border-radius: 12px; box-shadow: inset 0 0 0 1px var(--of-linha); overflow: hidden; background: var(--of-papel); }
@@ -86,11 +103,21 @@
 .pp-total small { display: block; margin-top: 4px; font-size: 11.5px; color: var(--of-tinta-4); }
 .pp-total strong { font-family: var(--of-fonte-titulo); font-size: clamp(24px, 5vw, 30px); font-weight: 800; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
 
+.pp-total-lista { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.pp-total-lista li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-top: 10px; border-top: 1px solid var(--of-tinta-2); font-size: 12px; color: var(--of-tinta-4); }
+.pp-total-lista strong { font-size: clamp(17px, 4vw, 20px); color: var(--of-papel); white-space: nowrap; }
+
 /* Decisão: o único lugar com contorno grafite — é o que a página pede. */
 .pp-decisao { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 20px; padding: 18px 20px; border-radius: 12px; box-shadow: inset 0 0 0 1.5px var(--of-tinta-forte); }
 .pp-decisao-texto { flex: 1 1 260px; min-width: 0; }
 .pp-decisao-texto h3 { margin: 0; font-family: var(--of-fonte-titulo); font-size: 15px; font-weight: 700; color: var(--of-tinta-forte); }
 .pp-decisao-texto p { margin: 4px 0 0; font-size: 12.5px; color: var(--of-tinta-3); }
+.pp-jornada { flex: 1 1 100%; margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.pp-jornada li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; background: var(--of-papel-alterno); font-size: 12px; font-weight: 600; color: var(--of-tinta-forte); }
+.pp-jornada li span { flex-shrink: 0; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; background: var(--of-tinta-forte); color: var(--of-papel); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.pp-garantias { flex: 1 1 100%; margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.pp-garantias li { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--of-tinta-3); }
+.pp-garantias svg { color: var(--of-canal-whatsapp-tinta); }
 .pp-decisao-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
 .pp-decisao-form { flex: 1 1 100%; display: flex; flex-direction: column; gap: 10px; }
 
@@ -142,6 +169,9 @@
 .pp-contrato-corpo p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.7; color: var(--of-tinta); }
 .pp-contrato-corpo b { color: var(--of-tinta-forte); }
 
+.pp-contato { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding: 14px 16px; border-radius: 10px; background: var(--of-papel-alterno); box-shadow: inset 0 0 0 1px var(--of-fio); }
+.pp-contato .pp-rotulo { flex: 1 1 100%; }
+.pp-contato strong { font-size: 13px; color: var(--of-tinta-forte); }
 .pp-rodape-doc { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; padding-top: 18px; border-top: 1px solid var(--of-fio); font-size: 11px; color: var(--of-tinta-3); }
 .pp-link { display: inline-flex; align-items: center; gap: 6px; color: var(--of-tinta-2); font-weight: 600; text-decoration: none; border-radius: 6px; }
 .pp-link:hover { color: var(--of-coral-texto); }

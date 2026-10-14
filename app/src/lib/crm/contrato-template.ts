@@ -308,6 +308,16 @@ async function montarVariaveisDoGrupo(grupoId: string): Promise<VariaveisDoGrupo
 }
 
 /**
+ * Variáveis REAIS de um grupo comercial, para pré-visualizar um modelo com os
+ * dados de uma proposta. Mesmo montador do contrato; `null` se o grupo não é da organização.
+ */
+export async function variaveisReaisDoGrupo(organizacaoId: string, grupoId: string): Promise<Record<string, string> | null> {
+  const [g] = await db.select({ org: propostaGrupoComercial.organizacaoId }).from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, grupoId)).limit(1);
+  if (!g || g.org !== organizacaoId) return null;
+  return (await montarVariaveisDoGrupo(grupoId)).variaveis;
+}
+
+/**
  * Modelo + variáveis do grupo, e o que falta para o contrato poder sair.
  * `faltando` vazio = pode enviar. Mensagens já em palavras de quem vai corrigir.
  */

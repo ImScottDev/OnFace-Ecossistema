@@ -1640,6 +1640,9 @@ export const propostas = pgTable(
     dataEmissao: date("data_emissao"),
     dataValidade: date("data_validade"),
     observacoes: text("observacoes"),
+    // Modelo do PDF (migration 0127). NULL = "padrao", o PDF de sempre: nenhuma
+    // proposta existente muda de aparência sem alguém escolher.
+    modeloPdf: text("modelo_pdf"),
     condicoesPagamento: text("condicoes_pagamento"),
     // Condição de pagamento ESTRUTURADA (25/08, pedido do Kauã — billing
     // avançado). `condicoesPagamento` (texto livre acima) continua existindo

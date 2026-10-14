@@ -120,6 +120,18 @@ export function variaveisFaltando(corpoTemplate: string, valores: Record<string,
   return faltando;
 }
 
+/**
+ * Chaves `{{x}}` do corpo que o catálogo não conhece (o gerador as deixaria cruas
+ * no contrato e o envio seria bloqueado). O editor usa isto ANTES de salvar.
+ * Marcadores do Zoho (`${...}`) são traduzidos primeiro, como o servidor faz ao gravar.
+ */
+export function variaveisDesconhecidas(corpoTemplate: string): string[] {
+  const { corpo } = converterVariaveisZoho(corpoTemplate);
+  const chaves = new Set<string>();
+  for (const [, chave] of corpo.matchAll(/\{\{(\w+)\}\}/g)) if (!POR_CHAVE.has(chave)) chaves.add(chave);
+  return [...chaves];
+}
+
 /** Valores fictícios da pré-visualização, derivados do mesmo catálogo. */
 export const VARIAVEIS_EXEMPLO: Record<string, string> = Object.fromEntries(
   VARIAVEIS_CONTRATO.map((v) => [v.chave, v.exemplo]),

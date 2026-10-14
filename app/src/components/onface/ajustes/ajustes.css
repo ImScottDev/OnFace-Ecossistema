@@ -77,6 +77,16 @@
   color: var(--onface-white);
   font-weight: var(--weight-semibold);
 }
+/* Tela que só registra: nada lê o que ela grava. Discreta, mas à vista. */
+.aj-nav-tag {
+  margin-left: auto;
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+.aj-nav-item[aria-current="page"] .aj-nav-tag { color: inherit; }
 .aj-nav-item svg { width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
 
 /* ── Grupos (cartões do índice) ───────────────────────────────────────── */

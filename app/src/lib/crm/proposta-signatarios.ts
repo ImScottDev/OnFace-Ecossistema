@@ -75,6 +75,34 @@ export function normalizarSignatarios(lista: unknown): Signatario[] {
     .map(({ s }, i) => ({ ...s, ordem: i + 1 }));
 }
 
+/** Quem pode assinar pela Callface, cadastrado em Ajustes > Contratos. A ordem do array é a ordem de oferta; o primeiro de cada papel é o padrão dele. */
+export interface SignatarioCallface { nome: string; email: string; papel: string }
+
+/** Limpa a lista vinda da tela/banco: nome obrigatório, papel Callface (senão representante), e-mail válido ou vazio, sem duplicata nome+papel. */
+export function normalizarSignatariosCallface(lista: unknown): SignatarioCallface[] {
+  if (!Array.isArray(lista)) return [];
+  const vistos = new Set<string>();
+  const saida: SignatarioCallface[] = [];
+  for (const b of lista) {
+    if (!b || typeof b !== "object") continue;
+    const r = b as Record<string, unknown>;
+    const nome = String(r.nome ?? "").trim();
+    if (!nome) continue;
+    const papel = ehPapelCallface(r.papel) ? String(r.papel) : PAPEL_REPRESENTANTE;
+    const email = String(r.email ?? "").trim();
+    const chave = `${papel}|${nome.toLowerCase()}`;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    saida.push({ nome, email: emailValido(email) ? email : "", papel });
+  }
+  return saida;
+}
+
+/** O padrão do papel: o primeiro da lista. Para o representante, só vale com e-mail (é o que `comPadraoDaPolitica` exige). */
+export function padraoDoPapel(lista: SignatarioCallface[], papel: string): SignatarioCallface | null {
+  return lista.find((s) => s.papel === papel && (papel !== PAPEL_REPRESENTANTE || s.email)) ?? null;
+}
+
 /**
  * Parâmetros de Ajustes > Contratos viram só o valor PADRÃO: valem quando a
  * proposta não trouxe um representante legal com e-mail. Nome e e-mail do

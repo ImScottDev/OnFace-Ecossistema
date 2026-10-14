@@ -23,6 +23,7 @@ import { Bloco } from "./pagina";
 import { AcoesContato } from "./pagina";
 import { rotuloAtor } from "./PreVendas";
 import { rotuloDeEvento } from "@/lib/vendas/rotulos-evento";
+import { MODELOS_PDF, ROTULO_MODELO_PDF, type ModeloPdf } from "@/lib/propostas/modelos-pdf";
 import { descreverAlteracao } from "@/lib/vendas/auditoria-comercial";
 
 export function rotuloStatus(status: string): string {
@@ -43,6 +44,8 @@ export interface AcoesCorpoProposta {
   completarJuridicos: () => void;
   /** Tenta de novo o contrato/pagamento de uma proposta aceita que não andou. Seguro de repetir. */
   reprocessar?: () => Promise<void>;
+  /** Troca o modelo do PDF desta proposta. Sem isso, o bloco do PDF só pré-visualiza. */
+  salvarModeloPdf?: (modelo: ModeloPdf) => Promise<void>;
 }
 
 /** Marcadores de estado, iguais nas duas superfícies. */
@@ -288,6 +291,7 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
       ) : null}
 
       <LinkPublico proposta={proposta} Wrap={Wrap} />
+      <ModeloDoPdf proposta={proposta} acoes={acoes} Wrap={Wrap} />
       <ContratoDaProposta proposta={proposta} Wrap={Wrap} />
       <EmailsDaProposta proposta={proposta} Wrap={Wrap} />
 
@@ -391,6 +395,43 @@ function LinkPublico({ proposta, Wrap }: { proposta: DetalheProposta; Wrap: type
 }
 
 /** O que o aceite gerou: estado da assinatura e o documento final assinado. */
+/**
+ * Qual PDF o cliente recebe. "Ver" abre o modelo sem gravar nada (`?modelo=`), para
+ * comparar antes de escolher; escolher grava na proposta e passa a valer no e-mail e
+ * na página pública. `padrao` é o PDF de sempre.
+ */
+function ModeloDoPdf({ proposta, acoes, Wrap }: {
+  proposta: DetalheProposta; acoes: AcoesCorpoProposta; Wrap: typeof Secao;
+}) {
+  // Enquanto grava, o rádio fica travado para não enfileirar duas trocas.
+  const [salvando, setSalvando] = React.useState(false);
+  return (
+    <Wrap titulo="PDF da proposta">
+      <div style={{ display: "grid", gap: 6 }}>
+        {MODELOS_PDF.map((m) => (
+          <div key={m} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, cursor: acoes.salvarModeloPdf && !salvando ? "pointer" : "default" }}>
+              <input
+                type="radio" name={`modelo-pdf-${proposta.id}`} value={m}
+                checked={proposta.modeloPdf === m}
+                disabled={salvando || !acoes.salvarModeloPdf}
+                onChange={() => {
+                  if (!acoes.salvarModeloPdf) return;
+                  setSalvando(true);
+                  void acoes.salvarModeloPdf(m).finally(() => setSalvando(false));
+                }}
+              />
+              {ROTULO_MODELO_PDF[m]}
+            </label>
+            <a className="ov-botao" data-variante="contorno" style={{ padding: "2px 8px", fontSize: 12 }}
+               href={`/api/propostas/${proposta.id}/pdf?modelo=${m}`} target="_blank" rel="noreferrer">ver</a>
+          </div>
+        ))}
+      </div>
+    </Wrap>
+  );
+}
+
 function ContratoDaProposta({ proposta, Wrap }: { proposta: DetalheProposta; Wrap: typeof Secao }) {
   if (proposta.contratos.length === 0) return null;
   return (

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  acaoCriarRevisao, acaoEnviar, acaoReprocessarAceite, acaoSalvarJuridicos, type DetalheProposta,
+  acaoCriarRevisao, acaoEnviar, acaoReprocessarAceite, acaoSalvarJuridicos, acaoSalvarModeloPdf, type DetalheProposta,
 } from "@/app/(produto)/propostas/actions";
 import { VALIDADES_PROPOSTA } from "@/lib/vendas/dominio";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { AcoesProposta, ApoioProposta, CorpoProposta, TagsProposta } from "./PropostaCorpo";
 import { Bloco, PaginaColunas, PaginaEntidade } from "./pagina";
+import { ROTULO_MODELO_PDF, type ModeloPdf } from "@/lib/propostas/modelos-pdf";
 
 const CAMPOS_EMPRESA = [
   ["razaoSocial", "Razão social"], ["cnpj", "CNPJ"], ["logradouro", "Rua"], ["numero", "Número"],
@@ -55,11 +56,21 @@ export function DetalhePropostaPagina({ proposta, voltar, abrirEnvio = false }: 
     router.refresh();
   };
 
+  const salvarModeloPdf = async (modelo: ModeloPdf) => {
+    setPendente(true);
+    const r = await acaoSalvarModeloPdf(proposta.id, modelo);
+    setPendente(false);
+    if (!r.ok) { toast.error(r.erro); return; }
+    toast.success(`PDF da proposta: ${ROTULO_MODELO_PDF[modelo]}.`);
+    router.refresh();
+  };
+
   const acoes = {
     enviar: () => setEnviando(true),
     revisar,
     completarJuridicos: () => setJuridicos(true),
     reprocessar,
+    salvarModeloPdf,
   };
 
   const editarLinhas = proposta.status === "rascunho" && proposta.oportunidade.id

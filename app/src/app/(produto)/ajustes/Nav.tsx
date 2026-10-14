@@ -29,20 +29,22 @@ type ItemAjuste = {
   /**
    * Tela que grava em `organizacoes.settings` uma chave que NENHUM processo lê
    * (medido 01/10/2026: só `preVendas` tem leitor, em lib/vendas/pre-vendas.ts).
-   * Fica fora da coluna para não ser oferecida como ajuste que funciona; a rota
-   * continua viva (deep-link, dado já salvo) e a própria tela avisa.
+   * Aparece na coluna com a marca "só registro" para não ser tomada por ajuste que
+   * funciona; a rota segue viva (dado já salvo) e a própria tela avisa.
    */
   semEfeito?: boolean;
 };
 
 export const GRUPOS: { titulo: string; itens: ItemAjuste[] }[] = [
   {
-    titulo: "Organização e acesso",
+    titulo: "Organização",
     itens: [
       { label: "Geral", href: "/ajustes/geral", icon: Settings },
       { label: "Membros", href: "/ajustes/membros", icon: UserCog },
       { label: "Permissões", href: "/ajustes/permissoes", icon: Lock },
-      { label: "Notificações", href: "/ajustes/notificacoes", icon: Bell, semEfeito: true },
+      { label: "Qualidade de dados", href: "/ajustes/qualidade-dados", icon: ShieldCheck },
+      // Migrado de `(crm)/admin` em 09/09/2026.
+      { label: "Organizações", href: "/ajustes/organizacoes", icon: Building2, superAdmin: true },
     ],
   },
   {
@@ -51,43 +53,35 @@ export const GRUPOS: { titulo: string; itens: ItemAjuste[] }[] = [
       { label: "Pipeline", href: "/ajustes/pipeline", icon: Kanban },
       { label: "Leads", href: "/ajustes/leads", icon: Users },
       { label: "Campos custom", href: "/ajustes/campos-custom", icon: SlidersHorizontal },
+      { label: "Catálogo", href: "/ajustes/catalogo", icon: Package },
+      { label: "Serviços", href: "/ajustes/servicos", icon: Package },
+      { label: "Contratos", href: "/ajustes/contratos", icon: FileText },
       { label: "ICP", href: "/ajustes/icp", icon: Target, semEfeito: true },
       { label: "Handover", href: "/ajustes/handover", icon: Handshake, semEfeito: true },
     ],
   },
   {
-    titulo: "Catálogo e contratos",
-    itens: [
-      { label: "Catálogo", href: "/ajustes/catalogo", icon: Package },
-      { label: "Serviços", href: "/ajustes/servicos", icon: Package },
-      { label: "Contratos", href: "/ajustes/contratos", icon: FileText },
-    ],
-  },
-  {
-    titulo: "Canais",
+    titulo: "Comunicação",
     itens: [
       { label: "WhatsApp", href: "/ajustes/whatsapp", icon: MessageCircle },
       { label: "E-mail", href: "/ajustes/email", icon: Mail },
       { label: "Templates de e-mail", href: "/ajustes/email/templates", icon: Mail },
+      { label: "Notificações", href: "/ajustes/notificacoes", icon: Bell, semEfeito: true },
     ],
   },
   {
-    titulo: "Inteligência e dados",
+    titulo: "Automação",
     itens: [
       { label: "AI SDR", href: "/ajustes/ai-sdr", icon: Bot },
       { label: "Enriquecimento", href: "/ajustes/enriquecimento", icon: Sparkles, semEfeito: true },
-      { label: "Tracking", href: "/ajustes/tracking", icon: LineChart, semEfeito: true },
-      { label: "Integrações", href: "/ajustes/integracoes", icon: Key },
-      { label: "Tokens da API", href: "/ajustes/api-tokens", icon: KeyRound },
     ],
   },
   {
-    // Migrado de `(crm)/admin` em 09/09/2026 — eram telas reais e em uso que
-    // só existiam no shell legado, sem nenhuma entrada na navegação do CRM2.
-    titulo: "Sistema",
+    titulo: "Técnico",
     itens: [
-      { label: "Qualidade de dados", href: "/ajustes/qualidade-dados", icon: ShieldCheck },
-      { label: "Organizações", href: "/ajustes/organizacoes", icon: Building2, superAdmin: true },
+      { label: "Integrações", href: "/ajustes/integracoes", icon: Key },
+      { label: "Tokens da API", href: "/ajustes/api-tokens", icon: KeyRound },
+      { label: "Tracking", href: "/ajustes/tracking", icon: LineChart, semEfeito: true },
     ],
   },
 ];
@@ -142,7 +136,7 @@ function AjustesNav({ indice }: { indice: boolean }) {
       )}
       <div className="aj-nav-grupos">
         {GRUPOS.map((grupo) => {
-          const itens = grupo.itens.filter((i) => !i.semEfeito && (!i.superAdmin || superAdmin));
+          const itens = grupo.itens.filter((i) => !i.superAdmin || superAdmin);
           if (itens.length === 0) return null;
           return (
             <div key={grupo.titulo} className="flex flex-col gap-0.5">
@@ -158,6 +152,7 @@ function AjustesNav({ indice }: { indice: boolean }) {
                   >
                     <Icone aria-hidden />
                     {item.label}
+                    {item.semEfeito && <span className="aj-nav-tag" title="Grava a configuração, mas nenhum processo a lê ainda">só registro</span>}
                   </Link>
                 );
               })}

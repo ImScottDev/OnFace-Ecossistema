@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { VARIAVEIS_CONTRATO, converterVariaveisZoho, corpoEhHtml, renderizarCorpo } from "./contrato-variaveis.js";
+import { VARIAVEIS_CONTRATO, converterVariaveisZoho, variaveisDesconhecidas, corpoEhHtml, renderizarCorpo } from "./contrato-variaveis.js";
 
 test("texto puro não é escapado — o PDF já trata cada linha como parágrafo", () => {
   const corpo = "CONTRATANTE: {{empresa_nome}}, CNPJ {{empresa_cnpj}}.";
@@ -63,4 +63,9 @@ test("toda chave do de-para existe no catálogo de variáveis", () => {
   for (const [, chave] of corpo.matchAll(/\{\{(\w+)\}\}/g)) {
     assert.ok(catalogo.has(chave), `${chave} não está no catálogo`);
   }
+});
+
+test("variaveisDesconhecidas aponta só o que o catálogo não tem e traduz o Zoho antes", () => {
+  assert.deepEqual(variaveisDesconhecidas("<p>{{empresa_cnpj}} {{nao_existe}} ${Empresas.CNPJ} {{nao_existe}}</p>"), ["nao_existe"]);
+  assert.deepEqual(variaveisDesconhecidas("sem variável"), []);
 });

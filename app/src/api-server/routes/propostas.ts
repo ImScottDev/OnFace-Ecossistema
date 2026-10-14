@@ -10,6 +10,8 @@ import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
 import { enviarPropostaComCheckout } from "@/lib/crm/enviar-proposta";
 import { getCheckoutSessionStatus } from "@/lib/integrations/stripe-sync";
 import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf";
+import { familiasDaProposta, modeloPdfDaProposta, gravarModeloPdf } from "@/lib/propostas/familia-proposta";
+import { modeloPdfValido } from "@/lib/propostas/modelos-pdf";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { verificarPropostaExigeEmpresa } from "@/lib/vendas/proposta-exige-empresa";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -92,6 +94,8 @@ const updateSchema = z.object({
   dataValidade: z.string().optional().nullable(),
   signatarios: z.array(z.object({ nome: z.string().trim().min(1), email: z.string().trim().email(), papel: z.string().trim().optional(), ordem: z.number().int().positive().optional() })).optional(),
   itens: z.array(itemSchema).min(1).optional(),
+  /** Modelo do PDF (lib/propostas/modelos-pdf.ts). "padrao" volta ao PDF de sempre. */
+  modeloPdf: z.enum(["padrao", "enxuto", "completo", "white_label"]).optional(),
 }).strict();
 
 const aceitarBodySchema = z.object({
@@ -447,6 +451,7 @@ app.get("/propostas/:id/pdf", async (c) => {
       parcelas: propostas.parcelas,
       prazoContratoMeses: propostas.prazoContratoMeses,
       trialDias: propostas.trialDias,
+      reajusteIndice: propostas.reajusteIndice,
       totalRecorrente: propostas.totalRecorrente,
       totalAvulso: propostas.totalAvulso,
       totalGeral: propostas.totalGeral,
@@ -478,8 +483,12 @@ app.get("/propostas/:id/pdf", async (c) => {
     .orderBy(asc(propostaItens.ordem));
 
   try {
+    // ?modelo= é a escolha avulsa (pré-visualizar); sem ela vale o modelo gravado na proposta; sem os dois, o PDF de sempre.
+    const modelo = modeloPdfValido(c.req.query("modelo")) ?? (await modeloPdfDaProposta(id));
     const html = propostaPdfHtml({
       ...p,
+      modelo,
+      familias: await familiasDaProposta(id),
       itens: itens.map((i) => ({
         nome: i.nome,
         descricao: i.descricao,
@@ -526,6 +535,11 @@ app.get("/propostas/:id/publica", async (c) => {
 
   const [negocio] = proposta.negocioId
     ? await db.select({ titulo: negocios.titulo }).from(negocios).where(eq(negocios.id, proposta.negocioId)).limit(1)
+    : [];
+
+  // Quem enviou a proposta: o cliente precisa saber com quem falar (mesmo dado que o PDF já mostra na capa).
+  const [responsavel] = proposta.criadoPorId
+    ? await db.select({ nome: usuarios.nome, email: usuarios.email }).from(usuarios).where(eq(usuarios.id, proposta.criadoPorId)).limit(1)
     : [];
 
   const itens = await db
@@ -626,6 +640,12 @@ app.get("/propostas/:id/publica", async (c) => {
     condicaoPagamentoTipo: proposta.condicaoPagamentoTipo ?? null,
     parcelas: proposta.parcelas ?? null,
     negocioTitulo: negocio?.titulo ?? null,
+    // Apresentação: a(s) família(s) dos itens escolhem o conteúdo (PABX, Callface AI, White Label) na MESMA página.
+    familias: await familiasDaProposta(id),
+    trialDias: proposta.trialDias ?? null,
+    reajusteIndice: proposta.reajusteIndice ?? null,
+    responsavelNome: responsavel?.nome ?? null,
+    responsavelEmail: responsavel?.email ?? null,
     itens,
     grupos, // [] antes do aceite — a página pública mostra os itens crus e o botão de aceitar
   });
@@ -948,6 +968,8 @@ app.patch("/propostas/:id", async (c) => {
   if (parsed.data.itens) {
     await syncOportunidadeItensFromProposta(id);
   }
+
+  if (parsed.data.modeloPdf !== undefined) await gravarModeloPdf(id, ctx.organizacaoId, parsed.data.modeloPdf);
 
   return c.json(updated);
 });

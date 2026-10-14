@@ -3,7 +3,8 @@
 import { Fragment, useRef, useState } from "react";
 import { periodoDoItem, PERIODOS_EM_ORDEM, ROTULO_PERIODO, SUFIXO_PERIODO, totaisPorPeriodo, type PeriodoDeCobranca } from "@/lib/crm/periodo-cobranca";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Clock, FileSignature, CreditCard, CheckCircle2, AlertTriangle, Download, ShieldCheck, Loader2 } from "lucide-react";
+import { Check, Clock, FileSignature, CreditCard, CheckCircle2, AlertTriangle, Download, ShieldCheck, Loader2, Mail } from "lucide-react";
+import { conteudoDasFamilias } from "@/lib/propostas/conteudo-familia";
 import { rotuloDaRecorrencia } from "@/lib/catalogo/rotulos";
 import "./publico.css";
 
@@ -42,6 +43,9 @@ interface PropostaPublicaData {
   empresa: string | null; empresaCnpj: string | null; negocioTitulo: string | null;
   condicaoPagamentoTipo: string | null; parcelas: number | null; prazoContratoMeses: number | null;
   itens: Item[]; grupos: Grupo[];
+  /** Apresentação: as famílias dos itens escolhem o conteúdo (PABX, Callface AI, White Label) na MESMA estrutura. */
+  familias?: string[]; trialDias?: number | null; reajusteIndice?: string | null;
+  responsavelNome?: string | null; responsavelEmail?: string | null;
 }
 
 const brl = (v: string | number) =>
@@ -171,11 +175,15 @@ function ItemLinha({ item }: { item: Item }) {
   const { periodo } = periodoDoItem(item);
   const suf = SUFIXO_PERIODO[periodo];
   const qtd = Number(item.quantidade || 1);
+  // Itens do catálogo trazem os recursos numa string só, separados por ";" ou quebra de linha (o PDF faz o mesmo).
+  const recursos = (item.descricao || "").split(/;\s*|\r?\n/).map((l) => l.trim()).filter(Boolean);
   return (
     <div className="pp-item">
       <div className="pp-item-nome">
         <strong>{item.nome}</strong>
-        {item.descricao ? <small>{item.descricao}</small> : null}
+        {recursos.length > 1 ? (
+          <ul className="pp-item-lista">{recursos.map((r, i) => <li key={i}>{r}</li>)}</ul>
+        ) : item.descricao ? <small>{item.descricao}</small> : null}
       </div>
       <div className="pp-item-valor">
         <strong>{brl(item.subtotal)}{suf}</strong>
@@ -418,6 +426,7 @@ export function PropostaPublica({ id }: { id: string }) {
   const tot = totaisPorPeriodo(p.itens);
   const periodosComValor = PERIODOS_EM_ORDEM.filter((per) => tot[per] > 0);
 
+  const conteudo = conteudoDasFamilias(p.familias);
   const titulo = p.empresa || p.clienteNome || "Proposta comercial";
   const sub = p.negocioTitulo && p.negocioTitulo !== titulo ? p.negocioTitulo : null;
 
@@ -430,6 +439,9 @@ export function PropostaPublica({ id }: { id: string }) {
   for (const per of PERIODOS_EM_ORDEM) if (tot[per] > 0) linhasResumo.push([RESUMO_PERIODO[per], `${brl(tot[per])}${SUFIXO_PERIODO[per]}`]);
   if (condicaoPagamentoTexto) linhasResumo.push(["Pagamento", condicaoPagamentoTexto]);
   if (p.prazoContratoMeses) linhasResumo.push(["Fidelidade", `${p.prazoContratoMeses} meses`]);
+  if (p.trialDias) linhasResumo.push(["Período de teste", `${p.trialDias} dias`]);
+  if (p.reajusteIndice && p.reajusteIndice !== "nenhum") linhasResumo.push(["Reajuste", p.reajusteIndice]);
+  if (validaAte) linhasResumo.push(["Proposta válida até", validaAte]);
 
   let n = 0;
   const proximo = () => String(++n).padStart(2, "0");
@@ -445,6 +457,7 @@ export function PropostaPublica({ id }: { id: string }) {
                 <span className="pp-overline">Proposta comercial</span>
                 <h1 className="pp-titulo">{titulo}</h1>
                 {sub ? <p className="pp-sub">{sub}</p> : null}
+                <p className="pp-promessa">{conteudo.promessa}</p>
               </div>
               <dl className="pp-meta" style={{ margin: 0 }}>
                 {meta.map(([l, v]) => <div key={l}><dt>{l}</dt><dd>{v}</dd></div>)}
@@ -470,6 +483,21 @@ export function PropostaPublica({ id }: { id: string }) {
             )}
           </header>
 
+          <section aria-labelledby="pp-apresentacao">
+            <SecaoTitulo n={proximo()}><span id="pp-apresentacao">Por que a Callface{conteudo.rotulo !== "Callface" ? ` · ${conteudo.rotulo}` : ""}</span></SecaoTitulo>
+            <div className="pp-difs">
+              {conteudo.diferenciais.map((d) => (
+                <div key={d.titulo} className="pp-dif"><strong>{d.titulo}</strong><small>{d.texto}</small></div>
+              ))}
+            </div>
+            {conteudo.entregas.length > 1 && (
+              <div className="pp-incluso">
+                <span className="pp-rotulo">O que está incluso</span>
+                <ul>{conteudo.entregas.map((e) => <li key={e}><Check size={13} aria-hidden /> {e}</li>)}</ul>
+              </div>
+            )}
+          </section>
+
           <section aria-labelledby="pp-escopo">
             <SecaoTitulo n={proximo()}><span id="pp-escopo">Escopo e investimento</span></SecaoTitulo>
             <div className="pp-tabela">
@@ -482,7 +510,7 @@ export function PropostaPublica({ id }: { id: string }) {
                     const doPer = doPeriodo(per);
                     return doPer.length === 0 ? null : (
                       <Fragment key={per}>
-                        <div className="pp-grupo">{TITULO_PERIODO[per]}</div>
+                        <div className="pp-grupo"><span>{TITULO_PERIODO[per]}</span><b>{brl(tot[per])}{SUFIXO_PERIODO[per]}</b></div>
                         {doPer.map((item) => <ItemLinha key={item.id} item={item} />)}
                       </Fragment>
                     );
@@ -512,6 +540,18 @@ export function PropostaPublica({ id }: { id: string }) {
                   </div>
                   <strong>{brl(tot[periodosComValor[0]])}{SUFIXO_PERIODO[periodosComValor[0]]}</strong>
                 </div>
+              ) : periodosComValor.length > 1 ? (
+                <div className="pp-total">
+                  <div>
+                    <span className="pp-rotulo">Seu investimento</span>
+                    <small>Cada cobrança no seu próprio período</small>
+                  </div>
+                  <ul className="pp-total-lista">
+                    {periodosComValor.map((per) => (
+                      <li key={per}><span>{RESUMO_PERIODO[per]}</span><strong>{brl(tot[per])}{SUFIXO_PERIODO[per]}</strong></li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
             </div>
             {p.condicoesPagamento ? <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--of-tinta-3)" }}>{p.condicoesPagamento}</p> : null}
@@ -526,6 +566,14 @@ export function PropostaPublica({ id }: { id: string }) {
                     <h3>{validaAte ? `Proposta válida até ${validaAte}` : "Pronto para seguir?"}</h3>
                     <p>{p.status === "ajuste_solicitado" ? "Recebemos seu pedido de ajuste. Você ainda pode aceitar esta versão." : "Depois do aceite, o contrato e o pagamento chegam prontos, nesta mesma página."}</p>
                   </div>
+                  <ol className="pp-jornada" aria-label="O que acontece depois do aceite">
+                    {["Você aceita aqui", "Recebe o contrato para assinar", "Paga pelo link seguro", "Nosso time ativa e acompanha"].map((t, i) => (
+                      <li key={t}><span>{i + 1}</span>{t}</li>
+                    ))}
+                  </ol>
+                  <ul className="pp-garantias">
+                    {conteudo.garantias.map((g) => <li key={g}><ShieldCheck size={13} aria-hidden /> {g}</li>)}
+                  </ul>
                   <div className="pp-decisao-acoes">
                     <button type="button" className="pp-btn pp-btn-secundario" onClick={() => setPainel("ajuste")}>Pedir ajuste</button>
                     <button type="button" className="pp-btn pp-btn-ghost" onClick={() => setPainel("recusa")}>Recusar</button>
@@ -596,6 +644,14 @@ export function PropostaPublica({ id }: { id: string }) {
           )}
           {todosGruposConcluidos && (
             <Aviso tom="ok">Tudo certo! Recebemos a confirmação de todos os itens desta proposta. Nosso time vai entrar em contato para dar sequência.</Aviso>
+          )}
+
+          {p.responsavelNome && (
+            <div className="pp-contato">
+              <span className="pp-rotulo">Dúvidas sobre esta proposta?</span>
+              <strong>{p.responsavelNome}</strong>
+              {p.responsavelEmail ? <a className="pp-link" href={`mailto:${p.responsavelEmail}`}><Mail size={13} aria-hidden /> {p.responsavelEmail}</a> : null}
+            </div>
           )}
 
           <footer className="pp-rodape-doc">

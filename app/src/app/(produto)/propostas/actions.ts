@@ -11,6 +11,8 @@ import { executar, type Resultado } from "@/lib/vendas/resultado";
 import * as propostas from "@/lib/vendas/propostas";
 import { atualizarItensDoRascunho, criarPropostaComItens, resolverContatoDaProposta, resolverFamiliaDoNegocio, type ItemEntrada } from "@/lib/crm/proposta-criacao";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "@/lib/vendas/eventos";
+import { modeloPdfValido, type ModeloPdf } from "@/lib/propostas/modelos-pdf";
+import { gravarModeloPdf } from "@/lib/propostas/familia-proposta";
 import { lerAlteracoesDaProposta } from "@/lib/vendas/auditoria-comercial-registro";
 import type { RegistroDeAlteracao } from "@/lib/vendas/auditoria-comercial";
 import { atualizarEntregaDaOrigem, entregasDaOrigem } from "@/lib/email/entrega";
@@ -160,6 +162,8 @@ export interface DetalheProposta {
   validadeDias: number | null;
   dataValidade: string | null;
   tipoContratual: string | null;
+  /** Qual dos modelos de PDF esta proposta usa. `padrao` é o de sempre (coluna NULL). */
+  modeloPdf: ModeloPdf;
   itens: Array<{ id: string; nome: string; tipo: string; natureza: string | null; quantidade: number; valorUnitario: number; desconto: number; subtotal: number }>;
   composicao: propostas.ComposicaoFinanceira;
   tracking: { enviadaEm: string | null; primeiraVisualizacao: string | null; aceitaEm: string | null; recusadaEm: string | null; ajusteEm: string | null; ajusteDescricao: string | null };
@@ -198,6 +202,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       razao_social: string | null; cnpj: string | null; logradouro: string | null;
       endereco_numero: string | null; complemento: string | null; bairro: string | null;
       cidade: string | null; estado: string | null; cep: string | null;
+      modelo_pdf: string | null;
     }>(sql`
       SELECT p.id::text, p.numero AS proposta_numero, p.versao, p.status,
              n.empresa_id::text, e.nome AS empresa, p.negocio_id::text,
@@ -211,7 +216,8 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
              p.modo_fechamento AS modo, p.validade_dias, p.data_validade::text,
              p.tipo_contratual, p.enviada_em::text, p.primeira_visualizacao_em::text AS primeira_vis,
              p.aceita_em::text, p.recusada_em::text,
-             p.ajuste_solicitado_em::text AS ajuste_em, p.ajuste_solicitado_descricao AS ajuste_desc
+             p.ajuste_solicitado_em::text AS ajuste_em, p.ajuste_solicitado_descricao AS ajuste_desc,
+             p.modelo_pdf
         FROM propostas p
         LEFT JOIN negocios n ON n.id = p.negocio_id
         LEFT JOIN empresas e ON e.id = n.empresa_id
@@ -254,6 +260,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       validadeDias: p.validade_dias,
       dataValidade: p.data_validade,
       tipoContratual: p.tipo_contratual,
+      modeloPdf: modeloPdfValido(p.modelo_pdf) ?? "padrao",
       itens: itens.map((i) => ({
         id: i.id, nome: i.nome, tipo: i.tipo, natureza: i.natureza,
         quantidade: Number(i.quantidade), valorUnitario: Number(i.valor_unitario),
@@ -347,6 +354,22 @@ export async function acaoReprocessarAceite(propostaId: string): Promise<Resulta
 }
 
 /** Catálogo filtrado pela família da oportunidade (Bloco 03 §2). */
+/**
+ * Escolhe o modelo de PDF desta proposta. É o que o cliente recebe no e-mail e baixa
+ * na página pública, então muda o documento: `padrao` volta ao PDF de sempre.
+ */
+export async function acaoSalvarModeloPdf(propostaId: string, modelo: string): Promise<Resultado> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  const m = modeloPdfValido(modelo);
+  if (!m) return { ok: false, erro: "Modelo de PDF desconhecido." };
+  return executar("escolher o modelo do PDF", async () => {
+    await gravarModeloPdf(propostaId, ctx.organizacaoId, m);
+    revalidatePath("/propostas");
+    revalidatePath(`/propostas/${propostaId}`);
+  });
+}
+
 export async function acaoCatalogo(familia: Familia): Promise<propostas.ItemCatalogo[]> {
   const ctx = await getTenantContext();
   if (!ctx) return [];
