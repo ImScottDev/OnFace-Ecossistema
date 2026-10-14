@@ -20,6 +20,19 @@ const TIMEOUT_MS = 4000;
 export const NOMES_BARRAMENTO: Record<string, string> = {
   DealCreated: "negocio.criado",
   StageChanged: "negocio.etapa_alterada",
+  /*
+   * DE FORA DE PROPÓSITO, e o log do sweep vai chamá-los de "não mapeado":
+   *
+   * - `OpportunityStageChanged` sai JUNTO com `StageChanged` na mesma mudança de etapa
+   *   (medido em produção 14/10, mesmo instante). Mapear os dois entregaria o MESMO fato
+   *   duas vezes ao n8n, com nomes diferentes — e a idempotência por `id_evento` não pega,
+   *   porque são linhas distintas do outbox.
+   * - `ConversationMessageReceived` é mensagem de WhatsApp, o evento mais numeroso de todos
+   *   (366 de 637). Publicar conversa no barramento jogaria para fora a privacidade que a
+   *   regra de 14/10 acabou de fechar, número pessoal incluído.
+   *
+   * Se um dia forem publicados, tem de ser por decisão escrita, não para calar o aviso.
+   */
   DealWon: "negocio.ganho",
   DealLost: "negocio.perdido",
   CustomerCreated: "cliente.criado",
