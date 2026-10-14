@@ -26,6 +26,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             tipo: usuarios.tipo,
             organizacaoId: usuarios.organizacaoId,
             organizacaoSlug: organizacoes.slug,
+            organizacaoAtiva: organizacoes.ativo,
           })
           .from(usuarios)
           .innerJoin(organizacoes, eq(organizacoes.id, usuarios.organizacaoId))
@@ -34,6 +35,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         // Agente de IA é usuário do sistema, mas nunca entra por login.
         if (!user || !user.ativo || user.tipo === "agente") return null;
+        // Ajustes > Organizações > "Ativa": organização inativada (soft delete do
+        // super admin) não entra mais. Antes o flag era só exibido.
+        if (!user.organizacaoAtiva) return null;
 
         const senhaValida = await bcrypt.compare(
           credentials.password as string,

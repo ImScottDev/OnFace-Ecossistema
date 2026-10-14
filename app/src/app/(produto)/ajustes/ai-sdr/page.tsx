@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ETAPAS_PIPELINE, ROTULO_ETAPA_PIPELINE, STATUS_LEGADO_DA_ETAPA } from "@/lib/vendas/dominio";
 import {
   Bot, Save, Eye, EyeOff, Power, PowerOff,
   MessageSquare, Zap, BookOpen,
@@ -49,12 +50,21 @@ interface Stats {
   activeContacts: number;
 }
 
+// Chaves = valor real de `negocios.status` que o SDR lê em lib/ai/sdr.ts
+// (`stageConfig[negocio.status]`). As antigas qualificacao/respondeu/proposta_enviada
+// nunca casavam com um negócio, então o prompt configurado nelas jamais entrava.
+//
+// A lista NÃO é escrita à mão: vem de `STATUS_LEGADO_DA_ETAPA`, a mesma tradução
+// que o motor de vendas usa ao gravar o status. Assim a tela não volta a divergir
+// quando uma etapa mudar. `trial` ficou fora de propósito — deixou de ser etapa
+// em 06/10 (quem está em trial está em Proposta).
 const PIPELINE_STAGES = [
-  { key: "qualificacao", label: "Qualificacao" },
-  { key: "em_contato", label: "Em Contato" },
-  { key: "respondeu", label: "Respondeu" },
-  { key: "reuniao_agendada", label: "Reuniao Agendada" },
-  { key: "proposta_enviada", label: "Proposta Enviada" },
+  // Contato sem negócio: o SDR usa esta chave antes de existir oportunidade.
+  { key: "em_contato", label: "Em Contato (sem negócio ainda)" },
+  ...ETAPAS_PIPELINE.map((etapa) => ({
+    key: STATUS_LEGADO_DA_ETAPA[etapa],
+    label: ROTULO_ETAPA_PIPELINE[etapa],
+  })),
 ];
 
 const DAYS = [

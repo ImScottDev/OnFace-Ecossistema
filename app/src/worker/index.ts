@@ -2782,30 +2782,13 @@ const callfaceAiWorker = new Worker(
     // Falha de conexão NÃO derruba o job: o sync devolve status
     // 'indisponivel' em vez de lançar, e aqui isso vira log. O RDS é externo e
     // um job que explode a cada 6 horas por isso só produz ruído de alerta.
-    const { sincronizarCallfaceAi } = await import("../lib/integrations/callface-ai/sincronizar");
+    const { rodadaCallfaceAi, logarRodada } = await import("../lib/integrations/callface-ai/rodada");
     const { fecharConexao } = await import("@onface/integrations-callface-ai");
+    const origem = (job.data as { origem?: string })?.origem ?? "agendado";
     try {
       const orgs = await db.execute<{ id: string; slug: string }>(rawSql`SELECT id::text, slug FROM organizacoes`);
       for (const org of orgs) {
-        try {
-          // O sync resolve as identidades por conta própria (primeiro passo dele).
-          const r = await sincronizarCallfaceAi(org.id);
-          console.log(`[callface-ai-sync] ${org.slug} (${(job.data as { origem?: string })?.origem ?? "agendado"}): ${r.status} em ${r.duracaoMs}ms — ${r.identidadesNovas} identidade(s) nova(s), ${r.tenants} tenant(s), ${r.snapshots} snapshot(s), ${r.detalhes} detalhe(s), ${r.diasDeUso} dia(s) de uso, saúde ${r.saude?.linhas ?? 0} linha(s)/${r.saude?.mudancasDeSemaforo ?? 0} mudança(s) de semáforo, tarefas ${r.tarefas ? `+${r.tarefas.criadas} ~${r.tarefas.atualizadas} -${r.tarefas.fechadas}` : "n/a"}${r.erro ? ` — ${r.erro}` : ""}`);
-          // White Label: espelho de parceiros + conferência do faturado contra o CRM.
-          // Tem estado próprio (recurso 'parceiros') e não derruba o sync de uso.
-          if (r.status !== "desabilitado") {
-            const { sincronizarParceirosCallfaceAi } = await import("../lib/integrations/callface-ai/parceiros-sincronizar");
-            const p = await sincronizarParceirosCallfaceAi(org.id);
-            console.log(`[callface-ai-sync] ${org.slug} parceiros: ${p.status} em ${p.duracaoMs}ms — ${p.parceiros} parceiro(s), ${p.licencasAtivas}/${p.licencas} licença(s) ativa(s), ${p.faturas} fatura(s), ${p.pendenciasAbertas} pendência(s) (${p.pendenciasAltas} alta(s), ${p.faturasVencidas} fatura(s) vencida(s))${p.limites.length ? ` — não conferido: ${p.limites.join(" | ")}` : ""}${p.erro ? ` — ${p.erro}` : ""}`);
-            // Retrato do cliente na plataforma (plano, Stripe, licenças, usuários, equipes, receptivos).
-            // Estado próprio (recurso 'retrato'); bloco que não pôde ser lido vira erro no estado, não vazio.
-            const { sincronizarRetratoCallfaceAi } = await import("../lib/integrations/callface-ai/retrato-sincronizar");
-            const rt = await sincronizarRetratoCallfaceAi(org.id);
-            console.log(`[callface-ai-sync] ${org.slug} retrato: ${rt.status} em ${rt.duracaoMs}ms — ${rt.organizacoes} organização(ões), ${rt.planos} plano(s), ${rt.licencas} licença(s), ${rt.usuarios} vínculo(s) de usuário, ${rt.equipes} equipe(s)/workspace(s), ${rt.receptivos} receptivo(s)${rt.avisos.length ? ` — conferir: ${rt.avisos.join(" | ")}` : ""}${rt.erro ? ` — ${rt.erro}` : ""}`);
-          }
-        } catch (e) {
-          console.error(`[callface-ai-sync] ${org.slug}: falhou:`, e instanceof Error ? e.message : e);
-        }
+        logarRodada(await rodadaCallfaceAi(org.id, org.slug), "[callface-ai-sync]", origem);
       }
     } finally {
       await fecharConexao().catch(() => undefined);
@@ -3908,7 +3891,7 @@ const emailSequenceWorker = new Worker(
           };
 
           const subject = interpolateTemplate(template.assunto, templateData);
-          const html = interpolateTemplate(template.corpo, templateData);
+          const html = (await import("@/lib/ajustes/assinatura-email")).comAssinatura(interpolateTemplate(template.corpo, templateData), conta.assinatura);
 
           const client = createEmailClient({
             id: conta.id, tipo: conta.tipo as "google" | "microsoft" | "imap", email: conta.email,

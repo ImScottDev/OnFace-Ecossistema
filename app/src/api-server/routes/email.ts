@@ -17,6 +17,7 @@ import { getGoogleAuthUrl } from "@/lib/email/google";
 import { exchangeGoogleCode } from "@/lib/email/google";
 import { getMicrosoftAuthUrl } from "@/lib/email/microsoft";
 import { exchangeMicrosoftCode } from "@/lib/email/microsoft";
+import { comAssinatura } from "@/lib/ajustes/assinatura-email";
 import { createEmailOAuthState, readEmailOAuthState } from "@/lib/email/oauth-state";
 
 const app = new Hono();
@@ -286,7 +287,8 @@ app.post("/email/send", async (c) => {
       if (matched) matchedLeadId = matched.id;
     }
 
-    const corpoTexto = data.corpo.replace(/<[^>]*>/g, "");
+    const corpoHtml = comAssinatura(data.corpo, conta.assinatura);
+    const corpoTexto = corpoHtml.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]*>/g, "");
     const effectiveFromAlias = data.fromAlias || conta.envioComo || null;
     const [emailRecord] = await db.insert(emails).values({
       organizacaoId: ctx.organizacaoId,
@@ -297,7 +299,7 @@ app.post("/email/send", async (c) => {
       cc: data.cc || null,
       bcc: data.bcc || null,
       assunto: data.assunto,
-      corpo: data.corpo,
+      corpo: corpoHtml,
       corpoTexto,
       direcao: "out",
       status: "queued",
@@ -331,7 +333,7 @@ app.post("/email/send", async (c) => {
         cc: data.cc,
         bcc: data.bcc,
         subject: data.assunto,
-        html: data.corpo,
+        html: corpoHtml,
         text: corpoTexto,
         inReplyTo: data.inReplyTo,
         threadId: data.threadId,

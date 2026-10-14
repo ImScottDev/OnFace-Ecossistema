@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { comAssinatura } from "@/lib/ajustes/assinatura-email";
 import { db } from "@/lib/db";
 import {
   leads, usuarios, whatsappSessao, whatsappMensagens,
@@ -207,7 +208,7 @@ app.post("/cadencia/:leadId/enviar", async (c) => {
 
     const assuntoFinal = (assunto ?? toque.assunto ?? "").trim() || "Callface";
     const corpoTexto = conteudo;
-    const corpoHtml = conteudo.replace(/\n/g, "<br>");
+    const corpoHtml = comAssinatura(conteudo.replace(/\n/g, "<br>"), conta.assinatura);
     const effectiveFromAlias = conta.envioComo || null;
 
     const [emailRecord] = await db.insert(emails).values({

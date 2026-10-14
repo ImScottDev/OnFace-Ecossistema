@@ -215,7 +215,7 @@ export default function ServicosCatalogoPage() {
                   className="w-full px-3 py-1.5 rounded text-[12px] text-[var(--cf2-text-primary)] outline-none"
                   style={{ background: "var(--cf2-bg-surface-muted)" }}
                 />
-                <p className="text-[10px] text-[var(--cf2-text-tertiary)] mt-0.5">Pré-preenchido ao adicionar este serviço em propostas.</p>
+                <p className="text-[10px] text-[var(--cf2-text-tertiary)] mt-0.5">Referência para o AI SDR citar preço na conversa. Não preenche a proposta: o preço da proposta vem do catálogo oficial (Ajustes &gt; Catálogo).</p>
               </div>
               <div>
                 <label className="text-[11px] text-[var(--cf2-text-tertiary)] block mb-1">Unidade</label>

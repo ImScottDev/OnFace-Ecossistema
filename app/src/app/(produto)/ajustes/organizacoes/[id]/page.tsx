@@ -174,6 +174,10 @@ export default function OrganizacaoDetalhePage() {
       </div>
 
       <Secao titulo="Configurações">
+        {/* Medido em 13/10/2026: só "Organização ativa" (bloqueia o login) e nome/slug têm efeito. */}
+        <p className="aj-aviso" role="status">
+          <strong>Só registro, por enquanto:</strong> domínio, cor primária, limites de pessoas e de leads e &ldquo;WhatsApp habilitado&rdquo; ficam gravados, mas nenhuma parte do ONFACE os lê. Os limites não impedem novos convites nem novos leads. &ldquo;Organização ativa&rdquo; desmarcada impede o login de todas as pessoas dela.
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {CAMPOS.map((campo) => (
             <div key={campo.key} className="flex flex-col gap-1.5">

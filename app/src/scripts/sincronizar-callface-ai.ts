@@ -3,14 +3,22 @@
  *
  *     pnpm tsx --env-file=.env src/scripts/sincronizar-callface-ai.ts
  *     pnpm tsx --env-file=.env src/scripts/sincronizar-callface-ai.ts --so-identidade
+ *     pnpm tsx --env-file=.env src/scripts/sincronizar-callface-ai.ts --so-uso
+ *
+ * Por padrão roda a MESMA rodada do job de 6 h (`lib/integrations/callface-ai/rodada.ts`):
+ * uso, parceiros (White Label) e retrato do cliente. Rodava só o uso, e por isso as
+ * tabelas de parceiro e de retrato ficavam vazias quando o job não tinha passado.
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { sincronizarCallfaceAi } from "@/lib/integrations/callface-ai/sincronizar";
 import { resolverIdentidades } from "@/lib/integrations/callface-ai/identidade";
+import { rodadaCallfaceAi, logarRodada } from "@/lib/integrations/callface-ai/rodada";
 import { fecharConexao } from "@onface/integrations-callface-ai";
 
 const SO_IDENTIDADE = process.argv.includes("--so-identidade");
+// `--so-uso` mantém o comportamento antigo do script (passo 1 só), para depuração.
+const SO_USO = process.argv.includes("--so-uso");
 
 async function main() {
   const orgs = await db.execute<{ id: string; slug: string }>(sql`SELECT id::text, slug FROM organizacoes`);
@@ -35,6 +43,11 @@ async function main() {
       console.log(`  avaliadas ${r.avaliadas} · vinculadas ${r.vinculadas} · já tinham ${r.jaVinculadas}`);
       console.log(`  sem sinal ${r.semSinal} · disputadas ${r.disputadas} · duplicadas ${r.duplicadas} (indecisas ${r.duplicadasIndecisas}) · ambíguas ${r.ambiguas} · contradições ${r.contradicoes} · com pendência ${r.pendentes}`);
       if (r.erro) console.log(`  erro: ${r.erro}`);
+      continue;
+    }
+    if (!SO_USO) {
+      const relato = await rodadaCallfaceAi(org.id, org.slug);
+      logarRodada(relato, " ", "script");
       continue;
     }
     const r = await sincronizarCallfaceAi(org.id);
