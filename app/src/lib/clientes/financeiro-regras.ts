@@ -196,6 +196,84 @@ export function assinaturaFinanceira(a: AssinaturaBruta): AssinaturaFinanceira {
   };
 }
 
+// ─── "Como está o financeiro deste cliente hoje" ─────────────────────────────
+
+/**
+ * Por que NÃO há próxima cobrança (nunca um traço mudo):
+ *  sem_assinatura    — nenhuma assinatura no Stripe para a conta
+ *  cancelada         — todas encerradas (`data` = cancelamento, quando se sabe)
+ *  suspensa          — o Stripe parou de cobrar (inadimplente, não concluída, pausada)
+ *  cancela_no_fim    — ainda cobra, mas acaba em `data`: não haverá nova fatura
+ *  sem_fim_do_ciclo  — assinatura viva, e o espelho ainda não tem o fim do período (volta no próximo sync)
+ *  sem_valor         — ciclo conhecido (`data`), valor de cobrança não
+ */
+export type MotivoSemProxima = "sem_assinatura" | "cancelada" | "suspensa" | "cancela_no_fim" | "sem_fim_do_ciclo" | "sem_valor";
+
+/**
+ * Estado da fatura do mês vigente (mês do dia de cobrança, fuso SP):
+ *  vencida / a_receber / recebida — a fatura do mês existe
+ *  sera_gerada       — não existe ainda; o Stripe a gera em `data` (ainda neste mês)
+ *  aguardando_stripe — o ciclo já terminou em `data` e o Stripe ainda não gerou a renovação
+ *  sem_fatura_no_mes — não existe e nenhuma é esperada neste mês (`data` = próxima cobrança, se houver)
+ *  sem_assinatura    — não há assinatura cobrando
+ */
+export type EstadoDoMes = "vencida" | "a_receber" | "recebida" | "sera_gerada" | "aguardando_stripe" | "sem_fatura_no_mes" | "sem_assinatura";
+
+export interface SituacaoFinanceira {
+  mesRotulo: string;
+  mes: { estado: EstadoDoMes; valor: number | null; data: Date | null };
+  proxima: { data: Date; valor: number; assinaturas: number } | { data: Date | null; motivo: MotivoSemProxima };
+}
+
+export function situacaoFinanceira(
+  faturas: Array<Pick<FaturaFinanceira, "estado" | "valor" | "mesCobranca" | "dataCobranca" | "pagaEm">>,
+  assinaturas: Array<Pick<AssinaturaFinanceira, "statusStripe" | "ativa" | "fimDoPeriodo" | "canceladaEm" | "proximaCobranca"> & { cancelaNoFim: boolean }>,
+  agora: Date,
+): SituacaoFinanceira {
+  const mesAtual = mesSP(agora), hoje = diaSP(agora);
+  const mesRotulo = rotuloMesCobranca(mesAtual).split("/")[0].toLowerCase();
+
+  // Próxima cobrança: a mais cedo entre as assinaturas que cobrarão de novo.
+  const proximas = assinaturas.flatMap((a) => (a.proximaCobranca ? [a.proximaCobranca] : []));
+  proximas.sort((x, y) => x.data.getTime() - y.data.getTime());
+  let proxima: SituacaoFinanceira["proxima"];
+  if (proximas.length) proxima = { data: proximas[0].data, valor: proximas[0].valor, assinaturas: proximas.length };
+  else {
+    const cobrando = assinaturas.filter((a) => a.ativa);
+    const encerradas = assinaturas.filter((a) => a.statusStripe === "canceled");
+    const fimAgendado = cobrando.find((a) => a.cancelaNoFim || a.canceladaEm);
+    const semFim = cobrando.find((a) => !a.fimDoPeriodo);
+    const comFim = cobrando.find((a) => a.fimDoPeriodo);
+    if (!assinaturas.length) proxima = { data: null, motivo: "sem_assinatura" };
+    else if (fimAgendado) proxima = { data: fimAgendado.fimDoPeriodo ?? fimAgendado.canceladaEm, motivo: "cancela_no_fim" };
+    else if (semFim) proxima = { data: null, motivo: "sem_fim_do_ciclo" };
+    else if (comFim) proxima = { data: comFim.fimDoPeriodo, motivo: "sem_valor" };
+    else if (encerradas.length === assinaturas.length) {
+      const quando = encerradas.map((a) => a.canceladaEm ?? a.fimDoPeriodo).filter((d): d is Date => !!d).sort((x, y) => y.getTime() - x.getTime())[0] ?? null;
+      proxima = { data: quando, motivo: "cancelada" };
+    } else proxima = { data: null, motivo: "suspensa" };
+  }
+
+  // Fatura do mês vigente: a que já existe (a pior vence: vencida > a receber > recebida).
+  const doMes = faturas.filter((f) => f.mesCobranca === mesAtual && (f.estado === "vencida" || f.estado === "a_receber" || f.estado === "recebida"));
+  const soma = (l: typeof doMes) => r(l.reduce((s, f) => s + c(f.valor), 0));
+  const vencidas = doMes.filter((f) => f.estado === "vencida"), aReceber = doMes.filter((f) => f.estado === "a_receber"), pagas = doMes.filter((f) => f.estado === "recebida");
+  const cedo = (l: typeof doMes) => l.map((f) => f.dataCobranca).filter((d): d is Date => !!d).sort((x, y) => x.getTime() - y.getTime())[0] ?? null;
+  let mes: SituacaoFinanceira["mes"];
+  if (vencidas.length) mes = { estado: "vencida", valor: soma(vencidas), data: cedo(vencidas) };
+  else if (aReceber.length) mes = { estado: "a_receber", valor: soma(aReceber), data: cedo(aReceber) };
+  else if (pagas.length) mes = { estado: "recebida", valor: soma(pagas), data: pagas.map((f) => f.pagaEm).filter((d): d is Date => !!d).sort((x, y) => y.getTime() - x.getTime())[0] ?? null };
+  else if (!assinaturas.some((a) => a.ativa)) mes = { estado: "sem_assinatura", valor: null, data: null };
+  else if ("valor" in proxima) {
+    const dia = diaSP(proxima.data);
+    mes = dia < hoje ? { estado: "aguardando_stripe", valor: proxima.valor, data: proxima.data }
+      : mesSP(proxima.data) === mesAtual ? { estado: "sera_gerada", valor: proxima.valor, data: proxima.data }
+      : { estado: "sem_fatura_no_mes", valor: proxima.valor, data: proxima.data };
+  } else mes = { estado: "sem_fatura_no_mes", valor: null, data: null };
+
+  return { mesRotulo, mes, proxima };
+}
+
 // ─── Fatura ──────────────────────────────────────────────────────────────────
 
 /**

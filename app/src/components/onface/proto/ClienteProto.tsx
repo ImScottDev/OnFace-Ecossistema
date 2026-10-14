@@ -31,7 +31,7 @@ import { textoDaClasse } from "@/lib/vendas/classificacao-rotulos";
 import { toast } from "sonner";
 
 import type { ClienteDoDesenho } from "@/lib/clientes/cliente-para-o-desenho";
-import { ROTULO_STATUS_ASSINATURA } from "@/lib/clientes/financeiro-regras";
+import { ROTULO_STATUS_ASSINATURA, situacaoFinanceira, type MotivoSemProxima } from "@/lib/clientes/financeiro-regras";
 import { produtoParaExibir } from "@/lib/catalogo/rotulos";
 import { geometriaFaturamento } from "@/lib/clientes/evolucao-geometria";
 import { ClienteLiga } from "./ClienteLiga";
@@ -241,6 +241,7 @@ class ClienteLigada extends ClienteLiga {
     const pagas12 = fats.filter((f) => f.st === "Pago" && f.pagoEm && f.pagoEm.getTime() >= umAno);
     const pago12 = pagas12.reduce((a, f) => a + f.v, 0);
     const pagoTotal = fats.filter((f) => f.st === "Pago").reduce((a, f) => a + f.v, 0);
+    const maisAtraso = Math.max(0, ...vencidas.map((f) => f.atraso ?? 0));
     const proxF = abertas.filter((f) => f.venc).sort((a, b) => a.venc!.getTime() - b.venc!.getTime())[0] ?? null;
     const FST: Record<string, string> = { Pago: "ok", "Em aberto": "neutro", Vencida: "erro" };
     const copiar = (t: string, rot: string) => { navigator.clipboard.writeText(t).then(() => toast(rot + " copiado"), () => toast.error("Não deu para copiar")); };
@@ -329,6 +330,32 @@ class ClienteLigada extends ClienteLiga {
     const proxRen = [...ativos.map((c) => ({ c, d: dt(c.vencimento), mensal: false })), ...(proxCob ? [{ c: null, d: proxCob.d, mensal: proxCob.a.periodo === "mensal" }] : [])]
       .filter((x) => x.d && x.d >= h0).sort((a, b) => a.d!.getTime() - b.d!.getTime())[0] ?? null;
     const diasAte = (d: Date) => Math.round((d.getTime() - hoje.getTime()) / 864e5);
+    /* As três perguntas do dono, de uma regra só (financeiro-regras.situacaoFinanceira): fatura do mês vigente,
+       próxima cobrança e, quando não há, o PORQUÊ — nunca um traço mudo. */
+    const sit = situacaoFinanceira(
+      R.faturas.map((f) => ({ estado: f.estado, valor: Number(f.valor), mesCobranca: f.mesCobranca, dataCobranca: dt(f.dataCobranca), pagaEm: dt(f.pagaEm) })),
+      R.assinaturas.map((a) => ({ statusStripe: a.status, ativa: ["active", "trialing", "past_due"].includes(a.status), fimDoPeriodo: dt(a.fimDoPeriodo), canceladaEm: dt(a.canceladaEm), cancelaNoFim: !!a.cancelaNoFimDoPeriodo, proximaCobranca: a.proximaCobranca ? { data: dt(a.proximaCobranca.data)!, valor: a.proximaCobranca.valor } : null })),
+      hoje,
+    );
+    const SEM_PROXIMA: Record<MotivoSemProxima, (d: Date | null) => string> = {
+      sem_assinatura: () => "sem assinatura no Stripe",
+      cancelada: (d) => "assinatura cancelada" + (d ? " em " + dmy(d) : ""),
+      suspensa: () => "o Stripe parou de cobrar",
+      cancela_no_fim: (d) => "cancela" + (d ? " em " + dmy(d) : " no fim do ciclo") + ", sem nova fatura",
+      sem_fim_do_ciclo: () => "Stripe ainda não informou o ciclo",
+      sem_valor: (d) => "ciclo até " + dmy(d) + ", valor indisponível",
+    };
+    const proxTxt = "motivo" in sit.proxima ? SEM_PROXIMA[sit.proxima.motivo](sit.proxima.data) : brl2(sit.proxima.valor) + (diasAte(sit.proxima.data) < 0 ? " · ciclo já encerrado" : " · em " + diasAte(sit.proxima.data) + " dias") + (sit.proxima.assinaturas > 1 ? " · +" + (sit.proxima.assinaturas - 1) + " assinatura(s)" : "");
+    const mesBrl = sit.mes.valor != null ? brl2(sit.mes.valor) : "";
+    const [mesV, mesS, mesTom]: [string, string, string] = ({
+      vencida: ["Vencida", mesBrl + " · venceu " + dmy(sit.mes.data), "erro"],
+      a_receber: ["Em aberto", mesBrl + " · vence " + dmy(sit.mes.data), "coral"],
+      recebida: ["Paga", mesBrl + (sit.mes.data ? " · em " + dmy(sit.mes.data) : ""), "ok"],
+      sera_gerada: ["Ainda não gerada", "será gerada em " + dmy(sit.mes.data) + " · " + mesBrl, "neutro"],
+      aguardando_stripe: ["Ainda não gerada", "ciclo acabou em " + dmy(sit.mes.data) + "; o Stripe não renovou", "erro"],
+      sem_fatura_no_mes: ["Sem fatura", sit.mes.data ? "nenhuma neste mês · próxima em " + dmy(sit.mes.data) : "nenhuma esperada neste mês", "neutro"],
+      sem_assinatura: ["Sem cobrança", "nenhuma assinatura cobrando", "neutro"],
+    } as Record<string, [string, string, string]>)[sit.mes.estado];
     const ROT_TIPO: Record<string, string> = { documenso: "Contrato assinado", legado: "Contrato legado (Zoho)" };
     /* Contrato = assinado no Documenso ou do legado. Assinatura do Stripe NÃO
        entra aqui (fica em `R.assinaturas` e no botão "Assinaturas"). */
@@ -584,7 +611,7 @@ class ClienteLigada extends ClienteLiga {
       },
       fatos: [
         { l: "Método", v: "—" },
-        { l: "Próxima cobrança", v: proxCob ? dmy(proxCob.d) : proxF ? dmy(proxF.venc) : "—" },
+        { l: "Próxima cobrança", v: "motivo" in sit.proxima ? SEM_PROXIMA[sit.proxima.motivo](sit.proxima.data) : dmy(sit.proxima.data) + " · " + brl2(sit.proxima.valor) },
         /* Conta com assinatura ativa E uma em atraso só dizia "Ativa": o estado
            ruim sumia atrás do bom. Agora cada status presente aparece, contado. */
         { l: "Assinatura", v: R.assinaturas.length
@@ -647,7 +674,7 @@ class ClienteLigada extends ClienteLiga {
         ] : []),
         tile("Receita acumulada", brlK(pagoTotal), primeiroPago ? "faturas pagas desde " + MES[primeiroPago.getMonth()].toLowerCase() + "/" + primeiroPago.getFullYear() : pagoTotal > 0 ? "faturas pagas (sem data de pagamento)" : "nenhuma fatura paga", "var(--of-papel)", irAba("financeiro")),
         tile("Em aberto", brl(emAberto), vencidas.length ? brl(vencido) + " vencido" : proxF?.venc ? "vence " + dm(proxF.venc) : "nada pendente", vencidas.length ? "var(--of-coral-no-escuro)" : "var(--of-papel)", irAba("financeiro")),
-        tile("Próxima renovação", proxRen ? dmy(proxRen.d) : "—", proxRen ? (proxRen.c ? "" : "próxima fatura · ") + "em " + diasAte(proxRen.d!) + " dias" : "sem data de vencimento", proxRen && !proxRen.mensal && diasAte(proxRen.d!) <= 45 ? "var(--of-coral-no-escuro)" : "var(--of-papel)", () => proxRen && abrirOpp("renovacao")),
+        tile("Próxima renovação", proxRen ? dmy(proxRen.d) : "—", proxRen ? (proxRen.c ? "" : "próxima fatura · ") + "em " + diasAte(proxRen.d!) + " dias" : "motivo" in sit.proxima ? SEM_PROXIMA[sit.proxima.motivo](sit.proxima.data) : "sem data de vencimento", proxRen && !proxRen.mensal && diasAte(proxRen.d!) <= 45 ? "var(--of-coral-no-escuro)" : "var(--of-papel)", () => proxRen && abrirOpp("renovacao")),
       ],
     };
 
@@ -655,14 +682,16 @@ class ClienteLigada extends ClienteLiga {
       ...v.fin,
       aberto: brl2(emAberto),
       abertoStyle: "display:block;margin-top:3px;font-family:'Plus Jakarta Sans',sans-serif;font-size:26px;font-weight:800;letter-spacing:-.035em;line-height:1.1;font-variant-numeric:tabular-nums;color:" + (vencidas.length ? "var(--of-coral-acao-hover)" : "var(--of-tinta-forte)"),
-      abertoSub: vencidas.length ? vencidas.length + (vencidas.length > 1 ? " faturas vencidas" : " fatura vencida") + " · " + brl2(vencido) : abertas.length ? abertas.length + (abertas.length > 1 ? " faturas em aberto" : " fatura em aberto") + (proxF ? " · vence " + dmy(proxF.venc) : "") : "Nenhuma fatura pendente",
+      abertoSub: vencidas.length ? vencidas.length + (vencidas.length > 1 ? " faturas vencidas" : " fatura vencida") + " · " + brl2(vencido) + (maisAtraso ? " · a mais antiga há " + maisAtraso + " dias" : "") : abertas.length ? abertas.length + (abertas.length > 1 ? " faturas em aberto" : " fatura em aberto") + (proxF ? " · vence " + dmy(proxF.venc) : "") : "Nenhuma fatura pendente",
       abertoSubStyle: "display:block;margin-top:3px;font-size:12px;font-weight:" + (vencidas.length ? "600;color:var(--of-coral-acao-hover)" : "500;color:var(--of-tinta-3)"),
       temCobrar: !!(vencidas[0] ?? abertas[0])?.hosted,
       cobrar: () => { const f = vencidas[0] ?? abertas[0]; if (f?.hosted) copiar(f.hosted, "Link de cobrança"); },
-      ultimas: fats.slice(0, 4).map(fatRow),
+      /* A primeira linha é sempre a fatura do mês vigente (paga, em aberto, vencida ou "ainda não gerada"). */
+      ultimas: [{ id: "mes-vigente", comp: "Fatura de " + sit.mesRotulo, vencTxt: mesS, valor: mesBrl || "—", st: mesV, stStyle: pill(mesTom), dot: dotS(mesTom) }, ...fats.slice(0, 3).map(fatRow)],
       kpis: [
-        ["Em aberto", brl2(emAberto), proxF ? "Próximo vencimento " + dmy(proxF.venc) : abertas.length ? "Sem data de vencimento" : "Nada pendente", "var(--of-tinta-forte)"],
-        ["Vencido", brl2(vencido), vencidas.length ? vencidas.length + (vencidas.length > 1 ? " faturas em atraso" : " fatura em atraso") : "Nenhum atraso", vencidas.length ? "var(--of-coral-acao-hover)" : "var(--of-tinta-forte)"],
+        ["Em aberto", brl2(emAberto), vencidas.length ? brl2(vencido) + " vencido" + (maisAtraso ? " · há " + maisAtraso + " dias" : "") : proxF ? "vence " + dmy(proxF.venc) : abertas.length ? "sem data de vencimento" : "nada pendente", vencidas.length ? "var(--of-coral-acao-hover)" : "var(--of-tinta-forte)"],
+        ["Fatura de " + sit.mesRotulo, mesV, mesS, mesTom === "erro" ? "var(--of-coral-acao-hover)" : "var(--of-tinta-forte)"],
+        ["Próxima cobrança", "motivo" in sit.proxima ? "—" : dmy(sit.proxima.data), proxTxt, "var(--of-tinta-forte)"],
         ["Pago em 12 meses", brl2(pago12), pagas12.length + (pagas12.length === 1 ? " fatura paga" : " faturas pagas"), "var(--of-tinta-forte)"],
         // Responsável financeiro não é designado no banco: mostra o contato
         // principal REAL, com o e-mail real — nunca o "Financeiro" do POOL.
