@@ -32,7 +32,8 @@ export interface PortasInbox {
   marcarProcessado(id: string): Promise<void>;
   marcarFalho(id: string, erro: string): Promise<void>;
   auditar(organizacaoId: string, acao: string, inboxId: string, depois: Record<string, unknown>): Promise<void>;
-  enfileirar(eventId: string, tentativa: number): Promise<void>;
+  /** `atrasoMs` padrão 15s (reprocesso de falha); a primeira entrega passa 0. */
+  enfileirar(eventId: string, tentativa: number, atrasoMs?: number): Promise<void>;
   processar(payload: StripeEventPayload, ctx: { organizacaoId: string; inboxId: string }): Promise<{ passos: string[] }>;
 }
 
@@ -81,5 +82,33 @@ export async function executarComPortas(
       catch (qe) { console.error("[StripeWebhook] não consegui enfileirar o reprocesso:", qe); }
     }
     return { estado: "falhou", erro, enfileirado };
+  }
+}
+
+export type ResultadoAceite =
+  | { estado: "enfileirado" }
+  | { estado: "ja_processado" }
+  | { estado: "nao_enfileirado"; erro: string };
+
+/**
+ * Caminho da REQUISIÇÃO do webhook: o evento já está no inbox; aqui só se decide se
+ * vai para a fila. NÃO processa nada (sync, recebíveis, ganho rodam no worker), para
+ * responder ao Stripe em milissegundos. Idempotência: só `processed` é pulado; o resto
+ * entra na fila e o `claim` do worker garante que um evento produz efeito uma vez só.
+ * Se a fila recusar, o evento segue `pending` no inbox e o chamador responde 500
+ * (o Stripe reentrega) — nunca um 2xx falso.
+ */
+export async function aceitarEvento(
+  portas: Pick<PortasInbox, "situacao" | "enfileirar">, inboxId: string, eventId: string,
+): Promise<ResultadoAceite> {
+  const s = await portas.situacao(inboxId);
+  if (s && normalizarStatusInbox(s.status) === "processed") return { estado: "ja_processado" };
+  try {
+    await portas.enfileirar(eventId, 0, 0);
+    return { estado: "enfileirado" };
+  } catch (e) {
+    const erro = e instanceof Error ? e.message : String(e);
+    console.error(`[StripeWebhook] ${eventId}: fila recusou o evento (segue pending no inbox):`, e);
+    return { estado: "nao_enfileirado", erro };
   }
 }

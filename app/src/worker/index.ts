@@ -155,6 +155,10 @@ const stripeWebhookEventsWorker = new Worker(
   },
   { connection, concurrency: 1 },
 );
+stripeWebhookEventsWorker.on("failed", (job, err) => {
+  const ultima = job && job.attemptsMade >= (job.opts.attempts ?? 1);
+  console.error(`[StripeWebhookWorker] ${job?.data?.stripeEventId} falhou (tentativa ${job?.attemptsMade}${ultima ? ", ESGOTADO — evento segue failed no inbox, reprocessar pelo admin" : ""}):`, err.message);
+});
 trackRedisConnection(stripeWebhookEventsWorker);
 
 // Follow-up Worker

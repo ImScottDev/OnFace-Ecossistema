@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { assinaturas, auditLog, checkouts, faturas, leads, organizacoes, stripeWebhookEvents as T } from "@/lib/db/schema";
 import { organizationIdFromStripeMetadata } from "./stripe-webhook-metadata";
 import { customerIdDe, eventoDoSaaS, invoiceIdDe, subscriptionIdDe } from "./stripe-financeiro";
-import { executarComPortas, type LinhaInbox, type PortasInbox, type ResultadoInbox } from "./stripe-webhook-inbox";
+import { aceitarEvento, executarComPortas, type LinhaInbox, type PortasInbox, type ResultadoInbox } from "./stripe-webhook-inbox";
 import { depsReais, processarEventoStripe, type StripeEventPayload } from "./stripe-webhook-processor";
 
 /** Eventos de CLIENTE: sem vínculo persistido não há como saber de quem são (a conta é compartilhada com o SaaS). */
@@ -77,13 +77,18 @@ export function portasReais(): PortasInbox {
         await db.insert(auditLog).values({ organizacaoId, actorId: null, action: acao, entityType: "stripe_event", entityId: inboxId, before: null, after: depois, source: "webhook" });
       } catch (e) { console.error("[StripeWebhook] auditoria falhou:", e); }
     },
-    async enfileirar(eventId) {
+    async enfileirar(eventId, _tentativa, atrasoMs = 15_000) {
       const { stripeWebhookEventsQueue } = await import("@/lib/queue");
       // jobId com timestamp: id repetido de job já concluído seria ignorado em silêncio pelo BullMQ.
-      await stripeWebhookEventsQueue.add("reprocessar", { stripeEventId: eventId }, { jobId: `stripe-evt-${eventId}-${Date.now()}`, delay: 15_000 });
+      await stripeWebhookEventsQueue.add("reprocessar", { stripeEventId: eventId }, { jobId: `stripe-evt-${eventId}-${Date.now()}`, delay: atrasoMs });
     },
     async processar(payload, ctx) { return processarEventoStripe(payload, ctx, await depsReais()); },
   };
+}
+
+/** Para a rota HTTP: só enfileira (sem processar). */
+export function aceitarEventoDoInbox(inboxId: string, eventId: string) {
+  return aceitarEvento(portasReais(), inboxId, eventId);
 }
 
 export function executarEventoDoInbox(inboxId: string, opcoes: { enfileirarSeFalhar: boolean }): Promise<ResultadoInbox> {

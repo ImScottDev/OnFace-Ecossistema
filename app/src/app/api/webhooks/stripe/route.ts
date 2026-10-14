@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { stripeWebhookEvents } from "@/lib/db/schema";
 import { EVENTOS_ESPERADOS } from "@/lib/integrations/stripe-financeiro";
-import { executarEventoDoInbox, resolverOrganizacao } from "@/lib/integrations/stripe-webhook-inbox-db";
+import { aceitarEventoDoInbox, resolverOrganizacao } from "@/lib/integrations/stripe-webhook-inbox-db";
 import { normalizarStatusInbox } from "@/lib/integrations/stripe-webhook-status";
 import type { StripeEventPayload } from "@/lib/integrations/stripe-webhook-processor";
 
@@ -16,8 +16,9 @@ import type { StripeEventPayload } from "@/lib/integrations/stripe-webhook-proce
  * `lib/integrations/stripe-webhook-handlers.ts` e o ciclo de vida do inbox em
  * `stripe-webhook-inbox*.ts` — o worker e o reprocesso rodam EXATAMENTE o mesmo código.
  *
- * Falha não é silenciosa: o evento vira `failed` com o erro e entra na fila
- * `stripe-webhook-events` (retry com backoff). Se nem a fila aceitar, 500 para o Stripe reentregar.
+ * NÃO processa na requisição: grava, enfileira em `stripe-webhook-events` e responde 202.
+ * O worker processa (retry com backoff; falha vira `failed` + auditoria). Se a fila não
+ * aceitar, 500 para o Stripe reentregar.
  *
  * Configurar no painel Stripe (Developers > Webhooks) https://crm.callface.io/api/webhooks/stripe com os
  * eventos de `EVENTOS_ESPERADOS` (lista: `npx tsx src/scripts/stripe-endpoint-eventos-faltantes.ts`).
@@ -113,16 +114,16 @@ export async function POST(request: NextRequest) {
     inboxId = existente.id;
   }
 
-  const r = await executarEventoDoInbox(inboxId, { enfileirarSeFalhar: true });
+  // Sem organização não há o que enfileirar (era 202 antes também).
+  if (!tenant.organizacaoId) return NextResponse.json({ received: true, unresolved: true, eventId: event.id }, { status: 202 });
+
+  // RESPONDE JÁ, PROCESSA DEPOIS: sync completo da conta + recebíveis levavam 25–65s e o Stripe
+  // desiste em ~20s (499 → reentrega → risco de endpoint desativado). O worker roda o mesmo código.
+  const r = await aceitarEventoDoInbox(inboxId, event.id);
   switch (r.estado) {
-    case "processado": return NextResponse.json({ received: true, type });
+    case "enfileirado": return NextResponse.json({ received: true, type, queued: true }, { status: 202 });
     case "ja_processado": return NextResponse.json({ received: true, duplicate: true, eventId: event.id });
-    case "em_andamento": return NextResponse.json({ received: true, inProgress: true, eventId: event.id });
-    case "sem_organizacao": return NextResponse.json({ received: true, unresolved: true, eventId: event.id }, { status: 202 });
-    case "falhou":
-      // Gravado como failed e na fila: o worker refaz com backoff. Se a fila não aceitou, 500 → o Stripe reentrega.
-      if (r.enfileirado) return NextResponse.json({ received: true, type, failed: true, queued: true, error: r.erro.slice(0, 300) });
-      return NextResponse.json({ error: "processing failed and could not be queued, retry", detail: r.erro.slice(0, 300) }, { status: 500 });
-    default: return NextResponse.json({ error: "webhook inbox unavailable" }, { status: 500 });
+    // Fila fora: o evento está no inbox como pending; 500 faz o Stripe reentregar.
+    default: return NextResponse.json({ error: "queue unavailable, retry", detail: r.erro.slice(0, 300) }, { status: 500 });
   }
 }
