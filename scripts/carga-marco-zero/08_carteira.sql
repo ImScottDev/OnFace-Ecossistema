@@ -372,13 +372,26 @@ ON CONFLICT (organizacao_id, canonical_key) DO NOTHING;
 --     o servico ACTIVE dele passa a CHURNED; a ficha e as telas leem isso. Nunca liga portfolio_included de
 --     servico que prod tinha desligado. O estado de antes fica em evidence.marco_zero_p12 (reversivel).
 --     Nao toca updated_at.
+--     DUAS GUARDAS (medidas em 14/10/2026, depois da primeira carga): o fechamento de set/26 nao sabe
+--     de tudo, e churn aqui era decidido sem consultar o Stripe.
+--      1. Assinatura Stripe VIVA (active/trialing/past_due) manda mais que a planilha: 37 servicos
+--         (19 empresas, R$ 15.936,10/mes cobrados de fato) nasceram CHURNED so porque a empresa nao
+--         aparecia no faturamento de set/26. Dinheiro sendo cobrado nao e churn.
+--      2. Servico criado DEPOIS do corte nao estava no fechamento, logo o fechamento nao pode
+--         cancela-lo: cliente ganho em out/26 nascia e churnava no mesmo lote.
+--     As duas guardas sao sobre o UPDATE inteiro (nem sai do portfolio, nem vira CHURNED).
+--     Reverter o que a carga anterior ja marcou: app/src/scripts/reverter-churn-marco-zero.ts.
 UPDATE servicos_canonicos sc
    SET portfolio_included = false,
        commercial_lifecycle = CASE WHEN sc.commercial_lifecycle = 'ACTIVE' THEN 'CHURNED' ELSE sc.commercial_lifecycle END,
        evidence = sc.evidence || jsonb_build_object('marco_zero_p12', coalesce(sc.evidence -> 'marco_zero_p12',
                     jsonb_build_object('portfolio_included_antes', sc.portfolio_included, 'commercial_lifecycle_antes', sc.commercial_lifecycle)))
  WHERE (sc.portfolio_included OR sc.commercial_lifecycle = 'ACTIVE')
-   AND NOT EXISTS (SELECT 1 FROM _mz_universo u WHERE u.empresa_id = sc.empresa_id AND NOT u.cancelado);
+   AND NOT EXISTS (SELECT 1 FROM _mz_universo u WHERE u.empresa_id = sc.empresa_id AND NOT u.cancelado)
+   AND sc.created_at < :'depois_do_corte'
+   AND NOT EXISTS (SELECT 1 FROM assinaturas a
+                    WHERE (a.servico_id = sc.id OR a.stripe_subscription_id = sc.current_subscription_id)
+                      AND a.status IN ('active', 'trialing', 'past_due'));
 
 -- ═══ 7. Fulfillments (onboarding) ═══════════════════════════════════════════
 SELECT 'fulfillments' AS tabela, pg_temp.mz_carga('fulfillments', 'true', jsonb_build_object(
