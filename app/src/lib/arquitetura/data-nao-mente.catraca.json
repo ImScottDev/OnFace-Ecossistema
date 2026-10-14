@@ -1,0 +1,13 @@
+{
+  "src/lib/agentes/distribuicao.ts": 1,
+  "src/lib/automacoes/fluxos-servico.ts": 1,
+  "src/lib/calendario/trocar-responsavel.ts": 1,
+  "src/lib/calendario/volta.ts": 2,
+  "src/lib/callface-ai/tarefas-saude.ts": 1,
+  "src/lib/callface-ai/uso.ts": 9,
+  "src/lib/cs/health.ts": 1,
+  "src/lib/cs/tarefas.ts": 2,
+  "src/lib/integrations/callface-ai/leitura-dominio.ts": 3,
+  "src/lib/integrations/callface-ai/retrato-leitura.ts": 6,
+  "src/scripts/reparar-evento-reuniao.ts": 2
+}

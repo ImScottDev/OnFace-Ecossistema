@@ -286,10 +286,10 @@ async function persistirPendencias(organizacaoId: string, pendencias: Pendencia[
 export async function lerPendenciasDeParceiro(organizacaoId: string) {
   return db.execute<{
     chave: string; tipo: string; severidade: string; partner_id: string | null; invoice_id: string | null;
-    mensagem: string; esperado: string | null; encontrado: string | null; detectada_em: Date;
+    mensagem: string; esperado: string | null; encontrado: string | null; detectada_em: string;
   }>(sql`
     SELECT chave, tipo, severidade, partner_id, invoice_id, mensagem,
-           esperado::text, encontrado::text, detectada_em
+           esperado::text, encontrado::text, detectada_em::text
       FROM callface_ai_parceiro_pendencias
      WHERE organizacao_id = ${organizacaoId}::uuid AND resolvida_em IS NULL
      ORDER BY CASE severidade WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, detectada_em`);
