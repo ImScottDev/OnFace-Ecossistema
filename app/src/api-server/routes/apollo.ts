@@ -621,8 +621,10 @@ app.post("/webhook", async (c) => {
 
     return c.json({ ok: true, updated: lead.id });
   } catch (error) {
+    /* 500, não 200: devolvendo `ok` o Apollo considera entregue e nunca reenvia
+       o enriquecimento. */
     console.error("Apollo webhook error:", error);
-    return c.json({ ok: true, error: String(error) });
+    return c.json({ ok: false, error: String(error) }, 500);
   }
 });
 

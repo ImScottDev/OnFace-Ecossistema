@@ -2401,7 +2401,15 @@ const whatsappIncomingWorker = new Worker(
       uazapiMessageId: message.id || null,
       status: "received",
       statusAt: new Date(timestamp * 1000),
-    }).returning({ id: whatsappMensagens.id });
+    })
+      /* O relay entrega a MESMA mensagem mais de uma vez. Sem isto o insert
+         violava `whatsapp_mensagens_uazapi_message_id_unique`, o job inteiro
+         falhava — 18 falhas entre 02 e 14/10/2026, 8 só no último dia — e todo o
+         resto do handler (conversa, notificação, identidade canônica) deixava de
+         rodar nessa tentativa. A mensagem não se perdia; o que se perdia era o
+         trabalho em volta dela, e o ruído escondia a próxima falha de verdade. */
+      .onConflictDoNothing({ target: whatsappMensagens.uazapiMessageId })
+      .returning({ id: whatsappMensagens.id });
 
     // O canal atualiza o estado das cadências antes de qualquer resposta da IA.
     // Se houver um grafo publicado para mensagem recebida, ele assume o turno;
@@ -4194,7 +4202,14 @@ async function setupScheduledJobs() {
   // Email sync: trigger every 5 min
   await emailSyncQueue.upsertJobScheduler("email-sync-trigger", { every: 5 * 60 * 1000 }, { name: "sync-trigger" });
   // Email sequences: check every minute
-  const seqQueue = new Queue("email-sequence", { connection });
+  /* Sem `defaultJobOptions` a BullMQ guarda TODO job concluído para sempre: esta
+     fila roda a cada minuto e tinha 47.373 jobs retidos em produção (14/10/2026),
+     num Redis sem `maxmemory` e com `noeviction` — quando ele enche, a escrita é
+     recusada e TODAS as filas param juntas. Mesma retenção de `lib/queue`. */
+  const seqQueue = new Queue("email-sequence", {
+    connection,
+    defaultJobOptions: { removeOnComplete: { count: 200 }, removeOnFail: { count: 500 } },
+  });
   await seqQueue.upsertJobScheduler("check-sequences", { every: 60 * 1000 }, { name: "check-sequences" });
 
   // Só DEPOIS de todos os upserts: tira o que sobrou de versões anteriores.

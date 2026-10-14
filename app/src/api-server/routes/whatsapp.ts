@@ -134,8 +134,11 @@ app.post("/whatsapp/webhook", async (c) => {
 
     return c.json({ ok: true });
   } catch (error) {
+    /* 500, não 200: o relay reentrega o que falhou. Respondendo `ok` o provedor
+       entende que entregou e a mensagem do cliente some sem rastro — e o log não
+       sobrevive ao próximo deploy para alguém notar. */
     console.error("[Webhook] Parse error:", error);
-    return c.json({ ok: true });
+    return c.json({ ok: false, error: "falha ao receber" }, 500);
   }
 });
 

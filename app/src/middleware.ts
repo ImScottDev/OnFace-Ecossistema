@@ -62,7 +62,12 @@ export default auth((req) => {
   //
   // Backend também passou a checar papel (getGestaoCtx / isAdminView nas rotas
   // financeiras): isto aqui é navegação, não é a única barreira.
-  const GESTAO = ["/configuracoes", "/financeiro", "/campanhas", "/clientes/financeiro", "/ajustes"];
+  /* `/design` é o laboratório do Design System: fixtures com nome de cliente
+     ("TechCorp Telecom"), metas e realizados de pessoas do time e valores em
+     reais inventados, numa casca idêntica à do produto. Estava só atrás de
+     sessão — qualquer SDR, closer ou usuário de cliente abria a URL e lia
+     aquilo como se fosse a operação (auditoria de 14/10/2026). */
+  const GESTAO = ["/configuracoes", "/financeiro", "/campanhas", "/clientes/financeiro", "/ajustes", "/design"];
   // Conexão de e-mail/calendário e de número de WhatsApp é PESSOAL (cada um
   // conecta a própria conta e o próprio número), não configuração da
   // organização — closer e SDR precisam alcançar. O escopo do que aparece lá

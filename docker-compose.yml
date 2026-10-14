@@ -15,9 +15,20 @@
 # Subir:  docker compose -p crm2-dev up -d
 # Imagens: construidas no GitHub Actions (GHCR); a EC2 so faz pull. Ver deploy.sh.
 
+# Rotação de log: sem isto o driver json-file cresce sem teto e enche o disco da
+# caixa — em 14/10/2026 ela estava com 4,7 GB livres de 96 GB. E, pior, o log vive
+# só dentro do container: o deploy recria os três e leva o histórico junto, então
+# "o que quebrou ontem" vira pergunta sem resposta.
+x-log: &log
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16-alpine
+    logging: *log
     container_name: callface-${STACK:-crm2-dev}-postgres
     restart: unless-stopped
     environment:
@@ -43,6 +54,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    logging: *log
     container_name: callface-${STACK:-crm2-dev}-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
@@ -67,6 +79,7 @@ services:
     # em dev antes. Fixado por DIGEST: a tag `v1.0.9` que estava aqui não existe
     # no Docker Hub (13/10/2026), e o que roda é a `latest` de 17/09/2026.
     image: asternic/wuzapi:latest@sha256:7f2aee54a6585fcc67f78dbbec41cf56e3bdab31577183cf3b97f9a78d84df66
+    logging: *log
     container_name: callface-${STACK:-crm2-dev}-wuzapi
     restart: unless-stopped
     environment:
@@ -101,6 +114,7 @@ services:
     # IMAGE_TAG vem do .env do servidor, gravado pelo ./deploy.sh. O `build:`
     # fica só para o fallback `./deploy.sh dev --construir-aqui`.
     build:
+    logging: *log
       context: .
       target: app
     image: ghcr.io/imscottdev/onface-app:${IMAGE_TAG:-main}
@@ -159,6 +173,7 @@ services:
   api:
     # API e worker são a MESMA imagem (`backend`); muda só o processo.
     build:
+    logging: *log
       context: .
       target: backend
     image: ghcr.io/imscottdev/onface-backend:${IMAGE_TAG:-main}
@@ -210,6 +225,7 @@ services:
 
   worker:
     image: ghcr.io/imscottdev/onface-backend:${IMAGE_TAG:-main}
+    logging: *log
     command: ["node", "app/dist/worker/index.mjs"]
     container_name: callface-${STACK:-crm2-dev}-worker
     restart: unless-stopped

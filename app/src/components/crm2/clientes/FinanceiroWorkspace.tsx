@@ -262,7 +262,14 @@ export function FinanceiroWorkspace() {
   const batch = data.ledger.batch;
   const quality = data.ledger.quality;
   const invoiceTotal = data.invoices.reduce((sum, row) => sum + Number(row.total || 0), 0);
-  const stripeTotal = data.stripe.reduce((sum, row) => sum + Number(row.mrr || 0), 0);
+  /* Só assinatura que COBRA entra no total. Somando todo status, `canceled`,
+     `incomplete_expired` e `unpaid` entravam juntos e o card mostrava
+     R$ 153.708 onde o real era R$ 51.058 — três vezes, num número rotulado
+     como MRR (auditoria de 14/10/2026). */
+  const STATUS_QUE_COBRA = new Set(["active", "trialing"]);
+  const stripeTotal = data.stripe
+    .filter((row) => STATUS_QUE_COBRA.has(String(row.status ?? "").toLowerCase()))
+    .reduce((sum, row) => sum + Number(row.mrr || 0), 0);
 
   return (
     <div className="flex flex-col gap-5">
@@ -335,7 +342,7 @@ export function FinanceiroWorkspace() {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <section className="overflow-hidden rounded-3xl" style={{ background: "var(--cf2-bg-surface)", border: "1px solid var(--cf2-border-default)" }}>
           <div className="flex items-center justify-between gap-3 border-b p-5" style={{ borderColor: "var(--cf2-border-default)" }}>
-            <div className="flex items-center gap-3"><Wallet className="h-4 w-4" style={{ color: "var(--cf2-success-text)" }} /><div><h2 className="text-sm font-bold" style={{ color: "var(--cf2-text-primary)" }}>Stripe / Billing</h2><p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{data.stripe.length} status · {money(stripeTotal)} em MRR de assinaturas</p></div></div>
+            <div className="flex items-center gap-3"><Wallet className="h-4 w-4" style={{ color: "var(--cf2-success-text)" }} /><div><h2 className="text-sm font-bold" style={{ color: "var(--cf2-text-primary)" }}>Stripe / Billing</h2><p className="text-[11px]" style={{ color: "var(--cf2-text-tertiary)" }}>{data.stripe.length} status · {money(stripeTotal)} em MRR ativo (assinatura que cobra)</p></div></div>
           </div>
           <div className="divide-y" style={{ borderColor: "var(--cf2-border-default)" }}>
             {data.stripe.length === 0 ? <p className="p-5 text-sm" style={{ color: "var(--cf2-text-tertiary)" }}>Nenhuma assinatura Stripe encontrada.</p> : data.stripe.map((row) => (
