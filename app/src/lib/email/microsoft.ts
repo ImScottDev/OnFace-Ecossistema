@@ -6,6 +6,7 @@ import { dataHoraGraph } from "@/lib/calendario/fuso";
 import { db } from "@/lib/db";
 import { emailContas } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 
 // Calendars.ReadWrite foi pedido/consentido no app registration (chamado TI Wevy,
 // pra Natália ler disponibilidade real e criar reunião no Outlook), mas nunca tinha
@@ -199,7 +200,7 @@ export function getMicrosoftAuthUrl(state: string): string {
 // cache nenhum do MSAL.
 export async function exchangeMicrosoftCode(code: string) {
   const tenantId = process.env.MICROSOFT_TENANT_ID || "common";
-  const res = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+  const res = await fetchComPrazo(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -235,7 +236,7 @@ export async function refreshMicrosoftToken(refreshToken: string): Promise<{
   expiryDate: Date | null;
 }> {
   const tenantId = process.env.MICROSOFT_TENANT_ID || "common";
-  const res = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+  const res = await fetchComPrazo(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -293,7 +294,7 @@ export async function getValidAccessToken(contaId: string): Promise<string> {
 }
 
 export async function graphFetch(accessToken: string, path: string, init?: RequestInit) {
-  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+  const res = await fetchComPrazo(`https://graph.microsoft.com/v1.0${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -410,7 +411,7 @@ export async function updateOutlookEvent(params: {
     garantirDestinoPermitido(params.attendeeEmails);
     // Mantém os convidados que já estão no evento (com a resposta deles) e só
     // acrescenta/remove a diferença; reenviar a lista crua zera aceites.
-    const atual = await fetch(`https://graph.microsoft.com/v1.0/me/events/${idUrl}?$select=attendees`, {
+    const atual = await fetchComPrazo(`https://graph.microsoft.com/v1.0/me/events/${idUrl}?$select=attendees`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (atual.status === 404) return { atualizado: false, naoExiste: true };
@@ -428,7 +429,7 @@ export async function updateOutlookEvent(params: {
   }
   if (Object.keys(body).length === 0) return { atualizado: false };
 
-  const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${idUrl}`, {
+  const res = await fetchComPrazo(`https://graph.microsoft.com/v1.0/me/events/${idUrl}`, {
     method: "PATCH",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -452,10 +453,10 @@ export async function cancelOutlookEvent(contaId: string, eventId: string, comen
   const accessToken = await getValidAccessToken(contaId);
   const base = `https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}`;
   const h = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
-  const r = await fetch(`${base}/cancel`, { method: "POST", headers: h, body: JSON.stringify({ comment: comentario ?? "Reunião cancelada." }) });
+  const r = await fetchComPrazo(`${base}/cancel`, { method: "POST", headers: h, body: JSON.stringify({ comment: comentario ?? "Reunião cancelada." }) });
   if (r.ok || r.status === 404) return;
   if (r.status !== 400 && r.status !== 403) throw new Error(`Graph cancel event ${eventId}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
-  const d = await fetch(base, { method: "DELETE", headers: h });
+  const d = await fetchComPrazo(base, { method: "DELETE", headers: h });
   if (!d.ok && d.status !== 404) throw new Error(`Graph DELETE event ${eventId}: HTTP ${d.status} ${(await d.text()).slice(0, 200)}`);
 }
 
@@ -474,7 +475,7 @@ export interface EventoOutlook {
  */
 export async function getOutlookEvent(contaId: string, eventId: string): Promise<EventoOutlook> {
   const accessToken = await getValidAccessToken(contaId);
-  const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${eventId}?$select=start,end,subject,isCancelled`, {
+  const res = await fetchComPrazo(`https://graph.microsoft.com/v1.0/me/events/${eventId}?$select=start,end,subject,isCancelled`, {
     headers: { Authorization: `Bearer ${accessToken}`, Prefer: 'outlook.timezone="UTC"' },
   });
   if (res.status === 404) return { existe: false, cancelado: true, inicioISO: null, fimISO: null, titulo: null };

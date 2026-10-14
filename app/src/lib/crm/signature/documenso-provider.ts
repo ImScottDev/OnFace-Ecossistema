@@ -4,6 +4,7 @@ import { contratos, leads } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { contratoPdfHtml, renderContratoPdf, localizarAncoras } from "@/lib/crm/contrato-pdf";
 import { politicaContratual } from "@/lib/crm/contrato-politica";
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 import {
   ANCORA_DO_PAPEL, comPadraoDaPolitica, ehCliente, ehPapelCallface, emailValido, faltaRepresentante, normalizarSignatarios, type Signatario,
 } from "@/lib/crm/proposta-signatarios";
@@ -110,7 +111,7 @@ export class DocumensoSignatureProvider implements SignatureProvider {
   readonly nome = "documenso";
 
   private async request(path: string, init: RequestInit): Promise<DocumensoResponse> {
-    const response = await fetch(`${baseUrl()}${path}`, {
+    const response = await fetchComPrazo(`${baseUrl()}${path}`, {
       ...init,
       headers: { Authorization: apiKey(), ...(init.headers || {}) },
     });
@@ -203,7 +204,7 @@ export function isDocumensoConfigured(): boolean {
 /** Baixa o PDF assinado somente depois que o envelope foi concluído. */
 export async function baixarDocumentoAssinado(providerRef: string): Promise<{ buffer: ArrayBuffer; filename: string }> {
   if (!isDocumensoConfigured()) throw new Error("Documenso não configurado");
-  const response = await fetch(`${baseUrl()}/envelope/${encodeURIComponent(providerRef)}`, {
+  const response = await fetchComPrazo(`${baseUrl()}/envelope/${encodeURIComponent(providerRef)}`, {
     headers: { Authorization: apiKey() },
   });
   const envelope = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -213,7 +214,7 @@ export async function baixarDocumentoAssinado(providerRef: string): Promise<{ bu
   const item = items.find((value): value is Record<string, unknown> => !!value && typeof value === "object");
   const itemId = item?.id;
   if (!itemId) throw new Error("Documenso não devolveu o item PDF do envelope");
-  const pdfResponse = await fetch(`${baseUrl()}/envelope/item/${encodeURIComponent(String(itemId))}/download?version=signed`, {
+  const pdfResponse = await fetchComPrazo(`${baseUrl()}/envelope/item/${encodeURIComponent(String(itemId))}/download?version=signed`, {
     headers: { Authorization: apiKey() },
   });
   if (!pdfResponse.ok) throw new Error(`Documenso ${pdfResponse.status}: PDF assinado indisponível`);

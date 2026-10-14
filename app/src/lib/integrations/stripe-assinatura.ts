@@ -21,6 +21,7 @@ import { assinaturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db";
 import { assinaturas, assinaturaItens } from "../db/schema";
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 const STRIPE_API_VERSION = process.env.STRIPE_API_VERSION || "2026-08-26.dahlia";
@@ -37,7 +38,7 @@ export async function stripe<T>(
   idempotencyKey?: string,
   metodo?: "DELETE",
 ): Promise<T> {
-  const res = await fetch(`${STRIPE_API}/${path}`, {
+  const res = await fetchComPrazo(`${STRIPE_API}/${path}`, {
     method: metodo ?? (form ? "POST" : "GET"),
     headers: {
       Authorization: `Bearer ${chave()}`,

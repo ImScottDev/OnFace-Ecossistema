@@ -1,3 +1,4 @@
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 /**
  * Cobrança pontual via Stripe Invoice API (25/08, billing avançado — pedido
  * do Kauã). Duas capacidades novas, GREENFIELD (nenhuma menção prévia no
@@ -36,7 +37,7 @@ const STRIPE_API_VERSION = process.env.STRIPE_API_VERSION || "2026-08-26.dahlia"
 
 async function stripePost<T>(path: string, form: URLSearchParams, idempotencyKey?: string): Promise<T> {
   const key = requireKey();
-  const res = await fetch(`${STRIPE_API}/${path}`, {
+  const res = await fetchComPrazo(`${STRIPE_API}/${path}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,

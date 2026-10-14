@@ -1,3 +1,4 @@
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 /**
  * Stripe Checkout da 2C.2.
  *
@@ -49,7 +50,7 @@ function stableIdempotencyKey(prefix: string): string {
 }
 
 async function stripePost<T>(path: string, form: URLSearchParams, opts: { idempotencyKey?: string } = {}): Promise<T> {
-  const response = await fetch(`${STRIPE_API}/${path}`, {
+  const response = await fetchComPrazo(`${STRIPE_API}/${path}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${stripeKey()}`,
@@ -67,7 +68,7 @@ async function stripePost<T>(path: string, form: URLSearchParams, opts: { idempo
 }
 
 async function stripeGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${STRIPE_API}/${path}`, {
+  const response = await fetchComPrazo(`${STRIPE_API}/${path}`, {
     headers: { Authorization: `Bearer ${stripeKey()}`, "Stripe-Version": STRIPE_API_VERSION },
   });
   if (!response.ok) {

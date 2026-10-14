@@ -17,6 +17,7 @@ import { sql } from "drizzle-orm";
 import { montarCaso } from "./stripe-caso-cobranca";
 import { db } from "../db";
 import { ehCustomerDoSaas, type CustomerStripe } from "./stripe-customer";
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 import {
   reconciliar, type AssinaturaStripe, type Divergencia, type FaturaStripe, type RelatorioReconciliacao,
   type SnapshotOnface, type SnapshotStripe,
@@ -31,7 +32,7 @@ async function leitura<T>(path: string, params: Record<string, string>): Promise
   if (!key) throw new Error("STRIPE_API_KEY não configurada (use uma chave restrita de LEITURA)");
   const url = new URL(`${STRIPE_API}/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.append(k, v);
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+  const r = await fetchComPrazo(url, { headers: { Authorization: `Bearer ${key}` } });
   if (!r.ok) throw new Error(`Stripe GET ${path}: HTTP ${r.status} ${(await r.text()).slice(0, 300)}`);
   return r.json();
 }

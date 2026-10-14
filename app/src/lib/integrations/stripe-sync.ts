@@ -30,6 +30,7 @@ import { resumoDeCancelamento } from "./stripe-portal-retorno";
 import { periodoCorrente } from "./stripe-financeiro";
 import { ehDoSaas, ignorarNoSync, origemDaAssinatura, origemDaFatura } from "./stripe-origem";
 import { MARCA_AUTOMATICA, produtoDaSubscriptionDoSync } from "./stripe-produto-do-servico";
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 
 const seg = (n: number | null | undefined) => (n ? new Date(n * 1000) : null);
 
@@ -42,7 +43,7 @@ async function stripeGet<T>(path: string, params: Record<string, string> = {}): 
   if (!key) throw new Error("STRIPE_API_KEY não configurada no .env");
   const url = new URL(`${STRIPE_API}/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+  const r = await fetchComPrazo(url, { headers: { Authorization: `Bearer ${key}` } });
   if (!r.ok) throw new Error(`Stripe ${path}: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
   return r.json();
 }
@@ -50,7 +51,7 @@ async function stripeGet<T>(path: string, params: Record<string, string> = {}): 
 async function stripeGetOne<T>(path: string): Promise<T | null> {
   const key = process.env.STRIPE_API_KEY;
   if (!key) return null;
-  const r = await fetch(`${STRIPE_API}/${path}`, { headers: { Authorization: `Bearer ${key}` } });
+  const r = await fetchComPrazo(`${STRIPE_API}/${path}`, { headers: { Authorization: `Bearer ${key}` } });
   if (!r.ok) return null;
   return r.json();
 }
@@ -162,6 +163,26 @@ const INVOICE_STATUS: Record<string, string> = {
 
 // Status que contam como "gerando receita" pro diff de MRR.
 const BILLABLE = new Set(["active", "past_due", "trialing"]);
+
+/**
+ * Reconciliação de ESTADO do serviço da carteira a partir do estado da assinatura.
+ *
+ * Regra única, nos dois sentidos — por estado, nunca por transição:
+ *  - assinatura morta (`canceled`/`unpaid`) -> o serviço encerra (CHURNED, fora do portfólio);
+ *  - assinatura viva (`active`/`trialing`/`past_due`) -> serviço CHURNED volta a ACTIVE.
+ *
+ * O sentido "volta" existe porque o estado errado também chega do outro lado: a carga do marco
+ * zero churnou 37 serviços com assinatura viva (19 empresas, R$ 15.936,10/mês cobrados de fato e
+ * fora do MRR, medido em 14/10/2026) só porque a empresa não aparecia no fechamento de set/26.
+ * Sem reconciliar, nenhum sync tiraria esses serviços do churn — a borda nunca mais acontece.
+ *
+ * Qualquer outro estado (`incomplete`, `incomplete_expired`, `paused`) não diz nada: não mexe.
+ */
+export function reconciliacaoDoServico(statusStripe: string): "encerrar" | "reativar" | null {
+  if (statusStripe === "canceled" || statusStripe === "unpaid") return "encerrar";
+  if (BILLABLE.has(statusStripe)) return "reativar";
+  return null;
+}
 
 /** "payment_failed" | "cancellation_requested (too_expensive): comentário" */
 function motivoCancelamento(s: StripeSubscription): string | null {
@@ -503,14 +524,17 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
          * `unpaid` entra junto: assinatura que o Stripe desistiu de cobrar não é cliente ativo.
          * O MOVIMENTO de churn continua só na borda (acima), senão o MRR contaria duas vezes.
          */
-        if (s.status === "canceled" || s.status === "unpaid") {
+        const reconciliacao = reconciliacaoDoServico(s.status);
+        // O serviço desta assinatura: por `servico_id` da assinatura ou por `current_subscription_id`.
+        const servicoDestaAssinatura = existing.servicoId
+          ? sql`(${servicosCanonicos.id} = ${existing.servicoId} OR ${servicosCanonicos.currentSubscriptionId} = ${s.id})`
+          : eq(servicosCanonicos.currentSubscriptionId, s.id);
+        if (reconciliacao === "encerrar") {
           const encerrados = await tx.update(servicosCanonicos)
             .set({ commercialLifecycle: "CHURNED", portfolioIncluded: false, billingStatus: "CANCELED", updatedAt: new Date() })
             .where(and(
               eq(servicosCanonicos.organizacaoId, org.id),
-              existing.servicoId
-                ? sql`(${servicosCanonicos.id} = ${existing.servicoId} OR ${servicosCanonicos.currentSubscriptionId} = ${s.id})`
-                : eq(servicosCanonicos.currentSubscriptionId, s.id),
+              servicoDestaAssinatura,
               // Só o que ainda não foi encerrado: a condição agora é por estado e roda a cada
               // sync, então sem isto a mesma linha seria reescrita de 30 em 30 minutos e o
               // `updated_at` diria "mexido agora" para sempre.
@@ -524,6 +548,30 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
               await tx.update(clientes).set({ statusFinanceiro: "churned", updatedAt: new Date() })
                 .where(and(eq(clientes.empresaId, empresaId), eq(clientes.organizacaoId, org.id)));
             }
+          }
+        } else if (reconciliacao === "reativar") {
+          /* O inverso do bloco acima: a assinatura está viva no Stripe e o serviço está CHURNED.
+             Acontece quando o churn veio de fora do Stripe (carga do marco zero, cancelamento
+             manual desfeito). Volta ACTIVE e ao portfólio, senão o MRR fica faltando dinheiro
+             que está sendo cobrado. O estado anterior fica em `evidence.reconciliacao_stripe`.
+             Idempotente pelo mesmo motivo do outro lado: só pega quem está CHURNED. */
+          const revividos = await tx.update(servicosCanonicos)
+            .set({
+              commercialLifecycle: "ACTIVE", portfolioIncluded: true, billingStatus: "ACTIVE", updatedAt: new Date(),
+              evidence: sql`coalesce(${servicosCanonicos.evidence}, '{}'::jsonb) || jsonb_build_object('reconciliacao_stripe', jsonb_build_object(
+                'em', now(), 'status_stripe', ${s.status}::text, 'commercial_lifecycle_antes', ${servicosCanonicos.commercialLifecycle},
+                'portfolio_included_antes', ${servicosCanonicos.portfolioIncluded}, 'billing_status_antes', ${servicosCanonicos.billingStatus}))`,
+            })
+            .where(and(
+              eq(servicosCanonicos.organizacaoId, org.id),
+              servicoDestaAssinatura,
+              eq(servicosCanonicos.commercialLifecycle, "CHURNED"),
+            ))
+            .returning({ empresaId: servicosCanonicos.empresaId });
+          for (const empresaId of new Set(revividos.map((e) => e.empresaId).filter((e): e is string => !!e))) {
+            await tx.update(clientes).set({ statusFinanceiro: "ativo", updatedAt: new Date() })
+              .where(and(eq(clientes.empresaId, empresaId), eq(clientes.organizacaoId, org.id),
+                sql`${clientes.statusFinanceiro} IS DISTINCT FROM 'ativo'`));
           }
         }
 

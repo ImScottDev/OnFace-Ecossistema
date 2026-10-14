@@ -1,3 +1,4 @@
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 /**
  * Catálogo comercial lido do Stripe (SPEC §23, integrações como adaptador).
  *
@@ -111,7 +112,7 @@ async function listarTudo<T extends BrutoStripe>(
     const q = new URLSearchParams({ ...params, limit: "100" });
     if (startingAfter) q.set("starting_after", startingAfter);
 
-    const r = await fetch(`${STRIPE_API}/${caminho}?${q}`, {
+    const r = await fetchComPrazo(`${STRIPE_API}/${caminho}?${q}`, {
       headers: { Authorization: `Bearer ${chave()}`, "Stripe-Version": STRIPE_API_VERSION },
     });
     if (!r.ok) {

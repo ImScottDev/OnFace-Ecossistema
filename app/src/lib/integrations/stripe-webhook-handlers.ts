@@ -23,6 +23,7 @@ import { quitarPendenciaFinanceira } from "@/lib/crm/pendencia-financeira";
 import { notificarPagamentoConfirmado } from "@/lib/crm/notificar";
 import { publicarEvento } from "@/lib/events/outbox";
 import { appUrl } from "@/lib/app-url";
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 
 /**
  * Notificação sem repetir: o reprocesso (fila, admin) e a reentrega do Stripe re-rodam os handlers, e
@@ -263,7 +264,7 @@ async function gravarDocumentoFiscalNoCustomer(session: Record<string, unknown>,
   const form = new URLSearchParams();
   form.append(`metadata[${chave}]`, digitos);
 
-  const res = await fetch(`https://api.stripe.com/v1/customers/${customerId}`, {
+  const res = await fetchComPrazo(`https://api.stripe.com/v1/customers/${customerId}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),

@@ -23,6 +23,7 @@
  */
 
 import { getStripeCheckoutMode } from "./stripe-checkout";
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 import {
   MARCA_CONFIG, MENSAGEM_FALTAM_POLITICAS, PortalConfigError, decidirConfiguracao, ehRecusaPorPoliticas, formDaConfiguracao,
   type ConfiguracaoDoStripe, type PlanoDoPortal, type PoliticasPortal,
@@ -40,7 +41,7 @@ function chave(): string {
 }
 
 export async function stripe<T>(path: string, form?: URLSearchParams, idempotencyKey?: string): Promise<T> {
-  const res = await fetch(`${STRIPE_API}/${path}`, {
+  const res = await fetchComPrazo(`${STRIPE_API}/${path}`, {
     method: form ? "POST" : "GET",
     headers: {
       Authorization: `Bearer ${chave()}`,
