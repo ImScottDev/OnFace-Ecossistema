@@ -14,7 +14,7 @@ import { eq, and, gte, lt, sql, inArray, isNotNull, isNull, or, desc } from "dri
 import { getFechadoPeriodo, PIPELINE_ATIVO_STATUSES } from "@/lib/relatorios/comercial";
 import { getFluxoMes, getCalendarioRenovacao } from "@/lib/financeiro/metricas";
 import { medir } from "@/lib/metricas/catalogo";
-import { condicaoMinhasConversas } from "@/lib/whatsapp/acesso";
+import { condicaoMinhasConversas, condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 
 /**
  * Dias úteis (seg-sex) restantes no mês a partir de `hoje`, incluindo hoje
@@ -297,7 +297,8 @@ export async function getAtividadeRecente(orgId: string, limite = 3): Promise<At
       id: whatsappMensagens.id, createdAt: whatsappMensagens.createdAt, direcao: whatsappMensagens.direcao,
       nome: contatos.nome,
     }).from(whatsappMensagens).innerJoin(contatos, eq(contatos.id, whatsappMensagens.contatoId))
-      .where(and(eq(contatos.organizacaoId, orgId), eq(whatsappMensagens.direcao, "in")))
+      // Feed da organização: conversa de número privado não aparece nem com o nome do contato.
+      .where(and(eq(contatos.organizacaoId, orgId), eq(whatsappMensagens.direcao, "in"), condicaoConversaNaoPrivada(contatos.sessaoId)))
       .orderBy(desc(whatsappMensagens.createdAt)).limit(limite),
     db.select({
       id: emails.id, createdAt: emails.createdAt, para: emails.para, direcao: emails.direcao, entregaEstado: emails.entregaEstado,
@@ -507,7 +508,7 @@ export async function getAtendimentoResumo(orgId: string, usuarioId?: string): P
       // Com usuário: só as conversas dele (a mesma regra "Minhas" da tela de Atendimento e do badge da
       // casca). Sem ele, a organização inteira. O bloco do Início aponta para /atendimento, que abre
       // em "Minhas": o número do bloco tem que ser o que a pessoa encontra lá.
-      usuarioId ? condicaoMinhasConversas(usuarioId) : undefined,
+      usuarioId ? condicaoMinhasConversas(usuarioId) : condicaoConversaNaoPrivada(contatos.sessaoId),
       eq(contatos.canal, "whatsapp"),
       eq(contatos.status, "open"),
       sql`${contatos.naoLidas} > 0`,

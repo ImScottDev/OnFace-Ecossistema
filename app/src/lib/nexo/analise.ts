@@ -9,7 +9,7 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { isPersonalView } from "@/lib/auth/roles";
+import { checarAcessoContato } from "@/lib/whatsapp/acesso";
 import { prepararAgenteNexo, type Quem } from "./painel";
 
 export type TipoAnalise = "resumo" | "sentimento" | "sugestao";
@@ -59,8 +59,10 @@ export async function analisarConversa(q: Quem, entrada: { contatoId: string; ti
     SELECT id::text AS id, nome, responsavel_id::text AS responsavel_id, lead_id::text AS lead_id
       FROM contatos WHERE id = ${entrada.contatoId}::uuid AND organizacao_id = ${q.organizacaoId}::uuid`);
   if (!contato) return { ok: false, status: 404, erro: "Conversa não encontrada." };
-  if (isPersonalView(q.userRole) && contato.responsavel_id && contato.responsavel_id !== q.userId) {
-    return { ok: false, status: 403, erro: "Esta conversa é de outra pessoa." };
+  // Mesma porta de toda leitura de conversa: sem isto qualquer gerente/admin pedia o resumo de
+  // qualquer conversa, inclusive de número pessoal, só informando o id.
+  if (!(await checarAcessoContato({ userId: q.userId, organizacaoId: q.organizacaoId }, contato.id)).ok) {
+    return { ok: false, status: 404, erro: "Conversa não encontrada." };
   }
 
   const msgs = await db.execute<{ direcao: string; tipo: string; conteudo: string | null; created_at: string }>(sql`

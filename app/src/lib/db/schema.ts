@@ -1322,6 +1322,8 @@ export const whatsappSessao = pgTable("whatsapp_sessao", {
   lastConnectedAt: timestamp("last_connected_at", { withTimezone: true }),
   /** Para que serve o número: comercial | atendimento | suporte | sdr | cs | outro (migration 0102). */
   finalidade: text("finalidade"),
+  /** Número pessoal/privado (migration 0126): nem a supervisão o alcança; só dono, compartilhados e super admin (auditado). */
+  privado: boolean("privado").default(false).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_wa_sessao_org").on(table.organizacaoId),
@@ -1337,6 +1339,19 @@ export const whatsappSessaoAcesso = pgTable("whatsapp_sessao_acesso", {
 }, (table) => [
   primaryKey({ columns: [table.sessaoId, table.usuarioId] }),
   index("idx_wa_sessao_acesso_usuario").on(table.usuarioId),
+]);
+
+/** Supervisão EXPLÍCITA: o supervisor vê os números NÃO privados do alvo. Nunca vem do cargo. Migration 0126. */
+export const whatsappSupervisao = pgTable("whatsapp_supervisao", {
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  supervisorId: uuid("supervisor_id").references(() => usuarios.id, { onDelete: "cascade" }).notNull(),
+  alvoUsuarioId: uuid("alvo_usuario_id").references(() => usuarios.id, { onDelete: "cascade" }).notNull(),
+  concedidoPor: uuid("concedido_por").references(() => usuarios.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.supervisorId, table.alvoUsuarioId] }),
+  index("idx_wa_supervisao_alvo").on(table.alvoUsuarioId),
+  index("idx_wa_supervisao_org").on(table.organizacaoId),
 ]);
 
 // ─── CADENCIA SDR (execuções por lead+toque) ───────────────

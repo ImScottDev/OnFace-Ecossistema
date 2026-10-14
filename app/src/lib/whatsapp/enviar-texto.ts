@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import { contatos, leads, whatsappMensagens, whatsappSessao } from "@/lib/db/schema";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { normalizePhone } from "@/lib/whatsapp/phone-utils";
-import { checarAcessoContato } from "@/lib/whatsapp/acesso";
+import { checarAcessoContato, sessaoAutorizadaParaEnvio } from "@/lib/whatsapp/acesso";
 import { getStatus, sessionToConfig } from "@/lib/whatsapp/client";
 
 export type EnvioDeTexto =
@@ -37,6 +37,10 @@ export async function enviarTextoNaConversa(p: {
   const { contato } = acesso;
   if (!contato.telefone) return { ok: false, erro: "O contato não tem telefone cadastrado." };
   if (!contato.sessaoId) return { ok: false, erro: "Esta conversa não tem número de WhatsApp vinculado; responda pela tela de Atendimento." };
+  // Ver a conversa (supervisão, transferência) não é poder falar pelo número de outra pessoa.
+  if (!(await sessaoAutorizadaParaEnvio({ userId: p.userId, organizacaoId: p.organizacaoId }, contato.sessaoId))) {
+    return { ok: false, erro: "Esta conversa está em um número que não é seu; a resposta sai pelo dono do número." };
+  }
 
   const [sessao] = await db.select().from(whatsappSessao)
     .where(and(eq(whatsappSessao.id, contato.sessaoId), eq(whatsappSessao.organizacaoId, p.organizacaoId))).limit(1);

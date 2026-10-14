@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { negocios, fulfillments, fileLinks } from "@/lib/db/schema";
 import { getTenantFromRequest } from "../auth.js";
 import { entregarDoAcervo } from "@/lib/arquivos/servico";
+import { autorizarMidiaWhatsapp } from "@/lib/whatsapp/acesso";
 
 const app = new Hono();
 
@@ -90,15 +91,14 @@ async function autorizar(c: Context, caminho: string): Promise<{ ok: true } | { 
   // consulta nenhuma — é o motivo de a chave ter sido desenhada assim.
   const primeiro = caminho.split("/")[0];
   if (/^[0-9a-f-]{36}$/i.test(primeiro)) {
-    return primeiro.toLowerCase() === ctx.organizacaoId.toLowerCase()
-      ? { ok: true }
-      : { ok: false, status: 403 };
+    if (primeiro.toLowerCase() !== ctx.organizacaoId.toLowerCase()) return { ok: false, status: 403 };
+    return (await autorizarMidiaWhatsapp(ctx, [`/api/uploads/${caminho}`])) ? { ok: true } : { ok: false, status: 404 };
   }
 
-  // 5. Avatar de usuário e mídia de WhatsApp de ANTES da virada ficam na raiz:
-  // sessão basta. Arquivo novo não cai mais aqui — nasce com organização na
-  // chave, no caso 4.
-  return { ok: true };
+  // 5. Avatar de usuário e mídia de WhatsApp de ANTES da virada ficam na raiz. Sessão
+  // não basta para a mídia de CONVERSA: quem baixa é quem pode abrir a conversa da
+  // mensagem (o link direto não é uma porta dos fundos). Avatar não tem mensagem: segue por sessão.
+  return (await autorizarMidiaWhatsapp(ctx, [`/api/uploads/${caminho}`])) ? { ok: true } : { ok: false, status: 404 };
 }
 
 /**
@@ -193,6 +193,9 @@ app.get("/arquivos/:id", async (c) => {
 
   const ctx = await getTenantFromRequest(c);
   if (!ctx) return c.json({ error: "Unauthorized" }, 401);
+
+  // Anexo de conversa de WhatsApp só sai para quem pode abrir a conversa (link direto não burla a regra).
+  if (!(await autorizarMidiaWhatsapp(ctx, [`/api/arquivos/${id}`]))) return c.json({ error: "Not found" }, 404);
 
   // A organização é parâmetro da busca, não filtro aplicado depois: arquivo de
   // outro cliente não é "encontrado e negado", é inexistente.

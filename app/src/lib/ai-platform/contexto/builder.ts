@@ -227,7 +227,9 @@ export async function construirContexto(e: EntradaContexto): Promise<ContextoMon
         FROM whatsapp_mensagens m JOIN contatos c ON c.id = m.contato_id
         WHERE c.organizacao_id = ${org}::uuid
           AND ((${ids.contatoId}::uuid IS NOT NULL AND c.id = ${ids.contatoId}::uuid)
-            OR (${ids.leadId}::uuid IS NOT NULL AND c.lead_id = ${ids.leadId}::uuid))
+            -- Outros contatos do lead entram, MENOS os de número privado: o agente repete o que lê para o cliente.
+            OR (${ids.leadId}::uuid IS NOT NULL AND c.lead_id = ${ids.leadId}::uuid
+                AND NOT EXISTS (SELECT 1 FROM whatsapp_sessao wp WHERE wp.id = c.sessao_id AND wp.privado)))
           AND m.created_at < ${fimDoRecente}::timestamptz
           AND m.created_at >= ${new Date(agora.getTime() - 540 * 86_400_000).toISOString()}::timestamptz
           AND (nullif(btrim(m.conteudo), '') IS NOT NULL OR m.tipo = 'audio')

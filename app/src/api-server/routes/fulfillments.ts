@@ -7,6 +7,7 @@ import { fulfillments, fulfillmentItens, servicosCanonicos, contratos, negocios,
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
+import { condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { guardarNoAcervo } from "@/lib/arquivos/servico";
 import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM, MARCO_AI_POR_WORKSTREAM, MARCOS_AI, FAMILIAS_ONBOARDING } from "@/lib/crm/fulfillment";
@@ -483,7 +484,9 @@ app.get("/fulfillments/:id", async (c) => {
     ? await db.select({ id: whatsappMensagens.id, direcao: whatsappMensagens.direcao, createdAt: whatsappMensagens.createdAt, enviadoPorNome: usuarios.nome })
         .from(whatsappMensagens)
         .leftJoin(usuarios, eq(usuarios.id, whatsappMensagens.enviadoPorId))
-        .where(eq(whatsappMensagens.leadId, detalhes.leadId)).orderBy(desc(whatsappMensagens.createdAt)).limit(10)
+        // Quem escreveu e quando também é conversa: mensagem de número pessoal/privado não entra no resumo da entrega.
+        .where(and(eq(whatsappMensagens.leadId, detalhes.leadId), condicaoConversaNaoPrivada(whatsappMensagens.sessaoId)))
+        .orderBy(desc(whatsappMensagens.createdAt)).limit(10)
     : [];
 
   // Atividades recentes (referência de UX) — feed real e variado (nota,

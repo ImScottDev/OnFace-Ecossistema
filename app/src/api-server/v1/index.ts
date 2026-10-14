@@ -19,6 +19,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { condicaoComunicacaoNaoPrivada } from "@/lib/whatsapp/acesso";
 import { autenticarApi, temEscopo, registrarUso, type AtorApi } from "./autenticacao";
 import type { CodigoPermissao } from "@/lib/auth/permissoes";
 import { boardDeAquisicoes } from "@onface/acquisition";
@@ -198,6 +199,7 @@ app.get("/v1/communications", rota("acquisition.read", async (c, ator) => {
            cm.subject, cm.summary, cm.ocorrido_em::text AS "occurredAt"
       FROM communications cm
      WHERE cm.organizacao_id = ${ator.organizacaoId}::uuid
+       AND ${condicaoComunicacaoNaoPrivada("cm")}
        AND (${pessoaId}::uuid IS NULL OR cm.pessoa_id = ${pessoaId}::uuid)
      ORDER BY cm.ocorrido_em DESC LIMIT ${limite} OFFSET ${offset}`);
   return { data: linhas, page: { limit: limite, offset } };

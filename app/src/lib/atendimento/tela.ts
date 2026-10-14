@@ -16,16 +16,18 @@
 import { nomeCompleto } from "@/lib/vendas/texto";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { condicaoMinhasConversas, condicaoEquipe, podeVerEquipe as podeEquipe, sessaoMinha, sessaoVisivel } from "@/lib/whatsapp/acesso";
+import { condicaoConversa, podeVerEquipe as podeEquipe, registrarListaExcepcional, sessaoMinha, sessaoVisivel } from "@/lib/whatsapp/acesso";
 
 type Ctx = {
   organizacaoId: string;
   userId: string;
   userRole?: string | null;
   realRole?: string | null;
+  realUserId?: string | null;
+  isViewingAs?: boolean;
 };
 
-/** "minhas" = meus números + atribuídas a mim; "equipe" = todos (só quem pode, ver `veTodasAsConversas`). */
+/** "minhas" = meus números + atribuídas a mim; "equipe" = as minhas mais as que supervisiono por permissão explícita (ver lib/whatsapp/acesso). */
 export type EscopoAtendimento = "minhas" | "equipe";
 
 export type ConversaAtendimento = {
@@ -70,7 +72,7 @@ export type DadosAtendimento = {
   eu: { id: string; nome: string };
   /** Escopo efetivo da lista (pedido da URL já limitado pela permissão). */
   escopo: EscopoAtendimento;
-  /** Pode alternar para "Equipe": gestão (admin vê a organização; gerente/coordenador vê o time). */
+  /** Pode alternar para "Equipe": tem supervisão concedida (ou é super admin, auditado). O cargo não basta. */
   podeVerEquipe: boolean;
   conversas: ConversaAtendimento[];
   leads: LeadAtendimento[];
@@ -99,17 +101,17 @@ function ultimosDigitos(tel: string | null | undefined): string | null {
 
 export async function paginaDeAtendimento(ctx: Ctx, escopoPedido: EscopoAtendimento = "minhas"): Promise<DadosAtendimento> {
   const org = ctx.organizacaoId;
-  /* Conversa de WhatsApp é dado pessoal (decisão Kauã 09/09, lib/whatsapp/acesso).
-     O escopo PADRÃO de todo mundo, inclusive super_admin, é "Minhas": os números
-     que são seus e o que está atribuído a você. Só quem `veTodasAsConversas`
-     pode pedir "Equipe". A mesma condição vale para a lista, os números, as
-     abas, a busca e as métricas — total que conta conversa fora do escopo
-     seria o mesmo vazamento disfarçado. */
-  const podeVerEquipe = podeEquipe(ctx);
+  /* Conversa de WhatsApp é dado pessoal (decisão Kauã 09/09; reforçada em 13/10, lib/whatsapp/acesso).
+     O escopo PADRÃO de todo mundo, inclusive super_admin, é "Minhas": os números que são seus e o
+     que está atribuído a você. "Equipe" só existe para quem recebeu SUPERVISÃO explícita (ou é super
+     admin, auditado); o cargo não abre nada. A mesma condição vale para a lista, os números, as
+     abas, a busca e as métricas — total que conta conversa fora do escopo seria o mesmo vazamento
+     disfarçado. */
+  const podeVerEquipe = await podeEquipe(ctx);
   const escopo: EscopoAtendimento = escopoPedido === "equipe" && podeVerEquipe ? "equipe" : "minhas";
-  const acesso = escopo === "equipe"
-    ? condicaoEquipe(ctx, sql`c.responsavel_id`, sql`c.sessao_id`)
-    : condicaoMinhasConversas(ctx.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
+  const acesso = condicaoConversa(ctx, escopo, sql`c.responsavel_id`, sql`c.sessao_id`);
+  // Lista excepcional (super admin em "Equipe", ou qualquer lista no "ver como") deixa rastro.
+  await registrarListaExcepcional(ctx, escopo, "atendimento");
 
   const [conversas, leadsTel, equipe, sessoes, labels, tags, templates, eu, carga, resp] = await Promise.all([
     db.execute<{
@@ -184,7 +186,7 @@ export async function paginaDeAtendimento(ctx: Ctx, escopoPedido: EscopoAtendime
         FROM contato_labels cl
         JOIN labels l ON l.id = cl.label_id
         JOIN contatos c ON c.id = cl.contato_id
-       WHERE c.organizacao_id = ${org}`),
+       WHERE c.organizacao_id = ${org} AND c.canal = 'whatsapp' AND ${acesso}`),
     db.execute<{ id: string; nome: string; categoria: string; conteudo: string }>(sql`
       SELECT id::text, nome, categoria, conteudo FROM whatsapp_templates
        WHERE organizacao_id = ${org} AND ativo ORDER BY categoria, nome`),

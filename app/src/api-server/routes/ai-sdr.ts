@@ -7,6 +7,7 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, desc, sql, gte, count } from "drizzle-orm";
 import { getCtx } from "../compat.js";
+import { checarAcessoContato, condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { encrypt, decrypt } from "@/lib/email/encryption.js";
 
 const app = new Hono();
@@ -105,6 +106,8 @@ app.put("/config", async (c) => {
 app.get("/contatos/:id/state", async (c) => {
   const ctx = await getCtx(c);
   const contatoId = c.req.param("id");
+  // O estado traz o resumo da conversa: só para quem pode abrir a conversa.
+  if (!(await checarAcessoContato(ctx, contatoId)).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
 
   const [state] = await db
     .select()
@@ -122,6 +125,8 @@ app.get("/contatos/:id/state", async (c) => {
 app.patch("/contatos/:id/toggle", async (c) => {
   const ctx = await getCtx(c);
   const contatoId = c.req.param("id");
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
+  if (!(await checarAcessoContato(ctx, contatoId)).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
   const { aiAtivo } = await c.req.json();
 
   const values: Record<string, unknown> = {
@@ -247,6 +252,8 @@ app.post("/style/analyze", async (c) => {
     .innerJoin(contatos, eq(whatsappMensagens.contatoId, contatos.id))
     .where(and(
       eq(contatos.organizacaoId, orgId),
+      // A IA aprende o estilo da equipe, não de conversa de número pessoal/privado.
+      condicaoConversaNaoPrivada(contatos.sessaoId),
       eq(whatsappMensagens.direcao, "out"),
       eq(whatsappMensagens.tipo, "text"),
       sql`(${whatsappMensagens.dados}->>'aiGenerated')::boolean IS NOT TRUE`,

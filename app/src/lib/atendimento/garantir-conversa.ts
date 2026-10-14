@@ -1,7 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contatos, leads, whatsappSessao } from "@/lib/db/schema";
 import { nomeCompleto } from "@/lib/vendas/texto";
+import { sessaoMinha } from "@/lib/whatsapp/acesso";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -29,10 +30,15 @@ export async function garantirConversaDoLead(
      costuma vir sem o 55. Sem ele o envio e o casamento por telefone não encontram a conversa. */
   if (telefone.length === 10 || telefone.length === 11) telefone = "55" + telefone;
 
-  /* Preferência: sessão conectada do próprio usuário, depois a padrão conectada,
-     depois qualquer uma da org. Sem número conectado a conversa abre assim mesmo
+  /* Preferência: sessão conectada do próprio usuário, depois a padrão conectada.
+     Número PRIVADO de outra pessoa nunca é candidato: a conversa nasceria dentro do WhatsApp
+     pessoal de alguém que não a abriu. Com usuário, só os números dele (dono ou compartilhado);
+     sem usuário (job), só os não privados. Sem número conectado a conversa abre assim mesmo
      (dá para ler e preparar a mensagem); quem barra é o envio, que avisa. */
-  const todas = await db.select().from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId));
+  const todas = await db.select().from(whatsappSessao).where(and(
+    eq(whatsappSessao.organizacaoId, organizacaoId),
+    usuarioId ? sessaoMinha(usuarioId, sql`${whatsappSessao.id}`, sql`${whatsappSessao.usuarioId}`) : eq(whatsappSessao.privado, false),
+  ));
   const conectadas = todas.filter((s) => s.status === "connected");
   const sessao = conectadas.find((s) => usuarioId && s.usuarioId === usuarioId)
     ?? conectadas.find((s) => s.isDefault) ?? conectadas[0]

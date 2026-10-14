@@ -13,7 +13,7 @@ import { nomeCompleto } from "@/lib/vendas/texto";
 import { getCtx, parseBody } from "../compat.js";
 import { publicarEvento } from "@/lib/events/outbox";
 import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
-import { checarAcessoContato } from "@/lib/whatsapp/acesso";
+import { checarAcessoContato, condicaoConversa, podeVerEquipe, registrarListaExcepcional } from "@/lib/whatsapp/acesso";
 import { estadoDaIaNaConversa } from "@/lib/atendimento/ia-conversa";
 
 /**
@@ -137,8 +137,12 @@ app.get("/atendimento/conversas", async (c) => {
   // que ela existir na org, sem abrir a caixa de entrada de outra pessoa.
   const leadIdFiltro = c.req.query("leadId") ?? null;
 
+  /* WhatsApp NÃO obedece `viewAs` por parâmetro: "ver como" é o cookie do super admin, que troca a identidade
+     inteira (auth.ts) e deixa rastro. A busca de e-mail e ligação abaixo ainda usa o id pedido por admin. */
   const isAdmin = ctx.userRole === "admin" || ctx.userRole === "super_admin";
   const effectiveUserId = isAdmin && viewAs ? viewAs : ctx.userId;
+  const escopoWhatsapp = view === "todos" && (await podeVerEquipe(ctx)) ? "equipe" as const : "minhas" as const;
+  if (escopoWhatsapp === "equipe") await registrarListaExcepcional(ctx, escopoWhatsapp, "atendimento/conversas");
 
   // Contadores por aba (19/08, referência de UX): busca as 3 fontes sempre
   // — mesmas funções/filtros de view+search já usados pra montar a lista,
@@ -146,7 +150,7 @@ app.get("/atendimento/conversas", async (c) => {
   // (risco real de dessincronia, já visto nesta sessão noutro campo). Custo
   // extra é aceitável: são as mesmas queries indexadas que "todas" já fazia.
   const [wpp, eml, lig] = await Promise.all([
-    buscarWhatsapp({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
+    buscarWhatsapp({ ctx, view, search, limit, leadIdFiltro, escopo: escopoWhatsapp }),
     buscarEmail({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
     buscarLigacao({ ctx, view, search, effectiveUserId, limit, leadIdFiltro }),
   ]);
@@ -196,15 +200,17 @@ app.get("/atendimento/conversas", async (c) => {
 
 async function buscarWhatsapp(opts: {
   ctx: Awaited<ReturnType<typeof getCtx>>; view: string; search: string | null;
-  effectiveUserId: string; limit: number; leadIdFiltro?: string | null;
+  limit: number; leadIdFiltro?: string | null; escopo: "minhas" | "equipe";
 }): Promise<{ itens: ItemUnificado[]; total: number }> {
-  const { ctx, view, search, effectiveUserId, limit, leadIdFiltro } = opts;
+  const { ctx, view, search, limit, leadIdFiltro, escopo } = opts;
 
-  const conditions = [eq(contatos.organizacaoId, ctx.organizacaoId), eq(contatos.canal, "whatsapp")];
+  /* A autorização da conversa é a regra única (lib/whatsapp/acesso) e vale para TODA entrada, inclusive o
+     deep link por lead: antes o `leadId` ignorava dono/número e a lista abria a conversa de qualquer
+     pessoa; e "todos" não filtrava nada. */
+  const conditions = [eq(contatos.organizacaoId, ctx.organizacaoId), eq(contatos.canal, "whatsapp"), condicaoConversa(ctx, escopo)];
 
   if (leadIdFiltro) {
-    // Deep link: acha a conversa DESSE lead na org, sem filtro de dono/status
-    // (ver comentário na rota) — não é o browse geral do inbox.
+    // Deep link: acha a conversa DESSE lead entre as que o usuário pode abrir, sem filtro de status.
     conditions.push(eq(contatos.leadId, leadIdFiltro));
   } else {
     if (view === "fechadas") {
@@ -215,20 +221,8 @@ async function buscarWhatsapp(opts: {
       conditions.push(eq(contatos.status, "open"), or(isNull(contatos.snoozedUntil), sql`${contatos.snoozedUntil} <= now()`)!);
     }
 
-    // Privacidade real entre vendedores (Kauã, 10/08): por padrão, cada um só
-    // vê as conversas de WhatsApp que são dele (ou ainda sem dono). "Todos"
-    // é exatamente a ação explícita que o comentário original previa como
-    // separada desse filtro passivo — achado real 24/08: a rota nunca tinha
-    // esse `else if`, então "Todos" no dropdown se comportava idêntico a
-    // "Meus" (mesmo branch), motivo real de WhatsApp aparecer vazio pra
-    // quem não tinha nenhuma conversa atribuída. Só "Atribuir" continua
-    // sendo o que muda o dono de fato — "Todos" aqui é só visão, não toca
-    // `responsavelId` de nada.
-    if (view === "nao_atribuidos") {
-      conditions.push(isNull(contatos.responsavelId));
-    } else if (view !== "todos") {
-      conditions.push(or(eq(contatos.responsavelId, effectiveUserId), isNull(contatos.responsavelId))!);
-    }
+    // "Não atribuídos" é só um recorte DENTRO do que o usuário já pode ver.
+    if (view === "nao_atribuidos") conditions.push(isNull(contatos.responsavelId));
   }
 
   if (search) conditions.push(or(ilike(contatos.nome, `%${search}%`), ilike(contatos.telefone, `%${search}%`))!);
@@ -309,6 +303,7 @@ const acaoConversaSchema = z.object({
 // publicam evento para Timeline/automacoes, sem criar uma conversa paralela.
 app.post("/atendimento/conversas/:id/acao", async (c) => {
   const ctx = await getCtx(c);
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
   const contatoId = c.req.param("id");
   const parsed = acaoConversaSchema.safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Dados invalidos", details: parsed.error.flatten() }, 400);
@@ -491,6 +486,7 @@ app.get("/atendimento/conversas/:id/ia", async (c) => {
    o worker leem (ai_sdr_contato_state) e publica o fato com autor, para medir depois. */
 app.post("/atendimento/conversas/:id/ia", async (c) => {
   const ctx = await getCtx(c);
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
   const id = c.req.param("id");
   const parsed = z.object({ ativa: z.boolean() }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "Informe { ativa: boolean }" }, 400);
@@ -532,6 +528,7 @@ app.post("/atendimento/conversas/:id/ia", async (c) => {
 
 app.get("/atendimento/conversas/:id/tags", async (c) => {
   const ctx = await getCtx(c);
+  if (!(await checarAcessoContato(ctx, c.req.param("id"))).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
   const rows = await db.select({ id: labels.id, nome: labels.nome, cor: labels.cor })
     .from(contatoLabels)
     .innerJoin(labels, eq(labels.id, contatoLabels.labelId))
@@ -542,9 +539,11 @@ app.get("/atendimento/conversas/:id/tags", async (c) => {
 
 app.post("/atendimento/conversas/:id/tags", async (c) => {
   const ctx = await getCtx(c);
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
   const body = await c.req.json();
   const parsed = z.object({ labelId: z.string().uuid() }).safeParse(body);
   if (!parsed.success) return c.json({ error: "labelId invalido" }, 400);
+  if (!(await checarAcessoContato(ctx, c.req.param("id"))).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
   const [label] = await db.select({ id: labels.id, nome: labels.nome }).from(labels).where(and(
     eq(labels.id, parsed.data.labelId), eq(labels.organizacaoId, ctx.organizacaoId),
   )).limit(1);
@@ -598,6 +597,8 @@ app.post("/atendimento/conversas/:id/tags", async (c) => {
 
 app.delete("/atendimento/conversas/:id/tags/:labelId", async (c) => {
   const ctx = await getCtx(c);
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
+  if (!(await checarAcessoContato(ctx, c.req.param("id"))).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
   const [contato] = await db.select({ id: contatos.id }).from(contatos).where(and(
     eq(contatos.id, c.req.param("id")), eq(contatos.organizacaoId, ctx.organizacaoId),
   )).limit(1);

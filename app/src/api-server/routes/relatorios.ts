@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { negocios, leads, campanhas, contratos, npsRespostas, atividades, statusChanges, usuarios, reunioes, notas, ligacoes, tarefas, whatsappMensagens } from "@/lib/db/schema";
 import { eq, count, sum, avg, and, inArray, sql, gte, isNotNull, lte, desc, not, between, lt, or } from "drizzle-orm";
 import { getCtx } from "../compat.js";
+import { sessaoVisivel } from "@/lib/whatsapp/acesso";
 import { parsePeriodo, clampDesdeGoLive, GO_LIVE_ISO } from "@/lib/relatorios/periodo";
 import { fetchMetaCampaignInsights, fetchMetaAdInsights, metaConfigured, normCampanha } from "@/lib/integrations/meta-insights";
 import { isPersonalView, isAdminView } from "@/lib/auth/roles";
@@ -507,6 +508,8 @@ app.get("/atividade-time/:usuarioId/:dia", async (c) => {
     db.select({
       id: whatsappMensagens.id, createdAt: whatsappMensagens.createdAt, conteudo: whatsappMensagens.conteudo,
       leadId: whatsappMensagens.leadId, leadNome: leads.nome,
+      // O relatório conta a atividade de qualquer pessoa, mas o TEXTO só sai se quem olha pode ver aquele número.
+      visivel: sql<boolean>`(${whatsappMensagens.sessaoId} IS NULL OR EXISTS (SELECT 1 FROM whatsapp_sessao wv WHERE wv.id = ${whatsappMensagens.sessaoId} AND ${sessaoVisivel(ctx, sql`wv.id`, sql`wv.usuario_id`)}))`,
     }).from(whatsappMensagens)
       .leftJoin(leads, eq(whatsappMensagens.leadId, leads.id))
       .where(and(eq(whatsappMensagens.enviadoPorId, usuarioId), eq(whatsappMensagens.direcao, "out"), gte(whatsappMensagens.createdAt, diaInicio), lt(whatsappMensagens.createdAt, diaFim))),
@@ -550,9 +553,9 @@ app.get("/atividade-time/:usuarioId/:dia", async (c) => {
     })),
     ...mensagensDia.map((m) => ({
       tipo: "whatsapp" as const,
-      titulo: m.conteudo ? truncar(m.conteudo, 140) : "(mídia)",
-      contexto: m.leadNome || null,
-      leadId: m.leadId, negocioId: null as string | null,
+      titulo: !m.visivel ? "(mensagem em número pessoal)" : m.conteudo ? truncar(m.conteudo, 140) : "(mídia)",
+      contexto: m.visivel ? (m.leadNome || null) : null,
+      leadId: m.visivel ? m.leadId : null, negocioId: null as string | null,
       createdAt: m.createdAt,
     })),
     ...mudancasDia.map((s) => ({

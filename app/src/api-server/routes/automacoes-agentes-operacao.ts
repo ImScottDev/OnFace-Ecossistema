@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import { aiAgentVersions, aiAgents, aiKnowledgeSources, contatos, leads, roteamentoComercialRegras, usuarios, whatsappSessao, aiMemoriaFatos } from "@/lib/db/schema";
 import { AGENT_SYSTEM_SLUGS } from "@/lib/ai/agent-studio";
 import { getCtx, exigirCtx } from "../compat.js";
-import { checarAcessoContato } from "@/lib/whatsapp/acesso";
+import { checarAcessoContato, sessaoVisivel } from "@/lib/whatsapp/acesso";
 import { catalogoDeFerramentas, DOMINIOS } from "@/lib/ai-platform/tools/catalogo";
 import { CLASSES_AUTONOMIA } from "@/lib/ai-platform/tools/politica";
 import { atribuirAgente, AtribuicaoRecusada, encerrarAtribuicao, listarAtribuicoes, pausarAtribuicao, retomarAtribuicao, transferirParaHumano, atribuicaoViva } from "@/lib/ai-platform/operacao/atribuicoes";
@@ -66,7 +66,11 @@ app.get(`${AO}/apoio`, async (c) => {
   const ctx = await getCtx(c);
   const [sessoes, pessoas, fontes, regras] = await Promise.all([
     db.select({ id: whatsappSessao.id, nome: sql<string>`coalesce(nullif(btrim(${whatsappSessao.label}), ''), ${whatsappSessao.sessionName})`, status: whatsappSessao.status, telefone: whatsappSessao.phoneNumber, finalidade: whatsappSessao.finalidade, dono: whatsappSessao.usuarioId })
-      .from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, ctx.organizacaoId)).orderBy(whatsappSessao.sessionName),
+      .from(whatsappSessao).where(and(
+        eq(whatsappSessao.organizacaoId, ctx.organizacaoId),
+        // O editor de agente lista os números que a pessoa pode ver; o número pessoal de outra pessoa não é opção.
+        sessaoVisivel(ctx, sql`${whatsappSessao.id}`, sql`${whatsappSessao.usuarioId}`),
+      )).orderBy(whatsappSessao.sessionName),
     db.select({ id: usuarios.id, nome: usuarios.nome, role: usuarios.role }).from(usuarios).where(and(eq(usuarios.organizacaoId, ctx.organizacaoId), eq(usuarios.ativo, true), not(eq(usuarios.tipo, "agente")))).orderBy(usuarios.nome),
     db.select({ id: aiKnowledgeSources.id, nome: aiKnowledgeSources.nome, governanca: aiKnowledgeSources.governanca, categoria: aiKnowledgeSources.categoria, status: aiKnowledgeSources.status, indexadoEm: aiKnowledgeSources.indexedAt, metadata: aiKnowledgeSources.metadata })
       .from(aiKnowledgeSources).where(eq(aiKnowledgeSources.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiKnowledgeSources.updatedAt)),

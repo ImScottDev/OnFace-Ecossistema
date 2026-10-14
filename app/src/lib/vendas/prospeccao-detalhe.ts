@@ -10,6 +10,7 @@ import { detalheLead, passoDaCadencia, type DetalheLead } from "./consultas";
 import { lerLinhaDoTempo, type LinhaDoTempo } from "./eventos";
 import { enriquecimentoDaEmpresa, type EnriquecimentoDaEmpresa } from "./ficha-extras";
 import { ROTULO_ESTADO_PROSPECCAO, type EstadoProspeccao } from "./dominio";
+import { sessaoPrivada, condicaoComunicacaoNaoPrivada } from "@/lib/whatsapp/acesso";
 
 export interface PassoDaCadencia {
   id: string;
@@ -196,10 +197,14 @@ async function conversasDoProspect(organizacaoId: string, leadId: string): Promi
       SELECT m.id::text, 'whatsapp' AS canal, m.direcao, left(COALESCE(m.conteudo, '[' || m.tipo || ']'), 160) AS resumo, m.created_at::text AS em
         FROM whatsapp_mensagens m
        WHERE m.lead_id = ${leadId}::uuid
+         -- Número privado não aparece aqui: a ficha do prospect é vista por todo o
+         -- comercial, e o trecho de 160 caracteres é conteúdo da conversa.
+         AND NOT ${sessaoPrivada(sql`m.sessao_id`)}
       UNION ALL
       SELECT c.id::text, c.canal, c.direcao, left(COALESCE(NULLIF(c.summary, ''), c.conteudo, ''), 160), c.ocorrido_em::text
         FROM communications c
        WHERE c.organizacao_id = ${organizacaoId}::uuid AND c.canal <> 'whatsapp'
+         AND ${condicaoComunicacaoNaoPrivada("c")}
          AND c.pessoa_id IN (SELECT id FROM pessoas WHERE lead_id_legado = ${leadId}::uuid)
     ) x ORDER BY em DESC LIMIT 200`);
   return {

@@ -89,6 +89,18 @@ jobs:
             src/lib/catalogo/sincronizar-stripe.test.ts \
             src/lib/integrations/stripe-webhook-assincrono.test.ts
 
+      # Segurança da conversa de WhatsApp (13/10/2026): o WhatsApp pessoal do dono era legível por
+      # qualquer admin. Decisão pura sobre papéis (dono, admin, gerente, closer, super admin, "ver
+      # como", id direto, número privado, transferência, supervisão), mais a trava de arquitetura
+      # `conversa-so-pela-porta` que roda no passo acima. Dados sintéticos, sem banco, milissegundos.
+      - name: segurança (conversa de WhatsApp por papel)
+        if: always()
+        working-directory: app
+        run: |
+          pnpm exec tsx --test \
+            src/lib/whatsapp/acesso-politica.test.ts \
+            src/lib/arquitetura/conversa-so-pela-porta.test.ts
+
   # ─── Imagens de deploy (só push na main) ───────────────────────────────────
   # Até 12/10/2026 a imagem era construída NA EC2: ~48 min por deploy. Agora o
   # build roda aqui, EM PARALELO ao portão acima, e publica uma imagem

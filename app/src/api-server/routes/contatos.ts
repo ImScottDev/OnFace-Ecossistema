@@ -9,6 +9,7 @@ import { phoneLikePattern } from "@/lib/whatsapp/phone-utils";
 import { downloadAndSaveAvatar, sessionToConfig } from "@/lib/whatsapp/client";
 import { syncPessoaFromLead, syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { publicarEvento } from "@/lib/events/outbox";
+import { checarAcessoContato } from "@/lib/whatsapp/acesso";
 
 const app = new Hono();
 
@@ -55,6 +56,10 @@ app.post("/contatos/:id/atribuir", async (c) => {
   if (!contato) {
     return c.json({ error: "Contato não encontrado" }, 404);
   }
+  // Dono, compartilhado, supervisão explícita ou conversa transferida. O filtro de organização sozinho deixava
+  // qualquer um atribuir a si (e então LER) a conversa de um número pessoal só sabendo o id.
+  if (contato.canal === "whatsapp" && !(await checarAcessoContato(ctx, id)).ok) return c.json({ error: "Contato não encontrado" }, 404);
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
 
   // If only updating unread count (no user assignment)
   if (parsed.data.naoLidas !== undefined && !parsed.data.usuarioId) {
@@ -214,6 +219,10 @@ app.post("/contatos/:id/criar-lead", async (c) => {
   if (!contato) {
     return c.json({ error: "Contato não encontrado" }, 404);
   }
+  // Dono, compartilhado, supervisão explícita ou conversa transferida. O filtro de organização sozinho deixava
+  // qualquer um atribuir a si (e então LER) a conversa de um número pessoal só sabendo o id.
+  if (contato.canal === "whatsapp" && !(await checarAcessoContato(ctx, id)).ok) return c.json({ error: "Contato não encontrado" }, 404);
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
 
   if (contato.leadId) {
     return c.json({ error: "Contato já possui lead vinculado" }, 400);
@@ -297,6 +306,10 @@ app.post("/contatos/:id/desvincular", async (c) => {
   if (!contato) {
     return c.json({ error: "Contato não encontrado" }, 404);
   }
+  // Dono, compartilhado, supervisão explícita ou conversa transferida. O filtro de organização sozinho deixava
+  // qualquer um atribuir a si (e então LER) a conversa de um número pessoal só sabendo o id.
+  if (contato.canal === "whatsapp" && !(await checarAcessoContato(ctx, id)).ok) return c.json({ error: "Contato não encontrado" }, 404);
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
 
   // Unlink — set leadId to null
   const [updated] = await db
@@ -331,6 +344,10 @@ app.post("/contatos/:id/vincular-lead", async (c) => {
   if (!contato) {
     return c.json({ error: "Contato não encontrado" }, 404);
   }
+  // Dono, compartilhado, supervisão explícita ou conversa transferida. O filtro de organização sozinho deixava
+  // qualquer um atribuir a si (e então LER) a conversa de um número pessoal só sabendo o id.
+  if (contato.canal === "whatsapp" && !(await checarAcessoContato(ctx, id)).ok) return c.json({ error: "Contato não encontrado" }, 404);
+  if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
 
   // Validate lead exists and belongs to org
   const [lead] = await db

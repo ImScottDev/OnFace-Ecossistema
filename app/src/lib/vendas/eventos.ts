@@ -23,6 +23,7 @@ import { sincronizarAquisicaoDoLead } from "./sincronizar-aquisicao";
 import { moverEtapaDaAquisicao, type EtapaAquisicaoCanonica } from "@onface/acquisition";
 import type { ExecutorDb } from "./executor";
 import type { Ator } from "./dominio";
+import { condicaoComunicacaoNaoPrivada } from "@/lib/whatsapp/acesso";
 
 /**
  * Tipos de evento da spec (Bloco 01 §17, Bloco 02 §27, Bloco 04 §22).
@@ -469,6 +470,10 @@ export async function lerLinhaDoTempo(params: {
       LEFT JOIN usuarios u ON u.id = c.usuario_id
      WHERE c.organizacao_id = ${params.organizacaoId}::uuid
        AND c.canal = 'whatsapp'
+       -- A linha do tempo da pessoa, da empresa e do negócio é vista por todo o
+       -- comercial. Cópia de mensagem de número privado não entra (trecho de 180
+       -- caracteres é conteúdo da conversa).
+       AND ${condicaoComunicacaoNaoPrivada("c")}
        AND NOT EXISTS (
          SELECT 1 FROM timeline_events t
           WHERE t.pessoa_id = c.pessoa_id AND t.tipo = c.canal

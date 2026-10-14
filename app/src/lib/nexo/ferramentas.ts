@@ -29,7 +29,7 @@ import { criarTarefa, alterarTarefa, excluirTarefa, TIPOS_TAREFA, PRIORIDADES_TA
 import { classificarEmpresas, classificarLeads } from "@/lib/vendas/classificacao";
 import { comClasse } from "@/lib/vendas/classificacao-rotulos";
 import { CATALOGO, medir } from "@/lib/metricas/catalogo";
-import { condicaoMinhasConversas, veTodasAsConversas } from "@/lib/whatsapp/acesso";
+import { condicaoMinhasConversas } from "@/lib/whatsapp/acesso";
 import * as memoria from "@/lib/nexo/memoria";
 import type { AgentToolContext, AgentToolRegistration } from "@/lib/ai-platform/tools/registry";
 
@@ -249,7 +249,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
   leitura("conversas", "Conversas do Atendimento (WhatsApp): lista recente ou, com contato_id, as últimas mensagens daquela conversa.", { contato_id: str("uuid do contato"), somente_nao_lidas: { type: "boolean" }, limite: { type: "integer" } }, [],
     async (ctx, u, i) => {
       if (u.role === "leitor") return { ok: false, error: "o papel leitor não consulta conversas individuais" };
-      const acesso = veTodasAsConversas(u.role) ? sql`TRUE` : condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
+      const acesso = condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
       if (i.contato_id) {
         const id = String(i.contato_id);
         if (!UUID.test(id)) return { ok: false, error: "contato_id inválido" };
@@ -270,7 +270,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
     { limite: { type: "integer", minimum: 1, maximum: 30 } }, [],
     async (ctx, u, i) => {
       if (u.role === "leitor") return { ok: false, error: "o papel leitor não consulta conversas individuais" };
-      const acesso = veTodasAsConversas(u.role) ? sql`TRUE` : condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
+      const acesso = condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
       const base = sql`FROM contatos c
         JOIN LATERAL (SELECT m.id, m.created_at, m.conteudo, m.tipo FROM whatsapp_mensagens m
           WHERE m.contato_id = c.id AND m.direcao = 'in' ORDER BY m.created_at DESC LIMIT 1) recebida ON TRUE
@@ -285,7 +285,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
                EXTRACT(EPOCH FROM now() - recebida.created_at)::int / 3600 horas_sem_resposta,
                '/atendimento?contatoId=' || c.id::text href
           ${base} ORDER BY recebida.created_at ASC LIMIT ${lim(i.limite)}`);
-      return { ok: true, data: { fonte: "whatsapp_mensagens", criterio: "ultima mensagem inbound posterior a ultima outbound, conversa aberta", escopo: veTodasAsConversas(u.role) ? "todas" : "minhas", total: tot?.n ?? 0, conversas: rows } };
+      return { ok: true, data: { fonte: "whatsapp_mensagens", criterio: "ultima mensagem inbound posterior a ultima outbound, conversa aberta", escopo: "minhas", total: tot?.n ?? 0, conversas: rows } };
     }),
   leitura("kpis", "Métrica do catálogo único (mrr_atual, booking_ganho, faturado, recebido, clientes_ativos, oportunidades_abertas). Sem codigo: lista as disponíveis. Números da organização inteira: não disponível para papéis pessoais.",
     { codigo: str("código da métrica"), de: str("ISO"), ate: str("ISO") }, [],
@@ -442,7 +442,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
     async (ctx, u, i) => {
       const id = String(i.contato_id ?? "");
       if (!UUID.test(id)) return { ok: false, error: "contato_id inválido" };
-      const acesso = veTodasAsConversas(u.role) ? sql`TRUE` : condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
+      const acesso = condicaoMinhasConversas(u.userId, sql`c.responsavel_id`, sql`c.sessao_id`);
       const [c] = await db.execute<{ nome: string }>(sql`SELECT c.nome FROM contatos c WHERE c.id = ${id}::uuid AND c.organizacao_id = ${ctx.organizacaoId}::uuid AND ${acesso}`);
       if (!c) return { ok: false, error: "conversa não encontrada ou de outra pessoa" };
       const conteudo = String(i.conteudo ?? "").trim();
