@@ -12,6 +12,9 @@ import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "@/lib/vendas/ponte-canonica";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
+import {
+  buscarLeadNaGraph, normalizarLeadAds, camposRastreioMeta, credenciaisLeadAds,
+} from "@onface/integrations-meta";
 
 /**
  * Busca IDs reais da Meta deixados em staging pelo webhook /api/webhooks/meta-lead-ids
@@ -22,7 +25,7 @@ import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empres
 async function buscarMetaIdsStaging(
   email: string | undefined,
   telefone: string | undefined
-): Promise<{ adId?: string; adsetId?: string; campaignId?: string; telefone?: string } | null> {
+): Promise<{ fbLeadId?: string; adId?: string; adsetId?: string; campaignId?: string; telefone?: string } | null> {
   if (!email && !telefone) return null;
   const condicoes = [];
   if (email) condicoes.push(eq(metaLeadStaging.email, email));
@@ -36,6 +39,9 @@ async function buscarMetaIdsStaging(
   if (!row) return null;
   await db.update(metaLeadStaging).set({ usado: true }).where(eq(metaLeadStaging.id, row.id));
   return {
+    // O id do lead na Meta é a ÚNICA chave que permite buscar o que a pessoa
+    // respondeu no formulário. Ele chegava aqui e era descartado.
+    fbLeadId: row.fbLeadId ?? undefined,
     adId: row.adId ?? undefined,
     adsetId: row.adsetId ?? undefined,
     campaignId: row.campaignId ?? undefined,
@@ -158,6 +164,27 @@ export async function POST(req: NextRequest) {
       const formCampos: Record<string, unknown> = {};
       if (p.tipoNegocio) formCampos.tipoNegocio = p.tipoNegocio;
       if (p.tamanhoBase) formCampos.tamanhoBase = p.tamanhoBase;
+
+      /* AS RESPOSTAS DO FORMULÁRIO DA META — causa do "Sem formulário" na ficha.
+       *
+       * O lead que vem por este caminho (Meta → n8n → RD) nascia sem resposta
+       * nenhuma: o RD só repassa nome, contato e UTM. O `fb_lead_id`, única
+       * chave que permite buscar o que a pessoa respondeu, chegava no
+       * `meta_lead_staging` e era jogado fora aqui. Medido em produção
+       * (14/10/2026): 130 dos 136 leads de Meta de outubro sem respostas tinham
+       * esse id guardado no nosso próprio banco.
+       *
+       * A busca é a MESMA do webhook direto da Meta (meta-leads/route.ts), para
+       * o lead ter a mesma ficha venha por onde vier. Best-effort: falha aqui
+       * não derruba a captação de um lead pago. */
+      if (metaIds?.fbLeadId) {
+        const busca = await buscarLeadNaGraph(metaIds.fbLeadId, credenciaisLeadAds().accessToken);
+        if (busca.ok && busca.lead) {
+          Object.assign(formCampos, normalizarLeadAds(busca.lead).respostas, camposRastreioMeta(busca.lead));
+        } else {
+          console.warn(`[rd-lead] respostas do formulário do lead Meta ${metaIds.fbLeadId} não vieram: ${busca.erro}`);
+        }
+      }
 
       // Nota com o que o lead preencheu no form (sempre visível na ficha).
       const notaLinhas = [

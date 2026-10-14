@@ -23,7 +23,7 @@ test("o board de pré-vendas conta toda aquisição aberta do seu universo, sem 
   const { sql } = await import("drizzle-orm");
   const { boardPreVendas } = await import("./consultas.js");
 
-  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
+  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes ORDER BY created_at LIMIT 1`);
   const board = await boardPreVendas(org.id, { aba: "ativos" });
 
   // Universo de Pré-vendas: aquisição aberta que não é prospect de outbound
@@ -55,7 +55,7 @@ test("nenhuma coluna anuncia total sem conseguir mostrar card", async (t) => {
   const { sql } = await import("drizzle-orm");
   const { boardPreVendas } = await import("./consultas.js");
 
-  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
+  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes ORDER BY created_at LIMIT 1`);
   const board = await boardPreVendas(org.id, { aba: "ativos" });
 
   // Coluna que diz "531" e mostra zero card parece bug do produto — e antes
@@ -73,7 +73,7 @@ test("o card leva identidade suficiente para abrir o registro", async (t) => {
   const { sql } = await import("drizzle-orm");
   const { boardPreVendas } = await import("./consultas.js");
 
-  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
+  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes ORDER BY created_at LIMIT 1`);
   const board = await boardPreVendas(org.id, { aba: "ativos" });
   const cards = board.colunas.flatMap((c) => c.cards);
   assert.ok(cards.length > 0, "o board de um banco com dado não pode vir vazio");
@@ -90,7 +90,7 @@ test("o pipeline canônico tem paridade com o legado, e a diferença é um caso 
   const { sql } = await import("drizzle-orm");
   const { boardPipeline } = await import("./consultas.js");
 
-  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
+  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes ORDER BY created_at LIMIT 1`);
 
   // Contagem pelo caminho LEGADO, direto na tabela que a tela lia antes.
   const legado = await db.execute<{ etapa: string; n: number }>(sql`
@@ -184,7 +184,7 @@ test("a linha do tempo lê as fontes que têm dado, e não repete o mesmo fato",
   const { sql } = await import("drizzle-orm");
   const { lerLinhaDoTempo } = await import("./eventos.js");
 
-  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
+  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes ORDER BY created_at LIMIT 1`);
 
   // `vendas_eventos` está vazia e a consulta lia só ela: a timeline aparecia
   // vazia enquanto 47 mil registros existiam em timeline_events e

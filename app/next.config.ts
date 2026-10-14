@@ -71,7 +71,7 @@ const nextConfig: NextConfig = {
         beforeFiles: [
           uploadsCompat,
           {
-            source: "/api/:path((?!auth|webhooks|financeiro|onboarding|campanhas|contratos-publicos).*)",
+            source: "/api/:path((?!auth|webhooks|financeiro|onboarding|campanhas|contratos-publicos|admin).*)",
             destination: `http://localhost:${apiPort}/api/:path*`,
           },
         ],

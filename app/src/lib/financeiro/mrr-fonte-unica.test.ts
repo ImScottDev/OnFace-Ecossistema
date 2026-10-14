@@ -21,7 +21,7 @@ import { organizacoes } from "@/lib/db/schema";
 test("Financeiro e Início leem o MESMO MRR", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
   try {
-    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
+    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).orderBy(organizacoes.createdAt).limit(1);
     if (!org) return t.skip("nenhuma organização no banco");
 
     const financeiro = await getMrrAtual(org.id);
@@ -39,7 +39,7 @@ test("Financeiro e Início leem o MESMO MRR", async (t) => {
 test("a conciliação por contratos não conta a mesma assinatura duas vezes", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
   try {
-    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
+    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).orderBy(organizacoes.createdAt).limit(1);
     if (!org) return t.skip("nenhuma organização no banco");
 
     const { sql } = await import("drizzle-orm");
@@ -76,7 +76,7 @@ test("a conciliação por contratos não conta a mesma assinatura duas vezes", a
 test("os segmentos de MRR somam exatamente o MRR canônico", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
   try {
-    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
+    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).orderBy(organizacoes.createdAt).limit(1);
     if (!org) return t.skip("nenhuma organização no banco");
 
     const { getFluxoMes } = await import("./metricas");
@@ -106,7 +106,7 @@ test("os segmentos de MRR somam exatamente o MRR canônico", async (t) => {
 test("caixa é pagamento, e fatura paga sem pagamento fica visível", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
   try {
-    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
+    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).orderBy(organizacoes.createdAt).limit(1);
     if (!org) return t.skip("nenhuma organização no banco");
 
     const { getFluxoMes } = await import("./metricas");

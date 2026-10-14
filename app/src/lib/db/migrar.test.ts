@@ -63,9 +63,18 @@ test("o deploy aplica migration antes de trocar container", () => {
 test("o deploy aponta para caminho e container que existem no compose", () => {
   const deploy = fs.readFileSync(path.join(RAIZ, "deploy.sh"), "utf8");
   const compose = fs.readFileSync(path.join(RAIZ, "docker-compose.yml"), "utf8");
-  const m = deploy.match(/CONTAINER_APP=([\w-]+)/);
-  assert.ok(m, "deploy.sh sem CONTAINER_APP");
-  assert.ok(compose.includes(`container_name: ${m[1]}`), `deploy.sh referencia o container "${m[1]}", que não existe no docker-compose.yml`);
+  // O compose virou parametrizado por pilha (`callface-${STACK:-crm2-dev}-app`)
+  // para a homologação sair do mesmo arquivo. O nome do container de cada alvo
+  // do deploy é esse molde com `STACK` = o projeto do alvo; conferir o literal
+  // só casava a pilha `dev` e deixava a `homolog` sem trava.
+  const molde = compose.match(/container_name: callface-\$\{STACK:-[\w-]+\}-app/);
+  assert.ok(molde, "docker-compose.yml sem container_name do app por pilha");
+  const alvos = [...deploy.matchAll(/PROJETO=([\w-]+)\s+CONTAINER_APP=([\w-]+)/g)];
+  assert.ok(alvos.length >= 2, "deploy.sh sem os alvos (PROJETO/CONTAINER_APP) que ele publica");
+  for (const [, projeto, container] of alvos) {
+    assert.equal(container, `callface-${projeto}-app`,
+      `deploy.sh chama o container de "${container}", mas o compose o nomeia callface-\${STACK}-app com STACK=${projeto}`);
+  }
 });
 
 // O runtime executa `migrar.mjs`; exigir `.ts` fazia o deploy sair 0 sem

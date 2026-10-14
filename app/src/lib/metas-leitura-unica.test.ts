@@ -22,7 +22,7 @@ import { getMetaComercialAgregada, getMetasPorVendedor } from "@/lib/metas";
 test("a soma das metas por vendedor bate com a meta agregada", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
   try {
-    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
+    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).orderBy(organizacoes.createdAt).limit(1);
     if (!org) return t.skip("nenhuma organização no banco");
 
     const hoje = new Date();
@@ -49,7 +49,7 @@ test("a soma das metas por vendedor bate com a meta agregada", async (t) => {
 test("meta cadastrada no mês vira alvo maior que zero", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
   try {
-    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
+    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).orderBy(organizacoes.createdAt).limit(1);
     if (!org) return t.skip("nenhuma organização no banco");
 
     const { sql } = await import("drizzle-orm");

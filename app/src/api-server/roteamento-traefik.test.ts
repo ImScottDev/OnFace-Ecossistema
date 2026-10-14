@@ -35,6 +35,19 @@ const RAIZ = acharRaiz();
 const COMPOSES = ["docker-compose.yml"];
 
 /**
+ * Resolve `${VAR:-padrão}` para o padrão, como o `docker compose` faz quando a
+ * variável não está no ambiente.
+ *
+ * O compose virou parametrizado por pilha (`STACK`, `ROTA`, `CRM_DOMAIN`) para
+ * a homologação publicar do mesmo arquivo. Sem resolver, o nome do router é
+ * literalmente `${ROTA:-crm2dev}-app` e os regexes abaixo não casam nada — o
+ * teste passava a reclamar de regra ausente em vez de conferir a allowlist.
+ */
+function comPadroes(compose: string): string {
+  return compose.replace(/\$\{[A-Z_][A-Z0-9_]*:-([^}]*)\}/g, "$1");
+}
+
+/**
  * Rotas Next que NÃO devem receber tráfego, com o motivo. Mexer aqui é decisão
  * consciente: ou a rota é código morto a remover, ou precisa entrar na allowlist.
  */
@@ -93,7 +106,7 @@ function prefixosDasRotasNext(): Map<string, string[]> {
 }
 
 for (const arquivo of COMPOSES) {
-  const compose = fs.readFileSync(path.join(RAIZ, arquivo), "utf8");
+  const compose = comPadroes(fs.readFileSync(path.join(RAIZ, arquivo), "utf8"));
 
   test(`${arquivo}: regras do app e da API são complementares`, () => {
     const app = allowlistDoApp(compose);
@@ -120,7 +133,7 @@ for (const arquivo of COMPOSES) {
 }
 
 test("o rewrite de dev espelha a allowlist de produção", () => {
-  const compose = fs.readFileSync(path.join(RAIZ, "docker-compose.yml"), "utf8");
+  const compose = comPadroes(fs.readFileSync(path.join(RAIZ, "docker-compose.yml"), "utf8"));
   const nextConfig = fs.readFileSync(path.join(RAIZ, "app/next.config.ts"), "utf8");
 
   const m = nextConfig.match(/source: "\/api\/:path\(\(\?!([^)]+)\)\.\*\)"/);

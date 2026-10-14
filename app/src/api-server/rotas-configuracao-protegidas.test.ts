@@ -126,7 +126,16 @@ const PUBLICAS_POR_DESENHO = new Set([
   "whatsapp.ts: POST /whatsapp/webhook",
 ]);
 
-const SESSAO = /getCtx\(c\)|getTenantFromRequest\(c\)/;
+/**
+ * Sessão resolvida na própria rota — ou delegada a um wrapper NOMEADO aqui.
+ *
+ * `pelaPorta(c, …)` (tarefas.ts) é o único: ele faz `getCtx(c)` e traduz
+ * `RegraDeNegocio` em status. Sem nomeá-lo, a gaveta de atividades (subtarefa,
+ * comentário, anexo) aparecia como rota sem sessão, que é o oposto do que o
+ * código faz. Wrapper novo tem que entrar aqui de propósito, lido: regra
+ * genérica do tipo "passou `c` para alguma função" deixaria passar rota aberta.
+ */
+const SESSAO = /getCtx\(c\)|getTenantFromRequest\(c\)|pelaPorta\(c,/;
 
 test("rota de escrita sem sessão é pública por desenho, e está nomeada", () => {
   // O ponto: rota NOVA que esqueça a sessão cai aqui, em vez de se diluir num
@@ -173,7 +182,7 @@ test("o levantamento de rotas abertas continua visível", () => {
   }
   assert.ok(escritas > 150, "a varredura precisa estar encontrando as rotas");
   assert.ok(
-    semGate <= 180,
+    semGate <= 190,
     `${semGate} rotas de escrita sem autorização (medido em 21/09/2026: 166 depois de fechar ` +
     "automação, agente e plataforma de IA; 171 em 05/10, com PATCH /notificacoes, " +
     "que é dado PESSOAL: o gate dele é a sessão mais o filtro por usuario_id, e " +
@@ -182,7 +191,7 @@ test("o levantamento de rotas abertas continua visível", () => {
     "/empresa/contatos NÃO estão abertas: cada uma barra quem não é admin " +
     "lendo `ctx.userRole`, um estilo que o regex deste levantamento não " +
     "reconhece, e resolve a empresa por `empresaComDominio(ctx.organizacaoId, …)`, " +
-    "então o id vindo do cliente nunca escapa do tenant; 178 em 08/10 com os envios de arquivo de documentos do cliente, arquivos da empresa (POST e DELETE) e do projeto, todos de operação, com sessão e filtro por organizacao_id; 183 em 08/10 com as rotas de distribuição de leads, que barram quem não é gestão lendo `ctx.userRole`, estilo que o regex não reconhece, e as de anexo e IA do Atendimento, todas com sessão e escopo de organização; 180 em 08/10: as rotas de edição de modelo de contrato e de parâmetros do contrato passaram a exigir gestão (`getGestaoCtx`) e o resto do aumento é de rotas de Atendimento e agentes, com sessão e escopo de organização). Se cresceu, uma rota " +
+    "então o id vindo do cliente nunca escapa do tenant; 178 em 08/10 com os envios de arquivo de documentos do cliente, arquivos da empresa (POST e DELETE) e do projeto, todos de operação, com sessão e filtro por organizacao_id; 183 em 08/10 com as rotas de distribuição de leads, que barram quem não é gestão lendo `ctx.userRole`, estilo que o regex não reconhece, e as de anexo e IA do Atendimento, todas com sessão e escopo de organização; 180 em 08/10: as rotas de edição de modelo de contrato e de parâmetros do contrato passaram a exigir gestão (`getGestaoCtx`) e o resto do aumento é de rotas de Atendimento e agentes, com sessão e escopo de organização; 190 em 14/10: 9 são a gaveta de atividades (subtarefa, comentário e anexo de tarefa), todas de OPERAÇÃO, com sessão e tenant pelo `pelaPorta` → `getCtx`, e a décima é POST /whatsapp/supervisao, que NÃO está aberta: ela barra quem não é super admin por `superAdminAgindo(ctx)`, estilo que o regex deste levantamento não reconhece, e resolve supervisor e alvo dentro de `organizacao_id = ctx.organizacaoId`). Se cresceu, uma rota " +
     "nova entrou aberta.",
   );
 });

@@ -19,7 +19,7 @@ import { getPipelineAtual, PIPELINE_ATIVO_STATUSES, STAGE_PROB, ETAPAS_DO_FUNIL 
 test("o relatório de pipeline bate com o board, no total e no valor", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
   try {
-    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).limit(1);
+    const [org] = await db.select({ id: organizacoes.id }).from(organizacoes).orderBy(organizacoes.createdAt).limit(1);
     if (!org) return t.skip("nenhuma organização no banco");
 
     const { boardPipeline } = await import("@/lib/vendas/consultas");

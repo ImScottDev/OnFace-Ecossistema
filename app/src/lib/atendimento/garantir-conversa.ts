@@ -45,9 +45,20 @@ export async function garantirConversaDoLead(
     ?? todas.find((s) => usuarioId && s.usuarioId === usuarioId) ?? todas.find((s) => s.isDefault) ?? todas[0];
   if (!sessao) return;
 
+  /* A conversa é ÚNICA por (sessão, telefone). Se já existe uma com esse número
+     — criada pela mensagem que chegou antes de o lead existir, ou sem lead
+     nenhum — ela é ADOTADA pelo lead, não duplicada: era isso que estourava
+     `idx_contatos_sessao_phone` e derrubava quem só queria gravar a mensagem.
+     Conversa já ligada a OUTRO lead não é roubada (COALESCE). */
   await db.insert(contatos).values({
     organizacaoId, canal: "whatsapp", nome: nomeCompleto(lead.nome, lead.sobrenome) || lead.nome, telefone, email: lead.email,
     sessaoId: sessao.id, responsavelId: lead.responsavelId, leadId,
+  }).onConflictDoUpdate({
+    target: [contatos.sessaoId, contatos.telefone],
+    set: {
+      leadId: sql`COALESCE(${contatos.leadId}, EXCLUDED.lead_id)`,
+      responsavelId: sql`COALESCE(${contatos.responsavelId}, EXCLUDED.responsavel_id)`,
+    },
   });
 }
 
@@ -96,5 +107,13 @@ export async function conversaParaEnvio(
     )).limit(1);
     if (criado) return criado.id;
   }
-  return null;
+
+  /* Último recurso: a conversa daquele número em QUALQUER sessão da organização.
+     Sem sessão informada (job antigo, mensagem importada) o casamento por
+     telefone acima nem roda, e a mensagem ficava órfã tendo conversa. */
+  const [porNumero] = await db.select({ id: contatos.id }).from(contatos).where(and(
+    eq(contatos.organizacaoId, organizacaoId),
+    inArray(contatos.telefone, [comDdi, tel]),
+  )).limit(1);
+  return porNumero?.id ?? null;
 }

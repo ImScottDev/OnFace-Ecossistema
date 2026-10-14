@@ -39,7 +39,7 @@ test("o Kanban único mostra cards de Nutrição e Desqualificado", async (t) =>
   const { db } = await import("@/lib/db");
   const { sql } = await import("drizzle-orm");
   const { boardPreVendas } = await import("./consultas.js");
-  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`);
+  const [org] = await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes ORDER BY created_at LIMIT 1`);
   const board = await boardPreVendas(org.id, {});
   for (const chave of ["nutricao", "desqualificado"] as const) {
     const col = board.colunas.find((c) => c.chave === chave);

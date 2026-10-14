@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { publicarEvento, projetarTimeline } from "@onface/platform-events";
 
-const org = async () => (await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes LIMIT 1`))[0]?.id;
+const org = async () => (await db.execute<{ id: string }>(sql`SELECT id FROM organizacoes ORDER BY created_at LIMIT 1`))[0]?.id;
 const algumaEmpresa = async () => (await db.execute<{ id: string }>(sql`SELECT id FROM empresas LIMIT 1`))[0]?.id;
 
 test("evento com a mesma chave de idempotência não duplica", async () => {
