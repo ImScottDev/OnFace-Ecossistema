@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contatos, leads, whatsappSessao } from "@/lib/db/schema";
 import { nomeCompleto } from "@/lib/vendas/texto";
@@ -49,4 +49,52 @@ export async function garantirConversaDoLead(
     organizacaoId, canal: "whatsapp", nome: nomeCompleto(lead.nome, lead.sobrenome) || lead.nome, telefone, email: lead.email,
     sessaoId: sessao.id, responsavelId: lead.responsavelId, leadId,
   });
+}
+
+/**
+ * A conversa onde uma mensagem de SAÍDA deve cair — criando se preciso — e o id dela.
+ *
+ * REGRA (Scott, 14/10/2026): *"cada vírgula, cada ponto tem que aparecer na aba de
+ * atendimento, independente do canal"*. Mensagem gravada sem `contato_id` existe no banco
+ * e é invisível para quem atende.
+ *
+ * Medido em produção no mesmo dia: **932 mensagens enviadas sem contato**, 104 só em
+ * outubro. O lembrete de reunião do INVEST BANK saiu pelo WhatsApp da Mayra às 15:58, foi
+ * entregue, e não apareceu na conversa — ela escreveu para o mesmo cliente às 16:41 sem
+ * saber que o sistema já tinha falado. Se ele responder, a resposta cai numa conversa onde
+ * a pergunta não existe.
+ *
+ * Casa primeiro pelo telefone DENTRO da sessão que vai enviar (é a conversa real daquele
+ * número), depois pelo lead. Só então cria.
+ */
+export async function conversaParaEnvio(
+  organizacaoId: string,
+  opts: { leadId?: string | null; telefone: string; sessaoId: string | null; usuarioId?: string | null },
+): Promise<string | null> {
+  const tel = opts.telefone?.replace(/\D/g, "");
+  if (!tel) return null;
+  const comDdi = tel.length === 10 || tel.length === 11 ? `55${tel}` : tel;
+
+  if (opts.sessaoId) {
+    const [porTelefone] = await db.select({ id: contatos.id }).from(contatos).where(and(
+      eq(contatos.organizacaoId, organizacaoId),
+      eq(contatos.sessaoId, opts.sessaoId),
+      inArray(contatos.telefone, [comDdi, tel]),
+    )).limit(1);
+    if (porTelefone) return porTelefone.id;
+  }
+
+  if (opts.leadId && UUID.test(opts.leadId)) {
+    const [porLead] = await db.select({ id: contatos.id }).from(contatos).where(and(
+      eq(contatos.organizacaoId, organizacaoId), eq(contatos.leadId, opts.leadId),
+    )).limit(1);
+    if (porLead) return porLead.id;
+
+    await garantirConversaDoLead(organizacaoId, opts.leadId, opts.usuarioId ?? null);
+    const [criado] = await db.select({ id: contatos.id }).from(contatos).where(and(
+      eq(contatos.organizacaoId, organizacaoId), eq(contatos.leadId, opts.leadId),
+    )).limit(1);
+    if (criado) return criado.id;
+  }
+  return null;
 }

@@ -17,6 +17,7 @@ import { reunioes, leads, usuarios, whatsappSessao, whatsappMensagens } from "@/
 import { and, eq, gte, lte, isNull, desc } from "drizzle-orm";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { normalizePhone } from "@/lib/whatsapp/phone-utils";
+import { conversaParaEnvio } from "@/lib/atendimento/garantir-conversa";
 
 function firstName(nome: string | null | undefined): string {
   return (nome || "").trim().split(/\s+/)[0] || "";
@@ -75,8 +76,13 @@ export async function enviarLembretesReunioes30min(): Promise<{ enviados: number
       const phone = normalizePhone(lead.telefone);
       const sessaoId = await resolveSessaoResponsavel(reuniao.organizacaoId, reuniao.responsavelId);
 
+      // Toda mensagem cai na conversa do Atendimento — nada escreve fora dela.
+      const contatoId = await conversaParaEnvio(reuniao.organizacaoId, {
+        leadId: reuniao.leadId, telefone: phone, sessaoId, usuarioId: reuniao.responsavelId,
+      });
+
       const [message] = await db.insert(whatsappMensagens).values({
-        contatoId: null,
+        contatoId,
         leadId: reuniao.leadId,
         sessaoId,
         telefone: phone,

@@ -44,6 +44,7 @@ export const ROTINAS_AGENDADAS: RotinaAgendada[] = [
   { chave: "sla-check", nome: "SLA do pipeline", frequencia: "a cada 30 min", grupo: "vendas", oQueFaz: "Negócio parado além do limite da etapa gera alerta." },
   { chave: "follow-up-proposta", nome: "Follow-up de proposta", frequencia: "a cada 1 h", grupo: "vendas", oQueFaz: "Proposta apresentada parada 3+ dias notifica o dono e cria tarefa." },
   { chave: "expirar-propostas", nome: "Expirar propostas", frequencia: "a cada 1 h", grupo: "vendas", oQueFaz: "Proposta com validade vencida vira expirada e o link de pagamento morre." },
+  { chave: "retomar-aceites", nome: "Retomar aceite parado", frequencia: "a cada 5 min", grupo: "vendas", oQueFaz: "Cliente aceitou e o contrato ou o pagamento não saiu: tenta de novo, sem duplicar, até 5 vezes." },
   { chave: "reativar-lead-perdido", nome: "Reativar perdidos", frequencia: "a cada 24 h", grupo: "vendas", oQueFaz: "Negócio perdido volta para o radar depois do prazo do motivo de perda." },
   { chave: "lembrete-reuniao-30min", nome: "Lembrete de reunião", frequencia: "a cada 5 min", grupo: "vendas", oQueFaz: "Avisa o responsável 30 minutos antes da reunião." },
   { chave: "cs-sweep", nome: "Varredura de CS", frequencia: "a cada 1 h", grupo: "clientes", oQueFaz: "Recalcula saúde e playbooks da carteira." },

@@ -17,6 +17,7 @@ import {
 } from "@/lib/cadencia/sdr-inbound";
 import { registrarPrimeiroContato } from "@/lib/vendas/pre-vendas";
 import { atorHumano } from "@/lib/vendas/dominio";
+import { conversaParaEnvio } from "@/lib/atendimento/garantir-conversa";
 
 /** O vocabulário de canal da cadência para o da porta canônica. */
 const CANAL_CANONICO: Record<string, "whatsapp" | "email" | "ligacao" | "outro"> = {
@@ -165,8 +166,13 @@ app.post("/cadencia/:leadId/enviar", async (c) => {
 
     const phone = normalizePhone(lead.telefone);
 
+    // Toda mensagem cai na conversa do Atendimento — nada escreve fora dela.
+    const contatoId = await conversaParaEnvio(ctx.organizacaoId, {
+      leadId: lead.id, telefone: phone, sessaoId, usuarioId: ctx.userId ?? null,
+    });
+
     const [message] = await db.insert(whatsappMensagens).values({
-      contatoId: null,
+      contatoId,
       leadId: lead.id,
       sessaoId,
       telefone: phone,
