@@ -233,3 +233,32 @@ sempre toca é alarme que ninguém escuta.
 **Para conferir item a item de verdade** é preciso saber a forma da linha em
 `partner_invoice_items` (se há coluna de quantidade, ou se a linha agrega licenças
 com dias diferentes). É leitura no schema do SaaS e depende de você.
+
+## Decisão do Scott (14/10/2026): o legado não se mexe
+
+Medido em produção: **164 negócios com `status = 'ativo'`** — um status do CRM
+anterior que a tradução para etapa não conhece — somam **R$ 238.477,35** entre
+`mrr_fechado` e `valor_setup`. Eles não contam como ganho, não aparecem em coluna
+nenhuma do Pipeline (etapa nula) e não têm uma linha sequer de
+`comercial_evidencia`. Só 9 dos 166 viraram cliente no modelo novo.
+
+| Mês | Vendas | MRR | Setup |
+|---|---:|---:|---:|
+| Julho | 51 | R$ 56.135,07 | R$ 10.908,97 |
+| Agosto | 59 | R$ 49.782,60 | R$ 30.734,80 |
+| Setembro | 48 | R$ 51.772,31 | R$ 36.525,00 |
+| Outubro | 8 | R$ 2.618,60 | — |
+
+**A decisão dele, nas palavras dele:** *"o legado, as coisas antigas, a gente
+mantém da forma que tava, quanto que a gente faturou e assim sucessivamente. Não
+muda nada, mas daqui em diante as coisas têm que entrar correto"*.
+
+Então: **nenhum desses 164 é convertido em Ganho.** O faturamento histórico fica
+como está, e a referência continua sendo a planilha de faturamento. O que a
+correção de hoje garante é o **daqui em diante**: venda nova passa pela porta do
+Ganho, com empresa, valor decomposto em MRR e setup, evidência registrada e
+pós-venda criado.
+
+Quem for mexer nisso depois precisa saber que **a diferença entre o número do CRM
+e a planilha nos meses de julho a setembro é esperada** — não é defeito a
+corrigir, é decisão.
