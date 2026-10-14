@@ -56,6 +56,8 @@ export interface LinhaProposta {
   responsavel: string | null;
   /** O contato da conversa — o que a linha mostra embaixo da empresa. */
   pessoa: string | null;
+  /** Aceita, mas o contrato/pagamento falhou e ninguém destravou: é a mesma pendência que o detalhe mostra em "Reprocessar aceite". */
+  fechamentoParado: boolean;
 }
 
 const LIMITE_LISTA_PROPOSTAS = 5000;
@@ -74,6 +76,7 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
     validade_dias: number | null;
     vis_em: string | null; ajuste_em: string | null; aceita_em: string | null; recusada_em: string | null; expirada_em: string | null;
     responsavel: string | null; pessoa: string | null; empresa_id: string | null; etapa: string | null;
+    fechamento_parado: boolean;
   }>(sql`
     SELECT p.id::text, p.numero, p.versao, p.status, n.empresa_id::text AS empresa_id, n.etapa,
            COALESCE(e.nome, l.empresa) AS empresa, n.titulo AS oportunidade, p.negocio_id::text,
@@ -102,7 +105,12 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
            COALESCE(u.nome, uo.nome) AS responsavel,
            -- O contato vem do LEAD: a tabela negocios não tem pessoa_id, e o
            -- lead é quem guarda com quem a conversa começou.
-           l.nome AS pessoa
+           l.nome AS pessoa,
+           -- Aceite que parou com erro registrado (mesmo critério de lerPendenciasDoAceite): não pode esperar alguém perguntar.
+           (p.status = 'aceita' AND EXISTS (
+              SELECT 1 FROM proposta_grupo_comercial g
+               WHERE g.proposta_id = p.id AND g.contrato_assinado_em IS NULL AND g.checkout_id IS NULL
+                 AND g.fechamento_erro IS NOT NULL AND g.status <> 'aguardando_validacao_manual')) AS fechamento_parado
       FROM propostas p
       LEFT JOIN negocios n ON n.id = p.negocio_id
       LEFT JOIN empresas e ON e.id = n.empresa_id
@@ -137,7 +145,7 @@ export async function acaoListar(filtros: { status?: string | null; busca?: stri
     enviadaEm: l.enviada_em, atualizadaEm: l.atualizada_em, validade: l.validade, ajusteSolicitado: l.ajuste,
     validadeDias: l.validade_dias,
     eventosEm: { visualizada: l.vis_em, ajuste: l.ajuste_em, aceita: l.aceita_em, recusada: l.recusada_em, expirada: l.expirada_em },
-    responsavel: l.responsavel, pessoa: l.pessoa,
+    responsavel: l.responsavel, pessoa: l.pessoa, fechamentoParado: l.fechamento_parado === true,
   }));
 }
 

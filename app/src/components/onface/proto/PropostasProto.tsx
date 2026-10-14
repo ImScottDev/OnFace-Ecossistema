@@ -142,6 +142,7 @@ function agrupar(linhas: LinhaProposta[]) {
       codigo: String(p.numero),
       versao: p.versao,
       status: p.status,
+      fechamentoParado: p.fechamentoParado,
       modo: p.modoFechamento,
       enviadaEm: dia(p.enviadaEm),
       atualizadaEm: dia(p.atualizadaEm),

@@ -538,9 +538,11 @@ class Logica extends React.Component<any, any> {
           famIco: "flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:" + fc[0] + ";color:" + fc[1],
           empIni: ini(o.empresa),
           valor: (s.mrr || s.un) ? (s.mrr ? brl(s.mrr) : brl(s.un)) : "—", valorSuf: s.mrr ? "/mês" : "", valorSub: s.mrr ? (s.un ? "+ setup " + brl(s.un) : "recorrente") : (s.un ? "pagamento único" : "sem itens"),
-          fech: P.modo === "PREPAID" ? "Checkout" : "Contrato", fechSub: P.modo === "PREPAID" ? "Stripe direto" : "Assinatura + Stripe",
+          /* Aceite que parou (contrato ou link de pagamento não saiu): o vendedor vê aqui, sem esperar o cliente cobrar. */
+          fech: P.fechamentoParado ? "Fechamento parado" : P.modo === "PREPAID" ? "Checkout" : "Contrato",
+          fechSub: P.fechamentoParado ? "Abra e reprocesse o aceite" : P.modo === "PREPAID" ? "Stripe direto" : "Assinatura + Stripe",
           fechD: P.modo === "PREPAID" ? "M2 5h20v14H2zM2 10h20" : "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15l2 2 4-4",
-          status: sx[0], stD: sx[3], stStyle: "display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px 0 8px;border-radius:9999px;font-size:12px;font-weight:500;white-space:nowrap;color:#1f252c;background:#fff;box-shadow:inset 0 0 0 1px #e6e9e9",
+          status: P.fechamentoParado ? sx[0] + " · parado" : sx[0], stD: sx[3], stStyle: "display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px 0 8px;border-radius:9999px;font-size:12px;font-weight:500;white-space:nowrap;color:#1f252c;background:#fff;box-shadow:inset 0 0 0 1px #e6e9e9",
           stDot: "flex:0 0 auto;color:" + sx[2],
           resp: o.resp, respIni: ini(o.resp),
           respAv: "flex:0 0 auto;width:24px;height:24px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;background:#eeeff3;color:#4a5560",

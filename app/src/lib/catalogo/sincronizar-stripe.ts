@@ -192,7 +192,10 @@ export async function sincronizarCatalogoStripe(
         descricao = EXCLUDED.descricao,
         descricao_extrato = EXCLUDED.descricao_extrato,
         etiqueta_unidade = EXCLUDED.etiqueta_unidade,
-        service_family = EXCLUDED.service_family,
+        -- Stripe sem familia (UNKNOWN) NAO apaga familia ja declarada no CRM
+        -- (classificar-familia-do-catalogo.ts): sem isto o proximo ciclo do worker
+        -- devolvia o Callface Copilot a lista dos invisiveis.
+        service_family = CASE WHEN EXCLUDED.service_family = 'UNKNOWN' THEN servicos_catalogo.service_family ELSE EXCLUDED.service_family END,
         categoria = EXCLUDED.categoria,
         sku_produto = EXCLUDED.sku_produto,
         destino_pos_venda = EXCLUDED.destino_pos_venda,

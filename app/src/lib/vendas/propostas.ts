@@ -434,6 +434,38 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
     throw new RegraDeNegocio("proposta_sem_itens", "A proposta precisa de pelo menos um item.");
   }
 
+  /* A venda não pode morrer DEPOIS do aceite: o checkout (lib/crm/checkout.ts, mapItem) recusa item sem Price
+     oficial ativo do catálogo e item vendido ACIMA do preço de tabela. Aqui a mesma conta, antes de o cliente ver. */
+  const problemas = await db.execute<{ nome: string; motivo: "sem_preco" | "acima_da_tabela" }>(sql`
+    SELECT i.nome,
+           CASE WHEN COALESCE(i.stripe_price_id, cp.stripe_price_id) IS NULL OR COALESCE(i.stripe_product_id, sc.stripe_product_id) IS NULL
+                  OR cp.id IS NULL OR NOT cp.ativo OR NOT COALESCE(sc.ativo, false) OR sc.origem_catalogo IS DISTINCT FROM 'oficial_stripe'
+                  OR cp.recorrente <> (i.tipo = 'recorrente')
+                THEN 'sem_preco' ELSE 'acima_da_tabela' END AS motivo
+      FROM proposta_itens i
+      LEFT JOIN catalogo_precos cp ON cp.id = i.catalogo_preco_id
+      LEFT JOIN servicos_catalogo sc ON sc.id = i.servico_catalogo_id
+     WHERE i.proposta_id = ${envio.propostaId}::uuid
+       AND (COALESCE(i.stripe_price_id, cp.stripe_price_id) IS NULL OR COALESCE(i.stripe_product_id, sc.stripe_product_id) IS NULL
+            OR cp.id IS NULL OR NOT cp.ativo OR NOT COALESCE(sc.ativo, false) OR sc.origem_catalogo IS DISTINCT FROM 'oficial_stripe'
+            OR cp.recorrente <> (i.tipo = 'recorrente')
+            OR i.subtotal::numeric / GREATEST(1, round(i.quantidade::numeric)) > COALESCE(i.valor_tabela, cp.valor)::numeric + 0.01)
+     ORDER BY i.ordem`);
+  const semPreco = problemas.filter((p) => p.motivo === "sem_preco").map((p) => `"${p.nome}"`);
+  if (semPreco.length) {
+    throw new RegraDeNegocio(
+      "item_sem_preco_oficial",
+      `${semPreco.join(", ")}: este item não tem preço oficial do catálogo e não vai gerar cobrança depois do aceite. Volte aos itens e escolha o item do catálogo (o preço pode ser ajustado com desconto).`,
+    );
+  }
+  const acima = problemas.filter((p) => p.motivo === "acima_da_tabela").map((p) => `"${p.nome}"`);
+  if (acima.length) {
+    throw new RegraDeNegocio(
+      "item_acima_da_tabela",
+      `${acima.join(", ")}: o valor está acima do preço de tabela do catálogo, e o pagamento não consegue cobrar mais que a tabela. Ajuste o valor para no máximo o da tabela (ou peça ao financeiro para criar o preço no catálogo).`,
+    );
+  }
+
   if (envio.modoFechamento === "CONTRACT") {
     if (!proposta.empresa_id) {
       throw new RegraDeNegocio("proposta_sem_empresa", "Proposta contratual exige uma Empresa vinculada.");
