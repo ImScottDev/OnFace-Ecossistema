@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { licencaAtivaEm, resumirTarifacao } from "@onface/integrations-callface-ai";
+import { data } from "./parceiros-sincronizar";
 import {
   conferirParceiros, itemBate, totalEsperadoDoItem,
   type FaturaLocal, type ItemLocal, type ParceiroLocal,
@@ -83,4 +84,20 @@ test("conferência: parceiro sem empresa é pendência, e o que não deu para co
   const r = conferirParceiros({ parceiros: [parceiro({ empresaId: null })], licencas: [], faturas: [fatura({ cicloInicio: null, cicloFim: null, total: null })], faturasCrm: [] }, AGORA);
   assert.deepEqual(tipos(r), ["parceiro_sem_empresa"]);
   assert.equal(r.limites.length, 2);
+});
+
+test("data do Postgres vem como texto, e a conferência precisa de Date", () => {
+  // O defeito real (14/10, homologação): `inicio_em` anotado como Date, mas
+  // `fetch_types:false` devolve string — e a conferência faz `.getTime()`.
+  // Medido: "parceiros: falhou: l.inicioEm.getTime is not a function".
+  const d = data("2026-06-01 03:00:00+00");
+  assert.ok(d instanceof Date, "texto do Postgres tem de virar Date");
+  assert.equal(d!.toISOString(), "2026-06-01T03:00:00.000Z");
+  assert.equal(data(null), null);
+  assert.equal(data(""), null);
+  assert.equal(data("nem data"), null, "data inválida vira null, não Invalid Date");
+
+  // A conferência usa getTime() nas três datas da licença: com o conversor, passa.
+  const l = { licenseId: "l1", partnerId: "p1", inicioEm: data("2026-06-01 03:00:00+00"), revogadaEm: data(null), expiraEm: data(null) };
+  assert.doesNotThrow(() => l.inicioEm!.getTime());
 });

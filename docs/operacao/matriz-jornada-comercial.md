@@ -26,7 +26,7 @@ para destinatário de verdade.
 | 9 | White Label fim a fim | Implantação única, contrato, cobrança, licença por ativação | Catálogo e grupo corrigidos; licença por ativação depende de integração | — | 975db8e | 541f8cd | parcial |
 | 10 | Reconciliação do legado | Família, valores, evidência, responsável, datas preservadas | Script escrito, **não executado** | 1423e0c | 1423e0c | — | **não executado** |
 | 11 | Eventos no n8n | Evento real do ONFACE chega e é idempotente | Barramento provado com evento sintético; **falta evento real** | — | 77460f9 | 541f8cd | **a comprovar** |
-| 12 | Sincronismos Callface AI | Parceiro, licença, fatura e retrato espelhados | Tabelas criadas e **vazias**: sync nunca rodou | — | 864ea2b | 541f8cd | **a comprovar** |
+| 12 | Sincronismos Callface AI | Parceiro, licença, fatura e retrato espelhados | **Rodou sozinho em homologação às 03:23 UTC de 14/10** e encheu: 6 parceiros, 21 planos, 957 licenças, 12 faturas, 517 vínculos de usuário, 63 receptivos. Achou dois defeitos (abaixo) | log do worker + `integracao_sync_estado` | 799a00b | aaa5918 | **comprovado; retrato segue `parcial`** |
 | 13 | Aviso de pagamento do Stripe não cai | Responder antes de o Stripe desistir (~20s) e processar depois, sem perder evento | **Comprovado em homologação:** HTTP 202 em **0,24s**; o trabalho real levou **16,0s** no worker e o evento terminou `processed` | medição em homologação, evento `evt_latencia_1791939237` | ee32dc8 | ee32dc8 | **comprovado em homologação** |
 | 14 | Conversa de WhatsApp por papel (P0) | Número pessoal só do dono; cargo não abre caixa alheia | **Corrigido e travado**: regra única em `lib/whatsapp/acesso.ts`, 132 testes e trava de arquitetura; 20 superfícies vazavam | `conversa-so-pela-porta.test.ts`, `acesso-politica.test.ts` | a5ac16b | a5ac16b | **comprovado em teste; falta decidir a supervisão dos admins** |
 | 15 | Ajustes que mudam comportamento | Salvar um ajuste muda o sistema | Varredura completa: assinatura de e-mail, organização ativa e AI SDR por estágio eram órfãos e foram ligados; 7 telas seguem como "só registro" | relatório de Ajustes neste doc | 799a00b | 799a00b | **parcial — 7 telas sem leitor, por decisão sua** |
@@ -154,3 +154,41 @@ isso, em vez de pedir o e-mail que acabou de ser recusado.
 
 **Falta ver num envio real:** cada pessoa com um campo só no Documenso, e o nome da
 testemunha sem e-mail ainda impresso no bloco do contrato.
+
+## Cenário 12 — rodou, encheu, e achou dois defeitos
+
+Com o caminho único publicado (`799a00b`), o job de 6 h rodou sozinho em
+homologação às **03:23 UTC de 14/10** e fez o que nunca tinha feito:
+
+| Tabela | Linhas |
+|---|---:|
+| `callface_ai_parceiros` | 6 |
+| `callface_ai_planos` | 21 |
+| `callface_ai_licencas` | 957 |
+| `callface_ai_parceiro_faturas` | 12 |
+
+Mais 105 organizações, 517 vínculos de usuário e 63 receptivos no retrato, e 105
+tenants com 3.098 dias de uso no espelho. **A prova é o caminho que o sistema usa
+sozinho**, não um comando à mão.
+
+E rodar expôs dois defeitos que ninguém via justamente porque nunca rodava:
+
+**1. O espelho de White Label morria na conferência** —
+`parceiros: falhou: l.inicioEm.getTime is not a function`. A consulta anotava
+`inicio_em` como `Date`, mas `fetch_types: false` faz o Postgres devolver
+**string**, e a conferência chama `.getTime()`. O tipo mentia e o compilador
+acreditou. Corrigido pedindo `::text` e convertendo uma vez, no limite — o mesmo
+remédio para `revogada_em`, `expira_em` e `vencimento`. Teste novo em
+`parceiro-conferencia.test.ts` reproduz a string que o banco devolve.
+
+É o terceiro defeito da noite causado pelo `fetch_types: false`. O padrão é
+sempre o mesmo: **o tipo em TypeScript afirma o que o driver não entrega.**
+
+**2. O retrato não lê equipes, e não é bug nosso** — ele procura `teams`,
+`organization_teams`, `workspace_teams` e `equipes`, e **nenhuma existe** no SaaS.
+Por isso o estado fica `parcial` para sempre. Ou a plataforma guarda equipe com
+outro nome, ou não guarda. Precisa de uma olhada no schema real antes de
+inventarmos a quarta tentativa de adivinhar nome de tabela.
+
+**Aviso que o próprio sync deixou, e vale conferir:** o preço de plano foi lido da
+coluna `price` nos 21 planos, de 0 a 1799 — *"conferir que é em reais"*.

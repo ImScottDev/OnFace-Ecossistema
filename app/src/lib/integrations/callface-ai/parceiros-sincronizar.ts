@@ -200,12 +200,16 @@ async function carregarParaConferencia(organizacaoId: string) {
     db.execute<{ id: string; nome: string | null; preco: string | null; empresa: string | null }>(sql`
       SELECT partner_id AS id, nome, preco_por_licenca::text AS preco, empresa_id::text AS empresa
         FROM callface_ai_parceiros WHERE organizacao_id = ${org}`),
-    db.execute<{ id: string; parceiro: string | null; ini: Date | null; rev: Date | null; exp: Date | null }>(sql`
-      SELECT license_id AS id, partner_id AS parceiro, inicio_em AS ini, revogada_em AS rev, expira_em AS exp
+    // `conexao.ts` usa fetch_types:false, então timestamptz volta como STRING, não Date:
+    // anotar `Date` aqui era mentira e `inicioEm.getTime()` explodia na conferência.
+    // Pede texto e converte uma vez, no limite.
+    db.execute<{ id: string; parceiro: string | null; ini: string | null; rev: string | null; exp: string | null }>(sql`
+      SELECT license_id AS id, partner_id AS parceiro,
+             inicio_em::text AS ini, revogada_em::text AS rev, expira_em::text AS exp
         FROM callface_ai_parceiro_licencas WHERE organizacao_id = ${org}`),
-    db.execute<{ id: string; parceiro: string; status: string; comp: string | null; ini: string | null; fim: string | null; venc: Date | null; total: string | null }>(sql`
+    db.execute<{ id: string; parceiro: string; status: string; comp: string | null; ini: string | null; fim: string | null; venc: string | null; total: string | null }>(sql`
       SELECT invoice_id AS id, partner_id AS parceiro, status, competencia::text AS comp,
-             ciclo_inicio::text AS ini, ciclo_fim::text AS fim, vencimento AS venc, total::text AS total
+             ciclo_inicio::text AS ini, ciclo_fim::text AS fim, vencimento::text AS venc, total::text AS total
         FROM callface_ai_parceiro_faturas WHERE organizacao_id = ${org}`),
     db.execute<{ id: string; fatura: string; lic: string | null; ativos: number; ciclo: number; prop: boolean; preco: string; total: string }>(sql`
       SELECT item_id AS id, invoice_id AS fatura, license_id AS lic, dias_ativos AS ativos, dias_no_ciclo AS ciclo,
@@ -229,16 +233,27 @@ async function carregarParaConferencia(organizacaoId: string) {
     partnerId: p.id, nome: p.nome, precoPorLicenca: p.preco === null ? null : Number(p.preco), empresaId: p.empresa,
   }));
   const licencas: LicencaLocal[] = lics.map((l) => ({
-    licenseId: l.id, partnerId: l.parceiro, inicioEm: l.ini, revogadaEm: l.rev, expiraEm: l.exp,
+    licenseId: l.id, partnerId: l.parceiro, inicioEm: data(l.ini), revogadaEm: data(l.rev), expiraEm: data(l.exp),
   }));
   const faturas: FaturaLocal[] = fats.map((f) => ({
     invoiceId: f.id, partnerId: f.parceiro, status: f.status, competencia: f.comp, cicloInicio: f.ini, cicloFim: f.fim,
-    vencimento: f.venc, total: f.total === null ? null : Number(f.total), itens: itensPor.get(f.id) ?? [],
+    vencimento: data(f.venc), total: f.total === null ? null : Number(f.total), itens: itensPor.get(f.id) ?? [],
   }));
   const faturasCrm: FaturaCrm[] = crm.map((c) => ({
     partnerId: c.parceiro, faturaId: c.id, valor: Number(c.valor), status: c.status, competencia: c.comp,
   }));
   return { parceiros, licencas, faturas, faturasCrm };
+}
+
+/**
+ * Texto do Postgres para Date. Data inválida vira null, para não virar `Invalid Date`
+ * silencioso. Exportada só para o teste: era aqui que o espelho de White Label morria
+ * com `inicioEm.getTime is not a function`, porque o tipo dizia Date e vinha string.
+ */
+export function data(v: string | null): Date | null {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 async function persistirPendencias(organizacaoId: string, pendencias: Pendencia[]): Promise<void> {
