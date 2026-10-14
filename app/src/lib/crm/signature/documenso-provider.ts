@@ -82,12 +82,12 @@ export function montarDestinatarios(todos: Signatario[], ancoras: Record<string,
   const campo = (a: Area, x = a.x, largura = a.largura): Campo => ({
     identifier: 0, type: "SIGNATURE", page: a.pagina, positionX: x, positionY: a.y, width: largura, height: a.altura,
   });
-  // Mesmo e-mail em dois papéis (ex.: vendedor que também é o representante) é UM destinatário com dois campos.
+  // Uma pessoa = um campo. `normalizarSignatarios` já tira o e-mail repetido; aqui é a última barreira.
   const porEmail = new Map<string, Record<string, unknown>>();
   const adiciona = (s: Signatario, ordem: number, f: Campo) => {
     const chave = s.email.toLowerCase();
     const ja = porEmail.get(chave);
-    if (ja) { (ja.fields as Campo[]).push(f); return; }
+    if (ja) return;
     porEmail.set(chave, { email: s.email, name: s.nome, role: "SIGNER", signingOrder: ordem, fields: [f] });
   };
   todos.filter((s) => emailValido(s.email) && (ehCliente(s) || ehPapelCallface(s.papel))).forEach((s, index) => {

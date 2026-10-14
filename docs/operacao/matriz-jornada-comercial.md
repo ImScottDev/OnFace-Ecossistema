@@ -16,7 +16,7 @@ para destinatário de verdade.
 | # | Cenário | Esperado | Observado | Evidência | Commit | SHA homologado | Situação |
 |---|---|---|---|---|---|---|---|
 | 1 | Proposta: criar, enviar, aceitar, recusar, ajustar | Estados corretos, condições persistidas, PDF e página pública coerentes | Aceite/recusa e condições validados na Fase 0 | validacao-fase-0.md | 2a4ec8d | 2a4ec8d | parcial — falta recusa e ajuste |
-| 2 | Contrato e Documenso | Gera, envia, assina, volta ao ONFACE com cópia e registro | Gera e envia provado; **assinatura em dois pontos relatada pelo dono** | em apuração | 975db8e | 541f8cd | **em apuração** |
+| 2 | Contrato e Documenso | Gera, envia, assina, volta ao ONFACE com cópia e registro | Gera e envia provado; **a assinatura em dois pontos foi achada no dado e corrigida** | 10 contratos de homologação com o mesmo e-mail em 2 ou 3 papéis, um deles já `signed` | — | — | **causa achada e corrigida; falta um envio real** |
 | 3 | Estados e retomadas sem resposta falsa | Falha aparece; retomar não duplica | Retomada provada; e-mail recusado aparece | validacao-fase-0.md | 2a4ec8d | 2a4ec8d | comprovado |
 | 4 | Ganho → valores → meta e faturamento | mrr_fechado e valor_setup gravados no Ganho | Corrigido; 107 ganhos antigos sem composição reconciliados em homologação (6 do JOAO + 100 do legado + 1 projeto) | `backfill-valor-negocios.ts` | 541f8cd | 541f8cd | **reconciliado em homologação, produção pendente** |
 | 5 | Pós-venda: um processo por venda | **Uma jornada principal por venda**, com trilhas por família | Entregue "uma por venda **e família**" — diverge da decisão | 1508bb3 | 1508bb3 | — | **a corrigir** |
@@ -122,3 +122,35 @@ com sucesso às 21:23 (380 itens, 72s) e **nenhuma linha** para parceiros ou ret
 Corrigido em `799a00b`: os dois caminhos passam a chamar a mesma rodada
 (`lib/integrations/callface-ai/rodada.ts`). Falta rodar em homologação com o código
 novo publicado e conferir as quatro tabelas.
+
+## Cenário 2 — "assinando em dois cantos": achado no dado
+
+O dono descreveu assim: *"na hora de assinar eu tava assinando em dois cantos, como
+se eu fosse duas pessoas"*. Ficou em apuração porque o banco local não tem contrato
+enviado para assinatura. O dado de homologação respondeu:
+
+| Contrato | Estado | E-mail | Papéis |
+|---|---|---|---:|
+| `5bce5437` | enviado para assinatura | `kaua.araujo+e2e-dono@` | **contratante + representante_legal + testemunha_vendedor** |
+| `38818a58`, `3b3696bc`, `64e424c7`, `6cbece40`, `af746805`, `b34519c1`, `ba00c252`, `d2234aa6`, `dc9664d0` | 3 assinados, 4 cancelados, 2 criados | `kaua.araujo@` | contratante + representante_legal |
+
+Dez contratos com a mesma pessoa em dois papéis, e um com **três**. O Documenso
+põe um campo de assinatura por papel, então a mesma pessoa recebia dois (ou três)
+cantos para assinar. **Três desses contratos estão `signed` assim.**
+
+**Causa:** `normalizarSignatarios` não deduplicava por e-mail, e
+`montarDestinatarios` empilhava um campo por papel de propósito — o que está certo
+para pessoas diferentes e errado para a mesma.
+
+**Correção:** uma pessoa vale uma assinatura. O e-mail repetido fica no papel de
+maior peso (cliente > representante > testemunhas); nos papéis da Callface que
+perdem, o nome continua impresso no contrato e o e-mail é esvaziado, então a pessoa
+não assina de novo. A deduplicação está na função pela qual TODO caminho passa, e
+`montarDestinatarios` ignora o segundo campo do mesmo e-mail como última barreira.
+
+**Efeito colateral que vale saber:** testar com o mesmo e-mail nos dois lados passa
+a ser recusado, porque uma pessoa não assina pelos dois. A mensagem diz exatamente
+isso, em vez de pedir o e-mail que acabou de ser recusado.
+
+**Falta ver num envio real:** cada pessoa com um campo só no Documenso, e o nome da
+testemunha sem e-mail ainda impresso no bloco do contrato.

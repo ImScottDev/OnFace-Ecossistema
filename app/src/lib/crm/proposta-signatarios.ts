@@ -69,10 +69,21 @@ export function normalizarSignatarios(lista: unknown): Signatario[] {
     limpos.push(s);
   }
   const rank = (s: Signatario) => ehCliente(s) ? 0 : ({ [PAPEL_REPRESENTANTE]: 1, [PAPEL_TESTEMUNHA_VENDEDOR]: 2, [PAPEL_TESTEMUNHA_2]: 3 }[String(s.papel)] ?? 4);
+  // Uma pessoa = uma assinatura. O mesmo e-mail em dois papéis (cliente e representante/testemunha, ou duas
+  // testemunhas) fazia o Documenso mostrar DOIS campos ao mesmo destinatário: "assinando como duas pessoas".
+  // Vale o papel de maior peso (cliente > representante > testemunhas); nos demais, a Callface mantém o nome
+  // impresso no contrato sem e-mail (não assina no sistema) e o cliente repetido some.
+  const vistos = new Set<string>();
   return limpos
     .map((s, i) => ({ s, i }))
     .sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i)
-    .map(({ s }, i) => ({ ...s, ordem: i + 1 }));
+    .flatMap(({ s }) => {
+      const chave = s.email.toLowerCase();
+      if (!chave) return [s];
+      if (!vistos.has(chave)) { vistos.add(chave); return [s]; }
+      return ehPapelCallface(s.papel) ? [{ ...s, email: "" }] : [];
+    })
+    .map((s, i) => ({ ...s, ordem: i + 1 }));
 }
 
 /** Quem pode assinar pela Callface, cadastrado em Ajustes > Contratos. A ordem do array é a ordem de oferta; o primeiro de cada papel é o padrão dele. */
@@ -125,6 +136,12 @@ export function comPadraoDaPolitica(
 export function faltaRepresentante(lista: Signatario[]): string | null {
   const rep = lista.find((s) => s.papel === PAPEL_REPRESENTANTE);
   if (rep && emailValido(rep.email)) return null;
+  // Caso que confunde: o representante existe e tem nome, mas o e-mail foi esvaziado
+  // porque é o MESMO do cliente — uma pessoa não assina pelos dois lados. Dizer só
+  // "falta o e-mail" manda a pessoa preencher de novo o que acabou de ser recusado.
+  if (rep && !rep.email && lista.some((s) => ehCliente(s) && s.email)) {
+    return `O representante legal (${rep.nome}) está com o mesmo e-mail do cliente, e uma pessoa não pode assinar pelos dois lados. Use um e-mail da Callface para quem assina por nós — em Ajustes > Contratos ou na própria proposta.`;
+  }
   return "Falta o e-mail do representante legal da Callface. Informe-o na proposta (Contrato e pagamento, \"Assinam pela Callface\") ou cadastre o padrão em Ajustes > Contratos.";
 }
 

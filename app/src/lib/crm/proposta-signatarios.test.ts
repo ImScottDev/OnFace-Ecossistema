@@ -61,3 +61,31 @@ test("signatários da Callface: ordem preservada, papel inválido vira represent
   assert.equal(padraoDoPapel(l, "representante_legal")?.nome, "Filipe Nascimento");
   assert.equal(padraoDoPapel(l, "testemunha_2")?.nome, "Test");
 });
+
+test("mesmo e-mail em dois papéis vira UMA assinatura (defeito: assinar em dois cantos)", () => {
+  const n = normalizarSignatarios([
+    { nome: "Dono", email: "dono@x.com", papel: "contratante" },
+    { nome: "Dono", email: "DONO@x.com", papel: "representante_legal" },
+    { nome: "Vend", email: "v@callface.io", papel: "testemunha_vendedor" },
+    { nome: "Vend 2", email: "v@callface.io", papel: "testemunha_2" },
+    { nome: "Outro", email: "dono@x.com", papel: "contratante" },
+  ]);
+  const comEmail = n.filter((s) => s.email).map((s) => s.email.toLowerCase());
+  assert.deepEqual(comEmail, ["dono@x.com", "v@callface.io"]);
+  assert.deepEqual(n.map((s) => s.papel), ["contratante", "representante_legal", "testemunha_vendedor", "testemunha_2"]);
+  assert.ok(faltaRepresentante(n)); // o cliente não assina também como representante da Callface
+});
+
+test("o bloqueio diz o motivo real: e-mail do representante igual ao do cliente", () => {
+  const n = normalizarSignatarios([
+    { nome: "Kauã", email: "kaua@callface.ai", papel: "contratante" },
+    { nome: "Kauã Araújo", email: "kaua@callface.ai", papel: "representante_legal" },
+  ]);
+  const msg = faltaRepresentante(n);
+  assert.ok(msg?.includes("mesmo e-mail do cliente"),
+    `a mensagem precisa explicar que o e-mail é o mesmo do cliente, e não só pedir o e-mail de novo: ${msg}`);
+
+  // Sem cliente com e-mail, continua a mensagem antiga (é falta de cadastro, não choque de pessoa).
+  const semCliente = normalizarSignatarios([{ nome: "Filipe", email: "", papel: "representante_legal" }]);
+  assert.ok(faltaRepresentante(semCliente)?.startsWith("Falta o e-mail"));
+});
