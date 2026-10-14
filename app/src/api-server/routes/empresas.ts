@@ -9,6 +9,7 @@ import { getOrgApolloKey } from "@/lib/apollo/tenant-key";
 import { enrichmentQueue } from "@/lib/queue";
 import { normalizarCnpj } from "@/lib/vendas/identidade";
 import { guardarNoAcervo, removerDoAcervo } from "@/lib/arquivos/servico";
+import { adotarLeadsPeloNome } from "@/lib/crm/resolver-empresa";
 
 const app = new Hono();
 
@@ -132,6 +133,13 @@ app.post("/empresas", async (c) => {
     .insert(empresas)
     .values({ ...parsed.data, organizacaoId: ctx.organizacaoId })
     .returning();
+
+  /* Empresa nova adota quem já a esperava pelo nome: o lead guarda o nome em texto e
+     só ganha vínculo se a empresa existir na hora em que ele entra. Cadastrar depois
+     não religava nada — a tela casava pelo nome, mostrava "empresa vinculada", e
+     clicar não abria. */
+  const adotados = await adotarLeadsPeloNome(ctx.organizacaoId, empresa.id, empresa.nome);
+  if (adotados.leads > 0) console.log(`[empresas] "${empresa.nome}" adotou ${adotados.leads} lead(s) que já tinham esse nome em texto`);
 
   return c.json(empresa, 201);
 });

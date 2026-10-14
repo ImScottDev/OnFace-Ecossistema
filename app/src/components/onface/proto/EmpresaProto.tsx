@@ -22,6 +22,7 @@ import type { DetalheLead, Empresa360 } from "@/lib/vendas/consultas";
 import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 import { EmpresaLiga } from "./EmpresaLiga";
 import { levarParametros } from "./rota-do-desenho";
+import { rotaDaPessoa, rotaDaPessoaCanonica } from "@/lib/vendas/rota-da-ficha";
 import { aquisicaoDaFicha, corrigirVazio, montarRelacoes, paraALiga } from "./relacoes-da-ficha";
 import { registroDoDesenho, linkDoAnuncio } from "./registro-do-desenho";
 import { qualDoDesenho } from "./qual-do-desenho";
@@ -73,6 +74,18 @@ class EmpresaLigada extends EmpresaLiga {
   renderVals() {
     const vals = super.renderVals();
     const P = (this as any).props;
+    /* "Pessoas vinculadas" levava para `/pessoas/<id do registro da ficha>`.
+       Na empresa SEM lead principal esse id é o da própria EMPRESA, e o clique
+       dava 404 (caso Ariene, 14/10/2026). A ficha da pessoa é chaveada pelo
+       LEAD; quando só se tem o id canônico, a porta /contatos/pessoas resolve e
+       redireciona. O nome é o que liga a linha do desenho à pessoa real. */
+    const reaisP: Array<{ id: string; fonte: "pessoa" | "lead"; nome: string }> = P.pessoasReais ?? [];
+    vals.pessoas = (vals.pessoas ?? []).map((linha: any) => {
+      const real = reaisP.find((x) => x.nome === linha.nome);
+      if (!real) return linha;
+      const rota = real.fonte === "lead" ? rotaDaPessoa(real.id) : rotaDaPessoaCanonica(real.id);
+      return { ...linha, abrir: () => P.ir?.(rota) };
+    });
     /* "Passo 2 de 5" e a barra 2/5 eram do protótipo, para qualquer cadência.
        O motor não guarda a posição numérica do passo: não afirmar um. */
     if (vals.temCad) {
@@ -419,6 +432,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
         excluirEmpresa={excluirEmpresa}
         onRemoverCadencia={() => { if (lead) void acaoRemoverDaCadencia(lead.id).then((r) => { if (!r.ok) toast.error(r.erro); router.refresh(); }); }}
         onTrocarCadencia={() => { if (lead) abrir("cadencia", lead.id); }}
+        pessoasReais={empresa.pessoas}
         ir={(href: string) => router.push(href)}
         /* Depois de importar contatos do Apollo a ficha relê o servidor. */
         recarregar={() => router.refresh()}

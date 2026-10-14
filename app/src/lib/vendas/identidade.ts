@@ -463,6 +463,20 @@ export async function vincularPessoaEmpresa(params: {
     `);
   }
 
+  /* A AQUISIÇÃO segue a pessoa. Quem lê a ficha da empresa (empresa360) busca
+     `aquisicoes.empresa_id`: é de lá que saem responsável, origem e o card
+     "Relações em andamento". Vincular a pessoa sem mover a aquisição deixava a
+     empresa aberta e vazia — o lead aparecia em Pré-vendas com responsável e
+     relação, e a empresa dele dizia "Nada em andamento". Só preenche o vazio:
+     aquisição já atribuída a outra empresa não é roubada. */
+  await tx.execute(sql`
+    UPDATE aquisicoes SET empresa_id = ${params.empresaId}::uuid, updated_at = now()
+     WHERE organizacao_id = ${params.organizacaoId}::uuid
+       AND empresa_id IS NULL
+       AND lead_legado_id IN (SELECT lead_id_legado FROM pessoas
+                               WHERE id = ${params.pessoaId}::uuid AND lead_id_legado IS NOT NULL)
+  `);
+
   await registrarEvento({
     organizacaoId: params.organizacaoId, tipo: "PersonLinkedToCompany",
     ator: params.ator, pessoaId: params.pessoaId, empresaId: params.empresaId,

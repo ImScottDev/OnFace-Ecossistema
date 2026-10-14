@@ -98,3 +98,50 @@ export async function empresaUnicaPorDominio(organizacaoId: string, dominio: str
 }
 
 export { dominioCorporativo } from "./dominio-empresa";
+
+/**
+ * Empresa nova adota quem já a esperava pelo NOME.
+ *
+ * O lead guarda o nome da empresa em texto (`leads.empresa`) e só ganha `empresa_id`
+ * se a empresa JÁ existir na hora em que ele entra. Quando ela é cadastrada depois —
+ * na mão, pelo time — nada voltava para religar.
+ *
+ * Caso real (14/10/2026): a Ariene entrou pelo formulário do Meta em 12/08 com
+ * `Empresa: Maíra cred`; a empresa foi criada em 09/10. A tela casava pelo nome e
+ * mostrava "empresa vinculada", mas clicar não abria nada — não havia id — e quem
+ * tentava qualificar travava. Eram **477 leads** assim, **366** com a empresa já
+ * existente.
+ *
+ * Só preenche o que está VAZIO: vínculo já declarado nunca é trocado.
+ */
+export async function adotarLeadsPeloNome(
+  organizacaoId: string, empresaId: string, nome: string,
+): Promise<{ leads: number }> {
+  const limpo = (nome ?? "").trim();
+  if (!limpo) return { leads: 0 };
+
+  const r = await db.execute<{ id: string }>(sql`
+    UPDATE leads SET empresa_id = ${empresaId}::uuid
+     WHERE organizacao_id = ${organizacaoId}::uuid
+       AND empresa_id IS NULL
+       AND lower(btrim(empresa)) = lower(btrim(${limpo}))
+    RETURNING id::text`);
+
+  if (r.length) {
+    const ids = `{${r.map((x) => x.id).join(",")}}`;
+    await db.execute(sql`
+      UPDATE pessoas SET empresa_id = ${empresaId}::uuid
+       WHERE organizacao_id = ${organizacaoId}::uuid
+         AND empresa_id IS NULL
+         AND lead_id_legado = ANY(${ids}::uuid[])`);
+    /* A AQUISIÇÃO é quem leva a empresa para a ficha: responsável, origem e
+       "Relações em andamento" saem de `aquisicoes.empresa_id` (empresa360).
+       Religar só o lead deixava a empresa aberta e muda. */
+    await db.execute(sql`
+      UPDATE aquisicoes SET empresa_id = ${empresaId}::uuid, updated_at = now()
+       WHERE organizacao_id = ${organizacaoId}::uuid
+         AND empresa_id IS NULL
+         AND lead_legado_id = ANY(${ids}::uuid[])`);
+  }
+  return { leads: r.length };
+}
