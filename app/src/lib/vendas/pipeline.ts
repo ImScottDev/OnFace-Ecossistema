@@ -742,6 +742,21 @@ export async function tentarGanhar(params: {
     await import("@/lib/crm/won-evidence");
 
   const familia = op.service_family;
+
+  /*
+   * Caminho MANUAL do Ganho: aqui há uma pessoa na tela, então a empresa é resolvida ANTES de marcar — e, se não
+   * der, o Ganho não acontece e ela vincula na hora. Tem de ser antes: marcar primeiro e lançar depois deixaria o
+   * negócio ganho com uma mensagem de erro na cara de quem clicou.
+   *
+   * O caminho AUTOMÁTICO (pagamento no Stripe, contrato assinado) faz o contrário de propósito: ganha mesmo sem
+   * empresa e abre pendência, porque segurar o Ganho sumiria com uma venda PAGA do faturamento e da meta.
+   */
+  const { garantirEmpresaDoNegocio, FRASE_GANHO_SEM_EMPRESA } = await import("@/lib/vendas/empresa-do-negocio");
+  const empresa = await garantirEmpresaDoNegocio(params.organizacaoId, params.negocioId);
+  if (!empresa.ok) {
+    throw new RegraDeNegocio("ganho_exige_empresa", `${FRASE_GANHO_SEM_EMPRESA} (${empresa.motivo})`, { rotulo: "Vincular empresa", tipo: "vincular_empresa" });
+  }
+
   await marcarNegocioGanhoSeAindaNao(params.negocioId, params.organizacaoId, { familiaHint: familia });
 
   const [depois] = await db.execute<{ status: string }>(sql`

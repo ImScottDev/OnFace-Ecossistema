@@ -6,6 +6,7 @@ import { eq, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
 import { getCtx, parseBody } from "../compat.js";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
+import { propagarEmpresaDoLeadParaNegocios } from "@/lib/vendas/empresa-do-negocio";
 
 const app = new Hono();
 
@@ -220,6 +221,11 @@ app.patch("/contatos-unified/:id", async (c) => {
     .returning();
 
   if (!updated) return c.json({ error: "Contato não encontrado" }, 404);
+
+  if (updates.empresaId && updated.empresaId) {
+    await propagarEmpresaDoLeadParaNegocios(ctx.organizacaoId, id, updated.empresaId)
+      .catch((e) => console.error("[contatos-unified] empresa não propagada aos negócios:", e));
+  }
 
   return c.json(updated);
 });

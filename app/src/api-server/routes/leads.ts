@@ -5,6 +5,7 @@ import { cors } from "hono/cors";
 import { getCtx, parseBody } from "../compat.js";
 import { getTenantFromRequest } from "../auth.js";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
+import { propagarEmpresaDoLeadParaNegocios } from "@/lib/vendas/empresa-do-negocio";
 import { db } from "@/lib/db";
 import {
   leads,
@@ -1216,6 +1217,12 @@ app.patch("/leads/:id", async (c) => {
     return c.json({ error: "Lead nao encontrado" }, 404);
   }
 
+  // O negócio copia a empresa do lead ao nascer; se o lead ganha empresa depois, o negócio sem empresa acompanha.
+  if (updateData.empresaId && updated.empresaId) {
+    await propagarEmpresaDoLeadParaNegocios(ctx.organizacaoId, id, updated.empresaId)
+      .catch((e) => console.error("[leads] empresa não propagada aos negócios do lead:", e));
+  }
+
   if (updated.primeiroContatoAt) {
     await concluirAtividadePrimeiroContato({ organizacaoId: ctx.organizacaoId, leadId: id });
   }
@@ -1909,6 +1916,9 @@ app.post("/leads/:id/vincular-empresa", async (c) => {
     .set({ empresaId, updatedAt: new Date() })
     .where(eq(leads.id, id))
     .returning();
+
+  await propagarEmpresaDoLeadParaNegocios(ctx.organizacaoId, id, empresaId)
+    .catch((e) => console.error("[leads] empresa não propagada aos negócios do lead:", e));
 
   return c.json({ lead: updatedLead, empresaId }, parsed.data.criar ? 201 : 200);
 });

@@ -22,6 +22,7 @@
  * Ver ADR-EXEC-012 em ARCHITECTURE_DECISIONS.md.
  */
 import { db } from "@/lib/db";
+import { garantirEmpresaDoNegocio, registrarGanhoSemEmpresa, FRASE_GANHO_SEM_EMPRESA } from "@/lib/vendas/empresa-do-negocio";
 import { decidirGanhoPelaOferta, propagarGanhoCanonico } from "@/lib/vendas/ponte-ganho";
 import { comercialEvidencia, wonEvidencePolicies, negocios, propostas, contratos, auditLog, leads, statusChanges, oportunidadeItens, oportunidades, clientes, atividades } from "@/lib/db/schema";
 import { eq, and, or, isNull } from "drizzle-orm";
@@ -281,14 +282,36 @@ export async function marcarNegocioGanhoSeAindaNao(
    * Label voltariam a exigir pagamento pra fechar.
    */
   opts: { familiaHint?: string | null } = {},
-): Promise<void> {
+): Promise<{ pendenciaEmpresa?: string }> {
   const [negocio] = await db.select().from(negocios).where(eq(negocios.id, negocioId)).limit(1);
-  if (!negocio || negocio.status === "ganho") return;
+  if (!negocio || negocio.status === "ganho") return {};
 
   const familiaHint = opts.familiaHint && opts.familiaHint !== "UNKNOWN" ? opts.familiaHint : null;
   const produto = familiaHint ?? (await getProdutoNegocio(negocioId));
   const evidencia = await avaliarEvidenciaWon(negocioId, organizacaoId, produto);
-  if (!evidencia.permitido) return;
+  if (!evidencia.permitido) return {};
+
+  /*
+   * Ganho PRECISA de empresa: Cliente 360, serviço canônico, conta de CS e implantação dependem dela, e foi
+   * assim que 150 ganhos nasceram órfãos. Resolve pela regra única (lead, oportunidade, CNPJ, domínio, nome),
+   * criando a partir do lead quando não houver.
+   *
+   * ESTE caminho é o AUTOMÁTICO (pagamento no Stripe, contrato assinado). Aqui o ganho acontece MESMO sem
+   * empresa: o dinheiro já entrou, e segurar o Ganho faria uma venda paga sumir do faturamento e da meta —
+   * pior do que o pós-venda atrasar. A pendência não some: vira caso aberto e log de erro, e o backfill de
+   * empresa resolve depois. Quem BLOQUEIA é o caminho manual (`tentarGanhar`, PATCH do negócio), onde há uma
+   * pessoa na tela que consegue vincular a empresa na hora.
+   */
+  const empresa = await garantirEmpresaDoNegocio(organizacaoId, negocioId);
+  let pendenciaEmpresa: string | undefined;
+  if (empresa.ok) {
+    negocio.empresaId = empresa.empresaId;
+  } else {
+    console.error(`[won-evidence] negócio ${negocioId} ganho SEM empresa (${empresa.motivo}) — pós-venda fica pendente`);
+    await registrarGanhoSemEmpresa(organizacaoId, negocioId, empresa.motivo, empresa.pista)
+      .catch((e) => console.error("[won-evidence] caso GANHO_SEM_EMPRESA não gravado:", e));
+    pendenciaEmpresa = FRASE_GANHO_SEM_EMPRESA;
+  }
 
   const deStatus = negocio.status;
   // `etapa` junto com `status`: o board lê a etapa, e só `tentarGanhar` a gravava.
@@ -316,6 +339,7 @@ export async function marcarNegocioGanhoSeAindaNao(
     evidencias: evidencia.evidencias,
     motivo: evidencia.motivo,
   });
+  return pendenciaEmpresa ? { pendenciaEmpresa } : {};
 }
 
 /**

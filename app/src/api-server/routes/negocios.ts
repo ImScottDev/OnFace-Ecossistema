@@ -10,6 +10,7 @@ import { dispararAutomacoes } from "@/lib/crm/automacao-engine";
 import { avaliarEvidenciaWon, registrarEvidenciaManual, aplicarEfeitosPosGanho } from "@/lib/crm/won-evidence";
 import { publicarEvento } from "@/lib/events/outbox";
 import { registrarEvento, registrarMudancaDeEtapa } from "@/lib/vendas/eventos";
+import { garantirEmpresaDoNegocio, FRASE_GANHO_SEM_EMPRESA } from "@/lib/vendas/empresa-do-negocio";
 import { garantirItemComercialManual } from "@/lib/crm/composicao-comercial";
 import { listarOportunidadesIrmas } from "@/lib/crm/oportunidade-bundle";
 import { materializarServicosCanonicosDoNegocio } from "@/lib/crm/servico-canonico";
@@ -598,6 +599,14 @@ app.patch("/negocios/:id", async (c) => {
           400
         );
       }
+    }
+
+    // Ganho exige empresa (Cliente 360, serviço, CS e implantação dependem dela). Resolve pela regra única e
+    // cria a partir do lead se preciso; sem como decidir com segurança, recusa com a pendência.
+    if (parsed.data.status === "ganho") {
+      const empresa = await garantirEmpresaDoNegocio(ctx.organizacaoId, id);
+      if (!empresa.ok) return c.json({ error: FRASE_GANHO_SEM_EMPRESA, motivo: empresa.motivo }, 400);
+      currentNegocio.empresaId = empresa.empresaId;
     }
 
     // Record status change
