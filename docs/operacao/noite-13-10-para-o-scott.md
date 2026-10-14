@@ -127,7 +127,7 @@ toquei em nenhum.
 | **Franquia de minutos** | Vendida em prosa na descrição do plano; 1 de 21 planos tem o campo preenchido. Sem isso não existe cobrança de excedente. |
 | **Preço por licença do White Label** | Recomendo: a plataforma cobra, o Stripe documenta a oferta. |
 | **Recebível** | Você disse "recebível junto da mensalidade com o setup". Mantive uma linha por natureza no mesmo grupo. Se era uma linha só, somando, eu mudo. |
-| **Rotacionar segredos** | A senha do admin da Callface, as duas chaves do n8n e o `AUTH_SECRET` passaram por chat em 13/10. |
+| **Rotacionar segredos — um a mais, por erro meu** | A senha do admin da Callface, as duas chaves do n8n e o `AUTH_SECRET` passaram por chat em 13/10. **Acrescente a isso o usuário do banco do SaaS Callface AI (`CALLFACE_AI_DATABASE_URL`, usuário `lucas_vasconcelos` no RDS de produção).** Eu rodei um script com rastreio ligado (`bash -x`) para depurar, e o rastreio imprimiu a URL inteira, com senha, na sessão. Nada foi escrito naquele banco (a consulta era `information_schema`, e nem chegou a rodar), mas a credencial está num transcript de chat agora e precisa ser trocada. |
 
 ---
 
