@@ -33,6 +33,7 @@ import {
   Dialogo, Painel, Secao, Tag, dataCurta, dataHora, moeda, moedaExata, useAcao,
 } from "./ui";
 import { rotuloAtor, rotuloEvento } from "./PreVendas";
+import { tempoNaEtapaPorExtenso } from "@/lib/vendas/tempo-na-etapa";
 
 type Aba = "abertas" | "ganhas" | "perdidas";
 
@@ -337,7 +338,7 @@ function CardOportunidade({ card, selecionado, aoAbrir }: {
           {card.responsavelIniciais ? <span className="ov-avatar" aria-hidden><IniciaisUsuario nome={card.responsavel} iniciais={card.responsavelIniciais} /></span> : null}
           {card.responsavel ? card.responsavel.split(" ")[0] : "Sem responsável"}
         </span>
-        <span>{card.diasNaEtapa === null ? "—" : `${card.diasNaEtapa}d na etapa`}</span>
+        <span>{tempoNaEtapaPorExtenso(card.horasNaEtapa)}</span>
       </span>
     </button>
   );

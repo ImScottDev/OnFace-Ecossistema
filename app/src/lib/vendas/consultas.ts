@@ -30,6 +30,7 @@ import { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas } from "./dominio";
 import { resumoSlaPreVendas } from "./sla-lead";
 import { boardDeAquisicoes, somenteDePreVendas, type EstagioAquisicao } from "@onface/acquisition";
 import { boardDeOportunidades } from "@onface/sales";
+import { horasDesde } from "./tempo-na-etapa";
 
 const LIMITE_PADRAO = 400;
 
@@ -556,6 +557,8 @@ export interface CardPipeline {
   proximaAcao: string | null;
   proximaAcaoEm: string | null;
   diasNaEtapa: number | null;
+  /** Horas na etapa (com fração). O rótulo sai de `tempoNaEtapa`. */
+  horasNaEtapa: number | null;
   /** Badges contextuais (Bloco 02 §26). Badge nunca vira coluna. */
   badges: string[];
   leadId: string | null;
@@ -748,6 +751,9 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       diasNaEtapa: l?.etapa_desde
         ? Math.max(0, Math.floor((agora - new Date(l.etapa_desde).getTime()) / 86_400_000))
         : null,
+      // Em HORAS também: até 48h o quadro fala em minuto/hora (lib/vendas/tempo-na-etapa.ts).
+      // Só com dias, um lead de dois minutos aparecia como "1d".
+      horasNaEtapa: horasDesde(l?.etapa_desde ?? null, agora),
       badges,
       leadId: l?.lead_id ?? null,
       bundleId: c.bundleId,

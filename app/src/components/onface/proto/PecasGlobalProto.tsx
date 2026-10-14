@@ -60,6 +60,7 @@ function doDetalhe(l: DetalheLead): LeadDoDesenho {
     resp: l.responsavel.nome,
     // O detalhe não traz horas sem interação; 0 é "não sei", não um número inventado.
     dias: 0,
+    horas: null,
     origem: l.atribuicao.origem,
     campanha: l.atribuicao.campanha,
     interesse: l.servicos?.[0] ?? null,

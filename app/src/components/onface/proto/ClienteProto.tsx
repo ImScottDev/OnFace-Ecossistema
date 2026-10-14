@@ -626,9 +626,17 @@ class ClienteLigada extends ClienteLiga {
       ...v.hero,
       mrr: brl(mrr),
       // Variação real do faturamento total vs. mês anterior, quando há série.
+      /*
+       * Três casos, não dois. O selo dizia "sem histórico de faturamento" sempre que o
+       * MÊS ANTERIOR fosse zero — e aparecia ao lado de um gráfico cheio e de faturas
+       * pagas listadas na mesma tela (cliente THAYS, 14/10: set/2026 R$ 180, ago/2026
+       * zero, três faturas pagas desde julho). Tela que se contradiz sozinha não é lida.
+       */
       ...(ultF && antF && antF.total > 0
         ? { dt: Math.abs(Math.round((ultF.total / antF.total - 1) * 100)) + "%", dIco: ultF.total >= antF.total ? I.up : I.dn, dTxt: "faturado vs. mês anterior" }
-        : { dt: "—", dIco: I.up, dTxt: "sem histórico de faturamento" }),
+        : pagoTotal > 0 || fats.length > 0
+          ? { dt: "—", dIco: I.up, dTxt: antF ? "mês anterior sem faturamento" : "primeiro mês com faturamento" }
+          : { dt: "—", dIco: I.up, dTxt: "sem histórico de faturamento" }),
       dStyle: "display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:9999px;font-size:12px;font-weight:700;white-space:nowrap;background:rgba(255,255,255,.08);color:var(--of-tinta-4)",
       fams: fams.map((f) => ({ l: f.F.l, v: brl(f.mrr), dot: "flex:0 0 auto;width:8px;height:8px;border-radius:2px;background:" + f.F.cor })),
       tiles: [

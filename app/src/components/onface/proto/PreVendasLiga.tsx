@@ -28,6 +28,7 @@ import { toast } from "sonner";
 
 import { PreVendasDesenho } from "./PreVendasDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
+import { tempoNaEtapa } from "@/lib/vendas/tempo-na-etapa";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -259,7 +260,7 @@ class Logica extends React.Component<any, any> {
       avatarStyle: "flex:0 0 auto;width:24px;height:24px;border-radius:9999px;display:grid;place-items:center;font-size:9.5px;font-weight:700;"
         + (L.resp ? "background:#eeeff3;color:#616b78" : "background:#fff;color:#c2330f;box-shadow:inset 0 0 0 1.5px #f0c8bd"),
       origem: L.origem,
-      dias: L.dias + "d",
+      dias: tempoNaEtapa(L.horas) ?? (L.dias + "d"),
       sel: on, selAttr: on ? "1" : "0",
       checkStyle: "position:relative;width:18px;height:18px;border-radius:9999px;display:flex;align-items:center;justify-content:center;padding:0;border:0;line-height:0;cursor:pointer;justify-self:center;"
         + (on ? "background:#fe4f2b;box-shadow:inset 0 0 0 1px #fe4f2b" : "background:#fff;box-shadow:inset 0 0 0 1.5px #c8ccc9"),
@@ -511,7 +512,7 @@ class Logica extends React.Component<any, any> {
         pessoa: card.pessoa + " · " + card.cargo,
         responsavel: card.resp || "Sem responsável",
         iniciais: avatarDe(card.resp, iniciaisDe(card.resp)),
-        tempo: card.dias + "d",
+        tempo: tempoNaEtapa(card.horas) ?? (card.dias + "d"),
         origem: card.campanha || card.origem,
         origemSelo: "display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0;height:19px;padding:0 7px;border-radius:6px;font-size:10.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;"
           + ({ "Meta Ads": "background:#fff6f4;color:#9c3210", "Instagram": "background:#efecfa;color:#4f3fa8", "WhatsApp": "background:#e6f4ee;color:#1f7256", "Formulário": "background:#e8f0fb;color:#2c5f9e", "Site": "background:#e8f0fb;color:#2c5f9e", "Orgânica": "background:#f7edd8;color:#6e5420" }[card.origem] || "background:#eeeff3;color:#4a5560"),

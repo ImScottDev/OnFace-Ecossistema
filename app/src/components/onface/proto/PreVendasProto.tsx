@@ -51,7 +51,7 @@ import { type CanalAtendimento } from "../vendas/atendimento";
 /** O lead na forma que o desenho consome. */
 export interface LeadDoDesenho {
   id: string; empresa: string | null; pessoa: string; cargo: string;
-  resp: string | null; dias: number; origem: string | null; campanha: string | null;
+  resp: string | null; dias: number; horas: number | null; origem: string | null; campanha: string | null;
   interesse: string | null; tag: string | null; acao: string | null;
   venceEm: string | null; etapa: string;
   telefone?: string | null; whatsapp?: string | null; email?: string | null;
@@ -71,8 +71,10 @@ function paraODesenho(c: CardPreVendas, cadencia: string | null = null): LeadDoD
     pessoa: c.pessoa ?? "Sem contato",
     cargo: c.cargo ?? "",
     resp: c.responsavel,
-    // `dias` no cartão: há quantos dias o lead está NESTA etapa. Zera ao mover.
+    // `dias` continua inteiro porque os FILTROS contam em dia ("parado 7 dias+").
+    // O RÓTULO sai de `horas` (lib/vendas/tempo-na-etapa.ts): até 48h em minuto/hora.
     dias: c.horasNaEtapa == null ? 0 : Math.floor(c.horasNaEtapa / 24),
+    horas: c.horasNaEtapa ?? null,
     origem: origemCanonica(c.origem),
     campanha: c.campanha,
     interesse: c.servicos?.[0] ?? null,
