@@ -25,6 +25,28 @@
  * metadata existir); mostrar a mais é corrigível, sumir não é.
  */
 
+/**
+ * O SYNC (leitura) só ignora quando a marca do SaaS está no PRÓPRIO objeto.
+ *
+ * Medido em 14/10/2026 na conta real: das 406 assinaturas, 88 trazem a marca do
+ * SaaS na assinatura e **94 são "do SaaS" apenas porque o Customer tem
+ * `user_name`/`user_cnpj`**. Essas 94 o sync ignorava — e aí nascia o defeito que
+ * o dono viu: cliente que cancelou seguia ACTIVE no portfólio, contando MRR, e
+ * nenhuma rodada do sync conseguia encerrar, porque ela nunca chegava a olhar.
+ * O CRM contava dinheiro de assinatura que se recusava a gerenciar.
+ *
+ * É o que este arquivo já dizia: "mostrar a mais é corrigível, sumir não é".
+ * Marca só do Customer é indício fraco — um Customer criado pelo SaaS compra
+ * pelo CRM depois, e a venda é do CRM.
+ *
+ * ESCREVER continua conservador: `ehDoSaas` puro segue valendo em
+ * `stripe-assinatura-acoes.ts`, porque alterar assinatura alheia numa conta
+ * compartilhada é irreversível, e ali o indício fraco deve bastar para recusar.
+ */
+export function ignorarNoSync(d: OrigemDecidida): boolean {
+  return d.origem === "saas" && d.evidencia === "objeto";
+}
+
 export type OrigemStripe = "saas" | "crm" | "sem_marca" | "conflito";
 
 export interface OrigemDecidida {

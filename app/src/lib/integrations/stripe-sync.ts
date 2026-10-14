@@ -28,7 +28,7 @@ import { resolveBillingCustomer, type BillingResolution } from "./billing-identi
 import { negocioDaMetadataStripe } from "../crm/metadata-comercial";
 import { resumoDeCancelamento } from "./stripe-portal-retorno";
 import { periodoCorrente } from "./stripe-financeiro";
-import { ehDoSaas, origemDaAssinatura, origemDaFatura } from "./stripe-origem";
+import { ehDoSaas, ignorarNoSync, origemDaAssinatura, origemDaFatura } from "./stripe-origem";
 import { MARCA_AUTOMATICA, produtoDaSubscriptionDoSync } from "./stripe-produto-do-servico";
 
 const seg = (n: number | null | undefined) => (n ? new Date(n * 1000) : null);
@@ -194,7 +194,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
      abaixo (lead, MRR, faturas, heal) trabalha sobre `subs` e `invoiceMap` já filtrados. Sem marca ou com marca
      dos dois lados FICA (e é contado no log), nunca é descartado em silêncio. */
   const subsDoStripe = await paginate<StripeSubscription>("subscriptions", { status: "all", "expand[]": "data.customer" });
-  const subs = subsDoStripe.filter((s) => !ehDoSaas(origemDaAssinatura(s)));
+  const subs = subsDoStripe.filter((s) => !ignorarNoSync(origemDaAssinatura(s)));
   const subsDoSaas = subsDoStripe.length - subs.length;
   const subsSemMarca = subs.filter((s) => origemDaAssinatura(s).origem !== "crm").length;
 
