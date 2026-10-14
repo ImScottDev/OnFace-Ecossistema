@@ -28,6 +28,8 @@ para destinatário de verdade.
 | 11 | Eventos no n8n | Evento real do ONFACE chega e é idempotente | Barramento provado com evento sintético; **falta evento real** | — | 77460f9 | 541f8cd | **a comprovar** |
 | 12 | Sincronismos Callface AI | Parceiro, licença, fatura e retrato espelhados | Tabelas criadas e **vazias**: sync nunca rodou | — | 864ea2b | 541f8cd | **a comprovar** |
 | 13 | Aviso de pagamento do Stripe não cai | Responder antes de o Stripe desistir (~20s) e processar depois, sem perder evento | **Comprovado em homologação:** HTTP 202 em **0,24s**; o trabalho real levou **16,0s** no worker e o evento terminou `processed` | medição em homologação, evento `evt_latencia_1791939237` | ee32dc8 | ee32dc8 | **comprovado em homologação** |
+| 14 | Conversa de WhatsApp por papel (P0) | Número pessoal só do dono; cargo não abre caixa alheia | **Corrigido e travado**: regra única em `lib/whatsapp/acesso.ts`, 132 testes e trava de arquitetura; 20 superfícies vazavam | `conversa-so-pela-porta.test.ts`, `acesso-politica.test.ts` | a5ac16b | a5ac16b | **comprovado em teste; falta decidir a supervisão dos admins** |
+| 15 | Ajustes que mudam comportamento | Salvar um ajuste muda o sistema | Varredura completa: assinatura de e-mail, organização ativa e AI SDR por estágio eram órfãos e foram ligados; 7 telas seguem como "só registro" | relatório de Ajustes neste doc | 799a00b | 799a00b | **parcial — 7 telas sem leitor, por decisão sua** |
 
 ## Regra esclarecida pelo Scott (13/10/2026): não existe venda mista
 
@@ -87,3 +89,36 @@ roda o sincronismo completo da conta** (`224 assinaturas, 257 faturas`) — é d
 os 16s. É caro demais para o que um evento precisa. Mexer agora arriscaria a cadeia
 pagamento → ganho → faturamento que acabou de ser comprovada; fica para quando ela
 estiver assentada.
+
+## Cenário 11 — por que nenhum evento real chegou ao n8n
+
+Não é defeito de código: é ambiente.
+
+| Ambiente | `ONFACE_BARRAMENTO_URL` / `_TOKEN` | Consequência |
+|---|---|---|
+| Produção | **definidos** (conferidos por impressão digital, sem ver o valor) | publica de verdade |
+| Homologação | **ausentes** | o barramento não tem para onde publicar — é impossível provar aqui |
+
+O outbox de homologação está vivo: 810 eventos `processed`, incluindo
+`ContractDeclined`, `CanonicalServiceActivated`, `PaymentStarted` e
+`CheckoutCreated` gravados nas validações desta noite. Ele grava; só não entrega.
+
+**O que falta de você:** ou as duas chaves do n8n no `.env` de homologação — e elas
+estão na lista de segredos a rotacionar, então o certo é gerar a nova e já colocar
+nos dois ambientes — ou autorização para eu ler as execuções do n8n de produção e
+conferir o que chegou lá.
+
+## Cenário 12 — achada a causa de as tabelas estarem vazias
+
+Não era conexão nem permissão. O job de 6 h roda **três** passos — uso, parceiros
+(White Label) e retrato do cliente. O script de operação
+(`sincronizar-callface-ai.ts`) rodava **só o primeiro**. Como o job é o único
+caminho que preenchia parceiro e retrato, bastava ele não ter passado para as
+tabelas ficarem vazias — e a guarda das 5,5 h impedia nova tentativa.
+
+Em homologação, `integracao_sync_estado` mostrava exatamente isso: `tenant_snapshot`
+com sucesso às 21:23 (380 itens, 72s) e **nenhuma linha** para parceiros ou retrato.
+
+Corrigido em `799a00b`: os dois caminhos passam a chamar a mesma rodada
+(`lib/integrations/callface-ai/rodada.ts`). Falta rodar em homologação com o código
+novo publicado e conferir as quatro tabelas.
