@@ -82,6 +82,10 @@ export async function sincronizarRetratoCallfaceAi(organizacaoId: string): Promi
   const blocosComFalha: Record<string, string> = {};
   for (const [nome, bl] of Object.entries(b)) if (!bl.ok) blocosComFalha[nome] = bl.erro;
   const avisos: string[] = [];
+  // Equipe que a plataforma não tem não é bloco com falha: é ausência. Entra como
+  // aviso, e o retrato pode fechar `ok` em vez de ficar `parcial` para sempre —
+  // estado que nunca fica verde é estado em que ninguém mais olha.
+  if (b.equipes.ok && b.equipes.dados.ausenteEquipes) avisos.push(b.equipes.dados.ausenteEquipes);
   if (b.planos.ok) {
     const cols = new Set(b.planos.dados.map((p) => p.precoColuna).filter(Boolean));
     const precos = b.planos.dados.filter((p) => p.preco !== null).map((p) => p.preco as number);
@@ -160,7 +164,7 @@ export async function sincronizarRetratoCallfaceAi(organizacaoId: string): Promi
       }
 
       if (b.equipes.ok) {
-        const lote = b.equipes.dados.map((e) => ({ tipo: e.tipo, id: e.refId, org: e.organizationId, nome: e.nome, st: e.status }));
+        const lote = b.equipes.dados.dados.map((e) => ({ tipo: e.tipo, id: e.refId, org: e.organizationId, nome: e.nome, st: e.status }));
         for (const l of emLotes(lote)) {
           await tx.execute(sql`
             INSERT INTO callface_ai_equipes (organizacao_id, tipo, ref_id, external_organization_id, nome, status, coletado_em)

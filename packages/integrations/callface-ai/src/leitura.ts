@@ -976,23 +976,49 @@ export interface EquipeCallfaceAi {
   status: string | null;
 }
 
-/** Primeira tabela da lista que existe; se nenhuma, falha listando as de nome parecido. */
-async function tabelaExistente(sql: Sql, candidatas: string[], parecidas: string, rotulo: string): Promise<string> {
+/**
+ * Primeira tabela da lista que existe, ou null quando NENHUMA existe — junto do
+ * motivo, com as de nome parecido, para quem for decidir.
+ *
+ * Devolver null em vez de lançar: tabela que não existe na plataforma é AUSÊNCIA,
+ * não falha de leitura, e as duas coisas não podem ter o mesmo efeito. Era por
+ * lançar aqui que o bloco de equipes derrubava com ele os workspaces, que existem
+ * e já estavam lidos.
+ */
+async function tabelaExistente(sql: Sql, candidatas: string[], parecidas: string, rotulo: string): Promise<{ tabela: string } | { ausente: string }> {
   const achadas = await sql<Array<{ table_name: string }>>`
     SELECT table_name FROM information_schema.tables
      WHERE table_schema = current_schema() AND table_name IN ${sql(candidatas)}`;
   const nomes = new Set(achadas.map((a) => a.table_name));
   const escolhida = candidatas.find((c) => nomes.has(c));
-  if (escolhida) return escolhida;
+  if (escolhida) return { tabela: escolhida };
   const similares = await sql<Array<{ table_name: string }>>`
     SELECT table_name FROM information_schema.tables
      WHERE table_schema = current_schema() AND table_name ~ ${parecidas} ORDER BY 1`;
-  throw new Error(`${rotulo}: nenhuma das tabelas [${candidatas.join(", ")}] existe. Tabelas de nome parecido: ${similares.map((s) => s.table_name).join(", ") || "(nenhuma)"}`);
+  return { ausente: `${rotulo}: nenhuma das tabelas [${candidatas.join(", ")}] existe. Tabelas de nome parecido: ${similares.map((s) => s.table_name).join(", ") || "(nenhuma)"}` };
 }
 
-/** Workspaces (confirmados) e equipes (tabela não confirmada: descoberta, ou falha alto). */
-export async function lerEquipes(sql: Sql, organizationIds: string[]): Promise<EquipeCallfaceAi[]> {
-  if (!organizationIds.length) return [];
+/**
+ * Mesma busca, mas AUSÊNCIA é falha. Para conceito que a plataforma certamente tem
+ * (receptivo): não achar nenhum nome candidato significa que erramos o nome, e isso
+ * tem de aparecer alto, não virar bloco vazio.
+ */
+async function tabelaExistenteOuFalha(sql: Sql, candidatas: string[], parecidas: string, rotulo: string): Promise<string> {
+  const r = await tabelaExistente(sql, candidatas, parecidas, rotulo);
+  if ("ausente" in r) throw new Error(r.ausente);
+  return r.tabela;
+}
+
+/**
+ * Workspaces (tabela confirmada) e equipes (tabela NÃO confirmada: descoberta).
+ *
+ * `ausenteEquipes` fica preenchido quando a plataforma não tem tabela de equipe
+ * nenhuma. Isso não é falha: é a plataforma não ter o conceito com esse nome, e
+ * quem chama registra como aviso em vez de marcar o retrato como incompleto para
+ * sempre. Tabela que EXISTE e não se lê continua falhando alto.
+ */
+export async function lerEquipes(sql: Sql, organizationIds: string[]): Promise<{ dados: EquipeCallfaceAi[]; ausenteEquipes: string | null }> {
+  if (!organizationIds.length) return { dados: [], ausenteEquipes: null };
   const ids = new Set(organizationIds);
   const ws = await sql<Array<{ r: Linha }>>`
     SELECT to_jsonb(w) AS r FROM workspaces w WHERE w.organization_id IN ${sql(organizationIds)}`;
@@ -1005,7 +1031,11 @@ export async function lerEquipes(sql: Sql, organizationIds: string[]): Promise<E
   }));
   const orgDoWorkspace = new Map(saida.map((w) => [w.refId, w.organizationId]));
 
-  const tabela = await tabelaExistente(sql, ["teams", "organization_teams", "workspace_teams", "equipes"], "team|equipe", "equipes");
+  const achada = await tabelaExistente(sql, ["teams", "organization_teams", "workspace_teams", "equipes"], "team|equipe", "equipes");
+  // Sem tabela de equipe na plataforma: devolve os workspaces, que são reais, e diz
+  // por que não há equipe. Antes isto lançava e os workspaces iam embora com ele.
+  if ("ausente" in achada) return { dados: saida, ausenteEquipes: achada.ausente };
+  const tabela = achada.tabela;
   const times = await sql<Array<{ r: Linha }>>`SELECT to_jsonb(t) AS r FROM ${sql(tabela)} t`;
   for (const { r } of times) {
     const viaWs = achar(r, ["workspace_id"]);
@@ -1019,7 +1049,7 @@ export async function lerEquipes(sql: Sql, organizationIds: string[]): Promise<E
       nome: texto(achar(r, ["name", "title"])), status: texto(achar(r, ["status"])),
     });
   }
-  return saida;
+  return { dados: saida, ausenteEquipes: null };
 }
 
 export interface ReceptivoCallfaceAi {
@@ -1042,7 +1072,7 @@ const DESTINOS: Array<[string, string[]]> = [
 export async function lerReceptivos(sql: Sql, organizationIds: string[]): Promise<ReceptivoCallfaceAi[]> {
   if (!organizationIds.length) return [];
   const ids = new Set(organizationIds);
-  const tabela = await tabelaExistente(
+  const tabela = await tabelaExistenteOuFalha(
     sql, ["inbound_numbers", "inbound_dids", "dids", "did_numbers", "receptive_numbers", "receptivos"],
     "did|inbound|receptiv|ura|ivr", "receptivos");
   const linhas = await sql<Array<{ r: Linha }>>`SELECT to_jsonb(d) AS r FROM ${sql(tabela)} d`;
@@ -1081,7 +1111,7 @@ export interface RetratoBrutoCallfaceAi {
   stripe: Bloco<StripeOrgCallfaceAi[]>;
   licencas: Bloco<LicencaOrgCallfaceAi[]>;
   usuarios: Bloco<UsuarioOrgCallfaceAi[]>;
-  equipes: Bloco<EquipeCallfaceAi[]>;
+  equipes: Bloco<{ dados: EquipeCallfaceAi[]; ausenteEquipes: string | null }>;
   receptivos: Bloco<ReceptivoCallfaceAi[]>;
 }
 
