@@ -73,7 +73,9 @@ test("conferência: OVERDUE fica visível como pendência alta, com valor e atra
 });
 
 test("conferência: divergências de proporcional, total, licença e CRM aparecem cada uma com o seu tipo", () => {
-  const f = fatura({ total: 300, itens: [item({ totalLinha: 129.9 })] });
+  // `totalLinha` ABAIXO do proporcional: é o caso que alarma. Cobrar acima virou
+  // "não conferido" (linha que cobre mais de uma licença), ver o teste no fim.
+  const f = fatura({ total: 300, itens: [item({ totalLinha: 50 })] });
   const r = conferirParceiros({ parceiros: [parceiro()], licencas: [lic("l1"), lic("l2")], faturas: [f], faturasCrm: [] }, AGORA);
   assert.deepEqual(new Set(tipos(r)), new Set(["fatura_total_diverge", "item_proporcional_diverge", "licenca_sem_item", "fatura_ausente_no_crm"]));
   const r2 = conferirParceiros({ parceiros: [parceiro()], licencas: [lic("l1"), lic("l2")], faturas: [fatura()], faturasCrm: [{ ...crmOk[0], valor: 180 }] }, AGORA);
@@ -100,4 +102,33 @@ test("data do Postgres vem como texto, e a conferência precisa de Date", () => 
   // A conferência usa getTime() nas três datas da licença: com o conversor, passa.
   const l = { licenseId: "l1", partnerId: "p1", inicioEm: data("2026-06-01 03:00:00+00"), revogadaEm: data(null), expiraEm: data(null) };
   assert.doesNotThrow(() => l.inicioEm!.getTime());
+});
+
+test("item que cobra MAIS que uma licença não é divergência: é linha que não dá para conferir", () => {
+  // Números reais de homologação (14/10): o item de 25/31 dias a R$ 129,90 dá
+  // R$ 104,76 para UMA licença, e a plataforma cobrou R$ 1.299,18 — a linha cobre
+  // várias licenças. Eram 75 itens assim, e os 75 alarmes escondiam as 3 faturas
+  // vencidas de verdade.
+  const base = { parceiros: [{ partnerId: "p1", nome: "Matte", precoPorLicenca: 129.9, empresaId: "e1" }], licencas: [], faturasCrm: [] };
+  const item = (totalLinha: number): ItemLocal => ({
+    itemId: `i-${totalLinha}`, licenseId: null, diasAtivos: 25, diasNoCiclo: 31,
+    proporcional: true, precoUnitario: 129.9, totalLinha,
+  });
+  const fatura = (i: ItemLocal): FaturaLocal => ({
+    invoiceId: "f1", partnerId: "p1", status: "PAID", competencia: "2026-08",
+    cicloInicio: "2026-08-01", cicloFim: "2026-08-31", vencimento: new Date("2026-09-10T00:00:00Z"),
+    total: i.totalLinha, itens: [i],
+  });
+
+  const acima = conferirParceiros({ ...base, faturas: [fatura(item(1299.18))] }, new Date("2026-08-20T00:00:00Z"));
+  assert.equal(acima.pendencias.filter((p) => p.tipo === "item_proporcional_diverge").length, 0,
+    "linha que cobre mais de uma licença não vira alarme");
+  assert.ok(acima.limites.some((l) => l.includes("não conferido item a item")),
+    "mas tem de aparecer como não conferido, não desaparecer");
+
+  // Cobrar MENOS que o proporcional de uma licença é receita perdida: segue alarmando.
+  const abaixo = conferirParceiros({ ...base, faturas: [fatura(item(50))] }, new Date("2026-08-20T00:00:00Z"));
+  const p = abaixo.pendencias.find((x) => x.tipo === "item_proporcional_diverge");
+  assert.ok(p, "cobrar menos que o devido continua sendo pendência");
+  assert.ok(String(p!.mensagem).includes("cobrou MENOS"));
 });

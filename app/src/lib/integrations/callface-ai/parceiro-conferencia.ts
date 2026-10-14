@@ -142,12 +142,25 @@ export function conferirParceiros(
         });
         continue;
       }
+      // Cobrou MENOS que o proporcional de uma licença: é receita que deixou de
+      // entrar, e vale alarme qualquer que seja a forma da linha.
+      //
+      // Cobrou MAIS: medido em homologação (14/10), 75 de 75 itens proporcionais
+      // caíam aqui, e um deles fechava em exatamente 4× o preço cheio. Quando uma
+      // conferência reprova 100% dos casos, o errado é a conferência: a linha cobre
+      // mais de uma licença e `days_active` descreve só uma, então a fórmula de uma
+      // licença não tem como julgá-la. Vai para `limites` como NÃO CONFERIDO — 75
+      // alarmes falsos escondiam as 3 faturas vencidas de verdade.
       if (!itemBate(i)) {
-        add({
-          chave: `item_proporcional_diverge:${i.itemId}`, tipo: "item_proporcional_diverge", severidade: "media",
-          partnerId: f.partnerId, invoiceId: f.invoiceId, esperado: totalEsperadoDoItem(i), encontrado: i.totalLinha,
-          mensagem: `Item da fatura de ${nome}: ${i.proporcional ? `${i.diasAtivos}/${i.diasNoCiclo} dias de ${moeda(i.precoUnitario)}` : `preço cheio de ${moeda(i.precoUnitario)}`} dá ${moeda(totalEsperadoDoItem(i))}, a plataforma cobrou ${moeda(i.totalLinha)}.`,
-        });
+        if (centavos(i.totalLinha) < centavos(totalEsperadoDoItem(i))) {
+          add({
+            chave: `item_proporcional_diverge:${i.itemId}`, tipo: "item_proporcional_diverge", severidade: "media",
+            partnerId: f.partnerId, invoiceId: f.invoiceId, esperado: totalEsperadoDoItem(i), encontrado: i.totalLinha,
+            mensagem: `Item da fatura de ${nome}: ${i.proporcional ? `${i.diasAtivos}/${i.diasNoCiclo} dias de ${moeda(i.precoUnitario)}` : `preço cheio de ${moeda(i.precoUnitario)}`} dá ${moeda(totalEsperadoDoItem(i))}, e a plataforma cobrou MENOS: ${moeda(i.totalLinha)}.`,
+          });
+        } else {
+          limites.add("Item com total acima do proporcional de UMA licença: a linha cobre mais de uma e `days_active` descreve só uma — não conferido item a item. O total da fatura continua conferido pela soma das linhas.");
+        }
       }
       if (parceiro?.precoPorLicenca != null && centavos(i.precoUnitario) !== centavos(parceiro.precoPorLicenca)) {
         add({

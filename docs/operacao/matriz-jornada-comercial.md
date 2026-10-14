@@ -23,7 +23,7 @@ para destinatário de verdade.
 | 6 | Histórico de entregas | Entregas antigas consolidadas | Histórico consolidado em homologação: 59 → 53 entregas, 51 com `oportunidade_id`; as 41 com andamento intactas | `backfill-consolidar-entregas.ts` | — | — | **consolidado em homologação, produção pendente** |
 | 7 | Serviços sem vínculo | Agrupamento sabe lidar com serviço sem venda | 445 de 508 sem oportunidade nem contrato: carga (LEDGER 258, STRIPE 144, MARCO_ZERO 36, CONTRACT 5, ZOHO 2); cada um é sua própria venda, nunca agrupa; o backfill não toca neles | `entrega-da-venda.test.ts` | — | — | **legado esperado, documentado** |
 | 8 | Upgrade, downgrade, cross-sell, renovação | Upgrade/downgrade: o serviço de hoje é o novo e o anterior vira histórico (SUPERSEDED); cross-sell soma; renovação não cria serviço, entrega nem recebível; etapa já cumprida nasce cumprida | Implementado (sem coluna nova): `lib/crm/upgrade-cross-sell.ts`, `servico-canonico.ts` (`materializarLote`), `fulfillment.ts` (etapas herdadas DONE) | upgrade-e-cross-sell.md | `upgrade-cross-sell.db.test.ts` | — | **provado em banco descartável; falta tela** |
-| 9 | White Label fim a fim | Implantação única, contrato, cobrança, licença por ativação | Catálogo e grupo corrigidos; licença por ativação depende de integração | — | 975db8e | 541f8cd | parcial |
+| 9 | White Label fim a fim | Implantação única, contrato, cobrança, licença por ativação | Espelho e conferência **rodando**: 6 parceiros, 106 licenças, 12 faturas, e a conferência achou sozinha **R$ 18.390,27 vencidos** em 3 faturas | `integracao_sync_estado` + `callface_ai_parceiro_pendencias` | 975db8e | ad4dd26 | **espelho comprovado; cobrança pela plataforma, não pelo CRM** |
 | 10 | Reconciliação do legado | Família, valores, evidência, responsável, datas preservadas | Script escrito, **não executado** | 1423e0c | 1423e0c | — | **não executado** |
 | 11 | Eventos no n8n | Evento real do ONFACE chega e é idempotente | Barramento provado com evento sintético; **falta evento real** | — | 77460f9 | 541f8cd | **a comprovar** |
 | 12 | Sincronismos Callface AI | Parceiro, licença, fatura e retrato espelhados | **Rodou sozinho em homologação às 03:23 UTC de 14/10** e encheu: 6 parceiros, 21 planos, 957 licenças, 12 faturas, 517 vínculos de usuário, 63 receptivos. Achou dois defeitos (abaixo) | log do worker + `integracao_sync_estado` | 799a00b | aaa5918 | **comprovado; retrato segue `parcial`** |
@@ -192,3 +192,44 @@ inventarmos a quarta tentativa de adivinhar nome de tabela.
 
 **Aviso que o próprio sync deixou, e vale conferir:** o preço de plano foi lido da
 coluna `price` nos 21 planos, de 0 a 1799 — *"conferir que é em reais"*.
+
+## Cenário 12 (fechamento) — a passada das 09:23 UTC provou os três recursos
+
+| Recurso | Antes | Depois |
+|---|---|---|
+| `tenant_snapshot` | ok | ok — 367 itens |
+| `parceiros` | **linha nenhuma** (morria antes de gravar) | **ok — 386 itens** |
+| `retrato` | `parcial` para sempre | **ok — 1.756 itens** |
+
+E o espelho passou a ter conteúdo que nunca teve: **106 licenças de parceiro, 12
+faturas, 198 equipes/workspaces e 90 pendências de conferência**.
+
+### O que a conferência achou sozinha
+
+Três faturas vencidas, **R$ 18.390,27 em aberto**:
+
+| Parceiro | Competência | Em aberto | Atraso |
+|---|---|---:|---:|
+| Callface | 2026-09 | R$ 18.157,92 | 8 dias |
+| Chat Envio | 2026-08 | R$ 184,38 | 23 dias |
+| Realize | 2026-09 | R$ 47,97 | 8 dias |
+
+Mais 6 licenças sem item de fatura e 6 parceiros sem empresa no CRM.
+
+### E 75 alarmes falsos que escondiam esses três
+
+A conferência reprovava **75 de 75** itens proporcionais, e um deles fechava em
+exatamente **4× o preço cheio** (R$ 519,60 contra R$ 129,90). Quando uma
+conferência reprova 100% dos casos, o errado é a conferência: a linha da fatura
+cobre **mais de uma licença**, e `days_active` descreve só uma — a fórmula de uma
+licença não tem como julgar a linha.
+
+Agora: cobrar **menos** que o proporcional de uma licença continua sendo pendência
+(é receita que deixou de entrar); cobrar mais vira **"não conferido"** em `limites`,
+dito em voz alta, e o total da fatura segue conferido pela soma das linhas. Sem
+isso, 75 alarmes falsos enterravam as 3 faturas vencidas de verdade — alarme que
+sempre toca é alarme que ninguém escuta.
+
+**Para conferir item a item de verdade** é preciso saber a forma da linha em
+`partner_invoice_items` (se há coluna de quantidade, ou se a linha agrega licenças
+com dias diferentes). É leitura no schema do SaaS e depende de você.
