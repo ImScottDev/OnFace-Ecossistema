@@ -148,14 +148,37 @@ const fimDoPeriodo = (o: Obj): number | null => periodoCorrente(o).fim;
 
 const INTERVALO: Record<string, string> = { month: "mês", year: "ano", week: "semana", day: "dia" };
 
-/** Soma dos itens de uma assinatura, em centavos por período, e o intervalo. */
-export function totalDosItens(itens: unknown): { centavos: number; intervalo: string | null; moeda: string | null; plano: string | null } | null {
+/** Um item da assinatura, já com o que importa para auditoria (quantidade e unitário). */
+export interface ItemDaAssinatura {
+  itemId: string | null;
+  priceId: string | null;
+  nome: string | null;
+  quantidade: number;
+  unitCentavos: number;
+  /** quantidade × unitário, em centavos do período. */
+  centavos: number;
+}
+
+export interface TotalDosItens {
+  centavos: number;
+  intervalo: string | null;
+  moeda: string | null;
+  plano: string | null;
+  /** Soma das quantidades. É o número de assentos/licenças, e é o que muda numa alteração de quantidade. */
+  quantidade: number;
+  itens: ItemDaAssinatura[];
+}
+
+/** Soma dos itens de uma assinatura, em centavos por período, o intervalo e o detalhe por item. */
+export function totalDosItens(itens: unknown): TotalDosItens | null {
   const lista = Array.isArray(asObj(itens)?.data) ? (asObj(itens)!.data as unknown[]) : null;
   if (!lista || lista.length === 0) return null;
   let centavos = 0;
+  let quantidade = 0;
   let intervalo: string | null = null;
   let moeda: string | null = null;
   const nomes: string[] = [];
+  const detalhe: ItemDaAssinatura[] = [];
   for (const it of lista) {
     const item = asObj(it);
     if (!item) continue;
@@ -163,12 +186,140 @@ export function totalDosItens(itens: unknown): { centavos: number; intervalo: st
     const unit = asNum(preco?.unit_amount) ?? asNum(preco?.amount) ?? 0;
     const qtd = asNum(item.quantity) ?? 1;
     centavos += unit * qtd;
+    quantidade += qtd;
     intervalo = intervalo ?? asStr(asObj(preco?.recurring)?.interval) ?? asStr(preco?.interval);
     moeda = moeda ?? asStr(preco?.currency);
     const nome = asStr(preco?.nickname) ?? asStr(asObj(preco?.product)?.name);
     if (nome) nomes.push(nome);
+    detalhe.push({
+      itemId: asStr(item.id), priceId: asStr(preco?.id), nome,
+      quantidade: qtd, unitCentavos: unit, centavos: unit * qtd,
+    });
   }
-  return { centavos, intervalo, moeda, plano: nomes.length ? nomes.join(" + ") : null };
+  return { centavos, intervalo, moeda, plano: nomes.length ? nomes.join(" + ") : null, quantidade, itens: detalhe };
+}
+
+/* ── Origem da mudança: o que o Stripe informa ─────────────────────────── */
+
+export type OrigemStripe = "onface" | "integracao_externa" | "api_ou_dashboard" | "stripe_automatico";
+
+export interface OrigemDaMudanca {
+  origem: OrigemStripe;
+  /** `req_…` da chamada que causou o evento, quando houve chamada. */
+  requestId: string | null;
+  idempotencyKey: string | null;
+  rotulo: string;
+  livemode: boolean | null;
+  apiVersion: string | null;
+}
+
+/**
+ * De onde veio a mudança, segundo o PRÓPRIO Stripe (`event.request`).
+ *
+ * É tudo o que se pode saber quando a alteração não passou pelo ONFACE: o
+ * Stripe não diz "quem", diz qual requisição. A distinção que interessa:
+ *
+ *  - `request.id` nulo → ninguém chamou a API: foi o Stripe (renovação,
+ *    retentativa automática de cobrança, fim de trial);
+ *  - chave `onface-assin-…` → saiu da porta de alteração do ONFACE, e então
+ *    `audit_log` (`assinatura.*`) tem o usuário, o motivo e o antes/depois;
+ *  - chave `stripe-node-retry-…` → outro aplicativo usando o SDK Node da
+ *    Stripe. O ONFACE não usa o SDK (fala HTTP direto), então isto é de fora;
+ *  - requisição sem chave reconhecível → API externa ou Dashboard do Stripe.
+ */
+export function origemDaMudanca(event: {
+  request?: unknown; livemode?: boolean | null; api_version?: string | null;
+}): OrigemDaMudanca {
+  const req = asObj(event.request);
+  const requestId = asStr(req?.id) ?? (typeof event.request === "string" ? event.request : null);
+  const idempotencyKey = asStr(req?.idempotency_key);
+  const livemode = typeof event.livemode === "boolean" ? event.livemode : null;
+  const apiVersion = asStr(event.api_version);
+
+  let origem: OrigemStripe;
+  if (idempotencyKey?.startsWith("onface-assin-")) origem = "onface";
+  else if (idempotencyKey?.startsWith("stripe-node-")) origem = "integracao_externa";
+  else if (requestId) origem = "api_ou_dashboard";
+  else origem = "stripe_automatico";
+
+  const rotulo = {
+    onface: "pelo ONFACE (há registro em auditoria com o usuário)",
+    integracao_externa: "por integração externa usando o SDK da Stripe (não foi pelo ONFACE)",
+    api_ou_dashboard: "por chamada de API ou pelo Dashboard do Stripe (fora do ONFACE)",
+    stripe_automatico: "automaticamente pelo Stripe (renovação ou retentativa)",
+  }[origem];
+
+  return { origem, requestId, idempotencyKey, rotulo, livemode, apiVersion };
+}
+
+/* ── Salto anormal de cobrança ─────────────────────────────────────────── */
+
+/**
+ * Limite do alerta. Dois critérios, e o alerta exige OS DOIS.
+ *
+ * `FATOR` = 2: expansão legítima acrescenta assento ou produto, e isso move a
+ * cobrança em dezenas de por cento (5 → 6 assentos é +20%). Dobrar não é
+ * acréscimo, é outra ordem de grandeza — quantidade digitada errada, Price
+ * trocado por engano, ou alteração que ninguém revisou.
+ *
+ * `CENTAVOS` = R$ 1.000,00 de acréscimo: sem piso absoluto, todo cliente
+ * pequeno que sai de um assento para dois dispara alerta (R$ 89,90 → R$ 179,80
+ * dobra) e o aviso vira ruído que a equipe aprende a ignorar — e aí o alerta
+ * que importa também passa batido.
+ */
+export const LIMITE_SALTO_FATOR = 2;
+export const LIMITE_SALTO_CENTAVOS = 100_000;
+
+export interface SaltoDeCobranca {
+  anteriorCentavos: number;
+  novoCentavos: number;
+  deltaCentavos: number;
+  /** `null` quando não havia valor anterior para dividir (de zero para algo). */
+  fator: number | null;
+  anormal: boolean;
+}
+
+/**
+ * A regra do alerta: a cobrança do próximo ciclo saltou de forma anormal?
+ * Pura de propósito — é a regra que o teste trava, e vale igual para quantidade,
+ * troca de Price ou item novo, porque olha o total do ciclo.
+ */
+export function saltoDeCobranca(anteriorCentavos: number, novoCentavos: number): SaltoDeCobranca {
+  const deltaCentavos = novoCentavos - anteriorCentavos;
+  const fator = anteriorCentavos > 0 ? novoCentavos / anteriorCentavos : null;
+  const dobrou = fator == null ? novoCentavos > 0 : fator > LIMITE_SALTO_FATOR;
+  return { anteriorCentavos, novoCentavos, deltaCentavos, fator, anormal: dobrou && deltaCentavos >= LIMITE_SALTO_CENTAVOS };
+}
+
+/**
+ * O que mudou ITEM A ITEM, em frases. Sem isto, uma assinatura de dois itens
+ * (licença + assentos) só mostra o total, e o item que teve a quantidade
+ * alterada fica indistinguível do que ficou parado.
+ */
+export function diferencasPorItem(
+  antes: ItemDaAssinatura[], depois: ItemDaAssinatura[], moeda: string | null,
+): string[] {
+  const chave = (i: ItemDaAssinatura) => i.itemId ?? i.priceId ?? "";
+  const porChave = new Map(antes.map((i) => [chave(i), i]));
+  const frases: string[] = [];
+  for (const d of depois) {
+    const a = porChave.get(chave(d));
+    const nome = d.nome ?? d.priceId ?? d.itemId ?? "item";
+    if (!a) {
+      frases.push(`Item adicionado: ${nome} ${d.quantidade}× ${formatarValor(d.unitCentavos, moeda)} = ${formatarValor(d.centavos, moeda)}.`);
+      continue;
+    }
+    porChave.delete(chave(d));
+    if (a.quantidade !== d.quantidade) {
+      frases.push(`${nome}: quantidade ${a.quantidade} → ${d.quantidade} a ${formatarValor(d.unitCentavos, moeda)} cada, ${formatarValor(a.centavos, moeda)} → ${formatarValor(d.centavos, moeda)}.`);
+    } else if (a.unitCentavos !== d.unitCentavos) {
+      frases.push(`${nome}: unitário ${formatarValor(a.unitCentavos, moeda)} → ${formatarValor(d.unitCentavos, moeda)}.`);
+    }
+  }
+  for (const a of porChave.values()) {
+    frases.push(`Item removido: ${a.nome ?? a.priceId ?? a.itemId ?? "item"} (${formatarValor(a.centavos, moeda)}).`);
+  }
+  return frases;
 }
 
 const STATUS_ASSINATURA: Record<string, string> = {
@@ -213,6 +364,10 @@ interface EventoStripe {
   type?: string;
   created?: number;
   data?: { object?: Obj; previous_attributes?: Obj };
+  /** `{ id, idempotency_key }` da chamada que causou o evento; nulo quando foi o Stripe. */
+  request?: unknown;
+  livemode?: boolean | null;
+  api_version?: string | null;
 }
 
 function base(event: EventoStripe, o: Obj): Pick<FatoFinanceiro, "customerId" | "invoiceId" | "subscriptionId" | "negocioId" | "ocorridoEm"> {
@@ -318,27 +473,57 @@ export function descreverEventoFinanceiro(event: EventoStripe): FatoFinanceiro |
         };
       }
     }
-    // 2) troca de plano / valor
+    // 2) troca de plano / quantidade / valor
+    //
+    // É AQUI que uma alteração de quantidade (1 → 24 assentos) tem de deixar
+    // rastro completo: antes, depois, por item, e o que o Stripe informa sobre
+    // a origem. Antes o título só dizia o total do ciclo ("R$ 3.159,50 →
+    // R$ 67.557,20"), e quem lia a timeline não tinha como saber que o que
+    // mudou foi a QUANTIDADE de um item, nem de onde a mudança veio.
     if (prev.items) {
       const novo = totalDosItens(o.items);
       const antigo = totalDosItens(prev.items);
-      if (novo && antigo && novo.centavos !== antigo.centavos) {
+      const org = origemDaMudanca(event);
+      if (novo && antigo && (novo.centavos !== antigo.centavos || novo.quantidade !== antigo.quantidade)) {
         const sobe = novo.centavos > antigo.centavos;
         const per = INTERVALO[novo.intervalo ?? "month"] ?? novo.intervalo ?? "mês";
+        const salto = saltoDeCobranca(antigo.centavos, novo.centavos);
+        const qtdMudou = novo.quantidade !== antigo.quantidade;
+        const moeda = novo.moeda ?? antigo.moeda;
+        // Quantidade na frente quando foi ela que mudou: é a informação que faltava.
+        const titulo = qtdMudou && novo.centavos !== antigo.centavos
+          ? `${sobe ? "Upgrade" : "Downgrade"} de assinatura: quantidade ${antigo.quantidade} → ${novo.quantidade} · ${formatarValor(antigo.centavos, antigo.moeda ?? novo.moeda)} → ${formatarValor(novo.centavos, moeda)}/${per}`
+          : qtdMudou
+            ? `Quantidade da assinatura: ${antigo.quantidade} → ${novo.quantidade} (cobrança do ciclo segue ${formatarValor(novo.centavos, moeda)})`
+            : `${sobe ? "Upgrade" : "Downgrade"} de assinatura: ${formatarValor(antigo.centavos, antigo.moeda ?? novo.moeda)} → ${formatarValor(novo.centavos, moeda)}/${per}`;
         return {
-          ...b, tipo: sobe ? "SubscriptionUpgraded" : "SubscriptionDowngraded", chave: `sub-plan:${eid}`,
-          titulo: `${sobe ? "Upgrade" : "Downgrade"} de assinatura: ${formatarValor(antigo.centavos, antigo.moeda ?? novo.moeda)} → ${formatarValor(novo.centavos, novo.moeda)}/${per}`,
-          descricao: novo.plano ? `Plano: ${novo.plano}` : null, valorCentavos: novo.centavos, moeda: novo.moeda,
-          contexto: { valorAnteriorCentavos: antigo.centavos, valorNovoCentavos: novo.centavos },
+          ...b,
+          tipo: novo.centavos === antigo.centavos ? "SubscriptionUpdated" : sobe ? "SubscriptionUpgraded" : "SubscriptionDowngraded",
+          chave: `sub-plan:${eid}`,
+          titulo,
+          descricao: [
+            novo.plano ? `Plano: ${novo.plano}.` : null,
+            ...diferencasPorItem(antigo.itens, novo.itens, moeda),
+            `Alterado ${org.rotulo}${org.requestId ? ` (requisição ${org.requestId})` : ""}.`,
+            salto.anormal
+              ? `Salto anormal: a cobrança do próximo ciclo ${salto.fator ? `multiplicou por ${salto.fator.toFixed(1)}` : "passou de zero"} (+${formatarValor(salto.deltaCentavos, moeda)}). Confira antes da renovação.`
+              : null,
+          ].filter(Boolean).join(" ") || null,
+          valorCentavos: novo.centavos, moeda,
+          contexto: {
+            valorAnteriorCentavos: antigo.centavos, valorNovoCentavos: novo.centavos,
+            quantidadeAnterior: antigo.quantidade, quantidadeNova: novo.quantidade,
+            itensAnteriores: antigo.itens, itensNovos: novo.itens,
+            origem: org.origem, origemRotulo: org.rotulo,
+            stripeRequestId: org.requestId, stripeIdempotencyKey: org.idempotencyKey,
+            salto,
+          },
         };
       }
-      if (novo) {
-        return {
-          ...b, tipo: "SubscriptionUpdated", chave: `sub-items:${eid}`,
-          titulo: "Itens da assinatura alterados", descricao: novo.plano ? `Plano: ${novo.plano}` : null,
-          valorCentavos: novo.centavos, moeda: novo.moeda, contexto: {},
-        };
-      }
+      // Nada material mudou (renovação troca o objeto dos itens a cada ciclo):
+      // não é fato, e registrar virava uma linha "Itens da assinatura alterados"
+      // por renovação na timeline de todo cliente.
+      return null;
     }
     // 3) mudança de status
     if (typeof prev.status === "string" && typeof o.status === "string" && prev.status !== o.status) {

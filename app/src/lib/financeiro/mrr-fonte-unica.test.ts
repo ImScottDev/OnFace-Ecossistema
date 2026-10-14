@@ -17,6 +17,11 @@ import { organizacoes } from "@/lib/db/schema";
  *
  * Agora existe uma fonte canônica só. Este teste falha se alguém reintroduzir
  * a segunda base.
+ *
+ * A organização é SEMPRE a mais antiga (`orderBy(createdAt)`), que é o tenant
+ * de verdade: um `limit(1)` sem ordem pegava organização `qa-…` deixada por
+ * outro teste, onde tudo é zero, e o teste acusava "PABX zerado" sem PABX
+ * nenhum ter mudado.
  */
 test("Financeiro e Início leem o MESMO MRR", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");

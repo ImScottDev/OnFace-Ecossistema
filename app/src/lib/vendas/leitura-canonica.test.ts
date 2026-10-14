@@ -11,6 +11,11 @@
  *
  * Precisa de DATABASE_URL: é validação contra o banco real, como o resto da
  * validação deste refactor. Sem ela, pula.
+ *
+ * A organização é SEMPRE a mais antiga (`ORDER BY created_at`), que é o tenant
+ * de verdade: um `LIMIT 1` sem ordem pegava qualquer organização `qa-…` deixada
+ * por outro teste e o board vinha vazio — falha que fala de dado de QA, não do
+ * cutover de leitura.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -202,15 +207,24 @@ test("a linha do tempo lê as fontes que têm dado, e não repete o mesmo fato",
     `a pessoa tem ${p.n} comunicações no banco e a linha do tempo veio vazia`,
   );
 
-  // Mesmo fato por dois caminhos (atividade projetada + comunicação) aparecia
-  // duas vezes, com títulos diferentes, no mesmo minuto.
-  const porMinuto = new Map<string, number>();
+  // Mesmo fato por DOIS CAMINHOS (projeção da atividade + comunicação) aparecia
+  // duas vezes, com títulos diferentes, no mesmo minuto. O que se trava é a
+  // repetição ENTRE FONTES: a comunicação (`comunicacao_<canal>`) e a projeção
+  // do mesmo canal no mesmo minuto.
+  //
+  // Contar por minuto sem olhar a fonte acusava ligação repetida onde não há:
+  // o backfill tem duas chamadas perdidas de verdade para a mesma pessoa a 17
+  // segundos uma da outra, dois registros de origem diferentes, e o produto
+  // deve mostrar as duas.
+  const canalDaComunicacao = (e: { tipo: string }) =>
+    e.tipo.startsWith("comunicacao_") ? e.tipo.slice("comunicacao_".length) : null;
+  const repetidas: string[] = [];
   for (const e of tl) {
-    const chave = `${e.ocorridoEm.slice(0, 16)}|${String(e.titulo ?? e.tipo).slice(0, 8)}`;
-    porMinuto.set(chave, (porMinuto.get(chave) ?? 0) + 1);
+    const canal = canalDaComunicacao(e);
+    if (!canal) continue;
+    const minuto = e.ocorridoEm.slice(0, 16);
+    const gemeo = tl.find((o) => o.tipo === canal && o.ocorridoEm.slice(0, 16) === minuto);
+    if (gemeo) repetidas.push(`${minuto} ${canal}: comunicação ${e.id} e projeção ${gemeo.id}`);
   }
-  const ligacoesRepetidas = [...porMinuto.entries()].filter(
-    ([chave, n]) => n > 1 && chave.toLowerCase().includes("liga"),
-  );
-  assert.deepEqual(ligacoesRepetidas, [], "a mesma ligação aparece duas vezes na linha do tempo");
+  assert.deepEqual(repetidas, [], "o mesmo fato aparece pela comunicação e pela projeção");
 });

@@ -9,7 +9,7 @@
  */
 import { mudancasDoCliente, type MudancaDoCliente } from "./stripe-portal-retorno";
 import {
-  customerIdDe, descreverEventoFinanceiro, invoiceIdDe, pagamentoDoEvento, subscriptionIdDe,
+  customerIdDe, descreverEventoFinanceiro, formatarValor, invoiceIdDe, pagamentoDoEvento, subscriptionIdDe,
   type FatoFinanceiro, type PagamentoDoEvento,
 } from "./stripe-financeiro";
 
@@ -21,6 +21,8 @@ export type StripeEventPayload = {
   created?: number;
   api_version?: string | null;
   livemode?: boolean;
+  /** `{ id, idempotency_key }`: o que o Stripe informa sobre a origem da mudança. */
+  request?: { id?: string | null; idempotency_key?: string | null } | null;
   data?: { object?: Obj; previous_attributes?: Obj };
 };
 
@@ -124,6 +126,26 @@ export async function processarEventoStripe(
       }));
     }
   }
+  // Salto anormal na cobrança do próximo ciclo (quantidade digitada errada, Price
+  // trocado por engano, alteração que ninguém revisou). A regra mora em
+  // `saltoDeCobranca`; aqui só se entrega o aviso. Vai na MESMA notificação que a
+  // equipe já olha — nada de canal novo — porque um alerta num lugar que ninguém
+  // abriu é o mesmo que não alertar. Idempotente: `inserirNotificacaoUmaVez`
+  // segura a reentrega do Stripe e o reprocesso da fila.
+  if (fato && (fato.contexto.salto as { anormal?: boolean } | undefined)?.anormal) {
+    const s = fato.contexto.salto as { anteriorCentavos: number; novoCentavos: number; deltaCentavos: number; fator: number | null };
+    await passo("alerta de salto", () => deps.avisar({
+      organizacaoId: org, customerId, tipo: "cobranca_proximo_ciclo_anormal",
+      titulo: "Salto anormal na cobrança da assinatura",
+      mensagem: [
+        fato.titulo,
+        `A cobrança do próximo ciclo ${s.fator ? `multiplicou por ${s.fator.toFixed(1)}` : "saiu de zero"}: +${formatarValor(s.deltaCentavos, fato.moeda)}.`,
+        fato.descricao,
+        "Confira a assinatura no Stripe ANTES da renovação.",
+      ].filter(Boolean).join(" "),
+    }));
+  }
+
   // Cancelamento AGENDADO pelo cliente (portal ou Dashboard): é a última hora de reverter, então avisa na hora.
   if (fato?.tipo === "SubscriptionCancelScheduled") {
     await passo("aviso", () => deps.avisar({

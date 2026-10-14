@@ -9,6 +9,7 @@ import { dominioDoEmail } from "@/lib/vendas/identidade";
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
+import { respostasDoFormularioDoSite } from "@/lib/vendas/respostas-formulario";
 
 /**
  * Webhook do FORMULÁRIO do site institucional (site.callface.io).
@@ -60,6 +61,19 @@ function clean(v: unknown): string | null {
   return t.length ? t.slice(0, 300) : null;
 }
 
+/** Mescla as respostas no `campos_custom` do lead sem apagar o que já está lá
+ *  (qualificação, custom de Ajustes): a resposta do formulário manda no conflito. */
+async function guardarRespostas(leadId: string, respostas: Record<string, string>) {
+  if (Object.keys(respostas).length === 0) return;
+  await db
+    .update(leads)
+    .set({
+      camposCustom: sql`COALESCE(${leads.camposCustom}, '{}'::jsonb) || ${JSON.stringify(respostas)}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(eq(leads.id, leadId));
+}
+
 export async function POST(req: NextRequest) {
   const cors = corsHeaders(req.headers.get("origin"));
 
@@ -81,6 +95,7 @@ export async function POST(req: NextRequest) {
   const telefone = telefoneUsavel(clean(body.telefone));
   const cargo = clean(body.cargo);
   const empresa = clean(body.empresa);
+  const respostas = respostasDoFormularioDoSite(body);
 
   if (!nome) {
     return NextResponse.json(
@@ -177,6 +192,7 @@ export async function POST(req: NextRequest) {
         updatedAt: new Date(),
       })
       .where(eq(leads.id, existing.id));
+    await guardarRespostas(existing.id, respostas);
     await syncPessoaFromLead(existing.id); // F1/dual-write, best-effort
     await garantirAtividadePrimeiroContato({
       organizacaoId: org.id,
@@ -217,6 +233,10 @@ export async function POST(req: NextRequest) {
     // primeiro contato ligada ao responsável escolhido.
     responsavelId: null,
   }, ATOR_SISTEMA);
+
+  // As respostas vão para o lead depois de criado: `criarLead` não grava
+  // `campos_custom` (e pode devolver um lead já aberto, que também recebe).
+  await guardarRespostas(criado.leadId, respostas);
 
   // CUTOVER (fase 16): o mesmo fato no modelo canônico. `criarLead` acima já é
   // o motor canônico do CRM atual; esta chamada acrescenta aquisição, touchpoint

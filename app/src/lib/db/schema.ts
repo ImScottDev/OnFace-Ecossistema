@@ -4475,6 +4475,11 @@ export const callfaceAiExternalIdentities = pgTable(
     source: text("source"),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    // Migration 0105: nome da organização no SaaS, evidência do vínculo e como
+    // ele nasceu (`auto` pelo sinal determinístico, ou decidido por alguém).
+    orgNome: text("org_nome"),
+    evidencia: jsonb("evidencia"),
+    estado: text("estado").default("auto").notNull(),
   },
   (table) => [
     index("idx_callface_ai_ext_ident_entity").on(table.entityType, table.entityId),
@@ -4611,6 +4616,14 @@ export const callfaceAiReconciliationCandidates = pgTable(
     score: decimal("score", { precision: 5, scale: 4 }),
     status: text("status").default("pendente").notNull(), // pendente | aprovado | rejeitado
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    // Decisão e evidência do vínculo (migration 0105): quem decidiu, quando, por quê,
+    // e o nome da organização no SaaS, para a tela não precisar consultar o SaaS.
+    orgNome: text("org_nome"),
+    evidencia: jsonb("evidencia"),
+    razao: text("razao"),
+    decididoPor: uuid("decidido_por"),
+    decididoEm: timestamp("decidido_em", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("idx_callface_ai_recon_empresa").on(table.empresaId),
@@ -5266,3 +5279,240 @@ export const delegacoesAgente = pgTable("delegacoes_agente", {
 }, (table) => [
   index("idx_delegacoes_agente_ativas").on(table.organizacaoId, table.status, table.proximoToqueEm),
 ]);
+// ─── ESPELHO CALLFACE AI (parceiros, retrato do cliente, saúde), CALENDÁRIO E
+//     MEMÓRIA DO NEXO ──────────────────────────────────────────
+//
+// Declaradas aqui porque EXISTEM no banco (migrations 0105, 0110, 0116, 0118,
+// 0122 e 0123) e o Drizzle é o retrato do schema: tabela criada por migration
+// e não declarada é exatamente o drift que `db/drift-schema.test.ts` cobra —
+// a próxima coluna que uma migration adicionar nelas passa sem ninguém ver.
+//
+// A leitura e a escrita destas tabelas é por SQL cru nos módulos que as usam
+// (`lib/integrations/callface-ai/*`, `lib/calendario/volta*.ts`,
+// `lib/nexo/memoria.ts`); estas declarações são o retrato, não uma segunda
+// porta de acesso. FK não é declarada de propósito: o banco já as tem e
+// repeti-las aqui só criaria ordem de declaração para manter.
+
+export const callfaceAiTenantDetalhe = pgTable("callface_ai_tenant_detalhe", {
+  externalIdentityId: uuid("external_identity_id").primaryKey(),
+  orgNome: text("org_nome"),
+  orgCriadaEm: timestamp("org_criada_em", { withTimezone: true }),
+  orgDesativadaEm: timestamp("org_desativada_em", { withTimezone: true }),
+  licencas: jsonb("licencas").default([]).notNull(),
+  usuarios: jsonb("usuarios").default([]).notNull(),
+  campanhas: jsonb("campanhas").default([]).notNull(),
+  agentes: jsonb("agentes").default([]).notNull(),
+  integracoes: jsonb("integracoes").default([]).notNull(),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const callfaceAiUsoDiario = pgTable("callface_ai_uso_diario", {
+  externalIdentityId: uuid("external_identity_id").notNull(),
+  dia: date("dia").notNull(),
+  chamadas: integer("chamadas").default(0).notNull(),
+  finalizadas: integer("finalizadas").default(0).notNull(),
+  minutos: decimal("minutos", { precision: 12, scale: 2 }).default("0").notNull(),
+  usuariosAtivos: integer("usuarios_ativos").default(0).notNull(),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+  minutosDuracao: decimal("minutos_duracao", { precision: 12, scale: 2 }),
+  chamadasSemTarifa: integer("chamadas_sem_tarifa"),
+}, (t) => [primaryKey({ columns: [t.externalIdentityId, t.dia] })]);
+
+export const callfaceAiSaudeDiaria = pgTable("callface_ai_saude_diaria", {
+  externalIdentityId: uuid("external_identity_id").notNull(),
+  dia: date("dia").notNull(),
+  ultimaAtividadeEm: timestamp("ultima_atividade_em", { withTimezone: true }),
+  ultimaChamadaEm: timestamp("ultima_chamada_em", { withTimezone: true }),
+  ultimaCopilotoEm: timestamp("ultima_copiloto_em", { withTimezone: true }),
+  ultimaReuniaoEm: timestamp("ultima_reuniao_em", { withTimezone: true }),
+  diasSilencio: integer("dias_silencio"),
+  inicioEm: timestamp("inicio_em", { withTimezone: true }),
+  usuariosTotal: integer("usuarios_total"),
+  usuariosAtivos: integer("usuarios_ativos"),
+  licencasPagas: integer("licencas_pagas"),
+  licencasEmUso: integer("licencas_em_uso"),
+  minutosMes: decimal("minutos_mes", { precision: 12, scale: 2 }),
+  minutosContratadosMes: decimal("minutos_contratados_mes", { precision: 12, scale: 2 }),
+  minutos14d: decimal("minutos_14d", { precision: 12, scale: 2 }),
+  minutos14dAnteriores: decimal("minutos_14d_anteriores", { precision: 12, scale: 2 }),
+  copilotoSessoes30d: integer("copiloto_sessoes_30d"),
+  copilotoSugestoes30d: integer("copiloto_sugestoes_30d"),
+  copilotoUsadas30d: integer("copiloto_usadas_30d"),
+  assinaturasTotal: integer("assinaturas_total"),
+  assinaturasCanceladas: integer("assinaturas_canceladas"),
+  canceladaEm: timestamp("cancelada_em", { withTimezone: true }),
+  cancelamentoMotivo: text("cancelamento_motivo"),
+  licencaVenceEm: timestamp("licenca_vence_em", { withTimezone: true }),
+  licencasVencendo30d: integer("licencas_vencendo_30d"),
+  licencasVencendo60d: integer("licencas_vencendo_60d"),
+  semaforo: text("semaforo").default("sem_dado").notNull(),
+  motivos: jsonb("motivos").default([]).notNull(),
+  calculadoEm: timestamp("calculado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.externalIdentityId, t.dia] })]);
+
+export const callfaceAiPlanos = pgTable("callface_ai_planos", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  planId: text("plan_id").notNull(),
+  nome: text("nome"),
+  preco: decimal("preco", { precision: 12, scale: 2 }),
+  precoColuna: text("preco_coluna"),
+  stripePriceId: text("stripe_price_id"),
+  intervalo: text("intervalo"),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.planId] })]);
+
+export const callfaceAiOrgStripe = pgTable("callface_ai_org_stripe", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  externalOrganizationId: text("external_organization_id").notNull(),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeMigrado: boolean("stripe_migrado"),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.externalOrganizationId] })]);
+
+export const callfaceAiLicencas = pgTable("callface_ai_licencas", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  licenseId: text("license_id").notNull(),
+  externalOrganizationId: text("external_organization_id").notNull(),
+  planId: text("plan_id"),
+  motivo: text("motivo").notNull(),
+  inicioEm: timestamp("inicio_em", { withTimezone: true }),
+  revogadaEm: timestamp("revogada_em", { withTimezone: true }),
+  expiraEm: timestamp("expira_em", { withTimezone: true }),
+  atribuida: boolean("atribuida").default(false).notNull(),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.licenseId] })]);
+
+export const callfaceAiUsuarios = pgTable("callface_ai_usuarios", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  vinculoId: text("vinculo_id").notNull(),
+  externalOrganizationId: text("external_organization_id").notNull(),
+  papel: text("papel").notNull(),
+  aceite: text("aceite"),
+  convite: text("convite"),
+  desativadoEm: timestamp("desativado_em", { withTimezone: true }),
+  usuarioAtivo: boolean("usuario_ativo").default(true).notNull(),
+  crmUserId: text("crm_user_id"),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.vinculoId] })]);
+
+export const callfaceAiEquipes = pgTable("callface_ai_equipes", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  tipo: text("tipo").notNull(),
+  refId: text("ref_id").notNull(),
+  externalOrganizationId: text("external_organization_id").notNull(),
+  nome: text("nome"),
+  status: text("status"),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.tipo, t.refId] })]);
+
+export const callfaceAiReceptivos = pgTable("callface_ai_receptivos", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  didId: text("did_id").notNull(),
+  externalOrganizationId: text("external_organization_id").notNull(),
+  numero: text("numero").notNull(),
+  destinoTipo: text("destino_tipo"),
+  destinoId: text("destino_id"),
+  disponivel: boolean("disponivel"),
+  status: text("status"),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.didId] })]);
+
+export const callfaceAiParceiros = pgTable("callface_ai_parceiros", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  partnerId: text("partner_id").notNull(),
+  nome: text("nome"),
+  precoPorLicenca: decimal("preco_por_licenca", { precision: 12, scale: 2 }),
+  diaFaturamento: integer("dia_faturamento"),
+  prazoPagamentoDias: integer("prazo_pagamento_dias"),
+  dominio: text("dominio"),
+  dnsVerificado: boolean("dns_verificado"),
+  ativo: boolean("ativo"),
+  empresaId: uuid("empresa_id"),
+  vinculoOrigem: text("vinculo_origem"),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.partnerId] })]);
+
+export const callfaceAiParceiroLicencas = pgTable("callface_ai_parceiro_licencas", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  licenseId: text("license_id").notNull(),
+  partnerId: text("partner_id"),
+  externalOrganizationId: text("external_organization_id").notNull(),
+  orgNome: text("org_nome"),
+  inicioEm: timestamp("inicio_em", { withTimezone: true }),
+  revogadaEm: timestamp("revogada_em", { withTimezone: true }),
+  expiraEm: timestamp("expira_em", { withTimezone: true }),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.licenseId] })]);
+
+export const callfaceAiParceiroFaturas = pgTable("callface_ai_parceiro_faturas", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  invoiceId: text("invoice_id").notNull(),
+  partnerId: text("partner_id").notNull(),
+  status: text("status").notNull(),
+  competencia: date("competencia"),
+  cicloInicio: date("ciclo_inicio"),
+  cicloFim: date("ciclo_fim"),
+  vencimento: timestamp("vencimento", { withTimezone: true }),
+  pagaEm: timestamp("paga_em", { withTimezone: true }),
+  total: decimal("total", { precision: 14, scale: 2 }),
+  moeda: text("moeda"),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.invoiceId] })]);
+
+export const callfaceAiParceiroFaturaItens = pgTable("callface_ai_parceiro_fatura_itens", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  itemId: text("item_id").notNull(),
+  invoiceId: text("invoice_id").notNull(),
+  licenseId: text("license_id"),
+  externalOrganizationId: text("external_organization_id"),
+  diasAtivos: integer("dias_ativos"),
+  diasNoCiclo: integer("dias_no_ciclo"),
+  proporcional: boolean("proporcional"),
+  precoUnitario: decimal("preco_unitario", { precision: 12, scale: 2 }),
+  totalLinha: decimal("total_linha", { precision: 14, scale: 2 }),
+  licencaInicioEm: timestamp("licenca_inicio_em", { withTimezone: true }),
+  licencaRevogadaEm: timestamp("licenca_revogada_em", { withTimezone: true }),
+  coletadoEm: timestamp("coletado_em", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.itemId] })]);
+
+export const callfaceAiParceiroPendencias = pgTable("callface_ai_parceiro_pendencias", {
+  organizacaoId: uuid("organizacao_id").notNull(),
+  chave: text("chave").notNull(),
+  tipo: text("tipo").notNull(),
+  severidade: text("severidade").notNull(),
+  partnerId: text("partner_id"),
+  invoiceId: text("invoice_id"),
+  mensagem: text("mensagem").notNull(),
+  esperado: decimal("esperado", { precision: 14, scale: 2 }),
+  encontrado: decimal("encontrado", { precision: 14, scale: 2 }),
+  detectadaEm: timestamp("detectada_em", { withTimezone: true }).defaultNow().notNull(),
+  ultimaVistaEm: timestamp("ultima_vista_em", { withTimezone: true }).defaultNow().notNull(),
+  resolvidaEm: timestamp("resolvida_em", { withTimezone: true }),
+}, (t) => [primaryKey({ columns: [t.organizacaoId, t.chave] })]);
+
+export const calendarioAssinaturas = pgTable("calendario_assinaturas", {
+  contaId: uuid("conta_id").primaryKey(),
+  organizacaoId: uuid("organizacao_id").notNull(),
+  subscriptionId: text("subscription_id"),
+  expiraEm: timestamp("expira_em", { withTimezone: true }),
+  deltaLink: text("delta_link"),
+  deltaIniciadoEm: timestamp("delta_iniciado_em", { withTimezone: true }),
+  ultimoDeltaEm: timestamp("ultimo_delta_em", { withTimezone: true }),
+  ultimoErro: text("ultimo_erro"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const nexoMemoria = pgTable("nexo_memoria", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").notNull(),
+  usuarioId: uuid("usuario_id").notNull(),
+  titulo: text("titulo").notNull(),
+  resumo: text("resumo").notNull(),
+  corpo: text("corpo"),
+  ligaA: uuid("liga_a").array().default([]).notNull(),
+  conversaId: uuid("conversa_id"),
+  status: text("status").default("ativa").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+

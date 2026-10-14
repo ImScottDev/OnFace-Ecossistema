@@ -87,3 +87,33 @@ export function comIdentidadeDoFormulario(
     .map(([pergunta, resposta]) => ({ pergunta, resposta }));
   return [...topo, ...respostas];
 }
+
+/** Chaves do POST do formulário do site que NÃO são resposta: identidade que tem
+ *  coluna própria no lead (a lista já a mostra pela coluna, em
+ *  `comIdentidadeDoFormulario`), atribuição e o honeypot. */
+const CHAVE_NAO_E_RESPOSTA_DO_SITE = new Set([
+  "nome", "sobrenome", "email", "telefone", "phone", "whatsapp", "website",
+  "landingpage", "utmsource", "utmmedium", "utmcampaign", "utmterm", "utmcontent",
+  "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+  "gclid", "fbclid",
+]);
+
+/**
+ * O que a pessoa respondeu no formulário do site, no MESMO formato das outras
+ * portas (Meta e RD): chave → resposta, para gravar em `leads.campos_custom`.
+ * Com isso a ficha exibe pelo mesmo `respostasDoFormulario` e o mesmo
+ * componente, e o lead do site deixa de cair como "Sem formulário".
+ *
+ * A lista nasce das chaves enviadas, como no formulário da Meta: pergunta nova
+ * no site aparece sozinha na ficha, sem ninguém mexer no código.
+ */
+export function respostasDoFormularioDoSite(body: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [chave, valor] of Object.entries(body)) {
+    if (CHAVE_NAO_E_RESPOSTA_DO_SITE.has(chave.toLowerCase())) continue;
+    if (typeof valor !== "string") continue;
+    const t = valor.trim().slice(0, 300);
+    if (t) out[chave] = t;
+  }
+  return out;
+}

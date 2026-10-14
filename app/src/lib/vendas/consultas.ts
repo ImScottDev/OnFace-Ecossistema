@@ -1660,16 +1660,19 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
   // score entre eles. Os dois sumiam da empresa: moram no lead, não nela.
   const doLead = await db.execute<{
     id: string; nome: string | null; criado_em: string; lead_score: number | null;
-    campos_custom: Record<string, unknown> | null; meta_ad_id: string | null;
+    campos_custom: Record<string, unknown> | null; meta_ad_id: string | null; email: string | null;
   }>(sql`
-    SELECT l.id::text, NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
+    SELECT l.id::text, l.email, NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
            l.created_at::text AS criado_em, l.lead_score, l.campos_custom, l.meta_ad_id
       FROM leads l
      WHERE l.empresa_id = ${empresaId}::uuid AND l.organizacao_id = ${organizacaoId}::uuid
      ORDER BY l.created_at DESC LIMIT 50
   `);
+  // MESMA leitura da ficha do lead (com fallback do irmão): o lead que tem as
+  // respostas no irmão mostrava formulário na ficha e nada aqui.
+  const camposPorLead = await camposDeFormularioPorLead(organizacaoId, [...doLead]);
   const formularios = doLead
-    .map((l) => ({ leadId: l.id, nome: l.nome, criadoEm: l.criado_em, metaAdId: l.meta_ad_id, respostas: respostasDoFormulario(l.campos_custom) }))
+    .map((l) => ({ leadId: l.id, nome: l.nome, criadoEm: l.criado_em, metaAdId: l.meta_ad_id, respostas: respostasDoFormulario(camposPorLead.get(l.id) ?? l.campos_custom) }))
     .filter((f) => f.respostas.length > 0 || f.metaAdId);
   const scores = doLead.map((l) => l.lead_score ?? 0).filter((n) => n > 0);
 
@@ -1884,6 +1887,46 @@ export function camposComRespostasDoIrmao(
   return irmao ? { ...irmao, ...(proprios ?? {}) } : proprios;
 }
 
+/** Campos de formulário de um conjunto de leads, JÁ com o fallback do lead irmão.
+ *
+ *  Fonte única: quem mostra resposta de formulário (ficha do lead, Cliente 360,
+ *  qualquer superfície nova) lê por aqui, nunca `campos_custom` cru — senão o
+ *  mesmo lead mostra o formulário numa tela e "Sem formulário" na outra, que era
+ *  exatamente o que a empresa fazia. Uma consulta para o lote todo. */
+export async function camposDeFormularioPorLead(
+  organizacaoId: string,
+  leads: ReadonlyArray<{ id: string; email: string | null; campos_custom: Record<string, unknown> | null }>,
+): Promise<Map<string, Record<string, unknown> | null>> {
+  const chave = (email: string | null) => email?.trim().toLowerCase() || null;
+  // Só quem não tem resposta própria precisa de irmão.
+  const emails = [...new Set(
+    leads.filter((l) => respostasDoFormulario(l.campos_custom).length === 0)
+      .map((l) => chave(l.email)).filter((e): e is string => !!e),
+  )];
+
+  const porEmail = new Map<string, Array<Record<string, unknown> | null>>();
+  if (emails.length > 0) {
+    const r = await db.execute<{ email: string; campos_custom: Record<string, unknown> | null }>(sql`
+      SELECT lower(trim(l.email)) AS email, l.campos_custom
+        FROM leads l
+       WHERE l.organizacao_id = ${organizacaoId}::uuid
+         AND l.campos_custom IS NOT NULL
+         AND lower(trim(l.email)) IN (
+               SELECT lower(trim(x)) FROM jsonb_array_elements_text(${JSON.stringify(emails)}::jsonb) x)
+       ORDER BY l.created_at DESC`);
+    for (const linha of r) {
+      const lista = porEmail.get(linha.email) ?? [];
+      lista.push(linha.campos_custom);
+      porEmail.set(linha.email, lista);
+    }
+  }
+
+  return new Map(leads.map((l) => [
+    l.id,
+    camposComRespostasDoIrmao(l.campos_custom, porEmail.get(chave(l.email) ?? "") ?? []),
+  ]));
+}
+
 /** Campos custom ativos do lead, na ordem definida em Ajustes > Campos custom. */
 async function camposCustomDoLead(organizacaoId: string): Promise<Array<{ nome: string; label: string }>> {
   const r = await db.execute<{ nome: string; label: string }>(sql`
@@ -2033,14 +2076,9 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
      "qualificacao" (mesma regra de `boardPreVendas`). Antes o detalhe lia só o
      campo legado, que 3 leads locais tinham defasado: o cartão dizia Qualificado
      e a ficha dizia Em contato. */
-  const irmaos = l.email
-    ? await db.execute<{ campos_custom: Record<string, unknown> | null }>(sql`
-        SELECT campos_custom FROM leads
-         WHERE organizacao_id = ${organizacaoId}::uuid AND id <> ${leadId}::uuid
-           AND lower(email) = lower(${l.email}) AND campos_custom IS NOT NULL
-         ORDER BY created_at DESC LIMIT 5`)
-    : [];
-  const camposDoFormulario = camposComRespostasDoIrmao(l.campos_custom, [...irmaos].map((r) => r.campos_custom));
+  const camposDoFormulario = (await camposDeFormularioPorLead(organizacaoId, [
+    { id: l.id, email: l.email, campos_custom: l.campos_custom },
+  ])).get(l.id) ?? l.campos_custom;
 
   const etapa = (l.etapa === "qualificacao" ? "qualificacao" : (l.etapa_canonica ?? l.etapa ?? "novo")) as EstagioPreVendas;
 

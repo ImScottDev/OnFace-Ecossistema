@@ -23,7 +23,14 @@ const DB_URL = process.env.DATABASE_URL;
 const SCHEMA = path.resolve(import.meta.dirname, "schema.ts");
 
 /** Tabelas de controle interno, deliberadamente fora do Drizzle. */
-const FORA_DO_DRIZZLE = new Set(["_migracoes_aplicadas", "_carga_contagem_antes"]);
+const FORA_DO_DRIZZLE = new Set([
+  "_migracoes_aplicadas",
+  "_carga_contagem_antes",
+  // Backup do estado anterior tirado pela migration 0108 (aquisição convertida
+  // que seguia aberta). É registro de rollback: nenhum código lê, e declará-la
+  // no Drizzle a ofereceria como tabela do produto.
+  "_relacoes_conversao_20261013",
+]);
 
 /**
  * Colunas GERADAS pelo banco, que a aplicação nunca escreve.
@@ -35,11 +42,12 @@ const FORA_DO_DRIZZLE = new Set(["_migracoes_aplicadas", "_carga_contagem_antes"
  * A exceção é nomeada uma a uma de propósito: uma regra genérica do tipo
  * "ignore colunas de índice" deixaria passar drift de verdade.
  */
-const GERADAS_PELO_BANCO = new Set(["ai_knowledge_chunks.busca"]);
+const GERADAS_PELO_BANCO = new Set(["ai_knowledge_chunks.busca", "nexo_memoria.busca"]);
 
-/* Tabelas de trabalho da carga (marco zero, conferência, NFS-e) que sobram em banco local; produção não as tem.
+/* Tabelas de trabalho da carga (marco zero, conferência, NFS-e) e de limpeza de
+   QA que sobram em banco local; produção não as tem.
    Por prefixo, para a próxima carga não reabrir o teste. */
-const ESCRATCH = /^(_mz_|_carga_|tmp_)/;
+const ESCRATCH = /^(_mz_|_carga_|_qa_|tmp_)/;
 
 interface Declarada { tabela: string; colunas: Set<string> }
 

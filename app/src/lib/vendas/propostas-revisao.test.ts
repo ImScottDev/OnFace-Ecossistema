@@ -21,8 +21,13 @@ test("revisão: não duplica versão, mantém a anterior vigente e substitui só
   const ator = atorHumano(null as unknown as string);
   try {
     await db.execute(sql`UPDATE negocios SET service_family = 'PABX' WHERE id = ${alvo.negocio_id}::uuid`);
+    // O item precisa ser do catálogo OFICIAL: desde 14/10 `enviarProposta`
+    // recusa item sem Price/Product ativo e com `origem_catalogo = 'oficial_stripe'`
+    // (a mesma conta que o checkout faz depois do aceite). Fixture sem isso
+    // provava a revisão por um caminho que o produto não permite mais.
     const [{ id: servico }] = await db.execute<{ id: string }>(sql`
-      INSERT INTO servicos_catalogo (organizacao_id, nome, tipo, service_family) VALUES (${alvo.org}::uuid, ${marca}, 'avulso', 'PABX') RETURNING id::text`);
+      INSERT INTO servicos_catalogo (organizacao_id, nome, tipo, service_family, stripe_product_id, origem_catalogo)
+      VALUES (${alvo.org}::uuid, ${marca}, 'avulso', 'PABX', ${marca}, 'oficial_stripe') RETURNING id::text`);
     const [{ id: preco }] = await db.execute<{ id: string }>(sql`
       INSERT INTO catalogo_precos (organizacao_id, servico_catalogo_id, stripe_price_id, variacao, valor, tipo, revenue_nature)
       VALUES (${alvo.org}::uuid, ${servico}::uuid, ${marca}, 'Teste', 100, 'avulso', 'ONE_TIME') RETURNING id::text`);
