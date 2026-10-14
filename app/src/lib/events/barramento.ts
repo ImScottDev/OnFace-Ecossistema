@@ -85,8 +85,18 @@ export function montarEventoBarramento(evento: EventoOutbox, familia: string) {
     id_evento: evento.id,
     ocorrido_em: new Date(evento.createdAt).toISOString(),
     organizacao_id: evento.organizacaoId,
+    // De onde o fato veio. Sem isto, evento de homologação chega ao n8n
+    // indistinguível de venda real — e viraria e-mail e WhatsApp de verdade para
+    // o cliente. O n8n filtra por aqui.
+    ambiente: ambienteDoBarramento(),
     dados: dadosMinimos(evento),
   };
+}
+
+/** `producao` só na URL pública de produção; qualquer outra coisa é `homologacao`. */
+export function ambienteDoBarramento(): "producao" | "homologacao" {
+  const url = (process.env.NEXTAUTH_URL || process.env.AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "").toLowerCase();
+  return url.includes("//crm.callface.io") ? "producao" : "homologacao";
 }
 
 /** Família: payload primeiro; senão a da entidade (sempre filtrando pela organização da linha). */

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { publicarNoBarramento, montarEventoBarramento } from "./barramento";
+import { publicarNoBarramento, montarEventoBarramento, ambienteDoBarramento } from "./barramento";
 
 const evento = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -46,5 +46,21 @@ test("n8n fora (não-2xx) lança para o sweep tentar de novo", async () => {
   } finally {
     delete process.env.ONFACE_BARRAMENTO_URL;
     delete process.env.ONFACE_BARRAMENTO_TOKEN;
+  }
+});
+
+test("o evento diz de qual ambiente veio, para o n8n não tratar homologação como venda real", () => {
+  const antes = { ...process.env };
+  try {
+    process.env.NEXTAUTH_URL = "https://crm.callface.io";
+    assert.equal(ambienteDoBarramento(), "producao");
+
+    process.env.NEXTAUTH_URL = "https://dev.crm.callface.io";
+    assert.equal(ambienteDoBarramento(), "homologacao", "dev. não é produção, mesmo contendo o domínio");
+
+    delete process.env.NEXTAUTH_URL; delete process.env.AUTH_URL; delete process.env.NEXT_PUBLIC_APP_URL;
+    assert.equal(ambienteDoBarramento(), "homologacao", "sem URL, nunca se declara produção");
+  } finally {
+    process.env = antes;
   }
 });

@@ -34,7 +34,12 @@ export function registrarConsumidorEvento(eventType: string, handler: Handler): 
 
 const MAX_TENTATIVAS = 5;
 
-export async function processarEventosPendentes(limite = 50): Promise<{ processados: number; falhados: number }> {
+export async function processarEventosPendentes(limite = 50): Promise<{
+  processados: number;
+  falhados: number;
+  /** O que foi para o n8n nesta rodada — publicado, sem configuração, ou tipo sem mapa. */
+  barramento: { publicados: number; semConfiguracao: number; naoMapeados: string[] };
+}> {
   // Claim atômico por evento: múltiplos workers podem listar o mesmo pending,
   // mas só um muda seu estado para processing. Eventos presos em processing
   // há mais de 15 minutos voltam a ser elegíveis para recuperação.
@@ -51,6 +56,8 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
 
   let processados = 0;
   let falhados = 0;
+  /** O que o barramento (n8n) fez nesta rodada. Sem isto, publicar e pular são indistinguíveis. */
+  const barramento = { publicados: 0, semConfiguracao: 0, naoMapeados: new Set<string>() };
 
   for (const evento of pendentes) {
     const [claimed] = await db.update(eventOutbox)
@@ -132,7 +139,13 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
       let erroBarramento: Error | null = null;
       try {
         const { publicarNoBarramento } = await import("./barramento");
-        await publicarNoBarramento(evento);
+        const r = await publicarNoBarramento(evento);
+        // Sucesso e "pulei" eram IGUAIS: os dois silenciosos. Com 630 eventos
+        // `processed` em produção não havia como saber se algum chegou ao n8n —
+        // e ninguém vai confiar num barramento que não diz o que fez.
+        if (r.publicado) barramento.publicados++;
+        else if (r.motivo === "evento_nao_mapeado") barramento.naoMapeados.add(evento.eventType);
+        else barramento.semConfiguracao++;
       } catch (e) {
         console.error(`[outbox] publicação no barramento falhou para ${evento.eventType} (${evento.id}):`, e);
         erroBarramento = e instanceof Error ? e : new Error(String(e));
@@ -160,7 +173,17 @@ export async function processarEventosPendentes(limite = 50): Promise<{ processa
     }
   }
 
-  return { processados, falhados };
+  // Uma linha por rodada que mexeu em algo, e só então: log por evento em fila de
+  // 50 vira ruído que esconde o resto.
+  if (barramento.publicados || barramento.semConfiguracao || barramento.naoMapeados.size) {
+    console.log(
+      `[barramento] ${barramento.publicados} publicado(s) no n8n` +
+      (barramento.semConfiguracao ? ` · ${barramento.semConfiguracao} sem ONFACE_BARRAMENTO_URL/TOKEN neste ambiente` : "") +
+      (barramento.naoMapeados.size ? ` · não mapeado(s): ${[...barramento.naoMapeados].join(", ")}` : ""),
+    );
+  }
+
+  return { processados, falhados, barramento: { publicados: barramento.publicados, semConfiguracao: barramento.semConfiguracao, naoMapeados: [...barramento.naoMapeados] } };
 }
 
 async function registrarNoAuditLog(evento: EventoOutbox): Promise<void> {
