@@ -26,7 +26,7 @@
  */
 import { db } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
-import { assinaturas, assinaturaItens } from "@/lib/db/schema";
+import { assinaturas, assinaturaItens, checkouts } from "@/lib/db/schema";
 import { assinaturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { stripe } from "@/lib/integrations/stripe-assinatura";
 import {
@@ -36,7 +36,7 @@ import {
   type AcaoDeAssinatura,
 } from "@/lib/integrations/stripe-assinatura-acoes";
 import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
-import { registrarPagamentoDoGrupo, concluirGrupo } from "@/lib/crm/grupo-comercial";
+import { registrarPagamentoDoGrupo, concluirGrupo, vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
 
 /** O item da proposta, já validado contra o catálogo oficial pelo checkout. */
 export interface ItemDeExpansao {
@@ -218,42 +218,54 @@ export async function aplicarExpansaoNaAssinatura(opts: {
     }
   }
 
-  /* O link da fatura do pró-rata. É o que o cliente abre para pagar os itens
-     que acabaram de entrar na assinatura dele — com boleto (o caso comum
-     aqui) a cobrança não é instantânea: o Stripe emite o boleto e espera.
-     Sem este link o aceite terminaria sem nada para mostrar a quem comprou. */
+  /* A fatura do pró-rata: o link para o cliente pagar e o estado dela.
+     Com boleto — o meio da casa — a cobrança NÃO é instantânea: o Stripe
+     emite e espera. Era aqui que eu errava: dava o grupo por pago assim que a
+     fatura saía, e isso é ganho sem pagamento, contra a regra do projeto
+     ("aceite não é ganho"). Agora quem decide é o estado da fatura. */
   let faturaUrl: string | null = null;
+  let faturaPaga = false;
   if (faturaId) {
-    faturaUrl = await stripe<{ hosted_invoice_url?: string | null }>(`invoices/${faturaId}`)
-      .then((f) => f.hosted_invoice_url ?? null)
-      .catch((e) => { console.error("[expansao] não consegui ler o link da fatura:", e); return null; });
+    const f = await stripe<{ hosted_invoice_url?: string | null; status?: string }>(`invoices/${faturaId}`)
+      .catch((e) => { console.error("[expansao] não consegui ler a fatura do pró-rata:", e); return null; });
+    faturaUrl = f?.hosted_invoice_url ?? null;
+    faturaPaga = f?.status === "paid";
   }
 
-  /* Chegou aqui: o Stripe aceitou com `error_if_incomplete`, ou seja, o
-     proporcional foi cobrado de verdade. Então o grupo fecha pelas portas de
-     sempre — `concluirGrupo` é quem publica FulfillmentGroupCompleted, e é
-     esse evento que faz o serviço canônico do cliente crescer. Sem isto a
-     cobrança aconteceria e a entrega ficaria parada. */
+  /* A fatura vira o pagamento DESTE grupo, registrada em `checkouts`.
+     Não é burocracia: é por uma linha de `checkouts` que o webhook do Stripe
+     encontra o negócio quando o cliente paga (`findCheckoutForBillingObject`
+     procura por `stripe_invoice_id`). Sem ela, o pagamento do upgrade chegaria
+     como órfão e o Ganho nunca sairia — e a tela não teria link nenhum para
+     mostrar a quem comprou. */
+  if (faturaUrl || faturaId) {
+    const [linha] = await db.insert(checkouts).values({
+      organizacaoId: opts.organizacaoId,
+      propostaId: opts.propostaId,
+      negocioId: opts.negocioId,
+      grupoComercialId: opts.grupoId,
+      origem: "automatico_pos_aceite",
+      criadoPorId: opts.usuarioId ?? null,
+      stripeSubscriptionId: assinatura.subscriptionId,
+      stripeInvoiceId: faturaId,
+      stripeCheckoutUrl: faturaUrl,
+      status: faturaPaga ? "pago" : "aberto",
+      paymentStatus: faturaPaga ? "confirmado" : "pendente",
+      ...(faturaPaga ? { paidAt: new Date() } : {}),
+    }).returning({ id: checkouts.id });
+    if (linha) await vincularCheckoutAoGrupo(opts.grupoId, linha.id);
+  }
+
+  /* Pago de verdade (cartão, que debita na hora): fecha o grupo pelas portas
+     de sempre, e `concluirGrupo` publica o evento que faz o serviço do cliente
+     crescer. Em aberto (boleto): nada se conclui aqui — quem conclui é o
+     webhook `invoice.paid`, pelo caminho que todo pagamento já percorre. */
+  if (!faturaPaga) {
+    await registrarPagamentoDoGrupo(opts.grupoId, "pendente");
+    return { ok: true, subscriptionId: assinatura.subscriptionId, itensAplicados: aplicados, faturaId, faturaUrl };
+  }
   await registrarPagamentoDoGrupo(opts.grupoId, "confirmado");
   await concluirGrupo(opts.grupoId);
-
-  /* Ganho: a assinatura alterada É a evidência. `stripe_subscription` já é um
-     tipo aceito pela política — não é exceção criada para a expansão, é o
-     mesmo que o webhook grava quando um checkout vira assinatura. Sem isto o
-     ganho nunca sairia: o caminho da alteração não cria `checkouts`, e é por
-     uma linha de `checkouts` que o webhook encontra o negócio. */
-  if (opts.negocioId) {
-    await registrarEvidencia({
-      negocioId: opts.negocioId,
-      organizacaoId: opts.organizacaoId,
-      tipo: "stripe_subscription",
-      sourceRef: `expansao:${opts.grupoId}`,
-      metadata: { subscriptionId: assinatura.subscriptionId, faturaId, faturaUrl, itens: aplicados, propostaId: opts.propostaId },
-      grupoComercialId: opts.grupoId,
-    }).catch((e) => console.error("[expansao] falha ao registrar evidência:", e));
-    await marcarNegocioGanhoSeAindaNao(opts.negocioId, opts.organizacaoId)
-      .catch((e) => console.error("[expansao] falha ao marcar ganho:", e));
-  }
 
   return { ok: true, subscriptionId: assinatura.subscriptionId, itensAplicados: aplicados, faturaId, faturaUrl };
 }
