@@ -482,6 +482,14 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
         await tx
           .update(assinaturas)
           .set({
+            /* O vínculo que FALTA, nunca o que já existe. O update não mexia em
+               lead/empresa, então assinatura que nasceu antes de o cliente ter
+               empresa ficava órfã para sempre — medido em produção em
+               15/10/2026: 13 assinaturas ativas, R$ 3.538,51 de MRR, cujo lead
+               JÁ tem empresa. COALESCE porque corrigir à mão (mesclar empresa,
+               reatribuir) é decisão humana que o sync não pode desfazer. */
+            ...(lead ? { leadId: sql`COALESCE(${assinaturas.leadId}, ${lead.id}::uuid)` } : {}),
+            ...(lead?.empresaId ? { empresaId: sql`COALESCE(${assinaturas.empresaId}, ${lead.empresaId}::uuid)` } : {}),
             status: s.status,
             mrr: String(mrr),
             canceladaEm,
