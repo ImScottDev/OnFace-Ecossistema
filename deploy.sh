@@ -173,7 +173,7 @@ t0=\$(date +%s)
 trap 'sudo docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 
 # A versão vai no .env ANTES de tudo: o compose lê IMAGE_TAG dele (sudo não
-# repassa o ambiente), e um `up` manual depois não troca de versão.
+# repassa o ambiente), e um 'up' manual depois não troca de versão.
 sudo cp -p .env .env.bak-deploy
 sudo sed -i '/^IMAGE_TAG=/d' .env
 echo "IMAGE_TAG=$REV" | sudo tee -a .env >/dev/null
@@ -240,7 +240,7 @@ for i in \$(seq 1 45); do
     # O worker carrega os jobs agendados e o sweep do outbox: se ele ficar
     # unhealthy, o pós-venda congela em silêncio.
     etapa "✓ app saudável · worker: \$(sudo docker inspect --format='{{.State.Health.Status}}' $CONTAINER_WORKER 2>/dev/null || echo '?')"
-    # Só camadas órfãs. Nunca `-a`: a caixa é dividida com produção.
+    # Só camadas órfãs. Nunca '-a': a caixa é dividida com produção.
     sudo docker image prune -f >/dev/null 2>&1 || true
     # O cache de build nunca era podado e chegou a 9,4 GB com a caixa em 96%
     # (14/10/2026). As imagens vêm prontas do GHCR, então aqui ele só ocupa disco.
