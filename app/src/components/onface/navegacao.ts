@@ -118,6 +118,70 @@ export const NAVEGACAO: AreaNav[] = [
   },
 ];
 
+/**
+ * O traço do ícone de cada área, como a casca desenhada o pinta.
+ *
+ * `CascaDesenho` (gerado) pinta `<path d={...}/>` com UM traço por área, e
+ * `ItemNav.icon` é componente Lucide — não serve ali. Os sete traços abaixo são
+ * os do handoff, copiados da árvore que estava cravada em `CascaLiga.arvore()`
+ * (Atendimento vem do Acesso rápido do mesmo arquivo, porque a árvore cravada
+ * nem listava a área). Só as áreas têm ícone no menu; os filhos não.
+ */
+const TRACO_DA_AREA: Record<string, string> = {
+  "Início": "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
+  "Atendimento": "M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z",
+  "Vendas": "M16 20V6a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v14M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z",
+  "Operação": "m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8",
+  "Clientes": "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.9",
+  "Automações": "M4 14h7l-1 7 10-11h-7l1-7z",
+  "Insights": "M3 3v18h18M18 17V9M13 17V5M8 17v-3",
+};
+
+/** Área do menu na forma que a casca desenhada consome. */
+export type AreaDoMenu = {
+  label: string;
+  /** Traço do ícone (`<path d>`), já resolvido para o desenho. */
+  d: string;
+  href: string;
+  /** Rótulo de seção acima da área, em caixa alta — "" quando não abre bloco. */
+  grupo: string;
+  pendente: boolean;
+  /** Área fechada neste ambiente (AREAS_EM_BREVE): sem submenu e sem clique. */
+  emBreve?: boolean;
+  filhos: Array<{ label: string; href: string; pendente: boolean }>;
+};
+
+/**
+ * A árvore que a casca RENDERIZA, montada da árvore declarada.
+ *
+ * Até 14/10/2026 existiam duas: esta declaração e uma segunda cravada à mão em
+ * `CascaLiga.arvore()` (arquivo gerado). Quem via o menu via a cravada; quem
+ * verificava — `checar-rotas-onface.ts` e `pendente-diz-a-verdade.test.ts` —
+ * lia esta. O menu mentia nas duas direções e os dois testes passavam verdes:
+ * `/chamados`, `/clientes/risco` e `/clientes/uso` não apareciam, três telas
+ * prontas apareciam como pendentes e a única pendente de verdade não.
+ *
+ * `CascaProto.arvore()` substitui `super.arvore()` por esta função. Fonte única:
+ * mexer no menu é mexer em `NAVEGACAO`, e o teste valida o que é renderizado.
+ *
+ * @param labelsFechados rótulos de área fechados no ambiente (`labelsEmBreve`).
+ */
+export function arvoreDoMenu(labelsFechados: string[] = []): AreaDoMenu[] {
+  return NAVEGACAO.map((area) => ({
+    label: area.label,
+    d: TRACO_DA_AREA[area.label] ?? "",
+    href: area.href,
+    grupo: area.secao?.toUpperCase() ?? "",
+    pendente: !!area.pendente,
+    ...(labelsFechados.includes(area.label) ? { emBreve: true } : {}),
+    filhos: (area.itens ?? []).map((i) => ({
+      label: i.label,
+      href: i.href,
+      pendente: !!i.pendente,
+    })),
+  }));
+}
+
 /** Linha de apoio de cada destino, para a barra do topo.
  *
  * Mora aqui, e não dentro de cada página, porque quem desenha o cabeçalho é a

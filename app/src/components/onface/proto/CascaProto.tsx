@@ -17,7 +17,7 @@ import * as React from "react";
 import { signOut } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { trilhaAtual } from "../navegacao";
+import { arvoreDoMenu, trilhaAtual } from "../navegacao";
 import { CascaLiga } from "./CascaLiga";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { PecasHost } from "./pecas-host";
@@ -75,10 +75,23 @@ function quando(iso: string): string {
 }
 
 class CascaLigada extends CascaLiga {
-  /* "Em breve" no menu segue AREAS_EM_BREVE do ambiente (lida no layout). */
+  /* O menu do produto sai de `NAVEGACAO`, não da árvore cravada em
+     `CascaLiga.arvore()` (gerada, de 22/09). As duas divergiram: a cravada não
+     tinha Atendimento, Chamados, Risco / Churn nem Uso da Callface AI, marcava
+     três telas prontas como pendentes e não marcava a única pendente de
+     verdade. A árvore da Liga não é mais consultada — ver `arvoreDoMenu`.
+     "Em breve" segue AREAS_EM_BREVE do ambiente (lida no layout). */
   arvore() {
-    const labels = labelsEmBreve(this.props.areasEmBreve ?? []);
-    return super.arvore().map((m: any) => (labels.includes(m.label) ? { ...m, emBreve: true } : m));
+    return arvoreDoMenu(labelsEmBreve(this.props.areasEmBreve ?? []));
+  }
+
+  /* Área acesa no menu. A da Liga casa prefixo contra os `href` da árvore, o
+     que não cobre rota herdada (`/empresas`, `/leads`, `/financeiro`…) nem
+     página de nome próprio (`/vendas`). `trilhaAtual` é a mesma fonte do
+     título da barra do topo: menu e cabeçalho nunca divergem. */
+  area(rota: string): string | null {
+    const t = trilhaAtual(rota);
+    return t ? (t.area ?? t.item) : null;
   }
 
   constructor(props: any) {
