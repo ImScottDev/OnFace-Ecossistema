@@ -29,9 +29,9 @@ import { createHash } from "node:crypto";
 import { db } from "@/lib/db";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { moverEtapa as moverEtapaPreVendas } from "@/lib/vendas/pre-vendas";
-import { ETAPAS_PRE_VENDAS, type EtapaPreVendas, type Ator } from "@/lib/vendas/dominio";
-import { aiAgentVersions, cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels } from "@/lib/db/schema";
-import { eq, and, lte, inArray, desc, or, isNull, lt, sql } from "drizzle-orm";
+import { ETAPAS_PRE_VENDAS, ETAPAS_FECHADAS, type EtapaPreVendas, type Ator } from "@/lib/vendas/dominio";
+import { aiAgentVersions, cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels, empresas, pessoas, notificacoes } from "@/lib/db/schema";
+import { eq, and, lte, inArray, notInArray, desc, or, isNull, lt, sql } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
@@ -223,6 +223,32 @@ async function resolverContatoDaEntidade(
 }
 
 /**
+ * Substituição de `{{chave}}` — UMA função para template, WhatsApp e e-mail.
+ *
+ * Só o template substituía. Os adapters de texto livre mandavam
+ * `config.mensagem` cru, e por isso os 10 passos de e-mail publicados começam
+ * com "Olá, tudo bem?" sem o nome de ninguém: escrever `{{nome}}` ali não
+ * adiantaria. Com a substituição na saída dos três, escrever passa a valer.
+ *
+ * `primeiro_nome` e `empresa` são derivados: não precisam estar em `vars`.
+ * Chave desconhecida fica literal (era o comportamento do template) — melhor
+ * ver `{{cargo}}` na mensagem do que apagar um dado em silêncio.
+ */
+export function aplicarVariaveis(texto: string, vars: Record<string, unknown>): string {
+  const nome = String(vars.nome ?? "").trim();
+  const todas: Record<string, unknown> = {
+    ...vars,
+    nome,
+    primeiro_nome: vars.primeiro_nome ?? nome.split(/\s+/)[0] ?? "",
+    empresa: vars.empresa ?? vars.empresa_nome ?? "",
+  };
+  return texto.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (bruto, chave: string) => {
+    const valor = todas[chave];
+    return typeof valor === "string" || typeof valor === "number" ? String(valor) : bruto;
+  });
+}
+
+/**
  * Adapter real — envia WhatsApp de texto livre. `step.config.mensagem` é obrigatório.
  *
  * O número que envia é o ESCOLHIDO (`config.sessao_id` do nó, senão o do
@@ -232,8 +258,9 @@ async function resolverContatoDaEntidade(
  * o que a automação mandou).
  */
 registrarAdapter("whatsapp", async (ctx) => {
-  const mensagem = (ctx.step.config?.mensagem as string | undefined)?.trim();
-  if (!mensagem) return { sucesso: false, erro: 'step de ação "whatsapp" sem config.mensagem' };
+  const bruta = (ctx.step.config?.mensagem as string | undefined)?.trim();
+  if (!bruta) return { sucesso: false, erro: 'step de ação "whatsapp" sem config.mensagem' };
+  const mensagem = aplicarVariaveis(bruta, ctx.vars);
   const telefoneAvulso = ((ctx.vars.telefone as string | null | undefined) ?? "").replace(/\D/g, "") || null;
   const preferida = (ctx.step.config?.sessao_id as string | undefined) || null;
   // A BullMQ recusa jobId com ":" (salvo o formato antigo de 3 partes).
@@ -256,9 +283,10 @@ registrarAdapter("whatsapp", async (ctx) => {
 
 /** Adapter real — envia e-mail via Resend (mesmo provider do motor de automação). `step.config.mensagem` é obrigatório; `step.config.assunto` é opcional. */
 registrarAdapter("email", async (ctx) => {
-  const mensagem = (ctx.step.config?.mensagem as string | undefined)?.trim();
-  if (!mensagem) return { sucesso: false, erro: 'step de ação "email" sem config.mensagem' };
-  const assunto = (ctx.step.config?.assunto as string | undefined)?.trim() || "Callface";
+  const bruta = (ctx.step.config?.mensagem as string | undefined)?.trim();
+  if (!bruta) return { sucesso: false, erro: 'step de ação "email" sem config.mensagem' };
+  const mensagem = aplicarVariaveis(bruta, ctx.vars);
+  const assunto = aplicarVariaveis((ctx.step.config?.assunto as string | undefined)?.trim() || "Callface", ctx.vars);
   let email = (ctx.vars.email as string | null | undefined) ?? null;
   if (!email) {
     email = (await resolverContatoDaEntidade(ctx.entityType, ctx.entityId, ctx.organizacaoId)).email;
@@ -297,8 +325,18 @@ export async function escolherSessao(
     else if (opts.entidade.tipo === "contato") responsavelId = (await db.select({ r: contatos.responsavelId }).from(contatos).where(eq(contatos.id, opts.entidade.id)).limit(1))[0]?.r ?? null;
   }
   const doResponsavel = responsavelId ? conectadas.filter((x) => x.usuarioId === responsavelId) : [];
-  const escolhida = doResponsavel.find((x) => x.isDefault) ?? doResponsavel[0] ?? conectadas.find((x) => x.isDefault) ?? conectadas[0];
-  return { id: escolhida.id };
+  const escolhida = doResponsavel.find((x) => x.isDefault) ?? doResponsavel[0] ?? conectadas.find((x) => x.isDefault);
+  // Sem critério, `conectadas[0]` era a primeira linha de um SELECT sem ORDER
+  // BY: a organização tem 3 números conectados e `is_default` em nenhum, então
+  // a mensagem saía por um número sorteado. Erro na tela de Execuções é melhor
+  // que o cliente receber de quem não devia.
+  if (!escolhida && conectadas.length > 1) throw new SessaoAmbiguaError(`há ${conectadas.length} números de WhatsApp conectados e nada decide qual usar: escolha o número no passo, defina o responsável do registro ou marque um número como padrão`);
+  return { id: (escolhida ?? conectadas[0]).id };
+}
+
+/** Mais de um número conectado e nenhum critério: o motor para em vez de sortear. */
+export class SessaoAmbiguaError extends Error {
+  override name = "SessaoAmbiguaError";
 }
 
 /** Número configurado no agente (versão publicada). Sem agente explícito ou sem número no agente: null (vale a ordem de `escolherSessao`). */
@@ -381,10 +419,9 @@ async function enviarWhatsappTemplate(args: { organizacaoId: string; contato: ty
     .limit(1);
   if (!template) return { sucesso: false, erro: "template não encontrado ou inativo" };
 
-  let texto = template.conteudo.replace(/\{\{nome\}\}/g, args.contato.nome || "");
-  for (const [chave, valor] of Object.entries(args.vars)) {
-    if (typeof valor === "string" || typeof valor === "number") texto = texto.replace(new RegExp(`\\{\\{${chave}\\}\\}`, "g"), String(valor));
-  }
+  // O nome do contato continua vencendo o do snapshot: é o dado do número que
+  // vai receber a mensagem.
+  const texto = aplicarVariaveis(template.conteudo, { ...args.vars, nome: args.contato.nome || args.vars.nome || "" });
 
   return enfileirarWhatsapp({ contato: args.contato, texto, templateNome: template.nome });
 }
@@ -488,7 +525,7 @@ function actionKey(ctx: CadenceActionContext): string {
   return `cadence:${ctx.enrollmentId}:${ctx.step.id}:${ctx.attempt}`;
 }
 
-async function entityLinks(ctx: CadenceActionContext): Promise<{ leadId: string | null; negocioId: string | null; empresaId: string | null; servicoId: string | null }> {
+async function entityLinks(ctx: Pick<CadenceActionContext, "organizacaoId" | "entityType" | "entityId">): Promise<{ leadId: string | null; negocioId: string | null; empresaId: string | null; servicoId: string | null }> {
   if (ctx.entityType === "lead") {
     const [row] = await db.select({ empresaId: leads.empresaId }).from(leads).where(and(eq(leads.id, ctx.entityId), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
     return { leadId: ctx.entityId, negocioId: null, empresaId: row?.empresaId ?? null, servicoId: null };
@@ -753,6 +790,15 @@ export async function iniciarCadencia(opts: {
     .where(and(eq(cadenceDefinitions.id, opts.cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, opts.organizacaoId))).limit(1);
   if (!definicao || !definicao.ativo) return null;
 
+  // Tipo errado nunca matricula. Os passos foram pensados para UM tipo de
+  // registro e leem campos dele: um lead numa cadência de negócio executa um
+  // grafo que não é o dele. `acoes-em-massa` inscreve com "lead" fixo e foi
+  // assim que aconteceu em produção. A guarda fica na porta porque são 10
+  // chamadores — `prospeccao.exigirCadenciaValida` já tinha a sua cópia.
+  if (definicao.entityType !== opts.entityType) {
+    throw new Error(`a cadência "${definicao.nome}" é de ${definicao.entityType} e este registro é ${opts.entityType}`);
+  }
+
   const [pointer] = await db.select().from(cadenceDefinitionPointers)
     .where(and(eq(cadenceDefinitionPointers.cadenceDefinitionId, definicao.id), eq(cadenceDefinitionPointers.organizacaoId, opts.organizacaoId)))
     .limit(1);
@@ -806,7 +852,7 @@ export async function iniciarCadencia(opts: {
 /** Atualiza fatos vivos usados pelas condições. O snapshot inicial continua em
  * `vars`, mas status/tags/resposta são relidos antes de cada passo. */
 async function hidratarVars(enrollment: typeof cadenceEnrollments.$inferSelect): Promise<Record<string, unknown>> {
-  const vars = { ...((enrollment.vars as Record<string, unknown>) ?? {}), entity_type: enrollment.entityType, has_replied: Boolean(enrollment.lastInboundAt) };
+  const vars: Record<string, unknown> = { ...((enrollment.vars as Record<string, unknown>) ?? {}), entity_type: enrollment.entityType, has_replied: Boolean(enrollment.lastInboundAt) };
   if (enrollment.entityType === "lead") {
     const [lead, tagsRows] = await Promise.all([
       // `crm2PreVendasStage` é o retrato do De/Para legado; depois de uma
@@ -824,13 +870,93 @@ async function hidratarVars(enrollment: typeof cadenceEnrollments.$inferSelect):
     ));
     Object.assign(vars, { tag: tagsRows.map((row) => row.nome), tags: tagsRows.map((row) => row.nome) });
   }
+  // `nome` e `empresa` saem daqui para que `{{nome}}`/`{{primeiro_nome}}`/
+  // `{{empresa}}` funcionem em qualquer passo, não só no template: antes só o
+  // caminho de Prospecção punha `empresa` no snapshot inicial, e `nome` nenhum.
+  const [contato, links] = await Promise.all([
+    resolverContatoDaEntidade(enrollment.entityType, enrollment.entityId, enrollment.organizacaoId),
+    entityLinks(enrollment),
+  ]);
+  if (contato.nome) vars.nome = contato.nome;
+  if (contato.email && !vars.email) vars.email = contato.email;
+  if (contato.telefone && !vars.telefone) vars.telefone = contato.telefone;
+  if (!vars.empresa && links.empresaId) {
+    const [empresa] = await db.select({ nome: empresas.nome }).from(empresas).where(and(eq(empresas.id, links.empresaId), eq(empresas.organizacaoId, enrollment.organizacaoId))).limit(1);
+    if (empresa?.nome) vars.empresa = empresa.nome;
+  }
   return vars;
+}
+
+/**
+ * Negócios e oportunidades ABERTOS do lead.
+ *
+ * `registrarRespostaEmCadencias` só olhava `entity_id IN (contato, lead)`:
+ * inscrição de `negocio`/`oportunidade` nunca parava quando o lead respondia —
+ * e a cadência pós-proposta é justamente de negócio, então o cliente que
+ * respondia continuava recebendo a régua.
+ */
+async function entidadesRelacionadasDoLead(organizacaoId: string, leadId: string): Promise<string[]> {
+  const [negs, pessoasDoLead] = await Promise.all([
+    db.select({ id: negocios.id }).from(negocios).where(and(
+      eq(negocios.organizacaoId, organizacaoId), eq(negocios.leadId, leadId), notInArray(negocios.status, [...ETAPAS_FECHADAS]),
+    )),
+    db.select({ id: pessoas.id }).from(pessoas).where(and(
+      eq(pessoas.organizacaoId, organizacaoId), eq(pessoas.leadIdLegado, leadId),
+    )),
+  ]);
+  const negocioIds = negs.map((n) => n.id);
+  const pessoaIds = pessoasDoLead.map((p) => p.id);
+  // Oportunidade liga ao lead por `pessoa_id` (canônico) ou por
+  // `negocio_id_legado` (ponte da migração): as duas pontes valem.
+  const vinculo = [
+    ...(negocioIds.length ? [inArray(oportunidades.negocioIdLegado, negocioIds)] : []),
+    ...(pessoaIds.length ? [inArray(oportunidades.pessoaId, pessoaIds)] : []),
+  ];
+  const opps = vinculo.length
+    ? await db.select({ id: oportunidades.id }).from(oportunidades).where(and(
+        eq(oportunidades.organizacaoId, organizacaoId), or(...vinculo), notInArray(oportunidades.stage, [...ETAPAS_FECHADAS]),
+      ))
+    : [];
+  return [...negocioIds, ...opps.map((o) => o.id)];
+}
+
+/**
+ * Aviso ao responsável do lead quando a cadência muda de estado sozinha.
+ *
+ * Pausou por resposta, esgotou e falhou eram transições silenciosas: ninguém
+ * ficava sabendo que havia um lead quente parado, ou uma régua morta.
+ *
+ * Idempotente pela chave única de `cadence_enrollment_events` — a reentrega
+ * não insere o evento e, portanto, não reavisa. É o mesmo cadeado que o motor
+ * já usa para não repetir envio.
+ */
+async function avisarResponsavel(
+  enrollment: typeof cadenceEnrollments.$inferSelect,
+  motivo: "pausado_por_resposta" | "esgotada" | "falhou",
+  titulo: string,
+  mensagem: string,
+): Promise<void> {
+  const [marca] = await db.insert(cadenceEnrollmentEvents).values({
+    enrollmentId: enrollment.id, stepId: enrollment.currentStepId ?? "-", status: "responsavel_avisado",
+    resultado: { motivo }, idempotencyKey: `aviso:${enrollment.id}:${motivo}`,
+  }).onConflictDoNothing().returning({ id: cadenceEnrollmentEvents.id });
+  if (!marca) return;
+  const { leadId } = await entityLinks(enrollment);
+  if (!leadId) return;
+  const [lead] = await db.select({ nome: leads.nome, responsavelId: leads.responsavelId }).from(leads)
+    .where(and(eq(leads.id, leadId), eq(leads.organizacaoId, enrollment.organizacaoId))).limit(1);
+  if (!lead?.responsavelId) return;
+  await db.insert(notificacoes).values({
+    usuarioId: lead.responsavelId, tipo: "cadencia",
+    titulo, mensagem: `${lead.nome ?? "Lead"}: ${mensagem}`, link: `/pre-vendas/${leadId}`,
+  });
 }
 
 /** Uma resposta recebida encerra ou acorda follow-ups conforme a política da
  * versão pinada. É chamada depois que a mensagem inbound foi persistida. */
 export async function registrarRespostaEmCadencias(input: { organizacaoId: string; contatoId: string; leadId?: string | null; recebidaEm?: Date }): Promise<number> {
   const ids = [input.contatoId, input.leadId].filter((id): id is string => Boolean(id));
+  if (input.leadId) ids.push(...await entidadesRelacionadasDoLead(input.organizacaoId, input.leadId));
   if (!ids.length) return 0;
   const rows = await db.select().from(cadenceEnrollments).where(and(
     eq(cadenceEnrollments.organizacaoId, input.organizacaoId),
@@ -855,6 +981,7 @@ export async function registrarRespostaEmCadencias(input: { organizacaoId: strin
       // data, cada reentrega virava um evento novo. Uma resposta sem data é "a
       // resposta que pausou esta inscrição", e a inscrição só pausa uma vez.
       idempotencyKey: `reply:${row.id}:${input.recebidaEm?.toISOString() ?? "sem-data"}` }).onConflictDoNothing();
+    if (pause) await avisarResponsavel(row, "pausado_por_resposta", "Lead respondeu — cadência pausada", "respondeu e a cadência parou. A conversa é sua agora.");
     atualizados++;
   }
   return atualizados;
@@ -998,6 +1125,7 @@ export async function avancarEnrollment(enrollmentId: string): Promise<void> {
     }
     await db.update(cadenceEnrollmentEvents).set({ status: "erro", resultado: { erro: resultado.erro } }).where(eq(cadenceEnrollmentEvents.id, execution.id));
     await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+    await avisarResponsavel(enrollment, "falhou", "Cadência falhou", `a cadência parou no passo "${step.id}": ${resultado.erro ?? "erro sem detalhe"}`);
     return;
   }
 
@@ -1014,7 +1142,8 @@ async function avancarParaProximoStep(enrollmentId: string, steps: CadenceStep[]
     : proximoStep(steps, stepAtual.id);
 
   if (!proximo) {
-    await db.update(cadenceEnrollments).set({ status: "completed", completedAt: new Date(), vars, attempt: 0, claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+    const [concluido] = await db.update(cadenceEnrollments).set({ status: "completed", completedAt: new Date(), vars, attempt: 0, claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId)).returning();
+    if (concluido && !concluido.lastInboundAt) await avisarResponsavel(concluido, "esgotada", "Cadência esgotada sem resposta", "passou por todos os passos e não respondeu. Decida o próximo movimento.");
     return;
   }
 

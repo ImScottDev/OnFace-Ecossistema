@@ -73,6 +73,12 @@ export function validateFollowupForPublish(graph: FollowupGraph): FollowupValida
     if (node.type === "wait" && node.config.mode === "smart" && node.config.min_ms > node.config.max_ms) {
       errors.push({ code: "invalid_smart_wait", message: `A espera “${node.label}” possui intervalo inválido.`, nodeId: node.id });
     }
+    // Em runtime, quem escreve ao cliente sem `agent_id` é o agente de maior
+    // prioridade que escuta `cadence.step_due` — em produção o "Organizador de
+    // Pipeline", não o SDR. Publicar sem escolher é publicar no escuro.
+    if (node.type === "action" && node.config.mode === "ai_message" && !node.config.agent_id) {
+      errors.push({ code: "ai_message_sem_agente", message: `A mensagem de IA “${node.label}” precisa de um agente escolhido.`, nodeId: node.id });
+    }
     if (node.type === "ai_classify" && node.config.grace_timeout_ms < 900_000) {
       errors.push({ code: "grace_too_short", message: `A classificação “${node.label}” precisa aguardar pelo menos 15 minutos.`, nodeId: node.id });
     }

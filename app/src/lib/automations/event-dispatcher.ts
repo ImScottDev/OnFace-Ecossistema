@@ -60,23 +60,42 @@ function entityIdFor(definitionType: string, event: EventRow, payload: Record<st
  * Replays são deduplicados em `iniciarCadencia` pela chave evento+definição. */
 export async function dispatchAutomationEvent(event: EventRow): Promise<{ matched: number; enrolled: number }> {
   const payload = (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, unknown>;
-  const rows = await db.select({ definition: cadenceDefinitions, pointer: cadenceDefinitionPointers, version: cadenceVersions })
+  /* LEFT JOIN, não INNER.
+   *
+   * Exigir a versão pinada matava a entrada por evento inteira: medido em
+   * 15/10/2026, as 4 cadências de produção tinham `published_version_id` nulo
+   * no ponteiro e TODAS as 8 versões em `draft`, então este JOIN devolvia zero
+   * linhas para qualquer evento. Doze `ProposalSent` passaram ao lado da
+   * cadência "Follow-up pós-proposta" — publicada, ativa, com esse gatilho — e
+   * nenhuma inscrição nasceu. A tela mostrava tudo certo.
+   *
+   * Sem versão, o gatilho vem de `cadence_definitions.trigger_config`, que o
+   * publish já grava e que até aqui só servia de rótulo na tela. É a mesma
+   * decisão que `iniciarCadencia` toma ao cair nos `steps` da definição quando
+   * não há versão: a cadência publicada funciona, pinada ou não. */
+  const rows = await db.select({ definition: cadenceDefinitions, version: cadenceVersions })
     .from(cadenceDefinitions)
-    .innerJoin(cadenceDefinitionPointers, eq(cadenceDefinitionPointers.cadenceDefinitionId, cadenceDefinitions.id))
-    .innerJoin(cadenceVersions, eq(cadenceVersions.id, cadenceDefinitionPointers.publishedVersionId))
+    .leftJoin(cadenceDefinitionPointers, eq(cadenceDefinitionPointers.cadenceDefinitionId, cadenceDefinitions.id))
+    .leftJoin(cadenceVersions, eq(cadenceVersions.id, cadenceDefinitionPointers.publishedVersionId))
     .where(and(eq(cadenceDefinitions.organizacaoId, event.organizacaoId), eq(cadenceDefinitions.ativo, true), eq(cadenceDefinitions.status, "published")));
 
   let matched = 0;
   let enrolled = 0;
   for (const row of rows) {
-    const graph = followupGraphSchema.safeParse(row.version.graph);
-    if (!graph.success) continue;
-    const trigger = graph.data.nodes.find((node) => node.type === "trigger");
-    if (!trigger || !eventMatches(trigger.config.event, event.eventType)) continue;
+    /* O gatilho sai do grafo da versão pinada quando ela existe; senão, da
+       coluna `trigger_config` da definição, que guarda {event, filters}. */
+    const grafo = row.version ? followupGraphSchema.safeParse(row.version.graph) : null;
+    const doGrafo = grafo?.success
+      ? grafo.data.nodes.find((node) => node.type === "trigger")?.config
+      : undefined;
+    const cfg = (row.definition.triggerConfig ?? {}) as { event?: string; filters?: unknown };
+    const trigger = doGrafo
+      ?? (cfg.event ? { event: cfg.event, filters: (cfg.filters ?? {}) as Record<string, unknown> } : null);
+    if (!trigger || !eventMatches(trigger.event, event.eventType)) continue;
     const entityId = entityIdFor(row.definition.entityType, event, payload);
     if (!entityId) continue;
     const facts = { ...payload, event_type: event.eventType, aggregate_type: event.aggregateType, aggregate_id: event.aggregateId };
-    if (!triggerFiltersMatch(trigger.config.filters, facts)) continue;
+    if (!triggerFiltersMatch(trigger.filters, facts)) continue;
     matched++;
     const id = await iniciarCadencia({
       cadenceDefinitionId: row.definition.id,
