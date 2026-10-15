@@ -592,7 +592,10 @@ app.get("/propostas/:id/publica", async (c) => {
         else if (checkout.status === "falhou" || checkout.status === "expirado") {
           // Regenera na hora — mesmo comportamento que o /p/[id] antigo tinha.
           const regen = await criarCheckoutParaGrupo({ grupoId: grupo.id, origem: "automatico_pos_aceite" });
-          if (regen.ok) { checkoutUrl = `${base}/checkout/${regen.checkoutId}`; pagamentoEstado = "aberto"; } else pagamentoEstado = "indisponivel";
+          // Expansão não regenera link: a cobrança foi para a assinatura do cliente.
+          if (regen.ok && "expansao" in regen) { checkoutUrl = null; pagamentoEstado = "pago"; }
+          else if (regen.ok) { checkoutUrl = `${base}/checkout/${regen.checkoutId}`; pagamentoEstado = "aberto"; }
+          else pagamentoEstado = "indisponivel";
         } else {
           const st = checkout.stripeSessionId ? await getCheckoutSessionStatus(checkout.stripeSessionId) : null;
           if (st?.status === "open") pagamentoEstado = "aberto";
@@ -744,6 +747,10 @@ app.post("/propostas/grupos/:grupoId/gerar-checkout", async (c) => {
 
   const result = await criarCheckoutParaGrupo({ grupoId, origem: "manual_vendedor", criadoPorId: ctx.userId });
   if (!result.ok) return c.json({ error: result.error }, 400);
+  // Expansão cobra na assinatura do cliente: não há link de pagamento a devolver.
+  if ("expansao" in result) {
+    return c.json({ expansao: true, subscriptionId: result.subscriptionId, itensAplicados: result.itensAplicados, faturaId: result.faturaId });
+  }
   return c.json({ checkoutId: result.checkoutId, url: result.url });
 });
 

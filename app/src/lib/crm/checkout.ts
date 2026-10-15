@@ -27,10 +27,16 @@ import { boletoExpiresAfterDaysFromValidade, createGroupCheckout, createStripeCu
 import { publicarEvento } from "@/lib/events/outbox";
 import { vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
 import { montarMetadataComercial } from "@/lib/crm/metadata-comercial";
+import { aplicarExpansaoNaAssinatura } from "@/lib/crm/expansao-assinatura";
 import { appUrl } from "@/lib/app-url";
 
 export type CriarCheckoutResult =
   | { ok: true; checkoutId: string; url: string }
+  /* Expansão não gera checkout: a cobrança foi feita na assinatura que o
+     cliente já tem. Variante própria de propósito — quem espera um link de
+     pagamento precisa ser obrigado pelo compilador a tratar este caso, em vez
+     de mostrar "aguardando pagamento" para uma venda já cobrada. */
+  | { ok: true; expansao: true; subscriptionId: string; itensAplicados: number; faturaId: string | null }
   | { ok: false; error: string; /** Para onde ir resolver: a alteração da assinatura no Cliente 360. */ alterarAssinaturaUrl?: string };
 
 /**
@@ -97,12 +103,14 @@ export async function criarCheckoutParaGrupo(opts: {
   const caminho = negocio?.empresaId && proposta.negocioId
     ? `${appUrl()}/clientes/${negocio.empresaId}?alterar-assinatura=1&negocio=${proposta.negocioId}&proposta=${proposta.id}`
     : undefined;
-  const bloqueioAssinatura = bloqueioNovoCheckoutDeAssinatura(
+  /* Expansão recorrente não passa por aqui — ela cobra na assinatura que o
+     cliente já tem. A checagem acontece depois da validação dos itens (mais
+     abaixo), porque a alteração precisa dos mesmos Prices já conferidos contra
+     o catálogo oficial: a regra do que pode ser cobrado é uma só. */
+  const ehExpansaoRecorrente = !!bloqueioNovoCheckoutDeAssinatura(
     negocio?.commercialMotion,
     itensDoGrupo.some((item) => item.tipo === "recorrente"),
-    caminho,
   );
-  if (bloqueioAssinatura) return { ok: false, error: bloqueioAssinatura, alterarAssinaturaUrl: caminho };
 
   const [lead] = await db.select({
     id: leads.id, nome: leads.nome, sobrenome: leads.sobrenome, email: leads.email, telefone: leads.telefone,
@@ -168,6 +176,31 @@ export async function criarCheckoutParaGrupo(opts: {
     itensAvulsos = itensDoGrupo.filter((i) => i.tipo !== "recorrente").map(mapItem);
   } catch (err) {
     return { ok: false, error: String(err) };
+  }
+
+  /* Cliente que já paga: a venda cresce a assinatura dele, com pró-rata, em vez
+     de abrir uma segunda cobrança. Os itens chegam aqui já conferidos contra o
+     catálogo oficial, que é o mesmo crivo do checkout. Travou (mais de uma
+     assinatura viva, desconto negociado): devolve o motivo e o caminho manual,
+     exatamente como antes — nada é cobrado pela metade sem dizer. */
+  if (ehExpansaoRecorrente) {
+    if (!negocio?.empresaId) {
+      return { ok: false, error: "Esta venda altera uma assinatura existente, mas a oportunidade não tem empresa vinculada — sem ela não dá para saber qual assinatura cresce.", alterarAssinaturaUrl: caminho };
+    }
+    const r = await aplicarExpansaoNaAssinatura({
+      organizacaoId: proposta.organizacaoId,
+      empresaId: negocio.empresaId,
+      negocioId: proposta.negocioId,
+      propostaId: proposta.id,
+      grupoId: opts.grupoId,
+      usuarioId: opts.criadoPorId ?? null,
+      itens: itensRecorrentes.map((i) => ({
+        nome: i.nome, quantidade: i.quantidade, stripePriceId: i.stripePriceId,
+        valorUnitario: i.valorUnitario, valorTabela: i.valorTabela,
+      })),
+    });
+    if (!r.ok) return { ok: false, error: r.error, alterarAssinaturaUrl: caminho };
+    return { ok: true, expansao: true, subscriptionId: r.subscriptionId, itensAplicados: r.itensAplicados, faturaId: r.faturaId };
   }
 
   // Re-geração: expira qualquer sessão ainda aberta desse grupo (valores podem ter mudado).

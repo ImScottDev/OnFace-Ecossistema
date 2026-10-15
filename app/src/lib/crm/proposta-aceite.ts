@@ -421,6 +421,16 @@ async function avancarGrupoAposAceite(args: {
     };
   }
   const checkout = await criarCheckoutParaGrupo({ grupoId: grupo.id, origem: "automatico_pos_aceite" });
+  /* Cliente que já paga: a venda foi cobrada na assinatura dele, com pró-rata,
+     e não existe link de pagamento para mandar — o grupo já saiu concluído.
+     Devolver "aguardando pagamento" aqui faria a tela pedir um checkout para
+     uma venda que o cliente JÁ pagou. */
+  if (checkout.ok && "expansao" in checkout) {
+    return {
+      grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "pagamento",
+      serviceFamily: familia, estado: "pagamento_confirmado",
+    };
+  }
   if (checkout.ok) {
     await publicarEvento({
       organizacaoId: opts.organizacaoId, eventType: "PaymentStarted", aggregateType: "checkout", aggregateId: checkout.checkoutId,

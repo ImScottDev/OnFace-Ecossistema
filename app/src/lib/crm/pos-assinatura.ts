@@ -156,7 +156,12 @@ export async function processarContratoAssinado(opts: {
   let checkoutUrl: string | null = null;
   let erroCheckout: string | null = null;
   const checkoutResult = await criarCheckoutParaGrupo({ grupoId, origem: "automatico_pos_aceite" });
-  if (checkoutResult.ok) {
+  /* Expansão: cobrada na assinatura que o cliente já tem. Não há link para
+     mandar nem PaymentStarted para publicar — o pagamento não começou, ele
+     aconteceu. */
+  if (checkoutResult.ok && "expansao" in checkoutResult) {
+    console.log(`[pos-assinatura] grupo ${grupoId} cobrado na assinatura ${checkoutResult.subscriptionId} (${checkoutResult.itensAplicados} item(ns))`);
+  } else if (checkoutResult.ok) {
     checkoutUrl = checkoutResult.url;
     await publicarEvento({
       organizacaoId: contrato.organizacaoId, eventType: "PaymentStarted", aggregateType: "checkout", aggregateId: checkoutResult.checkoutId,

@@ -85,6 +85,7 @@ jobs:
             src/lib/crm/regras-pos-ganho.test.ts \
             src/lib/crm/pendencia-linhas.test.ts \
             src/lib/crm/entrega-da-venda.test.ts \
+            src/lib/crm/expansao-assinatura.test.ts \
             src/lib/email/entrega.test.ts \
             src/lib/catalogo/sincronizar-stripe.test.ts \
             src/lib/integrations/stripe-webhook-assincrono.test.ts
