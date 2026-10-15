@@ -426,9 +426,15 @@ async function avancarGrupoAposAceite(args: {
      Devolver "aguardando pagamento" aqui faria a tela pedir um checkout para
      uma venda que o cliente JÁ pagou. */
   if (checkout.ok && "expansao" in checkout) {
+    /* A fatura do pró-rata tem link próprio: é por ele que o cliente paga os
+       itens que acabaram de entrar na assinatura (com boleto, a cobrança não é
+       instantânea). Vai como `checkoutUrl` porque, para quem comprou, é
+       exatamente isso: o endereço para pagar esta venda. */
     return {
       grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "pagamento",
-      serviceFamily: familia, estado: "pagamento_confirmado",
+      serviceFamily: familia,
+      estado: checkout.faturaUrl ? "pagamento_pendente" : "pagamento_confirmado",
+      checkoutUrl: checkout.faturaUrl,
     };
   }
   if (checkout.ok) {

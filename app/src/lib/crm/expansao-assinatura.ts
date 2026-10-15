@@ -28,6 +28,7 @@ import { db } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { assinaturas, assinaturaItens } from "@/lib/db/schema";
 import { assinaturaDoCrm } from "@/lib/financeiro/espelho-crm";
+import { stripe } from "@/lib/integrations/stripe-assinatura";
 import {
   planejarAlteracao,
   aplicarAlteracao,
@@ -48,7 +49,9 @@ export interface ItemDeExpansao {
 }
 
 export type ResultadoExpansao =
-  | { ok: true; subscriptionId: string; itensAplicados: number; faturaId: string | null }
+  | { ok: true; subscriptionId: string; itensAplicados: number; faturaId: string | null;
+      /** O link da fatura do pró-rata, para o cliente pagar (boleto, Pix ou cartão). */
+      faturaUrl: string | null }
   /** Não há assinatura viva: não é falha, é uma venda nova. Quem chama gera checkout. */
   | { ok: false; semAssinaturaViva: true; error: string }
   | { ok: false; semAssinaturaViva?: false; error: string };
@@ -174,6 +177,17 @@ export async function aplicarExpansaoNaAssinatura(opts: {
     }
   }
 
+  /* O link da fatura do pró-rata. É o que o cliente abre para pagar os itens
+     que acabaram de entrar na assinatura dele — com boleto (o caso comum
+     aqui) a cobrança não é instantânea: o Stripe emite o boleto e espera.
+     Sem este link o aceite terminaria sem nada para mostrar a quem comprou. */
+  let faturaUrl: string | null = null;
+  if (faturaId) {
+    faturaUrl = await stripe<{ hosted_invoice_url?: string | null }>(`invoices/${faturaId}`)
+      .then((f) => f.hosted_invoice_url ?? null)
+      .catch((e) => { console.error("[expansao] não consegui ler o link da fatura:", e); return null; });
+  }
+
   /* Chegou aqui: o Stripe aceitou com `error_if_incomplete`, ou seja, o
      proporcional foi cobrado de verdade. Então o grupo fecha pelas portas de
      sempre — `concluirGrupo` é quem publica FulfillmentGroupCompleted, e é
@@ -193,12 +207,12 @@ export async function aplicarExpansaoNaAssinatura(opts: {
       organizacaoId: opts.organizacaoId,
       tipo: "stripe_subscription",
       sourceRef: `expansao:${opts.grupoId}`,
-      metadata: { subscriptionId: assinatura.subscriptionId, faturaId, itens: aplicados, propostaId: opts.propostaId },
+      metadata: { subscriptionId: assinatura.subscriptionId, faturaId, faturaUrl, itens: aplicados, propostaId: opts.propostaId },
       grupoComercialId: opts.grupoId,
     }).catch((e) => console.error("[expansao] falha ao registrar evidência:", e));
     await marcarNegocioGanhoSeAindaNao(opts.negocioId, opts.organizacaoId)
       .catch((e) => console.error("[expansao] falha ao marcar ganho:", e));
   }
 
-  return { ok: true, subscriptionId: assinatura.subscriptionId, itensAplicados: aplicados, faturaId };
+  return { ok: true, subscriptionId: assinatura.subscriptionId, itensAplicados: aplicados, faturaId, faturaUrl };
 }

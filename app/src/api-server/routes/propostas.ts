@@ -749,7 +749,7 @@ app.post("/propostas/grupos/:grupoId/gerar-checkout", async (c) => {
   if (!result.ok) return c.json({ error: result.error }, 400);
   // Expansão cobra na assinatura do cliente: não há link de pagamento a devolver.
   if ("expansao" in result) {
-    return c.json({ expansao: true, subscriptionId: result.subscriptionId, itensAplicados: result.itensAplicados, faturaId: result.faturaId });
+    return c.json({ expansao: true, subscriptionId: result.subscriptionId, itensAplicados: result.itensAplicados, faturaId: result.faturaId, url: result.faturaUrl });
   }
   return c.json({ checkoutId: result.checkoutId, url: result.url });
 });

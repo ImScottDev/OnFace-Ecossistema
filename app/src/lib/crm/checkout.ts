@@ -36,7 +36,7 @@ export type CriarCheckoutResult =
      cliente já tem. Variante própria de propósito — quem espera um link de
      pagamento precisa ser obrigado pelo compilador a tratar este caso, em vez
      de mostrar "aguardando pagamento" para uma venda já cobrada. */
-  | { ok: true; expansao: true; subscriptionId: string; itensAplicados: number; faturaId: string | null }
+  | { ok: true; expansao: true; subscriptionId: string; itensAplicados: number; faturaId: string | null; faturaUrl: string | null }
   | { ok: false; error: string; /** Para onde ir resolver: a alteração da assinatura no Cliente 360. */ alterarAssinaturaUrl?: string };
 
 /**
@@ -205,7 +205,7 @@ export async function criarCheckoutParaGrupo(opts: {
        com a venda morrendo em silêncio. Segue como venda nova: checkout normal,
        link gerado, e o ganho sai pelo caminho de sempre, com o pagamento. */
     if (!r.ok && !r.semAssinaturaViva) return { ok: false, error: r.error, alterarAssinaturaUrl: caminho };
-    if (r.ok) return { ok: true, expansao: true, subscriptionId: r.subscriptionId, itensAplicados: r.itensAplicados, faturaId: r.faturaId };
+    if (r.ok) return { ok: true, expansao: true, subscriptionId: r.subscriptionId, itensAplicados: r.itensAplicados, faturaId: r.faturaId, faturaUrl: r.faturaUrl };
     console.log(`[checkout] grupo ${opts.grupoId} marcado como expansão, mas a empresa não tem assinatura viva — seguindo como venda nova`);
   }
 

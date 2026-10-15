@@ -351,7 +351,16 @@ export function PropostaPublica({ id }: { id: string }) {
       // O aceite foi gravado, mas um grupo pode não ter andado (`erro`): contrato que não pôde ser gerado ou
       // enviado, checkout que não saiu. Nesse caso NÃO navegamos para um link que não existe; a tela diz ao
       // cliente que recebeu o aceite e o que esperar (ver `pendenciaDoAceite`), e o time é avisado no servidor.
-      type G = { checkoutId?: string; grupoId?: string; proximoPasso?: string; proximoUrl?: string; erro?: string };
+      type G = { checkoutId?: string; checkoutUrl?: string; grupoId?: string; proximoPasso?: string; proximoUrl?: string; erro?: string };
+      /* Upgrade de quem já é cliente não gera checkout: os itens entram na
+         assinatura que ele já tem e o Stripe emite a fatura do pró-rata. Quem
+         aceitou vai direto para essa fatura — é lá que ele paga (boleto, Pix ou
+         cartão) e o que ele paga já está na assinatura dele. */
+      const expansaoComFatura = body?.grupos?.find((grupo: G) => !grupo.checkoutId && grupo.checkoutUrl && !grupo.erro);
+      if (expansaoComFatura?.checkoutUrl) {
+        window.location.assign(expansaoComFatura.checkoutUrl);
+        return;
+      }
       const primeiroPagamento = body?.grupos?.find((grupo: G) => grupo.checkoutId && !grupo.erro);
       const primeiroContrato = body?.grupos?.find((grupo: G) => grupo.proximoPasso === "contrato" && !grupo.erro);
       if (primeiroPagamento?.checkoutId) {
