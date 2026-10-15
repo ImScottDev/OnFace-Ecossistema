@@ -611,6 +611,10 @@ app.get("/propostas/:id/publica", async (c) => {
       contrato,
       checkoutUrl,
       pagamentoEstado,
+      /* Só o FATO de ter travado, nunca o texto: `fechamentoErro` é escrito para
+         o time e chega a carregar link interno do CRM. O cliente precisa saber
+         que não está esperando à toa — não precisa (nem pode) ler o motivo. */
+      fechamentoTravado: !!grupo.fechamentoErro,
     };
   }));
 

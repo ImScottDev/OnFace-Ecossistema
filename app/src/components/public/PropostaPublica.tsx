@@ -33,6 +33,8 @@ interface Grupo {
   contrato: { id: string; corpoGerado: string | null; assinaturaStatus: string; signatureStatus: string | null; status: string; signingUrl?: string | null; assinaturaExterna?: boolean } | null;
   checkoutUrl: string | null;
   pagamentoEstado: "aberto" | "pago" | "boleto_pendente" | "indisponivel" | null;
+  /** O fechamento deste grupo parou com erro — o time já foi avisado. */
+  fechamentoTravado?: boolean;
 }
 interface PropostaPublicaData {
   id: string; numero: number; versao: number; status: string; moeda: string;
@@ -227,8 +229,14 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
         ) : grupo.contrato.assinaturaExterna ? (
           /* Sob Documenso a assinatura é por link externo. Enquanto a signingUrl
              não chega, mostramos "preparando" — NUNCA o formulário de aceite
-             simples abaixo, que sob Documenso falharia no envio. */
-          <Aviso tom="neutro">Estamos preparando seu link de assinatura. Recarregue esta página em instantes para assinar o contrato.</Aviso>
+             simples abaixo, que sob Documenso falharia no envio. Mas quando o
+             fechamento travou de verdade, "em instantes" vira mentira do mesmo
+             jeito que virava no pagamento: o link não vem sozinho. */
+          grupo.fechamentoTravado ? (
+            <Aviso tom="neutro">Recebemos o seu aceite. O contrato precisa de um ajuste do nosso time antes de ir para assinatura — já avisamos quem cuida da sua conta e você será procurado em breve.</Aviso>
+          ) : (
+            <Aviso tom="neutro">Estamos preparando seu link de assinatura. Recarregue esta página em instantes para assinar o contrato.</Aviso>
+          )
         ) : (
           <>
             {grupo.contrato.corpoGerado && (
@@ -285,6 +293,12 @@ function GrupoCard({ grupo, id, onAssinado }: { grupo: Grupo; id: string; onAssi
                 : "Pague por Pix, cartão ou boleto. O QR code do Pix vale 24 horas."}
             </Aviso>
           </>
+        ) : grupo.fechamentoTravado ? (
+          /* "Preparando…" aqui era mentira: o fechamento parou com erro e a
+             página seguia prometendo um link que não ia chegar — um cliente
+             ficou um dia inteiro olhando isso. Travou, o cliente merece saber
+             que o aceite entrou e que alguém vai procurá-lo. */
+          <Aviso tom="neutro">Recebemos o seu aceite. Este pedido precisa de um ajuste do nosso time antes do pagamento — já avisamos quem cuida da sua conta e você será procurado em breve. Não é necessário aceitar de novo.</Aviso>
         ) : (
           <Aviso tom="neutro">Preparando o link de pagamento…</Aviso>
         )

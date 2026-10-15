@@ -19,6 +19,7 @@ import {
 import { normalizePhone, phoneLastDigits, formatPhoneDisplay } from "@/lib/whatsapp/phone-utils";
 import { pickNextCloserLocked, closerTemConflito } from "@/lib/crm/agenda-closers";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
+import { sincronizarDomainModelDaConversao } from "@/lib/crm/sync-domain-model";
 import { getBusyTimes } from "@/lib/email/microsoft";
 
 /**
@@ -251,6 +252,17 @@ async function tentarAutoAgendar(
 
   if ("error" in result) {
     return { criado: false, motivoFalha: `converterLeadEmOportunidade falhou: ${result.error}` };
+  }
+
+  /* A transação do rodízio acabou de fechar. O dual-write que roda DENTRO da
+     conversão lê pelo db global e, ali, o negócio ainda não existia para ele —
+     saía calado e a oportunidade canônica (a tabela que o Pipeline lê) nunca
+     nascia: o lead sumia de Pré-vendas pelo handoff e não aparecia no Pipeline.
+     Aqui o negócio já está commitado. Idempotente, inclusive para o negócio que
+     já existia: repara o que ficou para trás quando uma nova ligação chega. */
+  if (result.negocioId) {
+    await sincronizarDomainModelDaConversao({ leadId: lead.id, negocioId: result.negocioId })
+      .catch((e) => console.error("[Callface] dual-write pós-commit falhou (best-effort):", e));
   }
   if (result.recovered || result.alreadyConverted) {
     return { criado: false, jaExistia: true, negocioId: result.negocioId, motivoFalha: "negócio já existia pra esse lead (idempotente)" };

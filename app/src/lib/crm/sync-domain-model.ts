@@ -319,3 +319,23 @@ export async function syncOportunidadeFromNegocio(negocioId: string): Promise<vo
     await logFalhaSync("negocio", negocioId, negRow?.organizacaoId ?? null, err);
   }
 }
+
+/**
+ * O dual-write da conversão, para ser chamado DEPOIS do commit.
+ *
+ * `syncPessoaFromLead` e `syncOportunidadeFromNegocio` leem pelo `db` global.
+ * Quem converte dentro de uma transação (o auto-agendamento por ligação) tem o
+ * negócio ainda invisível para elas: as duas saem caladas e a oportunidade
+ * canônica nunca nasce — e o Pipeline lê exatamente essa tabela. Chamar aqui,
+ * com a transação já fechada, é o que faz o lead aparecer.
+ *
+ * Idempotente dos dois lados: rodar de novo sobre o que já sincronizou não
+ * duplica nada, então repetir é sempre mais barato que perder a linha.
+ */
+export async function sincronizarDomainModelDaConversao(params: {
+  leadId: string;
+  negocioId: string;
+}): Promise<void> {
+  await syncPessoaFromLead(params.leadId);
+  await syncOportunidadeFromNegocio(params.negocioId);
+}
