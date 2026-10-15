@@ -18,16 +18,37 @@ import { ArrowLeft, ArrowRight, Loader2, Mail, MailCheck } from "lucide-react";
 export default function EsqueciSenhaPage() {
   const [enviado, setEnviado] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [falha, setFalha] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
+    setFalha(null);
     const email = new FormData(e.currentTarget).get("email");
-    await fetch("/api/conta/esqueci", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    }).catch(() => {});
+    /* A resposta é lida. Antes o `catch(() => {})` engolia tudo e a tela dizia
+       "enviamos o link" mesmo quando o provedor de e-mail estava fora — a
+       pessoa, trancada fora do CRM, ficava esperando um e-mail que nunca saiu.
+       E-mail sem conta continua devolvendo sucesso (é o que impede descobrir
+       quem tem conta); o que passa a aparecer é falha de INFRAESTRUTURA, que
+       não diz nada sobre a conta. */
+    try {
+      const r = await fetch("/api/conta/esqueci", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!r.ok) {
+        setFalha(r.status === 503
+          ? "O envio de e-mail está indisponível agora. Avise o time para liberar seu acesso."
+          : "Não conseguimos enviar o e-mail. Tente de novo em instantes.");
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setFalha("Não conseguimos falar com o servidor. Verifique a conexão e tente de novo.");
+      setLoading(false);
+      return;
+    }
     setEnviado(true);
     setLoading(false);
   };
@@ -76,6 +97,11 @@ export default function EsqueciSenhaPage() {
             </div>
           ) : (
             <>
+              {falha && (
+                <div role="alert" className="mt-4 rounded-xl p-4 text-[14px] leading-relaxed text-[var(--of-tinta-forte)] bg-[var(--of-calha)]">
+                  {falha}
+                </div>
+              )}
               <p className="mt-3 text-[15px] text-[var(--onface-cinza-2)]">
                 Informe o e-mail da sua conta. Enviaremos um link para você criar uma nova senha.
               </p>

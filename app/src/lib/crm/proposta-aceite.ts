@@ -105,7 +105,11 @@ export async function processarAceiteDaProposta(opts: {
     const [ano, mes, dia] = proposta.dataValidade.split("-").map(Number);
     const validadeUtc = new Date(Date.UTC(ano, (mes || 1) - 1, dia || 1));
     if (Number.isFinite(validadeUtc.getTime()) && hojeUtc.getTime() > validadeUtc.getTime()) {
-      await db.update(propostas).set({ status: "expirada", updatedAt: new Date() }).where(eq(propostas.id, proposta.id));
+      // Expirar é UMA implementação só (`lib/vendas/propostas.expirarPropostasVencidas`):
+      // aqui era um UPDATE à parte que esquecia `expirada_em`, o evento
+      // ProposalExpired, a linha de tempo e o link do Stripe.
+      const { expirarPropostasVencidas } = await import("@/lib/vendas/propostas");
+      await expirarPropostasVencidas(proposta.organizacaoId, { propostaId: proposta.id });
       return { ok: false, error: "O prazo de validade desta proposta terminou. Solicite uma nova versão ao time comercial." };
     }
   }

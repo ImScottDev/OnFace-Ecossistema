@@ -12,6 +12,7 @@
  */
 
 import { garantirDestinoPermitido } from "./trava-destino";
+import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 
 const RESEND_API = "https://api.resend.com/emails";
 
@@ -45,7 +46,7 @@ export async function sendResendEmail(params: SendResendEmailParams): Promise<Re
     return { sent: false, skipped: true };
   }
 
-  const res = await fetch(RESEND_API, {
+  const res = await fetchComPrazo(RESEND_API, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,

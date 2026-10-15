@@ -804,20 +804,39 @@ export async function criarRevisao(params: {
 }
 
 /**
- * Expira as propostas vencidas.
+ * Expira as propostas vencidas. **Implementação única** (padrão único do
+ * AGENTS.md): o job horário do worker, o botão da tela e a guarda do aceite
+ * chamam ESTA função — não existe mais regra de expiração escrita em outro
+ * lugar. Antes havia três, e só esta gravava `expirada_em` e cobria
+ * `visualizada`/`ajuste_solicitado`; medido em 14/10/2026: 560 expiradas, 2
+ * sem data.
+ *
+ * Faz tudo o que a expiração implica: status + `expirada_em`, evento e linha
+ * de tempo, mata o link de pagamento no Stripe (senão o cliente paga uma
+ * proposta vencida) e resincroniza o valor da oportunidade.
  *
  * Bloco 03 §6 e §14: expirar não perde a oportunidade. Só a proposta muda de
  * estado; a decisão de perder continua sendo humana e com motivo.
+ *
+ * `propostaId` restringe a UMA proposta (guarda tardia do aceite), sem mudar a
+ * regra: a data e os estados que valem são os mesmos.
  */
-export async function expirarPropostasVencidas(organizacaoId: string): Promise<number> {
-  const vencidas = await db.execute<{ id: string; negocio_id: string | null; numero: number }>(sql`
+export async function expirarPropostasVencidas(
+  organizacaoId: string,
+  opts: { propostaId?: string } = {},
+): Promise<number> {
+  const vencidas = await db.execute<{ id: string; negocio_id: string | null; numero: number; stripe_session_id: string | null }>(sql`
     UPDATE propostas SET status = 'expirada', expirada_em = now(), updated_at = now()
      WHERE organizacao_id = ${organizacaoId}::uuid
        AND status IN ('enviada','visualizada','ajuste_solicitado')
        AND data_validade IS NOT NULL
        AND data_validade < CURRENT_DATE
-    RETURNING id::text, negocio_id::text, numero
+       ${opts.propostaId ? sql`AND id = ${opts.propostaId}::uuid` : sql``}
+    RETURNING id::text, negocio_id::text, numero, stripe_session_id
   `);
+  if (vencidas.length === 0) return 0;
+
+  const { syncNegocioValoresFromPropostas } = await import("@/lib/crm/sync-negocio-valores");
 
   for (const p of vencidas) {
     await registrarEvento({
@@ -829,6 +848,13 @@ export async function expirarPropostasVencidas(organizacaoId: string): Promise<n
         descricao: "A oportunidade continua aberta.",
       },
     });
+    if (p.stripe_session_id) {
+      const { expireCheckoutSession } = await import("@/lib/integrations/stripe-checkout");
+      await expireCheckoutSession(p.stripe_session_id).catch((e) => {
+        console.error(`[expirar-propostas] sessão ${p.stripe_session_id} da proposta #${p.numero} não expirou no Stripe:`, e);
+      });
+    }
+    if (p.negocio_id) await syncNegocioValoresFromPropostas(p.negocio_id).catch(() => {});
   }
 
   return vencidas.length;

@@ -2990,40 +2990,20 @@ const slaWorker = new Worker(
     }
 
     if (job.name === "expirar-propostas") {
-      // dataValidade vencida (< hoje, "válido até" inclui o próprio dia) em proposta
-      // ainda "enviada" (aguardando pagamento) → marca expirada e mata o link no
-      // Stripe. Sem isso, o campo de validade era só decorativo (não travava nada).
-      const { propostas } = await import("../lib/db/schema");
-      const { expireCheckoutSession } = await import("../lib/integrations/stripe-checkout");
-      const { syncNegocioValoresFromPropostas } = await import("../lib/crm/sync-negocio-valores");
-      const today = new Date().toISOString().split("T")[0];
-
-      const vencidas = await db
-        .select({
-          id: propostas.id,
-          numero: propostas.numero,
-          stripeSessionId: propostas.stripeSessionId,
-          negocioId: propostas.negocioId,
-        })
-        .from(propostas)
-        .where(and(
-          eq(propostas.status, "enviada"),
-          isNotNull(propostas.dataValidade),
-          lt(propostas.dataValidade, today),
-        ));
-
-      for (const p of vencidas) {
-        await db.update(propostas).set({ status: "expirada", updatedAt: new Date() }).where(eq(propostas.id, p.id));
-        if (p.stripeSessionId) {
-          await expireCheckoutSession(p.stripeSessionId).catch((e) => {
-            console.error(`[ExpirarPropostas] falha ao expirar sessão ${p.stripeSessionId} da proposta #${p.numero}:`, e);
-          });
-        }
-        if (p.negocioId) {
-          await syncNegocioValoresFromPropostas(p.negocioId).catch(() => {});
-        }
-      }
-      console.log(`[ExpirarPropostas] ${vencidas.length} proposta(s) marcada(s) como expirada(s)`);
+      /* Uma implementação só, em `lib/vendas/propostas.ts`. Este bloco tinha a
+         própria: marcava só `enviada` (deixando `visualizada` e
+         `ajuste_solicitado` vencerem para sempre), não gravava `expirada_em`,
+         não registrava o evento nem a linha do tempo — e não filtrava
+         organização nenhuma. A porta faz tudo isso, inclusive matar a sessão do
+         Stripe e resincronizar o valor da oportunidade. */
+      const { expirarPropostasVencidas } = await import("../lib/vendas/propostas");
+      const orgs = await db.execute<{ id: string }>(rawSql`
+        SELECT DISTINCT organizacao_id::text AS id FROM propostas
+         WHERE status IN ('enviada','visualizada','ajuste_solicitado')
+           AND data_validade IS NOT NULL AND data_validade < CURRENT_DATE`);
+      let total = 0;
+      for (const o of orgs) total += await expirarPropostasVencidas(o.id);
+      console.log(`[ExpirarPropostas] ${total} proposta(s) expirada(s) em ${orgs.length} organização(ões)`);
       return;
     }
 

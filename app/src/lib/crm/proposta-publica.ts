@@ -21,6 +21,7 @@ import { getSignatureProvider } from "@/lib/crm/signature";
 import { ehCliente } from "@/lib/crm/proposta-signatarios";
 import { processarContratoAssinado } from "@/lib/crm/pos-assinatura";
 import { registrarRespostaDoCliente } from "@/lib/vendas/propostas";
+import { registrarFalhaDaProposta } from "@/lib/crm/enviar-proposta";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
@@ -63,7 +64,10 @@ export async function registrarVisualizacao(proposta: PropostaRow): Promise<void
     // cliente não pode quebrar por causa de registro interno.
     await registrarRespostaDoCliente({
       organizacaoId: proposta.organizacaoId, propostaId: proposta.id, tipo: "visualizada",
-    }).catch((e) => console.error("[proposta-publica] falha ao registrar visualização no módulo Vendas:", e));
+    }).catch((e) => registrarFalhaDaProposta({
+      organizacaoId: proposta.organizacaoId, propostaId: proposta.id, leadId: proposta.leadId,
+      negocioId: proposta.negocioId, etapa: "registro da visualização no módulo Vendas", erro: e,
+    }));
   }
 }
 
@@ -105,7 +109,10 @@ export async function recusarPropostaPublica(proposta: PropostaRow, motivo?: str
   await registrarRespostaDoCliente({
     organizacaoId: proposta.organizacaoId, propostaId: proposta.id,
     tipo: "recusada", descricao: motivo ?? null,
-  }).catch((e) => console.error("[proposta-publica] falha ao registrar recusa no módulo Vendas:", e));
+  }).catch((e) => registrarFalhaDaProposta({
+    organizacaoId: proposta.organizacaoId, propostaId: proposta.id, leadId: proposta.leadId,
+    negocioId: proposta.negocioId, etapa: "registro da recusa no módulo Vendas", erro: e,
+  }));
 
   if (proposta.negocioId) await syncNegocioValoresFromPropostas(proposta.negocioId);
   return { ok: true };
@@ -139,7 +146,10 @@ export async function solicitarAjustePropostaPublica(proposta: PropostaRow, mens
   await registrarRespostaDoCliente({
     organizacaoId: proposta.organizacaoId, propostaId: proposta.id,
     tipo: "ajuste_solicitado", descricao: mensagem,
-  }).catch((e) => console.error("[proposta-publica] falha ao registrar ajuste no módulo Vendas:", e));
+  }).catch((e) => registrarFalhaDaProposta({
+    organizacaoId: proposta.organizacaoId, propostaId: proposta.id, leadId: proposta.leadId,
+    negocioId: proposta.negocioId, etapa: "registro do ajuste solicitado no módulo Vendas", erro: e,
+  }));
 }
 
 /**

@@ -44,19 +44,38 @@ app.post("/definir-senha", async (c) => {
 
 const esqueciSchema = z.object({ email: z.string().email() });
 
-// POST /auth-flow/esqueci — envia link de redefinição. SEMPRE 200 (não revela se o email existe).
+/**
+ * POST /auth-flow/esqueci — envia link de redefinição.
+ *
+ * Continua NÃO revelando se o e-mail existe: e-mail sem conta responde o mesmo
+ * `ok: true` de um envio bem-sucedido.
+ *
+ * O que mudou (14/10/2026): o resultado do provedor é LIDO. Antes respondia
+ * `ok: true` mesmo quando o Resend estava sem chave (`skipped`) ou devolveu
+ * erro — a tela dizia "e-mail enviado" e nada saía, e a pessoa ficava
+ * esperando um link que nunca chegou. Falha do provedor não é informação sobre
+ * a existência da conta: pode (e precisa) ser dita.
+ */
 app.post("/esqueci", async (c) => {
   const parsed = esqueciSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ ok: true }); // não vaza validação
   const email = parsed.data.email.trim().toLowerCase();
 
   const [u] = await db.select({ id: usuarios.id, nome: usuarios.nome, ativo: usuarios.ativo }).from(usuarios).where(eq(usuarios.email, email)).limit(1);
-  if (u) {
-    const raw = await criarToken(u.id, "reset", 60 * 60 * 1000); // 1h
-    const link = `${appUrl()}/definir-senha?token=${raw}`;
-    if (isResendConfigured()) {
-      await sendResendEmail({ to: email, subject: "Redefinir sua senha — Callface CRM", html: resetEmailHtml(u.nome, link) });
-    }
+  if (!u) return c.json({ ok: true });
+
+  if (!isResendConfigured()) {
+    console.error("[auth-flow] /esqueci: RESEND_API_KEY/RESEND_FROM ausentes — nenhum e-mail de redefinição saiu.");
+    return c.json({ ok: false, error: "O envio de e-mail não está configurado neste ambiente. Peça o link a um administrador." }, 503);
+  }
+
+  const raw = await criarToken(u.id, "reset", 60 * 60 * 1000); // 1h
+  const link = `${appUrl()}/definir-senha?token=${raw}`;
+  const r = await sendResendEmail({ to: email, subject: "Redefinir sua senha — Callface CRM", html: resetEmailHtml(u.nome, link) })
+    .catch((e) => ({ sent: false, error: e instanceof Error ? e.message : String(e) }));
+  if (!r.sent) {
+    console.error(`[auth-flow] /esqueci: envio falhou (${"error" in r ? r.error : "motivo não informado"}).`);
+    return c.json({ ok: false, error: "Não conseguimos enviar o e-mail agora. Tente de novo em alguns minutos." }, 502);
   }
   return c.json({ ok: true });
 });

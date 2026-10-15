@@ -28,6 +28,32 @@ import { dataValidadePadrao } from "@/lib/crm/proposta-regras";
 
 type PropostaRow = typeof propostas.$inferSelect;
 
+/**
+ * Falha de registro/aviso de uma proposta que PERSISTE: `console.error` morre
+ * no log do container e ninguém descobre que a visualização, a recusa ou o
+ * ajuste do cliente não entrou na linha do tempo. Vira atividade — mesma
+ * superfície onde o operador já lê o resto da proposta.
+ *
+ * Nunca lança: é o tratador de erro de um caminho que já falhou.
+ */
+export async function registrarFalhaDaProposta(f: {
+  organizacaoId: string; propostaId: string; etapa: string; erro: unknown;
+  leadId?: string | null; negocioId?: string | null;
+}): Promise<void> {
+  const erro = f.erro instanceof Error ? f.erro.message : String(f.erro);
+  console.error(`[proposta ${f.propostaId}] ${f.etapa} falhou:`, f.erro);
+  try {
+    await db.insert(atividades).values({
+      organizacaoId: f.organizacaoId, leadId: f.leadId ?? null, negocioId: f.negocioId ?? null,
+      tipo: "proposta_registro_falhou",
+      titulo: `Falha interna na proposta: ${f.etapa}`,
+      descricao: erro.slice(0, 500),
+      dados: { propostaId: f.propostaId, etapa: f.etapa, erro: erro.slice(0, 500) },
+    });
+  } catch (e) {
+    console.error(`[proposta ${f.propostaId}] nem a falha de ${f.etapa} pôde ser registrada:`, e);
+  }
+}
 
 /** Por onde o e-mail saiu: a caixa do usuário (Outlook/Google/IMAP) ou o Resend do sistema. */
 export type ViaEmail = "conta" | "resend";
@@ -150,6 +176,8 @@ export async function avisarClienteDaPropostaEnviada(opts: {
     let email: ResultadoEmail = opts.enviarEmail ? "sem_destinatario" : "nao_solicitado";
     let erro: string | null = null;
     let emailVia: ViaEmail | null = null, emailDe: string | null = null, avisoEmail: string | null = null;
+    // A linha em `emails` deste envio: é o que liga a proposta ao estado de entrega.
+    let emailRegistroId: string | null = null;
     if (destino) {
       const r = await dispararEmailDaProposta({
         para: destino, clienteNome, empresa: lead?.empresa,
@@ -161,6 +189,7 @@ export async function avisarClienteDaPropostaEnviada(opts: {
       email = r.sent ? "enviado" : r.skipped ? "sem_provedor" : "falhou";
       erro = r.error ?? null;
       if (r.sent) { emailVia = r.via; emailDe = r.de ?? null; }
+      emailRegistroId = r.emailId ?? null;
       avisoEmail = r.avisoConta ?? null;
     }
 
@@ -189,11 +218,11 @@ export async function avisarClienteDaPropostaEnviada(opts: {
       tipo: "proposta_enviada",
       titulo: `Link da proposta ${numero}: ${parteEmail}; ${parteWa}`,
       descricao: [erro, avisoEmail, whatsappErro].filter(Boolean).join(" | ") || link,
-      dados: { propostaId: proposta.id, linkPublico: link, email, para: destino || null, emailVia, emailDe, whatsapp, whatsappPara },
+      dados: { propostaId: proposta.id, linkPublico: link, email, para: destino || null, emailVia, emailDe, emailId: emailRegistroId, whatsapp, whatsappPara },
     });
     return { link, email, erro, destinatario: destino || null, emailVia, emailDe, avisoEmail, whatsapp, whatsappErro, whatsappPara };
   } catch (e) {
-    console.error("[enviar-proposta] aviso ao cliente falhou:", e);
+    await registrarFalhaDaProposta({ organizacaoId: opts.organizacaoId, propostaId: opts.propostaId, etapa: "aviso ao cliente (e-mail/WhatsApp)", erro: e });
     return falha(e instanceof Error ? e.message : String(e));
   }
 }
@@ -293,14 +322,19 @@ export async function enviarPropostaComCheckout(opts: {
   const clienteNome = [lead?.nome, lead?.sobrenome].filter(Boolean).join(" ") || lead?.nome || "";
   const linkPublico = `${base}/p/${proposta.id}`;
 
-  const emailResult: ResendResult = !skipEmail && lead?.email
+  // `ResultadoEmailEnviado` e não `ResendResult`: o `emailId` é a linha em
+  // `emails` (com `origem_tipo`/`origem_id` e o id do provedor) — é por ele que
+  // a ficha e o webhook do Resend descobrem bounce/suppressed depois. Tipado
+  // como ResendResult, esse id ficava invisível aqui e a timeline da proposta
+  // guardava só o id do provedor — sem ponteiro para a linha de entrega.
+  const emailResult: ResultadoEmailEnviado = !skipEmail && lead?.email
     ? await dispararEmailDaProposta({
         para: lead.email, clienteNome, empresa: lead.empresa, proposta,
         itens: itens.map((i) => ({ nome: i.nome, tipo: i.tipo, subtotal: parseFloat(i.subtotal || "0"), periodo: i.periodo })),
         totalRecorrente, totalAvulso, linkPublico, validade: dataValidadeEfetiva, remetenteNome: userName ?? null,
         usuario: { organizacaoId, userId, leadId: proposta.leadId },
       })
-    : ({ sent: false, skipped: true } satisfies ResendResult);
+    : ({ sent: false, skipped: true, via: "resend", de: null, emailId: null } satisfies ResultadoEmailEnviado);
 
   const valorTimeline = temRecorrente
     ? `valor mensal: R$ ${totalRecorrente.toLocaleString("pt-BR")}`
@@ -336,7 +370,7 @@ export async function enviarPropostaComCheckout(opts: {
       : emailResult.sent
         ? `Enviada para ${lead?.email} (${valorTimeline}). Cliente decide o próximo passo na página pública.`
         : `E-mail para ${lead?.email} NÃO saiu (${emailResult.error ?? (emailResult.skipped ? "provedor de e-mail não configurado" : "falha no envio")}). Link público: ${linkPublico} (${valorTimeline}).`,
-    dados: { propostaId: proposta.id, linkPublico, emailId: emailResult.id ?? null },
+    dados: { propostaId: proposta.id, linkPublico, emailId: emailResult.emailId ?? null, providerMessageId: emailResult.id ?? null, emailVia: emailResult.sent ? emailResult.via : null },
   });
 
   return {
