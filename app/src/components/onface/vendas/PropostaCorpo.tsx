@@ -133,6 +133,33 @@ export function CorpoProposta({ proposta, pendente, bloqueio, variante, acoes }:
         </div>
       ) : null}
 
+      {/* O link onde o cliente paga, à mão do vendedor. Aceita sem link visível
+          obrigava a abrir o Stripe ou a página pública para reenviar ao cliente
+          que acabou de fechar — e quando a cobrança é na assinatura (upgrade),
+          é a fatura do pró-rata que o cliente precisa receber. */}
+      {proposta.linksDePagamento.length > 0 ? (
+        <div className="ov-bloqueio" role="status">
+          <FileText aria-hidden />
+          <div>
+            <strong>{proposta.linksDePagamento.some((l) => l.pago) ? "Pagamento confirmado." : "Link de pagamento do cliente"}</strong>
+            {proposta.linksDePagamento.map((l) => (
+              <div key={l.grupoId + l.url} className="ov-acoes" style={{ marginTop: 8, alignItems: "center", gap: 8 }}>
+                <a className="ov-botao" href={l.url} target="_blank" rel="noreferrer">
+                  {l.tipo === "fatura" ? "Abrir fatura do upgrade" : "Abrir checkout"}
+                </a>
+                <button type="button" className="ov-botao" onClick={() => void navigator.clipboard?.writeText(l.url)}>Copiar link</button>
+                {l.pago ? <span style={{ fontSize: 12 }}>já pago</span> : null}
+              </div>
+            ))}
+            {proposta.linksDePagamento.some((l) => l.tipo === "fatura") ? (
+              <div style={{ fontSize: 12, marginTop: 6 }}>
+                Os itens já entraram na assinatura do cliente. Esta fatura é só o proporcional dos dias que faltam no ciclo.
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {aceita ? (
         <div className="ov-bloqueio" role="status">
           <FileText aria-hidden />

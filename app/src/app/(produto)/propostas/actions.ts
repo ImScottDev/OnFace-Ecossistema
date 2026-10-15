@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { appUrl } from "@/lib/app-url";
 import { getTenantContext } from "@/lib/auth/tenant";
 import {
   atorHumano, ehFamiliaValida, RegraDeNegocio, type Familia, type ModoFechamento, type TipoContratual,
@@ -190,6 +191,8 @@ export interface DetalheProposta {
   pendenciasDoAceite: Array<{ grupoId: string; passo: "contrato" | "pagamento"; erro: string | null; tentativas: number; ultimaTentativaEm: string | null }>;
   /** Auditoria comercial desta proposta: quem mudou o quê (de → para), quando e por quê. */
   alteracoes: RegistroDeAlteracao[];
+  /** Onde o cliente paga esta venda. O vendedor precisa ver (e copiar) o mesmo link que o cliente. */
+  linksDePagamento: Array<{ grupoId: string; url: string; tipo: "checkout" | "fatura"; pago: boolean }>;
 }
 
 export async function acaoDetalhe(propostaId: string): Promise<Resultado<DetalheProposta | null>> {
@@ -302,6 +305,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       timeline: await lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, limite: 30, negocioId: p.negocio_id ?? undefined }),
       entregas: await lerEntregasDaProposta(ctx.organizacaoId, propostaId, p.negocio_id),
       pendenciasDoAceite: p.status === "aceita" ? await lerPendenciasDoAceite(ctx.organizacaoId, propostaId) : [],
+      linksDePagamento: await lerLinksDePagamento(ctx.organizacaoId, propostaId),
       alteracoes: await lerAlteracoesDaProposta(ctx.organizacaoId, propostaId),
     };
   });
@@ -321,6 +325,39 @@ async function lerEntregasDaProposta(organizacaoId: string, propostaId: string, 
   }
   const todas = (await Promise.all(origens.map((o) => entregasDaOrigem(organizacaoId, { tipo: o.tipo, id: o.id })))).flat();
   return todas.sort((a, b) => b.enviadoEm.localeCompare(a.enviadoEm));
+}
+
+/**
+ * O link onde o cliente paga, para o vendedor ver e reenviar.
+ *
+ * Duas formas, porque são duas vendas diferentes: cliente novo paga por
+ * CHECKOUT (a ponte `/checkout/{id}`); quem já tem assinatura paga a FATURA do
+ * pró-rata que o Stripe emite ao somar os itens — e esse link fica guardado na
+ * evidência da expansão, que é onde a venda registrou que cobrou.
+ *
+ * Sem isto o vendedor via "aceita" e não tinha o que mandar para o cliente que
+ * fechou a compra.
+ */
+async function lerLinksDePagamento(organizacaoId: string, propostaId: string): Promise<DetalheProposta["linksDePagamento"]> {
+  const base = appUrl();
+  const doCheckout = await db.execute<{ grupo: string; id: string; status: string }>(sql`
+    SELECT g.id::text AS grupo, c.id::text AS id, c.status
+      FROM proposta_grupo_comercial g
+      JOIN checkouts c ON c.id = g.checkout_id
+     WHERE g.proposta_id = ${propostaId}::uuid AND g.organizacao_id = ${organizacaoId}::uuid`);
+
+  const daExpansao = await db.execute<{ grupo: string; url: string | null }>(sql`
+    SELECT ev.grupo_comercial_id::text AS grupo, ev.metadata->>'faturaUrl' AS url
+      FROM comercial_evidencia ev
+     WHERE ev.organizacao_id = ${organizacaoId}::uuid
+       AND ev.source_ref LIKE 'expansao:%'
+       AND ev.metadata->>'faturaUrl' IS NOT NULL
+       AND ev.grupo_comercial_id IN (SELECT id FROM proposta_grupo_comercial WHERE proposta_id = ${propostaId}::uuid)`);
+
+  return [
+    ...doCheckout.map((c) => ({ grupoId: c.grupo, url: `${base}/checkout/${c.id}`, tipo: "checkout" as const, pago: c.status === "pago" })),
+    ...daExpansao.filter((e) => e.url).map((e) => ({ grupoId: e.grupo, url: e.url as string, tipo: "fatura" as const, pago: false })),
+  ];
 }
 
 async function lerPendenciasDoAceite(organizacaoId: string, propostaId: string): Promise<DetalheProposta["pendenciasDoAceite"]> {
