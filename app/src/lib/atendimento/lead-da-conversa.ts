@@ -62,6 +62,18 @@ export async function ligarConversaAoLead(params: {
     UPDATE contatos
        SET lead_id = COALESCE(lead_id, ${casado}::uuid), updated_at = now()
      WHERE id = ${params.contatoId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid
+       /* idx_contatos_lead_responsavel é único por (lead, responsável): o
+          produto quer UMA conversa por lead para cada atendente. Quando o mesmo
+          número já tem conversa ligada àquele lead com o mesmo responsável,
+          ligar a segunda estouraria o índice e derrubaria quem só queria
+          gravar. Nesse caso a conversa fica como está — o histórico já tem
+          dono, e juntar as duas é decisão de produto, não de reparo. */
+       AND NOT EXISTS (
+         SELECT 1 FROM contatos o
+          WHERE o.organizacao_id = ${params.organizacaoId}::uuid
+            AND o.lead_id = ${casado}::uuid
+            AND o.id <> ${params.contatoId}::uuid
+            AND o.responsavel_id IS NOT DISTINCT FROM contatos.responsavel_id)
      RETURNING lead_id::text`);
   return linha?.lead_id ?? null;
 }
