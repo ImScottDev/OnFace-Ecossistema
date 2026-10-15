@@ -87,6 +87,19 @@ describe("a tela não desfaz o que o servidor avançou", () => {
     );
   });
 
+  it("lead em nutrição não volta sozinho para o funil", () => {
+    /* A SDR manda para nutrição; a repintura com o estado velho trazia de volta.
+       Sair da nutrição é o botão Retomar, que tem motivo e data. */
+    assert.deepEqual(
+      intencoesDoPatch([{ id: "a", etapa: "nutricao" }], [{ id: "a", etapa: "em_contato" }]),
+      [],
+    );
+    assert.deepEqual(
+      intencoesDoPatch([{ id: "a", etapa: "desqualificado" }], [{ id: "a", etapa: "novo" }]),
+      [],
+    );
+  });
+
   it("avançar continua valendo", () => {
     assert.deepEqual(
       intencoesDoPatch([{ id: "a", etapa: "novo" }], [{ id: "a", etapa: "qualificacao" }]),

@@ -35,7 +35,18 @@ export const ETAPAS_SIMPLES = new Set(["novo", "em_contato", "qualificacao"]);
  * seletor de etapa da ficha, que chama o command direto.
  */
 const ORDEM_DO_FUNIL = ["novo", "em_contato", "qualificacao", "qualificado", "oportunidade"];
+
+/**
+ * Nutrição e desqualificação são SAÍDAS do funil, não posições nele: sair delas
+ * é reativar, e reativar é um ato (o botão Retomar, `acaoReativar`), com motivo
+ * e data. Pela repintura acontecia sozinho — a SDR mandava o lead para
+ * nutrição, a lista em memória ainda tinha "em contato", e o diff seguinte
+ * trazia o lead de volta sem ninguém pedir.
+ */
+const FORA_DO_FUNIL = new Set(["nutricao", "desqualificado"]);
+
 function regrediu(de: string | null | undefined, para: string): boolean {
+  if (FORA_DO_FUNIL.has(de ?? "")) return true;
   const i = ORDEM_DO_FUNIL.indexOf(de ?? "");
   const j = ORDEM_DO_FUNIL.indexOf(para);
   return i >= 0 && j >= 0 && j < i;
