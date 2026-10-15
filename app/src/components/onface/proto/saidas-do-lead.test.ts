@@ -75,3 +75,22 @@ describe("intencoesDoPatch", () => {
     assert.equal(r[0].tipo, "desconhecida");
   });
 });
+
+describe("a tela não desfaz o que o servidor avançou", () => {
+  it("repintura com etapa velha não manda o lead para trás", () => {
+    /* O servidor avança sozinho quando a SDR liga: o lead vai para "Em contato".
+       A lista em memória ainda tem "novo", e o diff seguinte pedia a volta —
+       cinco idas e voltas em onze minutos no lead do Johnny Silva (15/10/2026). */
+    assert.deepEqual(
+      intencoesDoPatch([{ id: "a", etapa: "em_contato" }], [{ id: "a", etapa: "novo" }]),
+      [],
+    );
+  });
+
+  it("avançar continua valendo", () => {
+    assert.deepEqual(
+      intencoesDoPatch([{ id: "a", etapa: "novo" }], [{ id: "a", etapa: "qualificacao" }]),
+      [{ tipo: "mover", leadId: "a", para: "qualificacao" }],
+    );
+  });
+});

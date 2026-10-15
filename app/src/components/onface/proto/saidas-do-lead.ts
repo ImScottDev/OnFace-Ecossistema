@@ -17,6 +17,30 @@ import {
 /** As etapas que `acaoMoverEtapa` aceita — o resto tem command próprio. */
 export const ETAPAS_SIMPLES = new Set(["novo", "em_contato", "qualificacao"]);
 
+/**
+ * A ordem do funil, para o diff nunca mandar um lead para TRÁS.
+ *
+ * Este diff existe para traduzir o que a pessoa fez na tela em comando. Só que
+ * o servidor também avança a etapa sozinho — registrar ligação, WhatsApp ou
+ * e-mail move o lead para "Em contato". Quando isso acontece, a lista em
+ * memória ainda tem a etapa antiga; a repintura seguinte vira um diff
+ * "em_contato → novo" e o lead voltava, segundos depois de avançar.
+ *
+ * Medido em produção em 15/10/2026: o lead do Johnny Silva oscilou cinco vezes
+ * entre Novo e Em contato em onze minutos, sempre em nome de quem tinha acabado
+ * de ligar; 7 leads no mesmo dia.
+ *
+ * Regra do Scott: interação move para frente, nunca para trás. Voltar etapa
+ * deixa de ser efeito colateral de repintura — quem quiser mesmo regredir usa o
+ * seletor de etapa da ficha, que chama o command direto.
+ */
+const ORDEM_DO_FUNIL = ["novo", "em_contato", "qualificacao", "qualificado", "oportunidade"];
+function regrediu(de: string | null | undefined, para: string): boolean {
+  const i = ORDEM_DO_FUNIL.indexOf(de ?? "");
+  const j = ORDEM_DO_FUNIL.indexOf(para);
+  return i >= 0 && j >= 0 && j < i;
+}
+
 const CHAVES_NUTRICAO = new Set<string>(MOTIVOS_NUTRICAO.map((m) => m.chave));
 const CHAVES_DESQUALIFICACAO = new Set<string>(MOTIVOS_DESQUALIFICACAO.map((m) => m.chave));
 
@@ -90,6 +114,8 @@ export function intencoesDoPatch(
 
     if (a.etapa !== d.etapa && d.etapa) {
       if (ETAPAS_SIMPLES.has(d.etapa)) {
+        // Repintura com estado velho não desfaz o avanço que o servidor gravou.
+        if (regrediu(a.etapa, d.etapa)) continue;
         saida.push({ tipo: "mover", leadId: d.id, para: d.etapa as "novo" | "em_contato" | "qualificacao" });
       } else if (d.etapa === "qualificado") {
         saida.push({ tipo: "qualificar", leadId: d.id });
