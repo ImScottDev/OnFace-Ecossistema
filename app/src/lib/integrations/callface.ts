@@ -243,7 +243,16 @@ async function tentarAutoAgendar(
       },
     });
     return { skip: false as const, result, closerNome: closer?.nome ?? null };
-  }, lead.agendaCloserId ?? null);
+    /* Quem já é dono do lead fica com a reunião. O rodízio existe para repartir
+       o que NÃO tem dono; quando a closer exporta a carteira dela e manda o
+       agente ligar, devolver o resultado para outra pessoa é tirar dela o
+       trabalho que ela fez — e foi o que aconteceu com todo lead órfão
+       (relatado em 15/10/2026).
+
+       Ordem: closer já oferecido a este lead > responsável do lead > rodízio.
+       `pickNextCloserLocked` ignora o fixado que não for closer ativo, então um
+       responsável de outro papel cai no rodízio sozinho, sem exceção aqui. */
+  }, lead.agendaCloserId ?? lead.responsavelId ?? null);
 
   if (locked.skip) {
     return { criado: false, motivoFalha: locked.motivoFalha };
