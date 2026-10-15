@@ -251,8 +251,12 @@ for i in \$(seq 1 45); do
     # O cache de build nunca era podado e chegou a 9,4 GB com a caixa em 96%
     # (14/10/2026). As imagens vêm prontas do GHCR, então aqui ele só ocupa disco.
     sudo docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
+    # Nada de "teste && echo": com set -e, a condição falsa derruba o roteiro
+    # inteiro — e aqui ela é falsa justamente quando está TUDO BEM com o disco.
     LIVRE=\$(df -BG --output=avail / | tail -1 | tr -dc 0-9)
-    [ "\${LIVRE:-99}" -lt 10 ] && echo "⚠ disco da caixa com \${LIVRE}G livres — podar imagem antiga"
+    if [ "\${LIVRE:-99}" -lt 10 ]; then
+      echo "⚠ disco da caixa com \${LIVRE}G livres — podar imagem antiga"
+    fi
     exit 0
   fi
   echo "  aguardando app... (\$STATUS) [\$i/45]"
