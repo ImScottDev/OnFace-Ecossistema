@@ -200,7 +200,13 @@ else
        sudo docker manifest inspect $REGISTRO/onface-backend:$REV >/dev/null 2>&1; then
       break
     fi
-    [ \$i = 120 ] && { echo "✘ imagens não apareceram no GHCR em 20 min (portão vermelho ou build falhou: veja o workflow 'portão' no GitHub)" >&2; exit 1; }
+    # `[ cond ] && {...}` devolve 1 quando a condição é falsa, e com `set -e`
+    # isso MATAVA o roteiro na primeira volta: o deploy só funcionava quando a
+    # imagem já estava publicada, e nunca conseguia de fato esperar por ela.
+    if [ \$i = 120 ]; then
+      echo "✘ imagens não apareceram no GHCR em 20 min (portão vermelho ou build falhou: veja o workflow 'portão' no GitHub)" >&2
+      exit 1
+    fi
     sleep 10
   done
   etapa "[imagens] pull..."
