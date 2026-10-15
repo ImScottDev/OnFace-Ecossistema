@@ -216,7 +216,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       modelo_pdf: string | null;
     }>(sql`
       SELECT p.id::text, p.numero AS proposta_numero, p.versao, p.status,
-             n.empresa_id::text, e.nome AS empresa, p.negocio_id::text,
+             COALESCE(p.empresa_id, n.empresa_id, l.empresa_id)::text AS empresa_id, e.nome AS empresa, p.negocio_id::text,
              p.lead_id::text,
              NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS contato_nome,
              COALESCE(l.whatsapp, l.telefone) AS contato_telefone, l.email AS contato_email,
@@ -231,8 +231,14 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
              p.modelo_pdf
         FROM propostas p
         LEFT JOIN negocios n ON n.id = p.negocio_id
-        LEFT JOIN empresas e ON e.id = n.empresa_id
         LEFT JOIN leads l ON l.id = p.lead_id
+        /* A empresa vem da proposta, do negócio OU do lead — nessa ordem.
+           Lia só n.empresa_id, e negócio sem empresa (acontece: a conversão
+           nem sempre resolve) fazia a tela dizer "Empresa não vinculada" e
+           listar TODOS os campos jurídicos como pendentes, inclusive os que a
+           empresa já tinha. Caso #1570, LIVA HOTEIS (15/10/2026): o lead tinha
+           a empresa com CNPJ e cidade preenchidos, e a tela pedia os dois. */
+        LEFT JOIN empresas e ON e.id = COALESCE(p.empresa_id, n.empresa_id, l.empresa_id)
         LEFT JOIN oportunidades o ON o.negocio_id_legado = n.id
        WHERE p.id = ${propostaId}::uuid AND p.organizacao_id = ${ctx.organizacaoId}::uuid
     `);

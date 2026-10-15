@@ -319,10 +319,24 @@ export async function criarPropostaComItens(opts: {
   // Proposta, número e linhas na MESMA transação: ou grava tudo ou nada.
   const proposta = await db.transaction(async (tx) => {
     const numero = await proximoNumeroDeProposta(tx, opts.organizacaoId);
+    /* A empresa da proposta nasce resolvida, do negócio ou do lead.
+       `propostas.empresa_id` nunca era gravado: a proposta saía órfã e a tela
+       dizia "Empresa não vinculada" — e, pior, o gate de contrato lia a empresa
+       pela proposta, não achava nada e listava TODOS os campos jurídicos como
+       pendentes, inclusive os que a empresa já tinha preenchidos. Foi o caso da
+       #1570 (LIVA HOTEIS, 15/10/2026): CNPJ e cidade estavam lá e a tela pedia
+       os dois. 25 propostas abertas estavam assim. */
+    const [vinculo] = await tx.execute(sql`
+      SELECT COALESCE(n.empresa_id, l.empresa_id)::text AS empresa_id
+        FROM (SELECT 1) z
+        LEFT JOIN negocios n ON n.id = ${opts.negocioId ?? null}::uuid
+        LEFT JOIN leads l ON l.id = ${opts.leadId ?? null}::uuid`) as unknown as Array<{ empresa_id: string | null }>;
+
     const [criada] = await tx.insert(propostas).values({
       organizacaoId: opts.organizacaoId,
       leadId: opts.leadId,
       negocioId: opts.negocioId,
+      empresaId: vinculo?.empresa_id ?? null,
       numero,
       versao: 1,
       moeda,
