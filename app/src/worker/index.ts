@@ -288,8 +288,12 @@ async function findOrCreateContato(data: {
      ficaram sem lead, e 769 delas casavam com um lead que estava na base o tempo
      todo (medido em 14/10/2026). Quem atendia abria conversa em branco sobre um
      lead com origem, campanha, formulário e etapa no CRM. */
-  const { leadPorTelefone } = await import("../lib/atendimento/lead-da-conversa");
-  const leadDoNumero = await leadPorTelefone(organizacaoId, normalized);
+  const { leadParaNovaConversa } = await import("../lib/atendimento/lead-da-conversa");
+  const leadDoNumero = await leadParaNovaConversa({ organizacaoId, telefone: normalized, responsavelId });
+  /* Adotar em vez de estourar: entre o SELECT acima e este insert cabe a segunda
+     mensagem do mesmo número (o worker roda com concurrency 2), e `idx_contatos_sessao_phone`
+     derrubaria o job — perdendo a mensagem do cliente, não só a conversa. Mesmo
+     COALESCE de `garantirConversaDoLead`: conversa já ligada a outro lead não é roubada. */
   const [newContato] = await db.insert(contatos).values({
     organizacaoId,
     canal: "whatsapp",
@@ -298,6 +302,12 @@ async function findOrCreateContato(data: {
     sessaoId: sessaoId || undefined,
     responsavelId,
     leadId: leadDoNumero ?? undefined,
+  }).onConflictDoUpdate({
+    target: [contatos.sessaoId, contatos.telefone],
+    set: {
+      leadId: rawSql`COALESCE(${contatos.leadId}, EXCLUDED.lead_id)`,
+      responsavelId: rawSql`COALESCE(${contatos.responsavelId}, EXCLUDED.responsavel_id)`,
+    },
   }).returning({
     id: contatos.id, nome: contatos.nome, leadId: contatos.leadId, responsavelId: contatos.responsavelId,
   });
@@ -387,14 +397,17 @@ async function crossSaveInterSession(opts: {
   } else {
     // Create contato on recipient session for sender's phone
     // Mesma regra do caminho normal: a conversa do outro número também nasce ligada.
-    const { leadPorTelefone } = await import("../lib/atendimento/lead-da-conversa");
+    const { leadParaNovaConversa } = await import("../lib/atendimento/lead-da-conversa");
     const [newContato] = await db.insert(contatos).values({
       organizacaoId,
       canal: "whatsapp",
       nome: sanitizePushName(message.pushName) || senderPhone,
       telefone: senderPhone,
       sessaoId: recipientSession.id,
-      leadId: (await leadPorTelefone(organizacaoId, senderPhone)) ?? undefined,
+      leadId: (await leadParaNovaConversa({ organizacaoId, telefone: senderPhone, responsavelId: null })) ?? undefined,
+    }).onConflictDoUpdate({
+      target: [contatos.sessaoId, contatos.telefone],
+      set: { leadId: rawSql`COALESCE(${contatos.leadId}, EXCLUDED.lead_id)` },
     }).returning({ id: contatos.id, leadId: contatos.leadId });
     contatoId = newContato.id;
     contatoLeadId = newContato.leadId;

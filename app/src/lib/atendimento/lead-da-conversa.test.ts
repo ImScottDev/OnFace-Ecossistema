@@ -14,7 +14,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
 import { marcarPrimeiroContatoPorEtapa } from "@/lib/vendas/pre-vendas";
-import { leadPorTelefone, ligarConversaAoLead } from "./lead-da-conversa";
+import { leadPorTelefone, ligarConversaAoLead, leadParaNovaConversa } from "./lead-da-conversa";
 
 const T = `[QA lead-conversa ${Date.now().toString(36)}]`;
 let org = "";
@@ -135,4 +135,21 @@ test("o marco é idempotente: a segunda etapa não reescreve a data do primeiro 
   const [ev] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM vendas_eventos WHERE lead_id = ${l}::uuid AND tipo = 'FirstContactMade'`);
   assert.equal(ev.n, 1, "um fato, um evento");
+});
+
+/* A conversa NOVA e o índice `idx_contatos_lead_responsavel` (único por lead e
+   responsável). Nascer ligada é bom; estourar o índice custa a MENSAGEM do
+   cliente, porque a conversa é gravada antes dela e o job inteiro morre. */
+
+test("conversa nova nasce ligada quando o lead ainda não tem conversa com aquele responsável", async () => {
+  const l = await lead("Primeira conversa", "11944443333");
+  assert.equal(await leadParaNovaConversa({ organizacaoId: org, telefone: "5511944443333", responsavelId: null }), l);
+});
+
+test("lead que já tem conversa com o MESMO responsável: a nova nasce sem lead, não estoura", async () => {
+  const l = await lead("Já conversado", "11933332222");
+  await conversa("5511933332222", l); // irmã, responsável nulo — igual ao da nova
+  assert.equal(await leadParaNovaConversa({ organizacaoId: org, telefone: "5511933332222", responsavelId: null }), null);
+  // e a porta antiga continua achando o lead: quem some é o vínculo, não o casamento
+  assert.equal(await leadPorTelefone(org, "5511933332222"), l);
 });

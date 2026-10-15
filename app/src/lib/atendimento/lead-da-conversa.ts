@@ -77,3 +77,34 @@ export async function ligarConversaAoLead(params: {
      RETURNING lead_id::text`);
   return linha?.lead_id ?? null;
 }
+
+/**
+ * O lead com que uma conversa NOVA pode já nascer ligada, ou `null`.
+ *
+ * Mesmo casamento de `leadPorTelefone`, respeitando o limite que
+ * `idx_contatos_lead_responsavel` impõe: UMA conversa por lead para cada
+ * atendente. Quando aquele lead já tem conversa com esse mesmo responsável, a
+ * nova nasce SEM lead em vez de estourar o índice — e estourar aqui não é um
+ * vínculo a menos, é a MENSAGEM DO CLIENTE PERDIDA: o insert da conversa
+ * acontece antes do insert da mensagem, e o job inteiro morre.
+ *
+ * Mesma escolha de `ligarConversaAoLead`: a conversa fica sem vínculo e o
+ * Atendimento religa depois, porque juntar duas conversas do mesmo lead é
+ * decisão de produto, não de gravação.
+ */
+export async function leadParaNovaConversa(params: {
+  organizacaoId: string;
+  telefone: string | null | undefined;
+  responsavelId: string | null;
+}): Promise<string | null> {
+  const casado = await leadPorTelefone(params.organizacaoId, params.telefone);
+  if (!casado) return null;
+  const [irma] = await db.execute<{ id: string }>(sql`
+    SELECT o.id::text
+      FROM contatos o
+     WHERE o.organizacao_id = ${params.organizacaoId}::uuid
+       AND o.lead_id = ${casado}::uuid
+       AND o.responsavel_id IS NOT DISTINCT FROM ${params.responsavelId}::uuid
+     LIMIT 1`);
+  return irma ? null : casado;
+}
