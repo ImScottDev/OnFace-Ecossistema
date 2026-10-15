@@ -49,7 +49,9 @@ export interface ItemDeExpansao {
 
 export type ResultadoExpansao =
   | { ok: true; subscriptionId: string; itensAplicados: number; faturaId: string | null }
-  | { ok: false; error: string };
+  /** Não há assinatura viva: não é falha, é uma venda nova. Quem chama gera checkout. */
+  | { ok: false; semAssinaturaViva: true; error: string }
+  | { ok: false; semAssinaturaViva?: false; error: string };
 
 /**
  * O primeiro item cujo desconto a alteração de assinatura não sabe aplicar.
@@ -78,7 +80,7 @@ export function agruparPorPrice(itens: ItemDeExpansao[]): Map<string, number> {
 export async function assinaturaUnicaDaEmpresa(
   organizacaoId: string,
   empresaId: string,
-): Promise<{ ok: true; id: string; subscriptionId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; id: string; subscriptionId: string } | { ok: false; semAssinaturaViva?: boolean; error: string }> {
   const vivas = await db
     .select({ id: assinaturas.id, subId: assinaturas.stripeSubscriptionId, status: assinaturas.status })
     .from(assinaturas)
@@ -89,7 +91,13 @@ export async function assinaturaUnicaDaEmpresa(
     ));
   const ativas = vivas.filter((a) => a.status === "active" || a.status === "trialing");
   if (ativas.length === 0) {
-    return { ok: false, error: "Esta venda altera uma assinatura existente, mas a empresa não tem assinatura ativa no CRM. Confira o cadastro antes de cobrar." };
+    /* Marcado como expansão, mas não há assinatura viva para expandir — o
+       cliente cancelou, nunca completou o primeiro checkout, ou está inadimplente
+       (`unpaid`, `incomplete_expired`). Caso real: um cliente com duas
+       assinaturas, nenhuma ativa, cuja venda não gerava link "porque é
+       expansão" e não cobrava "porque não há onde cobrar". Esta venda é uma
+       venda nova como qualquer outra: quem chama cai no checkout normal. */
+    return { ok: false, semAssinaturaViva: true, error: "Nenhuma assinatura ativa para expandir." };
   }
   if (ativas.length > 1) {
     return { ok: false, error: `A empresa tem ${ativas.length} assinaturas ativas e a venda não diz qual delas cresce. Escolha a assinatura em Cliente 360 › Assinaturas para não cobrar na errada.` };
@@ -120,7 +128,11 @@ export async function aplicarExpansaoNaAssinatura(opts: {
   }
 
   const assinatura = await assinaturaUnicaDaEmpresa(opts.organizacaoId, opts.empresaId);
-  if (!assinatura.ok) return { ok: false, error: assinatura.error };
+  if (!assinatura.ok) {
+    return assinatura.semAssinaturaViva
+      ? { ok: false, semAssinaturaViva: true, error: assinatura.error }
+      : { ok: false, error: assinatura.error };
+  }
 
   // O espelho diz o que a assinatura já tem: Price repetido vira aumento de
   // quantidade, porque `adicionar_item` recusa Price que já está lá.

@@ -199,8 +199,14 @@ export async function criarCheckoutParaGrupo(opts: {
         valorUnitario: i.valorUnitario, valorTabela: i.valorTabela,
       })),
     });
-    if (!r.ok) return { ok: false, error: r.error, alterarAssinaturaUrl: caminho };
-    return { ok: true, expansao: true, subscriptionId: r.subscriptionId, itensAplicados: r.itensAplicados, faturaId: r.faturaId };
+    /* Sem assinatura viva não há expansão nenhuma: o cliente cancelou, nunca
+       completou o primeiro pagamento ou está inadimplente. Travar aqui era o
+       pior dos mundos — nenhum link para o cliente pagar E nenhuma cobrança,
+       com a venda morrendo em silêncio. Segue como venda nova: checkout normal,
+       link gerado, e o ganho sai pelo caminho de sempre, com o pagamento. */
+    if (!r.ok && !r.semAssinaturaViva) return { ok: false, error: r.error, alterarAssinaturaUrl: caminho };
+    if (r.ok) return { ok: true, expansao: true, subscriptionId: r.subscriptionId, itensAplicados: r.itensAplicados, faturaId: r.faturaId };
+    console.log(`[checkout] grupo ${opts.grupoId} marcado como expansão, mas a empresa não tem assinatura viva — seguindo como venda nova`);
   }
 
   // Re-geração: expira qualquer sessão ainda aberta desse grupo (valores podem ter mudado).

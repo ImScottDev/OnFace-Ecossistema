@@ -77,6 +77,7 @@ class OportunidadeLigada extends OportunidadeLiga {
     (this as any).oppId = props.oppId;
   }
 
+
   componentDidMount() {
     super.componentDidMount?.();
     // O didMount do protótipo sobrescreve `oppId` com o query param; devolver.
@@ -119,6 +120,20 @@ class OportunidadeLigada extends OportunidadeLiga {
      aos outros protos (Empresa/Pessoa/Calendário). */
   diz(t: string, tom?: string) {
     if (this.naoGrava) return;
+    /* "Ver empresa" e "Ver contato" paravam num aviso. A Liga decide se existe
+       ficha pelo `leadId` da oportunidade, e oportunidade de expansão nasce da
+       CARTEIRA, de um cliente — não tem lead nenhum. Os dois botões só diziam
+       "ainda não tem página" com a empresa vinculada ali na tela. A ficha
+       existe: é o Cliente 360, que abre por `empresaId`.
+       A correção de origem é o handoff mandar `empresa: empresaId` junto do
+       lead (o tradutor em `rota-do-desenho.ts` já aceita); aqui, por subclasse,
+       porque a Liga é gerada. */
+    const opp = (this as any).props?.dados?.opps?.[0];
+    if (tom === "aviso" && typeof t === "string" && t.endsWith("ainda não tem página") && opp?.empresaId) {
+      const ehEmpresa = typeof opp.empresa === "string" && t.startsWith(opp.empresa);
+      (this as any).props?.ir?.(ehEmpresa ? `/clientes/${opp.empresaId}` : `/clientes/${opp.empresaId}?aba=pessoas`);
+      return;
+    }
     if (tom === "erro") toast.error(t);
     else if (tom === "aviso") toast.warning(t);
     else toast.success(t);
