@@ -283,6 +283,13 @@ async function findOrCreateContato(data: {
   }
 
   const contatoName = pushName || normalized;
+  /* A conversa nasce JÁ ligada ao lead daquele número, quando ele existe.
+     Antes ninguém consultava `leads` por telefone aqui: 2.024 das 2.683 conversas
+     ficaram sem lead, e 769 delas casavam com um lead que estava na base o tempo
+     todo (medido em 14/10/2026). Quem atendia abria conversa em branco sobre um
+     lead com origem, campanha, formulário e etapa no CRM. */
+  const { leadPorTelefone } = await import("../lib/atendimento/lead-da-conversa");
+  const leadDoNumero = await leadPorTelefone(organizacaoId, normalized);
   const [newContato] = await db.insert(contatos).values({
     organizacaoId,
     canal: "whatsapp",
@@ -290,6 +297,7 @@ async function findOrCreateContato(data: {
     telefone: normalized,
     sessaoId: sessaoId || undefined,
     responsavelId,
+    leadId: leadDoNumero ?? undefined,
   }).returning({
     id: contatos.id, nome: contatos.nome, leadId: contatos.leadId, responsavelId: contatos.responsavelId,
   });
@@ -378,12 +386,15 @@ async function crossSaveInterSession(opts: {
     contatoLeadId = existingContato.leadId;
   } else {
     // Create contato on recipient session for sender's phone
+    // Mesma regra do caminho normal: a conversa do outro número também nasce ligada.
+    const { leadPorTelefone } = await import("../lib/atendimento/lead-da-conversa");
     const [newContato] = await db.insert(contatos).values({
       organizacaoId,
       canal: "whatsapp",
       nome: sanitizePushName(message.pushName) || senderPhone,
       telefone: senderPhone,
       sessaoId: recipientSession.id,
+      leadId: (await leadPorTelefone(organizacaoId, senderPhone)) ?? undefined,
     }).returning({ id: contatos.id, leadId: contatos.leadId });
     contatoId = newContato.id;
     contatoLeadId = newContato.leadId;

@@ -473,9 +473,15 @@ export async function registrarPrimeiroContato(params: {
   const quando = params.ocorridoEm ?? new Date();
 
   if (!jaTinha) {
+    /* `GREATEST` no último contato: `ocorridoEm` pode ser uma data ANTIGA (data
+       real da ligação, ou o backfill que deriva o marco da primeira mensagem de
+       saída). Gravando cru, o lead que falou com a equipe ontem voltava a
+       aparecer como "sem contato há meses" no badge do board. O marco é a
+       primeira vez; `last_contact_at` é a última, e ela nunca anda para trás. */
     await db.execute(sql`
       UPDATE leads SET primeiro_contato_at = ${quando.toISOString()}::timestamptz,
-             last_contact_at = ${quando.toISOString()}::timestamptz, updated_at = now()
+             last_contact_at = GREATEST(COALESCE(last_contact_at, ${quando.toISOString()}::timestamptz), ${quando.toISOString()}::timestamptz),
+             updated_at = now()
        WHERE id = ${params.leadId}::uuid
     `);
     await registrarEvento({
@@ -522,6 +528,55 @@ export async function registrarContatoSaindo(params: {
   } catch (e) {
     console.warn("[pre-vendas] primeiro contato por envio não registrado:", e);
   }
+}
+
+/**
+ * Etapas que só se alcança tendo trabalhado o lead.
+ *
+ * Chegar em qualquer uma delas É, por definição, ter contatado — e sem o marco
+ * o card anda enquanto o "tempo até 1º contato" fica nulo.
+ *
+ * `nutricao` e `desqualificado` ficam FORA de propósito: nutrir ou desqualificar
+ * sem nunca ter falado com a pessoa é legítimo (lead fora do perfil, lixo de
+ * formulário), e inventar um primeiro contato ali estragaria o SLA no outro
+ * sentido — contaria como atendido quem nunca foi procurado.
+ */
+const ETAPAS_DE_TRABALHO = new Set<string>(["em_contato", "qualificacao", "qualificado", "oportunidade"]);
+
+/**
+ * Marco de primeiro contato derivado da etapa alcançada.
+ *
+ * Antes isto vivia dentro de `moverEtapa`, condicionado a sair de `novo` para
+ * `em_contato` ou `qualificacao`. Quem arrastava direto para Qualificado ou
+ * Oportunidade não registrava nada: 3.589 leads constavam sem primeiro contato
+ * em 14/10/2026, 542 deles já com mensagem de saída. Como função própria, cada
+ * porta que muda etapa (`moverEtapa`, `qualificar`, e a criação de oportunidade)
+ * grava o mesmo marco pela mesma regra.
+ *
+ * O `UPDATE ... WHERE primeiro_contato_at IS NULL ... RETURNING` é o que torna a
+ * função idempotente e livre de corrida: o evento sai só quando a linha de fato
+ * mudou, nunca por leitura feita antes.
+ */
+export async function marcarPrimeiroContatoPorEtapa(params: {
+  organizacaoId: string;
+  leadId: string;
+  para: string;
+  ator: Ator;
+}): Promise<void> {
+  if (!ETAPAS_DE_TRABALHO.has(params.para)) return;
+
+  const gravadas = await db.execute<{ id: string }>(sql`
+    UPDATE leads SET primeiro_contato_at = now(), last_contact_at = now(), updated_at = now()
+     WHERE id = ${params.leadId}::uuid AND organizacao_id = ${params.organizacaoId}::uuid
+       AND primeiro_contato_at IS NULL
+     RETURNING id::text`);
+  if (gravadas.length === 0) return;
+
+  await registrarEvento({
+    organizacaoId: params.organizacaoId, tipo: "FirstContactMade", ator: params.ator,
+    leadId: params.leadId, contexto: { canal: "outro", origem: "movimento_de_etapa", etapa: params.para },
+  });
+  await concluirAtividadePrimeiroContato(params);
 }
 
 /**
@@ -596,17 +651,7 @@ export async function moverEtapa(params: {
     tipo: "StageChanged",
   });
 
-  // Sair de Novo para uma etapa de trabalho é, por definição, ter contatado o
-  // lead: sem este marco o card andava e o "tempo até 1º contato" ficava nulo.
-  if (lead.estagio_pre_vendas === "novo" && !lead.primeiro_contato_at
-      && (params.para === "em_contato" || params.para === "qualificacao")) {
-    await db.execute(sql`UPDATE leads SET primeiro_contato_at = now(), last_contact_at = now() WHERE id = ${params.leadId}::uuid AND primeiro_contato_at IS NULL`);
-    await registrarEvento({
-      organizacaoId: params.organizacaoId, tipo: "FirstContactMade", ator: params.ator,
-      leadId: params.leadId, contexto: { canal: "outro", origem: "movimento_de_etapa" },
-    });
-    await concluirAtividadePrimeiroContato(params);
-  }
+  await marcarPrimeiroContatoPorEtapa(params);
 
   if (params.para === "qualificacao") {
     await registrarEvento({
@@ -697,6 +742,13 @@ export async function qualificar(params: {
     organizacaoId: params.organizacaoId, ator: params.ator, leadId: params.leadId,
     de: lead.estagio_pre_vendas, para: "qualificado", tipo: "StageChanged",
     motivo: "Lead qualificado",
+  });
+
+  // Qualificar é uma etapa de trabalho como outra qualquer: quem qualifica
+  // direto de Novo (arrastando o card) falou com o lead, e o marco tem que
+  // existir. Sem esta linha o SLA de Pré-vendas continuava errando aqui.
+  await marcarPrimeiroContatoPorEtapa({
+    organizacaoId: params.organizacaoId, leadId: params.leadId, para: "qualificado", ator: params.ator,
   });
 
   await registrarEvento({

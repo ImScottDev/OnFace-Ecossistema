@@ -20,6 +20,7 @@ import { db } from "@/lib/db";
 import { registrarEvento, registrarMudancaDeEtapa } from "./eventos";
 import { encerrarAquisicaoConvertida } from "./sincronizar-aquisicao";
 import { publicarEvento } from "@/lib/events/outbox";
+import { marcarPrimeiroContatoPorEtapa } from "./pre-vendas";
 import {
   ehFamiliaValida, RegraDeNegocio, ROTULO_FAMILIA, STATUS_LEGADO_DA_ETAPA,
   type Ator, type EtapaPipeline, type EtapaPipelineAberta, type Familia,
@@ -272,6 +273,12 @@ export async function criarOportunidade(entrada: CriarOportunidade, ator: Ator):
          WHERE id = ${leadId}::uuid
       `);
       await encerrarAquisicaoConvertida(leadId, tx as never);
+    });
+    /* Virar oportunidade é prova de que alguém falou com a pessoa. Sem isto o
+       lead convertido seguia "sem primeiro contato" e o SLA de Pré-vendas o
+       contava como parado. Idempotente: só grava quando o marco está vazio. */
+    await marcarPrimeiroContatoPorEtapa({
+      organizacaoId: entrada.organizacaoId, leadId, para: "oportunidade", ator,
     });
     await registrarMudancaDeEtapa({
       organizacaoId: entrada.organizacaoId, ator, leadId: entrada.leadId,

@@ -1655,52 +1655,48 @@ app.post("/leads/:id/iniciar-whatsapp", async (c) => {
     return c.json({ contatoId: existing.id });
   }
 
-  // Find default WhatsApp session
-  const sessions = await db
-    .select()
-    .from(whatsappSessao)
-    .where(eq(whatsappSessao.organizacaoId, ctx.organizacaoId));
+  /* A conversa nasce pela PORTA ÚNICA (`garantirConversaDoLead`).
+   *
+   * Aqui havia um INSERT próprio, sem tratar conflito: a conversa daquele número
+   * podia já existir — criada pela mensagem que chegou antes do lead — e o INSERT
+   * estourava `idx_contatos_sessao_phone` em vez de adotá-la, deixando o lead sem
+   * conversa e a rota com erro 500. A porta canônica adota a existente, não rouba
+   * conversa de outro lead, normaliza o DDI e escolhe o número de quem clicou. */
+  const { garantirConversaDoLead } = await import("@/lib/atendimento/garantir-conversa");
+  await garantirConversaDoLead(ctx.organizacaoId, id, ctx.userId ?? null);
 
-  const session =
-    sessions.find((s) => s.isDefault && s.status === "connected") ||
-    sessions.find((s) => s.status === "connected");
+  const [criado] = await db
+    .select({ id: contatos.id, sessaoId: contatos.sessaoId, telefone: contatos.telefone })
+    .from(contatos)
+    .where(and(eq(contatos.leadId, id), eq(contatos.organizacaoId, ctx.organizacaoId)))
+    .limit(1);
 
-  if (!session) {
+  if (!criado) {
     return c.json({ error: "Nenhuma sessão WhatsApp conectada" }, 400);
   }
 
-  // Clean phone number (remove formatting)
-  const phone = lead.telefone.replace(/\D/g, "");
-
-  // Create contato immediately (don't block on avatar download)
-  const [newContato] = await db
-    .insert(contatos)
-    .values({
-      organizacaoId: ctx.organizacaoId,
-      canal: "whatsapp",
-      nome: lead.nome,
-      telefone: phone,
-      email: lead.email,
-      sessaoId: session.id,
-      responsavelId: lead.responsavelId || ctx.userId,
-      leadId: lead.id,
-    })
-    .returning();
-
   // Download avatar in background (fire-and-forget, don't block response)
-  const config = sessionToConfig(session);
-  downloadAndSaveAvatar(phone, config)
-    .then(async (avatarUrl) => {
-      if (avatarUrl) {
-        await Promise.all([
-          db.update(contatos).set({ avatarUrl }).where(eq(contatos.id, newContato.id)),
-          !lead.avatarUrl ? db.update(leads).set({ avatarUrl }).where(eq(leads.id, id)) : Promise.resolve(),
-        ]);
-      }
-    })
-    .catch(() => { /* best-effort */ });
+  if (criado.sessaoId && criado.telefone) {
+    const [session] = await db
+      .select()
+      .from(whatsappSessao)
+      .where(eq(whatsappSessao.id, criado.sessaoId))
+      .limit(1);
+    if (session) {
+      downloadAndSaveAvatar(criado.telefone, sessionToConfig(session))
+        .then(async (avatarUrl) => {
+          if (avatarUrl) {
+            await Promise.all([
+              db.update(contatos).set({ avatarUrl }).where(eq(contatos.id, criado.id)),
+              !lead.avatarUrl ? db.update(leads).set({ avatarUrl }).where(eq(leads.id, id)) : Promise.resolve(),
+            ]);
+          }
+        })
+        .catch(() => { /* best-effort */ });
+    }
+  }
 
-  return c.json({ contatoId: newContato.id }, 201);
+  return c.json({ contatoId: criado.id }, 201);
 });
 
 // ---------------------------------------------------------------------------

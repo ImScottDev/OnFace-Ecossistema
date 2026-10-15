@@ -12,6 +12,7 @@ import { getCtx, parseBody } from "../compat.js";
 import { whatsappIncomingQueue, whatsappOutgoingQueue } from "@/lib/queue";
 import { normalizePhone } from "@/lib/whatsapp/phone-utils";
 import { numeroConectado, sessaoDoUsuario, registrarEEnfileirarEnvio } from "@/lib/whatsapp/enviar";
+import { ligarConversaAoLead } from "@/lib/atendimento/lead-da-conversa";
 import {
   checarAcessoContato, sessaoAutorizadaParaEnvio, sessaoMinha, sessaoVisivel, condicaoConversa, podeVerEquipe, registrarListaExcepcional,
   podeAdministrarNumero, registrarAcessoExcepcional, superAdminAgindo, escopoDeGestao, usuariosDoTime,
@@ -209,6 +210,19 @@ app.post("/whatsapp/send", async (c) => {
     // A resposta sai pelo número DA CONVERSA. Antes caía na sessão conectada do usuário, que
     // pode ser outro número: o cliente recebia a resposta de um número que nunca falou com ele.
     sessaoDaConversa = contato.sessaoId;
+
+    /* Conversa sem lead é a regra, não a exceção: 2.024 de 2.683 em 14/10/2026,
+       769 delas com um lead que já existe no mesmo número. Sem resolver aqui,
+       `resolvedLeadId` fica nulo, a mensagem sai, e NADA do que depende do lead
+       acontece — marco de primeiro contato (SLA de Pré-vendas), relógio do card,
+       dual-write com pessoa. O envio é o momento em que alguém está de fato
+       trabalhando aquele número: casa pelo telefone e ADOTA o lead na conversa,
+       pela porta única (lib/atendimento/lead-da-conversa.ts). */
+    if (!resolvedLeadId) {
+      resolvedLeadId = await ligarConversaAoLead({
+        organizacaoId: ctx.organizacaoId, contatoId: contato.id, telefone: contato.telefone,
+      });
+    }
 
     if (resolvedLeadId) {
       const [lead] = await db.select({ nome: leads.nome, empresa: leads.empresa, negocioAtivoId: leads.negocioAtivoId })
