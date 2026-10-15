@@ -185,6 +185,29 @@ export function somenteDePreVendas(sql: SqlTag): unknown {
 }
 
 /**
+ * A coluna Oportunidade existe no board e estava SEMPRE vazia.
+ *
+ * Converter o lead encerra a aquisição (`encerrarAquisicaoConvertida`: etapa
+ * `oportunidade` + `closed_at`), e o board só lia `closed_at IS NULL` — então o
+ * card saía de Pré-vendas e a coluna desenhada para recebê-lo nunca mostrava
+ * nada. Medido em 15/10/2026: 110 aquisições paradas nessa etapa, 0 visíveis.
+ * Para quem vende, o lead simplesmente sumia da tela.
+ *
+ * Volta só quem tem negócio EM ANDAMENTO (96 dos 110). Ganho e perdido já
+ * fecharam o ciclo e vivem no Pipeline; trazê-los de volta encheria a coluna de
+ * histórico, que é exatamente o que não se quer no board de quem está
+ * trabalhando hoje.
+ */
+export function convertidaComNegocioAberto(sql: SqlTag): unknown {
+  return sql`(a.desqualificado_em IS NULL
+    AND EXISTS (SELECT 1 FROM pipeline_etapas pe2
+                 WHERE pe2.id = a.etapa_id AND pe2.codigo = 'oportunidade')
+    AND EXISTS (SELECT 1 FROM negocios n2
+                 WHERE n2.lead_id = a.lead_legado_id
+                   AND COALESCE(n2.status, '') NOT IN ('ganho', 'perdido')))`;
+}
+
+/**
  * A tarefa aberta mais próxima de vencer, por aquisição.
  *
  * `LATERAL` e não `JOIN`: só a primeira linha interessa, e um join comum
@@ -285,7 +308,8 @@ export async function boardDeAquisicoes(
        AND (${filtros.incluirEncerradas
               ? sql`(a.closed_at IS NULL OR a.desqualificado_em IS NOT NULL
                      OR COALESCE(a.nutricao_status, '') <> '')`
-              : sql`a.closed_at IS NULL`})
+              : sql`a.closed_at IS NULL`}
+            OR ${convertidaComNegocioAberto(sql)})
        AND ${somenteDePreVendas(sql)}
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
        AND (${filtros.semDono ? sql`a.responsavel_id IS NULL` : sql`TRUE`})
@@ -358,7 +382,8 @@ export async function boardDeAquisicoes(
        AND (${filtros.incluirEncerradas
               ? sql`(a.closed_at IS NULL OR a.desqualificado_em IS NOT NULL
                      OR COALESCE(a.nutricao_status, '') <> '')`
-              : sql`a.closed_at IS NULL`})
+              : sql`a.closed_at IS NULL`}
+            OR ${convertidaComNegocioAberto(sql)})
        AND ${somenteDePreVendas(sql)}
        AND (${filtros.responsavelId ?? null}::uuid IS NULL OR a.responsavel_id = ${filtros.responsavelId ?? null}::uuid)
        AND (${filtros.semDono ? sql`a.responsavel_id IS NULL` : sql`TRUE`})
