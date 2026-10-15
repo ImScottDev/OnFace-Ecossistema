@@ -285,13 +285,21 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
       let lead = leadByCustomer.get(sCustId);
       let precisaVincularCustomerId = false;
       if (!lead) {
+        /* A metadata da ASSINATURA vai junto: é nela que o CRM grava
+           `negocioId`/`propostaId` ao vender, e é a prova de quem é a empresa.
+           Sem isso, assinatura cujo e-mail de cobrança difere do contato da
+           proposta ficava fora do espelho para sempre. */
         const customer = typeof s.customer === "string"
-          ? { id: s.customer }
-          : { id: s.customer.id, email: s.customer.email, metadata: s.customer.metadata };
+          ? { id: s.customer, assinaturaMetadata: s.metadata }
+          : { id: s.customer.id, email: s.customer.email, metadata: s.customer.metadata, assinaturaMetadata: s.metadata };
+        /* O cache é por Customer, mas a evidência agora pode vir da ASSINATURA:
+           guardar um fracasso faria a segunda assinatura do mesmo Customer —
+           justamente a que talvez tenha `negocioId` — nem ser tentada. Só o
+           resultado confirmado é reaproveitado. */
         let resolution = resolutionCache.get(sCustId);
         if (!resolution) {
           resolution = await resolveBillingCustomer(org.id, customer);
-          resolutionCache.set(sCustId, resolution);
+          if (resolution.kind === "CONFIRMED") resolutionCache.set(sCustId, resolution);
         }
         if (resolution.kind === "CONFIRMED" && resolution.leadId) {
           lead = { id: resolution.leadId, empresaId: resolution.empresaId || null, stripeCustomerId: null };

@@ -8,12 +8,22 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { billingCustomerAliases, billingIdentities, empresas, leads } from "../db/schema";
+import { billingCustomerAliases, billingIdentities, empresas, leads, negocios, propostas } from "../db/schema";
 
 export type StripeCustomerSnapshot = {
   id: string;
   email?: string | null;
   metadata?: Record<string, string> | null;
+  /**
+   * A metadata da ASSINATURA, quando a resolução é de uma assinatura.
+   *
+   * É a evidência mais forte que existe: quem gravou `negocioId`/`propostaId`
+   * ali foi o próprio CRM, ao criar a venda. O Customer pode ter sido criado
+   * antes, por outro caminho, e não ter metadata nenhuma — o e-mail de cobrança
+   * ser o do financeiro e não o do contato da proposta é o caso COMUM, não a
+   * exceção, e não muda de quem é a empresa.
+   */
+  assinaturaMetadata?: Record<string, string> | null;
 };
 
 export type BillingResolution = {
@@ -33,6 +43,58 @@ export function normalizeEmail(value: string | null | undefined): string | null 
 export function normalizeCnpj(value: string | null | undefined): string | null {
   const digits = value?.replace(/\D/g, "") || "";
   return digits.length === 14 ? digits : null;
+}
+
+/**
+ * O lead/empresa do negócio ou da proposta que a assinatura carrega.
+ *
+ * `montarMetadataComercial` grava `negocioId` e `propostaId` em toda assinatura
+ * criada pelo CRM. Ler de volta é o que fecha o ciclo — era isto que faltava:
+ * o CRM escrevia a identidade e depois a procurava por e-mail, em outro objeto.
+ */
+async function porNegocioOuProposta(
+  organizacaoId: string,
+  metadata: Record<string, string> | null | undefined,
+): Promise<BillingResolution | null> {
+  const negocioId = metadataId(metadata, ["negocioId", "crm_negocio_id", "negocio_id"]);
+  if (negocioId) {
+    const [n] = await db
+      .select({ leadId: negocios.leadId, empresaId: negocios.empresaId })
+      .from(negocios)
+      .where(and(eq(negocios.id, negocioId), eq(negocios.organizacaoId, organizacaoId)))
+      .limit(1);
+    if (n?.leadId) return { kind: "CONFIRMED", source: "CRM_METADATA", leadId: n.leadId, empresaId: n.empresaId };
+    /* Negócio sem lead é o caso da venda de expansão, que nasce da carteira.
+       A empresa basta para saber de quem é a cobrança; o lead vira o da
+       empresa quando houver exatamente um, e sem isso fica para revisão —
+       nunca se escolhe um lead no chute. */
+    if (n?.empresaId) {
+      const daEmpresa = await db
+        .select({ id: leads.id, empresaId: leads.empresaId })
+        .from(leads)
+        .where(and(eq(leads.organizacaoId, organizacaoId), eq(leads.empresaId, n.empresaId)));
+      if (daEmpresa.length === 1) return { kind: "CONFIRMED", source: "CRM_METADATA", leadId: daEmpresa[0].id, empresaId: n.empresaId };
+      return { kind: "REVIEW", source: "CRM_METADATA", reason: daEmpresa.length ? "negócio da assinatura tem empresa com vários leads" : "negócio da assinatura sem lead e sem lead na empresa" };
+    }
+  }
+
+  const propostaId = metadataId(metadata, ["propostaId", "crm_proposta_id", "proposta_id"]);
+  if (propostaId) {
+    const [p] = await db
+      .select({ leadId: propostas.leadId })
+      .from(propostas)
+      .where(and(eq(propostas.id, propostaId), eq(propostas.organizacaoId, organizacaoId)))
+      .limit(1);
+    if (p?.leadId) {
+      const [lead] = await db
+        .select({ id: leads.id, empresaId: leads.empresaId })
+        .from(leads)
+        .where(and(eq(leads.id, p.leadId), eq(leads.organizacaoId, organizacaoId)))
+        .limit(1);
+      if (lead) return { kind: "CONFIRMED", source: "CRM_METADATA", leadId: lead.id, empresaId: lead.empresaId };
+    }
+  }
+  return null;
 }
 
 function metadataId(metadata: Record<string, string> | null | undefined, keys: string[]): string | null {
@@ -66,6 +128,15 @@ export async function resolveBillingCustomer(
   if (alias) {
     return { kind: "REVIEW", source: "ALIAS", billingIdentityId: alias.identityId, reason: "alias existe sem lead confirmado" };
   }
+
+  /* 2a. O negócio ou a proposta gravados na ASSINATURA pelo próprio CRM.
+     Prova mais forte que e-mail e que a metadata do Customer: o CRM escreveu
+     ali, no ato da venda, de quem é esta cobrança. Sem isto, uma assinatura
+     cujo e-mail de cobrança é o do financeiro (e não o do contato da proposta)
+     ficava FORA do espelho para sempre — medido em produção em 15/10/2026:
+     20 assinaturas ativas, R$ 8.355,91 de MRR mensal, sem dono no CRM. */
+  const daVenda = await porNegocioOuProposta(organizacaoId, customer.assinaturaMetadata);
+  if (daVenda) return daVenda;
 
   // 2. IDs opacos do CRM na metadata são a única metadata que pode confirmar
   // uma identidade sozinha. Nunca use nome/telefone como chave.
