@@ -58,6 +58,8 @@ export interface CallfaceCallPayload {
   call_duration?: number; // segundos
   call_audio_url?: string;
   user_email?: string;
+  /** Nome do agente de IA que discou — é ele que identifica de quem é a campanha. */
+  agent_name?: string;
   user_name?: string;
   destination_number?: string;
   credentials?: unknown[];
@@ -169,7 +171,7 @@ async function tentarAutoAgendar(
   orgId: string,
   lead: { id: string; nome: string; empresa: string | null; email: string | null; tipo: string; agendaCloserId?: string | null; responsavelId?: string | null },
   combinado: CallfaceSchedulingItem,
-  contexto: { quemLigou: string; numeroFmt: string; resumo?: string | null },
+  contexto: { quemLigou: string; numeroFmt: string; resumo?: string | null; donoDaCampanha?: string | null },
 ): Promise<AutoAgendarResultado> {
   if (lead.tipo !== "lead") {
     return { criado: false, motivoFalha: `lead.tipo='${lead.tipo}' não é pré-vendas, não auto-agenda` };
@@ -252,7 +254,7 @@ async function tentarAutoAgendar(
        Ordem: closer já oferecido a este lead > responsável do lead > rodízio.
        `pickNextCloserLocked` ignora o fixado que não for closer ativo, então um
        responsável de outro papel cai no rodízio sozinho, sem exceção aqui. */
-  }, lead.agendaCloserId ?? lead.responsavelId ?? null);
+  }, lead.agendaCloserId ?? contexto.donoDaCampanha ?? lead.responsavelId ?? null);
 
   if (locked.skip) {
     return { criado: false, motivoFalha: locked.motivoFalha };
@@ -329,6 +331,21 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
       .where(eq(usuarios.email, String(payload.user_email).toLowerCase().trim()))
       .limit(1);
     usuarioId = u?.id ?? null;
+  }
+
+  /* Ligação do AGENTE vem sem `user_email`: quem discou foi o robô. Mas o
+     payload traz `agent_name` ("Agente Mayra"), e é ele que diz de quem é a
+     campanha. Sem ler isso, o resultado do que a closer mandou ligar voltava
+     repartido no rodízio — 432 ligações em 7 dias sem dono, 226 delas de um
+     agente com nome de gente (15/10/2026). */
+  const agentName = typeof payload.agent_name === "string" ? payload.agent_name : null;
+  if (!usuarioId && agentName) {
+    const { donoDoAgente } = await import("./dono-da-ligacao");
+    const equipe = await db
+      .select({ id: usuarios.id, nome: usuarios.nome })
+      .from(usuarios)
+      .where(and(eq(usuarios.organizacaoId, orgId), eq(usuarios.ativo, true)));
+    usuarioId = donoDoAgente(agentName, equipe);
   }
 
   // Lead pelo número discado (órfã fica com leadId null — nunca descartar evento).
@@ -472,6 +489,10 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
         quemLigou,
         numeroFmt,
         resumo: payload.summarization,
+        /* Quem discou — a pessoa, ou a dona do agente que discou por ela.
+           É o que impede o rodízio de entregar a outra closer a reunião que
+           saiu da campanha desta. */
+        donoDaCampanha: usuarioId,
       }).catch((e): AutoAgendarResultado => {
         console.error("[Callface] auto-agendamento explodiu, caindo pro aviso manual:", e);
         return { criado: false, motivoFalha: String(e) };
