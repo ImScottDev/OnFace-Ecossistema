@@ -44,7 +44,12 @@ async function main() {
            l.responsavel_id::text AS responsavel_id
       FROM vendas_eventos e
       JOIN leads l ON l.id = e.lead_id
-      JOIN oportunidades o ON o.lead_id = e.lead_id
+      /* A oportunidade chega ao lead PELO NEGÓCIO: oportunidades.lead_id é
+         nulo em boa parte da base (a conversão não o preenche). Casar direto
+         por lead não achava nada — e foi por isso que o primeiro reparo saiu
+         vazio com o defeito na tela. */
+      JOIN negocios n ON n.lead_id = e.lead_id
+      JOIN oportunidades o ON o.negocio_id_legado = n.id
       LEFT JOIN usuarios uo ON uo.id = o.responsavel_id
       LEFT JOIN usuarios ul ON ul.id = l.responsavel_id
      WHERE e.tipo = 'OwnerChanged'
@@ -73,7 +78,16 @@ async function main() {
          WHERE id = ${c.negocio_id}::uuid`);
     }
   }
-  console.log(`alinhadas: ${casos.length}`);
+  /* De passagem: a oportunidade que não sabe de qual lead veio. Não é cosmético
+     — toda leitura que parte do lead (ficha, 360, relatório) perde a
+     oportunidade quando esse vínculo falta. Só preenche o que está vazio. */
+  const vinculo = await db.execute<{ id: string }>(sql`
+    UPDATE oportunidades o SET lead_id = n.lead_id, updated_at = now()
+      FROM negocios n
+     WHERE n.id = o.negocio_id_legado AND o.lead_id IS NULL AND n.lead_id IS NOT NULL
+    RETURNING o.id::text AS id`);
+
+  console.log(`alinhadas: ${casos.length} · vínculo lead↔oportunidade preenchido: ${vinculo.length}`);
 }
 
 void main().then(() => process.exit(0));
