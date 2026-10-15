@@ -65,6 +65,8 @@ export async function criarCheckoutParaGrupo(opts: {
   grupoId: string;
   origem: "automatico_pos_aceite" | "manual_vendedor";
   criadoPorId?: string | null;
+  /** Expansão: a assinatura que o vendedor escolheu, quando a empresa tem mais de uma viva. */
+  assinaturaEscolhidaId?: string | null;
 }): Promise<CriarCheckoutResult> {
   const [grupo] = await db.select().from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, opts.grupoId)).limit(1);
   if (!grupo) return { ok: false, error: "Grupo comercial não encontrado" };
@@ -194,6 +196,7 @@ export async function criarCheckoutParaGrupo(opts: {
       propostaId: proposta.id,
       grupoId: opts.grupoId,
       usuarioId: opts.criadoPorId ?? null,
+      assinaturaEscolhidaId: opts.assinaturaEscolhidaId ?? null,
       itens: itensRecorrentes.map((i) => ({
         nome: i.nome, quantidade: i.quantidade, stripePriceId: i.stripePriceId,
         valorUnitario: i.valorUnitario, valorTabela: i.valorTabela,

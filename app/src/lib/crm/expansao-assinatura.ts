@@ -80,6 +80,45 @@ export function agruparPorPrice(itens: ItemDeExpansao[]): Map<string, number> {
  * Só olha o espelho do CRM (`fora_do_espelho_em IS NULL`): a conta Stripe é
  * compartilhada com o SaaS, e assinatura do SaaS não é nossa para alterar.
  */
+/**
+ * A assinatura onde a expansão entra.
+ *
+ * Escolhida pelo vendedor na oportunidade quando existe mais de uma viva; a
+ * única viva quando não há dúvida. Escolher é da pessoa, não do sistema — mas
+ * perguntar é na tela da venda, não mandando ninguém procurar noutro lugar.
+ */
+export async function assinaturaParaExpandir(
+  organizacaoId: string,
+  empresaId: string,
+  escolhidaId: string | null,
+): Promise<{ ok: true; id: string; subscriptionId: string } | { ok: false; semAssinaturaViva?: boolean; error: string }> {
+  if (!escolhidaId) return assinaturaUnicaDaEmpresa(organizacaoId, empresaId);
+  const [a] = await db
+    .select({ id: assinaturas.id, subId: assinaturas.stripeSubscriptionId, status: assinaturas.status })
+    .from(assinaturas)
+    .where(and(
+      eq(assinaturas.id, escolhidaId),
+      eq(assinaturas.organizacaoId, organizacaoId),
+      eq(assinaturas.empresaId, empresaId),
+      assinaturaDoCrm,
+    ))
+    .limit(1);
+  if (!a) return { ok: false, error: "A assinatura escolhida não é desta empresa." };
+  if (a.status !== "active" && a.status !== "trialing") {
+    return { ok: false, error: `A assinatura escolhida está '${a.status}' — só assinatura ativa recebe o upgrade.` };
+  }
+  return { ok: true, id: a.id, subscriptionId: a.subId };
+}
+
+/** As assinaturas vivas da empresa, para o vendedor escolher na oportunidade. */
+export async function assinaturasVivasDaEmpresa(organizacaoId: string, empresaId: string) {
+  const linhas = await db
+    .select({ id: assinaturas.id, subscriptionId: assinaturas.stripeSubscriptionId, produto: assinaturas.produto, quantidade: assinaturas.quantidade, mrr: assinaturas.mrr, status: assinaturas.status })
+    .from(assinaturas)
+    .where(and(eq(assinaturas.organizacaoId, organizacaoId), eq(assinaturas.empresaId, empresaId), assinaturaDoCrm));
+  return linhas.filter((a) => a.status === "active" || a.status === "trialing");
+}
+
 export async function assinaturaUnicaDaEmpresa(
   organizacaoId: string,
   empresaId: string,
@@ -122,6 +161,8 @@ export async function aplicarExpansaoNaAssinatura(opts: {
   grupoId: string;
   itens: ItemDeExpansao[];
   usuarioId?: string | null;
+  /** A assinatura que o vendedor escolheu, quando a empresa tem mais de uma viva. */
+  assinaturaEscolhidaId?: string | null;
 }): Promise<ResultadoExpansao> {
   if (opts.itens.length === 0) return { ok: false, error: "Grupo de expansão sem item recorrente." };
 
@@ -130,7 +171,7 @@ export async function aplicarExpansaoNaAssinatura(opts: {
     return { ok: false, error: `O item '${descontado.nome}' foi negociado abaixo do preço de tabela, e a alteração de assinatura cobraria o valor cheio. Conclua em Cliente 360 › Assinaturas aplicando o desconto combinado.` };
   }
 
-  const assinatura = await assinaturaUnicaDaEmpresa(opts.organizacaoId, opts.empresaId);
+  const assinatura = await assinaturaParaExpandir(opts.organizacaoId, opts.empresaId, opts.assinaturaEscolhidaId ?? null);
   if (!assinatura.ok) {
     return assinatura.semAssinaturaViva
       ? { ok: false, semAssinaturaViva: true, error: assinatura.error }

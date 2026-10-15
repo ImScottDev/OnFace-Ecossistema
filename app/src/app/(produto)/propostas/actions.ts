@@ -800,3 +800,57 @@ export async function acaoSalvarDadosDoContrato(entrada: {
     return r;
   });
 }
+
+/**
+ * As assinaturas vivas do cliente desta proposta, para o vendedor escolher
+ * onde o upgrade entra — na própria oportunidade, sem sair para o Cliente 360.
+ *
+ * Só aparece quando há mais de uma: com uma só, o aceite resolve sozinho.
+ */
+export async function acaoAssinaturasParaUpgrade(propostaId: string): Promise<Resultado<Array<{
+  id: string; produto: string | null; quantidade: number | null; mrr: string | null;
+}>>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("listar assinaturas do cliente", async () => {
+    const [linha] = await db.execute<{ empresa_id: string | null }>(sql`
+      SELECT n.empresa_id::text AS empresa_id
+        FROM propostas p JOIN negocios n ON n.id = p.negocio_id
+       WHERE p.id = ${propostaId}::uuid AND p.organizacao_id = ${ctx.organizacaoId}::uuid`);
+    if (!linha?.empresa_id) return [];
+    const { assinaturasVivasDaEmpresa } = await import("@/lib/crm/expansao-assinatura");
+    const vivas = await assinaturasVivasDaEmpresa(ctx.organizacaoId, linha.empresa_id);
+    return vivas.map((a) => ({ id: a.id, produto: a.produto, quantidade: a.quantidade, mrr: a.mrr }));
+  });
+}
+
+/**
+ * Cobra o upgrade na assinatura que o vendedor escolheu, e devolve o link.
+ *
+ * É o mesmo caminho do aceite automático — só com a dúvida resolvida por
+ * alguém. Nada de assinatura nova: os itens entram na que o cliente já tem e o
+ * Stripe emite a fatura do proporcional.
+ */
+export async function acaoCobrarUpgradeNaAssinatura(
+  propostaId: string,
+  assinaturaId: string,
+): Promise<Resultado<{ url: string | null; itens: number }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("cobrar upgrade na assinatura", async () => {
+    const [g] = await db.execute<{ id: string }>(sql`
+      SELECT g.id::text FROM proposta_grupo_comercial g
+       WHERE g.proposta_id = ${propostaId}::uuid AND g.organizacao_id = ${ctx.organizacaoId}::uuid
+         AND g.checkout_id IS NULL
+       ORDER BY g.created_at LIMIT 1`);
+    if (!g) throw new RegraDeNegocio("grupo_nao_encontrado", "Esta proposta não tem grupo aguardando pagamento.");
+    const { criarCheckoutParaGrupo } = await import("@/lib/crm/checkout");
+    const r = await criarCheckoutParaGrupo({
+      grupoId: g.id, origem: "manual_vendedor", criadoPorId: ctx.usuarioId, assinaturaEscolhidaId: assinaturaId,
+    });
+    if (!r.ok) throw new RegraDeNegocio("upgrade_recusado", r.error);
+    revalidatePath(ROTA);
+    if ("expansao" in r) return { url: r.faturaUrl, itens: r.itensAplicados };
+    return { url: r.url, itens: 0 };
+  });
+}
