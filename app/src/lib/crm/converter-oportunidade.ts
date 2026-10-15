@@ -219,6 +219,14 @@ export async function converterLeadEmOportunidade(
       // Sem data de reunião = nasceu direto (mesmo sem a flag semReuniao explícita).
       origemQualificacao: input.reuniao?.data ? "reuniao" : "direta",
       status: "reuniao_agendada",
+      /* A etapa é o que a leitura usa, e o legado nascia sem ela. Quem é
+         classificado só conta como "Lead" com `etapa IN (abertas)`
+         (lib/vendas/classificacao.ts), então o negócio sem etapa saía de
+         Pré-vendas pelo handoff e não entrava em lugar nenhum: virava
+         "Contato" e desaparecia das duas telas. Mesma entrada da porta nova
+         (`criarOportunidade`). */
+      etapa: "entrada",
+      etapaDesde: new Date(),
       pipelineId: defaultPipeline?.id || null,
       responsavelId: closerId || lead.responsavelId || undefined,
     })
@@ -227,7 +235,12 @@ export async function converterLeadEmOportunidade(
   await db.insert(negocioLeads).values({ negocioId: negocio.id, leadId: lead.id, papel: "contato" });
 
   await db.update(leads).set({ negocioAtivoId: negocio.id, sdrStatus: "qualified", updatedAt: new Date() }).where(eq(leads.id, lead.id));
-  await encerrarAquisicaoConvertida(lead.id); // handoff: a aquisição sai de Pré-vendas como convertida
+  /* handoff: a aquisição sai de Pré-vendas como convertida. O executor vai
+     junto porque a conversão pode estar DENTRO de uma transação (é o caso do
+     auto-agendamento por ligação): sem ele, o fechamento da aquisição ia pelo
+     db global e valia mesmo que a transação voltasse atrás — o lead saía de
+     Pré-vendas sem ter virado oportunidade nenhuma. */
+  await encerrarAquisicaoConvertida(lead.id, db);
 
   await db.insert(statusChanges).values({
     leadId: lead.id,
@@ -292,8 +305,17 @@ export async function converterLeadEmOportunidade(
     });
   }
 
-  // F1/dual-write: sincroniza Domain Model novo — best-effort, nunca bloqueia
-  // a conversão real (usada tanto pelo endpoint manual quanto pelo Agente SDR).
+  /* F1/dual-write: sincroniza Domain Model novo — best-effort, nunca bloqueia
+     a conversão real (usada tanto pelo endpoint manual quanto pelo Agente SDR).
+
+     ATENÇÃO: estas duas leem pelo `db` GLOBAL, não pelo executor desta função.
+     Quando a conversão roda dentro de uma transação, o negócio ainda não está
+     commitado, a leitura não o encontra e as duas saem caladas — a linha
+     canônica em `oportunidades` nunca nasce e o Pipeline, que lê de lá, não
+     mostra a oportunidade. Quem chama dentro de transação precisa chamar
+     `sincronizarDomainModelDaConversao` DEPOIS do commit (é o que o
+     auto-agendamento por ligação faz). Rodar duas vezes é inofensivo: as duas
+     são idempotentes. */
   await syncPessoaFromLead(lead.id);
   await syncOportunidadeFromNegocio(negocio.id);
 
