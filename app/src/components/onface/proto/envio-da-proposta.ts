@@ -8,6 +8,8 @@
    3. SÓ DIZ "ENVIADA" DEPOIS DO SERVIDOR: `enviarConfirmando` só chama `sucesso` quando a gravação voltou `ok`.
       Com uma trava de reentrada: clique duplo não grava (nem cria proposta) duas vezes. */
 
+import { ehAcaoDeOutroBuild } from "@/lib/acao-de-outro-build";
+
 export interface FonteDeContato { email?: string | null; telefone?: string | null; whatsapp?: string | null }
 export interface Destinatario { email: string; telefone: string }
 
@@ -95,6 +97,17 @@ export async function enviarConfirmando<R extends ResultadoDaGravacao>(
     hooks.erro(r.erro, r);
     return "erro";
   } catch (e) {
+    /* Deploy com o time trabalhando: a página veio de um build anterior e a
+       Server Action não existe mais no servidor. O Next devolve o hash cru
+       ("Server Action '4098a…' was not found on the server"), que para quem
+       está vendendo não quer dizer nada — e nada foi perdido, basta recarregar.
+       O aviso global (`AvisoVersaoNova`) não alcança este caso porque aqui o
+       erro é capturado, então a tradução mora neste catch, que é por onde todo
+       envio de proposta passa. */
+    if (ehAcaoDeOutroBuild(e)) {
+      hooks.erro("O sistema foi atualizado enquanto esta página estava aberta. Nada foi enviado — recarregue a página (Cmd+R) e envie de novo.");
+      return "erro";
+    }
     hooks.erro(e instanceof Error ? e.message : "Não consegui falar com o servidor.");
     return "erro";
   } finally {

@@ -20,14 +20,9 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { ehAcaoDeOutroBuild } from "@/lib/acao-de-outro-build";
 
-/** A assinatura do erro, nas duas formas em que o Next o entrega. */
-function ehAcaoDeOutroBuild(motivo: unknown): boolean {
-  const texto =
-    motivo instanceof Error ? `${motivo.name}: ${motivo.message}` : String(motivo ?? "");
-  return /Failed to find Server Action/i.test(texto)
-    || /from an older or newer deployment/i.test(texto);
-}
+
 
 export function AvisoVersaoNova() {
   React.useEffect(() => {
