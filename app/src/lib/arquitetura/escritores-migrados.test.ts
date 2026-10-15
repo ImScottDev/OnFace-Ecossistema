@@ -206,7 +206,11 @@ test("o worker NÃO cria pessoa ao criar contato de WhatsApp", () => {
   // decide, pelo "Criar lead", se vira cadastro. Os LIDs do WhatsApp viravam
   // pessoas chamadas pelo próprio número.
   const src = ler("worker/index.ts");
-  const criaContato = src.match(/db\.insert\(contatos\)[\s\S]{0,900}?(?=\n  \/\/ Fire-and-forget|\n  \/\/ Dedup)/g) ?? [];
+  // O alcance acompanha o tamanho do trecho: os dois inserts ganharam
+  // `onConflictDoUpdate` (a corrida entre duas mensagens do mesmo número
+  // derrubava o job) e passaram de 900. O que a trava prova continua sendo o
+  // de sempre — que nenhum dos dois cria pessoa.
+  const criaContato = src.match(/db\.insert\(contatos\)[\s\S]{0,1600}?(?=\n  \/\/ Fire-and-forget|\n  \/\/ Dedup)/g) ?? [];
   assert.equal(criaContato.length, 2, "esperava os dois pontos que criam contato de WhatsApp");
   for (const trecho of criaContato) assert.ok(!trecho.includes("identidadeCanonicaDeContato"), trecho);
   assert.ok(!ler("lib/atendimento/tela.ts").includes("FROM pessoas"), "o Atendimento lista de contatos, não de pessoas");

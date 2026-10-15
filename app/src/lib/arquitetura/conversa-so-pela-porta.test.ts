@@ -70,6 +70,7 @@ const SEM_A_PORTA: Record<string, string> = {
   "src/lib/ai-platform/tools/operacao.ts": "ferramenta de agente: a conversa é a do contexto da execução (ctx.contatoId), não um argumento do modelo",
   "src/lib/ai-platform/tools/registry.ts": "ferramenta de agente: lê só a conversa do contexto da execução (ctx.contatoId)",
   "src/lib/atendimento/ia-conversa.ts": "estado da IA; as duas rotas que o chamam checam a porta antes",
+  "src/lib/atendimento/lead-da-conversa.ts": "casamento por telefone e checagem da conversa irmã do lead (identidade, nunca o texto da conversa)",
   // Ingestão.
   "src/worker/index.ts": "worker de ingestão e envio: grava e despacha mensagem, não responde a usuário",
   // vendas/**: a ficha do prospect e a linha do tempo passaram pela porta em 14/10

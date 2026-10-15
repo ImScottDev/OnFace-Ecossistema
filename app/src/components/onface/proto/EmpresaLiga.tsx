@@ -567,9 +567,9 @@ posFlutuante(r, alto) {
       timeline: (tlBase = (X.eventos || []).map(ev => [ev.titulo, ev.autor, ev.quando, ev.d, false, ev.vinc || vincDe(ev.autor)]).concat(E.registro ? [
         ["Cadastrado em Contatos & Empresas", (E.origem || "Cadastro manual") + (E.campanha ? " · " + E.campanha : ""), dataCriacao(E.criadoEm), "M12 5v14M5 12h14", false, "Empresa"]
       ] : [
-        ["Próxima ação agendada", E.acao || "Ligar para " + E.pessoa, "Hoje, 16:30", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", true, E.pessoa],
+        ["Próxima ação agendada", E.acao || (E.pessoa ? "Ligar para " + E.pessoa : "Ligar para o contato"), "Hoje, 16:30", "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", true, E.pessoa],
         ["WhatsApp recebido", E.pessoa, "Ontem, 13:42", ico.wa, false, E.pessoa],
-        ["Lead criado via " + E.origem, "Sistema", "20 set", "M12 5v14M5 12h14", false, "Empresa"],
+        [E.origem ? "Lead criado via " + E.origem : "Lead criado", "Sistema", "20 set", "M12 5v14M5 12h14", false, "Empresa"],
         ["Campanha " + (E.campanha || E.origem), E.origem, "20 set", "M3 11l18-5v12L3 14v-3z", false, "Empresa"]
       ])).filter(ev => vincOk(ev[5])).filter((_, i) => S.tlTudo || i < 5).map(([titulo, autor, quando, d, coral, vinc], i, arr) => {
         const rel = /^Ligação\b/.test(titulo);
@@ -594,8 +594,14 @@ posFlutuante(r, alto) {
           tlAlternar: () => this.setState(s => ({ tlTudo: !s.tlTudo }))
         };
       })(),
-      acaoTitulo: E.acao ? E.acao + " · " + (E.venceEm || "hoje") : (E.registro ? "Nenhuma ação agendada" : "Ligar para " + E.pessoa + " · hoje, 16:30"),
-      acaoNota: E.registro && !E.acao ? "Crie uma atividade para não esquecer do próximo passo." : "Entender necessidades de telefonia e apresentar o " + E.interesse + ".",
+      acaoTitulo: E.acao ? E.acao + " · " + (E.venceEm || "hoje") : (E.registro ? "Nenhuma ação agendada" : (E.pessoa ? "Ligar para " + E.pessoa : "Ligar para o contato") + " · hoje, 16:30"),
+      // Sem interesse preenchido o texto virava "apresentar o null." na tela do
+      // cliente — o campo é opcional e quase sempre vem vazio.
+      acaoNota: E.registro && !E.acao
+        ? "Crie uma atividade para não esquecer do próximo passo."
+        : E.interesse
+          ? "Entender necessidades de telefonia e apresentar o " + E.interesse + "."
+          : "Entender as necessidades de telefonia e apresentar a solução.",
       resp: E.resp || "Sem responsável",
       respIniciais: ini(E.resp),
       tags: tagsAtuais.map(t => ({ label: t })),
