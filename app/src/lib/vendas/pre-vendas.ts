@@ -431,6 +431,28 @@ export async function atribuirResponsavel(params: {
      WHERE id = ${params.leadId}::uuid
   `);
 
+  /* O mesmo registro aparece em Pré-vendas e no Pipeline. Trocar o dono aqui
+     gravava só o lead e a aquisição: a timeline dizia "Responsável: A → B" e o
+     card da oportunidade seguia em A, para sempre. Quem usa não vê dois
+     modelos, vê a troca que não pegou.
+
+     Propaga só quando os dois lados estavam no MESMO dono — aí é o mesmo fato,
+     e manter alinhado é o esperado. Oportunidade já entregue a outra pessoa
+     (SDR passou para closer) não é roubada por uma troca no lado de
+     Pré-vendas: isso tem porta própria, `atribuirResponsavelDaOportunidade`. */
+  if (lead.responsavel_id) {
+    await db.execute(sql`
+      UPDATE negocios SET responsavel_id = ${params.responsavelId}::uuid, updated_at = now()
+       WHERE lead_id = ${params.leadId}::uuid
+         AND organizacao_id = ${params.organizacaoId}::uuid
+         AND responsavel_id = ${lead.responsavel_id}::uuid`);
+    await db.execute(sql`
+      UPDATE oportunidades SET responsavel_id = ${params.responsavelId}::uuid, updated_at = now()
+       WHERE lead_id = ${params.leadId}::uuid
+         AND organizacao_id = ${params.organizacaoId}::uuid
+         AND responsavel_id = ${lead.responsavel_id}::uuid`);
+  }
+
   const nomes = await resolverNomes(params.organizacaoId, [lead.responsavel_id, params.responsavelId].filter((x): x is string => !!x));
   await registrarEvento({
     organizacaoId: params.organizacaoId,
