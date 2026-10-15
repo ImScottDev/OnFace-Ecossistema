@@ -114,10 +114,10 @@ services:
     # IMAGE_TAG vem do .env do servidor, gravado pelo ./deploy.sh. O `build:`
     # fica só para o fallback `./deploy.sh dev --construir-aqui`.
     build:
-    logging: *log
       context: .
       target: app
     image: ghcr.io/imscottdev/onface-app:${IMAGE_TAG:-main}
+    logging: *log
     container_name: callface-${STACK:-crm2-dev}-app
     restart: unless-stopped
     env_file: .env
@@ -173,10 +173,10 @@ services:
   api:
     # API e worker são a MESMA imagem (`backend`); muda só o processo.
     build:
-    logging: *log
       context: .
       target: backend
     image: ghcr.io/imscottdev/onface-backend:${IMAGE_TAG:-main}
+    logging: *log
     command: ["node", "app/dist/api/index.mjs"]
     container_name: callface-${STACK:-crm2-dev}-api
     restart: unless-stopped
