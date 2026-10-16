@@ -52,9 +52,14 @@ export function compileFollowupGraph(graph: FollowupGraph): CadenceStep[] {
       const adapter = node.config.mode === "ai_message" ? "ai_agent_message"
         : node.config.mode === "template" ? "whatsapp_template"
         : node.config.mode === "email" ? "email"
+        : node.config.mode === "whatsapp" ? "whatsapp"
         : `crm_${node.config.mode}`;
+      // Os adapters de texto livre leem `mensagem` (e o e-mail, `assunto`):
+      // é o nome que o motor usa desde a cadência legada, não o do grafo.
       const config = node.config.mode === "email"
         ? { assunto: node.config.subject, mensagem: node.config.message }
+        : node.config.mode === "whatsapp"
+        ? { mensagem: node.config.message, sessao_id: node.config.sessao_id }
         : node.config;
       return { id: node.id, tipo: "action", adapter, config, retry: { maxTentativas: 3, backoffMinutos: [1, 5, 15] }, branches };
     }

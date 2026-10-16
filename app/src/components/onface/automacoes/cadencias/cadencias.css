@@ -1,70 +1,106 @@
-/* Cadências — linguagem ONFACE, arquétipo B (Data List).
-   Escopo em .of-cad para não vazar para outras telas. Os valores são os
-   tokens do protótipo (OnFace Contatos.dc.html): elevação por box-shadow
-   inset, nunca border; coral só como acento; primário var(--of-coral-acao). */
+/* Cadências — só o que `automacoes.css` e `fluxos/fluxos.css` não dão.
+ *
+ * Esta tela tinha um vocabulário próprio (`of-cad-*`) que repetia botão,
+ * pílula, tabela e modal já existentes na seção. Saiu. O que sobra aqui é o
+ * cartão de passo (a peça que a seção não tinha), as larguras de grade das
+ * duas tabelas e três ajustes de campo. Cor só por token: hex aqui reprova a
+ * catraca cor-tem-nome. */
 
-.of-cad { display: flex; flex-direction: column; gap: 14px; font-family: Inter, system-ui, sans-serif; color: var(--of-tinta); }
-.of-cad h2, .of-cad .of-num { font-family: "Plus Jakarta Sans", Inter, sans-serif; }
+/* ─── Editor: coluna única, a sequência no centro ───────────────────────── */
+/* Vive dentro da página (`.onface-pagina`), não num véu por cima dela: a
+   barra é um cartão, não um cabeçalho de aplicativo separado. */
+.ofc-editor { min-width: 0; display: flex; flex-direction: column; gap: 12px; font-family: var(--of-fonte); color: var(--of-tinta); }
+.ofc-editor .ofx-topo { flex-wrap: wrap; border-radius: 14px; box-shadow: 0 0 0 1px var(--of-linha); }
+.ofc-editor .ofx-faixa { border-radius: 12px; box-shadow: none; }
+.ofc-rolagem { min-width: 0; }
+.ofc-coluna { width: 100%; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.ofc-gatilho { background: var(--of-papel); box-shadow: 0 0 0 1px var(--of-linha); }
+.ofc-dupla { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
 
-.of-cad-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border: 0; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; background: var(--of-papel); color: var(--of-tinta); box-shadow: inset 0 0 0 1px var(--of-linha-controle); transition: background-color .16s ease, box-shadow .16s ease; }
-.of-cad-btn:hover:not(:disabled) { background: var(--of-calha); }
-.of-cad-btn[data-tom="primario"] { background: var(--of-coral-acao); color: var(--of-papel); box-shadow: none; }
-.of-cad-btn[data-tom="primario"]:hover:not(:disabled) { background: var(--of-coral-acao-hover); }
-.of-cad-btn[data-tom="fantasma"] { background: transparent; box-shadow: none; color: var(--of-tinta-2); }
-.of-cad-btn[data-tamanho="p"] { height: 28px; padding: 0 9px; font-size: 11.5px; border-radius: 7px; }
-.of-cad-btn:disabled { opacity: .45; cursor: not-allowed; }
-.of-cad-btn svg { width: 14px; height: 14px; }
+/* Aviso da sintaxe de variável: {{chave}} e não {chave}. Fica à vista porque
+   é o erro que já deixou 6 dos 16 modelos de produção saindo literais. */
+.ofc-vars { display: flex; align-items: flex-start; gap: 8px; padding: 9px 12px; border-radius: 10px; background: var(--of-coral-fundo); color: var(--of-coral-texto-forte); font-size: 12px; line-height: 1.5; }
+.ofc-vars > span { flex: 1; }
+.ofc-vars code { padding: 1px 5px; border-radius: 5px; background: var(--of-papel); font-family: var(--of-fonte-mono); font-size: 11px; }
 
-.of-cad-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.of-cad-abas { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--of-calha); }
-.of-cad-aba { height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; font-size: 12.5px; font-weight: 600; color: var(--of-tinta-2); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-.of-cad-aba[aria-selected="true"] { background: var(--of-papel); color: var(--of-tinta-forte); box-shadow: inset 0 0 0 1px var(--of-linha); }
-.of-cad-aba .of-cad-cont { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--of-tinta-3); }
+/* ─── O cartão de passo ─────────────────────────────────────────────────── */
+.ofc-passos { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ofc-passos > li { position: relative; border-radius: 14px; background: var(--of-papel); box-shadow: 0 0 0 1px var(--of-linha); }
+/* A linha entre os cartões é o que faz a lista ler como sequência. */
+.ofc-passos > li + li::before { content: ""; position: absolute; left: 34px; top: -8px; height: 8px; width: 1.5px; background: var(--of-linha); }
+.ofc-passos > li[data-aberto="true"] { box-shadow: 0 0 0 1.5px var(--of-tinta-forte); }
+.ofc-passos > li[data-alvo="true"] { box-shadow: 0 0 0 2px var(--of-coral-contorno); }
 
-.of-cad-campo { height: 34px; padding: 0 10px; border: 0; outline: 0; border-radius: 8px; background: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-linha-controle); font-size: 12.5px; color: var(--of-tinta-forte); }
-.of-cad-campo:focus { box-shadow: inset 0 0 0 1px var(--of-tinta-forte); }
-.of-cad-busca { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 220px; }
-.of-cad-busca input { flex: 1; min-width: 0; }
+.ofc-passo { display: flex; align-items: center; gap: 2px; padding: 6px 8px 6px 4px; }
+.ofc-arrasta { flex: 0 0 auto; width: 20px; display: grid; place-items: center; color: var(--of-tinta-3); cursor: grab; }
+.ofc-arrasta:active { cursor: grabbing; }
+.ofc-passo-cab { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px; border: 0; border-radius: 10px; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.ofc-passo-cab:hover { background: var(--of-papel-alterno); }
+.ofc-quando { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: var(--of-r-pilula); background: var(--of-neutro); font-size: 11.5px; font-weight: var(--of-peso-semi); color: var(--of-tinta-2); white-space: nowrap; }
+.ofc-passo-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ofc-passo-corpo strong { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: var(--of-peso-semi); color: var(--of-tinta-forte); }
+.ofc-passo-corpo > span { font-size: 12px; color: var(--of-tinta-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ofc-numero { max-width: 190px; overflow: hidden; }
+.ofc-chevron { flex: 0 0 auto; color: var(--of-tinta-3); transition: transform var(--of-rapido) var(--of-curva); }
+.ofc-passo-cab[aria-expanded="true"] .ofc-chevron { transform: rotate(180deg); }
+.ofc-passo-acoes { flex: 0 0 auto; display: flex; gap: 1px; }
+.ofc-passo-detalhe { display: flex; flex-direction: column; gap: 10px; padding: 2px 12px 12px 34px; }
 
-.of-cad-lista { background: var(--of-papel); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--of-linha); overflow: hidden; }
-.of-cad-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.of-cad-tabela th { text-align: left; padding: 9px 14px; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--of-tinta-3); background: var(--of-papel-tela); white-space: nowrap; }
-.of-cad-tabela td { padding: 11px 14px; border-top: 1px solid var(--of-fio); vertical-align: middle; }
-.of-cad-tabela tr[data-clicavel="true"] { cursor: pointer; }
-.of-cad-tabela tr[data-clicavel="true"]:hover td { background: var(--of-papel-alterno); }
-.of-cad-rolagem { overflow-x: auto; }
-.of-cad-nome { display: block; font-size: 13px; font-weight: 600; color: var(--of-tinta-forte); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
-.of-cad-sub { display: block; font-size: 11.5px; color: var(--of-tinta-3); margin-top: 1px; }
-.of-cad-num { font-family: "Plus Jakarta Sans", Inter, sans-serif; font-weight: 700; color: var(--of-tinta-forte); font-variant-numeric: tabular-nums; }
-.of-cad-num[data-sinal="true"] { color: var(--of-coral-acao-hover); }
-.of-cad-acoes { display: flex; justify-content: flex-end; gap: 4px; }
+/* ─── Adicionar passo ───────────────────────────────────────────────────── */
+.ofc-add { position: relative; align-self: flex-start; }
+.ofc-add-pop { position: absolute; z-index: 20; left: 0; top: calc(100% + 6px); width: 320px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 14px; background: var(--of-papel); box-shadow: var(--of-sombra-popover); }
+.ofc-add-pop button { display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 10px; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.ofc-add-pop button:hover { background: var(--of-neutro); }
+.ofc-add-pop button > span:last-child { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ofc-add-pop strong { font-size: 13px; font-weight: var(--of-peso-semi); color: var(--of-tinta-forte); }
+.ofc-add-pop strong + span { font-size: 11.5px; color: var(--of-tinta-3); }
 
-.of-cad-pilula { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; background: var(--of-calha); color: var(--of-tinta-2); white-space: nowrap; }
-.of-cad-pilula::before { content: ""; width: 6px; height: 6px; border-radius: 9999px; background: currentColor; opacity: .8; }
-.of-cad-pilula[data-tom="ok"] { background: var(--of-sucesso-fundo); color: var(--of-sucesso-tinta); }
-.of-cad-pilula[data-tom="alerta"] { background: var(--of-aviso-fundo); color: var(--of-aviso-tinta); }
-.of-cad-pilula[data-tom="erro"] { background: var(--of-coral-fundo-forte); color: var(--of-coral-acao-hover); }
+/* ─── Prévia da mensagem ────────────────────────────────────────────────── */
+.ofc-previa { padding: 10px 12px; border-radius: 12px 12px 12px 4px; background: var(--of-canal-whatsapp-fundo); color: var(--of-canal-whatsapp-tinta); font-size: 12.5px; line-height: 1.5; }
+.ofc-previa[data-canal="email"] { border-radius: 12px; background: var(--of-papel-alterno); color: var(--of-tinta); box-shadow: inset 0 0 0 1px var(--of-fio); }
+.ofc-previa strong { display: block; margin-bottom: 4px; font-size: 13px; color: var(--of-tinta-forte); }
+.ofc-previa p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 
-.of-cad-aviso { display: flex; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 10px; background: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-linha); font-size: 12px; line-height: 1.5; color: var(--of-tinta-2); }
-.of-cad-aviso strong { color: var(--of-tinta-forte); }
-.of-cad-aviso svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 1px; color: var(--of-coral-marca); }
+/* ─── Condição e classes ────────────────────────────────────────────────── */
+.ofc-regra { display: grid; gap: 6px; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); }
+.ofc-classe { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ofc-classe > .oa-input { flex: 1 1 200px; }
+.ofc-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--of-tinta-2); white-space: nowrap; }
 
-.of-cad-vazio { padding: 56px 16px; text-align: center; }
-.of-cad-vazio h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--of-tinta-forte); }
-.of-cad-vazio p { margin: 4px auto 14px; max-width: 46ch; font-size: 12.5px; color: var(--of-tinta-3); }
+/* ─── Lista de cadências e fila: só as larguras ─────────────────────────── */
+.ofc-tabela .ofx-linha { grid-template-columns: minmax(200px, 2.2fr) minmax(140px, 1.2fr) auto minmax(80px, .7fr) minmax(90px, .7fr) minmax(90px, .7fr) auto; }
+.ofc-tabela-fila .ofx-linha { grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.2fr) minmax(120px, 1fr) minmax(120px, auto) auto auto; }
+.ofc-tabela .ofx-linha-nome { border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; padding: 0; }
+.ofc-tabela .ofx-linha-nome:disabled { cursor: default; }
+.ofc-tabela-fila .ofx-linha-nome { border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; padding: 0; }
+.ofc-acoes { flex-direction: row; align-items: center; gap: 2px; }
+.ofc-acoes .oa-btn { height: 30px; padding: 0 10px; font-size: 12px; }
+.ofx-linha-num[data-sinal="true"] { color: var(--of-coral-texto-forte); font-weight: var(--of-peso-semi); }
 
-.of-cad-veu { position: fixed; inset: 0; z-index: 1100; background: rgba(18,23,29,.42); display: grid; place-items: center; padding: 20px; }
-.of-cad-veu[data-lado="direita"] { place-items: stretch end; padding: 0; }
-.of-cad-modal { width: min(520px, 100%); max-height: calc(100vh - 40px); display: flex; flex-direction: column; background: var(--of-papel); border-radius: 14px; box-shadow: 0 30px 70px -20px rgba(18,23,29,.5); overflow: hidden; animation: ofCadIn .22s cubic-bezier(.16,1,.3,1); }
-.of-cad-gaveta { width: min(440px, 100vw); height: 100%; background: var(--of-papel); display: flex; flex-direction: column; box-shadow: -20px 0 50px -20px rgba(18,23,29,.4); animation: ofCadPainel .22s cubic-bezier(.16,1,.3,1); }
-.of-cad-modal-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px 12px; }
-.of-cad-modal-topo h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--of-tinta-forte); }
-.of-cad-modal-corpo { padding: 3px 18px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-.of-cad-item { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px; background: var(--of-papel-tela); font-size: 12.5px; }
-.of-cad-item > div { flex: 1; min-width: 0; }
-.of-cad-pre { margin: 6px 0 0; padding: 8px; border-radius: 7px; background: var(--of-papel); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--of-tinta-2); white-space: pre-wrap; overflow-x: auto; }
-.of-cad-x { width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--of-tinta-3); display: grid; place-items: center; cursor: pointer; }
-.of-cad-x:hover { background: var(--of-calha); }
+/* ─── Campos de busca e filtro da fila ──────────────────────────────────── */
+.ofc-busca { position: relative; display: flex; align-items: center; }
+.ofc-busca > svg { position: absolute; left: 10px; color: var(--of-tinta-3); pointer-events: none; }
+.ofc-busca > .oa-input { padding-left: 32px; }
+.ofc-filtro { flex: 0 1 220px; }
+.ofc-evento { align-items: flex-start; }
 
-@keyframes ofCadIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@keyframes ofCadPainel { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@media (max-width: 900px) {
+  .ofc-tabela .ofx-linha, .ofc-tabela-fila .ofx-linha { grid-template-columns: 1fr auto; row-gap: 8px; }
+  .ofc-passo-detalhe { padding-left: 12px; }
+  .ofc-add-pop { width: min(320px, calc(100vw - 48px)); }
+}
+
+/* No celular o cartão vira duas linhas: o passo em cima, as ações embaixo.
+   A alça de arrastar sai — toque não dispara drag HTML5, e as setas fazem o
+   mesmo trabalho sem prometer o que não funciona. */
+@media (max-width: 640px) {
+  .ofc-passo { flex-wrap: wrap; padding: 8px; }
+  .ofc-arrasta { display: none; }
+  .ofc-passo-cab { flex: 1 1 100%; flex-wrap: wrap; row-gap: 6px; }
+  .ofc-passo-corpo { flex: 1 1 100%; order: 3; }
+  .ofc-chevron { order: 4; margin-left: auto; }
+  .ofc-numero, .ofc-passo-cab .oa-selo { order: 5; }
+  .ofc-passo-acoes { flex: 1 1 100%; justify-content: flex-end; box-shadow: inset 0 1px 0 var(--of-fio); padding-top: 4px; }
+  .ofc-passos > li + li::before { left: 20px; }
+  .ofc-regra { grid-template-columns: 1fr; }
+}

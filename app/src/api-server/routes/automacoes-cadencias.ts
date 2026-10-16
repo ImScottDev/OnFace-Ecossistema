@@ -8,7 +8,7 @@
 // resposta pra não passar a falsa impressão de que já é 1 motor só.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, contatos, leads, negocios } from "@/lib/db/schema";
+import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, contatos, leads, negocios, whatsappTemplates } from "@/lib/db/schema";
 import { eq, sql, and, desc, inArray } from "drizzle-orm";
 import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
@@ -18,18 +18,41 @@ import { compileFollowupGraph } from "@/lib/ai-platform/followup/compile";
 import { createEmptyFollowupGraph, followupGraphSchema, type FollowupGraph } from "@/lib/ai-platform/followup/graph";
 import { legacyStepsToFollowupGraph } from "@/lib/ai-platform/followup/legacy";
 import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate";
+import { opcoesInspetor } from "@/lib/automacoes/fluxos-servico";
 
 const app = new Hono();
 
 // :id (cadência ou enrollment) que não é uuid estourava no Postgres (500); vira 404.
-// "fila" e o prefixo "enrollments" são rotas literais, não ids.
+// "fila", "opcoes" e o prefixo "enrollments" são rotas literais, não ids.
+const LITERAIS = new Set(["fila", "opcoes"]);
 app.use("/automacoes/cadencias/*", async (c, next) => {
   const [, , , seg, sub] = new URL(c.req.url).pathname.replace(/^\/api/, "").split("/");
   const id = seg === "enrollments" ? sub : seg;
-  if (id && id !== "fila" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+  if (id && !LITERAIS.has(id) && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return c.json({ error: "Nao encontrado" }, 404);
   }
   await next();
+});
+
+/**
+ * Opções do editor de passos: as mesmas do inspetor de Fluxos
+ * (`opcoesInspetor` — números de WhatsApp, usuários, tags, etapas, agentes),
+ * mais o que só a cadência precisa: o modelo aprovado com `categoria` (para
+ * agrupar a biblioteca) e `conteudo` (para a prévia do que vai chegar).
+ *
+ * Reusa a mesma função do inspetor de propósito: dois lugares calculando
+ * "números conectados desta organização" é como nasce a lista divergente.
+ */
+app.get("/automacoes/cadencias/opcoes", async (c) => {
+  const ctx = await getCtx(c);
+  const [opcoes, templates] = await Promise.all([
+    opcoesInspetor(ctx.organizacaoId),
+    db.select({ id: whatsappTemplates.id, nome: whatsappTemplates.nome, categoria: whatsappTemplates.categoria, conteudo: whatsappTemplates.conteudo })
+      .from(whatsappTemplates)
+      .where(and(eq(whatsappTemplates.organizacaoId, ctx.organizacaoId), eq(whatsappTemplates.ativo, true)))
+      .orderBy(whatsappTemplates.categoria, whatsappTemplates.nome),
+  ]);
+  return c.json({ ...opcoes, templates });
 });
 
 app.get("/automacoes/cadencias", async (c) => {

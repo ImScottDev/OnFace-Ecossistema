@@ -57,8 +57,13 @@ const classifyNodeSchema = z.object({
 const actionNodeSchema = z.object({
   id: z.string().min(1), type: z.literal("action"), label: z.string().min(1).max(60), position: positionSchema,
   config: z.discriminatedUnion("mode", [
-    z.object({ mode: z.literal("ai_message"), prompt_hint: z.string().min(1).max(1000), agent_id: z.string().uuid().optional(), fallback_template_id: z.string().uuid().optional() }).strict(),
-    z.object({ mode: z.literal("template"), template_id: z.string().uuid() }).strict(),
+    z.object({ mode: z.literal("ai_message"), prompt_hint: z.string().min(1).max(1000), agent_id: z.string().uuid().optional(), fallback_template_id: z.string().uuid().optional(), sessao_id: z.string().uuid().optional() }).strict(),
+    z.object({ mode: z.literal("template"), template_id: z.string().uuid(), sessao_id: z.string().uuid().optional() }).strict(),
+    // Texto livre de WhatsApp. O adapter "whatsapp" do motor já existia e já
+    // substitui `{{chave}}` (`aplicarVariaveis`), mas nenhum modo do grafo
+    // chegava nele: só o motor de Fluxos usava, por `executarAcaoAvulsa`. Sem
+    // este modo, a cadência só sabe mandar modelo aprovado ou pedir texto à IA.
+    z.object({ mode: z.literal("whatsapp"), message: z.string().min(1).max(4000), sessao_id: z.string().uuid().optional() }).strict(),
     z.object({ mode: z.literal("create_task"), title: z.string().min(1).max(160), description: z.string().max(1000).optional(), priority: z.enum(["baixa", "media", "alta", "urgente"]).default("media"), due_minutes: z.number().int().min(0).max(525_600).default(1440), owner_id: z.string().uuid().optional() }).strict(),
     z.object({ mode: z.literal("add_tag"), label_id: z.string().uuid() }).strict(),
     z.object({ mode: z.literal("remove_tag"), label_id: z.string().uuid() }).strict(),
