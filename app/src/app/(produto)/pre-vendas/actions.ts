@@ -460,7 +460,7 @@ export async function acaoCadenciasDoSistema(): Promise<Resultado<{
   return executar("cadências do sistema", async () => {
     const defs = await db.execute<{ id: string; nome: string; steps: unknown }>(sql`
       SELECT id::text, nome, steps FROM cadence_definitions
-       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false AND status = 'published'
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false AND status = 'published' AND entity_type = 'lead'
        ORDER BY nome LIMIT 40`);
     const rotuloDia = (min: number) => `Dia ${Math.round(min / 1440)}`;
     const cadencias = [...defs].map((d) => {
@@ -470,7 +470,7 @@ export async function acaoCadenciasDoSistema(): Promise<Resultado<{
         if (st.tipo === "wait") { acum += Number(st.esperaMinutos) || Math.round((Number(st.config?.duration_ms) || 0) / 60000); continue; }
         if (st.tipo !== "action") continue;
         const quando = rotuloDia(acum);
-        if (st.adapter === "ai_agent_message" || st.adapter === "whatsapp_message" || st.adapter === "whatsapp_template") passos.push({ quando, titulo: "WhatsApp", canal: "wa" });
+        if (["ai_agent_message", "whatsapp", "whatsapp_message", "whatsapp_template"].includes(String(st.adapter))) passos.push({ quando, titulo: st.config?.mensagem ? String(st.config.mensagem).slice(0, 170) : st.adapter === "ai_agent_message" ? "WhatsApp com IA" : "WhatsApp (modelo)", canal: "wa" });
         else if (st.adapter === "email") passos.push({ quando, titulo: `E-mail${st.config?.assunto ? ": " + st.config.assunto : ""}`, canal: "mail" });
         else if (st.adapter === "crm_callface_call") passos.push({ quando, titulo: "Ligação pelo Callface", canal: "tel" });
         else if (st.adapter === "crm_create_task") passos.push({ quando, titulo: `Tarefa${st.config?.titulo ? ": " + st.config.titulo : ""}`, canal: "task" });
@@ -500,7 +500,7 @@ export async function acaoRemoverDaCadencia(leadId: string): Promise<Resultado<{
     const vivas = await db.execute<{ id: string }>(sql`
       SELECT id::text FROM cadence_enrollments
        WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND entity_type = 'lead'
-         AND entity_id = ${leadId}::uuid AND status IN ('active', 'waiting')`);
+         AND entity_id = ${leadId}::uuid AND status IN ('active', 'waiting', 'waiting_reply', 'paused')`);
     const { cancelarCadencia } = await import("@/lib/cadencia/cadence-engine");
     for (const v of vivas) await cancelarCadencia(v.id, "removido_manualmente");
     revalidarLead();
@@ -592,4 +592,63 @@ export async function acaoSalvarEmpresa(empresaId: string, c: {
     revalidarLead();
     return null;
   });
+}
+
+/** Inscreve o lead autorizado; troca a régua somente após a nova inscrição existir. */
+export async function acaoInserirCadenciaDoLead(
+  leadId: string, cadenciaId: string, sessaoId?: string | null,
+): Promise<Resultado<{ enrollmentId: string; jaExistia: boolean }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("inserir na cadência", async () => {
+    const [lead] = await db.execute<{ id: string }>(sql`SELECT id::text FROM leads WHERE id = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid LIMIT 1`);
+    if (!lead) throw new RegraDeNegocio("lead_inexistente", "Este lead não pertence à sua organização.");
+    const [definition] = await db.execute<{ id: string }>(sql`SELECT id::text FROM cadence_definitions WHERE id = ${cadenciaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND entity_type = 'lead' AND ativo = true AND status = 'published' LIMIT 1`);
+    if (!definition) throw new RegraDeNegocio("cadencia_indisponivel", "Cadência não publicada ou incompatível com este lead.");
+    if (sessaoId) {
+      const [sessao] = await db.execute<{ id: string }>(sql`
+        SELECT id::text FROM whatsapp_sessao WHERE id = ${sessaoId}::uuid
+          AND organizacao_id = ${ctx.organizacaoId}::uuid AND usuario_id = ${ctx.ator.usuarioId}::uuid AND status = 'connected' LIMIT 1`);
+      if (!sessao) throw new RegraDeNegocio("sessao_invalida", "Número de WhatsApp não conectado ou não autorizado.");
+    }
+    const { iniciarCadencia, cancelarCadencia } = await import("@/lib/cadencia/cadence-engine");
+    const [existente] = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM cadence_enrollments WHERE organizacao_id = ${ctx.organizacaoId}::uuid
+        AND cadence_definition_id = ${cadenciaId}::uuid AND entity_type = 'lead'
+        AND entity_id = ${leadId}::uuid AND status IN ('active','waiting','waiting_reply','paused') LIMIT 1`);
+    if (existente) return { enrollmentId: existente.id, jaExistia: true };
+    const enrollmentId = await iniciarCadencia({
+      organizacaoId: ctx.organizacaoId, cadenceDefinitionId: cadenciaId,
+      entityType: "lead", entityId: leadId,
+      varsIniciais: sessaoId ? { cadencia_sessao_id: sessaoId } : {},
+    });
+    if (!enrollmentId) throw new RegraDeNegocio("cadencia_sem_passos", "A cadência não tem passos publicados.");
+    const anteriores = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM cadence_enrollments WHERE organizacao_id = ${ctx.organizacaoId}::uuid
+        AND entity_type = 'lead' AND entity_id = ${leadId}::uuid
+        AND id <> ${enrollmentId}::uuid AND status IN ('active','waiting','waiting_reply','paused')`);
+    for (const row of anteriores) await cancelarCadencia(row.id, "substituida_por_outra_cadencia");
+    revalidarLead();
+    return { enrollmentId, jaExistia: false };
+  });
+}
+
+/** Alterna a inscrição pelo ESTADO PERSISTIDO, nunca por um boolean de protótipo.
+ * A mesma peça de drawer pode ser aberta em qualquer página ou após um reload.
+ */
+export async function acaoAlternarCadenciaDoLead(leadId: string): Promise<Resultado<{ pausada: boolean }>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  const [row] = await db.execute<{ status: string }>(sql`
+    SELECT status FROM cadence_enrollments WHERE organizacao_id = ${ctx.organizacaoId}::uuid
+      AND entity_type = 'lead' AND entity_id = ${leadId}::uuid
+      AND status IN ('active','waiting','waiting_reply','paused')
+    ORDER BY started_at DESC LIMIT 1`);
+  if (!row) return { ok: false, erro: "Este lead não possui inscrição ativa ou pausada." };
+  const pausar = row.status !== "paused";
+  const { acaoPausarCadenciaDoLead } = await import("@/app/(produto)/contatos/actions");
+  const resultado = await acaoPausarCadenciaDoLead(leadId, pausar);
+  if (!resultado.ok) return resultado;
+  revalidarLead();
+  return { ok: true, dados: { pausada: pausar } };
 }

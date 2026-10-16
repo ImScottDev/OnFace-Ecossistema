@@ -114,3 +114,51 @@
   .ofc-passos > li + li::before { left: 20px; }
   .ofc-regra { grid-template-columns: 1fr; }
 }
+
+/* Construtor de jornada: mapa claro à esquerda e inspetor persistente à direita.
+   Reutiliza campos e tokens da casa; não há segundo editor nem formato novo. */
+.ofc-editor .ofc-coluna { max-width: 1320px; }
+.ofc-modos { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
+.ofc-modos > span { flex:1 1 230px; text-align:right; font-size:11.5px; color:var(--of-tinta-3); }
+.ofc-modos-grupo { display:inline-flex; gap:3px; padding:4px; border-radius:12px; background:var(--of-neutro); }
+.ofc-modos-grupo button { border:0; background:transparent; border-radius:9px; color:var(--of-tinta-2); display:flex; align-items:center; gap:7px; padding:8px 13px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.ofc-modos-grupo button:hover { color:var(--of-tinta-forte); }
+.ofc-modos-grupo button.ofc-modo-ativo { background:var(--of-papel); box-shadow:0 1px 5px var(--of-fio); color:var(--of-tinta-forte); }
+.ofc-workspace { display:grid; grid-template-columns:minmax(0, 1fr) minmax(320px, .78fr); gap:16px; align-items:start; }
+.ofc-flow { min-width:0; padding:26px clamp(12px, 3vw, 34px) 34px; border-radius:18px; border:1px solid var(--of-linha); background:radial-gradient(circle at 1px 1px, var(--of-fio) 1px, transparent 1px),var(--of-papel-alterno); background-size:20px 20px; display:flex; flex-direction:column; align-items:stretch; }
+.ofc-flow-intro,.ofc-flow-fim { width:min(100%, 540px); align-self:center; display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center; background:var(--of-papel); border-radius:14px; box-shadow:0 0 0 1px var(--of-linha); padding:19px; }
+.ofc-flow-inicio { display:flex; align-items:center; gap:6px; font-size:10px; letter-spacing:.07em; font-weight:700; color:var(--of-coral-texto-forte); }
+.ofc-flow-intro strong { color:var(--of-tinta-forte); font-size:14px; }
+.ofc-flow-intro small { color:var(--of-tinta-3); font-size:11px; }
+.ofc-flow-step { width:min(100%, 540px); align-self:center; min-width:0; }
+.ofc-flow-ligacao { display:flex; flex-direction:column; justify-content:center; align-items:center; gap:4px; min-height:64px; position:relative; color:var(--of-tinta-3); }
+.ofc-flow-ligacao::before { content:""; position:absolute; width:1px; height:100%; top:0; background:var(--of-fio); z-index:0; }
+.ofc-flow-ligacao > span { z-index:1; display:grid; place-items:center; background:var(--of-papel); border:1px solid var(--of-linha); color:var(--of-tinta-2); width:21px; height:21px; border-radius:50%; font-size:13px; }
+.ofc-flow-ligacao > small { z-index:1; background:var(--of-papel-alterno); padding:2px 7px; color:var(--of-tinta-2); font-size:11px; border-radius:6px; }
+.ofc-flow-node { display:flex; align-items:center; gap:12px; width:100%; min-width:0; text-align:left; padding:15px; border-radius:14px; border:1px solid var(--of-linha); background:var(--of-papel); box-shadow:0 2px 8px var(--of-fio); font:inherit; cursor:pointer; color:var(--of-tinta); transition:box-shadow .15s ease,border-color .15s ease,transform .15s ease; }
+.ofc-flow-node:hover { box-shadow:0 5px 20px var(--of-fio); transform:translateY(-1px); }
+.ofc-flow-node[data-selecionado="true"] { border-color:var(--of-coral-contorno); box-shadow:0 0 0 2px var(--of-coral-fundo),0 4px 20px var(--of-fio); }
+.ofc-flow-icon { width:42px; height:42px; flex:0 0 auto; display:grid; place-items:center; border-radius:12px; color:var(--of-coral-texto-forte); background:var(--of-coral-fundo); }
+.ofc-flow-content { display:flex; flex-direction:column; gap:4px; min-width:0; flex:1; }
+.ofc-flow-content > small { color:var(--of-tinta-3); font-size:10px; letter-spacing:.055em; font-weight:700; }
+.ofc-flow-content > strong { color:var(--of-tinta-forte); font-size:14px; font-weight:700; }
+.ofc-flow-content > span { color:var(--of-tinta-2); font-size:12px; line-height:1.5; overflow-wrap:anywhere; white-space:pre-wrap; max-height:3em; overflow:hidden; }
+.ofc-flow-node > svg:last-child { color:var(--of-tinta-3); transform:rotate(-90deg); }
+.ofc-flow-branches { display:flex; gap:8px; margin-top:8px; }
+.ofc-flow-branches > span { flex:1; min-width:0; padding:7px 6px; text-align:center; border-radius:8px; background:var(--of-papel); box-shadow:0 0 0 1px var(--of-linha); font-size:10.5px; color:var(--of-tinta-2); }
+.ofc-flow-fim { flex-direction:row; gap:10px; justify-content:center; font-size:12px; font-weight:650; }
+.ofc-flow-fim > span { display:grid; place-items:center; width:25px; height:25px; border-radius:50%; background:var(--of-neutro); color:var(--of-tinta-forte); }
+.ofc-inspector { min-width:0; position:sticky; top:14px; max-height:calc(100vh - 28px); overflow-y:auto; background:var(--of-papel); border:1px solid var(--of-linha); border-radius:18px; box-shadow:var(--of-sombra-popover); }
+.ofc-inspector-header { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:18px 18px 14px; border-bottom:1px solid var(--of-fio); }
+.ofc-inspector-header small { font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--of-coral-texto-forte); }
+.ofc-inspector-header h2 { margin:5px 0 0; font-size:17px; color:var(--of-tinta-forte); }
+.ofc-inspector-fields { display:flex; flex-direction:column; gap:14px; padding:16px; }
+.ofc-inspector-fields .ofx-insp-secao { min-width:0; }
+.ofc-inspector-empty { padding:60px 26px; min-height:300px; display:flex; flex-direction:column; align-items:center; text-align:center; justify-content:center; gap:9px; }
+.ofc-inspector-empty svg { color:var(--of-tinta-3); margin-bottom:12px; }
+.ofc-inspector-empty strong { color:var(--of-tinta-forte); font-size:15px; }
+.ofc-inspector-empty p { color:var(--of-tinta-3); font-size:12px; line-height:1.65; max-width:270px; margin:0; }
+.ofc-inspector-footer { display:flex; flex-wrap:wrap; gap:8px; padding:13px 16px 16px; border-top:1px solid var(--of-fio); }
+.ofc-espera-editor { display:grid; grid-template-columns:minmax(65px, 1fr) minmax(105px, 1.2fr); gap:8px; }
+@media(max-width:980px) { .ofc-workspace { grid-template-columns:minmax(0, 1fr); } .ofc-inspector { position:relative; top:0; max-height:none; } .ofc-modos > span { text-align:left; } }
+@media(max-width:520px) { .ofc-flow { padding:14px 10px 22px; } .ofc-flow-node { padding:12px 10px; gap:9px; } .ofc-flow-content > strong { font-size:12.5px; } .ofc-flow-branches { flex-direction:column; } .ofc-modos-grupo { width:100%; } .ofc-modos-grupo button { flex:1; justify-content:center; } }

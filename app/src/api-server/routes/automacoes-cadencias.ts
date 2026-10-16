@@ -295,7 +295,16 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
   }
 
   if (action.data.action === "pause") {
-    const [updated] = await db.update(cadenceDefinitions).set({ ativo: false, status: "disabled", updatedAt: new Date() }).where(eq(cadenceDefinitions.id, id)).returning();
+    const updated = await db.transaction(async (tx) => {
+      const [definition] = await tx.update(cadenceDefinitions).set({ ativo: false, status: "disabled", updatedAt: new Date() }).where(eq(cadenceDefinitions.id, id)).returning();
+      await tx.update(cadenceEnrollments).set({
+        status: "paused", cancelReason: "definicao_pausada",
+        scheduledAt: null, claimedUntil: null, updatedAt: new Date(),
+      }).where(and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId),
+        eq(cadenceEnrollments.cadenceDefinitionId, id),
+        inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply"])));
+      return definition;
+    });
     return c.json(updated);
   }
 
@@ -332,6 +341,13 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
     }).returning();
     await tx.update(cadenceDefinitionPointers).set({ draftVersionId: nextDraft.id, publishedVersionId: publishedVersion.id, updatedAt: publishedAt }).where(eq(cadenceDefinitionPointers.cadenceDefinitionId, id));
     const [cadencia] = await tx.update(cadenceDefinitions).set({ steps: compiled, draftSteps: compiled, triggerConfig: publishedVersion.triggerConfig, handoffPolicy: publishedVersion.handoffPolicy, ativo: true, status: "published", versao: publishedVersion.versionNumber, publishedAt, updatedAt: publishedAt }).where(eq(cadenceDefinitions.id, id)).returning();
+    await tx.update(cadenceEnrollments).set({
+      status: "active",
+      scheduledAt: sql`GREATEST(COALESCE(${cadenceEnrollments.nextEvalAt}, now()), now())`,
+      claimedUntil: null, cancelReason: null, updatedAt: publishedAt,
+    }).where(and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId),
+      eq(cadenceEnrollments.cadenceDefinitionId, id), eq(cadenceEnrollments.status, "paused"),
+      eq(cadenceEnrollments.cancelReason, "definicao_pausada")));
     return { cadencia, publishedVersion, draftVersion: nextDraft };
   });
   return c.json(result);
@@ -404,7 +420,7 @@ app.get("/automacoes/cadencias/:id/candidatos", async (c) => {
 
 app.post("/automacoes/cadencias/:id/enrollments", async (c) => {
   const ctx = await exigirCtx(c, "automation.manage");
-  const parsed = z.object({ entityId: z.string().uuid() }).safeParse(await c.req.json());
+  const parsed = z.object({ entityId: z.string().uuid(), sessaoId: z.string().uuid().optional() }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Registro invalido" }, 400);
   const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, c.req.param("id")), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!definition) return c.json({ error: "Cadencia nao encontrada" }, 404);
@@ -417,7 +433,7 @@ app.post("/automacoes/cadencias/:id/enrollments", async (c) => {
     eq(cadenceEnrollments.entityId, entidade.id), inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply", "paused"]),
   )).limit(1);
   if (jaAtivo) return c.json({ enrollmentId: jaAtivo.id, jaExistia: true });
-  const enrollmentId = await iniciarCadencia({ cadenceDefinitionId: definition.id, organizacaoId: ctx.organizacaoId, entityType: definition.entityType, entityId: entidade.id, varsIniciais: { nome: entidade.nome } });
+  const enrollmentId = await iniciarCadencia({ cadenceDefinitionId: definition.id, organizacaoId: ctx.organizacaoId, entityType: definition.entityType, entityId: entidade.id, varsIniciais: { nome: entidade.nome, ...(parsed.data.sessaoId ? { cadencia_sessao_id: parsed.data.sessaoId } : {}) } });
   if (!enrollmentId) return c.json({ error: "Cadência sem passos publicados." }, 409);
   await db.insert(cadenceEnrollmentEvents).values({ enrollmentId, stepId: "-", status: "enrolled", resultado: { actorId: ctx.userId, origem: "inscricao_manual" } });
   return c.json({ enrollmentId, jaExistia: false }, 201);
@@ -442,6 +458,16 @@ app.post("/automacoes/cadencias/enrollments/:id/action", async (c) => {
     eq(cadenceEnrollments.id, id), eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId),
   )).limit(1);
   if (!enrollment) return c.json({ error: "Enrollment nao encontrado" }, 404);
+  const emCurso = ["active", "waiting", "waiting_reply"].includes(enrollment.status);
+  if (parsed.data.action === "resume") {
+    if (enrollment.status !== "paused") return c.json({ error: "Só inscrições pausadas podem ser retomadas." }, 409);
+    const [def] = await db.select({ ativo: cadenceDefinitions.ativo }).from(cadenceDefinitions)
+      .where(and(eq(cadenceDefinitions.id, enrollment.cadenceDefinitionId),
+        eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
+    if (!def?.ativo) return c.json({ error: "Esta cadência está desativada. Publique-a antes de retomar." }, 409);
+  } else if (!emCurso && !(parsed.data.action === "cancel" && enrollment.status === "paused")) {
+    return c.json({ error: "Esta inscrição já está parada ou concluída." }, 409);
+  }
   if (parsed.data.action === "cancel") await cancelarCadencia(id, `cancelado_por_${ctx.userId}`);
   else if (parsed.data.action === "pause") {
     /* Pausar zera o agendamento: a varredura não pode pegar a inscrição de novo

@@ -34,7 +34,7 @@ import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate"
 import { Campo, type ContextoCampo } from "../fluxos/Campos";
 import type { GrupoVariaveis } from "../fluxos/SeletorVariaveis";
 import {
-  ESPERA_MINIMA_MIN, OPERADORES_CONDICAO, ROTULO_ACAO_CRM, ROTULO_CANAL, ROTULO_TIPO,
+  OPERADORES_CONDICAO, ROTULO_ACAO_CRM, ROTULO_CANAL, ROTULO_TIPO,
   VARIAVEIS_CADENCIA, camposDoPasso, grafoParaPassos, novoId, passoNovo, passosParaGrafo,
   pendenciasDosPassos, previaTexto, textoEspera,
   type AcaoCrm, type Canal, type OperadorCondicao, type Passo, type TipoPasso,
@@ -148,6 +148,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
   // Abre fechado: a primeira leitura tem de ser a SEQUÊNCIA inteira. Cartão
   // aberto de saída esconde os passos seguintes e desfaz o motivo da lista.
   const [aberto, setAberto] = useState<string | null>(null);
+  const [modoVisual, setModoVisual] = useState(true);
   const [addAberto, setAddAberto] = useState(false);
   const [salvando, setSalvando] = useState<"rascunho" | "publicar" | null>(null);
   const arrastando = useRef<number | null>(null);
@@ -284,7 +285,59 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
             </span>
           </div>
 
-          {passos.length === 0 ? (
+          <div className="ofc-modos" role="group" aria-label="Modo de edição">
+            <div className="ofc-modos-grupo">
+              <button type="button" aria-pressed={modoVisual} className={modoVisual ? "ofc-modo-ativo" : undefined} onClick={() => setModoVisual(true)}>
+                <GitBranch size={15} /> Fluxo visual
+              </button>
+              <button type="button" aria-pressed={!modoVisual} className={!modoVisual ? "ofc-modo-ativo" : undefined} onClick={() => setModoVisual(false)}>
+                <ListTodo size={15} /> Lista detalhada
+              </button>
+            </div>
+            <span>Selecione um bloco para personalizar. O rascunho só substitui a versão publicada ao publicar.</span>
+          </div>
+
+          {modoVisual && passos.length > 0 && (
+            <div className="ofc-workspace">
+              <div className="ofc-flow" aria-label="Jornada visual da cadência">
+                <div className="ofc-flow-intro"><span className="ofc-flow-inicio"><Rocket size={15} /> INÍCIO</span><strong>Registro entrou na cadência</strong><small>{evento === "manual" ? "Inscrição manual ou API" : EVENT_CATALOG.find((e) => e.id === evento)?.nome ?? evento}</small></div>
+                {passos.map((passo, i) => {
+                  const Icone = iconeDoPasso(passo);
+                  return (
+                    <div key={passo.id} className="ofc-flow-step">
+                      <div className="ofc-flow-ligacao"><span>+</span><small>{textoEspera(passo.esperaMin)}</small></div>
+                      <button type="button" className="ofc-flow-node" data-selecionado={aberto === passo.id ? "true" : undefined}
+                        aria-pressed={aberto === passo.id} onClick={() => setAberto(passo.id)}>
+                        <span className="ofc-flow-icon"><Icone size={18} /></span>
+                        <span className="ofc-flow-content"><small>PASSO {i + 1}</small><strong>{tituloDoPasso(passo)}</strong><span>{resumoDoPasso(passo, opcoes.data)}</span></span>
+                        <ChevronDown size={16} />
+                      </button>
+                      {passo.tipo === "condicao" && <div className="ofc-flow-branches"><span>Sim → próximo passo</span><span>Não → encerrar</span></div>}
+                      {passo.tipo === "classificar" && <div className="ofc-flow-branches"><span>Classe escolhida → continuar</span><span>Outras → encerrar</span></div>}
+                    </div>
+                  );
+                })}
+                <div className="ofc-flow-ligacao"><span>+</span></div>
+                <div className="ofc-flow-fim"><span>✓</span> Fim da cadência · avisar responsável</div>
+              </div>
+              <aside className="ofc-inspector" aria-label="Configuração do passo">
+                {(() => {
+                  const passo = passos.find((p) => p.id === aberto);
+                  if (!passo) return <div className="ofc-inspector-empty"><GitBranch size={32} /><strong>Personalize sua cadência</strong><p>Escolha um bloco à esquerda para configurar espera, canal, mensagem e condições.</p></div>;
+                  const idx = passos.findIndex((p) => p.id === passo.id);
+                  return <>
+                    <div className="ofc-inspector-header"><div><small>CONFIGURAÇÃO · PASSO {idx + 1}</small><h2>{tituloDoPasso(passo)}</h2></div><button className="oa-icone" type="button" aria-label="Fechar edição do passo" onClick={() => setAberto(null)}>×</button></div>
+                    <div className="ofc-inspector-fields"><PassoEditor passo={passo} ctx={ctx} opcoes={opcoes.data} primeiro={idx === 0} falhas={pendencias.filter((x) => x.passoId === passo.id)} aoTrocar={(mudanca) => trocar(passo.id, mudanca)} /></div>
+                    {!somenteLeitura && <div className="ofc-inspector-footer">
+                      <button type="button" className="oa-btn oa-btn-secundario" onClick={() => setPassos((xs) => { const i=xs.findIndex((x)=>x.id===passo.id); const clone={...passo,id:novoId(passo.tipo)} as Passo; setAberto(clone.id); return [...xs.slice(0,i+1),clone,...xs.slice(i+1)]; })}><Copy size={13}/> Duplicar</button>
+                      <button type="button" className="oa-btn oa-btn-secundario" onClick={() => {setPassos((xs)=>xs.filter((x)=>x.id!==passo.id));setAberto(null);}}><Trash2 size={13}/> Remover</button>
+                    </div>}
+                  </>;
+                })()}
+              </aside>
+            </div>
+          )}
+          {(!modoVisual || passos.length === 0) && (passos.length === 0 ? (
             <div className="ofx-vazio">
               <span className="ofx-vazio-icone"><Clock size={20} /></span>
               <h2>Nenhum passo ainda</h2>
@@ -343,7 +396,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
                 );
               })}
             </ol>
-          )}
+          ))}
 
           {!somenteLeitura && (
             <div className="ofc-add" ref={menuAdd}>
@@ -375,6 +428,26 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
   );
 }
 
+const UNIDADES_ESPERA = [
+  { valor: 1 / 60, label: "segundos" },
+  { valor: 1, label: "minutos" },
+  { valor: 60, label: "horas" },
+  { valor: 1440, label: "dias" },
+  { valor: 10080, label: "semanas" },
+] as const;
+
+function EsperaEditavel({ id, minutos, aoMudar, desabilitado }: { id: string; minutos: number; aoMudar: (valor: number) => void; desabilitado: boolean }) {
+  const inicial = minutos > 0 && minutos < 1 ? 1 / 60 : minutos >= 10080 && minutos % 10080 === 0 ? 10080 : minutos >= 1440 && minutos % 1440 === 0 ? 1440 : minutos >= 60 && minutos % 60 === 0 ? 60 : 1;
+  const [unidade, setUnidade] = useState<number>(inicial);
+  return <div className="ofc-espera-editor">
+    <input id={id} className="oa-input" type="number" min={0} step={1} value={Math.round((minutos / unidade) * 100) / 100} disabled={desabilitado} onChange={(e) => aoMudar(Math.max(0, Number(e.target.value)) * unidade)} aria-label="Tempo de espera" />
+    <select className="oa-input" value={unidade} disabled={desabilitado} aria-label="Unidade de tempo"
+      onChange={(e) => { const u=Number(e.target.value); setUnidade(u); aoMudar(minutos === 0 ? u : Math.max(u,Math.round(minutos/unidade)*u)); }}>
+      {UNIDADES_ESPERA.map((x) => <option key={x.label} value={x.valor}>{x.label}</option>)}
+    </select>
+  </div>;
+}
+
 /** Corpo editável de um passo. Campo por campo vem de `fluxos/Campos.tsx`. */
 function PassoEditor({ passo, ctx, opcoes, primeiro, falhas, aoTrocar }: {
   passo: Passo; ctx: ContextoCampo; opcoes?: Opcoes; primeiro: boolean;
@@ -390,13 +463,11 @@ function PassoEditor({ passo, ctx, opcoes, primeiro, falhas, aoTrocar }: {
     <>
       <fieldset className="ofx-insp-secao">
         <legend>Quando</legend>
-        <Campo idBase={`${passo.id}-espera`} ctx={ctx}
-          campo={{
-            chave: "esperaMin", rotulo: primeiro ? "Depois de entrar na cadência" : "Depois do passo anterior", tipo: "duracao",
-            ajuda: `Menos de ${ESPERA_MINIMA_MIN} minutos roda na sequência, sem espera — é o mínimo que o motor aceita agendar.`,
-          }}
-          valor={passo.esperaMin}
-          aoMudar={(v) => aoTrocar({ esperaMin: Math.max(0, Number(v ?? 0)) })} />
+        <div className="ofx-campo">
+          <label className="ofx-campo-rotulo" htmlFor={passo.id + "-espera"}>{primeiro ? "Depois de entrar na cadência" : "Depois do passo anterior"}</label>
+          <EsperaEditavel id={passo.id + "-espera"} minutos={passo.esperaMin} aoMudar={(min) => aoTrocar({ esperaMin: min })} desabilitado={ctx.somenteLeitura} />
+          <span className="oa-dica">0 executa em sequência. Tempos em segundos são aproximados pelo processamento periódico do motor.</span>
+        </div>
       </fieldset>
 
       {passo.tipo === "mensagem" && (

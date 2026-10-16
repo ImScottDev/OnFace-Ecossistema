@@ -45,7 +45,7 @@ function topological(graph: FollowupGraph): FollowupNode[] {
 export function compileFollowupGraph(graph: FollowupGraph): CadenceStep[] {
   return topological(graph).filter((node) => node.type !== "trigger").map((node): CadenceStep => {
     const branches = branchesFor(node, graph.edges).map((branch) => node.type === "end" ? { ...branch, proximoStepId: null } : branch);
-    if (node.type === "wait") return { id: node.id, tipo: "wait", esperaMinutos: Math.ceil((node.config.mode === "fixed" ? node.config.duration_ms : node.config.max_ms) / 60_000), config: node.config, branches };
+    if (node.type === "wait") return { id: node.id, tipo: "wait", esperaMinutos: (node.config.mode === "fixed" ? node.config.duration_ms : node.config.max_ms) / 60_000, esperaMilissegundos: (node.config.mode === "fixed" ? node.config.duration_ms : node.config.max_ms), config: node.config, branches };
     if (node.type === "condition") return { id: node.id, tipo: "condition", config: node.config, branches };
     if (node.type === "ai_classify") return { id: node.id, tipo: "action", adapter: "ai_classify", config: node.config, retry: { maxTentativas: 3, backoffMinutos: [1, 5, 15] }, branches };
     if (node.type === "action") {

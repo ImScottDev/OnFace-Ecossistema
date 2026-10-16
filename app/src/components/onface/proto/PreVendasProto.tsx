@@ -465,6 +465,24 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {} }: {
   acoes: AcoesPreVendas;
 }) {
   const router = useRouter();
+  const [cadenciasPublicadas, setCadenciasPublicadas] = React.useState<Array<{ id: string; nome: string }>>([]);
+  React.useEffect(() => {
+    let viva = true;
+    void acoes.cadenciasDoSistema().then((r) => {
+      if (viva && r.ok) setCadenciasPublicadas(r.dados?.cadencias.map((c) => ({ id: c.id, nome: c.nome })) ?? []);
+    }).catch(() => { if (viva) toast.error("Não foi possível carregar as cadências publicadas."); });
+    return () => { viva = false; };
+  }, [acoes.cadenciasDoSistema]);
+  const inscreverMassa = React.useCallback(async (ids: string[], cadenciaId: string) => {
+    const r = await acoes.emMassa("incluir_em_cadencia", ids, cadenciaId);
+    if (!r.ok) { toast.error(r.erro || "Não foi possível inscrever os leads."); return false; }
+    if (!r.dados) { toast.error("Nenhum resultado retornado para as inscrições."); return false; }
+    const { aplicados, ignorados, falhas } = r.dados;
+    if (falhas) toast.error(aplicados + " inscritos, " + ignorados + " ignorados e " + falhas + " falhas. Verifique os registros.");
+    else toast.success(aplicados + " leads inscritos, " + ignorados + " já existentes.");
+    router.refresh();
+    return falhas === 0;
+  }, [acoes.emMassa, router]);
   /* O que as peças daqui pedem e não hospedam (tags, atividade) abre pelo
      hospedeiro global, por cima desta tela. */
   const { abrir: abrirGlobal } = usePecas();
@@ -647,6 +665,8 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {} }: {
             não pelas peças. Ligar só as peças deixava o arraste sem efeito. */}
         <PreVendasLiga
           dados={{ leads, cadencias: cadenciaPorLead }}
+          cadenciasDisponiveis={cadenciasPublicadas}
+          inscreverEmCadencia={inscreverMassa}
           /* Sem catalogo o board caía nos nomes ficticios (Camila Reis e cia.)
              no Exportar e no "Atribuir responsavel" da acao em massa. EQUIPE
              real vem daqui. */

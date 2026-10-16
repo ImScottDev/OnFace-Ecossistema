@@ -26,6 +26,7 @@
  * Ver ADR-EXEC-013.
  */
 import { createHash } from "node:crypto";
+import { contataOCliente, dentroDaJanela, proximoHorarioDeContato } from "./janela-de-contato";
 import { db } from "@/lib/db";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { moverEtapa as moverEtapaPreVendas } from "@/lib/vendas/pre-vendas";
@@ -56,6 +57,7 @@ export interface CadenceStep {
   tipo: "wait" | "action" | "condition";
   /** Só pra tipo="wait": quanto esperar antes do PRÓXIMO step (minutos). */
   esperaMinutos?: number;
+  esperaMilissegundos?: number; // precisão para intervalos em segundos
   /** Só pra tipo="action": nome do adapter registrado (ver ADAPTERS abaixo). */
   adapter?: string;
   /** Config livre passada pro adapter (ex: template de mensagem, canal). */
@@ -261,8 +263,10 @@ registrarAdapter("whatsapp", async (ctx) => {
   const bruta = (ctx.step.config?.mensagem as string | undefined)?.trim();
   if (!bruta) return { sucesso: false, erro: 'step de ação "whatsapp" sem config.mensagem' };
   const mensagem = aplicarVariaveis(bruta, ctx.vars);
-  const telefoneAvulso = ((ctx.vars.telefone as string | null | undefined) ?? "").replace(/\D/g, "") || null;
-  const preferida = (ctx.step.config?.sessao_id as string | undefined) || null;
+  // Telefone do lead existe em vars para personalização; NÃO torna o envio avulso.
+  // Só um telefone escrito explicitamente no nó pode desviar da conversa do CRM.
+  const telefoneAvulso = ((ctx.step.config?.telefone as string | null | undefined) ?? "").replace(/\D/g, "") || null;
+  const preferida = (ctx.step.config?.sessao_id as string | undefined) || (ctx.vars.cadencia_sessao_id as string | undefined) || null;
   // A BullMQ recusa jobId com ":" (salvo o formato antigo de 3 partes).
   const jobId = `cadence-${ctx.enrollmentId}-${ctx.step.id}-${ctx.attempt}`.replace(/:/g, "-");
   try {
@@ -432,7 +436,7 @@ registrarAdapter("ai_agent_message", async (ctx) => {
   // O agente fala pelo número que foi configurado nele (canal da versão publicada); `sessao_id` do nó vence.
   let contato: typeof contatos.$inferSelect | null;
   try {
-    const sessaoPreferidaId = config.sessao_id || await sessaoDoAgente(ctx.organizacaoId, config.agent_id);
+    const sessaoPreferidaId = config.sessao_id || (ctx.vars.cadencia_sessao_id as string | undefined) || await sessaoDoAgente(ctx.organizacaoId, config.agent_id);
     contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId, { sessaoPreferidaId });
   } catch (err) {
     return { sucesso: false, erro: err instanceof Error ? err.message : String(err) };
@@ -468,7 +472,7 @@ registrarAdapter("whatsapp_template", async (ctx) => {
   if (!config.template_id) return { sucesso: false, erro: 'step de ação "whatsapp_template" sem config.template_id' };
   let contato: typeof contatos.$inferSelect | null;
   try {
-    contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId, { sessaoPreferidaId: config.sessao_id || null });
+    contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId, { sessaoPreferidaId: config.sessao_id || (ctx.vars.cadencia_sessao_id as string | undefined) || null });
   } catch (err) {
     return { sucesso: false, erro: err instanceof Error ? err.message : String(err) };
   }
@@ -780,7 +784,7 @@ export async function iniciarCadencia(opts: {
       eq(cadenceEnrollments.cadenceDefinitionId, opts.cadenceDefinitionId),
       eq(cadenceEnrollments.entityType, opts.entityType),
       eq(cadenceEnrollments.entityId, opts.entityId),
-      inArray(cadenceEnrollments.status, ["active", "waiting"]),
+      inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply", "paused"]),
     ))
     .limit(1);
   if (existente) return existente.id;
@@ -1026,28 +1030,53 @@ function resolverBranch(step: CadenceStep, vars: Record<string, unknown>): strin
  * step). Best-effort: erro de adapter nunca derruba o sweep todo, só marca
  * esse enrollment pra retry ou failed.
  */
+/** O worker nunca desfaz pausa, cancelamento ou conclusão feitos por outra transação. */
+const aindaEmCurso = (id: string) => and(
+  eq(cadenceEnrollments.id, id),
+  inArray(cadenceEnrollments.status, ["active", "waiting"]),
+);
+
 export async function avancarEnrollment(enrollmentId: string): Promise<void> {
   const now = new Date();
   const [enrollment] = await db.update(cadenceEnrollments).set({ claimedUntil: new Date(now.getTime() + 2 * 60_000), updatedAt: now }).where(and(
     eq(cadenceEnrollments.id, enrollmentId),
     inArray(cadenceEnrollments.status, ["active", "waiting"]),
+    lte(cadenceEnrollments.scheduledAt, now),
     or(isNull(cadenceEnrollments.claimedUntil), lt(cadenceEnrollments.claimedUntil, now)),
   )).returning();
   if (!enrollment) return;
 
   const [definicao] = await db.select().from(cadenceDefinitions).where(eq(cadenceDefinitions.id, enrollment.cadenceDefinitionId)).limit(1);
   if (!definicao) {
-    await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+    await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, updatedAt: new Date() }).where(aindaEmCurso(enrollmentId));
     return;
   }
 
+  // Pausar a definição também interrompe inscrições já iniciadas.
+  if (!definicao.ativo) {
+    await db.update(cadenceEnrollments).set({
+      status: "paused", cancelReason: "definicao_pausada",
+      scheduledAt: null, claimedUntil: null, updatedAt: new Date(),
+    }).where(aindaEmCurso(enrollmentId));
+    return;
+  }
   const [pinnedVersion] = enrollment.cadenceVersionId
     ? await db.select().from(cadenceVersions).where(and(eq(cadenceVersions.id, enrollment.cadenceVersionId), eq(cadenceVersions.organizacaoId, enrollment.organizacaoId))).limit(1)
     : [];
   const steps = (pinnedVersion?.compiledSteps ?? definicao.steps) as CadenceStep[];
   const step = enrollment.currentStepId === null ? steps[0] : steps.find((s) => s.id === enrollment.currentStepId);
   if (!step) {
-    await db.update(cadenceEnrollments).set({ status: "completed", completedAt: new Date(), claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+    await db.update(cadenceEnrollments).set({ status: "completed", completedAt: new Date(), claimedUntil: null, updatedAt: new Date() }).where(aindaEmCurso(enrollmentId));
+    return;
+  }
+
+  // A primeira ação de uma inscrição também obedece à janela comercial.
+  if (step.tipo === "action" && contataOCliente(step.adapter) && !dentroDaJanela(now)) {
+    const proximoHorario = proximoHorarioDeContato(now);
+    await db.update(cadenceEnrollments).set({
+      scheduledAt: proximoHorario, nextEvalAt: proximoHorario, claimedUntil: null,
+      updatedAt: new Date(),
+    }).where(aindaEmCurso(enrollmentId));
     return;
   }
 
@@ -1085,7 +1114,7 @@ export async function avancarEnrollment(enrollmentId: string): Promise<void> {
   const adapter = step.adapter ? adapters.get(step.adapter) : undefined;
   if (!adapter) {
     await db.insert(cadenceEnrollmentEvents).values({ enrollmentId, stepId: step.id, status: "erro", resultado: { erro: `adapter "${step.adapter}" não registrado` }, attempt: enrollment.attempt });
-    await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+    await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, updatedAt: new Date() }).where(aindaEmCurso(enrollmentId));
     return;
   }
 
@@ -1102,7 +1131,7 @@ export async function avancarEnrollment(enrollmentId: string): Promise<void> {
       await avancarParaProximoStep(enrollment.id, steps, step, { ...vars, ...varsAtualizadas });
       return;
     }
-    await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, cancelReason: "execução interrompida com efeito externo incerto; revisão humana necessária", updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+    await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, cancelReason: "execução interrompida com efeito externo incerto; revisão humana necessária", updatedAt: new Date() }).where(aindaEmCurso(enrollmentId));
     return;
   }
 
@@ -1120,11 +1149,11 @@ export async function avancarEnrollment(enrollmentId: string): Promise<void> {
       const backoffMin = retry.backoffMinutos[Math.min(tentativaAtual - 1, retry.backoffMinutos.length - 1)] ?? 60;
       await db.update(cadenceEnrollmentEvents).set({ status: "retry_agendado", resultado: { erro: resultado.erro, proximaTentativaEm: backoffMin } }).where(eq(cadenceEnrollmentEvents.id, execution.id));
       const retryAt = new Date(Date.now() + backoffMin * 60_000);
-      await db.update(cadenceEnrollments).set({ attempt: tentativaAtual, status: "waiting", scheduledAt: retryAt, nextEvalAt: retryAt, claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+      await db.update(cadenceEnrollments).set({ attempt: tentativaAtual, status: "waiting", scheduledAt: retryAt, nextEvalAt: retryAt, claimedUntil: null, updatedAt: new Date() }).where(aindaEmCurso(enrollmentId));
       return;
     }
     await db.update(cadenceEnrollmentEvents).set({ status: "erro", resultado: { erro: resultado.erro } }).where(eq(cadenceEnrollmentEvents.id, execution.id));
-    await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId));
+    await db.update(cadenceEnrollments).set({ status: "failed", claimedUntil: null, updatedAt: new Date() }).where(aindaEmCurso(enrollmentId));
     await avisarResponsavel(enrollment, "falhou", "Cadência falhou", `a cadência parou no passo "${step.id}": ${resultado.erro ?? "erro sem detalhe"}`);
     return;
   }
@@ -1142,23 +1171,25 @@ async function avancarParaProximoStep(enrollmentId: string, steps: CadenceStep[]
     : proximoStep(steps, stepAtual.id);
 
   if (!proximo) {
-    const [concluido] = await db.update(cadenceEnrollments).set({ status: "completed", completedAt: new Date(), vars, attempt: 0, claimedUntil: null, updatedAt: new Date() }).where(eq(cadenceEnrollments.id, enrollmentId)).returning();
+    const [concluido] = await db.update(cadenceEnrollments).set({ status: "completed", completedAt: new Date(), vars, attempt: 0, claimedUntil: null, updatedAt: new Date() }).where(aindaEmCurso(enrollmentId)).returning();
     if (concluido && !concluido.lastInboundAt) await avisarResponsavel(concluido, "esgotada", "Cadência esgotada sem resposta", "passou por todos os passos e não respondeu. Decida o próximo movimento.");
     return;
   }
 
-  const esperaMs = (stepAtual.tipo === "wait" ? stepAtual.esperaMinutos ?? 0 : 0) * 60_000;
+  const esperaMs = stepAtual.tipo === "wait" ? (stepAtual.esperaMilissegundos ?? (stepAtual.esperaMinutos ?? 0) * 60_000) : 0;
+  const quandoBruto = new Date(Date.now() + esperaMs);
+  const quando = contataOCliente(proximo.adapter) ? proximoHorarioDeContato(quandoBruto) : quandoBruto;
   await db.update(cadenceEnrollments).set({
     currentStepId: proximo.id,
     currentNodeId: proximo.id,
     status: "active",
-    scheduledAt: new Date(Date.now() + esperaMs),
-    nextEvalAt: new Date(Date.now() + esperaMs),
+    scheduledAt: quando,
+    nextEvalAt: quando,
     vars,
     attempt: 0,
     claimedUntil: null,
     updatedAt: new Date(),
-  }).where(eq(cadenceEnrollments.id, enrollmentId));
+  }).where(aindaEmCurso(enrollmentId));
 }
 
 /** Sweep periódico — busca todos os enrollments devidos e avança um a um. Best-effort por enrollment. Chamado pelo worker. */

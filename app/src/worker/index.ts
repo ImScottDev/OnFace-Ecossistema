@@ -4189,7 +4189,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("reativar-lead-perdido", { every: 24 * 60 * 60 * 1000 }, { name: "reativar-lead-perdido" });
   await scheduledQueue.upsertJobScheduler("check-whatsapp-connection", { every: 5 * 60 * 1000 }, { name: "check-whatsapp-connection" });
   await scheduledQueue.upsertJobScheduler("snapshot-diario", { every: 60 * 60 * 1000 }, { name: "snapshot-diario" });
-  await scheduledQueue.upsertJobScheduler("cadence-sweep", { every: 5 * 60 * 1000 }, { name: "cadence-sweep" });
+  await scheduledQueue.upsertJobScheduler("cadence-sweep", { every: 15 * 1000 }, { name: "cadence-sweep" });
   await scheduledQueue.upsertJobScheduler("fluxos-sweep", { every: 60 * 1000 }, { name: "fluxos-sweep" });
   await scheduledQueue.upsertJobScheduler("event-outbox-sweep", { every: 60 * 1000 }, { name: "event-outbox-sweep" });
   await scheduledQueue.upsertJobScheduler("lembrete-reuniao-30min", { every: 5 * 60 * 1000 }, { name: "lembrete-reuniao-30min" });

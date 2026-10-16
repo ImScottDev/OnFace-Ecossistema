@@ -146,21 +146,13 @@ export async function executarEmMassa(params: {
 
         case "incluir_em_cadencia": {
           if (!valor) { itens.push({ leadId, desfecho: "falhou", motivo: "cadência não informada" }); break; }
-          // Elegibilidade antes da inscrição (§9.4): inscrever quem já está
-          // inscrito duplicaria a régua de mensagens no mesmo contato.
-          const [ja] = await db.execute<{ n: number }>(sql`
-            SELECT count(*)::int AS n FROM cadencia_execucoes
-             WHERE organizacao_id = ${organizacaoId}::uuid AND lead_id = ${leadId}::uuid
-               AND status IN ('ativa','pendente','agendada')`);
-          if (ja.n > 0) { itens.push({ leadId, desfecho: "ignorado", motivo: "já está em uma cadência ativa" }); break; }
-
+          // O motor é a fonte única para conferir inscrição viva, tipo e tenant.
           const { iniciarCadencia } = await import("@/lib/cadencia/cadence-engine");
           // A chave de idempotência é do PAR cadência+lead: clicar duas vezes
           // no mesmo lote não inscreve duas vezes.
           const enrollmentId = await iniciarCadencia({
             cadenceDefinitionId: valor, organizacaoId,
             entityType: "lead", entityId: leadId,
-            idempotencyKey: `massa:${valor}:${leadId}`,
           });
           itens.push(enrollmentId
             ? { leadId, desfecho: "aplicado" }

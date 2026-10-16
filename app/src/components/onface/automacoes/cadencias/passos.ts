@@ -64,7 +64,7 @@ export type TipoPasso = Passo["tipo"];
 
 /** O motor recusa espera menor que 5 min (`waitNodeSchema`). Abaixo disso o
  *  passo roda na sequência, sem nó de espera. */
-export const ESPERA_MINIMA_MIN = 5;
+export const ESPERA_MINIMA_MIN = 1 / 60;
 /** `grace_timeout_ms` mínimo do nó de classificação. */
 export const GRACE_MINIMA_MIN = 15;
 
@@ -146,6 +146,8 @@ export function passoNovo(tipo: TipoPasso, esperaMin = 1440): Passo {
 
 export function textoEspera(min: number): string {
   if (min < ESPERA_MINIMA_MIN) return "Na sequência";
+  if (min < 1) { const segundos = Math.round(min * 60); return segundos === 1 ? "1 segundo depois" : segundos + " segundos depois"; }
+  if (min % 10080 === 0) { const semanas = min / 10080; return semanas + (semanas === 1 ? " semana depois" : " semanas depois"); }
   if (min % 1440 === 0) { const d = min / 1440; return `${d} ${d === 1 ? "dia" : "dias"} depois`; }
   if (min % 60 === 0) { const h = min / 60; return `${h} ${h === 1 ? "hora" : "horas"} depois`; }
   return `${min} min depois`;
@@ -310,7 +312,7 @@ export function passosParaGrafo(passos: Passo[], evento = "manual"): FollowupGra
   passos.forEach((passo, i) => {
     if (comEspera[i]) {
       y += 160;
-      nodes.push({ id: idEspera(passo.id), type: "wait", label: textoEspera(passo.esperaMin).slice(0, 60), position: { x: 420, y }, config: { mode: "fixed", duration_ms: passo.esperaMin * 60_000 } });
+      nodes.push({ id: idEspera(passo.id), type: "wait", label: textoEspera(passo.esperaMin).slice(0, 60), position: { x: 420, y }, config: { mode: "fixed", duration_ms: Math.round(passo.esperaMin * 60_000) } });
       edges.push({ id: `${passo.id}__e-espera`, source: idEspera(passo.id), target: passo.id, priority: 0, condition: { type: "always" } });
     }
     y += 160;
@@ -406,7 +408,7 @@ export function grafoParaPassos(grafo: FollowupGraph): LeituraGrafo {
 
     if (no.type === "wait") {
       if (saindo.length !== 1) { naoLinear = true; break; }
-      espera += Math.round((no.config.mode === "fixed" ? no.config.duration_ms : no.config.max_ms) / 60_000);
+      espera += Math.round((no.config.mode === "fixed" ? no.config.duration_ms : no.config.max_ms) / 1000) / 60;
       atual = saindo[0].target;
       continue;
     }

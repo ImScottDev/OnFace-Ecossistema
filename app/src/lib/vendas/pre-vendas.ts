@@ -951,7 +951,7 @@ export async function passoDaCadenciaPorLead(
           FROM cadence_enrollments ce
           JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
          WHERE ce.entity_type = 'lead' AND ce.entity_id = l.id
-           AND ce.status IN ('active', 'waiting')
+           AND ce.status IN ('active', 'waiting', 'waiting_reply', 'paused')
          ORDER BY ce.started_at DESC LIMIT 1
       ) ce_def ON true
      WHERE l.organizacao_id = ${organizacaoId}::uuid

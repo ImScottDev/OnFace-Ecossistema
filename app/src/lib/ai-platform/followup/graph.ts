@@ -22,8 +22,8 @@ const triggerNodeSchema = z.object({
 const waitNodeSchema = z.object({
   id: z.string().min(1), type: z.literal("wait"), label: z.string().min(1).max(60), position: positionSchema,
   config: z.discriminatedUnion("mode", [
-    z.object({ mode: z.literal("fixed"), duration_ms: z.number().int().min(300_000).max(7_776_000_000) }).strict(),
-    z.object({ mode: z.literal("smart"), min_ms: z.number().int().min(300_000), max_ms: z.number().int().max(7_776_000_000), guidance: z.string().max(500).optional() }).strict()
+    z.object({ mode: z.literal("fixed"), duration_ms: z.number().int().min(1_000).max(7_776_000_000) }).strict(),
+    z.object({ mode: z.literal("smart"), min_ms: z.number().int().min(1_000), max_ms: z.number().int().max(7_776_000_000), guidance: z.string().max(500).optional() }).strict()
       .refine((value) => value.min_ms <= value.max_ms, { message: "min_ms deve ser menor ou igual a max_ms" }),
   ]),
 }).strict();

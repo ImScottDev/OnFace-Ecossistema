@@ -236,8 +236,12 @@ class Logica extends React.Component<any, any> {
       const nova = peca === "atividade-nova" || !(L && L.acao);
       return this.setState(Object.assign({}, base, { atvAberta: true, atvModo: nova ? "editar" : "ver", atvDraft: nova ? this.atvVazia(L) : null }));
     }
-    if (peca === "cadencia") { const alvo = window.__ofCadAlvo || null; window.__ofCadAlvo = null; return this.setState(Object.assign({}, base, { cadModal: true, cadEscolha: null, cadAlvo: alvo })); }
-    if (peca === "cadencia") this.carregarCadencias();
+    if (peca === "cadencia") {
+      const alvo = window.__ofCadAlvo || null;
+      window.__ofCadAlvo = null;
+      this.setState(Object.assign({}, base, { cadModal: true, cadEscolha: null, cadAlvo: alvo }), () => this.carregarCadencias());
+      return;
+    }
   }
 
   /** O aviso do protótipo é o toast do produto. */
@@ -403,7 +407,7 @@ class Logica extends React.Component<any, any> {
             const c = canaisDe(fx);
             return {
               nome: fx.k,
-              resumo: fx.passos.length + " passos · " + fx.passos[fx.passos.length - 1][0].toLowerCase(),
+              resumo: fx.passos.length + " passos" + (fx.passos.length ? " · " + fx.passos[fx.passos.length - 1][0].toLowerCase() : ""),
               ponto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + (on ? "#fe4f2b" : "#c8ccc9"),
               icones: Object.keys(c).filter(k => k !== "task").map(k => ({ d: ic[k] })),
               style: "display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:9px 10px;border-radius:9px;border:0;cursor:pointer;text-align:left;transition:background 120ms cubic-bezier(0,0,.2,1);"
@@ -437,13 +441,12 @@ class Logica extends React.Component<any, any> {
           confirmar: async () => {
             const alvo = S.cadAlvo;
             const id = alvo ? alvo.chave : L0.id;
-            const emMassa = this.props.acoes && this.props.acoes.emMassa;
+            const inserir = this.props.acoes && this.props.acoes.inserirCadencia;
             if (!atual.id) return this.diz("Não há cadência publicada para inserir", "erro");
-            if (typeof emMassa !== "function") return this.diz("Inserir em cadência não está disponível nesta tela", "erro");
-            const r = await emMassa("incluir_em_cadencia", [id], atual.id);
-            const item = r && r.ok && r.dados && r.dados.itens ? r.dados.itens[0] : null;
-            if (!item || item.desfecho === "falhou") return this.diz((item && item.motivo) || (r && r.erro) || "Não consegui inserir na cadência", "erro");
-            if (item.desfecho === "ignorado") return this.diz(item.motivo || "Já está em uma cadência ativa", "aviso");
+            if (typeof inserir !== "function") return this.diz("Inserir em cadência não está disponível nesta tela", "erro");
+            const r = await inserir(id, atual.id, usa.wa ? (valorDe("wa") || null) : null);
+            if (!r || !r.ok) return this.diz((r && r.erro) || "Não consegui inserir na cadência", "erro");
+            if (r.dados?.jaExistia) return this.diz("Lead já inscrito nesta cadência.", "aviso");
             this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [id]: escolha }), cadModal: false, cadPausada: false, cadAlvo: null }));
             this.diz((alvo ? alvo.nome : "Lead") + " inserido em " + escolha, "ok");
           }
@@ -673,28 +676,35 @@ class Logica extends React.Component<any, any> {
         style: "flex:1;height:4px;border-radius:9999px;background:" + (i <= cadPassoReal.atual ? (S.cadPausada ? "#c8a86a" : "#fe4f2b") : "#e3e7e8")
       })) : [],
       cadBotao: S.cadPausada ? "Retomar" : "Pausar",
-      pausarCad: () => { const n = !S.cadPausada; this.setState({ cadPausada: n }); this.diz(n ? "Cadência pausada — nenhum toque automático sai" : "Cadência retomada", n ? "aviso" : "ok"); },
+      pausarCad: async () => {
+        const alternar = this.props.acoes?.alternarCadencia;
+        if (typeof alternar !== "function") return this.diz("Pausa indisponível nesta tela.", "erro");
+        const r = await alternar(L0.id);
+        if (!r?.ok) return this.diz(r?.erro || "Não foi possível alterar a cadência.", "erro");
+        const proximo = r.dados?.pausada === true;
+        this.setState({ cadPausada: proximo });
+        this.diz(proximo ? "Cadência pausada no motor." : "Cadência retomada no motor.", "ok");
+      },
       abrirPicker: () => { this.setState({ cadModal: true, cadEscolha: cadAtual || null }); this.carregarCadencias(); },
       removerCad: async () => {
         const rem = this.props.acoes && this.props.acoes.removerDaCadencia;
-        if (typeof rem === "function") {
-          const r = await rem(L0.id);
-          if (!r || !r.ok) return this.diz((r && r.erro) || "Não consegui remover da cadência", "erro");
-        }
+        if (typeof rem !== "function") return this.diz("Remoção indisponível nesta tela.", "erro");
+        const r = await rem(L0.id);
+        if (!r || !r.ok) return this.diz((r && r.erro) || "Não consegui remover da cadência", "erro");
         this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [L0.id]: null }), cadPicker: false }));
         this.diz("Lead removido da cadência", "aviso");
       },
-      cadOpcoes: [
-        ["Prospecção inbound", "5 toques"], ["Primeiro contato", "3 toques"],
-        ["Reengajamento", "5 toques"], ["Pós-proposta", "4 toques"]
-      ].map(([nome, toques]) => ({
-        label: nome, toques,
-        style: "display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border-radius:6px;"
-          + (cadAtual === nome ? "background:#fff6f4;font-weight:600" : ""),
-        onClick: () => {
-          this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [L0.id]: nome }), cadPicker: false, cadPausada: false }));
-          this.diz("Lead inserido em " + nome + " — toque 1 agendado", "ok");
-        }
+      cadOpcoes: (S.cadReal?.cadencias ?? []).map((cd) => ({
+        label: cd.nome, toques: cd.passos.length + " passos",
+        style: "display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border-radius:6px;",
+        onClick: async () => {
+          const inserir = this.props.acoes?.inserirCadencia;
+          if (typeof inserir !== "function") return this.diz("Inscrição indisponível.", "erro");
+          const r = await inserir(L0.id, cd.id);
+          if (!r?.ok) return this.diz(r?.erro || "Não foi possível inscrever o lead.", "erro");
+          this.setState(st => ({ cadencias: { ...st.cadencias, [L0.id]: cd.nome }, cadPicker: false, cadPausada: false }));
+          this.diz(r.dados?.jaExistia ? "Lead já inscrito nesta cadência." : "Lead inscrito em " + cd.nome, "ok");
+        },
       })),
 
       temAcao: !!L0.acao, semAcao: !L0.acao,

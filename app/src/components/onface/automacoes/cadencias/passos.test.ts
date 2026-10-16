@@ -85,10 +85,19 @@ test("grafo que ramifica para outro passo é recusado, não achatado", () => {
   assert.equal(grafoParaPassos(grafo).naoLinear, true);
 });
 
-test("espera menor que o mínimo do motor não cria nó de espera", () => {
-  const grafo = passosParaGrafo([{ id: "p1", tipo: "mensagem", esperaMin: 2, canal: "whatsapp", mensagem: "Já" }]);
-  assert.equal(grafo.nodes.some((n) => n.type === "wait"), false);
-  assert.equal(grafo.edges.find((e) => e.source === "trigger")?.target, "p1");
+test("espera de segundos persiste na versão compilada e volta ao editor sem arredondar para minuto", () => {
+  const grafo = passosParaGrafo([{ id: "p1", tipo: "mensagem", esperaMin: 10 / 60, canal: "whatsapp", mensagem: "Já" }]);
+  const wait = grafo.nodes.find((n) => n.type === "wait");
+  assert.ok(wait && wait.type === "wait" && wait.config.mode === "fixed");
+  if (wait.type !== "wait" || wait.config.mode !== "fixed") return;
+  assert.equal(wait.config.duration_ms, 10_000);
+  assert.equal(followupGraphSchema.safeParse(grafo).success, true);
+  const compiled = compileFollowupGraph(grafo);
+  assert.equal(compiled.find((step) => step.tipo === "wait")?.esperaMilissegundos, 10_000);
+  assert.equal(grafoParaPassos(grafo).passos[0].esperaMin, 10 / 60);
+  assert.equal(textoEspera(10 / 60), "10 segundos depois");
+  const semEspera = passosParaGrafo([{ id: "p2", tipo: "mensagem", esperaMin: 0, canal: "whatsapp", mensagem: "Já" }]);
+  assert.equal(semEspera.nodes.some((n) => n.type === "wait"), false);
 });
 
 /* Recorte real de "Reativação de lead frio" (produção, 15/10): o fim se chama

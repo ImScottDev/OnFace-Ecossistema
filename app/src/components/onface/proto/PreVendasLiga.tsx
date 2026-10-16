@@ -907,12 +907,20 @@ class Logica extends React.Component<any, any> {
           ];
         }
         if (S.acaoMassa === "cadencia") {
-          return [
-            { label: "Primeiro contato — 3 toques", style: linha, onClick: aplica({ acao: "Cadência: toque 1", venceEm: "hoje" }, n + " lead(s) na cadência de primeiro contato") },
-            { label: "Reengajamento — 5 toques", style: linha, onClick: feito(n + " lead(s) em reengajamento") },
-            { label: "Pós-proposta", style: linha, onClick: feito(n + " lead(s) em pós-proposta") },
-            { label: "Ver todas as cadências", style: linha, onClick: () => { this.setState({ acaoMassa: null }); this.ir("/automacoes/cadencias", "Cadências"); } }
-          ];
+          const publicadas = this.props.cadenciasDisponiveis || [];
+          return publicadas.length
+            ? publicadas.map((cd) => ({
+                label: cd.nome, style: linha,
+                onClick: async () => {
+                  const executar = this.props.inscreverEmCadencia;
+                  if (typeof executar !== "function") return this.diz("Inscrição não disponível.", "erro");
+                  const ok = await executar([...selecao], cd.id);
+                  if (ok) this.setState({ acaoMassa: null, selecao: [] });
+                }
+              }))
+            : [
+                { label: "Nenhuma cadência de lead publicada. Crie uma em Automações › Cadências.", style: travado, onClick: () => this.ir("/automacoes/cadencias", "Cadências") }
+              ];
         }
         if (S.acaoMassa === "tag") {
           return [

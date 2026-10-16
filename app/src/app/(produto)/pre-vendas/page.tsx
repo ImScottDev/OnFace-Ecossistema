@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
+import { acaoPausarCadenciaDoLead } from "@/app/(produto)/contatos/actions";
 import { passoDaCadenciaPorLead } from "@/lib/vendas/pre-vendas";
 import { boardPreVendas, ehView, type ViewPreVendas } from "@/lib/vendas/consultas";
 /* A tela é o desenho do Claude Design, convertido por máquina — não uma
@@ -12,7 +13,7 @@ import {
   acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
   acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
   acaoRegistrarContato, acaoSalvarQualificacao,
-  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa, acaoRemoverDaCadencia,
+  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa, acaoRemoverDaCadencia, acaoInserirCadenciaDoLead, acaoAlternarCadenciaDoLead,
 } from "./actions";
 
 export const metadata = { title: "Pré-vendas" };
@@ -94,7 +95,8 @@ export async function PreVendasPage({ searchParams }: {
         criarTarefa: acaoCriarTarefa,
         atribuirEmMassa: acaoAtribuirEmMassa,
         tag: acaoTagDoLead, tagsDaOrg: acaoOpcoesEmMassa,
-        cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa, removerDaCadencia: acaoRemoverDaCadencia,
+        cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa,
+        removerDaCadencia: acaoRemoverDaCadencia, pausarCadencia: acaoPausarCadenciaDoLead, alternarCadencia: acaoAlternarCadenciaDoLead, inserirCadencia: acaoInserirCadenciaDoLead,
       }}
     />
   );
