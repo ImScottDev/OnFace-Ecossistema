@@ -84,8 +84,18 @@
 .ofc-filtro { flex: 0 1 220px; }
 .ofc-evento { align-items: flex-start; }
 
+/* Quando aperta, Fluxos esconde `ofx-linha-exec`/`ofx-linha-num` (lá são
+   detalhe). Aqui são o assunto — em qual cadência, em que passo, quando roda
+   de novo —, então a linha vira flex e quebra em vez de sumir com o dado. */
+@media (max-width: 1100px) {
+  .ofc-tabela .ofx-linha, .ofc-tabela-fila .ofx-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+  .ofc-tabela .ofx-linha-nome, .ofc-tabela-fila .ofx-linha-nome { flex: 1 1 220px; }
+  .ofc-tabela .ofx-linha-exec, .ofc-tabela .ofx-linha-num,
+  .ofc-tabela-fila .ofx-linha-exec, .ofc-tabela-fila .ofx-linha-num { display: inline-flex; }
+  .ofc-acoes { flex: 1 1 100%; justify-content: flex-end; }
+}
+
 @media (max-width: 900px) {
-  .ofc-tabela .ofx-linha, .ofc-tabela-fila .ofx-linha { grid-template-columns: 1fr auto; row-gap: 8px; }
   .ofc-passo-detalhe { padding-left: 12px; }
   .ofc-add-pop { width: min(320px, calc(100vw - 48px)); }
 }

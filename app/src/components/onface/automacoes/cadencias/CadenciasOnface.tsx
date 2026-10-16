@@ -134,7 +134,7 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
     }
   };
 
-  const cadencias = flows.data?.cadencias ?? [];
+  const cadencias = useMemo(() => flows.data?.cadencias ?? [], [flows.data]);
   // Totais saem das contagens que a rota já agrega no banco — nada recontado
   // nem estimado no cliente.
   const totais = useMemo(() => cadencias.reduce((acc, cd) => {

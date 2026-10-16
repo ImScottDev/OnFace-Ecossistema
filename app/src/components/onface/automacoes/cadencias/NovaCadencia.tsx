@@ -8,7 +8,7 @@
  * modelo que precise de tag ou etapa da conta — isso cairia em campo vazio
  * logo na abertura. */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Mail, MessageCircle, Plus, Snowflake, X } from "lucide-react";
 import { ROTULO_ENTIDADE } from "@/lib/automacoes/grafo";
 import { novoId, type Passo } from "./passos";
@@ -66,10 +66,17 @@ export function NovaCadencia({ aoFechar, aoCriar }: {
   const [nome, setNome] = useState("");
   const [nomeTocado, setNomeTocado] = useState(false);
   const [entityType, setEntityType] = useState("lead");
-  useEffect(() => {
-    if (!nomeTocado) setNome(modelo?.nome ?? "");
-    if (modelo) setEntityType(modelo.entityType);
-  }, [modelo, nomeTocado]);
+
+  /* Escolher o modelo preenche nome e tipo no mesmo gesto. Fazer isso num
+   * efeito que observa a escolha seria o mesmo resultado por um caminho que
+   * renderiza duas vezes — e a segunda renderização é a que apaga o que a
+   * pessoa já tinha digitado. */
+  const escolher = (id: string) => {
+    const m = MODELOS.find((x) => x.id === id);
+    setEscolha(id);
+    if (!nomeTocado) setNome(m?.nome ?? "");
+    if (m) setEntityType(m.entityType);
+  };
 
   const criar = () => aoCriar({
     nome: nome.trim() || "Cadência sem nome",
@@ -88,12 +95,12 @@ export function NovaCadencia({ aoFechar, aoCriar }: {
         <p className="oa-dica">Comece em branco ou de um modelo. O modelo já vem com o texto escrito e as esperas definidas — revise e publique quando estiver do seu jeito.</p>
 
         <div className="ofx-modelos" role="radiogroup" aria-label="Ponto de partida">
-          <button type="button" role="radio" aria-checked={escolha === "branco"} className="ofx-modelo" onClick={() => setEscolha("branco")}>
+          <button type="button" role="radio" aria-checked={escolha === "branco"} className="ofx-modelo" onClick={() => escolher("branco")}>
             <span className="ofx-modelo-icone"><Plus size={16} strokeWidth={2.4} /></span>
             <span><strong>Em branco</strong><span>Você monta a sequência passo a passo.</span></span>
           </button>
           {MODELOS.map((m) => (
-            <button key={m.id} type="button" role="radio" aria-checked={escolha === m.id} className="ofx-modelo" onClick={() => setEscolha(m.id)}>
+            <button key={m.id} type="button" role="radio" aria-checked={escolha === m.id} className="ofx-modelo" onClick={() => escolher(m.id)}>
               <span className="ofx-modelo-icone"><m.icone size={16} strokeWidth={2.2} /></span>
               <span><strong>{m.nome}</strong><span>{m.descricao}</span></span>
             </button>
