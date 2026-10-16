@@ -22,6 +22,7 @@ import { CascaLiga } from "./CascaLiga";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { PecasHost } from "./pecas-host";
 import { AgentesDaOrgContexto } from "@/components/ui/avatar";
+import { VerComo } from "../VerComo";
 import { UsuarioDoProtoContexto, iniciaisDe, type UsuarioDoProto } from "./usuario-do-proto";
 import { desenharRadar, tituloDoRadar } from "@/lib/nexo/radar-desenho";
 import type { DadosRadar, MsgNexo } from "@/lib/nexo/painel";
@@ -113,6 +114,13 @@ class CascaLigada extends CascaLiga {
     this.carregarNexo();
     void this.carregarNotificacoes();
     this._notifI = setInterval(() => void this.carregarNotificacoes(), 60000);
+    /* Quem pode "ver como" é o SERVIDOR que diz: a rota responde 403 para quem
+       não passa por `podeVerComo`. Só com o sim dela o item entra no menu —
+       assim ninguém esbarra num diálogo que não lista ninguém, e a permissão
+       continua morando no back, não no cliente. */
+    void fetch("/api/admin/view-as", { credentials: "same-origin" })
+      .then((r) => { if (r.ok) this.setState({ podeVerComo: true } as any); })
+      .catch(() => undefined);
   }
 
   componentWillUnmount() {
@@ -246,15 +254,36 @@ class CascaLigada extends CascaLiga {
 
   render() {
     const el = super.render();
-    if (this.state.nexoResumoReal?.temAviso) return el;
+    /* "Ver como" fica fora do desenho de propósito: ele é do super admin, não
+       do produto. Quem não pode nem recebe a lista — o componente some sozinho
+       no 403 da rota, em vez de existir escondido por CSS. */
+    const verComo = (
+      <VerComo
+        aberto={!!(this.state as any).verComoAberto}
+        aoFechar={() => this.setState({ verComoAberto: false } as any)}
+      />
+    );
+    if (this.state.nexoResumoReal?.temAviso) return <>{el}{verComo}</>;
     // O ponto pulsante é markup fixo do desenho (gerado); sem aviso real, some.
-    return <>{el}<style>{`button[title^="NEXO"] span[style*="of-pisca"]{display:none}`}</style></>;
+    return <>{el}{verComo}<style>{`button[title^="NEXO"] span[style*="of-pisca"]{display:none}`}</style></>;
   }
 
   renderVals() {
     const v: any = super.renderVals();
     const n: number | null = this.props.naoLidas ?? null;
     const S = this.state;
+
+    /* O item só existe para quem a ROTA já confirmou que pode (ver o mount).
+       A tela não decide permissão: ela pergunta e obedece. */
+    v.itensPerfil = [
+      ...(v.itensPerfil ?? []),
+      ...(!(S as any).podeVerComo ? [] : [{
+        label: "Ver como…",
+        d: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6",
+        atalho: "",
+        onClick: () => this.setState({ perfilAberto: false, verComoAberto: true } as any),
+      }]),
+    ];
     v.nexoResumo = S.nexoResumoReal?.texto ?? "";
 
     /* Sino com as notificações reais do usuário. Antes a lista não existia no
