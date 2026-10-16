@@ -489,7 +489,16 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
                JÁ tem empresa. COALESCE porque corrigir à mão (mesclar empresa,
                reatribuir) é decisão humana que o sync não pode desfazer. */
             ...(lead ? { leadId: sql`COALESCE(${assinaturas.leadId}, ${lead.id}::uuid)` } : {}),
-            ...(lead?.empresaId ? { empresaId: sql`COALESCE(${assinaturas.empresaId}, ${lead.empresaId}::uuid)` } : {}),
+            /* A empresa-BALDE ("Unresolved billing identity") conta como
+               AUSÊNCIA, não como empresa: a carga de billing a usou para
+               juntar dezenas de Customers sem dono, e `ehEmpresaBalde` já diz
+               isso no saneamento. Sem esta ressalva o COALESCE respeitaria o
+               balde como se fosse o cliente, e a assinatura ficava presa nele
+               para sempre — 16 ativas, R$ 10.304,10, em 15/10/2026. */
+            ...(lead?.empresaId ? { empresaId: sql`CASE
+                WHEN ${assinaturas.empresaId} IS NULL THEN ${lead.empresaId}::uuid
+                WHEN EXISTS (SELECT 1 FROM empresas b WHERE b.id = ${assinaturas.empresaId} AND b.nome ~* '^unresolved billing identity') THEN ${lead.empresaId}::uuid
+                ELSE ${assinaturas.empresaId} END` } : {}),
             status: s.status,
             mrr: String(mrr),
             canceladaEm,
