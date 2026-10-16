@@ -15,12 +15,19 @@ import path from "node:path";
  * assinado que o CRM envia por e-mail pro cliente) e `/api/meta/resolve`
  * estavam fora da allowlist. O primeiro respondia 404 pro cliente final.
  *
- * O teste confere três coisas de uma vez:
+ * Achado 16/10: o mesmo defeito na MÃO CONTRÁRIA. `/api/admin` entrou na
+ * allowlist por causa de UMA rota Next (`/api/admin/stripe-webhooks`) e passou
+ * a engolir as 20 rotas admin que vivem no Hono — "Ver como", organizações,
+ * usuários, event-outbox: todas 404 em produção. O teste de baixo passava
+ * verde, porque conferia só se a rota Next era alcançável.
+ *
+ * O teste confere quatro coisas de uma vez:
  *   1. toda rota Next em `app/api` está na allowlist — ou declarada abaixo
  *      como intencionalmente inalcançável;
- *   2. as regras do app e da API são complementares (nada em ambos, nada em
+ *   2. nenhum prefixo da allowlist engole um prefixo que o Hono monta;
+ *   3. as regras do app e da API são complementares (nada em ambos, nada em
  *      nenhum);
- *   3. o rewrite de dev no `next.config.ts` espelha a mesma lista — senão dev
+ *   4. o rewrite de dev no `next.config.ts` espelha a mesma lista — senão dev
  *      testa um caminho que produção não executa.
  */
 function acharRaiz(): string {
@@ -64,11 +71,13 @@ const INALCANCAVEIS_POR_DECISAO: Record<string, string> = {};
 function allowlistDoApp(compose: string): Set<string> {
   const principal = compose.match(/routers\.([\w-]+)\.rule=Host\(`[^`]+`\) && \(!PathPrefix\(`\/api`\)([^"]*)\)"/);
   assert.ok(principal, "regra do router do app não encontrada no compose");
-  const prefixos = new Set([...principal[2].matchAll(/\|\| PathPrefix\(`\/api\/([\w-]+)`\)/g)].map((x) => x[1]));
+  /* O prefixo pode ter mais de um segmento (`admin/stripe-webhooks`): ele tem
+     que poder ser tão específico quanto a rota Next que justifica a exceção. */
+  const prefixos = new Set([...principal[2].matchAll(/\|\| PathPrefix\(`\/api\/([\w/-]+)`\)/g)].map((x) => x[1]));
 
   // O router principal do app dá nome ao serviço (`...services.<nome>.loadbalancer`).
   const nomeServicoApp = principal[1];
-  for (const m of compose.matchAll(/routers\.([\w-]+)\.rule=Host\(`[^`]+`\) && PathPrefix\(`\/api\/([\w-]+)`\)"/g)) {
+  for (const m of compose.matchAll(/routers\.([\w-]+)\.rule=Host\(`[^`]+`\) && PathPrefix\(`\/api\/([\w/-]+)`\)"/g)) {
     const router = m[1];
     const apontaProApp = new RegExp(`routers\\.${router}\\.service=${nomeServicoApp}\\b`).test(compose);
     if (apontaProApp) prefixos.add(m[2]);
@@ -80,7 +89,13 @@ function allowlistDoApp(compose: string): Set<string> {
 function exclusoesDaApi(compose: string): Set<string> {
   const m = compose.match(/routers\.[\w-]+-api\.rule=Host\(`[^`]+`\) && PathPrefix\(`\/api`\)([^"]*)"/);
   assert.ok(m, "regra do router da api não encontrada no compose");
-  return new Set([...m[1].matchAll(/&& !PathPrefix\(`\/api\/([\w-]+)`\)/g)].map((x) => x[1]));
+  return new Set([...m[1].matchAll(/&& !PathPrefix\(`\/api\/([\w/-]+)`\)/g)].map((x) => x[1]));
+}
+
+/** Prefixos que o Hono monta com caminho próprio (`app.route("/api/admin", …)`). */
+function prefixosMontadosNoHono(): string[] {
+  const src = fs.readFileSync(path.join(RAIZ, "app/src/api-server/server.ts"), "utf8");
+  return [...src.matchAll(/app\.route\("\/api\/([\w/-]+)",/g)].map((x) => x[1]);
 }
 
 /** Primeiro segmento de cada route handler do Next em `app/api`. */
@@ -123,10 +138,32 @@ for (const arquivo of COMPOSES) {
     allow.add("auth"); // NextAuth: sempre no Next
     const problemas: string[] = [];
     for (const [prefixo, rotas] of prefixosDasRotasNext()) {
-      if (allow.has(prefixo)) continue;
-      const restantes = rotas.filter((r) => !INALCANCAVEIS_POR_DECISAO[r]);
-      if (restantes.length === 0) continue;
-      problemas.push(`${restantes.join(", ")} — prefixo "/api/${prefixo}" não está na allowlist do Traefik; o tráfego vai pro Hono, que não tem essa rota`);
+      for (const rota of rotas) {
+        if (INALCANCAVEIS_POR_DECISAO[rota]) continue;
+        /* Alcançável quando ALGUM prefixo da allowlist cobre este caminho. A
+           comparação é por caminho, e não pelo primeiro segmento, porque a
+           exceção pode ser mais funda que ele (`admin/stripe-webhooks`). */
+        const coberta = [...allow].some((a) => rota === `/api/${a}` || rota.startsWith(`/api/${a}/`));
+        if (coberta) continue;
+        problemas.push(`${rota} — não está na allowlist do Traefik (prefixo "/api/${prefixo}"); o tráfego vai pro Hono, que não tem essa rota`);
+      }
+    }
+    assert.deepEqual(problemas, [], "\n" + problemas.join("\n"));
+  });
+
+  test(`${arquivo}: nenhum prefixo da allowlist engole rota do Hono`, () => {
+    const allow = allowlistDoApp(compose);
+    const problemas: string[] = [];
+    for (const montado of prefixosMontadosNoHono()) {
+      for (const a of allow) {
+        /* Engole quando a exceção é igual à montagem ou mais GENÉRICA que ela:
+           todo `/api/<montado>/*` passa a ir pro Next, que não tem essas rotas.
+           Exceção mais específica (`admin/stripe-webhooks` sobre `admin`) é o
+           caso legítimo — alcança a rota Next sem levar o resto junto. */
+        if (a === montado || montado.startsWith(a + "/")) {
+          problemas.push(`"/api/${a}" na allowlist do Traefik engole "/api/${montado}", que o Hono monta: essas rotas respondem 404 em produção. Estreite a exceção até a rota Next que a justifica.`);
+        }
+      }
     }
     assert.deepEqual(problemas, [], "\n" + problemas.join("\n"));
   });

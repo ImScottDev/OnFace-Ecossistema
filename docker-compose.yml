@@ -138,7 +138,13 @@ services:
       - "traefik.http.routers.${ROTA:-crm2dev}-webhooks.priority=200"
       - "traefik.http.routers.${ROTA:-crm2dev}-webhooks.service=${ROTA:-crm2dev}-app"
       # Frontend: tudo que nao e /api, mais as rotas de API que vivem no Next
-      - "traefik.http.routers.${ROTA:-crm2dev}-app.rule=Host(`${CRM_DOMAIN:-dev.crm.callface.io}`) && (!PathPrefix(`/api`) || PathPrefix(`/api/auth`) || PathPrefix(`/api/financeiro`) || PathPrefix(`/api/onboarding`) || PathPrefix(`/api/campanhas`) || PathPrefix(`/api/contratos-publicos`) || PathPrefix(`/api/admin`))"
+      #
+      # O prefixo tem que ser tao ESPECIFICO quanto a rota Next que ele existe
+      # para alcancar. `/api/admin` ficou aqui ate 16/10/2026 por causa de UMA
+      # rota (`/api/admin/stripe-webhooks`), e engolia as 20 rotas admin do Hono
+      # — view-as, organizacoes, usuarios, event-outbox — que respondiam 404 em
+      # producao: a tela existia, o trafego nunca chegava nela.
+      - "traefik.http.routers.${ROTA:-crm2dev}-app.rule=Host(`${CRM_DOMAIN:-dev.crm.callface.io}`) && (!PathPrefix(`/api`) || PathPrefix(`/api/auth`) || PathPrefix(`/api/financeiro`) || PathPrefix(`/api/onboarding`) || PathPrefix(`/api/campanhas`) || PathPrefix(`/api/contratos-publicos`) || PathPrefix(`/api/admin/stripe-webhooks`))"
       - "traefik.http.routers.${ROTA:-crm2dev}-app.entrypoints=websecure"
       - "traefik.http.routers.${ROTA:-crm2dev}-app.tls.certresolver=cloudflare"
       - "traefik.http.routers.${ROTA:-crm2dev}-app.middlewares=security-headers@file"
@@ -193,7 +199,7 @@ services:
       - ./uploads:/repo/app/public/uploads
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.${ROTA:-crm2dev}-api.rule=Host(`${CRM_DOMAIN:-dev.crm.callface.io}`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/webhooks`) && !PathPrefix(`/api/financeiro`) && !PathPrefix(`/api/onboarding`) && !PathPrefix(`/api/campanhas`) && !PathPrefix(`/api/contratos-publicos`) && !PathPrefix(`/api/admin`)"
+      - "traefik.http.routers.${ROTA:-crm2dev}-api.rule=Host(`${CRM_DOMAIN:-dev.crm.callface.io}`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/webhooks`) && !PathPrefix(`/api/financeiro`) && !PathPrefix(`/api/onboarding`) && !PathPrefix(`/api/campanhas`) && !PathPrefix(`/api/contratos-publicos`) && !PathPrefix(`/api/admin/stripe-webhooks`)"
       - "traefik.http.routers.${ROTA:-crm2dev}-api.entrypoints=websecure"
       - "traefik.http.routers.${ROTA:-crm2dev}-api.tls.certresolver=cloudflare"
       - "traefik.http.routers.${ROTA:-crm2dev}-api.middlewares=security-headers@file"
