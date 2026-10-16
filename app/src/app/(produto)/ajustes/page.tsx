@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { resumoAjustes } from "@/lib/ajustes/resumo";
+import { isAdminView } from "@/lib/auth/roles";
 
 export const metadata = { title: "Ajustes" };
 
@@ -58,6 +59,27 @@ const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um :
 export default async function AjustesPage() {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
+
+  /* Fora da gestão o índice abre (16/10/2026: o time clicava em Ajustes e
+     caía no Início), mas mostra só o que o papel alcança. O estado da
+     organização — membros, convites, tokens de API, credenciais de IA — é
+     leitura de gestão: oferecê-lo aqui seria contornar o mesmo gate que
+     barra `/ajustes/membros`. Os links pessoais são os de `PESSOAIS`
+     no middleware. */
+  if (!isAdminView(ctx.userRole)) {
+    return (
+      <div className="aj-grupos">
+        <Grupo
+          titulo="Suas conexões"
+          ajuda="Sua conta de e-mail e seu número de WhatsApp. Cada pessoa conecta os próprios."
+          links={[
+            { rotulo: "E-mail", href: "/ajustes/email" },
+            { rotulo: "WhatsApp", href: "/ajustes/whatsapp" },
+          ]}
+        />
+      </div>
+    );
+  }
 
   const r = await resumoAjustes(ctx.organizacaoId);
 

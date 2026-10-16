@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth/config";
 import { NextResponse } from "next/server";
 import { isAdminView, podeVerComo } from "@/lib/auth/roles";
+import { barraPorPapel } from "@/lib/auth/rotas-de-gestao";
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
@@ -46,38 +47,14 @@ export default auth((req) => {
   // Ajustes → Equipe, que admin comum pode ver. Quem checa papel agora é cada
   // tela de destino (`/ajustes/organizacoes` segue exigindo super_admin).
 
-  // Telas de gestão (Configurações, Financeiro, Relatórios, Onboarding, Campanhas):
-  // só admin/gerente/super_admin. Vendedor/closer não acessa (vê os números dele no
-  // Meu Dia e na Carteira filtrada).
-  // Exceção: /configuracoes/email é conexão PESSOAL (cada usuário conecta a própria
-  // conta Microsoft/Google/IMAP pra agenda e e-mail), não config da organização —
-  // libera pra qualquer cargo autenticado, senão closer/SDR nunca consegue conectar.
-  //
-  // Saneamento 14/09: a lista cobria só as rotas do CRM 1, que hoje são
-  // REDIRECTS. Os destinos reais do CRM2 (`/clientes/financeiro`, `/ajustes`)
-  // ficaram abertos a qualquer papel autenticado — um closer ou SDR abria o
-  // Financeiro inteiro e a configuração da organização. O gate voltou a valer
-  // sobre as rotas que de fato existem, com os papéis de gestão da RBAC v2
-  // (director/coordinator/operations) incluídos via `isAdminView`.
-  //
-  // Backend também passou a checar papel (getGestaoCtx / isAdminView nas rotas
-  // financeiras): isto aqui é navegação, não é a única barreira.
-  /* `/design` é o laboratório do Design System: fixtures com nome de cliente
-     ("TechCorp Telecom"), metas e realizados de pessoas do time e valores em
-     reais inventados, numa casca idêntica à do produto. Estava só atrás de
-     sessão — qualquer SDR, closer ou usuário de cliente abria a URL e lia
-     aquilo como se fosse a operação (auditoria de 14/10/2026). */
-  const GESTAO = ["/configuracoes", "/financeiro", "/campanhas", "/clientes/financeiro", "/ajustes", "/design"];
-  // Conexão de e-mail/calendário e de número de WhatsApp é PESSOAL (cada um
-  // conecta a própria conta e o próprio número), não configuração da
-  // organização — closer e SDR precisam alcançar. O escopo do que aparece lá
-  // dentro é do servidor (lib/whatsapp/acesso), não deste gate.
-  const PESSOAIS = ["/configuracoes/email", "/ajustes/email", "/ajustes/whatsapp"];
-  const ehPessoal = PESSOAIS.some((p) => pathname.startsWith(p));
-  if (req.auth && !ehPessoal && GESTAO.some((p) => pathname.startsWith(p))) {
-    if (!isAdminView(effectiveRole)) {
-      return NextResponse.redirect(new URL("/inicio", req.url));
-    }
+  /* Gate de PAPEL. As listas e a decisão moraram aqui até 16/10/2026; hoje
+     vivem em lib/auth/rotas-de-gestao.ts, com todo o histórico delas, para que
+     o teste execute a MESMA regra que a requisição executa, em vez de conferir
+     o texto das listas por regex.
+     Isto é navegação, não é a única barreira: o backend também checa papel
+     (getGestaoCtx / isAdminView nas rotas financeiras). */
+  if (req.auth && barraPorPapel(pathname, effectiveRole)) {
+    return NextResponse.redirect(new URL("/inicio", req.url));
   }
 
   return NextResponse.next();

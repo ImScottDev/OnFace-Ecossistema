@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
+import { GESTAO, PESSOAIS, barraPorPapel } from "./lib/auth/rotas-de-gestao";
 
 /**
  * Regressão do gate de papel perdido na migração CRM 1 → CRM 2.
@@ -36,12 +37,6 @@ const ROTAS_DE_GESTAO = ["/financeiro", "/clientes/financeiro", "/ajustes"];
 /** Rotas pessoais que qualquer papel autenticado precisa alcançar. */
 const ROTAS_PESSOAIS = ["/ajustes/email", "/ajustes/whatsapp"];
 
-function listaDoMiddleware(nome: string): string[] {
-  const m = middleware.match(new RegExp(`const ${nome} = \\[([^\\]]*)\\]`));
-  assert.ok(m, `array ${nome} não encontrado no middleware`);
-  return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
-}
-
 function matcher(): string[] {
   const m = middleware.match(/matcher:\s*\[([\s\S]*?)\]/);
   assert.ok(m, "matcher não encontrado");
@@ -49,7 +44,7 @@ function matcher(): string[] {
 }
 
 test("as rotas de gestão do CRM2 estão no gate de papel", () => {
-  const gestao = listaDoMiddleware("GESTAO");
+  const gestao = GESTAO;
   for (const rota of ROTAS_DE_GESTAO) {
     assert.ok(
       gestao.some((g) => rota === g || rota.startsWith(g + "/")),
@@ -69,7 +64,7 @@ test("as rotas de gestão também estão no matcher (senão o middleware nem rod
 });
 
 test("conexão pessoal de e-mail continua liberada pra qualquer papel", () => {
-  const pessoais = listaDoMiddleware("PESSOAIS");
+  const pessoais = PESSOAIS;
   for (const rota of ROTAS_PESSOAIS) {
     assert.ok(
       pessoais.some((p) => rota === p || rota.startsWith(p)),
@@ -80,9 +75,26 @@ test("conexão pessoal de e-mail continua liberada pra qualquer papel", () => {
 
 test("o gate usa isAdminView (inclui os papéis de gestão da RBAC v2)", () => {
   assert.ok(
-    /isAdminView\(effectiveRole\)/.test(middleware),
-    "o gate precisa usar isAdminView — a lista literal antiga deixava director, coordinator e operations de fora"
+    /barraPorPapel\(pathname, effectiveRole\)/.test(middleware),
+    "o middleware precisa aplicar barraPorPapel — é lá que mora a regra que este teste executa"
   );
+  for (const papel of ["director", "coordinator", "operations", "admin", "gerente", "super_admin"]) {
+    assert.equal(barraPorPapel("/ajustes/membros", papel), false, `${papel} é gestão e deveria abrir /ajustes/membros`);
+  }
+});
+
+/* O time não conseguia clicar em "Ajustes" (16/10/2026): o item do menu de
+   perfil leva a `/ajustes`, que o gate devolvia ao Início para closer e SDR.
+   A raiz abre; as seções da organização continuam fechadas. */
+test("fora da gestão, o índice de Ajustes abre e as seções da organização não", () => {
+  for (const papel of ["closer", "sdr", "leitor"]) {
+    assert.equal(barraPorPapel("/ajustes", papel), false, `${papel} precisa alcançar o índice de Ajustes`);
+    assert.equal(barraPorPapel("/ajustes/email", papel), false, `${papel} conecta o próprio e-mail`);
+    assert.equal(barraPorPapel("/ajustes/whatsapp", papel), false, `${papel} conecta o próprio WhatsApp`);
+    for (const fechada of ["/ajustes/membros", "/ajustes/permissoes", "/ajustes/integracoes", "/ajustes/api-tokens", "/financeiro", "/design"]) {
+      assert.equal(barraPorPapel(fechada, papel), true, `${fechada} é de gestão e não pode abrir para ${papel}`);
+    }
+  }
 });
 
 test("as rotas financeiras do backend checam papel", () => {

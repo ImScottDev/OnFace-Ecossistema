@@ -87,6 +87,16 @@ export const GRUPOS: { titulo: string; itens: ItemAjuste[] }[] = [
 ];
 
 /**
+ * As seções que NÃO são da organização: cada um conecta a própria conta de
+ * e-mail e o próprio número. É o que o middleware libera fora da gestão
+ * (`PESSOAIS` em middleware.ts) — mesma regra, para a coluna não oferecer
+ * destino que o gate devolve ao Início.
+ */
+export const ehSecaoPessoal = (href: string) =>
+  href === "/ajustes/email" || href.startsWith("/ajustes/email/")
+  || href === "/ajustes/whatsapp" || href.startsWith("/ajustes/whatsapp/");
+
+/**
  * Item de Ajustes correspondente à rota atual. Casa por prefixo (pra que
  * `/ajustes/organizacoes/<id>` acenda "Organizações") mas escolhe sempre o
  * href MAIS LONGO que casa — senão "/ajustes/email" e
@@ -112,16 +122,18 @@ export function itemAtualDeAjustes(pathname: string): ItemAjuste | undefined {
 export function AjustesCasca({ children, gestao }: { children: React.ReactNode; gestao: boolean }) {
   const pathname = usePathname();
   const indice = pathname === "/ajustes";
-  if (!gestao) return <div className="min-w-0">{children}</div>;
+  /* Fora da gestão a coluna não some: ela fica com as seções pessoais
+     (e-mail e WhatsApp). Escondê-la era o que deixava closer e SDR sem
+     caminho nenhum a partir de Ajustes. */
   return (
     <div className="aj-casca" data-indice={indice ? "true" : "false"}>
-      <AjustesNav indice={indice} />
+      <AjustesNav indice={indice} gestao={gestao} />
       <div className="min-w-0">{children}</div>
     </div>
   );
 }
 
-function AjustesNav({ indice }: { indice: boolean }) {
+function AjustesNav({ indice, gestao }: { indice: boolean; gestao: boolean }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const superAdmin = (session?.user as { role?: string } | undefined)?.role === "super_admin";
@@ -136,7 +148,9 @@ function AjustesNav({ indice }: { indice: boolean }) {
       )}
       <div className="aj-nav-grupos">
         {GRUPOS.map((grupo) => {
-          const itens = grupo.itens.filter((i) => !i.superAdmin || superAdmin);
+          const itens = grupo.itens
+            .filter((i) => !i.superAdmin || superAdmin)
+            .filter((i) => gestao || ehSecaoPessoal(i.href));
           if (itens.length === 0) return null;
           return (
             <div key={grupo.titulo} className="flex flex-col gap-0.5">
