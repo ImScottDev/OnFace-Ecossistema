@@ -34,6 +34,7 @@ import { ETAPAS_PRE_VENDAS, ETAPAS_FECHADAS, type EtapaPreVendas, type Ator } fr
 import { aiAgentVersions, cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels, empresas, pessoas, notificacoes } from "@/lib/db/schema";
 import { eq, and, lte, inArray, notInArray, desc, or, isNull, lt, sql } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
+import { resultadoCondicaoCadencia } from "./cadence-conditions";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
@@ -1090,6 +1091,11 @@ export async function avancarEnrollment(enrollmentId: string): Promise<void> {
   }
 
   if (step.tipo === "condition") {
+    // Sim/Não dependem de condition.<nodeId>, calculado do snapshot VIVO.
+    const config = step.config as Parameters<typeof resultadoCondicaoCadencia>[0] | undefined;
+    if (config?.branching === "combined") {
+      vars[`condition.${step.id}`] = resultadoCondicaoCadencia(config, vars);
+    }
     // Condition não executa ação nem espera — só avalia `branches` (mesma
     // `avaliarCondicao` de lib/crm/condicao.ts, via `resolverBranch` já
     // existente neste módulo, sem duplicar a gramática de condição) e

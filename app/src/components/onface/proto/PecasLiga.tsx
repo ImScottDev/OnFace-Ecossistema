@@ -108,7 +108,7 @@ class Logica extends React.Component<any, any> {
     const d: any = this.props.dados ?? {};
     this.state = {
       detalhe: false, detalheId: null,
-      cadPausada: false, nutrir: false, motivo: null, data: "",
+      cadPausada: false, cadPausadas: d.cadenciasPausadas || {}, nutrir: false, motivo: null, data: "",
       atvAberta: false, atvModo: "ver", atvDraft: null,
       cadPicker: false, timelineTudo: false, secDrawer: null,
       cadModal: false, cadEscolha: null, cadOrigens: {},
@@ -322,6 +322,8 @@ class Logica extends React.Component<any, any> {
         inventada. Sem passo real, a barra de progresso não é desenhada. */
     const cadAtual = L0 && S.cadencias.hasOwnProperty(L0.id) ? S.cadencias[L0.id] : null;
     const cadPassoReal = L0 && S.cadPassos ? S.cadPassos[L0.id] : null;
+    const cadPausada = typeof S.cadPausadas?.[L0.id] === "boolean"
+      ? S.cadPausadas[L0.id] : Boolean(S.cadPausada);
     /* Qualificação só mostra o que alguém preencheu. O protótipo preenchia
         sozinho: tamanho "45" fixo, dor tirada de um dicionário pelo interesse e
         fit "Alto"/"Médio" pela tag. A gaveta dizia "2 de 4 campos" sem ninguém
@@ -668,21 +670,21 @@ class Logica extends React.Component<any, any> {
         + ((S.tagNova || "").trim() ? "background:#12171d;color:#fff;cursor:pointer" : "background:#eeeff3;color:#a3a8a4;cursor:not-allowed"),
       temCad: !!cadAtual, semCad: !cadAtual,
       cadNome: cadAtual || "",
-      cadEstado: S.cadPausada ? "Pausada" : "Ativa",
+      cadEstado: cadPausada ? "Pausada" : "Ativa",
       cadSelo: "display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:5px;font-size:10.5px;font-weight:700;white-space:nowrap;background:"
-        + (S.cadPausada ? "#f7edd8;color:#6e5420" : "#e6f4ee;color:#1f7256"),
+        + (cadPausada ? "#f7edd8;color:#6e5420" : "#e6f4ee;color:#1f7256"),
       cadPasso: cadPassoReal ? "Passo " + cadPassoReal.atual + " de " + cadPassoReal.total : "",
       cadPassos: cadPassoReal ? Array.from({ length: cadPassoReal.total }, (_, k) => k + 1).map(i => ({
-        style: "flex:1;height:4px;border-radius:9999px;background:" + (i <= cadPassoReal.atual ? (S.cadPausada ? "#c8a86a" : "#fe4f2b") : "#e3e7e8")
+        style: "flex:1;height:4px;border-radius:9999px;background:" + (i <= cadPassoReal.atual ? (cadPausada ? "#c8a86a" : "#fe4f2b") : "#e3e7e8")
       })) : [],
-      cadBotao: S.cadPausada ? "Retomar" : "Pausar",
+      cadBotao: cadPausada ? "Retomar" : "Pausar",
       pausarCad: async () => {
         const alternar = this.props.acoes?.alternarCadencia;
         if (typeof alternar !== "function") return this.diz("Pausa indisponível nesta tela.", "erro");
         const r = await alternar(L0.id);
         if (!r?.ok) return this.diz(r?.erro || "Não foi possível alterar a cadência.", "erro");
         const proximo = r.dados?.pausada === true;
-        this.setState({ cadPausada: proximo });
+        this.setState((s) => ({ cadPausada: proximo, cadPausadas: { ...s.cadPausadas, [L0.id]: proximo } }));
         this.diz(proximo ? "Cadência pausada no motor." : "Cadência retomada no motor.", "ok");
       },
       abrirPicker: () => { this.setState({ cadModal: true, cadEscolha: cadAtual || null }); this.carregarCadencias(); },

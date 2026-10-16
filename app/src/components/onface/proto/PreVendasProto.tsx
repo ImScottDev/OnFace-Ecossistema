@@ -375,7 +375,10 @@ export class PecasLigadas extends PecasLiga {
     const id = (this as any).state?.detalheId;
     if (prevProps && prevProps.leads !== (this as any).props?.leads) {
       // O board atualizou: a cadência da gaveta acompanha a inscrição real.
-      (this as any).setState({ cadencias: (this as any).props?.dados?.cadencias ?? {} });
+      (this as any).setState({
+        cadencias: (this as any).props?.dados?.cadencias ?? {},
+        cadPausadas: (this as any).props?.dados?.cadenciasPausadas ?? {},
+      });
       if (id) this.carregarDetalhe(id);
     }
   }
@@ -459,9 +462,10 @@ export class PecasLigadas extends PecasLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function PreVendasProto({ dados, acoes, cadenciaPorLead = {} }: {
+export function PreVendasProto({ dados, acoes, cadenciaPorLead = {}, cadenciasPausadas = {} }: {
   dados: BoardPreVendas;
   cadenciaPorLead?: Record<string, string>;
+  cadenciasPausadas?: Record<string, boolean>;
   acoes: AcoesPreVendas;
 }) {
   const router = useRouter();
@@ -679,7 +683,7 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {} }: {
 
       <PecasLigadas
         ref={pecas}
-        dados={{ leads, qual, cadencias: cadenciasVivas }}
+        dados={{ leads, qual, cadencias: cadenciasVivas, cadenciasPausadas }}
         catalogo={catalogo}
         leads={leads}
         /* Sem `acoes`, o save-ao-digitar da qualificação (agendarSalvarQualificacao,

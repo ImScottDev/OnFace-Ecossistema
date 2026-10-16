@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { acaoPausarCadenciaDoLead } from "@/app/(produto)/contatos/actions";
-import { passoDaCadenciaPorLead } from "@/lib/vendas/pre-vendas";
+import { passoDaCadenciaPorLead, pausasDaCadenciaPorLead } from "@/lib/vendas/pre-vendas";
 import { boardPreVendas, ehView, type ViewPreVendas } from "@/lib/vendas/consultas";
 /* A tela é o desenho do Claude Design, convertido por máquina — não uma
    recriação. `PreVendasQuadro` era a versão feita à mão e saiu em 24/09:
@@ -73,12 +73,17 @@ export async function PreVendasPage({ searchParams }: {
     view, usuarioId: ctx.userId, porColuna,
   });
 
-  const cadenciaPorLead = await passoDaCadenciaPorLead(ctx.organizacaoId, dados.colunas.flatMap((col) => col.cards.map((c) => c.leadId)));
+  const leadIdsDaTela = dados.colunas.flatMap((col) => col.cards.map((c) => c.leadId));
+  const [cadenciaPorLead, cadenciasPausadas] = await Promise.all([
+    passoDaCadenciaPorLead(ctx.organizacaoId, leadIdsDaTela),
+    pausasDaCadenciaPorLead(ctx.organizacaoId, leadIdsDaTela),
+  ]);
 
   return (
     <PreVendasProto
       dados={dados}
       cadenciaPorLead={cadenciaPorLead}
+      cadenciasPausadas={cadenciasPausadas}
       acoes={{
         moverEtapa: acaoMoverEtapa,
         qualificar: acaoQualificar,

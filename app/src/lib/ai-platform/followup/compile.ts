@@ -20,7 +20,9 @@ function conditionForBranch(node: FollowupNode, branchId: string): Condicao | nu
 function branchesFor(node: FollowupNode, edges: FollowupEdge[]): CadenceStepBranch[] {
   return edges
     .filter((edge) => edge.source === node.id)
-    .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))
+    .sort((a, b) =>
+      Number(a.condition.type === "always") - Number(b.condition.type === "always")
+      || b.priority - a.priority || a.id.localeCompare(b.id))
     .map((edge) => ({ condicao: conditionForBranch(node, edgeBranchId(edge)), proximoStepId: edge.target }));
 }
 

@@ -958,3 +958,25 @@ export async function passoDaCadenciaPorLead(
        AND l.id = ANY(${ids}::uuid[])`);
   return Object.fromEntries(linhas.map((r) => [r.lead_id, r.texto]));
 }
+
+/** Estado real de pausa no quadro/drawer; o chip sozinho guarda só o nome. */
+export async function pausasDaCadenciaPorLead(
+  organizacaoId: string,
+  leadIds: string[],
+): Promise<Record<string, boolean>> {
+  if (!leadIds.length) return {};
+  const ids = literalDeTexto(leadIds);
+  const linhas = await db.execute<{ lead_id: string; pausada: boolean }>(sql`
+    SELECT l.id::text AS lead_id, ce_viva.status = 'paused' AS pausada
+      FROM leads l
+      JOIN LATERAL (
+        SELECT ce.status FROM cadence_enrollments ce
+         WHERE ce.organizacao_id = ${organizacaoId}::uuid AND ce.entity_type = 'lead'
+           AND ce.entity_id = l.id
+           AND ce.status IN ('active','waiting','waiting_reply','paused')
+         ORDER BY ce.started_at DESC LIMIT 1
+      ) ce_viva ON true
+     WHERE l.organizacao_id = ${organizacaoId}::uuid
+       AND l.id = ANY(${ids}::uuid[])`);
+  return Object.fromEntries(linhas.map((r) => [r.lead_id, r.pausada]));
+}

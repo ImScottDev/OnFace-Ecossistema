@@ -31,6 +31,7 @@ import { ROTULO_ENTIDADE, type OpcoesInspetor, type TipoEntidade } from "@/lib/a
 import { EVENT_CATALOG } from "@/components/crm2/automacoes/followup-types";
 import { followupGraphSchema } from "@/lib/ai-platform/followup/graph";
 import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate";
+import type { FollowupGraph, FollowupNode } from "@/lib/ai-platform/followup/graph";
 import { Campo, type ContextoCampo } from "../fluxos/Campos";
 import type { GrupoVariaveis } from "../fluxos/SeletorVariaveis";
 import {
@@ -42,6 +43,8 @@ import {
 import "../automacoes.css";
 import "../fluxos/fluxos.css";
 import "./cadencias.css";
+import { FollowupCanvas } from "./FollowupCanvas";
+import { FollowupInspector } from "./FollowupInspector";
 
 export type CadenciaEditavel = {
   id: string | null;
@@ -140,11 +143,12 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
   aoFechar: () => void;
   aoSalvar: (corpo: { nome: string; entityType: string; grafo: unknown }, publicar: boolean) => Promise<void>;
 }) {
-  const leitura = useMemo(() => grafoParaPassos(cadencia.grafo), [cadencia.grafo]);
+  const leituraInicial = useMemo(() => grafoParaPassos(cadencia.grafo), [cadencia.grafo]);
+  const [grafoEditado, setGrafoEditado] = useState<FollowupGraph>(cadencia.grafo);
   const [nome, setNome] = useState(cadencia.nome);
   const [entityType, setEntityType] = useState(cadencia.entityType);
-  const [evento, setEvento] = useState(leitura.evento);
-  const [passos, setPassos] = useState<Passo[]>(leitura.passos);
+  const [evento, setEvento] = useState(leituraInicial.evento);
+  const [passos, setPassos] = useState<Passo[]>(leituraInicial.passos);
   // Abre fechado: a primeira leitura tem de ser a SEQUÊNCIA inteira. Cartão
   // aberto de saída esconde os passos seguintes e desfaz o motivo da lista.
   const [aberto, setAberto] = useState<string | null>(null);
@@ -154,6 +158,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
   const arrastando = useRef<number | null>(null);
   const menuAdd = useRef<HTMLDivElement>(null);
   const [alvo, setAlvo] = useState<number | null>(null);
+  const [selecionado, setSelecionado] = useState<string | null>(null);
 
   const opcoes = useQuery<Opcoes>({
     queryKey: ["cadencias-opcoes"],
@@ -165,16 +170,26 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
     staleTime: 60_000,
   });
 
-  const somenteLeitura = !podeGerenciar || leitura.naoLinear;
-  const grafo = useMemo(() => passosParaGrafo(passos, evento), [passos, evento]);
+  const leitura = useMemo(() => grafoParaPassos(grafoEditado), [grafoEditado]);
+  const somenteLeitura = !podeGerenciar;
+  const grafo = grafoEditado;
+  useEffect(() => {
+    if (modoVisual) {
+      const proxima = grafoParaPassos(grafoEditado).passos;
+      setPassos((atual) => JSON.stringify(atual) === JSON.stringify(proxima) ? atual : proxima);
+    } else if (!leitura.naoLinear) {
+      const proximo = passosParaGrafo(passos, evento);
+      setGrafoEditado((atual) => JSON.stringify(atual) === JSON.stringify(proximo) ? atual : proximo);
+    }
+  }, [modoVisual, grafoEditado, passos, evento, leitura.naoLinear]);
   const pendencias = useMemo(() => {
-    const dos = pendenciasDosPassos(passos);
+    const dos = leitura.naoLinear ? [] : pendenciasDosPassos(leitura.passos);
     if (dos.length) return dos;
     const estrutura = followupGraphSchema.safeParse(grafo);
     if (!estrutura.success) return [{ passoId: "", mensagem: estrutura.error.issues[0]?.message ?? "Fluxo inválido." }];
     const v = validateFollowupForPublish(estrutura.data);
     return v.ok ? [] : v.errors.map((e) => ({ passoId: e.nodeId ?? "", mensagem: e.message }));
-  }, [passos, grafo]);
+  }, [grafo]);
 
   const ctx: ContextoCampo = {
     opcoes: opcoes.data,
@@ -208,6 +223,23 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
     finally { setSalvando(null); }
   };
 
+  const mudarGrafo = (proximo: FollowupGraph) => {
+    setGrafoEditado(proximo);
+    const trigger = proximo.nodes.find((n) => n.type === "trigger");
+    if (trigger?.type === "trigger") setEvento(trigger.config.event);
+  };
+  const noSelecionado = grafo.nodes.find((node) => node.id === selecionado) ?? null;
+  const editarNo = (node: FollowupNode) => mudarGrafo({ ...grafo, nodes: grafo.nodes.map((item) => item.id === node.id ? node : item) });
+  const duplicarNo = () => {
+    if (!noSelecionado || noSelecionado.type === "trigger") return;
+    const copia = { ...noSelecionado, id: `${noSelecionado.type}-${crypto.randomUUID().slice(0, 8)}`, label: `${noSelecionado.label} (cópia)`, position: { x: noSelecionado.position.x + 40, y: noSelecionado.position.y + 80 } } as FollowupNode;
+    mudarGrafo({ ...grafo, nodes: [...grafo.nodes, copia] }); setSelecionado(copia.id);
+  };
+  const excluirNo = () => {
+    if (!noSelecionado || noSelecionado.type === "trigger") return;
+    mudarGrafo({ ...grafo, nodes: grafo.nodes.filter((n) => n.id !== noSelecionado.id), edges: grafo.edges.filter((e) => e.source !== noSelecionado.id && e.target !== noSelecionado.id) }); setSelecionado(null);
+  };
+
   // Esc e clique fora fecham o menu de adicionar, nunca o editor: o editor
   // guarda trabalho não salvo, e uma tecla no meio de um campo não pode
   // jogá-lo fora.
@@ -232,7 +264,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
           aria-label="Nome da cadência" onChange={(e) => setNome(e.target.value)} />
         <span className={`oa-selo ${cadencia.ativo ? "oa-ok" : cadencia.publishedAt ? "oa-aviso" : ""}`}>{estado}</span>
         <span className="ofx-espaco" />
-        <span className="ofx-salvo">{passos.length === 1 ? "1 passo" : `${passos.length} passos`}</span>
+        <span className="ofx-salvo">{Math.max(0, grafo.nodes.length - 2) === 1 ? "1 passo" : `${Math.max(0, grafo.nodes.length - 2)} passos`}</span>
         {podeGerenciar && (
           <>
             <button type="button" className="oa-btn oa-btn-secundario" disabled={!!salvando || somenteLeitura} onClick={() => void salvar(false)}>
@@ -251,7 +283,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
       {leitura.naoLinear && (
         <div className="ofx-faixa" data-tom="erro">
           <AlertTriangle size={14} aria-hidden />
-          Esta cadência foi montada no construtor antigo e ramifica para mais de um caminho. Esta tela mostra a sequência, mas não salva por cima para não achatar o fluxo de ninguém.
+          Esta cadência tem caminhos ramificados. O fluxo visual é a fonte de edição; a lista detalhada mostra apenas uma leitura linear parcial para não achatar nenhum ramo.
         </div>
       )}
 
@@ -262,7 +294,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
             <div className="ofc-dupla">
               <div className="ofx-campo">
                 <label className="ofx-campo-rotulo" htmlFor="cad-evento">Entra na cadência</label>
-                <select id="cad-evento" className="oa-input" value={evento} disabled={somenteLeitura} onChange={(e) => setEvento(e.target.value)}>
+                <select id="cad-evento" className="oa-input" value={evento} disabled={somenteLeitura} onChange={(e) => { const value = e.target.value; setEvento(value); const trigger = grafo.nodes.find((n) => n.type === "trigger"); if (trigger?.type === "trigger") mudarGrafo({ ...grafo, nodes: grafo.nodes.map((n) => n.id === trigger.id ? { ...trigger, config: { ...trigger.config, event: value } } : n) }); }}>
                   {EVENT_CATALOG.map((ev) => <option key={ev.id} value={ev.id}>{ev.nome}</option>)}
                 </select>
                 <span className="oa-dica">“Inscrição manual/API” só anda quando alguém inscreve. Evento inscreve quando o fato acontece no CRM.</span>
@@ -290,51 +322,17 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
               <button type="button" aria-pressed={modoVisual} className={modoVisual ? "ofc-modo-ativo" : undefined} onClick={() => setModoVisual(true)}>
                 <GitBranch size={15} /> Fluxo visual
               </button>
-              <button type="button" aria-pressed={!modoVisual} className={!modoVisual ? "ofc-modo-ativo" : undefined} onClick={() => setModoVisual(false)}>
+              <button type="button" aria-pressed={!modoVisual} disabled={leitura.naoLinear} title={leitura.naoLinear ? "Use o fluxo visual para editar todos os ramos" : undefined} className={!modoVisual ? "ofc-modo-ativo" : undefined} onClick={() => setModoVisual(false)}>
                 <ListTodo size={15} /> Lista detalhada
               </button>
             </div>
             <span>Selecione um bloco para personalizar. O rascunho só substitui a versão publicada ao publicar.</span>
           </div>
 
-          {modoVisual && passos.length > 0 && (
+          {modoVisual && (
             <div className="ofc-workspace">
-              <div className="ofc-flow" aria-label="Jornada visual da cadência">
-                <div className="ofc-flow-intro"><span className="ofc-flow-inicio"><Rocket size={15} /> INÍCIO</span><strong>Registro entrou na cadência</strong><small>{evento === "manual" ? "Inscrição manual ou API" : EVENT_CATALOG.find((e) => e.id === evento)?.nome ?? evento}</small></div>
-                {passos.map((passo, i) => {
-                  const Icone = iconeDoPasso(passo);
-                  return (
-                    <div key={passo.id} className="ofc-flow-step">
-                      <div className="ofc-flow-ligacao"><span>+</span><small>{textoEspera(passo.esperaMin)}</small></div>
-                      <button type="button" className="ofc-flow-node" data-selecionado={aberto === passo.id ? "true" : undefined}
-                        aria-pressed={aberto === passo.id} onClick={() => setAberto(passo.id)}>
-                        <span className="ofc-flow-icon"><Icone size={18} /></span>
-                        <span className="ofc-flow-content"><small>PASSO {i + 1}</small><strong>{tituloDoPasso(passo)}</strong><span>{resumoDoPasso(passo, opcoes.data)}</span></span>
-                        <ChevronDown size={16} />
-                      </button>
-                      {passo.tipo === "condicao" && <div className="ofc-flow-branches"><span>Sim → próximo passo</span><span>Não → encerrar</span></div>}
-                      {passo.tipo === "classificar" && <div className="ofc-flow-branches"><span>Classe escolhida → continuar</span><span>Outras → encerrar</span></div>}
-                    </div>
-                  );
-                })}
-                <div className="ofc-flow-ligacao"><span>+</span></div>
-                <div className="ofc-flow-fim"><span>✓</span> Fim da cadência · avisar responsável</div>
-              </div>
-              <aside className="ofc-inspector" aria-label="Configuração do passo">
-                {(() => {
-                  const passo = passos.find((p) => p.id === aberto);
-                  if (!passo) return <div className="ofc-inspector-empty"><GitBranch size={32} /><strong>Personalize sua cadência</strong><p>Escolha um bloco à esquerda para configurar espera, canal, mensagem e condições.</p></div>;
-                  const idx = passos.findIndex((p) => p.id === passo.id);
-                  return <>
-                    <div className="ofc-inspector-header"><div><small>CONFIGURAÇÃO · PASSO {idx + 1}</small><h2>{tituloDoPasso(passo)}</h2></div><button className="oa-icone" type="button" aria-label="Fechar edição do passo" onClick={() => setAberto(null)}>×</button></div>
-                    <div className="ofc-inspector-fields"><PassoEditor passo={passo} ctx={ctx} opcoes={opcoes.data} primeiro={idx === 0} falhas={pendencias.filter((x) => x.passoId === passo.id)} aoTrocar={(mudanca) => trocar(passo.id, mudanca)} /></div>
-                    {!somenteLeitura && <div className="ofc-inspector-footer">
-                      <button type="button" className="oa-btn oa-btn-secundario" onClick={() => setPassos((xs) => { const i=xs.findIndex((x)=>x.id===passo.id); const clone={...passo,id:novoId(passo.tipo)} as Passo; setAberto(clone.id); return [...xs.slice(0,i+1),clone,...xs.slice(i+1)]; })}><Copy size={13}/> Duplicar</button>
-                      <button type="button" className="oa-btn oa-btn-secundario" onClick={() => {setPassos((xs)=>xs.filter((x)=>x.id!==passo.id));setAberto(null);}}><Trash2 size={13}/> Remover</button>
-                    </div>}
-                  </>;
-                })()}
-              </aside>
+              <FollowupCanvas graph={grafo} selectedId={selecionado} somenteLeitura={somenteLeitura} onChange={mudarGrafo} onSelect={setSelecionado} />
+              <FollowupInspector node={noSelecionado} somenteLeitura={somenteLeitura} opcoes={opcoes.data} onChange={editarNo} onDelete={excluirNo} onDuplicate={duplicarNo} />
             </div>
           )}
           {(!modoVisual || passos.length === 0) && (passos.length === 0 ? (
