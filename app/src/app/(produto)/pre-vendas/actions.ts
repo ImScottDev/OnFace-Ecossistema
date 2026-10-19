@@ -622,9 +622,14 @@ export async function acaoSalvarEmpresa(empresaId: string, c: {
 /** Os tipos que uma inscrição pode ter. Empresa NÃO está aqui de propósito:
  *  empresa não recebe mensagem — quem recebe é um contato dela, escolhido na
  *  tela. A tela da empresa inscreve esse contato, e não a empresa. */
+/* Nada aqui é exportado: este arquivo é `"use server"`, e num módulo de Server
+   Actions TODO export precisa ser função async. Exportar o type e o
+   guarda-de-tipo derrubou o build da imagem — e o `tsc --noEmit` passa, porque
+   a regra é do Next, não do TypeScript. Quem precisar destes nomes fora daqui
+   leva os três para um módulo próprio. */
 const TIPOS_INSCREVIVEIS = { lead: "leads", contato: "contatos", negocio: "negocios" } as const;
-export type TipoInscrivel = keyof typeof TIPOS_INSCREVIVEIS;
-export const ehTipoInscrivel = (t: string): t is TipoInscrivel => t in TIPOS_INSCREVIVEIS;
+type TipoInscrivel = keyof typeof TIPOS_INSCREVIVEIS;
+const ehTipoInscrivel = (t: string): t is TipoInscrivel => t in TIPOS_INSCREVIVEIS;
 
 /**
  * A ÚNICA porta de inscrição manual do produto.
