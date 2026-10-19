@@ -1432,7 +1432,6 @@ Em meses mais curtos, dias 29 a 31 vencem no último dia do mês.
 </div>
 </>) : null}
 </div>
-{(f2.naoWl) ? (<>
 <div style={{ minWidth: "0" }}>
 <span style={{ display: "flex", gap: "3px", fontSize: "12px", fontWeight: "600", color: "#4a5560", marginBottom: "6px" }}>
 Fidelidade
@@ -1472,7 +1471,6 @@ Reajuste anual
 </select>
 </label>
 </div>
-</>) : null}
 </div>
 {(f2.ehWl) ? (<>
 <div style={{ display: "flex", gap: "8px", marginTop: "10px", padding: "10px 12px", borderRadius: "10px", background: "#fafafa", fontSize: "12px", color: "#4a5560", lineHeight: "1.5", textWrap: "pretty" }}>
