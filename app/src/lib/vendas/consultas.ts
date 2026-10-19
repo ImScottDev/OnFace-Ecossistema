@@ -654,6 +654,9 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
   const negocioIds = board.cards.map((c) => c.negocioId).filter((id): id is string => Boolean(id));
   const legado = new Map<string, {
     proxima_acao: string | null; proxima_acao_em: string | null; etapa_desde: string | null;
+    /** O toque mais recente (atividade, WhatsApp, tarefa concluída) ou a
+     *  entrada na etapa. É o que o número do cartão conta. */
+    ultima_interacao: string | null;
     no_show_em: string | null; trial_iniciado_em: string | null; trial_encerrado_em: string | null;
     motivo_estagnacao: string | null; lead_id: string | null;
     propostas: Array<{ numero: number; versao: number; status: string; enviada_em: string | null; total: string | number | null; total_recorrente: string | number | null }> | null;
@@ -662,7 +665,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
   if (negocioIds.length > 0) {
     const linhas = await db.execute<{
       id: string; proxima_acao: string | null; proxima_acao_em: string | null;
-      etapa_desde: string | null; no_show_em: string | null; trial_iniciado_em: string | null;
+      etapa_desde: string | null; ultima_interacao: string | null; no_show_em: string | null; trial_iniciado_em: string | null;
       trial_encerrado_em: string | null; motivo_estagnacao: string | null; lead_id: string | null;
         propostas: Array<{ numero: number; versao: number; status: string; enviada_em: string | null; total: string | number | null; total_recorrente: string | number | null }> | null;
       pessoa: string | null; cargo: string | null; tags: string[] | null;
@@ -673,6 +676,27 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
              COALESCE(t.titulo, n.proxima_acao) AS proxima_acao,
              COALESCE(t.vence_em, n.proxima_acao_em)::text AS proxima_acao_em,
              n.etapa_desde::text,
+             -- ÚLTIMA INTERAÇÃO: o que o cartão passa a contar.
+             --
+             -- Antes o número do canto era tempo na ETAPA, e ele mentia na
+             -- pergunta que o time faz olhando o quadro: "de quem ninguém
+             -- cuida há mais tempo?". Uma oportunidade parada na mesma etapa
+             -- há 40 dias, com ligação ontem, está viva; outra com 3 dias de
+             -- etapa e nenhum toque desde que entrou, não. Agora conta o
+             -- toque: ligação, e-mail, WhatsApp, nota, tarefa concluída,
+             -- reunião e a própria movimentação de etapa — o que for mais
+             -- recente. Sem nenhum, cai na entrada da etapa, que é o que
+             -- havia antes.
+             GREATEST(
+               n.etapa_desde,
+               (SELECT max(a.created_at) FROM atividades a
+                 WHERE a.organizacao_id = n.organizacao_id
+                   AND (a.negocio_id = n.id OR (n.lead_id IS NOT NULL AND a.lead_id = n.lead_id))),
+               (SELECT max(m.created_at) FROM whatsapp_mensagens m
+                 WHERE n.lead_id IS NOT NULL AND m.lead_id = n.lead_id),
+               (SELECT max(tc.concluida_em) FROM tarefas tc
+                 WHERE tc.organizacao_id = n.organizacao_id AND tc.negocio_id = n.id)
+             )::text AS ultima_interacao,
              -- No-show é estado da reunião (SPEC §23). A coluna legada fica
              -- como fallback dos 4 casos históricos que a 0082 não moveu sem
              -- palpite; quem manda é a reunião.
@@ -758,12 +782,17 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       responsavelIniciais: iniciais(c.responsavel),
       proximaAcao: l?.proxima_acao ?? null,
       proximaAcaoEm: l?.proxima_acao_em ?? null,
-      diasNaEtapa: l?.etapa_desde
-        ? Math.max(0, Math.floor((agora - new Date(l.etapa_desde).getTime()) / 86_400_000))
+      /* O número do canto do cartão conta a ÚLTIMA INTERAÇÃO, não o tempo de
+         etapa (pedido do time, 19/10/2026): é "há quanto tempo ninguém toca
+         nisto", que é a pergunta que se faz olhando o quadro. O nome do campo
+         fica, porque é o que a tela e a exportação já leem; o que mudou é a
+         data de origem. Sem toque nenhum, cai na entrada da etapa. */
+      diasNaEtapa: (l?.ultima_interacao ?? l?.etapa_desde)
+        ? Math.max(0, Math.floor((agora - new Date((l?.ultima_interacao ?? l?.etapa_desde)!).getTime()) / 86_400_000))
         : null,
       // Em HORAS também: até 48h o quadro fala em minuto/hora (lib/vendas/tempo-na-etapa.ts).
       // Só com dias, um lead de dois minutos aparecia como "1d".
-      horasNaEtapa: horasDesde(l?.etapa_desde ?? null, agora),
+      horasNaEtapa: horasDesde(l?.ultima_interacao ?? l?.etapa_desde ?? null, agora),
       badges,
       leadId: l?.lead_id ?? null,
       bundleId: c.bundleId,

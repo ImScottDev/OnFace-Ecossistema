@@ -55,6 +55,7 @@ const SEM_A_PORTA: Record<string, string> = {
   "src/lib/cs/health.ts": "dias sem interação com a EMPRESA (max da data), sem texto",
   "src/app/(produto)/contatos/actions.ts": "mescla de pessoas: apaga as comunicações do duplicado, não as lê",
   "src/lib/relatorios/performance.ts": "contagem agregada de mensagens enviadas por pessoa, sem texto",
+  "src/lib/vendas/consultas.ts": "data do último toque no cartão (max da data), sem texto — mesma natureza de cs/health.ts",
   // Agentes de IA: o contato vem do evento que acordou o agente, nunca de parâmetro do usuário.
   "src/lib/agentes/autonomia.ts": "runtime de agente: a conversa é a que ele conduz",
   "src/lib/agentes/handover.ts": "runtime de agente: handover da conversa que ele conduz",

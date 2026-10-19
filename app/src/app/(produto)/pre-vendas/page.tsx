@@ -3,6 +3,7 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { acaoPausarCadenciaDoLead } from "@/app/(produto)/contatos/actions";
 import { passoDaCadenciaPorLead, pausasDaCadenciaPorLead } from "@/lib/vendas/pre-vendas";
 import { boardPreVendas, ehView, type ViewPreVendas } from "@/lib/vendas/consultas";
+import { viewPadrao } from "@/lib/vendas/recorte-padrao";
 /* A tela é o desenho do Claude Design, convertido por máquina — não uma
    recriação. `PreVendasQuadro` era a versão feita à mão e saiu em 24/09:
    cada transcrição dela introduzia divergência visual que só aparecia na
@@ -53,9 +54,15 @@ export async function PreVendasPage({ searchParams }: {
 
   // `?loop=sem-dono` era o destino do KPI "Sem responsável" antes das views.
   // Continua funcionando, agora como a view que faz a mesma coisa.
+  /* A tela ABRE nos meus (pedido do Scott, 19/10/2026): quem entra em
+     Pré-vendas quer ver o próprio trabalho, não o quadro da empresa inteira.
+     Qualquer recorte na URL já é escolha de quem está olhando e vence o
+     padrão — inclusive `view=todos`, que é o que "Limpar filtros" escreve. */
   const view: ViewPreVendas = ehView(params.view)
     ? params.view
-    : params.loop === "sem-dono" ? "sem-dono" : "todos";
+    : params.loop === "sem-dono"
+      ? "sem-dono"
+      : viewPadrao<ViewPreVendas>(undefined, [params.responsavel, params.origem, params.campanha, params.busca, params.desde, params.aba], "meus", "todos");
 
   const busca = params.busca?.trim() || "";
   const responsavelId = params.responsavel || null;

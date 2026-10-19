@@ -104,6 +104,12 @@ class Logica extends React.Component<any, any> {
 
   constructor(props: any) {
     super(props);
+    /* Abre no que é SEU, como Pré-vendas, Pipeline e Prospecção (pedido do
+       Scott, 19/10/2026). Aqui o filtro é por NOME, e o nome da sessão só
+       existe depois do super() — por isso não dá para pôr no `state` acima.
+       Limpar o filtro esvazia a lista e mostra tudo, como antes. */
+    const euAgora = props.usuario?.nome ?? null;
+    if (euAgora) (this.state as any) = { ...(this.state as any), sel: { ...(this.state as any).sel, resp: [euAgora] } };
     const d: any = props.dados ?? {};
     for (const k of Object.keys(this.state ?? {})) {
       if ((this.state as any)[k] === null && d[k] != null) {

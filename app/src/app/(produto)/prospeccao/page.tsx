@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { responsavelPadrao } from "@/lib/vendas/recorte-padrao";
 import { getTenantContext } from "@/lib/auth/tenant";
 import {
   FILAS_PROSPECCAO, ORDENS_PROSPECCAO, kanbanProspeccao, listaProspeccao, operacaoProspeccao,
@@ -37,7 +38,12 @@ export async function ProspeccaoPage({ searchParams }: {
   const filtro = {
     busca: p.busca?.trim() || "",
     estado,
-    responsavelId: p.responsavel === "sem" || UUID.test(p.responsavel ?? "") ? p.responsavel! : null,
+    /* Abre nos meus, como Pré-vendas e Pipeline. "sem" (sem dono) e um id
+       continuam valendo; `responsavel=todos` e qualquer outro recorte na URL
+       devolvem a lista inteira. */
+    responsavelId: p.responsavel === "sem" || UUID.test(p.responsavel ?? "")
+      ? p.responsavel!
+      : responsavelPadrao(ctx.userId, p.responsavel, [p.busca, p.estado, p.lista, p.cadencia, p.fila, p.pagina]),
     lista: p.lista?.trim() || null,
     cadenciaId: p.cadencia === "sem" || UUID.test(p.cadencia ?? "") ? p.cadencia! : null,
     fila: (FILAS_PROSPECCAO as readonly string[]).includes(p.fila ?? "") ? (p.fila as FilaProspeccao) : null,

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
+import { responsavelPadrao } from "@/lib/vendas/recorte-padrao";
 import { boardPipeline } from "@/lib/vendas/consultas";
 import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
 /* A tela é o desenho do handoff, convertido por máquina
@@ -30,7 +31,10 @@ export async function PipelinePage({ searchParams }: {
   const aba: Aba | null =
     params.aba === "ganhas" || params.aba === "perdidas" || params.aba === "abertas" ? params.aba : null;
   const busca = params.busca?.trim() || "";
-  const responsavelId = params.responsavel || null;
+  /* Abre nos meus, como Pré-vendas. `responsavel=todos` (o que "Limpar
+     filtros" escreve) devolve o quadro inteiro; qualquer outro recorte na URL
+     também vence o padrão, porque já é escolha de quem está olhando. */
+  const responsavelId = responsavelPadrao(ctx.userId, params.responsavel, [params.busca, params.familia, params.aba, params.oportunidade, params.loop]);
   const familia = params.familia || null;
   // Next Step Invariant: o número de "sem próxima ação" deixou de ser enfeite
   // no topo e virou um recorte do board.
