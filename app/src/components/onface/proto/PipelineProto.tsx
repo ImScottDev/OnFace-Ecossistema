@@ -35,6 +35,8 @@ import type { LinhaDoTempo } from "@/lib/vendas/eventos";
 export type AcoesPipeline = CommandsDeEtapa & {
   /** No-show: devolve o lead ao Pre-vendas. Sem isto o botao avisa que nao grava. */
   noShow?: (negocioId: string, reuniaoId: string | null) => Promise<Resultado>;
+  /** Nota escrita à mão, direto do drawer, sem abrir a oportunidade. */
+  registrarNota?: (negocioId: string, texto: string) => Promise<Resultado>;
   /** Detalhe completo (atividades, notas, timeline) carregado ao abrir o drawer. */
   detalhe?: (id: string) => Promise<Resultado<{ oportunidade: DetalheOportunidade | null; timeline: LinhaDoTempo[] }>>;
 };
@@ -327,6 +329,13 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
     router.refresh();
   }, [acoes, router]);
 
+  const registrarNota = React.useCallback(async (id: string, texto: string) => {
+    if (!acoes.registrarNota) { toast.error("Anotar ainda não é gravado por esta tela."); return; }
+    const r = await acoes.registrarNota(id, texto);
+    if (!r.ok) toast.error(r.erro); else toast.success("Nota salva na linha do tempo.");
+    router.refresh();
+  }, [acoes, router]);
+
   return (
     <div data-workspace="desenho">
       <PipelineLigado
@@ -336,6 +345,7 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
         abrir={abrir}
         persistir={persistir}
         registrarNoShow={registrarNoShow}
+        registrarNota={registrarNota}
         carregarDetalhe={acoes.detalhe}
         ir={(href: string) => router.push(href)}
       />

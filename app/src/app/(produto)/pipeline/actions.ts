@@ -250,3 +250,23 @@ export async function acaoBuscarEmpresas(termo: string): Promise<Array<{ id: str
   `);
   return linhas.map((l) => ({ id: l.id, nome: l.nome, apoio: l.apoio }));
 }
+
+/**
+ * Anota na linha do tempo sem abrir a oportunidade.
+ *
+ * Pedido do Scott (19/10): depois da ligação o vendedor quer escrever o que
+ * ouviu ali mesmo, no drawer. Antes o único jeito era criar uma TAREFA, que
+ * fica pendente para sempre — nota não tem o que concluir.
+ *
+ * A porta é a mesma de Pré-vendas (`lib/vendas/notas.ts`): a nota aparece na
+ * linha do tempo da oportunidade, da ficha e do Cliente 360 de uma vez.
+ */
+export async function acaoRegistrarNota(negocioId: string, texto: string): Promise<Resultado> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("registrar nota", async () => {
+    const { registrarNota } = await import("@/lib/vendas/notas");
+    await registrarNota({ organizacaoId: ctx.organizacaoId, ator: ctx.ator, negocioId, texto });
+    revalidatePath(ROTA);
+  });
+}

@@ -36,6 +36,8 @@ export type TipoEventoVendas =
   | "LeadCreated" | "LeadAssigned" | "FirstContactMade" | "StageChanged"
   | "QualificationStarted" | "LeadQualified" | "LeadNurtured" | "LeadDisqualified"
   | "LeadReactivated" | "OwnerChanged"
+  // Nota escrita por gente (lib/vendas/notas.ts), em lead, oportunidade ou empresa
+  | "NoteAdded"
   // Pipeline
   | "OpportunityCreated" | "OpportunityAssigned" | "OpportunityFamilyChanged"
   | "OpportunityStageChanged" | "OpportunityStalled" | "OpportunityLost" | "OpportunityWon"

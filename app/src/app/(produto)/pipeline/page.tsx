@@ -10,7 +10,7 @@ import { moeda } from "@/components/onface/vendas/formato";
 import {
   acaoAgendarReuniao, acaoAlterarFamilia, acaoBuscarEmpresas, acaoCriarOportunidade,
   acaoDefinirProximaAcao, acaoDetalhe, acaoMarcarEstagnacao, acaoMoverEtapa,
-  acaoNoShow, acaoPerder, acaoReagendar, acaoTentarGanhar, acaoTrial,
+  acaoNoShow, acaoPerder, acaoReagendar, acaoRegistrarNota, acaoTentarGanhar, acaoTrial,
 } from "./actions";
 
 export const metadata = { title: "Pipeline" };
@@ -55,6 +55,7 @@ export async function PipelinePage({ searchParams }: {
         perder: acaoPerder,
         tentarGanhar: acaoTentarGanhar,
         noShow: acaoNoShow,
+        registrarNota: acaoRegistrarNota,
         detalhe: acaoDetalhe,
       }}
     />
