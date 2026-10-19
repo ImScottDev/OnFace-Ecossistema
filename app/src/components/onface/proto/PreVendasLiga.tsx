@@ -109,7 +109,12 @@ class Logica extends React.Component<any, any> {
       visao: props.visaoInicial || d.visao || "quadro",
       aba: "ativos", busca: "",
       filtroAberto: null,
-      sel: { responsavel: [], origem: [], interesse: [], sla: [] },
+      /* O recorte com que o SERVIDOR abriu a tela aparece marcado no chip.
+         A tela já abria nos meus (pedido do Scott, 19/10), mas o filtro vinha
+         visualmente vazio: parecia que mostrava tudo e mostrava só os seus.
+         Marcar aqui não refiltra nada — o servidor já entregou só os seus —,
+         só faz o chip dizer a verdade, e dá o que limpar para ver o time. */
+      sel: { responsavel: props.recorteResponsavel ? [props.recorteResponsavel] : [], origem: [], interesse: [], sla: [] },
       expAberto: false, expFlutuante: false, expEscopo: "visao", expFormato: "XLSX", exportMenu: false, expRect: null,
       expSel: { responsavel: [], origem: [], campanha: [], interesse: [], sla: [], tag: [], cadencia: [] },
       expCols: { empresa: 1, pessoa: 1, cargo: 1, email: 1, telefone: 1, etapa: 1, responsavel: 1, origem: 1, campanha: 1, interesse: 1, tag: 0, acao: 1, dias: 1, cadencia: 0 },

@@ -462,11 +462,13 @@ export class PecasLigadas extends PecasLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function PreVendasProto({ dados, acoes, cadenciaPorLead = {}, cadenciasPausadas = {} }: {
+export function PreVendasProto({ dados, acoes, cadenciaPorLead = {}, cadenciasPausadas = {}, recorteResponsavel = null }: {
   dados: BoardPreVendas;
   cadenciaPorLead?: Record<string, string>;
   cadenciasPausadas?: Record<string, boolean>;
   acoes: AcoesPreVendas;
+  /** O recorte com que o servidor abriu a tela, para o chip mostrá-lo marcado. */
+  recorteResponsavel?: "minhas" | "sem_dono" | null;
 }) {
   const router = useRouter();
   const [cadenciasPublicadas, setCadenciasPublicadas] = React.useState<Array<{ id: string; nome: string }>>([]);
@@ -672,6 +674,7 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {}, cadenciasPa
         {/* O QUADRO também grava — o arraste entre colunas passa por aqui, e
             não pelas peças. Ligar só as peças deixava o arraste sem efeito. */}
         <PreVendasLiga
+          recorteResponsavel={recorteResponsavel}
           dados={{ leads, cadencias: cadenciaPorLead }}
           cadenciasDisponiveis={cadenciasPublicadas}
           inscreverEmCadencia={inscreverMassa}

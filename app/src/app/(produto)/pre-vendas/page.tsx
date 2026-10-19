@@ -89,6 +89,11 @@ export async function PreVendasPage({ searchParams }: {
   return (
     <PreVendasProto
       dados={dados}
+      /* A tela abriu nos meus? Então o chip "Responsável · Minhas" abre
+         marcado. Antes o recorte valia e o filtro parecia vazio: quem olhava
+         achava que estava vendo o quadro inteiro. Limpar o chip continua
+         mostrando o time todo. */
+      recorteResponsavel={view === "meus" ? "minhas" : null}
       cadenciaPorLead={cadenciaPorLead}
       cadenciasPausadas={cadenciasPausadas}
       acoes={{
