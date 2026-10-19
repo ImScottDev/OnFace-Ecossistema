@@ -232,9 +232,12 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
       {nova ? (
         <NovaCadencia
           aoFechar={() => setNova(false)}
-          aoCriar={({ nome, entityType, passos }) => {
+          aoCriar={({ nome, entityType, visibility, passos }) => {
             setNova(false);
-            setEditor({ id: null, nome, entityType, visibility: "shared", ownerId: null, ativo: false, publishedAt: null, grafo: passosParaGrafo(passos) });
+            /* `visibility` vem da escolha de quem cria. Era fixo em "shared"
+               aqui, então o campo existia no banco e na listagem e NUNCA podia
+               valer "personal": não havia como fazer uma cadência só sua. */
+            setEditor({ id: null, nome, entityType, visibility, ownerId: null, ativo: false, publishedAt: null, grafo: passosParaGrafo(passos) });
           }}
         />
       ) : null}

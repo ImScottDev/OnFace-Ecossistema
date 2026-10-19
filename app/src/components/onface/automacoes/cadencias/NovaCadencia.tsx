@@ -9,7 +9,7 @@
  * logo na abertura. */
 
 import { useState } from "react";
-import { Mail, MessageCircle, Plus, Snowflake, X } from "lucide-react";
+import { Mail, MessageCircle, Plus, Snowflake, User, Users, X } from "lucide-react";
 import { ROTULO_ENTIDADE } from "@/lib/automacoes/grafo";
 import { novoId, type Passo } from "./passos";
 
@@ -59,13 +59,19 @@ export const MODELOS: Modelo[] = [
 
 export function NovaCadencia({ aoFechar, aoCriar }: {
   aoFechar: () => void;
-  aoCriar: (escolha: { nome: string; entityType: string; passos: Passo[] }) => void;
+  aoCriar: (escolha: { nome: string; entityType: string; visibility: "personal" | "shared"; passos: Passo[] }) => void;
 }) {
   const [escolha, setEscolha] = useState("branco");
   const modelo = MODELOS.find((m) => m.id === escolha);
   const [nome, setNome] = useState("");
   const [nomeTocado, setNomeTocado] = useState(false);
   const [entityType, setEntityType] = useState("lead");
+  /* Quem pode usar, decidido na criação, como nos Templates de mensagem.
+     A coluna existe desde a migration 0129 e o pop-up de inscrever já mostra
+     o selo — mas esta tela nunca perguntou, então TODA cadência nascia do
+     time, e não havia como fazer uma só sua. O padrão é "todo o time":
+     cadência é trabalho combinado, e quem quer a sua escolhe. */
+  const [visibility, setVisibility] = useState<"personal" | "shared">("shared");
 
   /* Escolher o modelo preenche nome e tipo no mesmo gesto. Fazer isso num
    * efeito que observa a escolha seria o mesmo resultado por um caminho que
@@ -81,6 +87,7 @@ export function NovaCadencia({ aoFechar, aoCriar }: {
   const criar = () => aoCriar({
     nome: nome.trim() || "Cadência sem nome",
     entityType,
+    visibility,
     passos: modelo ? modelo.passos() : [],
   });
 
@@ -119,6 +126,23 @@ export function NovaCadencia({ aoFechar, aoCriar }: {
             {Object.entries(ROTULO_ENTIDADE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </label>
+        {/* Mesmo par de cartões do "Quem pode usar" dos Templates de mensagem:
+            a pessoa já conhece a escolha de lá, e a consequência é a mesma. */}
+        <div className="oa-campo">
+          <span>Quem pode usar</span>
+          <div className="ofx-modelos" role="radiogroup" aria-label="Quem pode usar">
+            <button type="button" role="radio" aria-checked={visibility === "personal"} className="ofx-modelo"
+              onClick={() => setVisibility("personal")}>
+              <span className="ofx-modelo-icone"><User size={16} strokeWidth={2.2} /></span>
+              <span><strong>Só para mim</strong><span>Aparece só na sua lista.</span></span>
+            </button>
+            <button type="button" role="radio" aria-checked={visibility === "shared"} className="ofx-modelo"
+              onClick={() => setVisibility("shared")}>
+              <span className="ofx-modelo-icone"><Users size={16} strokeWidth={2.2} /></span>
+              <span><strong>Para todo o time</strong><span>Todo mundo pode inscrever.</span></span>
+            </button>
+          </div>
+        </div>
 
         <div className="oa-modal-rodape">
           <button type="button" className="oa-btn oa-btn-secundario" onClick={aoFechar}>Cancelar</button>
