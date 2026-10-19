@@ -123,6 +123,8 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
+      # Nome da conexão no Postgres: o trigger de auditoria de responsável grava quem escreveu.
+      - APP_NAME=onface-app-${STACK:-dev}
       # Onde o signatário assina. Sem isso o link de assinatura cai no host interno (http://documenso:3000), que o cliente não alcança.
       - DOCUMENSO_PUBLIC_URL=${DOCUMENSO_PUBLIC_URL:-https://sign.callface.io}
       - NODE_OPTIONS=--max-old-space-size=448
@@ -190,6 +192,8 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
+      # Nome da conexão no Postgres: o trigger de auditoria de responsável grava quem escreveu.
+      - APP_NAME=onface-api-${STACK:-dev}
       # Onde o codigo grava midia (client.ts usa UPLOADS_DIR); e a pasta que o Dockerfile prepara e o volume compartilha com o app.
       - UPLOADS_DIR=/repo/app/public/uploads
       # Onde o signatário assina. Sem isso o link de assinatura cai no host interno (http://documenso:3000), que o cliente não alcança.
@@ -240,6 +244,8 @@ services:
     env_file: .env
     environment:
       - TZ=America/Sao_Paulo
+      # Nome da conexão no Postgres: o trigger de auditoria de responsável grava quem escreveu.
+      - APP_NAME=onface-worker-${STACK:-dev}
       # Onde o codigo grava midia (client.ts usa UPLOADS_DIR); e a pasta que o Dockerfile prepara e o volume compartilha com o app.
       - UPLOADS_DIR=/repo/app/public/uploads
       # Onde o signatário assina. Sem isso o link de assinatura cai no host interno (http://documenso:3000), que o cliente não alcança.

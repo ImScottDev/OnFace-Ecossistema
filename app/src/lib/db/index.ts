@@ -37,7 +37,13 @@ function conectar() {
       // Contatos) têm custo ESTIMADO acima de 100.000 por causa dos LATERAL e
       // EXISTS, o planner liga o JIT, e compilar levava 180-250 ms por
       // consulta para executar 5-40 ms. Medido em homologação (14/10/2026).
-      connection: { jit: "off" },
+      connection: {
+        jit: "off",
+        /* Quem é a conexão. O trigger de auditoria de responsável grava este
+           nome junto da consulta: é assim que "apareceu na Jenifer" vira
+           "foi o worker" ou "foi um script rodado na mão". */
+        application_name: process.env.APP_NAME || "onface-app",
+      },
     });
     instancia = drizzle(clientPool, { schema });
   }
