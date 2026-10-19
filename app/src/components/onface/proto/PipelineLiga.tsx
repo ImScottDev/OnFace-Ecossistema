@@ -108,6 +108,13 @@ class Logica extends React.Component<any, any> {
 
   constructor(props: any) {
     super(props);
+    /* O chip "Responsável" abre marcado com quem está usando, igual a
+       Propostas. A tela já abria nos seus (o servidor recorta), mas o filtro
+       vinha visualmente vazio — parecia mostrar o quadro inteiro e mostrava
+       só os seus. Aqui o filtro é por NOME, e o nome da sessão só existe
+       depois do super(). Limpar o chip mostra o time todo. */
+    const euAgora = props.usuario?.nome ?? null;
+    if (euAgora) (this.state as any) = { ...(this.state as any), sel: { ...(this.state as any).sel, resp: [euAgora] } };
     const d: any = props.dados ?? {};
     for (const k of Object.keys(this.state ?? {})) {
       if ((this.state as any)[k] === null && d[k] != null) {
@@ -264,8 +271,16 @@ class Logica extends React.Component<any, any> {
       const fx = EX.f || {};
       const base = esc === "visao" ? vis : todas;
       const lista = base.filter(o => G.every(([k, , , get]) => !(fx[k] && fx[k].length) || fx[k].indexOf(get(o)) >= 0));
-      const COLS = [["opp", "Oportunidade", o => (FAM[o.familia] || "") + " · " + o.empresa], ["empresa", "Empresa", o => o.empresa], ["pessoa", "Contato", o => o.pessoa], ["etapa", "Etapa", o => ROT[o.etapa]], ["familia", "Produto", o => FAM[o.familia]], ["tipo", "Tipo", o => TIPO[o.tipo || "nova"]],
+      /* Telefone, WhatsApp e e-mail entram aqui porque é para isso que a
+         planilha serve. Faltavam porque este exportador monta o CSV no
+         navegador, a partir do cartão — e o cartão não carregava contato. Ele
+         carrega desde que o botão "Ligar" do drawer foi consertado, então o
+         dado já está na mão; só faltava a coluna. */
+      const COLS = [["opp", "Oportunidade", o => (FAM[o.familia] || "") + " · " + o.empresa], ["empresa", "Empresa", o => o.empresa], ["pessoa", "Contato", o => o.pessoa], ["cargo", "Cargo", o => o.cargo || ""],
+        ["telefone", "Telefone", o => o.telefone || ""], ["whatsapp", "WhatsApp", o => o.whatsapp || ""], ["email", "E-mail", o => o.email || ""],
+        ["etapa", "Etapa", o => ROT[o.etapa]], ["familia", "Produto", o => FAM[o.familia]], ["tipo", "Tipo", o => TIPO[o.tipo || "nova"]],
         ["mrr", "Recorrente/mês", o => somas(o).mrr], ["un", "Único", o => somas(o).un], ["prop", "Proposta", o => o.proposta ? PROPS[o.proposta.status] || o.proposta.status : "Sem proposta"], ["resp", "Closer", o => o.resp], ["dias", "Dias na etapa", o => o.dias], ["origem", "Origem", o => o.origem || ""], ["prox", "Próxima atividade", o => { const a = (o.atvs || []).find(x => !x.feita); return a ? a.titulo + " · " + (a.quando || "") : ""; }]];
+      // Contato vem marcado por padrão: é o que o time usa a planilha para fazer.
       const colOn = EX.cols || COLS.filter(c => ["origem", "prox", "tipo"].indexOf(c[0]) < 0).map(c => c[0]);
       const fmt = EX.formato || "csv";
       const up = (p) => this.setState(s => ({ exp: Object.assign({}, s.exp || {}, p) }));
@@ -532,6 +547,10 @@ class Logica extends React.Component<any, any> {
             passoAberto: menu === "passo", togglePasso: () => setUi({ menu: menu === "passo" ? null : "passo" }),
             maisItens: [item("Abrir oportunidade", () => { setUi({ menu: null }); d.abrirOpp(); })]
               .concat(aberta ? [item("Marcar como perdida", () => { setUi({ menu: null }); this.mover(O, "perdido"); }, { style: "display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;border-radius:7px;border:0;background:transparent;cursor:pointer;text-align:left;font-size:13px;font-weight:500;color:#c2330f" })] : [])
+              /* Anotar sem abrir a oportunidade (pedido do Scott, 19/10): depois
+                 da ligação o vendedor escreve ali mesmo. Vai para a linha do
+                 tempo, não vira tarefa — nota não tem o que concluir. */
+              .concat([item("Anotar", () => { setUi({ menu: null }); this.setState({ modal: { k: "nota", id: O.id }, form: {}, tentou: false }); })])
               .concat(O.etapa === "entrada" || O.etapa === "diagnostico" ? [item("Registrar no-show", () => { setUi({ menu: null }); this.setState({ modal: { k: "noshow", id: O.id }, form: {}, tentou: false }); })] : [])
               .concat(aberta ? [item("Delegar a um agente", () => { setUi({ menu: null }); window.dispatchEvent(new CustomEvent("onface:delegar-agente", { detail: { negocioId: O.id } })); })] : [])
               /* Inserir em cadência também daqui: as cadências de NEGÓCIO
@@ -700,6 +719,20 @@ class Logica extends React.Component<any, any> {
             this.gravarOpp(Object.assign({}, MO, { etapa: "ganho", dias: 0, evidencia: ev }), "Ganho · " + ev);
             if (Es && MO.leadId) { const ls = (Es.ler("leads", null) || D.LEADS || []).map(l => l.id === MO.leadId ? Object.assign({}, l, { etapa: "ganho" }) : l); Es.gravar({ leads: ls }); }
             fechar(); this.diz("Ganho! " + MO.empresa + " agora é Cliente", "ok");
+          } });
+      } else if (md.k === "nota") {
+        m = Object.assign(base, { titulo: "Anotar", sub: "A nota entra na linha do tempo de " + MO.empresa + " — e aparece na ficha, no Cliente 360 e na oportunidade.",
+          d: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z",
+          icoStyle: "flex:0 0 auto;width:36px;height:36px;border-radius:9px;background:#eeeff3;color:#1f252c;display:grid;place-items:center",
+          campos: [campo("texto", "Nota", "Ex: ligou, pediu para retomar depois do dia 10", true, true)],
+          salvarLabel: "Salvar nota", salvarStyle: btnForte("#12171d"),
+          salvar: () => {
+            const texto = (Fm.texto || "").trim();
+            if (!texto) return this.setState({ tentou: true });
+            const pedir = this.props.registrarNota;
+            fechar();
+            if (!pedir) return this.diz("Anotar ainda não é gravado por esta tela.", "aviso");
+            pedir(MO.id, texto);
           } });
       } else if (md.k === "noshow") {
         m = Object.assign(base, { titulo: "Registrar no-show", sub: MO.pessoa + " não apareceu. A oportunidade sai do Pipeline e o lead volta para Pré-vendas em Qualificado, com a tag No-show.",
