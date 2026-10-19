@@ -66,6 +66,7 @@ const Reuniao = carregar(() => import("./ReuniaoPecaProto"));
 const Relatorio = carregar(() => import("./RelatorioLigacaoPecaProto"));
 const Tags = carregar(() => import("./TagsOportunidadePecaProto"));
 const IniciarRelacao = carregar(() => import("./IniciarRelacaoPecaProto"));
+const Nota = carregar(() => import("./NotaPecaProto"));
 
 /** Peça → adaptador. Os nomes são os do barramento do protótipo. */
 export const REGISTRO_DE_PECAS: Record<string, React.ComponentType<PecaProps>> = {
@@ -84,6 +85,9 @@ export const REGISTRO_DE_PECAS: Record<string, React.ComponentType<PecaProps>> =
   tagsopp: Tags, tagslead: Tags,
   // OnFace Iniciar Relacao.dc.html
   iniciarRelacao: IniciarRelacao,
+  // Sem desenho gerado: o handoff nunca desenhou uma nota. Peça escrita à mão
+  // com os componentes de `components/ui`, uma só para lead e oportunidade.
+  nota: Nota,
 };
 
 /** Como a peça se chama para quem usa — só para o aviso de "não ligada". */

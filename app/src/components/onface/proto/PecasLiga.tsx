@@ -369,7 +369,12 @@ class Logica extends React.Component<any, any> {
           this.diz("Abrindo o Callface para ligar para " + (L0.pessoa || "").split(" ")[0], "ok");
         } },
         { label: "WhatsApp", d: "M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z", onClick: () => { const F = this.props && this.props.falar; if (F) return F("whatsapp", L0.id); const E = this.E; if (E) E.irPara("/atendimento", "Atendimento", { lead: L0.id, canal: "WhatsApp" }); } },
-        { label: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6", onClick: () => { const F = this.props && this.props.falar; if (F) return F("email", L0.id); const E = this.E; if (E) E.irPara("/atendimento", "Atendimento", { lead: L0.id, canal: "E-mail" }); } }
+        { label: "E-mail", d: "M4 4h16v16H4zM4 7l8 6 8-6", onClick: () => { const F = this.props && this.props.falar; if (F) return F("email", L0.id); const E = this.E; if (E) E.irPara("/atendimento", "Atendimento", { lead: L0.id, canal: "E-mail" }); } },
+        /* Anotar sem abrir a ficha: depois da ligação o vendedor escreve o que
+           ouviu ali mesmo. Vai para a linha do tempo pela porta única
+           (lib/vendas/notas.ts), a mesma do drawer do Pipeline — não vira
+           tarefa, que ficaria pendente para sempre. */
+        { label: "Anotar", d: "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z", onClick: () => { const E = this.E; if (E) E.abrir("nota", { leadId: L0.id, sobre: L0.pessoa || L0.empresa || null }); } }
       ],
       cad: (() => {
         const ic = {"wa":"M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-4.1A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z","tel":"M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39","mail":"M4 4h16v16H4zM4 7l8 6 8-6","task":"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"};

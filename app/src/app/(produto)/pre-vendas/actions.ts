@@ -823,3 +823,20 @@ export async function acaoEstadoCadenciaDoLead(
     return cadenciaDoLead(ctx.organizacaoId, ctx.ator.usuarioId!, leadId);
   });
 }
+
+/**
+ * Anota na linha do tempo do lead, sem abrir a ficha.
+ *
+ * Mesma porta do Pipeline (`lib/vendas/notas.ts`): a nota é uma só e aparece
+ * na ficha, na oportunidade e no Cliente 360. Não vira tarefa de propósito —
+ * tarefa fica pendente para sempre, e nota não tem o que concluir.
+ */
+export async function acaoRegistrarNotaDoLead(leadId: string, texto: string): Promise<Resultado> {
+  const ctx = await getTenantContext();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar("registrar nota", async () => {
+    const { registrarNota } = await import("@/lib/vendas/notas");
+    await registrarNota({ organizacaoId: ctx.organizacaoId, ator: atorHumano(ctx.userId), leadId, texto });
+    revalidatePath("/pre-vendas");
+  });
+}
