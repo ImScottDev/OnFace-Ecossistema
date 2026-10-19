@@ -761,14 +761,24 @@ class Logica extends React.Component<any, any> {
       toggleExportMenu: () => { const r = this.expRef.current && this.expRef.current.getBoundingClientRect(); this.setState(s => ({ exportMenu: !s.exportMenu, expRect: r ? { top: r.top, bottom: r.bottom, right: r.right, left: r.left } : null })); },
       exportMenuStyle: (() => { const r = S.expRect, vw = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerWidth : 1440) : 1200;
         return "position:fixed;z-index:70;width:290px;max-width:calc(100vw - 20px);padding:5px;background:#fff;border-radius:11px;box-shadow:0 0 0 1px #e3e7e8,0 16px 40px -12px rgba(18,23,29,.3);top:" + ((r ? r.bottom : 60) + 6) + "px;left:" + Math.max(10, Math.min(vw - 300, (r ? r.right : 300) - 290)) + "px"; })(),
+      /* A planilha sai do SERVIDOR, não daqui.
+         Montada no navegador, ela só continha os cartões que a tela tinha
+         carregado — o board corta em 1.800 e as colunas Ganho/Perdido nem
+         abrem — e saía sem telefone e sem e-mail, porque o cartão não tem
+         esses campos. A rota refaz a consulta com o MESMO recorte, sem teto,
+         e busca o contato de cada lead. Ver app/(produto)/pipeline/exportar. */
       exportar: () => {
-        const esc = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
-        const linhas = [["Oportunidade", "Empresa", "Pessoa", "Etapa", "Família", "Recorrente/mês", "Único", "Proposta", "Responsável", "Dias na etapa"]]
-          .concat(vis.map(o => { const s = somas(o); return [(FAM[o.familia] || "") + " · " + o.empresa, o.empresa, o.pessoa, ROT[o.etapa], FAM[o.familia], s.mrr, s.un, o.proposta ? PROP[o.proposta.status] : "Sem proposta", o.resp, o.dias]; }));
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob(["\ufeff" + linhas.map(l => l.map(esc).join(";")).join("\n")], { type: "text/csv;charset=utf-8" }));
-        a.download = "onface-pipeline.csv"; document.body.appendChild(a); a.click(); a.remove();
-        this.diz(vis.length + " oportunidades exportadas", "ok");
+        const q = new URLSearchParams();
+        if (S.busca) q.set("busca", S.busca);
+        const f = S.filtros || {};
+        if (f.responsavel) q.set("responsavel", f.responsavel);
+        if (f.familia) q.set("familia", f.familia);
+        if (f.motion) q.set("motion", f.motion);
+        if (f.semProximaAcao) q.set("semProximaAcao", "1");
+        const url = "/pipeline/exportar" + (q.toString() ? "?" + q.toString() : "");
+        if (typeof window !== "undefined") window.location.href = url;
+        this.setState({ exportMenu: false });
+        this.diz("Gerando a planilha com o quadro inteiro...", "ok");
       },
       temDrawer: !!O, d, fecharDrawer: () => this.setState({ aberto: null }),
       naturezas: Object.keys(NAT).map(k => ({ v: k, l: NAT[k] })),

@@ -162,6 +162,13 @@ export interface FiltrosPreVendas {
   /** Cartões por coluna. A tela aumenta com "ver mais"; o padrão cobre a
    *  primeira dobra sem carregar milhares de cartões de uma vez. */
   porColuna?: number;
+  /** Teto de registros da consulta.
+   *
+   *  A TELA tem teto de propósito — ninguém rola 4.000 cartões, e carregar
+   *  todos custa caro à toa. A EXPORTAÇÃO não: planilha que sai cortada em
+   *  400 de um board de milhares é pior do que não exportar, porque quem abre
+   *  não tem como saber que faltou. Quem exporta passa o teto alto. */
+  limite?: number;
 }
 
 /**
@@ -308,7 +315,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
     // Nutrição e desqualificado vivem em aquisição encerrada: o Kanban único
     // precisa delas, e a aba "ativos" continua sem.
     incluirEncerradas: aba !== "ativos",
-    limite: LIMITE_PADRAO,
+    limite: filtros.limite ?? LIMITE_PADRAO,
     porColuna: filtros.porColuna ?? POR_COLUNA_PADRAO,
     ...daView,
   });
@@ -594,6 +601,9 @@ export interface FiltrosPipeline {
   motion?: string | null;
   /** Next Step Invariant: só as oportunidades sem próximo passo combinado. */
   semProximaAcao?: boolean;
+  /** Teto de registros. A tela corta de propósito; a exportação não pode —
+   *  planilha cortada mente sem avisar. Ver `FiltrosPreVendas.limite`. */
+  limite?: number;
 }
 
 export interface BoardPipeline {
@@ -635,7 +645,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
     motion: filtros.motion ?? null,
     busca: filtros.busca ?? null,
     semProximaAcao: filtros.semProximaAcao ?? false,
-    limite: LIMITE_PIPELINE,
+    limite: filtros.limite ?? LIMITE_PIPELINE,
   });
 
   // Enriquecimento legado — TEMPORÁRIO, sai na fase 26. São os sinais de

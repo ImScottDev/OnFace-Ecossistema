@@ -42,6 +42,13 @@ const COLUNAS: Array<{
   { chave: "empresa", titulo: "Empresa", ler: (c) => c.empresa },
   { chave: "pessoa", titulo: "Contato", ler: (c) => c.pessoa },
   { chave: "cargo", titulo: "Cargo", ler: (c) => c.cargo },
+  /* Telefone, WhatsApp e e-mail: é o que a planilha serve para fazer — ligar
+     e escrever. Os campos já vinham na consulta (ver `CardPreVendas`), mas
+     nunca viraram coluna, e a exportação saía sem como falar com ninguém.
+     Decisão do Scott em 19/10/2026. Documento e endereço seguem de fora. */
+  { chave: "telefone", titulo: "Telefone", ler: (c) => c.telefone },
+  { chave: "whatsapp", titulo: "WhatsApp", ler: (c) => c.whatsapp },
+  { chave: "email", titulo: "E-mail", ler: (c) => c.email },
   { chave: "etapa", titulo: "Etapa", ler: (_c, etapa) => etapa },
   { chave: "responsavel", titulo: "Responsável", ler: (c) => c.responsavel },
   { chave: "origem", titulo: "Origem", ler: (c) => c.origem },
@@ -61,7 +68,12 @@ export async function GET(request: NextRequest) {
   const p = request.nextUrl.searchParams;
   const view: ViewPreVendas = ehView(p.get("view")) ? (p.get("view") as ViewPreVendas) : "todos";
 
+  /* Teto alto de propósito: a TELA corta em 400 porque ninguém rola 4.000
+     cartões, mas planilha cortada em 400 de um board de milhares mente sem
+     avisar — quem abre não tem como saber que faltou. */
   const dados = await boardPreVendas(ctx.organizacaoId, {
+    limite: 50_000,
+    porColuna: 50_000,
     busca: p.get("busca"),
     responsavelId: p.get("responsavel"),
     origem: p.get("origem"),
