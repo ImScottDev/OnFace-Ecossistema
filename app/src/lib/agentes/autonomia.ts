@@ -57,21 +57,46 @@ export async function contagemDeMensagens(contatoId: string, agora: Date) {
   return { naHora: c?.hora ?? 0, noDia: c?.dia ?? 0, seguidasSemRetorno: c?.seguidas ?? 0 };
 }
 
-/** O responsável do lead é um agente? Lead primeiro; sem lead, o responsável do contato. */
+/**
+ * Quem responde esta conversa é um agente?
+ *
+ * Olha os DOIS responsáveis — o da conversa e o do lead — e fica com o que for
+ * agente, a conversa na frente.
+ *
+ * Antes o responsável do lead sobrescrevia o da conversa, e bastava o lead ter
+ * dono humano para a agente calar: em 19/10/2026 um contato cuja conversa era
+ * da Lia, num lead do Kauã, recebeu duas mensagens e não gerou execução
+ * nenhuma — o sistema concluía "o responsável não é agente" e nem tentava.
+ * Pôr a agente como responsável do número é dizer que ela atende ali; o dono
+ * humano do lead é de quem é o NEGÓCIO, e as duas coisas convivem.
+ */
 export async function agenteResponsavel(organizacaoId: string, p: { leadId?: string | null; contatoId?: string | null }): Promise<(UsuarioAgente & { leadId: string | null }) | null> {
   let leadId = p.leadId ?? null;
-  let responsavel: string | null = null;
-  if (!leadId && p.contatoId) {
+  let respDaConversa: string | null = null;
+  if (p.contatoId) {
     const [c] = await db.select({ l: contatos.leadId, r: contatos.responsavelId }).from(contatos).where(eq(contatos.id, p.contatoId)).limit(1);
-    leadId = c?.l ?? null;
-    responsavel = c?.r ?? null;
+    leadId = leadId ?? c?.l ?? null;
+    respDaConversa = c?.r ?? null;
   }
+  let respDoLead: string | null = null;
   if (leadId) {
     const [l] = await db.select({ r: leads.responsavelId }).from(leads).where(and(eq(leads.id, leadId), eq(leads.organizacaoId, organizacaoId))).limit(1);
-    responsavel = l?.r ?? responsavel;
+    respDoLead = l?.r ?? null;
   }
-  const a = await agenteDoUsuario(organizacaoId, responsavel);
-  return a ? { ...a, leadId } : null;
+  for (const responsavel of candidatosAResponder(respDaConversa, respDoLead)) {
+    const a = await agenteDoUsuario(organizacaoId, responsavel);
+    if (a) return { ...a, leadId };
+  }
+  return null;
+}
+
+/**
+ * Em que ordem perguntar "este responsável é um agente?": a conversa primeiro,
+ * o lead depois, sem repetir e sem nulo. É a parte da regra que dá para provar
+ * sem banco — ver `autonomia.test.ts`.
+ */
+export function candidatosAResponder(respDaConversa: string | null, respDoLead: string | null): string[] {
+  return [...new Set([respDaConversa, respDoLead].filter((x): x is string => !!x))];
 }
 
 export type ResultadoAcionamento =
