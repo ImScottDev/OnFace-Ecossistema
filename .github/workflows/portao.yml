@@ -16,6 +16,21 @@
 # foi empurrado compila, e não fura nenhuma regra de arquitetura?** O resto
 # continua sendo a bateria local (`scripts/rodar-smokes.sh`,
 # `scripts/rodar-aceites.sh`), que precisa do banco real.
+# ONDE ISTO RODA, e como trocar sem mexer em código.
+#
+# `vars.RUNNER_PORTAO` é uma variável do repositório (Settings → Secrets and
+# variables → Actions → Variables). Vazia, tudo roda em `ubuntu-latest`, que é
+# a máquina do GitHub — e consome a cota de Actions do repositório PRIVADO
+# (2.000 min/mês). Em 19/10/2026 essa cota esgotou no meio do dia e NENHUM
+# deploy saiu: sem imagem no GHCR, o `deploy.sh` espera 20 min e desiste.
+#
+# Com `RUNNER_PORTAO=onface-mac`, roda no runner self-hosted (grátis e sem
+# cota). O fluxo não muda: push → portão → imagem → `./deploy.sh`.
+# O runner precisa estar online; se o Mac estiver desligado, o job fica na
+# fila. Para voltar à máquina do GitHub, apague a variável.
+#
+# Receita completa: docs/operacao/portao-sem-cota.md
+
 name: portão
 
 on:
@@ -25,7 +40,7 @@ on:
 
 jobs:
   tipos-e-arquitetura:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_PORTAO || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -116,7 +131,7 @@ jobs:
   # e permite promover a mesma imagem para produção na virada.
   construir-imagem:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_PORTAO || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -148,7 +163,7 @@ jobs:
 
   liberar-imagem:
     needs: [tipos-e-arquitetura, construir-imagem]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_PORTAO || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       packages: write

@@ -21,6 +21,12 @@ gate é o navegador), a ordem de trabalho e a definição de pronto.
   `https://dev.crm.callface.io` (.env de produção, banco cópia, WhatsApp e e-mail travados); validado, promove-se o
   mesmo sha com `./deploy.sh dev --versao <sha>`. Guia: `docs/operacao/homologacao.md`.
   Não confundir com o `homolog.crm.callface.io` abaixo, que é o legado.
+- **Deploy parado em "esperando ... no GHCR"?** O portão roda num runner
+  self-hosted no Mac do Scott (`RUNNER_PORTAO=onface-mac`), porque a cota de
+  Actions do repositório privado esgotou em 19/10/2026 e travou todo deploy.
+  Primeiro a conferir é se o runner está online — Mac desligado deixa o job na
+  fila e o `deploy.sh` estoura os 20 min como se fosse falta de cota. Receita,
+  troca de máquina e fallbacks: [`docs/operacao/portao-sem-cota.md`](./docs/operacao/portao-sem-cota.md).
 - O CRM legado fica em `homolog.crm.callface.io`, só consulta, worker parado
   (`/opt/callface/crm`). Não religar nem escrever no banco dele. Volta da
   virada: `scripts/virada-dominio-voltar.sh 20261013-0408`.
