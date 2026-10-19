@@ -134,7 +134,26 @@ type SqlTag = (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
  * aquisição sem etapa própria: deixou de ser a verdade, não deixou de existir.
  */
 function expressaoDeEtapa(sql: SqlTag): unknown {
-  return sql`COALESCE(pe.codigo, CASE
+  return sql`CASE
+           /* NEGÓCIO ABERTO É PROVA, e prova vence campo gravado.
+            *
+            * O card aparecia em "Em contato" na Pré-vendas enquanto a mesma
+            * pessoa estava em Proposta no Pipeline — foi o que a Mayra
+            * apontou em 19/10 ("esse lead está em pré vendas, mas também está
+            * no meu pipeline"). A causa é a precedência: pe.codigo é a
+            * etapa que alguém gravou, e quem converte o lead nem sempre
+            * atualiza a aquisição. Medido em produção: 4 aquisições abertas e
+            * 171 encerradas com negócio em andamento e etapa gravada dizendo
+            * outra coisa.
+            *
+            * Existir negócio em andamento não se esquece de atualizar: ou
+            * existe, ou não existe. Por isso vem antes.
+            *
+            * Desqualificado continua mandando acima disto: é decisão
+            * explícita de quem trabalha o lead, e já tem coluna própria. */
+           WHEN a.desqualificado_em IS NOT NULL THEN 'desqualificado'
+           WHEN ${temNegocioAberto(sql)} THEN 'oportunidade'
+           ELSE COALESCE(pe.codigo, CASE
              WHEN a.desqualificado_em IS NOT NULL THEN 'desqualificado'
              WHEN a.nutricao_status IS NOT NULL AND a.nutricao_status <> '' THEN 'nutricao'
              WHEN EXISTS (SELECT 1 FROM oportunidades o
@@ -145,7 +164,22 @@ function expressaoDeEtapa(sql: SqlTag): unknown {
              WHEN a.last_touch_at IS NOT NULL AND a.first_touch_at IS NOT NULL
                   AND a.last_touch_at > a.first_touch_at THEN 'em_contato'
              ELSE 'novo'
-           END)`;
+           END)
+         END`;
+}
+
+/**
+ * O lead está no Pipeline agora: tem negócio que não foi ganho nem perdido.
+ *
+ * Uma expressão só, usada por `expressaoDeEtapa` (que manda o card para a
+ * coluna Oportunidade) e por `convertidaComNegocioAberto` (que traz o card de
+ * volta quando a aquisição já foi encerrada). Duas cópias da mesma regra
+ * divergiriam em silêncio, que é o bug que este arquivo existe para evitar.
+ */
+function temNegocioAberto(sql: SqlTag): unknown {
+  return sql`EXISTS (SELECT 1 FROM negocios n2
+                      WHERE n2.lead_id = a.lead_legado_id
+                        AND COALESCE(n2.status, '') NOT IN ('ganho', 'perdido'))`;
 }
 
 /**
@@ -197,14 +231,15 @@ export function somenteDePreVendas(sql: SqlTag): unknown {
  * fecharam o ciclo e vivem no Pipeline; trazê-los de volta encheria a coluna de
  * histórico, que é exatamente o que não se quer no board de quem está
  * trabalhando hoje.
+ *
+ * A exigência de a etapa GRAVADA ser 'oportunidade' saiu em 19/10: ela deixava
+ * de fora 171 aquisições encerradas cujo negócio está em andamento e cuja
+ * etapa gravada ficou em 'novo' ou 'qualificado'. Esses leads sumiam da
+ * Pré-vendas inteira — nem na coluna certa, nem em outra. Negócio em andamento
+ * é o teste; a etapa gravada é só o que alguém lembrou de escrever.
  */
 export function convertidaComNegocioAberto(sql: SqlTag): unknown {
-  return sql`(a.desqualificado_em IS NULL
-    AND EXISTS (SELECT 1 FROM pipeline_etapas pe2
-                 WHERE pe2.id = a.etapa_id AND pe2.codigo = 'oportunidade')
-    AND EXISTS (SELECT 1 FROM negocios n2
-                 WHERE n2.lead_id = a.lead_legado_id
-                   AND COALESCE(n2.status, '') NOT IN ('ganho', 'perdido')))`;
+  return sql`(a.desqualificado_em IS NULL AND ${temNegocioAberto(sql)})`;
 }
 
 /**
