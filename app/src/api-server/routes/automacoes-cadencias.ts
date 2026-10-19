@@ -8,7 +8,7 @@
 // resposta pra não passar a falsa impressão de que já é 1 motor só.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, contatos, leads, negocios, whatsappTemplates, usuarios } from "@/lib/db/schema";
+import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, contatos, leads, negocios, whatsappTemplates, usuarios, aiAgents, aiAgentVersions } from "@/lib/db/schema";
 import { eq, sql, and, or, desc, inArray } from "drizzle-orm";
 import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
@@ -357,6 +357,40 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
   if (!parsedGraph.success) return c.json({ error: "Grafo invalido", details: parsedGraph.error.flatten() }, 422);
   const validation = validateFollowupForPublish(parsedGraph.data);
   if (!validation.ok) return c.json({ error: "Fluxo nao pode ser publicado", validation }, 422);
+  /* Agente que não envia sozinho não serve para falar com o cliente.
+     `validateFollowupForPublish` é função pura e só cobra que EXISTA um agente
+     escolhido; qual agente é, só o banco sabe. Dos 6 agentes da organização em
+     19/10/2026, um único está em `autonomous` — os outros ficam em `approval`
+     ou `suggest`: escrevem a mensagem e esperam alguém aprovar, e nada sai.
+     Era exatamente assim que uma cadência publicada "rodava" sem o lead
+     receber nada. Aqui a publicação diz o nome do agente e o que ele faz. */
+  const nosDeIa = parsedGraph.data.nodes.filter(
+    (n): n is typeof n & { config: { agent_id: string } } =>
+      n.type === "action" && (n.config as { mode?: string }).mode === "ai_message" && !!(n.config as { agent_id?: string }).agent_id,
+  );
+  if (nosDeIa.length) {
+    const ids = [...new Set(nosDeIa.map((n) => n.config.agent_id))];
+    const versoes = await db
+      .select({ agentId: aiAgentVersions.agentId, nome: aiAgents.nome, guardrail: aiAgentVersions.guardrailConfig })
+      .from(aiAgentVersions)
+      .innerJoin(aiAgents, eq(aiAgents.id, aiAgentVersions.agentId))
+      .where(and(eq(aiAgents.organizacaoId, ctx.organizacaoId), inArray(aiAgentVersions.agentId, ids)));
+    const naoEnvia = nosDeIa.flatMap((n) => {
+      const v = versoes.find((x) => x.agentId === n.config.agent_id);
+      const autonomia = (v?.guardrail as { autonomia?: string } | null)?.autonomia;
+      if (!v || autonomia === "autonomous") return [];
+      return [{
+        code: "agente_nao_envia",
+        message: v
+          ? `“${v.nome}” não envia mensagem sozinho (autonomia “${autonomia ?? "não definida"}”): ele escreve e fica esperando aprovação. Escolha um agente autônomo para “${n.label}”.`
+          : `O agente escolhido em “${n.label}” não existe nesta organização.`,
+        nodeId: n.id,
+      }];
+    });
+    if (naoEnvia.length) {
+      return c.json({ error: "Fluxo nao pode ser publicado", validation: { ok: false, errors: naoEnvia } }, 422);
+    }
+  }
   const compiled = compileFollowupGraph(parsedGraph.data);
   const publishedAt = new Date();
   const result = await db.transaction(async (tx) => {
