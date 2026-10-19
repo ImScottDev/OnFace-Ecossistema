@@ -3,6 +3,7 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { acaoPausarCadenciaDoLead } from "@/app/(produto)/contatos/actions";
 import { passoDaCadenciaPorLead, pausasDaCadenciaPorLead } from "@/lib/vendas/pre-vendas";
 import { boardPreVendas, ehView, type ViewPreVendas } from "@/lib/vendas/consultas";
+import { viewPadrao } from "@/lib/vendas/recorte-padrao";
 /* A tela é o desenho do Claude Design, convertido por máquina — não uma
    recriação. `PreVendasQuadro` era a versão feita à mão e saiu em 24/09:
    cada transcrição dela introduzia divergência visual que só aparecia na
@@ -53,21 +54,20 @@ export async function PreVendasPage({ searchParams }: {
 
   // `?loop=sem-dono` era o destino do KPI "Sem responsável" antes das views.
   // Continua funcionando, agora como a view que faz a mesma coisa.
-  /* O recorte de dono NÃO é feito aqui, e isso é deliberado.
+  /* AQUI é onde o recorte de dono acontece, e o filtro da tela OBEDECE a URL
+     em vez de peneirar o que já veio.
      
-     O filtro "Responsável" desta tela é do lado do cliente: ele recorta os
-     cartões que o board entregou. Quando o servidor TAMBÉM recortava em
-     "meus", escolher "Sem responsável" (ou qualquer outra opção) buscava
-     dentro de um conjunto que já só tinha os seus, e a coluna ficava vazia —
-     foi o que o Scott viu em 19/10. Quem abre a tela nos seus é o filtro, que
-     já vem marcado com "Minhas" (PreVendasLiga); limpar mostra o time todo.
-     
-     Uma `?view=` explícita (link salvo, KPI) continua valendo. */
+     As duas tentativas erradas, para ninguém repetir: recortar aqui E deixar
+     o filtro peneirar no cliente fazia escolher "Sem responsável" devolver
+     tela vazia (o conjunto já só tinha os seus); tirar o recorte daqui fazia
+     o board vir com ~2.000 cartões e a tela ficava presa em "Carregando" —
+     o próprio teto de `mostrar` avisa que acima disso o navegador trava
+     montando cartão. Um lugar só, e ele é o servidor. */
   const view: ViewPreVendas = ehView(params.view)
     ? params.view
     : params.loop === "sem-dono"
       ? "sem-dono"
-      : "todos";
+      : viewPadrao<ViewPreVendas>(undefined, [params.responsavel, params.origem, params.campanha, params.busca, params.desde, params.aba], "meus", "todos");
 
   const busca = params.busca?.trim() || "";
   const responsavelId = params.responsavel || null;
@@ -99,7 +99,7 @@ export async function PreVendasPage({ searchParams }: {
          chip mostra o time todo; escolher outra opção funciona, porque há o
          que escolher. Quem chegou por link com recorte na URL já escolheu:
          aí o chip não impõe nada por cima. */
-      recorteResponsavel={ehView(params.view) || params.loop === "sem-dono" ? null : "minhas"}
+      recorteResponsavel={view === "meus" ? "minhas" : view === "sem-dono" ? "sem_dono" : null}
       cadenciaPorLead={cadenciaPorLead}
       cadenciasPausadas={cadenciasPausadas}
       acoes={{

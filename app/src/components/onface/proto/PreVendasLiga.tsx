@@ -76,6 +76,16 @@ class Logica extends React.Component<any, any> {
     return this.props.usuario?.nome ?? (this.context as any)?.nome ?? "Você";
   }
 
+  /** Troca o recorte de dono na URL: é o servidor que recorta esta tela. */
+  verView(view: string) {
+    this.setState({ filtroAberto: null });
+    const ir = (this.props as any).ir;
+    if (!ir) return;
+    const p = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
+    p.set("view", view);
+    ir("/pre-vendas?" + p.toString());
+  }
+
   E = {
     tudo: () => this.props.dados ?? {},
     ler: (k: string, alt?: any) => (this.props.dados as any)?.[k] ?? alt,
@@ -397,17 +407,28 @@ class Logica extends React.Component<any, any> {
           + (ativo ? "rgba(255,255,255,.22);color:#fff" : "#12171d;color:#fff"),
         chevron: "flex:0 0 auto;transition:transform .12s cubic-bezier(.2,0,.2,1);transform:rotate(" + (aberto ? 180 : 0) + "deg)",
         abrir: () => this.setState(s => ({ filtroAberto: s.filtroAberto === f.k ? null : f.k })),
-        limpar: () => this.setState(s => ({ sel: Object.assign({}, s.sel, { [f.k]: [] }) })),
+        limpar: () => (f.k === "responsavel" ? this.verView("todos") : this.setState(s => ({ sel: Object.assign({}, s.sel, { [f.k]: [] }) }))),
         opcoes: f.opcoes.map(o => {
           const on = sel.indexOf(o.v) >= 0;
           return {
             label: o.label, campo: o.campo, on,
             caixa: "flex:0 0 auto;width:17px;height:17px;border-radius:9999px;display:grid;place-items:center;border:0;"
               + (on ? "background:#fe4f2b;box-shadow:inset 0 0 0 1px #fe4f2b" : "background:#fff;box-shadow:inset 0 0 0 1.5px #c8ccc9"),
-            onClick: () => this.setState(s => {
-              const atual = s.sel[f.k] || [];
-              return { sel: Object.assign({}, s.sel, { [f.k]: on ? atual.filter(x => x !== o.v) : atual.concat(o.v) }) };
-            })
+            /* RESPONSÁVEL vai pela URL e reconsulta o servidor; os outros
+               filtros continuam recortando no cliente.
+               
+               A diferença não é capricho: este board tem ~2.000 cartões, e o
+               próprio código já avisa que acima disso o navegador trava
+               montando cartão. Carregar todos para o filtro escolher no
+               cliente deixou a tela presa em "Carregando" (19/10). Então o
+               servidor recorta — e, para o filtro não mentir nem limitar, cada
+               opção dele reconsulta em vez de peneirar o que já veio. */
+            onClick: () => f.k === "responsavel"
+              ? this.verView(on ? "todos" : o.v === "sem_dono" ? "sem-dono" : "meus")
+              : this.setState(s => {
+                  const atual = s.sel[f.k] || [];
+                  return { sel: Object.assign({}, s.sel, { [f.k]: on ? atual.filter(x => x !== o.v) : atual.concat(o.v) }) };
+                })
           };
         })
       };
