@@ -112,6 +112,9 @@ export interface AcoesPreVendas {
   pausarCadencia?: (leadId: string, pausar: boolean) => Promise<Resultado<null>>;
   alternarCadencia?: (leadId: string) => Promise<Resultado<{ pausada: boolean }>>;
   inserirCadencia?: (leadId: string, cadenciaId: string, sessaoId?: string | null) => Promise<Resultado<{ enrollmentId: string; jaExistia: boolean }>>;
+  /** A porta única: recebe o TIPO do registro aberto (lead, contato, negocio),
+   *  para a mesma peça servir Pré-vendas, Contatos, Empresa e Pipeline. */
+  inserirEmCadencia?: (tipo: string, entidadeId: string, cadenciaId: string, sessaoId?: string | null) => Promise<Resultado<{ enrollmentId: string; jaExistia: boolean }>>;
   /** Ação em massa (aqui usada com 1 lead: "incluir_em_cadencia"). */
   emMassa: (acao: import("@/lib/vendas/acoes-em-massa").AcaoEmMassa, leadIds: string[], valor: string | null) => Promise<Resultado<import("@/lib/vendas/acoes-em-massa").ResultadoEmMassa>>;
 }

@@ -607,16 +607,42 @@ export async function acaoSalvarEmpresa(empresaId: string, c: {
 }
 
 /** Inscreve o lead autorizado; troca a régua somente após a nova inscrição existir. */
-export async function acaoInserirCadenciaDoLead(
-  leadId: string, cadenciaId: string, sessaoId?: string | null,
+/** Os tipos que uma inscrição pode ter. Empresa NÃO está aqui de propósito:
+ *  empresa não recebe mensagem — quem recebe é um contato dela, escolhido na
+ *  tela. A tela da empresa inscreve esse contato, e não a empresa. */
+const TIPOS_INSCREVIVEIS = { lead: "leads", contato: "contatos", negocio: "negocios" } as const;
+export type TipoInscrivel = keyof typeof TIPOS_INSCREVIVEIS;
+export const ehTipoInscrivel = (t: string): t is TipoInscrivel => t in TIPOS_INSCREVIVEIS;
+
+/**
+ * A ÚNICA porta de inscrição manual do produto.
+ *
+ * Antes só existia a do lead, e era ela que a peça global chamava em qualquer
+ * tela — então as cadências de negócio, publicadas, não tinham por onde entrar
+ * no sistema. Drawer, ficha, Pipeline, Contatos e Prospecção passam por aqui;
+ * o tipo vem da tela que sabe o que está aberto, e a organização e o ator vêm
+ * sempre da sessão no servidor.
+ */
+export async function acaoInserirEmCadencia(
+  tipo: string, entidadeId: string, cadenciaId: string, sessaoId?: string | null,
 ): Promise<Resultado<{ enrollmentId: string; jaExistia: boolean }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  if (!ehTipoInscrivel(tipo)) return { ok: false, erro: `Não dá para inscrever um registro de tipo "${tipo}".` };
   return executar("inserir na cadência", async () => {
-    const [lead] = await db.execute<{ id: string }>(sql`SELECT id::text FROM leads WHERE id = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid LIMIT 1`);
-    if (!lead) throw new RegraDeNegocio("lead_inexistente", "Este lead não pertence à sua organização.");
-    const [definition] = await db.execute<{ id: string }>(sql`SELECT id::text FROM cadence_definitions WHERE id = ${cadenciaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND entity_type = 'lead' AND ativo = true AND status = 'published' AND (visibility = 'shared' OR owner_id = ${ctx.ator.usuarioId}::uuid) LIMIT 1`);
-    if (!definition) throw new RegraDeNegocio("cadencia_indisponivel", "Cadência não publicada ou incompatível com este lead.");
+    /* A tabela sai de um mapa fechado, nunca do argumento: `tipo` já passou por
+       `ehTipoInscrivel`, e é o mapa que decide o identificador no SQL. */
+    const tabela = TIPOS_INSCREVIVEIS[tipo];
+    const [alvo] = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM ${sql.identifier(tabela)}
+       WHERE id = ${entidadeId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid LIMIT 1`);
+    if (!alvo) throw new RegraDeNegocio("entidade_inexistente", "Este registro não pertence à sua organização.");
+    const [definition] = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM cadence_definitions
+       WHERE id = ${cadenciaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
+         AND entity_type = ${tipo} AND ativo = true AND status = 'published'
+         AND (visibility = 'shared' OR owner_id = ${ctx.ator.usuarioId}::uuid) LIMIT 1`);
+    if (!definition) throw new RegraDeNegocio("cadencia_indisponivel", "Cadência não publicada ou incompatível com este registro.");
     if (sessaoId) {
       const [sessao] = await db.execute<{ id: string }>(sql`
         SELECT id::text FROM whatsapp_sessao WHERE id = ${sessaoId}::uuid
@@ -626,24 +652,31 @@ export async function acaoInserirCadenciaDoLead(
     const { iniciarCadencia, cancelarCadencia } = await import("@/lib/cadencia/cadence-engine");
     const [existente] = await db.execute<{ id: string }>(sql`
       SELECT id::text FROM cadence_enrollments WHERE organizacao_id = ${ctx.organizacaoId}::uuid
-        AND cadence_definition_id = ${cadenciaId}::uuid AND entity_type = 'lead'
-        AND entity_id = ${leadId}::uuid AND status IN ('active','waiting','waiting_reply','paused') LIMIT 1`);
+        AND cadence_definition_id = ${cadenciaId}::uuid AND entity_type = ${tipo}
+        AND entity_id = ${entidadeId}::uuid AND status IN ('active','waiting','waiting_reply','paused') LIMIT 1`);
     if (existente) return { enrollmentId: existente.id, jaExistia: true };
     const enrollmentId = await iniciarCadencia({
       organizacaoId: ctx.organizacaoId, cadenceDefinitionId: cadenciaId,
       actorId: ctx.ator.usuarioId,
-      entityType: "lead", entityId: leadId,
+      entityType: tipo, entityId: entidadeId,
       varsIniciais: sessaoId ? { cadencia_sessao_id: sessaoId } : {},
     });
     if (!enrollmentId) throw new RegraDeNegocio("cadencia_sem_passos", "A cadência não tem passos publicados.");
     const anteriores = await db.execute<{ id: string }>(sql`
       SELECT id::text FROM cadence_enrollments WHERE organizacao_id = ${ctx.organizacaoId}::uuid
-        AND entity_type = 'lead' AND entity_id = ${leadId}::uuid
+        AND entity_type = ${tipo} AND entity_id = ${entidadeId}::uuid
         AND id <> ${enrollmentId}::uuid AND status IN ('active','waiting','waiting_reply','paused')`);
     for (const row of anteriores) await cancelarCadencia(row.id, "substituida_por_outra_cadencia");
     revalidarLead();
     return { enrollmentId, jaExistia: false };
   });
+}
+
+/** O nome antigo, mantido porque meia dúzia de telas chama por ele. */
+export async function acaoInserirCadenciaDoLead(
+  leadId: string, cadenciaId: string, sessaoId?: string | null,
+): Promise<Resultado<{ enrollmentId: string; jaExistia: boolean }>> {
+  return acaoInserirEmCadencia("lead", leadId, cadenciaId, sessaoId);
 }
 
 /** Alterna a inscrição pelo ESTADO PERSISTIDO, nunca por um boolean de protótipo.

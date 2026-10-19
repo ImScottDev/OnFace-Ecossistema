@@ -529,6 +529,16 @@ class Logica extends React.Component<any, any> {
               .concat(aberta ? [item("Marcar como perdida", () => { setUi({ menu: null }); this.mover(O, "perdido"); }, { style: "display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;border-radius:7px;border:0;background:transparent;cursor:pointer;text-align:left;font-size:13px;font-weight:500;color:#c2330f" })] : [])
               .concat(O.etapa === "entrada" || O.etapa === "diagnostico" ? [item("Registrar no-show", () => { setUi({ menu: null }); this.setState({ modal: { k: "noshow", id: O.id }, form: {}, tentou: false }); })] : [])
               .concat(aberta ? [item("Delegar a um agente", () => { setUi({ menu: null }); window.dispatchEvent(new CustomEvent("onface:delegar-agente", { detail: { negocioId: O.id } })); })] : [])
+              /* Inserir em cadência também daqui: as cadências de NEGÓCIO
+                 (follow-up pós-proposta) estavam publicadas e não tinham por
+                 onde entrar — a peça só era aberta em telas de lead. `O.id` é
+                 o negócio, o mesmo que "Delegar a um agente" usa. */
+              .concat(aberta ? [item("Inserir em cadência", () => {
+                setUi({ menu: null });
+                if (!this.E) return;
+                window.__ofCadAlvo = { chave: O.id, nome: O.empresa || "Negócio", tipo: "negocio" };
+                this.E.abrir("cadencia", O.id);
+              })] : [])
               .concat(!aberta ? [item("Reabrir oportunidade", () => { setUi({ menu: null }); d.reabrir(); })] : []),
             etapasItens: ordem.map((k, i) => item(ROT[k], () => { setUi({ menu: null }); if (i !== pos) this.mover(O, k); }, { atual: i === pos, dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:" + COR[k] }))
               .concat([item("Perdido", () => { setUi({ menu: null }); this.mover(O, "perdido"); }, { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#8b949e" })]),

@@ -381,10 +381,15 @@ class Logica extends React.Component<any, any> {
            motivo — sumir calada era o que fazia Automações contar 4 publicadas
            e o modal mostrar 2, sem nada explicar a diferença. */
         const ROTULO_TIPO = { lead: "lead", negocio: "negócio", contato: "contato", oportunidade: "oportunidade", empresa: "empresa", cliente: "cliente", servico: "serviço" };
+        /* O TIPO do registro aberto, que a tela informa ao abrir a peça
+           (`__ofCadAlvo.tipo`). Sem isso a peça assumia "lead" em qualquer
+           superfície, e no Pipeline ela inscrevia um negócio como se fosse
+           lead. Quem não informa segue como lead, que é de onde ela veio. */
+        const tipoAlvo = (S.cadAlvo && S.cadAlvo.tipo) || "lead";
         const fluxos = real.cadencias.map(c => ({
           k: c.nome, id: c.id, descricao: "",
           tipo: c.entityType || "lead",
-          elegivel: (c.entityType || "lead") === "lead",
+          elegivel: (c.entityType || "lead") === tipoAlvo,
           passos: c.passos.map(p => [p.quando, p.titulo, "", p.canal]),
         }));
         const primeiroElegivel = fluxos.find(f => f.elegivel) || fluxos[0];
@@ -434,7 +439,7 @@ class Logica extends React.Component<any, any> {
                   : "cursor:pointer;" + (on ? "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#12171d" : "background:transparent;color:#1f252c")),
               onClick: () => fx.elegivel
                 ? this.setState({ cadEscolha: fx.k })
-                : this.diz("“" + fx.k + "” é uma cadência de " + (ROTULO_TIPO[fx.tipo] || fx.tipo) + ": inscreva por lá, não pelo lead.", "aviso")
+                : this.diz("“" + fx.k + "” é uma cadência de " + (ROTULO_TIPO[fx.tipo] || fx.tipo) + ": inscreva por lá, não por " + (ROTULO_TIPO[tipoAlvo] || tipoAlvo) + ".", "aviso")
             };
           }),
           passos: atual.passos.map((p, i) => ({
@@ -458,16 +463,22 @@ class Logica extends React.Component<any, any> {
             }, bancos[k].length ? bancos[k].map(([v, nota]) => React.createElement("option", { key: v, value: v }, k === "wa" ? nota : v + " · " + nota)) : [React.createElement("option", { key: "x", value: "" }, k === "wa" ? "Você não tem WhatsApp conectado" : "Sem e-mail cadastrado")])
           })),
           rodape: atual.elegivel === false && atual.id
-            ? "Cadência de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + " — não recebe lead"
+            ? "Cadência de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + " — não recebe " + (ROTULO_TIPO[tipoAlvo] || tipoAlvo)
             : atual.passos.length + (atual.passos.length === 1 ? " toque" : " toques") + " · primeiro disparo hoje",
           btnLabel: (cadAtual ? "Trocar para esta cadência" : "Inserir na cadência"),
           btnStyle: "height:34px;padding:0 15px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;"
             + (atual.elegivel === false ? "background:#eeeff3;color:#a3a8a4;cursor:not-allowed" : "background:#d93c1a;color:#fff;cursor:pointer"),
           confirmar: async () => {
-            if (atual.elegivel === false) return this.diz("Esta cadência é de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + ": não recebe lead.", "erro");
+            if (atual.elegivel === false) return this.diz("Esta cadência é de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + ": não recebe " + (ROTULO_TIPO[tipoAlvo] || tipoAlvo) + ".", "erro");
             const alvo = S.cadAlvo;
             const id = alvo ? alvo.chave : L0.id;
-            const inserir = this.props.acoes && this.props.acoes.inserirCadencia;
+            /* A porta ÚNICA de inscrição, que recebe o tipo. `inserirCadencia`
+               é a antiga, só de lead: ela fica como reserva para quem ainda
+               não passa o tipo, mas nunca é usada fora de lead. */
+            const porta = this.props.acoes && this.props.acoes.inserirEmCadencia;
+            const inserir = porta
+              ? (regId, cadId, sessao) => porta(tipoAlvo, regId, cadId, sessao)
+              : (tipoAlvo === "lead" ? this.props.acoes && this.props.acoes.inserirCadencia : null);
             if (!atual.id) return this.diz("Não há cadência publicada para inserir", "erro");
             if (typeof inserir !== "function") return this.diz("Inserir em cadência não está disponível nesta tela", "erro");
             const r = await inserir(id, atual.id, usa.wa ? (valorDe("wa") || null) : null);

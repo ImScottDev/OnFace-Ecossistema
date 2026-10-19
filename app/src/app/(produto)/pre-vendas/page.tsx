@@ -13,7 +13,7 @@ import {
   acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
   acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
   acaoRegistrarContato, acaoSalvarQualificacao,
-  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa, acaoRemoverDaCadencia, acaoInserirCadenciaDoLead, acaoAlternarCadenciaDoLead,
+  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa, acaoRemoverDaCadencia, acaoInserirCadenciaDoLead, acaoInserirEmCadencia, acaoAlternarCadenciaDoLead,
 } from "./actions";
 
 export const metadata = { title: "Pré-vendas" };
@@ -101,7 +101,7 @@ export async function PreVendasPage({ searchParams }: {
         atribuirEmMassa: acaoAtribuirEmMassa,
         tag: acaoTagDoLead, tagsDaOrg: acaoOpcoesEmMassa,
         cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa,
-        removerDaCadencia: acaoRemoverDaCadencia, pausarCadencia: acaoPausarCadenciaDoLead, alternarCadencia: acaoAlternarCadenciaDoLead, inserirCadencia: acaoInserirCadenciaDoLead,
+        removerDaCadencia: acaoRemoverDaCadencia, pausarCadencia: acaoPausarCadenciaDoLead, alternarCadencia: acaoAlternarCadenciaDoLead, inserirCadencia: acaoInserirCadenciaDoLead, inserirEmCadencia: acaoInserirEmCadencia,
       }}
     />
   );

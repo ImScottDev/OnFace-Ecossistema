@@ -27,6 +27,7 @@ import {
   acaoRegistrarContato, acaoResponsaveis, acaoSalvarQualificacao,
   acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa,
   acaoRemoverDaCadencia, acaoInserirCadenciaDoLead, acaoEstadoCadenciaDoLead,
+  acaoInserirEmCadencia,
 } from "@/app/(produto)/pre-vendas/actions";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
 import { acaoPausarCadenciaDoLead } from "@/app/(produto)/contatos/actions";
@@ -47,6 +48,7 @@ const ACOES: AcoesPreVendas = {
   cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa,
   removerDaCadencia: acaoRemoverDaCadencia,
   inserirCadencia: acaoInserirCadenciaDoLead, pausarCadencia: acaoPausarCadenciaDoLead,
+  inserirEmCadencia: acaoInserirEmCadencia,
 };
 
 const ETAPAS = Object.fromEntries(
