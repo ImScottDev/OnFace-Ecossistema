@@ -1,19 +1,26 @@
 "use client";
 
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Copy, MousePointerClick, Plus, Trash2 } from "lucide-react";
 import { EVENT_CATALOG } from "@/components/crm2/automacoes/followup-types";
 import type { FollowupNode } from "@/lib/ai-platform/followup/graph";
-import { previaTexto, VARIAVEIS_CADENCIA } from "./passos";
+import { previaTexto, ROTULO_TIPO_NO, VARIAVEIS_CADENCIA } from "./passos";
 import type { OpcoesInspetor } from "@/lib/automacoes/grafo";
 
 type Props = { node: FollowupNode | null; somenteLeitura: boolean; opcoes?: OpcoesInspetor; onChange: (node: FollowupNode) => void; onDelete: () => void; onDuplicate: () => void };
 const input = "oa-input";
 
 export function FollowupInspector({ node, somenteLeitura, opcoes, onChange, onDelete, onDuplicate }: Props) {
-  if (!node) return <div className="ofc-inspector-empty"><strong>Edite o caminho visual</strong><p>Selecione um passo para configurar sua espera, mensagem, condição ou ação. Arraste uma saída até o próximo passo para criar um ramo.</p></div>;
+  // O vazio é uma peça do painel, não um texto solto no meio da página: sem
+  // a casca `ofc-inspector` ele flutuava sem fundo nem borda ao lado do
+  // desenho, e a coluna da direita parecia quebrada.
+  if (!node) return <div className="ofc-inspector"><div className="ofc-inspector-empty">
+    <MousePointerClick size={26} aria-hidden />
+    <strong>Nenhum passo selecionado</strong>
+    <p>Clique num passo do desenho para configurar espera, mensagem, condição ou ação. Para ramificar, arraste a bolinha de uma saída até o próximo passo.</p>
+  </div></div>;
   const set = (config: Record<string, unknown>) => onChange({ ...node, config } as FollowupNode);
   const text = (label: string, value: string, change: (v: string) => void, multiline = false) => <label className="ofx-campo"><span className="ofx-campo-rotulo">{label}</span>{multiline ? <textarea className={input} rows={4} value={value} disabled={somenteLeitura} onChange={(e) => change(e.target.value)} /> : <input className={input} value={value} disabled={somenteLeitura} onChange={(e) => change(e.target.value)} />}</label>;
-  return <div className="ofc-inspector"><header className="ofc-inspector-header"><div><small>CONFIGURAÇÃO · {node.type}</small><h2>{node.label}</h2></div>{!somenteLeitura && <div className="ofc-insp-acoes"><button type="button" className="oa-icone" onClick={onDuplicate} aria-label="Duplicar passo"><Copy size={14} /></button>{node.type !== "trigger" && <button type="button" className="oa-icone" onClick={onDelete} aria-label="Excluir passo"><Trash2 size={14} /></button>}</div>}</header><div className="ofc-inspector-fields">
+  return <div className="ofc-inspector"><header className="ofc-inspector-header"><div><small>{ROTULO_TIPO_NO[node.type]}</small><h2>{node.label}</h2></div>{!somenteLeitura && <div className="ofc-insp-acoes"><button type="button" className="oa-icone" onClick={onDuplicate} aria-label="Duplicar passo"><Copy size={14} /></button>{node.type !== "trigger" && <button type="button" className="oa-icone" onClick={onDelete} aria-label="Excluir passo"><Trash2 size={14} /></button>}</div>}</header><div className="ofc-inspector-fields">
     {text("Título no desenho", node.label, (label) => onChange({ ...node, label } as FollowupNode))}
     {node.type === "trigger" && <label className="ofx-campo"><span className="ofx-campo-rotulo">Quando entra</span><select className={input} value={node.config.event} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, event: e.target.value })}>{EVENT_CATALOG.map((event) => <option key={event.id} value={event.id}>{event.nome}</option>)}</select></label>}
     {node.type === "wait" && <WaitFields node={node} somenteLeitura={somenteLeitura} set={set} />}

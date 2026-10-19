@@ -434,3 +434,73 @@ export function grafoParaPassos(grafo: FollowupGraph): LeituraGrafo {
   if (grafo.nodes.some((n) => !vistos.has(n.id) && n.type !== "end")) naoLinear = true;
   return { passos, evento, naoLinear };
 }
+
+/** O tipo do nó do grafo dito em português. O inspetor mostrava o nome
+ *  interno ("ai_classify") no cabeçalho, que é vocabulário de banco. */
+export const ROTULO_TIPO_NO: Record<FollowupNode["type"], string> = {
+  trigger: "Gatilho",
+  wait: "Espera",
+  condition: "Condição",
+  ai_classify: "Classificar resposta",
+  action: "Ação",
+  end: "Fim",
+};
+
+// ─── Posições do fluxo visual ─────────────────────────────────────────────
+
+/** Largura de uma coluna do desenho e altura de uma linha, em unidades do
+ *  canvas. O cartão tem 268px; a folga é o que deixa a seta respirar. */
+export const LARGURA_COLUNA = 340;
+export const ALTURA_LINHA = 210;
+
+/** Redistribui os nós em camadas: profundidade no eixo X, ramos no eixo Y.
+ *
+ *  Por que existe: a cadência nasce e cresce numa coluna só — todo passo
+ *  novo entrava embaixo do anterior, no mesmo X. Uma coluna alta e estreita
+ *  faz o enquadramento automático afastar a câmera até o texto do cartão
+ *  ficar ilegível no meio de uma área vazia. Com as camadas, o desenho ocupa
+ *  a largura que tem e o zoom fica perto de 1.
+ *
+ *  Percurso em largura a partir do gatilho, visitando cada nó uma vez: grafo
+ *  com volta não entra em laço. Nó que ninguém alcança vai para a coluna
+ *  seguinte à mais profunda, em vez de ficar escondido sob outro. */
+export function organizarGrafo(grafo: FollowupGraph): FollowupGraph {
+  const saidas = new Map<string, string[]>();
+  for (const no of grafo.nodes) saidas.set(no.id, []);
+  for (const aresta of grafo.edges) saidas.get(aresta.source)?.push(aresta.target);
+
+  const profundidade = new Map<string, number>();
+  const inicio = grafo.nodes.find((n) => n.type === "trigger") ?? grafo.nodes[0];
+  if (inicio) {
+    profundidade.set(inicio.id, 0);
+    const fila: string[] = [inicio.id];
+    while (fila.length) {
+      const id = fila.shift()!;
+      const d = profundidade.get(id)!;
+      for (const destino of saidas.get(id) ?? []) {
+        if (profundidade.has(destino)) continue;
+        profundidade.set(destino, d + 1);
+        fila.push(destino);
+      }
+    }
+  }
+  const maior = profundidade.size ? Math.max(...profundidade.values()) : -1;
+  for (const no of grafo.nodes) if (!profundidade.has(no.id)) profundidade.set(no.id, maior + 1);
+
+  const colunas = new Map<number, FollowupNode[]>();
+  for (const no of grafo.nodes) {
+    const d = profundidade.get(no.id)!;
+    colunas.set(d, [...(colunas.get(d) ?? []), no]);
+  }
+  const posicoes = new Map<string, { x: number; y: number }>();
+  for (const [d, nos] of colunas) {
+    // Mantém a ordem vertical que a pessoa já via, para o desenho não
+    // embaralhar os ramos a cada clique em Organizar.
+    const ordenados = [...nos].sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+    ordenados.forEach((no, i) => posicoes.set(no.id, {
+      x: d * LARGURA_COLUNA,
+      y: Math.round((i - (ordenados.length - 1) / 2) * ALTURA_LINHA),
+    }));
+  }
+  return { ...grafo, nodes: grafo.nodes.map((no) => ({ ...no, position: posicoes.get(no.id) ?? no.position })) };
+}

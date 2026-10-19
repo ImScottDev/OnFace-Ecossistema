@@ -194,6 +194,20 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
     return v.ok ? [] : v.errors.map((e) => ({ passoId: e.nodeId ?? "", mensagem: e.message }));
   }, [grafo]);
 
+  // A pendência precisa aparecer NO passo, não só num aviso no pé: era
+  // preciso adivinhar qual dos dez cartões estava incompleto.
+  const errosPorNo = useMemo(() => {
+    const mapa: Record<string, string> = {};
+    for (const p of pendencias) if (p.passoId && !mapa[p.passoId]) mapa[p.passoId] = p.mensagem;
+    return mapa;
+  }, [pendencias]);
+  const contagemPassos = Math.max(0, grafo.nodes.length - 2);
+  const sujo = useMemo(() => (
+    cadencia.id === null
+    || nome !== cadencia.nome || entityType !== cadencia.entityType || visibility !== cadencia.visibility
+    || JSON.stringify(grafo) !== JSON.stringify(cadencia.grafo)
+  ), [nome, entityType, visibility, grafo, cadencia]);
+
   const ctx: ContextoCampo = {
     opcoes: opcoes.data,
     grupos: GRUPOS_VARIAVEIS,
@@ -258,7 +272,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
   const estado = cadencia.ativo ? "Publicada" : cadencia.publishedAt ? "Pausada" : "Rascunho";
 
   return (
-    <div className="ofc-editor">
+    <div className="ofc-editor" data-modo={modoVisual ? "visual" : "lista"}>
       <header className="ofx-topo">
         <button type="button" className="oa-icone ofx-voltar-topo" aria-label="Voltar às cadências" title="Voltar às cadências" onClick={aoFechar}>
           <ArrowLeft size={16} />
@@ -267,7 +281,10 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
           aria-label="Nome da cadência" onChange={(e) => setNome(e.target.value)} />
         <span className={`oa-selo ${cadencia.ativo ? "oa-ok" : cadencia.publishedAt ? "oa-aviso" : ""}`}>{estado}</span>
         <span className="ofx-espaco" />
-        <span className="ofx-salvo">{Math.max(0, grafo.nodes.length - 2) === 1 ? "1 passo" : `${Math.max(0, grafo.nodes.length - 2)} passos`}</span>
+        <span className="ofx-salvo" data-estado={sujo ? "erro" : undefined}
+          title={sujo ? "Há mudanças que ainda não foram salvas nesta cadência." : "Nada mudou desde o último salvamento."}>
+          {sujo ? "Não salvo" : "Salvo"} · {contagemPassos === 1 ? "1 passo" : `${contagemPassos} passos`}
+        </span>
         {podeGerenciar && (
           <>
             <button type="button" className="oa-btn oa-btn-secundario" disabled={!!salvando || somenteLeitura} onClick={() => void salvar(false)}>
@@ -337,16 +354,16 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
                 <ListTodo size={15} /> Lista detalhada
               </button>
             </div>
-            <span>Selecione um bloco para personalizar. O rascunho só substitui a versão publicada ao publicar.</span>
+            <span>{modoVisual ? "Clique num passo para configurar ao lado. Arraste a bolinha de uma saída até outro passo para ramificar." : "Arraste para reordenar; clique para abrir o passo."} O rascunho só substitui a versão publicada ao publicar.</span>
           </div>
 
           {modoVisual && (
             <div className="ofc-workspace">
-              <FollowupCanvas graph={grafo} selectedId={selecionado} somenteLeitura={somenteLeitura} onChange={mudarGrafo} onSelect={setSelecionado} />
+              <FollowupCanvas graph={grafo} selectedId={selecionado} somenteLeitura={somenteLeitura} erros={errosPorNo} onChange={mudarGrafo} onSelect={setSelecionado} />
               <FollowupInspector node={noSelecionado} somenteLeitura={somenteLeitura} opcoes={opcoes.data} onChange={editarNo} onDelete={excluirNo} onDuplicate={duplicarNo} />
             </div>
           )}
-          {(!modoVisual || passos.length === 0) && (passos.length === 0 ? (
+          {!modoVisual && (passos.length === 0 ? (
             <div className="ofx-vazio">
               <span className="ofx-vazio-icone"><Clock size={20} /></span>
               <h2>Nenhum passo ainda</h2>
@@ -407,7 +424,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
             </ol>
           ))}
 
-          {!somenteLeitura && (
+          {!somenteLeitura && !modoVisual && (
             <div className="ofc-add" ref={menuAdd}>
               <button type="button" className="oa-btn oa-btn-secundario" aria-expanded={addAberto} onClick={() => setAddAberto((a) => !a)}>
                 <Plus size={14} /> Adicionar passo
@@ -426,9 +443,21 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
           )}
 
           {pendencias.length > 0 && podeGerenciar && (
-            <div className="ofx-aviso">
+            <div className="ofx-aviso ofc-pendencias">
               <AlertTriangle size={14} aria-hidden />
-              <span><strong>Para publicar, falta:</strong> {pendencias.map((p) => p.mensagem).slice(0, 4).join(" ")}</span>
+              <div>
+                <strong>Para publicar, falta:</strong>
+                <ul>
+                  {pendencias.slice(0, 6).map((p, i) => (
+                    <li key={`${p.passoId}-${i}`}>
+                      {p.passoId && modoVisual
+                        ? <button type="button" onClick={() => setSelecionado(p.passoId)}>{p.mensagem}</button>
+                        : p.mensagem}
+                    </li>
+                  ))}
+                </ul>
+                {pendencias.length > 6 ? <small>e mais {pendencias.length - 6}.</small> : null}
+              </div>
             </div>
           )}
         </div>

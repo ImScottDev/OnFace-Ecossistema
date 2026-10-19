@@ -1,16 +1,39 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
+/* ─────────────────────────────────────────────────────────────────────────
+ * O desenho do fluxo da cadência.
+ *
+ * É a mesma superfície React Flow de Fluxos, com os rótulos e os tokens da
+ * cadência. As arestas são a fonte da verdade dos ramos; não há lista
+ * achatada por trás deste canvas.
+ *
+ * O que esta volta consertou, porque o editor estava ilegível:
+ *  - o passo novo entrava sempre no mesmo X, uma coluna alta e estreita, e o
+ *    enquadramento automático afastava a câmera até o cartão virar um
+ *    carimbo no meio de uma área vazia. Agora o passo novo entra na COLUNA
+ *    SEGUINTE ao passo de referência e já sai LIGADO nele, e o botão
+ *    Organizar redistribui o desenho em camadas (`organizarGrafo`);
+ *  - o enquadramento tem piso de zoom: antes de encolher o texto além do
+ *    legível, o canvas prefere deixar a pessoa deslizar;
+ *  - soltar um passo arrastado cai onde o cursor soltou, não num ponto fixo;
+ *  - passo com pendência de publicação é marcado no próprio cartão, não só
+ *    num aviso no pé da página.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   Background, BackgroundVariant, BaseEdge, Controls, EdgeLabelRenderer, Handle, MiniMap, Position,
-  ReactFlow, ReactFlowProvider, getBezierPath, type Connection, type Edge, type EdgeProps, type Node,
-  type NodeChange, type EdgeChange,
+  ReactFlow, ReactFlowProvider, getBezierPath, useNodesInitialized, useReactFlow,
+  type Connection, type Edge, type EdgeProps, type Node, type NodeChange, type EdgeChange,
 } from "@xyflow/react";
-import { Check, Clock, GitBranch, MessageCircle, Plus, Rocket, Sparkles, Square, Trash2, X } from "lucide-react";
+import {
+  AlertTriangle, Clock, Crosshair, GitBranch, LayoutGrid, MessageCircle, Plus, Rocket, Sparkles, Square, X,
+} from "lucide-react";
 import { branchesForNode, edgeBranchId, type FollowupEdge, type FollowupGraph, type FollowupNode, type FollowupNodeType } from "@/lib/ai-platform/followup/graph";
+import { ALTURA_LINHA, LARGURA_COLUNA, organizarGrafo } from "./passos";
 import "@xyflow/react/dist/style.css";
 
-type DadosNo = { no: FollowupNode; selecionado: boolean; somenteLeitura: boolean; aoSelecionar: () => void };
+type DadosNo = { no: FollowupNode; selecionado: boolean; somenteLeitura: boolean; erro?: string; aoSelecionar: () => void };
 type DadosAresta = { label: string; aoRemover: () => void; somenteLeitura: boolean };
 type NoRF = Node<DadosNo, "cadencia-no">;
 type ArestaRF = Edge<DadosAresta, "cadencia-aresta">;
@@ -23,6 +46,13 @@ const META: Record<FollowupNodeType, { titulo: string; categoria: string; Icon: 
   action: { titulo: "Ação", categoria: "Plataforma", Icon: MessageCircle },
   end: { titulo: "Fim", categoria: "Encerramento", Icon: Square },
 };
+
+/** Zoom mínimo do enquadramento automático. Abaixo disso o cartão perde o
+ *  texto, e um desenho ilegível enquadrado é pior que um desenho que pede
+ *  para deslizar. */
+const ZOOM_MINIMO_LEGIVEL = 0.6;
+
+const PARA_ADICIONAR: FollowupNodeType[] = ["wait", "action", "condition", "ai_classify", "end"];
 
 function resumo(no: FollowupNode): string {
   if (no.type === "trigger") return no.config.event;
@@ -46,15 +76,16 @@ function conditionFor(node: FollowupNode, branchId: string): FollowupEdge["condi
 }
 
 function NoCadencia({ data }: { data: DadosNo }) {
-  const { no, selecionado, somenteLeitura, aoSelecionar } = data;
+  const { no, selecionado, somenteLeitura, erro, aoSelecionar } = data;
   const meta = META[no.type];
   const Icon = meta.Icon;
   const branches = branchesForNode(no);
-  return <div className="ofc-rf-no" data-tipo={no.type} data-selecionado={selecionado ? "true" : undefined} onClick={aoSelecionar}>
+  return <div className="ofc-rf-no" data-tipo={no.type} data-selecionado={selecionado ? "true" : undefined} data-erro={erro ? "true" : undefined} onClick={aoSelecionar}>
     {no.type !== "trigger" && <Handle type="target" position={Position.Left} className="ofc-rf-porta" isConnectable={!somenteLeitura} />}
-    <div className="ofc-rf-cab"><span className="ofc-rf-icone"><Icon size={14} /></span><span>{meta.categoria}</span><small>{no.id}</small></div>
+    <div className="ofc-rf-cab"><span className="ofc-rf-icone"><Icon size={15} /></span><span>{meta.categoria}</span></div>
     <strong>{no.label}</strong><p>{resumo(no)}</p>
-    {branches.length > 0 && <ul className="ofc-rf-saidas">{branches.map((branch, i) => <li key={branch.id}><span>{branch.label}</span><Handle type="source" position={Position.Right} id={branch.id} className="ofc-rf-porta" style={{ top: `${54 + i * 28}px` }} isConnectable={!somenteLeitura} /></li>)}</ul>}
+    {erro && <p className="ofc-rf-pend"><AlertTriangle size={11} aria-hidden /> {erro}</p>}
+    {branches.length > 0 && <ul className="ofc-rf-saidas">{branches.map((branch) => <li key={branch.id}><span>{branch.label}</span><Handle type="source" position={Position.Right} id={branch.id} className="ofc-rf-porta" isConnectable={!somenteLeitura} /></li>)}</ul>}
   </div>;
 }
 
@@ -75,20 +106,217 @@ function novoNo(type: FollowupNodeType, position: { x: number; y: number }): Fol
   return { id, type: "trigger", label: "Início do fluxo", position, config: { event: "manual", filters: {} } };
 }
 
-export function FollowupCanvas({ graph, selectedId, somenteLeitura, onChange, onSelect }: { graph: FollowupGraph; selectedId: string | null; somenteLeitura: boolean; onChange: (graph: FollowupGraph) => void; onSelect: (id: string | null) => void }) {
+/** A saída livre do nó de referência, se houver: é por ela que o passo novo
+ *  entra já ligado, em vez de nascer solto esperando a pessoa descobrir que
+ *  precisa arrastar uma linha. */
+function saidaLivre(grafo: FollowupGraph, no: FollowupNode): string | null {
+  const usadas = new Set(grafo.edges.filter((e) => e.source === no.id).map((e) => edgeBranchId(e)));
+  return branchesForNode(no).find((b) => !usadas.has(b.id))?.id ?? null;
+}
+
+export type PropsCanvas = {
+  graph: FollowupGraph;
+  selectedId: string | null;
+  somenteLeitura: boolean;
+  /** Pendência de publicação por nó, para o cartão dizer o que falta nele. */
+  erros?: Record<string, string>;
+  onChange: (graph: FollowupGraph) => void;
+  onSelect: (id: string | null) => void;
+};
+
+export function FollowupCanvas(props: PropsCanvas) {
+  return <ReactFlowProvider><Lona {...props} /></ReactFlowProvider>;
+}
+
+function Lona({ graph, selectedId, somenteLeitura, erros, onChange, onSelect }: PropsCanvas) {
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const [dragging, setDragging] = useState(false);
   const graphRef = useRef(graph); graphRef.current = graph;
-  const nodes = useMemo<NoRF[]>(() => graph.nodes.map((no) => ({ id: no.id, type: "cadencia-no", position: no.position, data: { no, selecionado: no.id === selectedId, somenteLeitura, aoSelecionar: () => onSelect(no.id) }, deletable: !somenteLeitura && no.type !== "trigger" })), [graph.nodes, selectedId, somenteLeitura, onSelect]);
-  const edges = useMemo<ArestaRF[]>(() => graph.edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target, sourceHandle: edgeBranchId(edge), type: "cadencia-aresta", data: { label: branchesForNode(graph.nodes.find((n) => n.id === edge.source)!).find((b) => b.id === edgeBranchId(edge))?.label ?? edgeBranchId(edge), somenteLeitura, aoRemover: () => onChange({ ...graph, edges: graph.edges.filter((e) => e.id !== edge.id) }) } })), [graph, somenteLeitura, onChange]);
+  const selecaoRef = useRef(selectedId); selecaoRef.current = selectedId;
 
-  const add = useCallback((type: FollowupNodeType) => { if (somenteLeitura || type === "trigger") return; const y = Math.max(...graphRef.current.nodes.map((n) => n.position.y), 80) + 180; onChange({ ...graphRef.current, nodes: [...graphRef.current.nodes, novoNo(type, { x: 420, y })] }); }, [onChange, somenteLeitura]);
-  const onNodesChange = useCallback((changes: NodeChange<NoRF>[]) => { const next = graphRef.current.nodes.map((node) => { const c = changes.find((x) => "id" in x && x.id === node.id); return c?.type === "position" && c.position ? { ...node, position: c.position } : node; }); const selected = changes.find((x) => x.type === "select"); if (selected && "id" in selected) onSelect(selected.selected ? selected.id : null); if (changes.some((c) => c.type === "position") && !somenteLeitura) onChange({ ...graphRef.current, nodes: next }); }, [onChange, onSelect, somenteLeitura]);
-  const onEdgesChange = useCallback((changes: EdgeChange<ArestaRF>[]) => { if (!somenteLeitura && changes.some((c) => c.type === "remove")) onChange({ ...graphRef.current, edges: graphRef.current.edges.filter((e) => !changes.some((c) => c.type === "remove" && c.id === e.id)) }); }, [onChange, somenteLeitura]);
-  const onConnect = useCallback((connection: Connection) => { if (somenteLeitura || !connection.source || !connection.target || !connection.sourceHandle || connection.source === connection.target) return; const source = graphRef.current.nodes.find((n) => n.id === connection.source); if (!source) return; const edge: FollowupEdge = { id: `${connection.source}-${connection.sourceHandle}-${connection.target}`, source: connection.source, target: connection.target, priority: 0, condition: conditionFor(source, connection.sourceHandle) }; onChange({ ...graphRef.current, edges: [...graphRef.current.edges.filter((e) => !(e.source === edge.source && edgeBranchId(e) === connection.sourceHandle)), edge] }); }, [onChange, somenteLeitura]);
-  const onDelete = useCallback(({ nodes: ns, edges: es }: { nodes: NoRF[]; edges: ArestaRF[] }) => { if (somenteLeitura) return; const ids = new Set(ns.map((n) => n.id)); onChange({ ...graphRef.current, nodes: graphRef.current.nodes.filter((n) => !ids.has(n.id)), edges: graphRef.current.edges.filter((e) => !ids.has(e.source) && !ids.has(e.target) && !es.some((x) => x.id === e.id)) }); onSelect(null); }, [onChange, onSelect, somenteLeitura]);
-  const onDrop = (event: DragEvent) => { event.preventDefault(); const type = event.dataTransfer.getData("application/x-onface-cadencia-no") as FollowupNodeType; if (type) add(type); setDragging(false); };
+  const nodes = useMemo<NoRF[]>(() => graph.nodes.map((no) => ({
+    id: no.id, type: "cadencia-no", position: no.position,
+    data: { no, selecionado: no.id === selectedId, somenteLeitura, erro: erros?.[no.id], aoSelecionar: () => onSelect(no.id) },
+    selected: no.id === selectedId,
+    deletable: !somenteLeitura && no.type !== "trigger",
+  })), [graph.nodes, selectedId, somenteLeitura, erros, onSelect]);
+
+  // Aresta que aponta para nó que não existe mais é descartada no desenho em
+  // vez de derrubar a tela: antes a origem era buscada com `!`.
+  const edges = useMemo<ArestaRF[]>(() => {
+    const porId = new Map(graph.nodes.map((n) => [n.id, n]));
+    return graph.edges.filter((e) => porId.has(e.source) && porId.has(e.target)).map((edge) => ({
+      id: edge.id, source: edge.source, target: edge.target, sourceHandle: edgeBranchId(edge), type: "cadencia-aresta" as const,
+      data: {
+        label: branchesForNode(porId.get(edge.source)!).find((b) => b.id === edgeBranchId(edge))?.label ?? edgeBranchId(edge),
+        somenteLeitura,
+        aoRemover: () => onChange({ ...graph, edges: graph.edges.filter((e) => e.id !== edge.id) }),
+      },
+    }));
+  }, [graph, somenteLeitura, onChange]);
+
+  // O primeiro enquadramento espera o nó ter medida, senão sai torto — a
+  // mesma correção que o canvas de Fluxos já carrega.
+  const medidos = useNodesInitialized();
+  const enquadrado = useRef(false);
+  useEffect(() => {
+    if (!medidos || enquadrado.current) return;
+    enquadrado.current = true;
+    requestAnimationFrame(() => void fitView({ padding: 0.2, minZoom: ZOOM_MINIMO_LEGIVEL, maxZoom: 1 }));
+  }, [medidos, fitView]);
+
+  const enquadrar = useCallback(() => void fitView({ padding: 0.2, minZoom: ZOOM_MINIMO_LEGIVEL, maxZoom: 1, duration: 200 }), [fitView]);
+
+  const organizar = useCallback(() => {
+    if (somenteLeitura) return;
+    onChange(organizarGrafo(graphRef.current));
+    requestAnimationFrame(enquadrar);
+  }, [enquadrar, onChange, somenteLeitura]);
+
+  /** Acrescenta um passo.
+   *
+   *  Com posição (passo arrastado e solto) ele cai onde o cursor soltou, e
+   *  ligar é com a pessoa.
+   *
+   *  Sem posição (clique no botão) ele ENTRA NA SEQUÊNCIA do passo de
+   *  referência — o selecionado, ou o último que ainda tem saída: usa uma
+   *  saída livre, e se não houver, entra NO MEIO (o que vinha depois do
+   *  passo de referência passa a vir depois do novo). É o que a cadência
+   *  recém-criada precisa: ela já nasce com Início ligado ao Fim, e antes
+   *  disso o passo novo caía solto à direita do Fim, sem linha nenhuma.
+   *  Depois de ligar, o desenho é redistribuído em colunas. */
+  const adicionar = useCallback((type: FollowupNodeType, posicao?: { x: number; y: number }) => {
+    if (somenteLeitura || type === "trigger") return;
+    const atual = graphRef.current;
+    const porProfundidade = [...atual.nodes].sort((a, b) => b.position.x - a.position.x || b.position.y - a.position.y);
+    const referencia = atual.nodes.find((n) => n.id === selecaoRef.current)
+      ?? porProfundidade.find((n) => branchesForNode(n).length > 0)
+      ?? porProfundidade[0];
+
+    const ocupado = (p: { x: number; y: number }) => atual.nodes.some((n) => Math.abs(n.position.x - p.x) < 60 && Math.abs(n.position.y - p.y) < 60);
+    let destino = posicao ?? (referencia ? { x: referencia.position.x + LARGURA_COLUNA, y: referencia.position.y } : { x: 0, y: 0 });
+    while (ocupado(destino)) destino = { x: destino.x, y: destino.y + ALTURA_LINHA };
+    const no = novoNo(type, destino);
+
+    const liga = (origem: FollowupNode, branch: string, alvo: string): FollowupEdge =>
+      ({ id: `${origem.id}-${branch}-${alvo}`, source: origem.id, target: alvo, priority: 0, condition: conditionFor(origem, branch) });
+
+    let edges = atual.edges;
+    const livre = referencia && !posicao ? saidaLivre(atual, referencia) : null;
+    if (referencia && livre) {
+      edges = [...edges, liga(referencia, livre, no.id)];
+    } else if (referencia && !posicao && type !== "end") {
+      const antiga = atual.edges.find((e) => e.source === referencia.id);
+      const saidaDoNovo = branchesForNode(no)[0];
+      if (antiga && saidaDoNovo) {
+        edges = [
+          ...edges.filter((e) => e.id !== antiga.id),
+          { ...antiga, id: `${referencia.id}-${edgeBranchId(antiga)}-${no.id}`, target: no.id },
+          liga(no, saidaDoNovo.id, antiga.target),
+        ];
+      }
+    }
+
+    const proximo = { ...atual, nodes: [...atual.nodes, no], edges };
+    onChange(posicao ? proximo : organizarGrafo(proximo));
+    onSelect(no.id);
+    if (!posicao) requestAnimationFrame(enquadrar);
+  }, [enquadrar, onChange, onSelect, somenteLeitura]);
+
+  const onNodesChange = useCallback((changes: NodeChange<NoRF>[]) => {
+    const next = graphRef.current.nodes.map((node) => {
+      const c = changes.find((x) => "id" in x && x.id === node.id);
+      return c?.type === "position" && c.position ? { ...node, position: c.position } : node;
+    });
+    const selected = changes.find((x) => x.type === "select");
+    if (selected && "id" in selected) onSelect(selected.selected ? selected.id : null);
+    if (changes.some((c) => c.type === "position") && !somenteLeitura) onChange({ ...graphRef.current, nodes: next });
+  }, [onChange, onSelect, somenteLeitura]);
+
+  const onEdgesChange = useCallback((changes: EdgeChange<ArestaRF>[]) => {
+    if (!somenteLeitura && changes.some((c) => c.type === "remove")) {
+      onChange({ ...graphRef.current, edges: graphRef.current.edges.filter((e) => !changes.some((c) => c.type === "remove" && c.id === e.id)) });
+    }
+  }, [onChange, somenteLeitura]);
+
+  const onConnect = useCallback((connection: Connection) => {
+    if (somenteLeitura || !connection.source || !connection.target || !connection.sourceHandle || connection.source === connection.target) return;
+    const source = graphRef.current.nodes.find((n) => n.id === connection.source);
+    if (!source) return;
+    const edge: FollowupEdge = {
+      id: `${connection.source}-${connection.sourceHandle}-${connection.target}`,
+      source: connection.source, target: connection.target, priority: 0,
+      condition: conditionFor(source, connection.sourceHandle),
+    };
+    onChange({ ...graphRef.current, edges: [...graphRef.current.edges.filter((e) => !(e.source === edge.source && edgeBranchId(e) === connection.sourceHandle)), edge] });
+  }, [onChange, somenteLeitura]);
+
+  const onDelete = useCallback(({ nodes: ns, edges: es }: { nodes: NoRF[]; edges: ArestaRF[] }) => {
+    if (somenteLeitura) return;
+    const ids = new Set(ns.map((n) => n.id));
+    onChange({
+      ...graphRef.current,
+      nodes: graphRef.current.nodes.filter((n) => !ids.has(n.id)),
+      edges: graphRef.current.edges.filter((e) => !ids.has(e.source) && !ids.has(e.target) && !es.some((x) => x.id === e.id)),
+    });
+    onSelect(null);
+  }, [onChange, onSelect, somenteLeitura]);
+
+  const onDrop = (event: DragEvent) => {
+    event.preventDefault();
+    setDragging(false);
+    const type = event.dataTransfer.getData("application/x-onface-cadencia-no") as FollowupNodeType;
+    if (!type) return;
+    // Centro do cartão no cursor (268 × ~130), não o canto.
+    const p = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    adicionar(type, { x: Math.round(p.x - 134), y: Math.round(p.y - 60) });
+  };
+
   return <div className="ofc-rf-wrap" onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
-    <div className="ofc-rf-toolbar" role="toolbar" aria-label="Adicionar passo">{(["wait", "action", "condition", "ai_classify", "end"] as FollowupNodeType[]).map((type) => <button key={type} type="button" draggable={!somenteLeitura} disabled={somenteLeitura} onDragStart={(e) => e.dataTransfer.setData("application/x-onface-cadencia-no", type)} onClick={() => add(type)}><Plus size={12} /> {META[type].titulo}</button>)}</div>
-    <div className={`ofc-rf-canvas${dragging ? " ofc-rf-drop" : ""}`} aria-label="Fluxo visual ramificado"><ReactFlowProvider><ReactFlow<NoRF, ArestaRF> nodes={nodes} edges={edges} nodeTypes={{ "cadencia-no": NoCadencia }} edgeTypes={{ "cadencia-aresta": ArestaCadencia }} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onDelete={onDelete} onPaneClick={() => onSelect(null)} nodesDraggable={!somenteLeitura} nodesConnectable={!somenteLeitura} deleteKeyCode={somenteLeitura ? null : ["Delete", "Backspace"]} fitView minZoom={0.2} maxZoom={1.8} snapToGrid snapGrid={[16, 16]} proOptions={{ hideAttribution: true }}><Background variant={BackgroundVariant.Dots} gap={16} size={1.2} /><Controls showInteractive={false} /><MiniMap nodeClassName={(n) => `ofc-rf-mini ofc-rf-mini-${(n as NoRF).data.no.type}`} /></ReactFlow></ReactFlowProvider></div>
+    <div className="ofc-rf-toolbar" role="toolbar" aria-label="Montar o fluxo">
+      <span className="ofc-rf-toolbar-rotulo">Adicionar</span>
+      {PARA_ADICIONAR.map((type) => {
+        const Icon = META[type].Icon;
+        return <button key={type} type="button" draggable={!somenteLeitura} disabled={somenteLeitura}
+          title={somenteLeitura ? undefined : "Entra ligado ao passo selecionado — ou arraste para soltar onde quiser"}
+          onDragStart={(e) => e.dataTransfer.setData("application/x-onface-cadencia-no", type)}
+          onClick={() => adicionar(type)}>
+          <Icon size={13} aria-hidden /> {META[type].titulo}
+        </button>;
+      })}
+      <span className="ofc-rf-toolbar-espaco" />
+      <button type="button" disabled={somenteLeitura} title="Redistribuir os passos em colunas, da esquerda para a direita" onClick={organizar}>
+        <LayoutGrid size={13} aria-hidden /> Organizar
+      </button>
+      <button type="button" title="Enquadrar o fluxo inteiro" onClick={enquadrar}>
+        <Crosshair size={13} aria-hidden /> Enquadrar
+      </button>
+    </div>
+    <div className={`ofc-rf-canvas${dragging ? " ofc-rf-drop" : ""}`} aria-label="Fluxo visual ramificado">
+      <ReactFlow<NoRF, ArestaRF>
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={{ "cadencia-no": NoCadencia }}
+        edgeTypes={{ "cadencia-aresta": ArestaCadencia }}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onDelete={onDelete}
+        onPaneClick={() => onSelect(null)}
+        nodesDraggable={!somenteLeitura}
+        nodesConnectable={!somenteLeitura}
+        deleteKeyCode={somenteLeitura ? null : ["Delete", "Backspace"]}
+        minZoom={0.3}
+        maxZoom={1.6}
+        snapToGrid
+        snapGrid={[16, 16]}
+        connectionRadius={28}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} />
+        <Controls showInteractive={false} className="ofc-rf-controles" position="bottom-left" />
+        <MiniMap pannable zoomable className="ofc-rf-minimapa" nodeBorderRadius={8} nodeClassName={(n) => `ofc-rf-mini ofc-rf-mini-${(n as NoRF).data.no.type}`} />
+      </ReactFlow>
+    </div>
   </div>;
 }

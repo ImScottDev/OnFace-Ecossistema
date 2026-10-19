@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { followupGraphSchema } from "@/lib/ai-platform/followup/graph";
 import { compileFollowupGraph } from "@/lib/ai-platform/followup/compile";
 import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate";
-import { grafoParaPassos, passosParaGrafo, pendenciasDosPassos, previaTexto, textoEspera, type Passo } from "./passos";
+import { grafoParaPassos, organizarGrafo, passosParaGrafo, pendenciasDosPassos, previaTexto, textoEspera, type Passo } from "./passos";
 
 const SESSAO = "11111111-1111-4111-8111-111111111111";
 const TAG = "22222222-2222-4222-8222-222222222222";
@@ -152,4 +152,35 @@ test("texto da espera fala como gente", () => {
   assert.equal(textoEspera(2880), "2 dias depois");
   assert.equal(textoEspera(120), "2 horas depois");
   assert.equal(textoEspera(90), "90 min depois");
+});
+
+test("organizar espalha o fluxo em camadas, sem dois nós no mesmo ponto", () => {
+  const grafo = passosParaGrafo([
+    { id: "p1", tipo: "mensagem", esperaMin: 0, canal: "whatsapp", mensagem: "oi", sessaoId: SESSAO },
+    { id: "p2", tipo: "mensagem", esperaMin: 1440, canal: "whatsapp", mensagem: "e aí", sessaoId: SESSAO },
+  ]);
+  // Todos na mesma coluna é o estado que deixava o desenho ilegível.
+  assert.equal(new Set(grafo.nodes.map((n) => n.position.x)).size, 1);
+
+  const posto = organizarGrafo(grafo);
+  assert.equal(posto.nodes.length, grafo.nodes.length);
+  assert.equal(posto.edges, grafo.edges);
+  const colunas = new Set(posto.nodes.map((n) => n.position.x));
+  assert.ok(colunas.size > 1, "o gatilho e o fim têm de cair em colunas diferentes");
+  const pontos = posto.nodes.map((n) => `${n.position.x}:${n.position.y}`);
+  assert.equal(new Set(pontos).size, pontos.length, "dois nós empilhados no mesmo ponto");
+  // O gatilho abre o desenho à esquerda e o fim fecha à direita.
+  const x = (tipo: string) => posto.nodes.find((n) => n.type === tipo)!.position.x;
+  assert.ok(x("trigger") < x("end"));
+});
+
+test("organizar não entra em laço com grafo que volta", () => {
+  const grafo = passosParaGrafo([
+    { id: "p1", tipo: "mensagem", esperaMin: 0, canal: "whatsapp", mensagem: "oi", sessaoId: SESSAO },
+  ]);
+  const acao = grafo.nodes.find((n) => n.type === "action")!;
+  const gatilho = grafo.nodes.find((n) => n.type === "trigger")!;
+  const comVolta = { ...grafo, edges: [...grafo.edges, { id: "volta", source: acao.id, target: gatilho.id, priority: 1, condition: { type: "always" as const } }] };
+  const posto = organizarGrafo(comVolta);
+  assert.equal(posto.nodes.length, comVolta.nodes.length);
 });
