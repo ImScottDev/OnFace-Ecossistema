@@ -376,9 +376,20 @@ class Logica extends React.Component<any, any> {
            abrir o modal. O protótipo trazia quatro fluxos fixos que não
            existiam no banco. Sem nenhuma, o modal diz isso em vez de inventar. */
         const real = S.cadReal || { cadencias: [], whatsapps: [], email: null };
-        const fluxos = real.cadencias.map(c => ({ k: c.nome, id: c.id, descricao: "", passos: c.passos.map(p => [p.quando, p.titulo, "", p.canal]) }));
-        const escolha = S.cadEscolha || (fluxos[0] && fluxos[0].k) || "";
-        const atual = fluxos.find(x => x.k === escolha) || fluxos[0] || { k: S.cadCarregando ? "Carregando…" : "Nenhuma cadência publicada", id: null, descricao: S.cadCarregando ? "" : "Publique uma cadência em Automações para poder inserir leads nela.", passos: [] };
+        /* Esta peça é a do LEAD: cadência de outro tipo (negócio, contato) não
+           pode receber este registro. Ela continua NA LISTA, apagada e com o
+           motivo — sumir calada era o que fazia Automações contar 4 publicadas
+           e o modal mostrar 2, sem nada explicar a diferença. */
+        const ROTULO_TIPO = { lead: "lead", negocio: "negócio", contato: "contato", oportunidade: "oportunidade", empresa: "empresa", cliente: "cliente", servico: "serviço" };
+        const fluxos = real.cadencias.map(c => ({
+          k: c.nome, id: c.id, descricao: "",
+          tipo: c.entityType || "lead",
+          elegivel: (c.entityType || "lead") === "lead",
+          passos: c.passos.map(p => [p.quando, p.titulo, "", p.canal]),
+        }));
+        const primeiroElegivel = fluxos.find(f => f.elegivel) || fluxos[0];
+        const escolha = S.cadEscolha || (primeiroElegivel && primeiroElegivel.k) || "";
+        const atual = fluxos.find(x => x.k === escolha) || primeiroElegivel || { k: S.cadCarregando ? "Carregando…" : "Nenhuma cadência publicada", id: null, descricao: S.cadCarregando ? "" : "Publique uma cadência em Automações para poder inserir leads nela.", passos: [], tipo: "lead", elegivel: false };
         const canaisDe = (fx) => {
           const c = {};
           fx.passos.forEach(p => { c[p[3]] = (c[p[3]] || 0) + 1; });
@@ -409,12 +420,21 @@ class Logica extends React.Component<any, any> {
             const c = canaisDe(fx);
             return {
               nome: fx.k,
-              resumo: fx.passos.length + " passos" + (fx.passos.length ? " · " + fx.passos[fx.passos.length - 1][0].toLowerCase() : ""),
-              ponto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + (on ? "#fe4f2b" : "#c8ccc9"),
+              /* "toques" e não "passos": isto conta as AÇÕES (o que chega no
+                 cliente), e Automações conta os passos do grafo, esperas
+                 inclusive. Mesma cadência aparecia como "5 passos" aqui e
+                 "11 passos" lá, e nenhum dos dois números estava errado. */
+              resumo: fx.elegivel
+                ? fx.passos.length + (fx.passos.length === 1 ? " toque" : " toques") + (fx.passos.length ? " · " + fx.passos[fx.passos.length - 1][0].toLowerCase() : "")
+                : "Só para " + (ROTULO_TIPO[fx.tipo] || fx.tipo),
+              ponto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + (!fx.elegivel ? "#dbdede" : on ? "#fe4f2b" : "#c8ccc9"),
               icones: Object.keys(c).filter(k => k !== "task").map(k => ({ d: ic[k] })),
-              style: "display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:9px 10px;border-radius:9px;border:0;cursor:pointer;text-align:left;transition:background 120ms cubic-bezier(0,0,.2,1);"
-                + (on ? "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#12171d" : "background:transparent;color:#1f252c"),
-              onClick: () => this.setState({ cadEscolha: fx.k })
+              style: "display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:9px 10px;border-radius:9px;border:0;text-align:left;transition:background 120ms cubic-bezier(0,0,.2,1);"
+                + (!fx.elegivel ? "cursor:not-allowed;opacity:.55;background:transparent;color:#67787c"
+                  : "cursor:pointer;" + (on ? "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#12171d" : "background:transparent;color:#1f252c")),
+              onClick: () => fx.elegivel
+                ? this.setState({ cadEscolha: fx.k })
+                : this.diz("“" + fx.k + "” é uma cadência de " + (ROTULO_TIPO[fx.tipo] || fx.tipo) + ": inscreva por lá, não pelo lead.", "aviso")
             };
           }),
           passos: atual.passos.map((p, i) => ({
@@ -437,10 +457,14 @@ class Logica extends React.Component<any, any> {
               }
             }, bancos[k].length ? bancos[k].map(([v, nota]) => React.createElement("option", { key: v, value: v }, k === "wa" ? nota : v + " · " + nota)) : [React.createElement("option", { key: "x", value: "" }, k === "wa" ? "Você não tem WhatsApp conectado" : "Sem e-mail cadastrado")])
           })),
-          rodape: atual.passos.length + " toques · primeiro disparo hoje",
+          rodape: atual.elegivel === false && atual.id
+            ? "Cadência de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + " — não recebe lead"
+            : atual.passos.length + (atual.passos.length === 1 ? " toque" : " toques") + " · primeiro disparo hoje",
           btnLabel: (cadAtual ? "Trocar para esta cadência" : "Inserir na cadência"),
-          btnStyle: "height:34px;padding:0 15px;border-radius:8px;background:#d93c1a;color:#fff;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;cursor:pointer",
+          btnStyle: "height:34px;padding:0 15px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;"
+            + (atual.elegivel === false ? "background:#eeeff3;color:#a3a8a4;cursor:not-allowed" : "background:#d93c1a;color:#fff;cursor:pointer"),
           confirmar: async () => {
+            if (atual.elegivel === false) return this.diz("Esta cadência é de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + ": não recebe lead.", "erro");
             const alvo = S.cadAlvo;
             const id = alvo ? alvo.chave : L0.id;
             const inserir = this.props.acoes && this.props.acoes.inserirCadencia;

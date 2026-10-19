@@ -473,7 +473,11 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {}, cadenciasPa
   React.useEffect(() => {
     let viva = true;
     void acoes.cadenciasDoSistema().then((r) => {
-      if (viva && r.ok) setCadenciasPublicadas(r.dados?.cadencias.map((c) => ({ id: c.id, nome: c.nome })) ?? []);
+      /* Ação em MASSA só oferece cadência de lead: a seleção da tela é de
+         leads, e `cadenciasDoSistema` passou a devolver todas as publicadas
+         (o modal da ficha mostra as de outro tipo apagadas, com o motivo —
+         aqui não há onde explicar, então elas não entram na lista). */
+      if (viva && r.ok) setCadenciasPublicadas(r.dados?.cadencias.filter((c) => (c.entityType || "lead") === "lead").map((c) => ({ id: c.id, nome: c.nome })) ?? []);
     }).catch(() => { if (viva) toast.error("Não foi possível carregar as cadências publicadas."); });
     return () => { viva = false; };
   }, [acoes.cadenciasDoSistema]);

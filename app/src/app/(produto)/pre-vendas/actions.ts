@@ -452,18 +452,24 @@ export async function acaoTagDoLead(
  *  a ligação sai pelo Callface. O modal "Inserir na cadência" lia um catálogo
  *  chumbado de cadências e números que não existiam. */
 export async function acaoCadenciasDoSistema(): Promise<Resultado<{
-  cadencias: Array<{ id: string; nome: string; passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
+  cadencias: Array<{ id: string; nome: string; entityType: string; passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
   whatsapps: Array<{ id: string; numero: string; rotulo: string; padrao: boolean }>;
   email: string | null;
 }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("cadências do sistema", async () => {
-    const defs = await db.execute<{ id: string; nome: string; steps: unknown }>(sql`
-      SELECT id::text, nome, steps FROM cadence_definitions
-       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false AND status = 'published' AND entity_type = 'lead'
+    /* TODA cadência publicada e visível, não só a de lead.
+       Filtrar por `entity_type = 'lead'` aqui fazia a de negócio SUMIR do
+       modal sem dizer nada: a tela de Automações contava 4 publicadas e o
+       modal listava 2, e não havia como saber que as outras eram de negócio.
+       Quem decide o que pode ser inscrito é a tela (que sabe o tipo do
+       registro aberto); a lista mostra todas e explica a indisponibilidade. */
+    const defs = await db.execute<{ id: string; nome: string; entity_type: string; steps: unknown }>(sql`
+      SELECT id::text, nome, entity_type, steps FROM cadence_definitions
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false AND status = 'published'
          AND (visibility = 'shared' OR owner_id = ${ctx.ator.usuarioId}::uuid)
-       ORDER BY nome LIMIT 40`);
+       ORDER BY (entity_type = 'lead') DESC, nome LIMIT 40`);
     const rotuloDia = (min: number) => `Dia ${Math.round(min / 1440)}`;
     const cadencias = [...defs].map((d) => {
       const passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> = [];
@@ -477,7 +483,7 @@ export async function acaoCadenciasDoSistema(): Promise<Resultado<{
         else if (st.adapter === "crm_callface_call") passos.push({ quando, titulo: "Ligação pelo Callface", canal: "tel" });
         else if (st.adapter === "crm_create_task") passos.push({ quando, titulo: `Tarefa${st.config?.titulo ? ": " + st.config.titulo : ""}`, canal: "task" });
       }
-      return { id: d.id, nome: d.nome, passos };
+      return { id: d.id, nome: d.nome, entityType: d.entity_type, passos };
     });
     const zap = await db.execute<{ id: string; numero: string | null; label: string | null; is_default: boolean }>(sql`
       SELECT id::text, phone_number AS numero, label, is_default FROM whatsapp_sessao

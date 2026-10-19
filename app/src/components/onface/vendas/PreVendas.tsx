@@ -102,7 +102,9 @@ export interface AcoesPreVendas {
   tagsDaOrg: () => Promise<Resultado<{ tags: Array<{ id: string; nome: string }>; cadencias: Array<{ id: string; nome: string }> }>>;
   /** Cadências publicadas (com passos) + de onde o usuário dispara: WhatsApp e e-mail dele. */
   cadenciasDoSistema: () => Promise<Resultado<{
-    cadencias: Array<{ id: string; nome: string; passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
+    /** `entityType` vem junto: a lista traz TODAS as publicadas, e quem desenha
+     *  decide o que é elegível para o registro aberto (ver PecasLiga). */
+    cadencias: Array<{ id: string; nome: string; entityType: string; passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
     whatsapps: Array<{ id: string; numero: string; rotulo: string; padrao: boolean }>;
     email: string | null;
   }>>;
