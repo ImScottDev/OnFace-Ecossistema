@@ -480,12 +480,14 @@ class Logica extends React.Component<any, any> {
     const q = S.busca.trim().toLowerCase();
     const visiveis = S.leads.filter(L => {
       if (q && ((L.empresa || "") + " " + L.pessoa + " " + L.cargo).toLowerCase().indexOf(q) < 0) return false;
-      const sr = S.sel.responsavel, so = S.sel.origem, si = S.sel.interesse, ss = S.sel.sla;
-      if (sr.length) {
-        const ok = (sr.indexOf("minhas") >= 0 && L.resp === this.eu)
-          || (sr.indexOf("sem_dono") >= 0 && !L.resp);
-        if (!ok) return false;
-      }
+      const so = S.sel.origem, si = S.sel.interesse, ss = S.sel.sla;
+      /* RESPONSÁVEL não peneira aqui: quem recorta é o servidor, pela URL
+         (?view=meus|sem-dono|todos). O chip só MOSTRA o recorte e navega.
+         
+         Peneirar também aqui zerava a tela ao trocar de recorte: navegar não
+         remonta o componente, então o `sel` continuava com a escolha anterior
+         enquanto o servidor já tinha mandado o conjunto novo — pedir
+         `L.resp === eu` sobre leads sem dono não casa com nada. */
       if (so.length) {
         if (so.indexOf(L.origem) < 0) return false;
       }
