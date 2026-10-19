@@ -28,6 +28,7 @@ import type { Resultado } from "@/lib/vendas/resultado";
 import { montarPayloadMassa, montarUrlProspeccao, resumirExecucaoEmMassa, type LinhaCsvProspect, type OperacaoMassa } from "../vendas/prospeccao-acoes";
 import { ProspeccaoLiga, type AlvoMov, type Visao } from "./ProspeccaoLiga";
 import { ProspeccaoGaveta } from "./ProspeccaoGavetaDesenho";
+import { usePecas } from "./pecas-host";
 import {
   ModalCadencia, ModalDescartar, ModalImportar, ModalMassaTexto, ModalNovoProspect, ModalOportunidade, ModalResposta,
   type EntradaProspect,
@@ -104,6 +105,16 @@ export function ProspeccaoProto({
   const [selecionados, setSelecionados] = React.useState<string[]>([]);
   const [opMassa, setOpMassa] = React.useState<OperacaoMassa | null>(null);
   const [versao, setVersao] = React.useState(0);
+
+  /* A peça ÚNICA de cadência, pelo hospedeiro global da casca. O registro que
+     esta tela abre é um LEAD (`leads.id`) — é o id que as ações de prospecção,
+     /pessoas/<id> e `acaoInscreverEmCadencia` já usam —, então o tipo
+     informado à peça é "lead". */
+  const { abrir: abrirPeca } = usePecas();
+  const inserirEmCadencia = React.useCallback((leadId: string, nome: string) => {
+    window.__ofCadAlvo = { chave: leadId, nome, tipo: "lead" };
+    abrirPeca("cadencia", leadId, { tela: "prospeccao", leadId });
+  }, [abrirPeca]);
 
   /* Movimentos otimistas valem só para a leitura em que foram feitos: quando o
      servidor devolve dados novos (`fonte` muda de identidade) eles caducam e a
@@ -297,6 +308,7 @@ export function ProspeccaoProto({
         <DrawerCarregado key={abertoId} leadId={abertoId} versao={versao} acoes={acoes} equipe={responsaveis}
           fechar={() => navegar({ lead: null })} mover={pedirMovimento} atribuir={atribuir}
           ir={(rota) => router.push(rota)}
+          inserirEmCadencia={inserirEmCadencia}
           pausar={async (retomar) => {
             const r = retomar ? await acoes.retomarCadencia(abertoId) : await acoes.pausarCadencia(abertoId, "Pausado manualmente");
             if (r.ok) { toast.success(retomar ? "Cadência retomada." : "Cadência pausada."); setVersao((v) => v + 1); router.refresh(); } else toast.error(r.erro);
@@ -343,10 +355,11 @@ export function ProspeccaoProto({
 }
 
 /** Carrega o detalhe do prospect e entrega à gaveta; relê quando algo grava. */
-function DrawerCarregado({ leadId, versao, acoes, equipe, fechar, mover, atribuir, pausar, ir }: {
+function DrawerCarregado({ leadId, versao, acoes, equipe, fechar, mover, atribuir, pausar, ir, inserirEmCadencia }: {
   leadId: string; versao: number; acoes: AcoesProspeccao; equipe: Array<{ id: string; nome: string }>;
   fechar: () => void; mover: (a: AlvoMov, para: EstadoProspeccao) => void; atribuir: (id: string, r: string | null) => void;
   pausar: (retomar: boolean) => void; ir: (rota: string) => void;
+  inserirEmCadencia: (leadId: string, nome: string) => void;
 }) {
   const chave = `${leadId}:${versao}`;
   const [estado, setEstado] = React.useState<{ chave: string; d: DetalheDoProspect | null; erro: string | null }>({ chave: "", d: null, erro: null });
@@ -359,7 +372,7 @@ function DrawerCarregado({ leadId, versao, acoes, equipe, fechar, mover, atribui
   }, [chave, leadId, acoes]);
   return (
     <ProspeccaoGaveta detalhe={estado.d} carregando={estado.chave !== chave} erro={estado.erro} equipe={equipe}
-      fechar={fechar} mover={mover} atribuir={atribuir} pausar={pausar} ir={ir} />
+      fechar={fechar} mover={mover} atribuir={atribuir} pausar={pausar} ir={ir} inserirEmCadencia={inserirEmCadencia} />
   );
 }
 

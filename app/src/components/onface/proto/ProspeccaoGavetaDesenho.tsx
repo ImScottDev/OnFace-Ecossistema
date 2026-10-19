@@ -33,6 +33,8 @@ export interface ValoresDaGaveta {
   atribuir: (leadId: string, responsavelId: string | null) => void;
   pausar: (retomar: boolean) => void;
   ir: (rota: string) => void;
+  /** Abre a peça global de cadência para ESTE prospect (um lead). */
+  inserirEmCadencia: (leadId: string, nome: string) => void;
 }
 
 const ACAO: Record<string, { label: string; nota: string; d: string }> = {
@@ -58,6 +60,7 @@ const ICONE = {
   fechar: "M6 6l12 12M18 6L6 18",
   chevron: "m6 9 6 6 6-6",
   lead: "M7 17 17 7M8 7h9v9",
+  cadencia: "M4 14h7l-1 7 10-11h-7l1-7z",
 };
 
 const iniciais = (n: string | null | undefined) => (n ?? "").split(/\s+/).filter((p) => /^\p{L}/u.test(p)).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "—";
@@ -355,6 +358,10 @@ export function ProspeccaoGaveta(v: ValoresDaGaveta) {
               {saiu && d.estado === "oportunidade" ? <Botao d={ICONE.lead} onClick={() => v.ir(opp ? `/pipeline/${opp.id}` : "/pipeline")}>Abrir no Pipeline</Botao> : null}
               <Botao d={ICONE.empresa} onClick={() => { if (d.lead.empresa.id) v.ir(`/empresas/${d.lead.empresa.id}`); }}>{d.lead.empresa.id ? "Abrir empresa" : "Sem empresa"}</Botao>
               <Botao d={ICONE.pessoa} onClick={() => v.ir(`/pessoas/${d.leadId}`)}>Abrir contato</Botao>
+              {/* A peça ÚNICA de cadência, a mesma do Pipeline e da ficha: aqui
+                  o registro aberto é um LEAD (`d.leadId` é o id de `leads`, o
+                  mesmo que a gaveta usa em /pessoas e nas ações de prospecção). */}
+              <Botao d={ICONE.cadencia} onClick={() => v.inserirEmCadencia(d.leadId, d.lead.empresa.nome || d.lead.pessoa.nome || "Prospect")}>Inserir em cadência</Botao>
               <span style={{ flex: 1, minWidth: 0 }} />
               {principal && alvo ? (
                 <div data-of-saida="1" style={{ position: "relative", flex: "0 0 auto" }}>
