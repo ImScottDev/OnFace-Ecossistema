@@ -447,29 +447,36 @@ export async function acaoTagDoLead(
   });
 }
 
-/** Cadências do sistema (as publicadas, com os passos reais), mais de onde o
+/** Cadências do sistema (TODAS as visíveis, com os passos reais), mais de onde o
  *  usuário pode disparar: os WhatsApp DELE e o e-mail dele. Telefone não entra:
  *  a ligação sai pelo Callface. O modal "Inserir na cadência" lia um catálogo
  *  chumbado de cadências e números que não existiam. */
 export async function acaoCadenciasDoSistema(): Promise<Resultado<{
-  cadencias: Array<{ id: string; nome: string; entityType: string; visibility: "shared" | "private"; minha: boolean; passos: Array<{ quando: string; titulo: string; mensagem: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
+  cadencias: Array<{ id: string; nome: string; entityType: string; visibility: "shared" | "private"; minha: boolean; publicada: boolean; status: string; ativa: boolean; passos: Array<{ quando: string; titulo: string; mensagem: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
   whatsapps: Array<{ id: string; numero: string; rotulo: string; padrao: boolean }>;
   email: string | null;
 }>> {
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("cadências do sistema", async () => {
-    /* TODA cadência publicada e visível, não só a de lead.
+    /* TODA cadência visível, não só a de lead e não só a publicada.
        Filtrar por `entity_type = 'lead'` aqui fazia a de negócio SUMIR do
        modal sem dizer nada: a tela de Automações contava 4 publicadas e o
        modal listava 2, e não havia como saber que as outras eram de negócio.
+       Filtrar por `status = 'published' AND ativo` era o MESMO defeito: quem
+       despublicava ou desativava um fluxo em Automações via a cadência
+       desaparecer do pop-up calada. Agora ela vem com `status`/`ativa`, a
+       tela a mostra apagada com o motivo, e a porta de inscrição
+       (`acaoInserirEmCadencia`) continua exigindo publicada e ativa no
+       servidor — listar não é poder inscrever.
        Quem decide o que pode ser inscrito é a tela (que sabe o tipo do
        registro aberto); a lista mostra todas e explica a indisponibilidade. */
-    const defs = await db.execute<{ id: string; nome: string; entity_type: string; steps: unknown; visibility: string | null; owner_id: string | null }>(sql`
-      SELECT id::text, nome, entity_type, steps, visibility, owner_id::text FROM cadence_definitions
-       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false AND status = 'published'
+    const defs = await db.execute<{ id: string; nome: string; entity_type: string; steps: unknown; visibility: string | null; owner_id: string | null; status: string | null; ativo: boolean | null }>(sql`
+      SELECT id::text, nome, entity_type, steps, visibility, owner_id::text, status, ativo FROM cadence_definitions
+       WHERE organizacao_id = ${ctx.organizacaoId}::uuid
+         AND status <> 'archived'
          AND (visibility = 'shared' OR owner_id = ${ctx.ator.usuarioId}::uuid)
-       ORDER BY (entity_type = 'lead') DESC, nome LIMIT 40`);
+       ORDER BY (status = 'published' AND ativo IS NOT false) DESC, (entity_type = 'lead') DESC, nome LIMIT 60`);
     const rotuloDia = (min: number) => `Dia ${Math.round(min / 1440)}`;
     const cadencias = [...defs].map((d) => {
       const passos: Array<{ quando: string; titulo: string; mensagem: string; canal: "wa" | "tel" | "mail" | "task" }> = [];
@@ -490,11 +497,17 @@ export async function acaoCadenciasDoSistema(): Promise<Resultado<{
       }
       /* A visibilidade vem para a tela poder dizer "Só para mim" ou "Time
          todo": a lista mostra cadência pessoal junto da compartilhada e, sem
-         o selo, não havia como saber qual é qual. */
+         o selo, não havia como saber qual é qual. O valor gravado no banco é
+         `personal` (ver `lib/cadencia/acesso.ts` e a CHECK da migration 0129);
+         comparar com "private" aqui fazia TODA cadência pessoal chegar na tela
+         como "Time todo" — o selo dizia o contrário do que o banco guarda. */
       return {
         id: d.id, nome: d.nome, entityType: d.entity_type, passos,
-        visibility: d.visibility === "private" ? "private" as const : "shared" as const,
+        visibility: d.visibility === "personal" ? "private" as const : "shared" as const,
         minha: d.owner_id === ctx.ator.usuarioId,
+        status: d.status ?? "draft",
+        ativa: d.ativo !== false,
+        publicada: d.status === "published" && d.ativo !== false,
       };
     });
     const zap = await db.execute<{ id: string; numero: string | null; label: string | null; is_default: boolean }>(sql`

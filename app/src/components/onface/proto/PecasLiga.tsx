@@ -387,9 +387,24 @@ class Logica extends React.Component<any, any> {
            lead. Quem não informa segue como lead, que é de onde ela veio. */
         const tipoAlvo = (S.cadAlvo && S.cadAlvo.tipo) || "lead";
         const fluxos = real.cadencias.map(c => ({
-          k: c.nome, id: c.id, descricao: "",
+          k: c.nome, id: c.id,
+          /* O painel da direita explica por que a cadência não dá para usar.
+             Vazio, ele mostrava "0 toques" e nada mais. */
+          descricao: c.publicada === false
+            ? (c.ativa === false
+              ? "Cadência desativada em Automações. Reative para poder inscrever alguém nela."
+              : "Rascunho: os passos se configuram em Automações. Publique para poder inscrever alguém nela.")
+            : "",
           tipo: c.entityType || "lead",
-          elegivel: (c.entityType || "lead") === tipoAlvo,
+          /* Publicada e ativa é o que o servidor aceita inscrever. A lista traz
+             também o rascunho e a desativada: antes elas sumiam do pop-up sem
+             explicação quando alguém despublicava o fluxo em Automações.
+             Aparecem apagadas e com o motivo, como a de outro tipo. */
+          publicada: c.publicada !== false, ativa: c.ativa !== false,
+          motivo: c.publicada === false
+            ? (c.ativa === false ? "Desativada" : "Rascunho — publique em Automações")
+            : null,
+          elegivel: c.publicada !== false && (c.entityType || "lead") === tipoAlvo,
           /* A visibilidade vira selo na lista, como nos Templates: cadência
              pessoal e cadência do time apareciam iguais. */
           minha: !!c.minha, privada: c.visibility === "private",
@@ -400,7 +415,7 @@ class Logica extends React.Component<any, any> {
         }));
         const primeiroElegivel = fluxos.find(f => f.elegivel) || fluxos[0];
         const escolha = S.cadEscolha || (primeiroElegivel && primeiroElegivel.k) || "";
-        const atual = fluxos.find(x => x.k === escolha) || primeiroElegivel || { k: S.cadCarregando ? "Carregando…" : "Nenhuma cadência publicada", id: null, descricao: S.cadCarregando ? "" : "Publique uma cadência em Automações para poder inserir leads nela.", passos: [], tipo: "lead", elegivel: false };
+        const atual = fluxos.find(x => x.k === escolha) || primeiroElegivel || { k: S.cadCarregando ? "Carregando…" : "Nenhuma cadência publicada", id: null, descricao: S.cadCarregando ? "" : "Publique uma cadência em Automações para poder inserir leads nela.", passos: [], tipo: "lead", elegivel: false, publicada: false, ativa: true, motivo: null };
         const canaisDe = (fx) => {
           const c = {};
           fx.passos.forEach(p => { c[p[3]] = (c[p[3]] || 0) + 1; });
@@ -432,8 +447,11 @@ class Logica extends React.Component<any, any> {
           busca: S.cadBusca || "",
           setBusca: (e) => this.setState({ cadBusca: e.target.value }),
           sub: S.cadCarregando
-            ? "Carregando as cadências publicadas…"
-            : fluxos.length + (fluxos.length === 1 ? " cadência · " : " cadências · ") + fluxos.filter(f => f.minha).length + " suas",
+            ? "Carregando as cadências…"
+            : fluxos.length + (fluxos.length === 1 ? " cadência · " : " cadências · ") + fluxos.filter(f => f.minha).length + " suas"
+              /* Quantas não dão para usar agora: antes elas nem apareciam, e o
+                 número daqui não batia com o de Automações. */
+              + (fluxos.filter(f => !f.publicada).length ? " · " + fluxos.filter(f => !f.publicada).length + " fora do ar" : ""),
           vazio: !S.cadCarregando && !!(S.cadBusca || "").trim() && fluxos.filter(fx => fx.k.toLowerCase().includes((S.cadBusca || "").trim().toLowerCase())).length === 0,
           lista: fluxos.filter(fx => {
             const q = (S.cadBusca || "").trim().toLowerCase();
@@ -449,7 +467,10 @@ class Logica extends React.Component<any, any> {
                  "11 passos" lá, e nenhum dos dois números estava errado. */
               resumo: fx.elegivel
                 ? fx.passos.length + (fx.passos.length === 1 ? " toque" : " toques") + (fx.passos.length ? " · " + fx.passos[fx.passos.length - 1][0].toLowerCase() : "")
-                : "Só para " + (ROTULO_TIPO[fx.tipo] || fx.tipo),
+                /* O motivo de não dar para escolher vem primeiro: rascunho ou
+                   desativada antes do tipo, porque é o que a pessoa precisa
+                   resolver em Automações. */
+                : (fx.motivo || "Só para " + (ROTULO_TIPO[fx.tipo] || fx.tipo)),
               ponto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + (!fx.elegivel ? "#dbdede" : on ? "#fe4f2b" : "#c8ccc9"),
               selo: fx.privada ? "Só para mim" : "Time todo",
               seloStyle: "flex:0 0 auto;height:18px;padding:0 6px;border-radius:6px;font-size:10px;font-weight:600;display:inline-flex;align-items:center;white-space:nowrap;"
@@ -460,7 +481,13 @@ class Logica extends React.Component<any, any> {
                   : "cursor:pointer;" + (on ? "background:#fff;box-shadow:inset 0 0 0 1px #dbdede;color:#12171d" : "background:transparent;color:#1f252c")),
               onClick: () => fx.elegivel
                 ? this.setState({ cadEscolha: fx.k })
-                : this.diz("“" + fx.k + "” é uma cadência de " + (ROTULO_TIPO[fx.tipo] || fx.tipo) + ": inscreva por lá, não por " + (ROTULO_TIPO[tipoAlvo] || tipoAlvo) + ".", "aviso")
+                : this.diz(
+                  !fx.publicada
+                    ? (fx.ativa === false
+                      ? "“" + fx.k + "” está desativada: reative em Automações para poder inscrever."
+                      : "“" + fx.k + "” ainda é rascunho: configure os passos e publique em Automações.")
+                    : "“" + fx.k + "” é uma cadência de " + (ROTULO_TIPO[fx.tipo] || fx.tipo) + ": inscreva por lá, não por " + (ROTULO_TIPO[tipoAlvo] || tipoAlvo) + ".",
+                  "aviso")
             };
           }),
           passos: atual.passos.map((p, i) => ({
@@ -484,12 +511,17 @@ class Logica extends React.Component<any, any> {
             }, bancos[k].length ? bancos[k].map(([v, nota]) => React.createElement("option", { key: v, value: v }, k === "wa" ? nota : v + " · " + nota)) : [React.createElement("option", { key: "x", value: "" }, k === "wa" ? "Você não tem WhatsApp conectado" : "Sem e-mail cadastrado")])
           })),
           rodape: atual.elegivel === false && atual.id
-            ? "Cadência de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + " — não recebe " + (ROTULO_TIPO[tipoAlvo] || tipoAlvo)
+            ? (atual.motivo
+              ? (atual.motivo === "Desativada" ? "Cadência desativada — reative em Automações" : "Rascunho sem passos — configure e publique em Automações")
+              : "Cadência de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + " — não recebe " + (ROTULO_TIPO[tipoAlvo] || tipoAlvo))
             : atual.passos.length + (atual.passos.length === 1 ? " toque" : " toques") + " · primeiro disparo hoje",
           btnLabel: (cadAtual ? "Trocar para esta cadência" : "Inserir na cadência"),
           btnStyle: "height:34px;padding:0 15px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;"
             + (atual.elegivel === false ? "background:#eeeff3;color:#a3a8a4;cursor:not-allowed" : "background:#d93c1a;color:#fff;cursor:pointer"),
           confirmar: async () => {
+            if (atual.motivo) return this.diz(atual.ativa === false
+              ? "Esta cadência está desativada: reative em Automações antes de inscrever."
+              : "Esta cadência ainda é rascunho: configure os passos e publique em Automações.", "erro");
             if (atual.elegivel === false) return this.diz("Esta cadência é de " + (ROTULO_TIPO[atual.tipo] || atual.tipo) + ": não recebe " + (ROTULO_TIPO[tipoAlvo] || tipoAlvo) + ".", "erro");
             const alvo = S.cadAlvo;
             const id = alvo ? alvo.chave : L0.id;
@@ -752,7 +784,10 @@ class Logica extends React.Component<any, any> {
         this.setState(s => ({ cadencias: Object.assign({}, s.cadencias, { [L0.id]: null }), cadPicker: false }));
         this.diz("Lead removido da cadência", "aviso");
       },
-      cadOpcoes: (S.cadReal?.cadencias ?? []).map((cd) => ({
+      /* Só publicada e ativa: a listagem agora traz rascunho e desativada
+         (para o pop-up poder explicá-las), e este menu curto inscreve direto —
+         oferecer o que o servidor recusa só renderia erro. */
+      cadOpcoes: (S.cadReal?.cadencias ?? []).filter((cd) => cd.publicada !== false).map((cd) => ({
         label: cd.nome, toques: cd.passos.length + " passos",
         style: "display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border-radius:6px;",
         onClick: async () => {
