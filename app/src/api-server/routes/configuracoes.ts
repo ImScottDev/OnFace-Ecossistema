@@ -21,6 +21,17 @@ app.get("/integracoes/inventario", async (c) => {
   return c.json({ integracoes: await inventarioDeIntegracoes(ctx.organizacaoId) });
 });
 
+// GET /configuracoes/tracking/estado — o que a devolução de conversões à Meta
+// realmente faz: credenciais do servidor, entregas e o mapeamento em uso.
+app.get("/tracking/estado", async (c) => {
+  const ctx = await getCtx(c);
+  if (ctx.userRole !== "admin" && ctx.userRole !== "super_admin") {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  const { estadoDoTracking } = await import("@/lib/integrations/meta/estado-tracking");
+  return c.json(await estadoDoTracking(ctx.organizacaoId));
+});
+
 // GET /configuracoes/integracoes — return integration config (key masked)
 app.get("/integracoes", async (c) => {
   const ctx = await getCtx(c);

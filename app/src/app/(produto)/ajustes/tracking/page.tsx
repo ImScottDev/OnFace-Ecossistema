@@ -1,89 +1,147 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { toast } from "sonner";
-import { LineChart } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { SecaoAjuste, PilulaEstado, type EstadoAjuste } from "@/components/onface/ajustes/Secao";
+import type { EstadoTracking, EventoTracking } from "@/lib/integrations/meta/estado-tracking";
 
-const STAGES = ["qualificacao", "contato_feito", "reuniao_realizada", "proposta_apresentada", "negociacao_iniciada", "em_fechamento", "contrato"];
+/**
+ * Tracking — estado real da devolução de conversões à Meta.
+ *
+ * Antes: três blocos de campos (Meta CAPI, GA4, Google Ads) e um mapeamento por
+ * etapa que gravavam em `organizacoes.settings` uma chave que NENHUM processo
+ * lia. A entrega à Meta sempre usou as credenciais do servidor, então a tela
+ * parecia o painel de uma integração que ela não controlava.
+ *
+ * Agora é leitura do que roda: credenciais (existe ou não, nunca o valor), o
+ * mapeamento que o worker usa (`POLITICA_EVENTOS`) e o que já foi entregue.
+ */
 
-export default function TrackingConfigPage() {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [metaPixel, setMetaPixel] = useState("");
-  const [metaToken, setMetaToken] = useState("");
-  const [ga4Id, setGa4Id] = useState("");
-  const [ga4Secret, setGa4Secret] = useState("");
-  const [adsCustomer, setAdsCustomer] = useState("");
-  const [eventos, setEventos] = useState<Record<string, string>>({});
+const data = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
 
-  useEffect(() => {
-    fetch("/api/configuracoes/settings").then(r => r.json()).then((s) => {
-      const t = s.tracking || {};
-      setMetaPixel(t.metaPixel || ""); setMetaToken(t.metaToken || "");
-      setGa4Id(t.ga4Id || ""); setGa4Secret(t.ga4Secret || "");
-      setAdsCustomer(t.adsCustomer || ""); setEventos(t.eventos || {});
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+function estadoDoEvento(e: EventoTracking): { estado: EstadoAjuste; texto: string } {
+  if (e.falhas > 0 && e.entregues === 0) return { estado: "erro", texto: "Só falhas" };
+  if (e.entregues > 0) return { estado: "ok", texto: "Enviando" };
+  if (e.ocorreu === 0) return { estado: "pendente", texto: "Nunca disparou" };
+  return { estado: "neutro", texto: "Sem sinal da Meta" };
+}
 
-  const save = async () => {
-    setSaving(true);
-    const res = await fetch("/api/configuracoes/settings", {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: "tracking", value: { metaPixel, metaToken, ga4Id, ga4Secret, adsCustomer, eventos } }),
-    });
-    setSaving(false);
-    if (res.ok) toast.success("Tracking salvo"); else toast.error("Erro ao salvar");
-  };
+function LinhaEvento({ e }: { e: EventoTracking }) {
+  const { estado, texto } = estadoDoEvento(e);
+  return (
+    <li className="aj-linha">
+      <div className="aj-linha-corpo">
+        <span className="aj-linha-titulo">
+          {e.nomeMeta}{e.comValor ? " · com valor" : ""}{e.padrao ? "" : " · personalizado"}
+        </span>
+        <span className="aj-linha-meta">
+          {e.eventoOnface} → {e.entregues.toLocaleString("pt-BR")} enviados
+          {e.falhas > 0 ? `, ${e.falhas} com falha` : ""}
+          {e.ultimaEntrega ? `, último em ${data(e.ultimaEntrega)}` : ""}
+        </span>
+      </div>
+      <div className="aj-linha-acoes"><PilulaEstado estado={estado}>{texto}</PilulaEstado></div>
+    </li>
+  );
+}
 
-  if (loading) return <div className="text-[var(--cf2-text-tertiary)] text-center py-8">Carregando...</div>;
+function Credencial({ rotulo, ok, falta }: { rotulo: string; ok: boolean; falta: string }) {
+  return (
+    <div className="aj-fato">
+      <dt>{rotulo}</dt>
+      <dd>
+        <PilulaEstado estado={ok ? "ok" : "erro"}>{ok ? "Configurado" : "Ausente"}</PilulaEstado>
+        {!ok && <span className="font-normal text-[var(--text-muted)]">{falta}</span>}
+      </dd>
+    </div>
+  );
+}
+
+export default function TrackingPage() {
+  const { data: s, isLoading, isError, error } = useQuery({
+    queryKey: ["tracking-estado"],
+    queryFn: async () => {
+      const res = await fetch("/api/configuracoes/tracking/estado");
+      if (res.status === 403) throw new Error("Só administradores veem o estado do tracking.");
+      if (!res.ok) throw new Error("Não foi possível carregar o estado do tracking.");
+      return res.json() as Promise<EstadoTracking>;
+    },
+  });
+
+  if (isLoading) return <p className="aj-grupo-ajuda">Carregando…</p>;
+  if (isError || !s) return <div className="aj-vazio"><strong>{(error as Error)?.message ?? "Erro ao carregar."}</strong></div>;
+
+  const c = s.credenciais;
+  const semFechamento = s.eventos.filter((e) => e.comValor && e.entregues === 0 && e.ocorreu === 0);
 
   return (
-    <div className="space-y-5 max-w-3xl">
-      {/* Nenhum processo lê esta chave de organizacoes.settings (medido
-          01/10/2026; ver `semEfeito` em ../Nav). Salvar grava, e só. */}
-      <p className="aj-aviso" role="status">
-        <strong>Ainda sem efeito:</strong> estes campos ficam gravados, mas nenhum evento é enviado a partir deles. A entrega de conversões à Meta que já roda usa as credenciais do servidor, não esta tela.
-      </p>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <LineChart className="w-5 h-5 text-[var(--cf2-accent)]" />
-          <div>
-            <h2 className="text-lg font-semibold text-[var(--cf2-text-primary)]">Tracking &amp; Conversões</h2>
-            <p className="text-xs text-[var(--cf2-text-tertiary)]">Credenciais e eventos de funil para Meta CAPI, GA4 e Google Ads</p>
-          </div>
-        </div>
-        <button onClick={save} disabled={saving} className="cf2-btn-primary px-4 py-1.5 text-sm">{saving ? "Salvando..." : "Salvar"}</button>
-      </div>
+    <div className="aj-secoes">
+      {c.modoTeste && (
+        <p className="aj-aviso" data-tom="erro" role="alert">
+          <strong>Modo de teste ligado:</strong> há um código de teste da Meta no servidor, então os eventos vão para a aba
+          Test Events e <strong>não contam como conversão</strong>. Remova <code>META_CAPI_TEST_EVENT_CODE</code> do ambiente.
+        </p>
+      )}
+      {semFechamento.length > 0 && (
+        <p className="aj-aviso" role="status">
+          <strong>Venda ganha e pagamento ainda não voltam para a Meta:</strong>{" "}
+          {semFechamento.map((e) => e.nomeMeta).join(" e ")} nunca foram disparados. Qualificação, reunião e proposta já vão;
+          o fechamento não.
+        </p>
+      )}
 
-      <div className="grid sm:grid-cols-3 gap-4">
-        <div className="card-solid p-4 space-y-2">
-          <p className="text-sm font-medium text-[var(--cf2-text-primary)]">Meta CAPI</p>
-          <input className="cf2-input w-full text-xs" value={metaPixel} onChange={e => setMetaPixel(e.target.value)} placeholder="Pixel ID" aria-label="Pixel ID" />
-          <input className="cf2-input w-full text-xs" value={metaToken} onChange={e => setMetaToken(e.target.value)} placeholder="Access Token" aria-label="Access Token" type="password" />
-        </div>
-        <div className="card-solid p-4 space-y-2">
-          <p className="text-sm font-medium text-[var(--cf2-text-primary)]">GA4</p>
-          <input className="cf2-input w-full text-xs" value={ga4Id} onChange={e => setGa4Id(e.target.value)} placeholder="Measurement ID" aria-label="Measurement ID" />
-          <input className="cf2-input w-full text-xs" value={ga4Secret} onChange={e => setGa4Secret(e.target.value)} placeholder="API Secret" aria-label="API Secret" type="password" />
-        </div>
-        <div className="card-solid p-4 space-y-2">
-          <p className="text-sm font-medium text-[var(--cf2-text-primary)]">Google Ads</p>
-          <input className="cf2-input w-full text-xs" value={adsCustomer} onChange={e => setAdsCustomer(e.target.value)} placeholder="Customer ID" aria-label="Customer ID" />
-        </div>
-      </div>
+      <SecaoAjuste
+        titulo="Conversions API (Meta)"
+        ajuda="Devolve à Meta o que aconteceu com o lead que veio do anúncio, para a campanha otimizar por qualidade e não por formulário. As credenciais ficam no servidor, configuradas pelo time técnico."
+        acao={<PilulaEstado estado={c.datasetId && c.tokenCapi && !c.modoTeste ? "ok" : "erro"}>
+          {c.datasetId && c.tokenCapi ? (c.modoTeste ? "Em teste" : "Ativa") : "Incompleta"}
+        </PilulaEstado>}
+      >
+        <dl className="aj-fatos">
+          <Credencial rotulo="Pixel / Dataset ID" ok={c.datasetId} falta="META_PIXEL_ID" />
+          <Credencial rotulo="Token da Conversions API" ok={c.tokenCapi} falta="META_CAPI_ACCESS_TOKEN" />
+        </dl>
+      </SecaoAjuste>
 
-      <div className="card-solid p-4 space-y-3">
-        <p className="text-sm font-medium text-[var(--cf2-text-secondary)]">Mapeamento de Eventos por Etapa</p>
-        <p className="text-[11px] text-[var(--cf2-text-tertiary)]">Qual evento de conversão cada etapa dispara (ex: Lead, Schedule, Purchase)</p>
-        {STAGES.map(s => (
-          <div key={s} className="flex items-center gap-3">
-            <span className="text-xs text-[var(--cf2-text-secondary)] w-44 shrink-0">{s}</span>
-            <input className="cf2-input flex-1 text-xs" value={eventos[s] || ""} onChange={e => setEventos({ ...eventos, [s]: e.target.value })} placeholder="ex: Lead / Schedule / Purchase" aria-label="ex: Lead / Schedule / Purchase" />
-          </div>
-        ))}
-      </div>
-      <p className="text-[11px] text-[var(--cf2-warning-text)]/70">Envio real depende das credenciais e do developer token do Google Ads (a configurar). A estrutura já fica pronta.</p>
+      <SecaoAjuste
+        titulo="Entrada de leads (Lead Ads)"
+        ajuda="O formulário do anúncio vira lead no CRM assim que é preenchido."
+        acao={<PilulaEstado estado={c.tokenLeads && c.segredoApp ? "ok" : "erro"}>{c.tokenLeads && c.segredoApp ? "Ativa" : "Incompleta"}</PilulaEstado>}
+      >
+        <dl className="aj-fatos">
+          <Credencial rotulo="Token de leitura do lead" ok={c.tokenLeads} falta="META_LEADS_ACCESS_TOKEN" />
+          <Credencial rotulo="Segredo do app (assinatura do webhook)" ok={c.segredoApp} falta="META_APP_SECRET" />
+          <div className="aj-fato"><dt>Leads recebidos nos últimos 30 dias</dt><dd>{s.leads.total30d.toLocaleString("pt-BR")}</dd></div>
+          <div className="aj-fato"><dt>Último lead</dt><dd>{data(s.leads.ultimo)}</dd></div>
+        </dl>
+      </SecaoAjuste>
+
+      <SecaoAjuste
+        titulo="Eventos devolvidos"
+        ajuda="O que acontece no ONFACE e qual evento a Meta recebe. Só volta o fato de quem veio da Meta; lead de outra origem não é enviado, para não ensinar o algoritmo com público que ela não trouxe."
+      >
+        <ul className="aj-lista">{s.eventos.map((e) => <LinhaEvento key={e.eventoOnface} e={e} />)}</ul>
+      </SecaoAjuste>
+
+      {s.falhasRecentes.length > 0 && (
+        <SecaoAjuste titulo="Falhas recentes" ajuda="Últimas entregas que a Meta recusou ou que não puderam sair.">
+          <ul className="aj-lista">
+            {s.falhasRecentes.map((f, i) => (
+              <li key={i} className="aj-linha">
+                <div className="aj-linha-corpo">
+                  <span className="aj-linha-titulo">{f.evento} · {f.motivo ?? "erro"}</span>
+                  <span className="aj-linha-meta">{data(f.quando)}{f.detalhe ? ` — ${f.detalhe}` : ""}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </SecaoAjuste>
+      )}
+
+      <SecaoAjuste
+        titulo="GA4 e Google Ads"
+        ajuda="Ainda não existe envio de conversões para o GA4 nem para o Google Ads. Não há campo para preencher porque nada leria o valor."
+      />
     </div>
   );
 }

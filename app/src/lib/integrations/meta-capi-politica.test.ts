@@ -204,3 +204,22 @@ test("falha transitória da CAPI volta o evento para retry, não para processado
   assert.match(trecho, /r\.tentarDeNovo/, "o resultado retryable da CAPI não é considerado");
   assert.match(trecho, /throw erroCapiReprocessavel/, "a falha transitória não alcança o retry do outbox");
 });
+
+test("o fechamento que o ONFACE publica (DealWon, PaymentCompleted) chega à política da Meta", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const raiz = path.resolve(import.meta.dirname, "../..");
+  const entrega = fs.readFileSync(path.join(raiz, "lib/integrations/meta/entrega-capi.ts"), "utf8");
+
+  // Medido em produção: a política escutava OpportunityWon e PaymentConfirmed,
+  // e o ONFACE publica DealWon e PaymentCompleted. Purchase nunca voltava.
+  assert.match(entrega, /DealWon:\s*"OpportunityWon"/);
+  assert.match(entrega, /PaymentCompleted:\s*"PaymentConfirmed"/);
+  assert.match(entrega, /regraDoEvento\(tipoNaPolitica\(evento\.eventType\)\)/);
+
+  // E os dois eventos precisam levar o valor que a Meta usa em Purchase/Won.
+  const ganho = fs.readFileSync(path.join(raiz, "lib/crm/won-evidence.ts"), "utf8");
+  assert.match(ganho, /eventType: "DealWon"[\s\S]{0,600}valor:/);
+  const stripe = fs.readFileSync(path.join(raiz, "lib/integrations/stripe-webhook-handlers.ts"), "utf8");
+  assert.match(stripe, /eventType: "PaymentCompleted"[\s\S]{0,500}valor:/);
+});

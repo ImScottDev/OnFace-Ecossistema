@@ -81,7 +81,7 @@ export const GRUPOS: { titulo: string; itens: ItemAjuste[] }[] = [
     itens: [
       { label: "Integrações", href: "/ajustes/integracoes", icon: Key },
       { label: "Tokens da API", href: "/ajustes/api-tokens", icon: KeyRound },
-      { label: "Tracking", href: "/ajustes/tracking", icon: LineChart, semEfeito: true },
+      { label: "Tracking", href: "/ajustes/tracking", icon: LineChart },
     ],
   },
 ];

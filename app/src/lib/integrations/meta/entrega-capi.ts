@@ -54,32 +54,82 @@ interface LinhaOutbox {
   createdAt: Date | string;
 }
 
+/**
+ * O que o ONFACE publica no fechamento tem outro nome que a política da Meta.
+ *
+ * Medido em produção (19/10/2026): a política escutava `OpportunityWon` e
+ * `PaymentConfirmed`, e NENHUM dos dois entrou no outbox desde o início. O
+ * ganho publica `DealWon` e o pagamento publica `PaymentCompleted`, então
+ * `Purchase` e venda ganha nunca voltaram para a Meta (5 ganhos, 0 devolvidos).
+ * A tradução fica aqui, na borda, para a política continuar falando só do
+ * vocabulário da Meta.
+ */
+const TIPO_NA_POLITICA: Record<string, string> = {
+  DealWon: "OpportunityWon",
+  PaymentCompleted: "PaymentConfirmed",
+};
+
+export function tipoNaPolitica(eventType: string): string {
+  return TIPO_NA_POLITICA[eventType] ?? eventType;
+}
+
+/**
+ * Chave do FATO para o `event_id`. Ganho e pagamento podem chegar por mais de um
+ * caminho (`DealWon` e o canônico `OpportunityWon`; sessão do Stripe reenviada):
+ * a chave sai do negócio / da sessão, não do id da linha do outbox, para a Meta
+ * deduplicar os dois em vez de contar a venda duas vezes.
+ */
+export function chaveDoFato(e: Pick<LinhaOutbox, "id" | "eventType" | "aggregateId" | "payload">): string {
+  const p = e.payload ?? {};
+  const tipo = tipoNaPolitica(e.eventType);
+  if (tipo === "OpportunityWon") {
+    const negocio = p.negocio_legado_id ?? p.negocioId ?? (e.eventType === "DealWon" ? e.aggregateId : null);
+    if (typeof negocio === "string" && negocio) return negocio;
+  }
+  if (tipo === "PaymentConfirmed" && typeof p.stripeSessionId === "string" && p.stripeSessionId) return p.stripeSessionId;
+  return e.id;
+}
+
 /** Resolve a identidade e a atribuição do fato, a partir do modelo canônico. */
 async function contexto(evento: LinhaOutbox): Promise<{
   email: string | null; telefone: string | null; atribuicao: Atribuicao; valor: number | null;
 } | null> {
   const payload = evento.payload ?? {};
-  const pessoaId = (payload.pessoa_id as string) ?? null;
-  const empresaId = (payload.empresa_id as string) ?? null;
-  const aquisicaoId = (payload.aquisicao_id as string) ?? (evento.aggregateType === "aquisicao" ? evento.aggregateId : null);
+  const txt = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const pessoaId = txt(payload.pessoa_id);
+  const empresaId = txt(payload.empresa_id) ?? txt(payload.empresaId);
+  const aquisicaoId = txt(payload.aquisicao_id) ?? (evento.aggregateType === "aquisicao" ? evento.aggregateId : null);
+  // `DealWon` e `PaymentCompleted` não trazem a identidade canônica, só o lead
+  // legado ou o negócio: a pessoa e a aquisição saem deles.
+  const leadId = txt(payload.lead_legado_id) ?? txt(payload.leadId);
+  const negocioId = txt(payload.negocio_legado_id) ?? txt(payload.negocioId)
+    ?? (evento.aggregateType === "negocio" ? evento.aggregateId : null);
 
   const linhas = await db.execute<{
     email: string | null; telefone: string | null; meta_lead_id: string | null;
     fbclid: string | null; fbc: string | null; fbp: string | null;
     campaign_id: string | null; adset_id: string | null; ad_id: string | null;
   }>(sql`
+    WITH alvo AS (
+      SELECT COALESCE(${pessoaId}::uuid, (SELECT p.id FROM pessoas p WHERE p.lead_id_legado = l.id LIMIT 1)) AS pessoa_id,
+             COALESCE(${empresaId}::uuid, l.empresa_id) AS empresa_id,
+             COALESCE(${aquisicaoId}::uuid, (SELECT a.id FROM aquisicoes a WHERE a.lead_legado_id = l.id LIMIT 1)) AS aquisicao_id
+        FROM (SELECT 1) seed
+        LEFT JOIN leads l ON l.organizacao_id = ${evento.organizacaoId}::uuid
+         AND l.id = COALESCE(${leadId}::uuid, (SELECT n.lead_id FROM negocios n WHERE n.id = ${negocioId}::uuid))
+    )
     SELECT p.email, p.telefone,
            t.meta_lead_id, t.fbclid, t.fbc, t.fbp, t.campaign_id, t.adset_id, t.ad_id
-      FROM (SELECT 1) seed
-      LEFT JOIN pessoas p ON p.id = ${pessoaId}::uuid
+      FROM alvo
+      LEFT JOIN pessoas p ON p.id = alvo.pessoa_id
       -- O touchpoint vem da aquisição quando ela é conhecida; senão, do
       -- primeiro toque da pessoa ou da empresa. A ordem é de precisão.
       LEFT JOIN LATERAL (
         SELECT pc.* FROM pontos_contato pc
-         WHERE (${aquisicaoId}::uuid IS NOT NULL AND pc.aquisicao_id = ${aquisicaoId}::uuid)
-            OR (${pessoaId}::uuid IS NOT NULL AND pc.pessoa_id = ${pessoaId}::uuid)
-            OR (${empresaId}::uuid IS NOT NULL AND pc.empresa_id = ${empresaId}::uuid)
-         ORDER BY (pc.aquisicao_id = ${aquisicaoId}::uuid) DESC NULLS LAST,
+         WHERE (alvo.aquisicao_id IS NOT NULL AND pc.aquisicao_id = alvo.aquisicao_id)
+            OR (alvo.pessoa_id IS NOT NULL AND pc.pessoa_id = alvo.pessoa_id)
+            OR (alvo.empresa_id IS NOT NULL AND pc.empresa_id = alvo.empresa_id)
+         ORDER BY (pc.aquisicao_id = alvo.aquisicao_id) DESC NULLS LAST,
                   pc.is_first_touch DESC, pc.ocorrido_em ASC
          LIMIT 1
       ) t ON TRUE
@@ -101,7 +151,7 @@ async function contexto(evento: LinhaOutbox): Promise<{
 
 /** Entrega um evento do outbox à Meta, se ele deve ser entregue. */
 export async function entregarEventoNaMeta(evento: LinhaOutbox): Promise<ResultadoEntrega> {
-  const regra = regraDoEvento(evento.eventType);
+  const regra = regraDoEvento(tipoNaPolitica(evento.eventType));
   if (!regra) return { entregue: false, motivo: "sem_mapeamento" };
 
   const cred = credenciaisCapi();
@@ -121,7 +171,7 @@ export async function entregarEventoNaMeta(evento: LinhaOutbox): Promise<Resulta
     return { entregue: false, motivo: "sem_identidade" };
   }
 
-  const eventId = idDeterministicoDoEvento(evento.id, regra.nomeMeta);
+  const eventId = idDeterministicoDoEvento(chaveDoFato(evento), regra.nomeMeta);
   const ocorrido = evento.createdAt instanceof Date ? evento.createdAt : new Date(evento.createdAt);
 
   const capi: EventoCapi = {
@@ -166,7 +216,7 @@ export async function registrarEntregaCapi(
       INSERT INTO meta_capi_entregas
         (organizacao_id, outbox_id, event_type, event_name, event_id, entregue, motivo, detalhe)
       VALUES (${evento.organizacaoId}::uuid, ${evento.id}::uuid, ${evento.eventType},
-              ${regraDoEvento(evento.eventType)?.nomeMeta ?? null}, ${r.eventId ?? null},
+              ${regraDoEvento(tipoNaPolitica(evento.eventType))?.nomeMeta ?? null}, ${r.eventId ?? null},
               ${r.entregue}, ${r.motivo ?? null}, ${r.detalhe?.slice(0, 500) ?? null})
       ON CONFLICT (outbox_id) DO UPDATE
         SET entregue = EXCLUDED.entregue, motivo = EXCLUDED.motivo,

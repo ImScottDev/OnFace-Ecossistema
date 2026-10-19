@@ -439,9 +439,14 @@ export async function aplicarEfeitosPosGanho(opts: {
   const { notificarNegocioGanho } = await import("@/lib/crm/notificar");
   await notificarNegocioGanho(negocioId).catch((e) => console.error("[won-evidence] falha ao notificar negócio ganho (best-effort):", e));
 
+  // Valor do ganho para a Meta (conversão `OpportunityWon`): mensalidade + setup
+  // FECHADOS, lidos agora porque o `negocio` recebido pode ser anterior ao Ganho.
+  const [fechado] = await db.select({ mrr: negocios.mrrFechado, setup: negocios.valorSetup }).from(negocios).where(eq(negocios.id, negocioId)).limit(1);
+  const valorDoGanho = Number(fechado?.mrr ?? 0) + Number(fechado?.setup ?? 0);
+
   await publicarEvento({
     organizacaoId, eventType: "DealWon", aggregateType: "negocio", aggregateId: negocioId,
-    payload: { leadId: negocio.leadId, empresaId: negocio.empresaId, contratoId: opts.contratoId ?? null, produto, familiaHint, evidencias: opts.evidencias, motivo },
+    payload: { leadId: negocio.leadId, empresaId: negocio.empresaId, contratoId: opts.contratoId ?? null, produto, familiaHint, evidencias: opts.evidencias, motivo, valor: valorDoGanho > 0 ? valorDoGanho : null },
     idempotencyKey: `deal-won:${negocioId}`,
   });
   if (negocio.leadId) {

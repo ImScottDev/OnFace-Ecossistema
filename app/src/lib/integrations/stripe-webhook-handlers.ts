@@ -140,7 +140,9 @@ export async function handlePaymentConfirmed(session: Record<string, unknown>, c
 
   await publicarEvento({
     organizacaoId: checkout.organizacaoId, eventType: "PaymentCompleted", aggregateType: "checkout", aggregateId: checkout.id,
-    payload: { propostaId: checkout.propostaId, negocioId: checkout.negocioId, grupoComercialId: checkout.grupoComercialId, stripeSessionId },
+    payload: { propostaId: checkout.propostaId, negocioId: checkout.negocioId, grupoComercialId: checkout.grupoComercialId, stripeSessionId,
+      // Em reais, para a conversão `Purchase` da Meta.
+      valor: typeof session.amount_total === "number" ? session.amount_total / 100 : null },
     idempotencyKey: `payment-completed:${checkout.id}`,
   });
 
