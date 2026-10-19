@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { leads, organizacoes } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { criarLead, garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
 import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
 import { dominioDoEmail } from "@/lib/vendas/identidade";
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
-import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
+import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "@/lib/vendas/ponte-canonica";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 import { respostasDoFormularioDoSite } from "@/lib/vendas/respostas-formulario";
 
@@ -148,22 +148,26 @@ export async function POST(req: NextRequest) {
   const userAgent = req.headers.get("user-agent") || null;
   const landingPage = clean(body.landingPage) || req.headers.get("referer") || null;
 
-  // Dedup por email, depois telefone: a mesma captura não pode virar dois leads.
-  let existing: { id: string; tipo: string; responsavelId: string | null; empresaId: string | null } | undefined;
-  if (email) {
-    [existing] = await db
-      .select({ id: leads.id, tipo: leads.tipo, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
-      .from(leads)
-      .where(and(eq(leads.organizacaoId, org.id), eq(leads.email, email)))
-      .limit(1);
-  }
-  if (!existing && telefone) {
-    [existing] = await db
-      .select({ id: leads.id, tipo: leads.tipo, responsavelId: leads.responsavelId, empresaId: leads.empresaId })
-      .from(leads)
-      .where(and(eq(leads.organizacaoId, org.id), eq(leads.telefone, telefone)))
-      .limit(1);
-  }
+  /* A MESMA dedup das outras portas de entrada (`meta-leads`, `rd-lead`).
+   *
+   * Aqui a busca era por igualdade exata (`email = ?`, `telefone = ?`), e era
+   * por isso que a mesma pessoa entrava duas vezes: a Meta grava
+   * "5511963194410" e o formulário do site grava "(11) 96319-4410" — mesmo
+   * telefone, comparação diferente, dedup não casava. E-mail com maiúscula ou
+   * espaço sobrando dava no mesmo. `acharLeadPorContato` compara pela chave
+   * normalizada (E.164 sem o "+", e-mail em minúscula sem espaço) e olha
+   * também o WhatsApp.
+   *
+   * `travarEntrada` fecha a corrida: duas submissões ao mesmo tempo (clique
+   * duplo, retry do integrador) esperam uma pela outra em vez de cada uma
+   * concluir que o lead não existe. */
+  const soltarEntrada = await travarEntrada(org.id, email, telefone);
+  try {
+  const achado = await acharLeadPorContato(org.id, email, telefone);
+  const existing = achado && {
+    id: achado.id, tipo: achado.tipo,
+    responsavelId: achado.responsavelId, empresaId: achado.empresaId,
+  };
 
   // Empresa como entidade, não só texto (senão o lead entra sem vínculo no drawer).
   const empresaIdResolvida = await resolverEmpresaId({
@@ -260,4 +264,7 @@ export async function POST(req: NextRequest) {
     { ok: true, status: "created", leadId: criado.leadId, empresaId: criado.empresaId },
     { status: 201, headers: cors }
   );
+  } finally {
+    soltarEntrada();
+  }
 }
