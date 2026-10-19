@@ -506,6 +506,17 @@ class Logica extends React.Component<any, any> {
         .concat([item("Perdido", () => mover("perdido"), { dot: "flex:0 0 auto;width:8px;height:8px;border-radius:9999px;background:#8b949e" })]),
       maisItens: (aberta ? [item("Marcar como perdida", () => mover("perdido"), cor("#c2330f"))] : [item("Reabrir oportunidade", () => { salva({ etapa: "negociacao", dias: 0 }, "Reaberta em Negociação"); this.setState({ menu: null }); })])
         .concat(aberta ? [item("Delegar a um agente", () => { this.setState({ menu: null }); window.dispatchEvent(new CustomEvent("onface:delegar-agente", { detail: { negocioId: O.id } })); })] : [])
+        /* Inserir em cadência pela ficha, como no Pipeline: as cadências de
+           NEGÓCIO (follow-up pós-proposta) estavam publicadas e aqui não
+           tinham por onde entrar. `O.id` é o negócio — é o mesmo id que
+           "Delegar a um agente" manda em `negocioId` e que
+           `detalheOportunidade` lê de `negocios.id`. */
+        .concat(aberta ? [item("Inserir em cadência", () => {
+          this.setState({ menu: null });
+          if (!this.E) return;
+          window.__ofCadAlvo = { chave: O.id, nome: O.empresa || "Negócio", tipo: "negocio" };
+          this.E.abrir("cadencia", O.id);
+        })] : [])
         .concat([item("Ver no Pipeline", () => ir("/onface-preview/pipeline", "Pipeline", { opp: O.id }))]),
       notaRef: this.notaRef,
       novaAberto: S.menu === "nova", toggleNova: () => this.setState({ menu: S.menu === "nova" ? null : "nova" }),
