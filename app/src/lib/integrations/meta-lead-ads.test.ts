@@ -99,3 +99,38 @@ test("evento sem credencial é config ausente, não integração quebrada", asyn
   assert.equal(r.ok, false);
   assert.equal(r.semCredencial, true, "sem isso, o alerta de integração dispara em ambiente nunca configurado");
 });
+
+/**
+ * O formulário personalizado não usa o nome exato do campo.
+ *
+ * A campanha "TRT | Lead | Aquisição White Label — II" pergunta
+ * `número_do_whatsapp`. O casamento era por igualdade exata contra
+ * ["phone_number", "telefone", "celular", "whatsapp", "phone"], nenhum casava,
+ * e o lead entrava SEM TELEFONE — com o número parado em `campos_custom`.
+ * Medido em produção em 19/10/2026.
+ */
+test("campo do formulário que CONTÉM o sinônimo vira telefone (White Label)", () => {
+  const n = normalizarLeadAds({
+    leadgen_id: "1",
+    field_data: [
+      { name: "número_do_whatsapp", values: ["(11) 96319-4410"] },
+      { name: "qual_seu_maior_interesse?", values: ["White Label"] },
+    ],
+  } as never);
+  assert.equal(n.telefone, "(11) 96319-4410");
+});
+
+test("aproximação não rouba campo de outro papel nem aceita valor sem cara de telefone", () => {
+  const n = normalizarLeadAds({
+    leadgen_id: "2",
+    field_data: [
+      { name: "nome_da_empresa", values: ["Acme"] },
+      { name: "telefone_de_contato", values: ["não tenho"] },
+      { name: "full_name", values: ["Ana Souza"] },
+    ],
+  } as never);
+  assert.equal(n.empresa, "Acme");
+  assert.equal(n.nome, "Ana Souza");
+  // "não tenho" não tem oito dígitos: melhor sem telefone do que com lixo.
+  assert.equal(n.telefone, null);
+});

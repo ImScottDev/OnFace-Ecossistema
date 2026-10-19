@@ -105,6 +105,42 @@ function primeiro(campos: Record<string, string>, nomes: string[]): string | nul
   return null;
 }
 
+/** "número_do_whatsapp" → "numero_do_whatsapp": acento não pode separar campo. */
+const semAcento = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+/** Parece telefone? Oito dígitos é o mínimo de um fixo sem DDD. */
+const temCaraDeTelefone = (v: string) => (v.match(/\d/g) ?? []).length >= 8;
+
+/**
+ * O campo do formulário CONTÉM o sinônimo — "número_do_whatsapp",
+ * "telefone_para_contato", "whatsapp_comercial".
+ *
+ * O casamento era só por igualdade exata, e formulário personalizado nunca
+ * usa o nome exato: a campanha White Label pergunta "número_do_whatsapp" e o
+ * telefone ficava parado em `campos_custom`, com o lead entrando sem telefone
+ * nenhum (medido em 19/10/2026).
+ *
+ * Só roda DEPOIS da igualdade exata, que continua mandando, e nunca toma um
+ * campo que outro papel já levou — é o que impede "nome_da_empresa" de virar
+ * nome. O valor ainda precisa ter cara do que se procura.
+ */
+function porAproximacao(
+  campos: Record<string, string>,
+  nomes: string[],
+  jaUsados: Set<string>,
+  valorServe: (v: string) => boolean = () => true,
+): string | null {
+  for (const [chave, valor] of Object.entries(campos)) {
+    if (jaUsados.has(chave)) continue;
+    const k = semAcento(chave);
+    if (!nomes.some((n) => k.includes(semAcento(n)))) continue;
+    if (!valorServe(valor)) continue;
+    jaUsados.add(chave);
+    return valor;
+  }
+  return null;
+}
+
 /** Une first_name e last_name quando a Meta não mandou full_name. */
 function nomeCompleto(campos: Record<string, string>): string | null {
   const direto = primeiro(campos, SINONIMOS.nome);
@@ -130,13 +166,26 @@ export function normalizarLeadAds(bruto: LeadAdsBruto): LeadAdsNormalizado {
     ? new Date(typeof criadoEm === "number" ? criadoEm * 1000 : criadoEm)
     : null;
 
+  /* A ordem importa: quem é mais específico escolhe primeiro, para que
+     "nome_da_empresa" seja empresa e não nome. `tomados` guarda o que já foi
+     levado, e a aproximação nunca repete um campo. */
+  const tomados = new Set<string>();
+  const email = primeiro(campos, SINONIMOS.email)
+    ?? porAproximacao(campos, SINONIMOS.email, tomados, (v) => v.includes("@"));
+  const telefone = primeiro(campos, SINONIMOS.telefone)
+    ?? porAproximacao(campos, SINONIMOS.telefone, tomados, temCaraDeTelefone);
+  const empresa = primeiro(campos, SINONIMOS.empresa)
+    ?? porAproximacao(campos, SINONIMOS.empresa, tomados);
+  const cargo = primeiro(campos, SINONIMOS.cargo) ?? porAproximacao(campos, SINONIMOS.cargo, tomados);
+  const nome = nomeCompleto(campos) ?? porAproximacao(campos, SINONIMOS.nome, tomados);
+
   return {
     metaLeadId: bruto.leadgen_id ?? null,
-    nome: nomeCompleto(campos),
-    email: primeiro(campos, SINONIMOS.email),
-    telefone: primeiro(campos, SINONIMOS.telefone),
-    empresa: primeiro(campos, SINONIMOS.empresa),
-    cargo: primeiro(campos, SINONIMOS.cargo),
+    nome,
+    email,
+    telefone,
+    empresa,
+    cargo,
     ocorridoEm: ocorridoEm && !Number.isNaN(ocorridoEm.getTime()) ? ocorridoEm : null,
     atribuicao: {
       metaLeadId: bruto.leadgen_id ?? null,
