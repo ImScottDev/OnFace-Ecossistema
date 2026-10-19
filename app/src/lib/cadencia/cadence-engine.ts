@@ -444,6 +444,15 @@ registrarAdapter("ai_agent_message", async (ctx) => {
   }
   if (!contato) return { sucesso: false, erro: "sem contato resolvido para esta entidade" };
   if (contato.botSilencedUntil && contato.botSilencedUntil > new Date()) return { sucesso: false, erro: "contato com bot silenciado (handoff em curso)" };
+  /* Sem agente escolhido no nó, `executeAgent` resolve pelo de MAIOR
+     PRIORIDADE que escuta `cadence.step_due` — e em produção isso é o
+     "Organizador de Pipeline", cujo próprio guardrail diz que ele não trata
+     "mensagem ao cliente", e que roda em modo `approval` (escreve e espera
+     aprovação, não envia). A publicação já recusa nó assim desde 16/10, mas as
+     cadências publicadas ANTES seguem no ar com o defeito: uma rodou em
+     19/10/2026 e o lead nunca recebeu nada. Recusar aqui também, que é onde a
+     mensagem sairia. */
+  if (!config.agent_id) return { sucesso: false, erro: "passo de IA sem agente escolhido — abra a cadência, escolha quem escreve e republique" };
 
   try {
     const result = await executeAgent({
@@ -456,6 +465,17 @@ registrarAdapter("ai_agent_message", async (ctx) => {
       mode: "live",
       suppressEgress: false,
     });
+    /* Passo que não falou com ninguém NÃO é passo cumprido.
+       O agente pode terminar sem enviar nada — autonomia em `approval`
+       (escreve e espera aprovação humana), handoff, ou recusa do guardrail. O
+       adapter devolvia `sucesso: true` nos três casos, e a inscrição avançava
+       para o próximo passo como se o cliente tivesse sido abordado: em
+       19/10/2026 uma cadência pulou do Dia 0 para o Dia 3 com
+       `sentMessageIds: []`. Falhar aqui mantém a inscrição parada e aciona o
+       aviso ao responsável, em vez de fingir que a conversa começou. */
+    if (!result.sentMessageIds?.length) {
+      return { sucesso: false, erro: `o agente terminou em "${result.status}" sem enviar mensagem — confira a autonomia dele (em "aprovação" ele escreve mas não envia) e o escopo permitido` };
+    }
     return { sucesso: true, resultado: { runId: result.runId, status: result.status, sentMessageIds: result.sentMessageIds } };
   } catch (err) {
     const erro = err instanceof Error ? err.message : String(err);
