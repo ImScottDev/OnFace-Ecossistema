@@ -872,7 +872,14 @@ Criar
 Cadências
 </div>
 <div style={{ fontSize: "11.5px", color: "#67787c", lineHeight: "1.4", marginTop: "2px" }}>
-Escolha o fluxo que vai tocar o lead.
+{cad.sub}
+</div>
+<div style={{ display: "flex", alignItems: "center", gap: "7px", height: "32px", marginTop: "9px", padding: "0 10px", borderRadius: "9999px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede" }}>
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#67787c" strokeWidth="2" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
+<circle cx="11" cy="11" r="7" />
+<path d="m20 20-3.5-3.5" />
+</svg>
+<input value={cad.busca} onChange={cad.setBusca} placeholder="Buscar por nome" style={{ flex: "1", minWidth: "0", border: "0", outline: "0", background: "transparent", fontSize: "12.5px", fontFamily: "inherit" }} />
 </div>
 </div>
 <div style={{ flex: "1", minHeight: "0", overflowY: "auto", padding: "0 8px 10px", display: "flex", flexDirection: "column", gap: "3px" }}>
@@ -883,6 +890,9 @@ Escolha o fluxo que vai tocar o lead.
 <span style={estilo(c.ponto)} />
 <span style={{ flex: "1", minWidth: "0", fontSize: "12.5px", fontWeight: "600", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "left" }}>
 {c.nome}
+</span>
+<span style={estilo(c.seloStyle)}>
+{c.selo}
 </span>
 </span>
 <span style={{ display: "flex", alignItems: "center", gap: "7px", width: "100%", marginTop: "4px", paddingLeft: "14px" }}>
@@ -903,6 +913,16 @@ Escolha o fluxo que vai tocar o lead.
 </button>
 </Fragment>
 ))}
+{(cad.vazio) ? (<>
+<div style={{ padding: "32px 10px", textAlign: "center" }}>
+<div style={{ fontSize: "12.5px", fontWeight: "600", color: "#12171d" }}>
+Nenhuma cadência com esse nome
+</div>
+<div style={{ fontSize: "11.5px", color: "#67787c", marginTop: "3px", lineHeight: "1.4" }}>
+Ajuste a busca para ver as outras.
+</div>
+</div>
+</>) : null}
 </div>
 </aside>
 <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", background: "#fff" }}>
@@ -947,9 +967,11 @@ RESUMO DO FLUXO
 <span style={{ display: "block", fontSize: "12.5px", fontWeight: "600", color: "#12171d", lineHeight: "1.35", textWrap: "pretty" }}>
 {p.titulo}
 </span>
-<span style={{ display: "block", fontSize: "11.5px", color: "#4a5560", lineHeight: "1.45", marginTop: "1px", textWrap: "pretty" }}>
+{(p.nota) ? (<>
+<span style={{ display: "block", marginTop: "5px", padding: "8px 10px", borderRadius: "9px", background: "#fafafa", boxShadow: "inset 0 0 0 1px #eef1f1", fontSize: "11.5px", color: "#4a5560", lineHeight: "1.5", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
 {p.nota}
 </span>
+</>) : null}
 </span>
 </div>
 </Fragment>

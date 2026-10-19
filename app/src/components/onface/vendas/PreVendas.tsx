@@ -104,7 +104,10 @@ export interface AcoesPreVendas {
   cadenciasDoSistema: () => Promise<Resultado<{
     /** `entityType` vem junto: a lista traz TODAS as publicadas, e quem desenha
      *  decide o que é elegível para o registro aberto (ver PecasLiga). */
-    cadencias: Array<{ id: string; nome: string; entityType: string; passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
+    /** `visibility`/`minha` alimentam o selo "Só para mim"/"Time todo"; cada
+     *  passo traz a `mensagem` completa, para o painel mostrar o que o fluxo
+     *  realmente diz ao cliente. */
+    cadencias: Array<{ id: string; nome: string; entityType: string; visibility: "shared" | "private"; minha: boolean; passos: Array<{ quando: string; titulo: string; mensagem: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
     whatsapps: Array<{ id: string; numero: string; rotulo: string; padrao: boolean }>;
     email: string | null;
   }>>;

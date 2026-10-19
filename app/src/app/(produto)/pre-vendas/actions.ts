@@ -452,7 +452,7 @@ export async function acaoTagDoLead(
  *  a ligação sai pelo Callface. O modal "Inserir na cadência" lia um catálogo
  *  chumbado de cadências e números que não existiam. */
 export async function acaoCadenciasDoSistema(): Promise<Resultado<{
-  cadencias: Array<{ id: string; nome: string; entityType: string; passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
+  cadencias: Array<{ id: string; nome: string; entityType: string; visibility: "shared" | "private"; minha: boolean; passos: Array<{ quando: string; titulo: string; mensagem: string; canal: "wa" | "tel" | "mail" | "task" }> }>;
   whatsapps: Array<{ id: string; numero: string; rotulo: string; padrao: boolean }>;
   email: string | null;
 }>> {
@@ -465,25 +465,37 @@ export async function acaoCadenciasDoSistema(): Promise<Resultado<{
        modal listava 2, e não havia como saber que as outras eram de negócio.
        Quem decide o que pode ser inscrito é a tela (que sabe o tipo do
        registro aberto); a lista mostra todas e explica a indisponibilidade. */
-    const defs = await db.execute<{ id: string; nome: string; entity_type: string; steps: unknown }>(sql`
-      SELECT id::text, nome, entity_type, steps FROM cadence_definitions
+    const defs = await db.execute<{ id: string; nome: string; entity_type: string; steps: unknown; visibility: string | null; owner_id: string | null }>(sql`
+      SELECT id::text, nome, entity_type, steps, visibility, owner_id::text FROM cadence_definitions
        WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false AND status = 'published'
          AND (visibility = 'shared' OR owner_id = ${ctx.ator.usuarioId}::uuid)
        ORDER BY (entity_type = 'lead') DESC, nome LIMIT 40`);
     const rotuloDia = (min: number) => `Dia ${Math.round(min / 1440)}`;
     const cadencias = [...defs].map((d) => {
-      const passos: Array<{ quando: string; titulo: string; canal: "wa" | "tel" | "mail" | "task" }> = [];
+      const passos: Array<{ quando: string; titulo: string; mensagem: string; canal: "wa" | "tel" | "mail" | "task" }> = [];
       let acum = 0;
       for (const st of (Array.isArray(d.steps) ? d.steps : []) as Array<Record<string, any>>) {
         if (st.tipo === "wait") { acum += Number(st.esperaMinutos) || Math.round((Number(st.config?.duration_ms) || 0) / 60000); continue; }
         if (st.tipo !== "action") continue;
         const quando = rotuloDia(acum);
-        if (["ai_agent_message", "whatsapp", "whatsapp_message", "whatsapp_template"].includes(String(st.adapter))) passos.push({ quando, titulo: st.config?.mensagem ? String(st.config.mensagem).slice(0, 170) : st.adapter === "ai_agent_message" ? "WhatsApp com IA" : "WhatsApp (modelo)", canal: "wa" });
-        else if (st.adapter === "email") passos.push({ quando, titulo: `E-mail${st.config?.assunto ? ": " + st.config.assunto : ""}`, canal: "mail" });
-        else if (st.adapter === "crm_callface_call") passos.push({ quando, titulo: "Ligação pelo Callface", canal: "tel" });
-        else if (st.adapter === "crm_create_task") passos.push({ quando, titulo: `Tarefa${st.config?.titulo ? ": " + st.config.titulo : ""}`, canal: "task" });
+        /* `titulo` é o rótulo do canal e `mensagem` é o texto INTEIRO que vai
+           sair, com as variáveis à mostra. Antes a mensagem entrava no título
+           cortada em 170 caracteres: quem abria o modal não tinha como ler o
+           que a cadência diz ao cliente antes de inscrever alguém nela. */
+        const msg = st.config?.mensagem ? String(st.config.mensagem) : "";
+        if (["ai_agent_message", "whatsapp", "whatsapp_message", "whatsapp_template"].includes(String(st.adapter))) passos.push({ quando, titulo: st.adapter === "ai_agent_message" ? "WhatsApp com IA" : "WhatsApp (modelo)", mensagem: msg, canal: "wa" });
+        else if (st.adapter === "email") passos.push({ quando, titulo: `E-mail${st.config?.assunto ? ": " + st.config.assunto : ""}`, mensagem: msg, canal: "mail" });
+        else if (st.adapter === "crm_callface_call") passos.push({ quando, titulo: "Ligação pelo Callface", mensagem: msg, canal: "tel" });
+        else if (st.adapter === "crm_create_task") passos.push({ quando, titulo: `Tarefa${st.config?.titulo ? ": " + st.config.titulo : ""}`, mensagem: msg, canal: "task" });
       }
-      return { id: d.id, nome: d.nome, entityType: d.entity_type, passos };
+      /* A visibilidade vem para a tela poder dizer "Só para mim" ou "Time
+         todo": a lista mostra cadência pessoal junto da compartilhada e, sem
+         o selo, não havia como saber qual é qual. */
+      return {
+        id: d.id, nome: d.nome, entityType: d.entity_type, passos,
+        visibility: d.visibility === "private" ? "private" as const : "shared" as const,
+        minha: d.owner_id === ctx.ator.usuarioId,
+      };
     });
     const zap = await db.execute<{ id: string; numero: string | null; label: string | null; is_default: boolean }>(sql`
       SELECT id::text, phone_number AS numero, label, is_default FROM whatsapp_sessao

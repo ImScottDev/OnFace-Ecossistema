@@ -390,7 +390,13 @@ class Logica extends React.Component<any, any> {
           k: c.nome, id: c.id, descricao: "",
           tipo: c.entityType || "lead",
           elegivel: (c.entityType || "lead") === tipoAlvo,
-          passos: c.passos.map(p => [p.quando, p.titulo, "", p.canal]),
+          /* A visibilidade vira selo na lista, como nos Templates: cadência
+             pessoal e cadência do time apareciam iguais. */
+          minha: !!c.minha, privada: c.visibility === "private",
+          /* O terceiro campo é a MENSAGEM inteira do passo, que o painel da
+             direita mostra abaixo do título — era "" e o modal só dizia o
+             canal ("WhatsApp com IA"), nunca o que o fluxo fala. */
+          passos: c.passos.map(p => [p.quando, p.titulo, p.mensagem || "", p.canal]),
         }));
         const primeiroElegivel = fluxos.find(f => f.elegivel) || fluxos[0];
         const escolha = S.cadEscolha || (primeiroElegivel && primeiroElegivel.k) || "";
@@ -420,7 +426,19 @@ class Logica extends React.Component<any, any> {
           nome: atual.k,
           descricao: atual.descricao,
           selectStyle: inp,
-          lista: fluxos.map(fx => {
+          /* Busca por nome e contador, no padrão do pop-up de Templates. A
+             busca filtra só o que a lista desenha: a cadência escolhida
+             continua aberta à direita mesmo quando o texto não casa. */
+          busca: S.cadBusca || "",
+          setBusca: (e) => this.setState({ cadBusca: e.target.value }),
+          sub: S.cadCarregando
+            ? "Carregando as cadências publicadas…"
+            : fluxos.length + (fluxos.length === 1 ? " cadência · " : " cadências · ") + fluxos.filter(f => f.minha).length + " suas",
+          vazio: !S.cadCarregando && !!(S.cadBusca || "").trim() && fluxos.filter(fx => fx.k.toLowerCase().includes((S.cadBusca || "").trim().toLowerCase())).length === 0,
+          lista: fluxos.filter(fx => {
+            const q = (S.cadBusca || "").trim().toLowerCase();
+            return !q || fx.k.toLowerCase().includes(q);
+          }).map(fx => {
             const on = fx.k === escolha;
             const c = canaisDe(fx);
             return {
@@ -433,6 +451,9 @@ class Logica extends React.Component<any, any> {
                 ? fx.passos.length + (fx.passos.length === 1 ? " toque" : " toques") + (fx.passos.length ? " · " + fx.passos[fx.passos.length - 1][0].toLowerCase() : "")
                 : "Só para " + (ROTULO_TIPO[fx.tipo] || fx.tipo),
               ponto: "flex:0 0 auto;width:7px;height:7px;border-radius:50%;background:" + (!fx.elegivel ? "#dbdede" : on ? "#fe4f2b" : "#c8ccc9"),
+              selo: fx.privada ? "Só para mim" : "Time todo",
+              seloStyle: "flex:0 0 auto;height:18px;padding:0 6px;border-radius:6px;font-size:10px;font-weight:600;display:inline-flex;align-items:center;white-space:nowrap;"
+                + (fx.privada ? "background:#fff6f4;color:#9c3210" : "background:#eeeff3;color:#4a5560"),
               icones: Object.keys(c).filter(k => k !== "task").map(k => ({ d: ic[k] })),
               style: "display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:9px 10px;border-radius:9px;border:0;text-align:left;transition:background 120ms cubic-bezier(0,0,.2,1);"
                 + (!fx.elegivel ? "cursor:not-allowed;opacity:.55;background:transparent;color:#67787c"
