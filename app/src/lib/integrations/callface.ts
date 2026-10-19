@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, or, sql, desc } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import {
   organizacoes,
@@ -309,6 +309,12 @@ function labelStatus(status: string | undefined): string {
   return map[String(status || "").toUpperCase()] || String(status || "finalizada").toLowerCase();
 }
 
+/** A chamada completou? Só então existe trabalho concluído para fechar tarefa.
+ *  Perdida e não atendida deixam a tarefa de pé: ninguém falou com ninguém. */
+function ehAtendida(status: string | undefined): boolean {
+  return ["FINISHED", "ANSWERED"].includes(String(status || "").toUpperCase());
+}
+
 /**
  * Processa UM evento de ligação finalizada. Idempotente: o retry da Callface (ou da
  * fila) com o mesmo call_id não duplica nada — o insert em `ligacoes` tem
@@ -464,6 +470,32 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
       },
       duracaoSegundos: typeof payload.call_duration === "number" ? Math.round(payload.call_duration) : null,
     });
+
+    /* A tarefa de LIGAR que motivou a chamada se fecha sozinha.
+     *
+     * Antes não fechava: quem ligava pela tarefa via a ligação entrar na
+     * timeline e a tarefa continuar aberta e atrasada, cobrando um trabalho
+     * que já tinha sido feito. Fechar à mão também não dava, porque a lista
+     * não tinha o botão (corrigido no mesmo commit).
+     *
+     * Fecha só o que é inequívoco: tarefa de ligação ABERTA do mesmo lead (ou
+     * do negócio dele). Tarefa de outro tipo não se presume feita por uma
+     * ligação, e tarefa já concluída não se reescreve. Se a chamada não foi
+     * atendida, não há trabalho concluído — a tarefa fica de pé.
+     */
+    if (ehAtendida(payload.call_status)) {
+      await db.update(tarefas)
+        .set({ concluida: true, concluidaEm: new Date() })
+        .where(and(
+          eq(tarefas.organizacaoId, orgId),
+          eq(tarefas.concluida, false),
+          sql`lower(coalesce(${tarefas.tipo}, '')) IN ('ligacao', 'ligação', 'call')`,
+          lead.negocioAtivoId
+            ? or(eq(tarefas.leadId, lead.id), eq(tarefas.negocioId, lead.negocioAtivoId))
+            : eq(tarefas.leadId, lead.id),
+        ))
+        .catch((e) => console.error("[Callface] falha ao concluir a tarefa de ligação:", e));
+    }
 
     // Ligação é atividade real: reseta o relógio do badge de tempo no board de pré-vendas
     // e, se o lead tiver negócio ativo, no Pipeline também (mesmo negócio já usado acima em `negocioId`).

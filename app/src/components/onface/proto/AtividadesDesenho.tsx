@@ -207,6 +207,16 @@ Foco de hoje
 {(gp.itens ?? []).map((c: any, i2: number) => (
 <Fragment key={c?.id ?? c?.chave ?? i2}>
 <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 6px", borderRadius: "10px", boxShadow: "inset 0 -1px 0 #f1f3f3" }} className={[hover("background:#fafafa")].filter(Boolean).join(" ")}>
+{/* Marcar como feita SEM sair da lista. O dado já existia (`concluir` e
+    `check2` vinham montados na linha) e só o botão faltava: quem fazia a
+    ligação ficava com a tarefa aberta e sem como fechá-la daqui. */}
+<button onClick={c.concluir} aria-label={c.feita ? "Reabrir" : "Marcar como feita"} title={c.feita ? "Reabrir" : "Marcar como feita"} style={estilo(c.check2)}>
+{(c.feita) ? (<>
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+<path d="M20 6L9 17l-5-5" />
+</svg>
+</>) : null}
+</button>
 <button onClick={c.abrir} style={{ flex: "1", minWidth: "0", padding: "0", border: "0", background: "transparent", textAlign: "left", cursor: "pointer" }}>
 <span style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: "0" }}>
 <span style={{ fontSize: "13.5px", fontWeight: "500", color: "#12171d", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
