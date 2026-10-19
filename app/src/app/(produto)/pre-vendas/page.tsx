@@ -13,7 +13,7 @@ import {
   acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
   acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
   acaoRegistrarContato, acaoSalvarQualificacao,
-  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa, acaoRemoverDaCadencia, acaoInserirCadenciaDoLead, acaoInserirEmCadencia, acaoAlternarCadenciaDoLead,
+  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa, acaoCriarCadenciaRascunho, acaoRemoverDaCadencia, acaoInserirCadenciaDoLead, acaoInserirEmCadencia, acaoAlternarCadenciaDoLead,
 } from "./actions";
 
 export const metadata = { title: "Pré-vendas" };
@@ -101,6 +101,7 @@ export async function PreVendasPage({ searchParams }: {
         atribuirEmMassa: acaoAtribuirEmMassa,
         tag: acaoTagDoLead, tagsDaOrg: acaoOpcoesEmMassa,
         cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa,
+        criarCadenciaRascunho: acaoCriarCadenciaRascunho,
         removerDaCadencia: acaoRemoverDaCadencia, pausarCadencia: acaoPausarCadenciaDoLead, alternarCadencia: acaoAlternarCadenciaDoLead, inserirCadencia: acaoInserirCadenciaDoLead, inserirEmCadencia: acaoInserirEmCadencia,
       }}
     />

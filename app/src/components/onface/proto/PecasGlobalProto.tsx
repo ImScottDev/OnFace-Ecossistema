@@ -27,7 +27,7 @@ import {
   acaoRegistrarContato, acaoResponsaveis, acaoSalvarQualificacao,
   acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa,
   acaoRemoverDaCadencia, acaoInserirCadenciaDoLead, acaoEstadoCadenciaDoLead,
-  acaoInserirEmCadencia,
+  acaoInserirEmCadencia, acaoCriarCadenciaRascunho,
 } from "@/app/(produto)/pre-vendas/actions";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
 import { acaoPausarCadenciaDoLead } from "@/app/(produto)/contatos/actions";
@@ -46,6 +46,7 @@ const ACOES: AcoesPreVendas = {
   associarEmpresa: acaoAssociarEmpresa, detalhe: acaoDetalhe, criarTarefa: acaoCriarTarefa,
   atribuirEmMassa: acaoAtribuirEmMassa, tag: acaoTagDoLead, tagsDaOrg: acaoOpcoesEmMassa,
   cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa,
+  criarCadenciaRascunho: acaoCriarCadenciaRascunho,
   removerDaCadencia: acaoRemoverDaCadencia,
   inserirCadencia: acaoInserirCadenciaDoLead, pausarCadencia: acaoPausarCadenciaDoLead,
   inserirEmCadencia: acaoInserirEmCadencia,

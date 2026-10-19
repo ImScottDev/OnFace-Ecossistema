@@ -115,6 +115,10 @@ export interface AcoesPreVendas {
     whatsapps: Array<{ id: string; numero: string; rotulo: string; padrao: boolean }>;
     email: string | null;
   }>>;
+  /** Cria a cadência pelo próprio pop-up, como os Templates de mensagem criam
+   *  template sem sair do pop-up. Ela nasce RASCUNHO: os passos se configuram
+   *  em Automações. 'private' = só para quem criou; 'shared' = time todo. */
+  criarCadenciaRascunho?: (nome: string, tipo: string, visibilidade: "private" | "shared") => Promise<Resultado<{ id: string; nome: string; entityType: string }>>;
   removerDaCadencia: (leadId: string) => Promise<Resultado<{ canceladas: number }>>;
   pausarCadencia?: (leadId: string, pausar: boolean) => Promise<Resultado<null>>;
   alternarCadencia?: (leadId: string) => Promise<Resultado<{ pausada: boolean }>>;

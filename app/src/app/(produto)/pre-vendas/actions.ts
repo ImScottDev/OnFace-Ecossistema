@@ -702,6 +702,83 @@ export async function acaoInserirEmCadencia(
   });
 }
 
+/**
+ * Cria uma cadência pelo próprio pop-up de "Inserir na cadência", como os
+ * Templates de mensagem criam template sem sair do pop-up.
+ *
+ * Ela nasce RASCUNHO e inativa, sem passo nenhum: passo se configura em
+ * Automações. O que se resolve aqui é o que a pessoa já sabe na hora — nome,
+ * para quem a cadência serve (só ela ou o time todo) e o tipo de registro.
+ * Mentir que está pronta para uso seria pior: o motor não tem o que executar.
+ *
+ * Grava a definição, a versão 1 e o ponteiro de rascunho na MESMA transação,
+ * igual à rota `POST /automacoes/cadencias` (api-server/routes/automacoes-cadencias.ts):
+ * definição sem versão nem ponteiro abre no editor de Automações sem grafo.
+ */
+export async function acaoCriarCadenciaRascunho(
+  nome: string, tipo: string, visibilidade: "private" | "shared",
+): Promise<Resultado<{ id: string; nome: string; entityType: string }>> {
+  const ctx = await getTenantContext();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  const limpo = (nome ?? "").trim();
+  if (!limpo) return { ok: false, erro: "Dê um nome para a cadência." };
+  if (limpo.length > 120) return { ok: false, erro: "O nome não pode passar de 120 caracteres." };
+  if (!ehTipoInscrivel(tipo)) return { ok: false, erro: `Não dá para criar cadência de tipo "${tipo}".` };
+  /* A mesma permissão que a rota de Automações exige para criar: o pop-up é
+     outro caminho para a mesma escrita, não um atalho em volta dela. */
+  const { temPermissao } = await import("@/lib/auth/permissoes");
+  const pode = await temPermissao(
+    { usuarioId: ctx.userId, organizacaoId: ctx.organizacaoId, role: ctx.userRole, tipo: "HUMAN" },
+    "automation.manage",
+  );
+  if (!pode) return { ok: false, erro: "Você não tem permissão para criar cadências." };
+  return executar("criar cadência", async () => {
+    const [{ compileFollowupGraph }, { createEmptyFollowupGraph }, { dadosDeCriacaoDaCadencia }, esquema] = await Promise.all([
+      import("@/lib/ai-platform/followup/compile"),
+      import("@/lib/ai-platform/followup/graph"),
+      import("@/lib/cadencia/acesso"),
+      import("@/lib/db/schema"),
+    ]);
+    /* O banco guarda "personal" (CHECK da migration 0129); "private" é a
+       palavra da tela. Converter aqui, e não espalhar as duas pelo código. */
+    const visibility = visibilidade === "private" ? "personal" as const : "shared" as const;
+    const graph = createEmptyFollowupGraph();
+    const compiled = compileFollowupGraph(graph);
+    const triggerConfig = { event: "manual", filters: {} };
+    const handoffPolicy = { mode: "pause_on_reply" };
+    const id = await db.transaction(async (tx) => {
+      const [cadencia] = await tx.insert(esquema.cadenceDefinitions).values({
+        organizacaoId: ctx.organizacaoId,
+        ...dadosDeCriacaoDaCadencia(ctx.userId, visibility),
+        nome: limpo,
+        entityType: tipo,
+        steps: compiled,
+        draftSteps: compiled,
+        triggerConfig,
+        handoffPolicy,
+        status: "draft",
+        ativo: false,
+      }).returning({ id: esquema.cadenceDefinitions.id });
+      const [versao] = await tx.insert(esquema.cadenceVersions).values({
+        organizacaoId: ctx.organizacaoId,
+        cadenceDefinitionId: cadencia.id,
+        versionNumber: 1,
+        status: "draft",
+        graph,
+        compiledSteps: compiled,
+        triggerConfig,
+        handoffPolicy,
+        createdById: ctx.userId,
+      }).returning({ id: esquema.cadenceVersions.id });
+      await tx.insert(esquema.cadenceDefinitionPointers).values({
+        organizacaoId: ctx.organizacaoId, cadenceDefinitionId: cadencia.id, draftVersionId: versao.id,
+      });
+      return cadencia.id;
+    });
+    return { id, nome: limpo, entityType: tipo };
+  });
+}
+
 /** O nome antigo, mantido porque meia dúzia de telas chama por ele. */
 export async function acaoInserirCadenciaDoLead(
   leadId: string, cadenciaId: string, sessaoId?: string | null,

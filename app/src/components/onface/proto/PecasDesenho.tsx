@@ -881,6 +881,14 @@ Cadências
 </svg>
 <input value={cad.busca} onChange={cad.setBusca} placeholder="Buscar por nome" style={{ flex: "1", minWidth: "0", border: "0", outline: "0", background: "transparent", fontSize: "12.5px", fontFamily: "inherit" }} />
 </div>
+<button onClick={cad.abrirNovo} style={estilo(cad.novoStyle)} className={[hover("opacity:.9")].filter(Boolean).join(" ")}>
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ flex: "0 0 auto" }}>
+<path d="M12 5v14M5 12h14" />
+</svg>
+<span>
+Nova cadência
+</span>
+</button>
 </div>
 <div style={{ flex: "1", minHeight: "0", overflowY: "auto", padding: "0 8px 10px", display: "flex", flexDirection: "column", gap: "3px" }}>
 {(cad.lista ?? []).map((c: any, i1: number) => (
@@ -942,6 +950,66 @@ Ajuste a busca para ver as outras.
 </button>
 </div>
 <div style={{ flex: "1", minHeight: "0", overflowY: "auto", overflowX: "hidden", padding: "15px 17px 17px", display: "flex", flexDirection: "column", gap: "16px" }}>
+{(cad.modoForm) ? (<>
+<div>
+<div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", color: "#67787c", marginBottom: "8px" }}>
+NOME
+</div>
+<input value={cad.form.nome} onChange={cad.form.setNome} placeholder="Ex.: Retomada de lead frio" autoFocus style={estilo(cad.form.nomeStyle)} />
+</div>
+<div>
+<div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", color: "#67787c", marginBottom: "8px" }}>
+QUEM PODE USAR
+</div>
+<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+{(cad.form.escopos ?? []).map((o: any, i1: number) => (
+<Fragment key={o?.id ?? o?.chave ?? i1}>
+<button onClick={o.onClick} style={estilo(o.style)}>
+<span style={{ fontSize: "12.5px", fontWeight: "600" }}>
+{o.label}
+</span>
+<span style={estilo(o.notaStyle)}>
+{o.nota}
+</span>
+</button>
+</Fragment>
+))}
+</div>
+</div>
+<div>
+<div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", color: "#67787c", marginBottom: "8px" }}>
+TIPO DE REGISTRO
+</div>
+<div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+{(cad.form.tipos ?? []).map((t: any, i1: number) => (
+<Fragment key={t?.id ?? t?.chave ?? i1}>
+<button onClick={t.onClick} style={estilo(t.style)}>
+{t.label}
+</button>
+</Fragment>
+))}
+</div>
+<div style={{ fontSize: "11.5px", color: "#67787c", marginTop: "7px", lineHeight: "1.45", textWrap: "pretty" }}>
+Só esse tipo de registro entra nela. Uma cadência de lead não recebe negócio.
+</div>
+</div>
+<div style={{ padding: "11px 12px", borderRadius: "11px", background: "#fafafa", boxShadow: "inset 0 0 0 1px #eef1f1" }}>
+<div style={{ fontSize: "12px", fontWeight: "600", color: "#12171d" }}>
+Ela nasce como rascunho
+</div>
+<div style={{ fontSize: "11.5px", color: "#4a5560", marginTop: "3px", lineHeight: "1.5", textWrap: "pretty" }}>
+Os passos (canal, mensagem e o dia de cada toque) se configuram em Automações. Enquanto não publicar, ela aparece aqui apagada e não recebe ninguém.
+</div>
+<a href={cad.form.href} style={{ display: "inline-flex", alignItems: "center", gap: "5px", marginTop: "8px", fontSize: "11.5px", fontWeight: "600", color: "#c2330f", textDecoration: "none" }}>
+<span>
+Abrir Cadências em Automações
+</span>
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+<path d="M7 17 17 7M9 7h8v8" />
+</svg>
+</a>
+</div>
+</>) : (<>
 <div>
 <div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: ".08em", color: "#67787c", marginBottom: "10px" }}>
 RESUMO DO FLUXO
@@ -1032,7 +1100,21 @@ DISPARAR A PARTIR DE
 ))}
 </div>
 </div>
+</>)}
 </div>
+{(cad.modoForm) ? (<>
+<div style={{ flex: "0 0 auto", padding: "12px 17px", borderTop: "1px solid #e3e7e8", background: "#fafafa", display: "flex", gap: "9px", alignItems: "center" }}>
+<span style={{ flex: "1", minWidth: "0", fontSize: "11.5px", color: "#4a5560", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+{cad.form.aviso}
+</span>
+<button onClick={cad.form.cancelar} style={{ height: "34px", padding: "0 14px", borderRadius: "8px", background: "#fff", boxShadow: "inset 0 0 0 1px #dbdede", fontSize: "12.5px", fontWeight: "500", whiteSpace: "nowrap", flex: "0 0 auto", border: "0", cursor: "pointer" }} className={[hover("background:#f1f3f3")].filter(Boolean).join(" ")}>
+Voltar
+</button>
+<button onClick={cad.form.criar} style={estilo(cad.form.btnStyle)}>
+{cad.form.btnLabel}
+</button>
+</div>
+</>) : (<>
 <div style={{ flex: "0 0 auto", padding: "12px 17px", borderTop: "1px solid #e3e7e8", background: "#fafafa", display: "flex", gap: "9px", alignItems: "center" }}>
 <span style={{ flex: "1", minWidth: "0", fontSize: "11.5px", color: "#4a5560", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
 {cad.rodape}
@@ -1044,6 +1126,7 @@ Cancelar
 {cad.btnLabel}
 </button>
 </div>
+</>)}
 </div>
 </div>
 </div>

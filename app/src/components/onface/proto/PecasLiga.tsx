@@ -111,7 +111,7 @@ class Logica extends React.Component<any, any> {
       cadPausada: false, cadPausadas: d.cadenciasPausadas || {}, nutrir: false, motivo: null, data: "",
       atvAberta: false, atvModo: "ver", atvDraft: null,
       cadPicker: false, timelineTudo: false, secDrawer: null,
-      cadModal: false, cadEscolha: null, cadOrigens: {},
+      cadModal: false, cadEscolha: null, cadOrigens: {}, cadForm: null,
       tagMenu: null, tagRect: null, tagNova: "",
       intMenu: false, intRect: null, dropMenu: null, dropRect: null, convAberto: false, convTexto: "",
       saidaMenu: false,
@@ -150,7 +150,8 @@ class Logica extends React.Component<any, any> {
       if (this.state.dropMenu) return this.setState({ dropMenu: null });
       if (this.state.intMenu) return this.setState({ intMenu: false });
       if (this.state.tagMenu) return this.setState({ tagMenu: null });
-      if (this.state.cadModal) return this.setState({ cadModal: false });
+      if (this.state.cadForm) return this.setState({ cadForm: null });
+      if (this.state.cadModal) return this.setState({ cadModal: false, cadForm: null });
       if (this.state.qualMenu) return this.setState({ qualMenu: false });
       if (this.state.qualAberto) return this.setState({ qualAberto: false, qualDados: {}, qualMenu: false });
       if (this.state.vincAberto) return this.setState({ vincAberto: false });
@@ -239,7 +240,7 @@ class Logica extends React.Component<any, any> {
     if (peca === "cadencia") {
       const alvo = window.__ofCadAlvo || null;
       window.__ofCadAlvo = null;
-      this.setState(Object.assign({}, base, { cadModal: true, cadEscolha: null, cadAlvo: alvo }), () => this.carregarCadencias());
+      this.setState(Object.assign({}, base, { cadModal: true, cadEscolha: null, cadAlvo: alvo, cadForm: null }), () => this.carregarCadencias());
       return;
     }
   }
@@ -435,11 +436,59 @@ class Logica extends React.Component<any, any> {
         const estiloSel = { width: "100%", height: "36px", padding: "0 30px 0 11px", borderRadius: "8px", background: "#fff", outline: 0, fontSize: "12.5px", fontFamily: "inherit", border: "1px solid #dbdede", appearance: "none", cursor: "pointer", color: "#1f252c" };
         const precisa = Object.keys(bancos).filter(k => usa[k]);
         const valorDe = (k) => numeros[k] || (bancos[k][0] ? bancos[k][0][0] : "");
+        /* Criar cadência SEM sair do pop-up, como o "+ Novo template" do pop-up
+           de Templates de mensagem: quem está inserindo alguém numa cadência e
+           descobre que a que precisa não existe não tem de abandonar a tela.
+           A cadência nasce RASCUNHO — passo se configura em Automações — e o
+           formulário diz isso em vez de fingir que já está no ar. */
+        const F = S.cadForm;
+        const setF = (p) => this.setState(s => ({ cadForm: Object.assign({}, s.cadForm, p) }));
+        const TIPOS_NOVA = ["lead", "contato", "negocio"];
+        const tipoNova = (F && F.tipo) || (TIPOS_NOVA.includes(tipoAlvo) ? tipoAlvo : "lead");
+        const escopoNova = (F && F.escopo) || "meu";
+        const okF = !!(F && (F.nome || "").trim());
         return {
           aberto: !!S.cadModal,
-          fechar: () => this.setState({ cadModal: false }),
-          nome: atual.k,
-          descricao: atual.descricao,
+          fechar: () => this.setState({ cadModal: false, cadForm: null }),
+          nome: F ? "Nova cadência" : atual.k,
+          descricao: F
+            ? "Ela nasce como rascunho. Os passos (quem fala, por qual canal, em que dia) se configuram em Automações."
+            : atual.descricao,
+          modoForm: !!F, modoLista: !F,
+          abrirNovo: () => this.setState({ cadForm: { nome: "", tipo: tipoNova, escopo: "meu" } }),
+          novoStyle: "display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:30px;margin-top:9px;border-radius:9999px;border:0;cursor:pointer;font-size:12px;font-weight:600;background:#12171d;color:#fff",
+          form: F ? {
+            nome: F.nome || "", setNome: (e) => setF({ nome: e.target.value }),
+            nomeStyle: "width:100%;height:36px;padding:0 11px;border-radius:8px;background:#fff;outline:0;font-size:12.5px;font-family:inherit;border:1px solid #dbdede;color:#1f252c",
+            escopos: [["meu", "Só para mim", "Aparece só na sua lista"], ["todos", "Para todo o time", "Todo mundo pode usar"]].map(([k, l, n]) => ({
+              label: l, nota: n, onClick: () => setF({ escopo: k }),
+              style: "display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:10px 12px;border-radius:11px;border:0;cursor:pointer;text-align:left;"
+                + (escopoNova === k ? "background:#12171d;color:#fff" : "background:#fff;color:#12171d;box-shadow:inset 0 0 0 1px #dbdede"),
+              notaStyle: "display:block;font-size:11.5px;" + (escopoNova === k ? "color:#a3a8a4" : "color:#67787c"),
+            })),
+            tipos: TIPOS_NOVA.map(k => ({
+              label: { lead: "Lead", contato: "Contato", negocio: "Negócio" }[k] || k, onClick: () => setF({ tipo: k }),
+              style: "height:30px;padding:0 12px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;white-space:nowrap;"
+                + (tipoNova === k ? "font-weight:600;background:#12171d;color:#fff" : "font-weight:500;background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede"),
+            })),
+            aviso: "Rascunho — para usar, configure os passos em Automações e publique.",
+            href: "/automacoes/cadencias",
+            cancelar: () => this.setState({ cadForm: null }),
+            btnLabel: "Criar rascunho",
+            btnStyle: "height:34px;padding:0 15px;border-radius:8px;font-size:12.5px;font-weight:600;white-space:nowrap;flex:0 0 auto;border:0;"
+              + (okF ? "background:#d93c1a;color:#fff;cursor:pointer" : "background:#eeeff3;color:#a3a8a4;cursor:not-allowed"),
+            criar: async () => {
+              if (!okF) return;
+              const criar = this.props.acoes && this.props.acoes.criarCadenciaRascunho;
+              if (typeof criar !== "function") return this.diz("Criar cadência não está disponível nesta tela", "erro");
+              const r = await criar((F.nome || "").trim(), tipoNova, escopoNova === "meu" ? "private" : "shared");
+              if (!r || !r.ok) return this.diz((r && r.erro) || "Não consegui criar a cadência", "erro");
+              /* Recarrega a lista do servidor: a nova entra nela já apagada,
+                 com "Rascunho — publique em Automações", que é a verdade. */
+              this.setState({ cadForm: null, cadEscolha: r.dados.nome, cadBusca: "" }, () => this.carregarCadencias());
+              this.diz("“" + r.dados.nome + "” criada como rascunho" + (escopoNova === "meu" ? " · só você vê" : " para todo o time") + ". Configure os passos em Automações.", "ok");
+            },
+          } : {},
           selectStyle: inp,
           /* Busca por nome e contador, no padrão do pop-up de Templates. A
              busca filtra só o que a lista desenha: a cadência escolhida
@@ -775,7 +824,7 @@ class Logica extends React.Component<any, any> {
         this.setState((s) => ({ cadPausada: proximo, cadPausadas: { ...s.cadPausadas, [L0.id]: proximo } }));
         this.diz(proximo ? "Cadência pausada no motor." : "Cadência retomada no motor.", "ok");
       },
-      abrirPicker: () => { this.setState({ cadModal: true, cadEscolha: cadAtual || null }); this.carregarCadencias(); },
+      abrirPicker: () => { this.setState({ cadModal: true, cadEscolha: cadAtual || null, cadForm: null }); this.carregarCadencias(); },
       removerCad: async () => {
         const rem = this.props.acoes && this.props.acoes.removerDaCadencia;
         if (typeof rem !== "function") return this.diz("Remoção indisponível nesta tela.", "erro");
