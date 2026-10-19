@@ -8,6 +8,7 @@
  */
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import { TIPO_NA_POLITICA } from "./entrega-capi";
 import { POLITICA_EVENTOS, credenciaisCapi, credenciaisLeadAds } from "@onface/integrations-meta";
 
 export interface EventoTracking {
@@ -48,7 +49,10 @@ export async function estadoDoTracking(organizacaoId: string): Promise<EstadoTra
            max(criado_em) FILTER (WHERE entregue)::text AS ultima
       FROM meta_capi_entregas WHERE organizacao_id = ${org} GROUP BY event_type`);
 
-  const tipos = Object.keys(POLITICA_EVENTOS);
+  // O que o ONFACE publica no fechamento (DealWon, PaymentCompleted) tem outro
+  // nome que a política; conta-se pelos dois.
+  const tiposDe = (politica: string) => [politica, ...Object.entries(TIPO_NA_POLITICA).filter(([, v]) => v === politica).map(([k]) => k)];
+  const tipos = Object.keys(POLITICA_EVENTOS).flatMap(tiposDe);
   const ocorrencias = await db.execute<{ event_type: string; n: number }>(sql`
     SELECT event_type, count(*)::int AS n FROM event_outbox
      WHERE organizacao_id = ${org} AND event_type IN (${sql.join(tipos.map((t) => sql`${t}`), sql`, `)})
@@ -64,8 +68,11 @@ export async function estadoDoTracking(organizacaoId: string): Promise<EstadoTra
       FROM meta_capi_entregas WHERE organizacao_id = ${org} AND NOT entregue
      ORDER BY criado_em DESC LIMIT 5`);
 
+  const soma = <T,>(politica: string, f: (t: string) => T | undefined, vazio: T, junta: (a: T, b: T) => T) =>
+    tiposDe(politica).reduce((acc, t) => junta(acc, f(t) ?? vazio), vazio);
   const porTipo = new Map(entregas.map((e) => [e.event_type, e]));
   const nOutbox = new Map(ocorrencias.map((o) => [o.event_type, o.n]));
+  const mais = (a: number, b: number) => a + b;
 
   return {
     credenciais: {
@@ -77,11 +84,11 @@ export async function estadoDoTracking(organizacaoId: string): Promise<EstadoTra
     },
     leads: { total30d: leads?.n ?? 0, ultimo: leads?.ultimo ?? null },
     eventos: Object.entries(POLITICA_EVENTOS).map(([tipo, r]) => ({
-      eventoOnface: tipo, nomeMeta: r.nomeMeta, padrao: r.padrao, comValor: r.comValor, porque: r.porque,
-      ocorreu: nOutbox.get(tipo) ?? 0,
-      entregues: porTipo.get(tipo)?.entregues ?? 0,
-      falhas: porTipo.get(tipo)?.falhas ?? 0,
-      ultimaEntrega: porTipo.get(tipo)?.ultima ?? null,
+      eventoOnface: tiposDe(tipo).filter((t) => t !== tipo).concat(tipo).slice(0, 1)[0], nomeMeta: r.nomeMeta, padrao: r.padrao, comValor: r.comValor, porque: r.porque,
+      ocorreu: soma(tipo, (t) => nOutbox.get(t), 0, mais),
+      entregues: soma(tipo, (t) => porTipo.get(t)?.entregues, 0, mais),
+      falhas: soma(tipo, (t) => porTipo.get(t)?.falhas, 0, mais),
+      ultimaEntrega: tiposDe(tipo).map((t) => porTipo.get(t)?.ultima ?? null).filter(Boolean).sort().pop() ?? null,
     })),
     falhasRecentes: falhas.map((f) => ({ evento: f.event_name ?? "—", motivo: f.motivo, detalhe: f.detalhe, quando: f.quando })),
   };

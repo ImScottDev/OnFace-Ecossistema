@@ -72,7 +72,6 @@ export default function TrackingPage() {
   if (isError || !s) return <div className="aj-vazio"><strong>{(error as Error)?.message ?? "Erro ao carregar."}</strong></div>;
 
   const c = s.credenciais;
-  const semFechamento = s.eventos.filter((e) => e.comValor && e.entregues === 0 && e.ocorreu === 0);
 
   return (
     <div className="aj-secoes">
@@ -82,14 +81,6 @@ export default function TrackingPage() {
           Test Events e <strong>não contam como conversão</strong>. Remova <code>META_CAPI_TEST_EVENT_CODE</code> do ambiente.
         </p>
       )}
-      {semFechamento.length > 0 && (
-        <p className="aj-aviso" role="status">
-          <strong>Venda ganha e pagamento ainda não voltam para a Meta:</strong>{" "}
-          {semFechamento.map((e) => e.nomeMeta).join(" e ")} nunca foram disparados. Qualificação, reunião e proposta já vão;
-          o fechamento não.
-        </p>
-      )}
-
       <SecaoAjuste
         titulo="Conversions API (Meta)"
         ajuda="Devolve à Meta o que aconteceu com o lead que veio do anúncio, para a campanha otimizar por qualidade e não por formulário. As credenciais ficam no servidor, configuradas pelo time técnico."

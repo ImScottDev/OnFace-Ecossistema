@@ -64,7 +64,7 @@ interface LinhaOutbox {
  * A tradução fica aqui, na borda, para a política continuar falando só do
  * vocabulário da Meta.
  */
-const TIPO_NA_POLITICA: Record<string, string> = {
+export const TIPO_NA_POLITICA: Record<string, string> = {
   DealWon: "OpportunityWon",
   PaymentCompleted: "PaymentConfirmed",
 };
