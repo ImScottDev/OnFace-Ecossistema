@@ -122,7 +122,13 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
         id = criado.cadencia.id as string;
         // Guarda o id criado: se o publish falhar, a nova tentativa salva na
         // mesma cadência em vez de criar uma duplicada.
-        setEditor({ ...atual, id });
+        //
+        // E guarda TAMBÉM o que acabou de ser salvo: o editor é remontado
+        // pela troca da `key` (de "nova" para o id), e remontar com o grafo
+        // de abertura jogava fora os passos que a pessoa tinha acabado de
+        // salvar — a tela voltava ao fluxo vazio depois de um salvamento
+        // bem-sucedido.
+        setEditor({ ...atual, id, nome: corpo.nome, entityType: corpo.entityType, visibility: corpo.visibility, grafo: corpo.grafo as CadenciaEditavel["grafo"] });
       }
       if (publicar) await request(`/api/automacoes/cadencias/${id}`, json("PATCH", { action: "publish" }));
       toast.success(publicar ? "Cadência publicada." : "Rascunho salvo.");
@@ -140,10 +146,11 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
   const totais = useMemo(() => cadencias.reduce((acc, cd) => {
     const s = cd.enrollmentsPorStatus;
     acc.publicadas += cd.ativo ? 1 : 0;
+    acc.rascunhos += cd.ativo ? 0 : 1;
     acc.emCurso += (s.active ?? 0) + (s.waiting ?? 0) + (s.waiting_reply ?? 0);
     acc.falhas += s.failed ?? 0;
     return acc;
-  }, { publicadas: 0, emCurso: 0, falhas: 0 }), [cadencias]);
+  }, { publicadas: 0, rascunhos: 0, emCurso: 0, falhas: 0 }), [cadencias]);
   const legado = flows.data?.mecanismosParalelos.cadenciaSdrInboundExecucoes ?? 0;
 
   const verInscricoes = (st: string) => { setAba("inscricoes"); setStatus(st); setFluxo("all"); };
@@ -175,6 +182,7 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
       />
       <PaginaResumo itens={[
         { rotulo: "Cadências", valor: flows.isLoading ? "—" : cadencias.length, destaque: true, detalhe: flows.isLoading ? undefined : `${totais.publicadas} publicada(s)` },
+        { rotulo: "Não publicadas", valor: flows.isLoading ? "—" : totais.rascunhos, detalhe: "rascunho ou pausada" },
         { rotulo: "Em curso", valor: flows.isLoading ? "—" : totais.emCurso, detalhe: "ativas ou aguardando", aoSelecionar: () => verInscricoes("em_curso"), ativo: aba === "inscricoes" && status === "em_curso" },
         { rotulo: "Falhas", valor: flows.isLoading ? "—" : totais.falhas, sinal: true, aoSelecionar: () => verInscricoes("failed"), ativo: aba === "inscricoes" && status === "failed" },
       ]} />
@@ -255,6 +263,9 @@ function ListaCadencias({ cadencias, loading, error, podeGerenciar, onNova, onEd
   );
   return (
     <ul className="ofx-tabela ofc-tabela">
+      <li className="ofc-cab" aria-hidden="true">
+        <span>Cadência</span><span>Entra quando</span><span>Estado</span><span>Passos</span><span>Em curso</span><span>Falhas</span><span>Ações</span>
+      </li>
       {cadencias.map((cd) => {
         const s = cd.enrollmentsPorStatus;
         const emCurso = (s.active ?? 0) + (s.waiting ?? 0) + (s.waiting_reply ?? 0);
@@ -326,6 +337,9 @@ function ListaInscricoes({ data, loading, error, podeGerenciar, busy, status, fl
           </div>
         ) : (
           <ul className="ofx-tabela ofc-tabela-fila">
+            <li className="ofc-cab" aria-hidden="true">
+              <span>Registro</span><span>Cadência</span><span>Passo atual</span><span>Próxima execução</span><span>Status</span><span>Ações</span>
+            </li>
             {data.items.map((it) => {
               const [rotulo, tom] = STATUS_INSCRICAO[it.status] ?? [it.status, ""];
               return (
