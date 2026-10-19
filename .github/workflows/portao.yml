@@ -37,6 +37,14 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  # Montar a imagem SOB DEMANDA, sem empurrar commit novo. É o que o
+  # `deploy.sh` dispara quando a imagem do sha ainda não existe no GHCR.
+  workflow_dispatch:
+    inputs:
+      construir_imagem:
+        description: "Montar as imagens deste commit"
+        type: boolean
+        default: true
 
 jobs:
   tipos-e-arquitetura:
@@ -129,8 +137,18 @@ jobs:
   # Portão vermelho = nenhuma tag <sha> = o deploy espera e não publica nada.
   # Tag por commit é imutável: dá o rollback (`./deploy.sh dev --versao <sha>`)
   # e permite promover a mesma imagem para produção na virada.
+  # A imagem NÃO é montada a cada push, de propósito.
+  #
+  # Montava, e era o que gastava a cota: em 19/10/2026 foram 8 commits num dia
+  # = 16 builds de imagem, para 5 deploys de verdade. Mais da metade do
+  # consumo era imagem de commit que nunca foi para o ar — e a cota acabou no
+  # meio do dia, travando todo deploy.
+  #
+  # Agora a imagem sai quando alguém pede: `workflow_dispatch`, que é o que o
+  # `deploy.sh` dispara sozinho quando a imagem do sha não existe. Typecheck e
+  # travas seguem rodando em todo push, que é barato e é o que protege a main.
   construir-imagem:
-    if: github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch' && inputs.construir_imagem
     runs-on: ${{ vars.RUNNER_PORTAO || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
@@ -158,10 +176,29 @@ jobs:
           push: true
           provenance: false
           tags: ghcr.io/imscottdev/onface-${{ matrix.alvo }}:candidata-${{ github.sha }}
-          cache-from: type=gha,scope=onface-${{ matrix.alvo }}
-          cache-to: type=gha,scope=onface-${{ matrix.alvo }},mode=max
+          # Duas fontes de cache, nesta ordem. No runner PRÓPRIO o cache
+          # local está no disco e é lido na hora; o `gha` vem pela rede a cada
+          # build e, em máquina nossa, só serve de reserva — e é o único que
+          # existe quando o portão volta a rodar na máquina do GitHub, que é
+          # efêmera. Sem o local, todo build no Mac rebaixava o cache inteiro.
+          cache-from: |
+            type=local,src=/tmp/onface-buildx/${{ matrix.alvo }}
+            type=gha,scope=onface-${{ matrix.alvo }}
+          cache-to: type=local,dest=/tmp/onface-buildx/${{ matrix.alvo }}-novo,mode=max
+
+      # O buildx escreve o cache novo ao lado e só então substitui o antigo:
+      # gravar por cima do que está sendo lido cresce sem fim e corrompe.
+      - name: girar o cache local
+        if: always()
+        run: |
+          D=/tmp/onface-buildx
+          if [ -d "$D/${{ matrix.alvo }}-novo" ]; then
+            rm -rf "$D/${{ matrix.alvo }}"
+            mv "$D/${{ matrix.alvo }}-novo" "$D/${{ matrix.alvo }}"
+          fi
 
   liberar-imagem:
+    if: github.event_name == 'workflow_dispatch' && inputs.construir_imagem
     needs: [tipos-e-arquitetura, construir-imagem]
     runs-on: ${{ vars.RUNNER_PORTAO || 'ubuntu-latest' }}
     timeout-minutes: 5

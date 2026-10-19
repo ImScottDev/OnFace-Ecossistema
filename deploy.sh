@@ -139,6 +139,40 @@ if [ "$ALVO" = dev ] && [ "$MODO" = "--versao" ]; then
   fi
 fi
 
+# ─── 0. A imagem deste commit existe? Se não, pedir que seja montada ────────
+#
+# O portão NÃO monta imagem a cada push: montava, e era o que torrava a cota de
+# Actions do repositório privado (19/10/2026: 8 commits num dia viraram 16
+# builds, para 5 deploys de verdade — a cota acabou no meio do dia e travou
+# tudo). Agora a imagem sai sob demanda, e quem pede é este script, no commit
+# que de fato vai para o ar.
+#
+# Só pede se faltar: deploy repetido do mesmo sha (promoção, rollback) acha a
+# imagem pronta e não gasta nada.
+if [ "$MODO" != "--construir-aqui" ]; then
+  GH_TOKEN_DEPLOY="$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null | sed -n 's/^password=//p')"
+  if [ -n "$GH_TOKEN_DEPLOY" ]; then
+    JA_TEM=0
+    for ALVO_IMG in app backend; do
+      curl -fsS -o /dev/null \
+        -H "Authorization: Bearer $GH_TOKEN_DEPLOY" \
+        "https://ghcr.io/v2/imscottdev/onface-$ALVO_IMG/manifests/$REV" 2>/dev/null || JA_TEM=1
+    done
+    if [ "$JA_TEM" = "1" ]; then
+      echo "[0/2] Imagem de $REV ainda não existe — pedindo ao portão que monte..."
+      curl -fsS -X POST \
+        -H "Authorization: Bearer $GH_TOKEN_DEPLOY" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/ImScottDev/OnFace-Ecossistema/actions/workflows/portao.yml/dispatches" \
+        -d "{\"ref\":\"main\",\"inputs\":{\"construir_imagem\":\"true\"}}" \
+        && echo "    portão disparado; a espera abaixo cuida do resto." \
+        || echo "    ⚠ não consegui disparar o portão; monte a imagem pelo GitHub ou use --construir-aqui." >&2
+    fi
+  else
+    echo "⚠ sem credencial do GitHub aqui: se a imagem de $REV não existir, monte-a pelo portão antes." >&2
+  fi
+fi
+
 # ─── 1. Código e infra do commit, espelhados no servidor ────────────────────
 echo "[1/2] Enviando o commit..."
 STAGE="/tmp/onface-release-$ALVO-$REV"
