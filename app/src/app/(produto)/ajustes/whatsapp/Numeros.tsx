@@ -59,8 +59,18 @@ const fmtTel = (t: string | null) => {
   return m ? `+55 (${m[1]}) ${m[2]}-${m[3]}` : `+${d}`;
 };
 const fmtData = (iso: string | null) => iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
-const estadoDe = (s: string) => s === "connected" ? "ok" : s === "waiting_qr" || s === "connecting" ? "pendente" : "erro";
-const textoEstado = (s: string) => s === "connected" ? "Conectado" : s === "waiting_qr" ? "Aguardando QR" : s === "connecting" ? "Conectando" : "Desconectado";
+/* O estado considera o NÚMERO, não só o status da sessão.
+   O provedor responde `connected: true, loggedIn: true` com `jid` vazio
+   enquanto o pareamento com o celular não termina — e a tela dizia
+   "Conectado" em cima disso, ao lado de "Sem número vinculado". Sessão sem
+   número não envia nada: chamar isso de conectado manda a pessoa usar um
+   número que vai falhar no primeiro disparo. */
+const semNumero = (s: string, tel: string | null | undefined) => s === "connected" && !tel;
+const estadoDe = (s: string, tel?: string | null) =>
+  semNumero(s, tel) ? "pendente" : s === "connected" ? "ok" : s === "waiting_qr" || s === "connecting" ? "pendente" : "erro";
+const textoEstado = (s: string, tel?: string | null) =>
+  semNumero(s, tel) ? "Pareamento incompleto"
+    : s === "connected" ? "Conectado" : s === "waiting_qr" ? "Aguardando QR" : s === "connecting" ? "Conectando" : "Desconectado";
 
 export function NumerosWhatsapp() {
   const qc = useQueryClient();
@@ -196,7 +206,7 @@ export function NumerosWhatsapp() {
                 </div>
                 <div className="aj-chips">
                   {g.numeros.map((n) => (
-                    <button key={n.id} type="button" className="aj-chip" data-estado={estadoDe(n.status)} onClick={() => setAberto(n.id)}>
+                    <button key={n.id} type="button" className="aj-chip" data-estado={estadoDe(n.status, n.phoneNumber)} onClick={() => setAberto(n.id)}>
                       <span className="aj-chip-titulo">{n.label}</span>
                       <span className="aj-chip-meta">{fmtTel(n.phoneNumber) ?? "Sem número vinculado"}</span>
                     </button>
@@ -214,7 +224,7 @@ export function NumerosWhatsapp() {
                   <span className="aj-linha-titulo">{n.label}</span>
                   <span className="aj-linha-meta">{fmtTel(n.phoneNumber) ?? "Sem número vinculado"}</span>
                 </div>
-                <PilulaEstado estado={estadoDe(n.status)}>{textoEstado(n.status)}</PilulaEstado>
+                <PilulaEstado estado={estadoDe(n.status, n.phoneNumber)}>{textoEstado(n.status, n.phoneNumber)}</PilulaEstado>
                 <Fato rotulo={n.usuario?.tipo === "agente" ? "Agente" : "Usuário"}>{n.usuario?.nome ?? "Compartilhado"}</Fato>
                 <Fato rotulo="Finalidade">{rotuloFinalidade(n.finalidade)}</Fato>
                 <Fato rotulo="Conversas">{n.conversas}</Fato>
@@ -236,11 +246,23 @@ export function NumerosWhatsapp() {
         <Cf2SheetContent className="w-full sm:max-w-md overflow-y-auto">
           {aberto === "novo" ? (
             <NovoNumero gestao={gestao} pessoas={data?.filtros.usuarios ?? []} eu={data?.eu ?? ""}
-              criado={(id) => { invalidar(); setAberto(id); }} />
+              /* Espera a lista voltar ANTES de abrir o detalhe. Abrindo no
+                 mesmo gesto, `selecionado` procurava o número novo numa lista
+                 que ainda não o tinha, resolvia para null e o painel abria
+                 VAZIO — sem QR Code, sem nada. Quem criava um número para
+                 outra pessoa (um agente, por exemplo) não tinha como conectar:
+                 só sobrava criar para si e transferir depois. */
+              criado={async (id) => { await invalidar(); setAberto(id); }} />
           ) : selecionado ? (
             <DetalheNumero key={selecionado.id} n={selecionado} gestao={gestao} pessoas={data?.filtros.usuarios ?? []} eu={data?.eu ?? ""}
               mudou={invalidar} fechar={() => setAberto(null)} />
-          ) : null}
+          ) : (
+            /* Painel pedido para um número que a lista ainda não tem. Antes
+               aqui era `null`: a gaveta abria em branco e parecia defeito da
+               tela. Dizer que está carregando é a verdade, e some sozinho
+               quando a lista chega. */
+            <p className="aj-grupo-ajuda">Carregando o número…</p>
+          )}
         </Cf2SheetContent>
       </Cf2Sheet>
     </div>
@@ -406,7 +428,7 @@ function DetalheNumero({ n, gestao, pessoas, eu, mudou, fechar }: {
       <Cf2SheetHeader>
         <Cf2SheetTitle className="flex items-center gap-2"><span className="aj-conexao-icone" aria-hidden><IconeWa /></span>{n.label}</Cf2SheetTitle>
         <Cf2SheetDescription className="flex items-center gap-2">
-          {fmtTel(vivo?.phoneNumber ?? n.phoneNumber) ?? "Sem número vinculado"} <PilulaEstado estado={estadoDe(status)}>{textoEstado(status)}</PilulaEstado>
+          {fmtTel(vivo?.phoneNumber ?? n.phoneNumber) ?? "Sem número vinculado"} <PilulaEstado estado={estadoDe(status, vivo?.phoneNumber ?? n.phoneNumber)}>{textoEstado(status, vivo?.phoneNumber ?? n.phoneNumber)}</PilulaEstado>
         </Cf2SheetDescription>
       </Cf2SheetHeader>
 
