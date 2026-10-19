@@ -111,6 +111,10 @@ function paraODesenho(card: CardPipeline) {
     // O cartão do Pipeline mostra VALOR, não MRR — regra do Bloco 02 §14.
     valor: c.valor,
     dias: c.diasNaEtapa ?? 0,
+    /* As HORAS também, para o cartão poder dizer "12min" e "3h" como a
+       Pré-vendas já diz. Só com `dias` tudo abaixo de 24h virava "0d", e o
+       cartão parecia parado desde sempre no instante seguinte ao toque. */
+    horas: c.horasNaEtapa ?? null,
     titulo: c.titulo,
     acao: c.proximaAcao,
     acaoEm: c.proximaAcaoEm,

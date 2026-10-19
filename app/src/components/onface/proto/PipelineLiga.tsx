@@ -28,6 +28,7 @@ import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 
 import { PipelineDesenho } from "./PipelineDesenho";
+import { tempoNaEtapa } from "@/lib/vendas/tempo-na-etapa";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
 interface Props {
@@ -364,7 +365,9 @@ class Logica extends React.Component<any, any> {
         temUnico: !!(s.mrr && s.un), unico: "+ " + brl0(s.un) + " único",
         valorLinha: (s.mrr + s.un) > 0 ? (s.mrr ? brl0(s.mrr) + "/mês" : brl0(s.un)) : "—",
         proposta: o.proposta ? PROP[o.proposta.status] : "Sem proposta", propStyle, propPonto: propPonto(o.proposta && o.proposta.status),
-        resp: o.resp || "Sem responsável", iniciais: ini(o.resp), dias: (o.dias || 0) + "d", diasStyle: diasStyle(o.dias || 0),
+        /* "12min", "3h", "2d" — a mesma régua da Pré-vendas (tempoNaEtapa).
+           Era sempre em dias, então todo cartão tocado hoje dizia "0d". */
+        resp: o.resp || "Sem responsável", iniciais: ini(o.resp), dias: tempoNaEtapa(o.horas) ?? ((o.dias || 0) + "d"), diasStyle: diasStyle(o.dias || 0),
         abrir: abrir(o), arrastavel: true,
         pega: (e) => { if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", o.id); } this.setState({ arrastando: o.id }); },
         larga: () => this.setState({ arrastando: null, sobre: null }),
@@ -431,7 +434,7 @@ class Logica extends React.Component<any, any> {
         titulo: (FAM[O.familia] || "Callface") + " · " + O.empresa,
         etapaLabel: ROT[O.etapa], etapaPonto: "width:7px;height:7px;border-radius:9999px;background:" + COR[O.etapa],
         etapaChip: "display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:9999px;background:#fff;box-shadow:inset 0 0 0 1px #e3e7e8;font-size:12px;font-weight:600;color:#12171d",
-        diasTexto: aberta ? "há " + (O.dias || 0) + (O.dias === 1 ? " dia" : " dias") + " nesta etapa" : "",
+        diasTexto: aberta ? "há " + (tempoNaEtapa(O.horas) ?? ((O.dias || 0) + (O.dias === 1 ? " dia" : " dias"))) + " sem interação" : "",
         valorTopo: P && (s.mrr + s.un) ? (s.mrr ? brl(s.mrr) + "/mês" : "") + (s.mrr && s.un ? " · " : "") + (s.un ? brl(s.un) + " único" : "") + " · proposta " + (PROPX[P.status] || "").toLowerCase() : "Sem valor ainda · definido na proposta, depois do diagnóstico",
         valorTopoStyle: "margin-top:4px;font-size:12.5px;font-variant-numeric:tabular-nums;" + (P ? "color:#1f252c;font-weight:600" : "color:#67787c"),
         aberta, fechada: !aberta, podeNoShow: O.etapa === "entrada" || O.etapa === "diagnostico",
