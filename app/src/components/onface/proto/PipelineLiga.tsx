@@ -493,7 +493,12 @@ class Logica extends React.Component<any, any> {
           const via = O.via || ((O.atvs || []).some(x => x.tipo === "Reunião") ? "reuniao" : (O.atvs || []).some(x => x.tipo === "E-mail") ? "email" : (O.atvs || []).some(x => x.tipo === "Ligação") ? "ligacao" : "outro");
           const abrirNa = (tipo) => { setUi({ menu: null }); if (tipo === "Reunião") return this.abrirReuniao(O); this.abrirAtv(O, null, tipo); };
           const verAtv = (i) => { setUi({ menu: null }); this.abrirAtv(O, i); };
-          const tel = (LD && (LD.tel || LD.telefone)) || "";
+          /* O telefone vem da OPORTUNIDADE, que agora o carrega. Procurar
+             numa lista de leads era o defeito: o Pipeline carrega
+             oportunidades, não leads, então `LD` vinha vazio e Ligar sempre
+             respondia "Sem telefone cadastrado". A lista fica como reforço
+             para quem chegou com ela carregada. */
+          const tel = O.telefone || O.whatsapp || (LD && (LD.tel || LD.telefone)) || "";
           const irAt = (canal) => lead && Es ? Es.irPara("/atendimento", "Atendimento", { lead, canal }) : this.diz(O.pessoa + " ainda não tem conversa no Atendimento", "aviso");
           const canais = [
             { k: "reuniao", label: "Reunião", dica: "Agendar reunião", onClick: () => { setUi({ menu: null }); this.abrirReuniao(O); } },

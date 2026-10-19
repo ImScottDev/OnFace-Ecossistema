@@ -587,6 +587,10 @@ export interface CardPipeline {
   /** Quem é a conversa. O cartão mostra "Pessoa · Cargo" abaixo da empresa. */
   pessoa: string | null;
   cargo: string | null;
+  /** Contato do drawer: é daqui que saem Ligar, WhatsApp e E-mail. */
+  telefone: string | null;
+  whatsapp: string | null;
+  email: string | null;
   motivoPerda: string | null;
   /** Nomes das tags da oportunidade. */
   tags: string[];
@@ -660,7 +664,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
     no_show_em: string | null; trial_iniciado_em: string | null; trial_encerrado_em: string | null;
     motivo_estagnacao: string | null; lead_id: string | null;
     propostas: Array<{ numero: number; versao: number; status: string; enviada_em: string | null; total: string | number | null; total_recorrente: string | number | null }> | null;
-    pessoa: string | null; cargo: string | null; tags: string[] | null;
+    pessoa: string | null; cargo: string | null; telefone: string | null; whatsapp: string | null; email: string | null; tags: string[] | null;
   }>();
   if (negocioIds.length > 0) {
     const linhas = await db.execute<{
@@ -668,7 +672,7 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       etapa_desde: string | null; ultima_interacao: string | null; no_show_em: string | null; trial_iniciado_em: string | null;
       trial_encerrado_em: string | null; motivo_estagnacao: string | null; lead_id: string | null;
         propostas: Array<{ numero: number; versao: number; status: string; enviada_em: string | null; total: string | number | null; total_recorrente: string | number | null }> | null;
-      pessoa: string | null; cargo: string | null; tags: string[] | null;
+      pessoa: string | null; cargo: string | null; telefone: string | null; whatsapp: string | null; email: string | null; tags: string[] | null;
     }>(sql`
       SELECT n.id::text,
              -- Próxima ação É tarefa (SPEC §23). A coluna legada fica como
@@ -709,6 +713,16 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
              -- e sem isto ele identifica a conta mas não com quem se fala.
              COALESCE(ps.nome, l.nome) AS pessoa,
              COALESCE(ps.cargo, l.cargo) AS cargo,
+             -- Telefone, WhatsApp e e-mail do contato.
+             --
+             -- O botão "Ligação" do drawer procurava o número numa lista de
+             -- LEADS que o Pipeline não carrega (ele carrega oportunidades), e
+             -- por isso respondia "Sem telefone cadastrado" mesmo com o
+             -- telefone no cadastro. A consulta já une leads e pessoas para
+             -- mostrar "Pessoa · Cargo": o contato vinha de graça.
+             COALESCE(ps.telefone, l.telefone) AS telefone,
+             COALESCE(ps.whatsapp, l.whatsapp) AS whatsapp,
+             COALESCE(ps.email, l.email) AS email,
              -- Proposta é canônica (SPEC §13.1); o vínculo é que tem duas portas.
              --
              -- Uma varredura só, trazendo a LISTA. Antes eram três contagens
@@ -800,6 +814,9 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
       propostasLista: propostas,
       pessoa: l?.pessoa ?? null,
       cargo: l?.cargo ?? null,
+      telefone: l?.telefone ?? null,
+      whatsapp: l?.whatsapp ?? null,
+      email: l?.email ?? null,
       motivoPerda: c.motivoPerda,
       tags: l?.tags ?? [],
     };

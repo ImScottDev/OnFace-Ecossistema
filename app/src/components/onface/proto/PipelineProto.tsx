@@ -94,6 +94,13 @@ function paraODesenho(card: CardPipeline) {
     empresaId: c.empresaId,
     pessoa: c.pessoa ?? "",
     cargo: c.cargo ?? "",
+    /* O contato atravessa até o drawer: é dele que saem Ligar, WhatsApp e
+       E-mail. Sem isto o botão procurava numa lista de leads que esta tela
+       não carrega, e respondia "Sem telefone cadastrado" com o número no
+       cadastro. */
+    telefone: c.telefone ?? "",
+    whatsapp: c.whatsapp ?? "",
+    email: c.email ?? "",
     familia: c.familia,
     familiaRotulo: c.familiaRotulo,
     etapa: c.etapa,
