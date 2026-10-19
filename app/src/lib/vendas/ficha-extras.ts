@@ -22,13 +22,14 @@ export interface CadenciaDoLead {
 }
 
 /** A inscrição viva (ativa ou pausada) do lead, ou null. */
-export async function cadenciaDoLead(organizacaoId: string, leadId: string): Promise<CadenciaDoLead | null> {
+export async function cadenciaDoLead(organizacaoId: string, userId: string, leadId: string): Promise<CadenciaDoLead | null> {
   const [r] = await db.execute<{ nome: string; status: string }>(sql`
     SELECT cd.nome, ce.status
       FROM cadence_enrollments ce
       JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
      WHERE ce.organizacao_id = ${organizacaoId}::uuid AND ce.entity_type = 'lead'
        AND ce.entity_id = ${leadId}::uuid AND ce.status IN ('active', 'waiting', 'waiting_reply', 'paused')
+       AND (cd.visibility = 'shared' OR cd.owner_id = ${userId}::uuid)
      ORDER BY ce.started_at DESC LIMIT 1`);
   return r ? { nome: r.nome, pausada: r.status === "paused" } : null;
 }

@@ -417,9 +417,14 @@ export async function acaoPausarCadenciaDoLead(leadId: string, pausar: boolean):
   return executar("pausar cadência", async () => {
     await leadDaOrg(ctx.organizacaoId, leadId);
     const vivas = await db.execute<{ id: string; passo: string | null }>(sql`
-      SELECT id::text, current_step_id AS passo FROM cadence_enrollments
-       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND entity_type = 'lead' AND entity_id = ${leadId}::uuid
-         AND status = ANY(${pausar ? sql`ARRAY['active','waiting','waiting_reply']` : sql`ARRAY['paused']`}::text[])`);
+      SELECT ce.id::text, ce.current_step_id AS passo
+        FROM cadence_enrollments ce
+        JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+          AND cd.organizacao_id = ce.organizacao_id
+       WHERE ce.organizacao_id = ${ctx.organizacaoId}::uuid
+         AND ce.entity_type = 'lead' AND ce.entity_id = ${leadId}::uuid
+         AND (cd.visibility = 'shared' OR cd.owner_id = ${ctx.ator.usuarioId}::uuid)
+         AND ce.status = ANY(${pausar ? sql`ARRAY['active','waiting','waiting_reply']` : sql`ARRAY['paused']`}::text[])`);
     if (!vivas.length) {
       throw new RegraDeNegocio("sem_cadencia", pausar ? "Este contato não está numa cadência ativa." : "Não há cadência pausada para retomar.");
     }

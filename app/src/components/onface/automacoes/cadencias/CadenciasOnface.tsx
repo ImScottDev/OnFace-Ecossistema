@@ -37,7 +37,7 @@ import "../fluxos/fluxos.css";
 import "./cadencias.css";
 
 type Cadencia = {
-  id: string; nome: string; entityType: string; ativo: boolean; status: string; versao: number; publishedAt: string | null;
+  id: string; nome: string; entityType: string; visibility: "personal" | "shared"; ownerId: string | null; ownerName?: string | null; ativo: boolean; status: string; versao: number; publishedAt: string | null;
   triggerConfig: { event?: string } | null;
   draftSteps: CadenceStep[] | null; steps: CadenceStep[]; draftGraph: FollowupGraph | null; publishedGraph: FollowupGraph | null;
   draftVersionId: string | null; publishedVersionId: string | null; totalPassos: number; enrollmentsPorStatus: Record<string, number>;
@@ -110,15 +110,15 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
 
   /** Salvar rascunho e publicar pela mesma porta de sempre: publicar passa
    *  pelo rascunho, porque a rota publica a versão-rascunho apontada. */
-  const salvar = async (corpo: { nome: string; entityType: string; grafo: unknown }, publicar: boolean) => {
+  const salvar = async (corpo: { nome: string; entityType: string; visibility: "personal" | "shared"; grafo: unknown }, publicar: boolean) => {
     const atual = editor;
     if (!atual) return;
     try {
       let id = atual.id;
       if (id) {
-        await request(`/api/automacoes/cadencias/${id}`, json("PATCH", { action: "save_draft", nome: corpo.nome, entityType: corpo.entityType, graph: corpo.grafo }));
+        await request(`/api/automacoes/cadencias/${id}`, json("PATCH", { action: "save_draft", nome: corpo.nome, entityType: corpo.entityType, visibility: corpo.visibility, graph: corpo.grafo }));
       } else {
-        const criado = await request("/api/automacoes/cadencias", json("POST", { nome: corpo.nome, entityType: corpo.entityType, graph: corpo.grafo }));
+        const criado = await request("/api/automacoes/cadencias", json("POST", { nome: corpo.nome, entityType: corpo.entityType, visibility: corpo.visibility, graph: corpo.grafo }));
         id = criado.cadencia.id as string;
         // Guarda o id criado: se o publish falhar, a nova tentativa salva na
         // mesma cadência em vez de criar uma duplicada.
@@ -209,7 +209,7 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
         <ListaCadencias
           cadencias={cadencias} loading={flows.isLoading} error={flows.isError} podeGerenciar={podeGerenciar}
           onNova={() => setNova(true)}
-          onEditar={(cd) => setEditor({ id: cd.id, nome: cd.nome, entityType: cd.entityType, ativo: cd.ativo, publishedAt: cd.publishedAt, grafo: grafoDaCadencia(cd) })}
+          onEditar={(cd) => setEditor({ id: cd.id, nome: cd.nome, entityType: cd.entityType, visibility: cd.visibility, ownerId: cd.ownerId, ativo: cd.ativo, publishedAt: cd.publishedAt, grafo: grafoDaCadencia(cd) })}
           onHistorico={setHistorico} onInscrever={setInscrever}
           onPausar={(cd) => void patch(cd, { action: "pause" }, "Cadência pausada.")}
         />
@@ -226,7 +226,7 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
           aoFechar={() => setNova(false)}
           aoCriar={({ nome, entityType, passos }) => {
             setNova(false);
-            setEditor({ id: null, nome, entityType, ativo: false, publishedAt: null, grafo: passosParaGrafo(passos) });
+            setEditor({ id: null, nome, entityType, visibility: "shared", ownerId: null, ativo: false, publishedAt: null, grafo: passosParaGrafo(passos) });
           }}
         />
       ) : null}
@@ -267,7 +267,7 @@ function ListaCadencias({ cadencias, loading, error, podeGerenciar, onNova, onEd
           <li key={cd.id} className="ofx-linha">
             <button type="button" className="ofx-linha-nome" onClick={() => onEditar(cd)} disabled={!podeGerenciar} title={podeGerenciar ? "Abrir os passos" : SEM_PERMISSAO}>
               <strong>{cd.nome}</strong>
-              <span>{ENTIDADE[cd.entityType] ?? cd.entityType} · versão {cd.versao}{cd.publishedAt ? ` · publicada ${fmtData(cd.publishedAt)}` : ""}</span>
+              <span>{ENTIDADE[cd.entityType] ?? cd.entityType} · {cd.visibility === "personal" ? "Pessoal" : "Equipe"}{cd.ownerName ? ` · ${cd.ownerName}` : ""} · versão {cd.versao}{cd.publishedAt ? ` · publicada ${fmtData(cd.publishedAt)}` : ""}</span>
             </button>
             <span className="ofx-linha-exec">{EVENTO.get(evento) ?? evento}</span>
             <span className="ofx-linha-estado"><span className={`oa-selo ${tom ? `oa-${tom}` : ""}`}>{rotulo}</span></span>

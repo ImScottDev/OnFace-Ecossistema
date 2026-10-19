@@ -25,7 +25,7 @@ export default async function PessoaPorId({ params }: { params: Promise<{ id: st
   const [lead, timeline, cadencia, extras, daPessoa, reunioes] = await Promise.all([
     detalheLead(ctx.organizacaoId, id),
     lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, leadId: id, limite: 40 }),
-    cadenciaDoLead(ctx.organizacaoId, id),
+    cadenciaDoLead(ctx.organizacaoId, ctx.userId, id),
     empresasExtrasDaPessoa(ctx.organizacaoId, id),
     relacoesDaPessoa(ctx.organizacaoId, id),
     reunioesDoLead(ctx.organizacaoId, id),

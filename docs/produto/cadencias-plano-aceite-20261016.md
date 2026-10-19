@@ -19,8 +19,8 @@ Automações: criar, salvar rascunho, publicar, acompanhar fila e histórico. Pr
 - O motor calcula condições E/OU com dados vivos antes de escolher o ramo; fallback incondicional vem por último.
 - Pré-vendas mantém o estado de pausa sincronizado com inscrições reais após recarregar.
 
-## Ainda NÃO entregue nem aprovado
-2. Propriedade da cadência por usuário, visibilidade pessoal/equipe e permissões de compartilhamento.
+## Ainda NÃO entregue ou aguardando aceite
+2. Propriedade e visibilidade pessoal/equipe implementadas na V3 de 19/10; aguardam aceite E2E autenticado e teste com dois usuários.
 3. Inscrição direta unificada de empresas e oportunidades; rota manual ainda aceita lead, contato e negócio.
 4. Handoff completo e interrupção por reunião, e-mail, no-show, opt-out e respostas de outros canais.
 5. Execução temporal com precisão garantida de segundos: polling de 15 segundos não tem essa garantia.
@@ -35,3 +35,16 @@ Este documento registra implementação parcial e os critérios para poder dizer
 ## Evidências adicionais
 - Typecheck executado localmente, testes direcionados do grafo, janela e retomada.
 - A versão visual ramificada precisa ser publicada como segundo commit, separadamente do SHA inicial 61f92d4.
+
+
+## Atualização V3 — 19/10/2026
+
+- Migration aditiva 0129: `cadence_definitions.owner_id` e `visibility`; cadências legadas continuam compartilhadas.
+- Cadências novas registram o dono autenticado. Uma cadência pessoal só é listada, editada, inscrita, pausada ou cancelada pelo dono nos caminhos com contexto humano.
+- Catálogos e leituras nas fichas, pré-vendas, prospecção, atendimento, execuções e API filtram cadências conforme dono e tenant; a fila filtra antes do limite.
+- O SDR pode executar cadências com autorização de escrita comercial (`sales.manage`), sem precisar de permissão para construir automações.
+- Automações globais e agentes não executam ou alteram cadências pessoais sem identidade autorizada; portanto, **gatilhos automáticos de cadências pessoais ainda não são suportados**. Fluxos de sistema trabalham com cadências compartilhadas.
+- Duas verificações independentes encontraram e levaram a correções adicionais de tipagem, consulta de execuções, idempotência, ações dos agentes e filtros de pré-vendas.
+- A aceitação completa ainda depende de teste autenticado no navegador com dois usuários distintos, migration em homologação, criação/publicação/inscrição, resposta/pausa e casos de permissão, sem disparo externo.
+
+**Critério de liberação:** homologação primeiro; sem publicação de V3 em produção antes do aceite funcional.

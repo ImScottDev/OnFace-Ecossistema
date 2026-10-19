@@ -904,16 +904,20 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * passo pode ser espera ou condição. A posição confiável vem dos EVENTOS
  * persistidos: quantas ações distintas da versão pinada já foram executadas.
  */
-const FROM_PROSPECCAO = sql`
+function fromProspeccao(userId: string) {
+  return sql`
   FROM leads l
   LEFT JOIN empresas e ON e.id = l.empresa_id
   LEFT JOIN usuarios u ON u.id = l.responsavel_id
   LEFT JOIN LATERAL (
-    SELECT * FROM cadence_enrollments x
+    SELECT x.* FROM cadence_enrollments x
+     JOIN cadence_definitions xcd ON xcd.id = x.cadence_definition_id
      WHERE x.entity_type = 'lead' AND x.entity_id = l.id
+       AND (xcd.visibility = 'shared' OR xcd.owner_id = ${userId}::uuid)
      ORDER BY x.started_at DESC LIMIT 1
   ) ce ON true
   LEFT JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+    AND (cd.visibility = 'shared' OR cd.owner_id = ${userId}::uuid)
   LEFT JOIN cadence_versions cv ON cv.id = ce.cadence_version_id
   LEFT JOIN LATERAL (
     SELECT count(*)::int AS total,
@@ -925,8 +929,9 @@ const FROM_PROSPECCAO = sql`
      WHERE s.passo ->> 'tipo' = 'action'
   ) pos ON ce.id IS NOT NULL
 `;
+}
 
-function filtrosDeProspeccao(organizacaoId: string, f: FiltrosProspeccao, comEstado: boolean) {
+function filtrosDeProspeccao(organizacaoId: string, userId: string, f: FiltrosProspeccao, comEstado: boolean) {
   const busca = f.busca?.trim() ? `%${f.busca.trim().toLowerCase()}%` : null;
   const digitos = f.busca?.replace(/\D/g, "") ?? "";
   const buscaFone = digitos.length >= 4 ? `%${digitos}%` : null;
@@ -1041,7 +1046,7 @@ function linhaDeProspeccao(l: LinhaBruta): LinhaProspeccao {
   };
 }
 
-async function opcoesDeFiltroProspeccao(organizacaoId: string) {
+async function opcoesDeFiltroProspeccao(organizacaoId: string, userId: string) {
   const [responsaveis, listas, cadencias] = await Promise.all([
     db.execute<{ id: string; nome: string; eh_agente: boolean }>(sql`
       SELECT id::text, nome, (tipo = 'agente' OR agente_id IS NOT NULL) AS eh_agente FROM usuarios WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true ORDER BY eh_agente, nome`),
@@ -1056,6 +1061,7 @@ async function opcoesDeFiltroProspeccao(organizacaoId: string) {
         JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
         JOIN leads l ON l.id = ce.entity_id AND ce.entity_type = 'lead'
        WHERE l.organizacao_id = ${organizacaoId}::uuid AND l.prospeccao_estado IS NOT NULL
+         AND (cd.visibility = 'shared' OR cd.owner_id = ${userId}::uuid)
        ORDER BY 2 LIMIT 40`),
   ]);
   return {
@@ -1067,10 +1073,10 @@ async function opcoesDeFiltroProspeccao(organizacaoId: string) {
 
 /** Contagem por estado dentro dos MESMOS filtros (menos o de estado): os
  *  números das abas acompanham a busca, em vez de contar a base inteira. */
-async function resumoPorEstado(organizacaoId: string, filtros: FiltrosProspeccao): Promise<Record<EstadoProspeccao, number>> {
+async function resumoPorEstado(organizacaoId: string, userId: string, filtros: FiltrosProspeccao): Promise<Record<EstadoProspeccao, number>> {
   const linhas = await db.execute<{ estado: string; n: number }>(sql`
     SELECT l.prospeccao_estado AS estado, count(*)::int AS n
-    ${FROM_PROSPECCAO} ${filtrosDeProspeccao(organizacaoId, filtros, false)}
+    ${fromProspeccao(userId)} ${filtrosDeProspeccao(organizacaoId, userId, filtros, false)}
     GROUP BY 1`);
   const resumo = Object.fromEntries(ESTADOS_PROSPECCAO.map((e) => [e, 0])) as Record<EstadoProspeccao, number>;
   for (const r of linhas) resumo[r.estado as EstadoProspeccao] = r.n;
@@ -1078,7 +1084,7 @@ async function resumoPorEstado(organizacaoId: string, filtros: FiltrosProspeccao
 }
 
 
-export async function listaProspeccao(organizacaoId: string, filtros: FiltrosProspeccao = {}): Promise<{
+export async function listaProspeccao(organizacaoId: string, userId: string, filtros: FiltrosProspeccao = {}): Promise<{
   linhas: LinhaProspeccao[];
   resumo: Record<EstadoProspeccao, number>;
   filtros: { responsaveis: Array<{ id: string; nome: string; ehAgente?: boolean }>; listas: string[]; cadencias: Array<{ id: string; nome: string }> };
@@ -1093,16 +1099,16 @@ export async function listaProspeccao(organizacaoId: string, filtros: FiltrosPro
   const nulos = ordem === "proxima" ? "NULLS LAST" : "";
 
   const [{ n: total }] = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n ${FROM_PROSPECCAO} ${filtrosDeProspeccao(organizacaoId, filtros, true)}`);
+    SELECT count(*)::int AS n ${fromProspeccao(userId)} ${filtrosDeProspeccao(organizacaoId, userId, filtros, true)}`);
   const paginas = Math.max(1, Math.ceil(total / porPagina));
   const pagina = Math.min(Math.max(1, Math.trunc(filtros.pagina ?? 1) || 1), paginas);
 
   const linhas = await db.execute<LinhaBruta>(sql`
-    ${COLUNAS_PROSPECCAO} ${FROM_PROSPECCAO} ${filtrosDeProspeccao(organizacaoId, filtros, true)}
+    ${COLUNAS_PROSPECCAO} ${fromProspeccao(userId)} ${filtrosDeProspeccao(organizacaoId, userId, filtros, true)}
      ORDER BY ${sql.raw(ORDEM_SQL[ordem])} ${sql.raw(dir)} ${sql.raw(nulos)}, l.id
      LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`);
 
-  const [resumo, opcoes] = await Promise.all([resumoPorEstado(organizacaoId, filtros), opcoesDeFiltroProspeccao(organizacaoId)]);
+  const [resumo, opcoes] = await Promise.all([resumoPorEstado(organizacaoId, userId, filtros), opcoesDeFiltroProspeccao(organizacaoId, userId)]);
 
   return {
     linhas: linhas.map(linhaDeProspeccao),
@@ -1120,7 +1126,7 @@ export const COLUNAS_KANBAN_PROSPECCAO = ["novo", "em_cadencia", "respondeu"] as
  * primeiro. Mesmo recorte de filtros da lista (menos o de estado: o board é
  * quem mostra os estados). O total de cada coluna vem do resumo, não do corte.
  */
-export async function kanbanProspeccao(organizacaoId: string, filtros: FiltrosProspeccao = {}, porColuna = 25): Promise<{
+export async function kanbanProspeccao(organizacaoId: string, userId: string, filtros: FiltrosProspeccao = {}, porColuna = 25): Promise<{
   colunas: Array<{ estado: EstadoProspeccao; total: number; cards: LinhaProspeccao[] }>;
   resumo: Record<EstadoProspeccao, number>;
   filtros: { responsaveis: Array<{ id: string; nome: string }>; listas: string[]; cadencias: Array<{ id: string; nome: string }> };
@@ -1130,10 +1136,10 @@ export async function kanbanProspeccao(organizacaoId: string, filtros: FiltrosPr
     SELECT * FROM (
       ${COLUNAS_PROSPECCAO},
              row_number() OVER (PARTITION BY l.prospeccao_estado ORDER BY l.updated_at DESC, l.id) AS rn
-      ${FROM_PROSPECCAO} ${filtrosDeProspeccao(organizacaoId, { ...filtros, estado: null }, false)}
+      ${fromProspeccao(userId)} ${filtrosDeProspeccao(organizacaoId, userId, { ...filtros, estado: null }, false)}
         AND l.prospeccao_estado = ANY(ARRAY['novo','em_cadencia','respondeu'])
     ) t WHERE rn <= ${limite} ORDER BY rn`);
-  const [resumo, opcoes] = await Promise.all([resumoPorEstado(organizacaoId, filtros), opcoesDeFiltroProspeccao(organizacaoId)]);
+  const [resumo, opcoes] = await Promise.all([resumoPorEstado(organizacaoId, userId, filtros), opcoesDeFiltroProspeccao(organizacaoId, userId)]);
   const todas = linhas.map(linhaDeProspeccao);
   return {
     colunas: COLUNAS_KANBAN_PROSPECCAO.map((estado) => ({

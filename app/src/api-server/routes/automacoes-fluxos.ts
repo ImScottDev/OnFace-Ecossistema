@@ -41,7 +41,7 @@ app.get("/automacoes/fluxos", async (c) => {
 
 app.get("/automacoes/fluxos/opcoes", async (c) => {
   const ctx = await getCtx(c);
-  return c.json(await opcoesInspetor(ctx.organizacaoId));
+  return c.json(await opcoesInspetor(ctx.organizacaoId, ctx.userId));
 });
 
 app.get("/automacoes/fluxos/entidades", async (c) => {

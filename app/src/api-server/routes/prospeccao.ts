@@ -2,10 +2,11 @@ import { Hono } from "hono";
 import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
 import { db } from "@/lib/db";
 import { leads, usuarios, empresas, negocios, negocioLeads, contatoListas, leadListas, labels, leadLabels, cadenceDefinitions, cadenceEnrollments } from "@/lib/db/schema";
-import { eq, and, inArray, sql, desc } from "drizzle-orm";
-import { getCtx } from "../compat.js";
+import { eq, and, or, inArray, sql, desc } from "drizzle-orm";
+import { getCtx, exigirCtx } from "../compat.js";
 import { iniciarCadencia, cancelarCadencia } from "@/lib/cadencia/cadence-engine";
 import type { CadenceStep } from "@/lib/cadencia/cadence-engine";
+import { podeUsarCadencia, podeVerCadencia } from "@/lib/cadencia/acesso";
 
 const app = new Hono();
 
@@ -85,10 +86,12 @@ app.get("/prospeccao/board", async (c) => {
         scheduledAt: cadenceEnrollments.scheduledAt,
         definitionNome: cadenceDefinitions.nome,
         steps: cadenceDefinitions.steps,
+        visibility: cadenceDefinitions.visibility,
+        ownerId: cadenceDefinitions.ownerId,
       })
       .from(cadenceEnrollments)
       .innerJoin(cadenceDefinitions, eq(cadenceDefinitions.id, cadenceEnrollments.cadenceDefinitionId))
-      .where(and(eq(cadenceEnrollments.entityType, "lead"), inArray(cadenceEnrollments.entityId, leadIds)))
+      .where(and(eq(cadenceEnrollments.entityType, "lead"), inArray(cadenceEnrollments.entityId, leadIds), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId)))
       .orderBy(desc(cadenceEnrollments.updatedAt)),
     db
       .select({ leadId: leadLabels.leadId, id: labels.id, nome: labels.nome, cor: labels.cor })
@@ -107,7 +110,7 @@ app.get("/prospeccao/board", async (c) => {
   // A query vem da matrícula mais recente para a mais antiga; preserve a
   // primeira por prospect para não exibir uma cadência histórica no lugar da atual.
   const enrollMap = new Map<string, (typeof enrollments)[number]>();
-  for (const enrollment of enrollments) {
+  for (const enrollment of enrollments.filter((row) => podeVerCadencia(row, ctx))) {
     if (!enrollMap.has(enrollment.entityId)) enrollMap.set(enrollment.entityId, enrollment);
   }
   const labelMap = new Map<string, Array<{ id: string; nome: string; cor: string }>>();
@@ -207,12 +210,12 @@ app.get("/prospeccao/board", async (c) => {
 app.get("/prospeccao/cadencias", async (c) => {
   const ctx = await getCtx(c);
   const rows = await db
-    .select({ id: cadenceDefinitions.id, nome: cadenceDefinitions.nome, steps: cadenceDefinitions.steps })
+    .select({ id: cadenceDefinitions.id, nome: cadenceDefinitions.nome, steps: cadenceDefinitions.steps, visibility: cadenceDefinitions.visibility, ownerId: cadenceDefinitions.ownerId })
     .from(cadenceDefinitions)
     .where(and(eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId), eq(cadenceDefinitions.entityType, "lead"), eq(cadenceDefinitions.ativo, true)));
 
   return c.json(
-    rows.map((r) => ({ id: r.id, nome: r.nome, totalSteps: ((r.steps as CadenceStep[]) || []).filter((s) => s.tipo === "action").length }))
+    rows.filter((r) => podeVerCadencia(r, ctx)).map((r) => ({ id: r.id, nome: r.nome, totalSteps: ((r.steps as CadenceStep[]) || []).filter((s) => s.tipo === "action").length }))
   );
 });
 
@@ -238,14 +241,25 @@ app.get("/prospeccao/cadencia/status", async (c) => {
       definitionId: cadenceEnrollments.cadenceDefinitionId,
       definitionNome: cadenceDefinitions.nome,
       steps: cadenceDefinitions.steps,
+      visibility: cadenceDefinitions.visibility,
+      ownerId: cadenceDefinitions.ownerId,
     })
     .from(cadenceEnrollments)
     .innerJoin(cadenceDefinitions, eq(cadenceDefinitions.id, cadenceEnrollments.cadenceDefinitionId))
-    .where(and(eq(cadenceEnrollments.entityType, "lead"), eq(cadenceEnrollments.entityId, leadId), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId)))
+    .where(and(
+      eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId),
+      eq(cadenceEnrollments.entityType, "lead"),
+      eq(cadenceEnrollments.entityId, leadId),
+      eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId),
+      // Filtrar antes do LIMIT: inscrição pessoal alheia não pode esconder
+      // a inscrição compartilhada mais antiga.
+      or(eq(cadenceDefinitions.visibility, "shared"), eq(cadenceDefinitions.ownerId, ctx.userId)),
+    ))
     .orderBy(desc(cadenceEnrollments.updatedAt))
     .limit(1);
 
   const enr = rows[0];
+
   if (!enr) return c.json({ cadencia: null });
 
   const steps = (enr.steps as CadenceStep[]) || [];
@@ -267,11 +281,15 @@ app.get("/prospeccao/cadencia/status", async (c) => {
 // ── POST /prospeccao/cadencia/enroll — matricula em massa ───────────────
 
 app.post("/prospeccao/cadencia/enroll", async (c) => {
-  const ctx = await getCtx(c);
+  // O SDR executa cadências sem precisar gerenciar Automações,
+  // mas precisa da permissão de escrita comercial.
+  const ctx = await exigirCtx(c, "sales.manage");
   const body = await c.req.json();
   const leadIds: string[] = body.leadIds || [];
   const cadenceDefinitionId: string = body.cadenceDefinitionId;
   if (!cadenceDefinitionId || leadIds.length === 0) return c.json({ error: "leadIds e cadenceDefinitionId são obrigatórios" }, 400);
+  const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!definition || !podeUsarCadencia(definition, { userId: ctx.userId, role: ctx.userRole, canManage: true })) return c.json({ error: "Cadência não encontrada ou sem acesso" }, 404);
 
   // Só matricula lead da organização do contexto — id de outra org é ignorado
   // (a definição também é checada por org dentro de iniciarCadencia).
@@ -280,7 +298,7 @@ app.post("/prospeccao/cadencia/enroll", async (c) => {
 
   let matriculados = 0;
   for (const { id: leadId } of daOrg) {
-    const id = await iniciarCadencia({ cadenceDefinitionId, organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: leadId });
+    const id = await iniciarCadencia({ cadenceDefinitionId, organizacaoId: ctx.organizacaoId, actorId: ctx.userId, entityType: "lead", entityId: leadId });
     if (id) matriculados++;
   }
   return c.json({ ok: true, matriculados });
@@ -289,15 +307,17 @@ app.post("/prospeccao/cadencia/enroll", async (c) => {
 // ── POST /prospeccao/cadencia/pausar — cancela enrollment ativo em massa ─
 
 app.post("/prospeccao/cadencia/pausar", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "sales.manage");
   const body = await c.req.json();
   const leadIds: string[] = body.leadIds || [];
   if (leadIds.length === 0) return c.json({ error: "leadIds é obrigatório" }, 400);
 
   const ativos = await db
-    .select({ id: cadenceEnrollments.id })
+    .select({ id: cadenceEnrollments.id, visibility: cadenceDefinitions.visibility, ownerId: cadenceDefinitions.ownerId })
     .from(cadenceEnrollments)
-    .where(and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), eq(cadenceEnrollments.entityType, "lead"), inArray(cadenceEnrollments.entityId, leadIds), inArray(cadenceEnrollments.status, ["active", "waiting"])));
+    .innerJoin(cadenceDefinitions, eq(cadenceDefinitions.id, cadenceEnrollments.cadenceDefinitionId))
+    .where(and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId), eq(cadenceEnrollments.entityType, "lead"), inArray(cadenceEnrollments.entityId, leadIds), inArray(cadenceEnrollments.status, ["active", "waiting"])))
+    .then((rows) => rows.filter((row) => podeUsarCadencia(row, { userId: ctx.userId, role: ctx.userRole, canManage: true })));
 
   for (const e of ativos) {
     await cancelarCadencia(e.id, "pausado manualmente (Prospecção)");
@@ -317,7 +337,7 @@ interface ImportRow {
 }
 
 app.post("/prospeccao/import", async (c) => {
-  const ctx = await getCtx(c);
+  const ctx = await exigirCtx(c, "sales.manage");
   const body = await c.req.json();
   const rows: ImportRow[] = body.rows || [];
   const dryRun: boolean = !!body.dryRun;
@@ -429,7 +449,7 @@ app.post("/prospeccao/import", async (c) => {
 
   if (config.cadenceDefinitionId && inseridos.length > 0) {
     for (const leadId of inseridos) {
-      await iniciarCadencia({ cadenceDefinitionId: config.cadenceDefinitionId, organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: leadId });
+      await iniciarCadencia({ cadenceDefinitionId: config.cadenceDefinitionId, organizacaoId: ctx.organizacaoId, actorId: ctx.userId, entityType: "lead", entityId: leadId });
     }
   }
 

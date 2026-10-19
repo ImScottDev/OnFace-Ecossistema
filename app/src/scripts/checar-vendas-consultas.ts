@@ -36,7 +36,7 @@ async function main() {
   const badges = pipeline.colunas.flatMap((c) => c.cards).flatMap((c) => c.badges);
   console.log("   badges em uso:", [...new Set(badges)].join(", ") || "(nenhum)");
 
-  const prospeccao = await listaProspeccao(org.id);
+  const prospeccao = await listaProspeccao(org.id, "00000000-0000-0000-0000-000000000000");
   console.log("\n── Prospecção");
   console.log("   resumo:", JSON.stringify(prospeccao.resumo));
   console.log(`   linhas carregadas: ${prospeccao.linhas.length}`);

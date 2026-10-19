@@ -770,7 +770,16 @@ export async function iniciarCadencia(opts: {
   varsIniciais?: Record<string, unknown>;
   sourceEventId?: string | null;
   idempotencyKey?: string | null;
+  /** Necessário para usar uma cadência pessoal; entradas de sistema só usam compartilhadas. */
+  actorId?: string | null;
 }): Promise<string | null> {
+  // Autorize ANTES de retornar inscrição existente ou replay idempotente:
+  // caso contrário outro usuário poderia descobrir o ID de uma inscrição pessoal.
+  const [definicao] = await db.select().from(cadenceDefinitions)
+    .where(and(eq(cadenceDefinitions.id, opts.cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, opts.organizacaoId))).limit(1);
+  if (!definicao || !definicao.ativo) return null;
+  if (definicao.visibility === "personal" && definicao.ownerId !== opts.actorId) return null;
+
   const idempotencyKey = opts.idempotencyKey ?? (opts.sourceEventId ? `event:${opts.cadenceDefinitionId}:${opts.sourceEventId}` : null);
   if (idempotencyKey) {
     const [replay] = await db.select({ id: cadenceEnrollments.id }).from(cadenceEnrollments)
@@ -789,11 +798,6 @@ export async function iniciarCadencia(opts: {
     ))
     .limit(1);
   if (existente) return existente.id;
-
-  // Definição de outra organização nunca matricula (multi-tenant): o id vem do caller.
-  const [definicao] = await db.select().from(cadenceDefinitions)
-    .where(and(eq(cadenceDefinitions.id, opts.cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, opts.organizacaoId))).limit(1);
-  if (!definicao || !definicao.ativo) return null;
 
   // Tipo errado nunca matricula. Os passos foram pensados para UM tipo de
   // registro e leem campos dele: um lead numa cadência de negócio executa um
@@ -831,6 +835,7 @@ export async function iniciarCadencia(opts: {
 
   if (!enrollment) {
     const [concorrente] = await db.select({ id: cadenceEnrollments.id }).from(cadenceEnrollments).where(and(
+      eq(cadenceEnrollments.organizacaoId, opts.organizacaoId),
       eq(cadenceEnrollments.cadenceDefinitionId, opts.cadenceDefinitionId),
       eq(cadenceEnrollments.entityType, opts.entityType),
       eq(cadenceEnrollments.entityId, opts.entityId),

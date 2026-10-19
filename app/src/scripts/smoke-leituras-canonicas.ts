@@ -55,7 +55,7 @@ async function main() {
 
   const pv = await medir("boardPreVendas", () => boardPreVendas(org.id, { aba: "ativos" }));
   const pipe = await medir("boardPipeline", () => boardPipeline(org.id, {}));
-  const pros = await medir("listaProspeccao", () => listaProspeccao(org.id, {}));
+  const pros = await medir("listaProspeccao", () => listaProspeccao(org.id, "00000000-0000-0000-0000-000000000000", {}));
   const emps = await medir("diretorioEmpresas", () => diretorioEmpresas(org.id, {}));
   const pess = await medir("diretorioPessoas", () => diretorioPessoas(org.id, {}));
   const p1 = await medir("pessoaPorId", () => pessoaPorId(org.id, pes.id));

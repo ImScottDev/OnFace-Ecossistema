@@ -35,7 +35,7 @@ export default async function LeadPorId({ params }: { params: Promise<{ id: stri
 
   const [timeline, cadencia, tarefas, reunioes, notas, equipe] = await Promise.all([
     lerLinhaDoTempo({ organizacaoId: ctx.organizacaoId, leadId: id, limite: 40 }),
-    cadenciaDoLead(ctx.organizacaoId, id),
+    cadenciaDoLead(ctx.organizacaoId, ctx.userId, id),
     tarefasDoLead(ctx.organizacaoId, id),
     reunioesDoLead(ctx.organizacaoId, id),
     notasDoLead(ctx.organizacaoId, id),

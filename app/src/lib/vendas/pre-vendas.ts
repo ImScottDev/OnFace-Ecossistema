@@ -935,6 +935,7 @@ export async function voltarParaQualificado(params: {
  */
 export async function passoDaCadenciaPorLead(
   organizacaoId: string,
+  userId: string | null,
   leadIds: string[],
 ): Promise<Record<string, string>> {
   if (leadIds.length === 0) return {};
@@ -950,7 +951,10 @@ export async function passoDaCadenciaPorLead(
         SELECT cd.nome
           FROM cadence_enrollments ce
           JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
-         WHERE ce.entity_type = 'lead' AND ce.entity_id = l.id
+            AND cd.organizacao_id = ce.organizacao_id
+         WHERE ce.organizacao_id = ${organizacaoId}::uuid
+           AND ce.entity_type = 'lead' AND ce.entity_id = l.id
+           AND (cd.visibility = 'shared' OR cd.owner_id = ${userId}::uuid)
            AND ce.status IN ('active', 'waiting', 'waiting_reply', 'paused')
          ORDER BY ce.started_at DESC LIMIT 1
       ) ce_def ON true
@@ -962,6 +966,7 @@ export async function passoDaCadenciaPorLead(
 /** Estado real de pausa no quadro/drawer; o chip sozinho guarda só o nome. */
 export async function pausasDaCadenciaPorLead(
   organizacaoId: string,
+  userId: string | null,
   leadIds: string[],
 ): Promise<Record<string, boolean>> {
   if (!leadIds.length) return {};
@@ -971,8 +976,11 @@ export async function pausasDaCadenciaPorLead(
       FROM leads l
       JOIN LATERAL (
         SELECT ce.status FROM cadence_enrollments ce
+          JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+            AND cd.organizacao_id = ce.organizacao_id
          WHERE ce.organizacao_id = ${organizacaoId}::uuid AND ce.entity_type = 'lead'
            AND ce.entity_id = l.id
+           AND (cd.visibility = 'shared' OR cd.owner_id = ${userId}::uuid)
            AND ce.status IN ('active','waiting','waiting_reply','paused')
          ORDER BY ce.started_at DESC LIMIT 1
       ) ce_viva ON true

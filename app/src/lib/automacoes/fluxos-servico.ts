@@ -22,6 +22,7 @@ import {
 } from "./grafo";
 import { configDaVersao, ensaiarFluxo, grafoDaVersao, iniciarExecucao, cancelarExecucao as cancelarNoExecutor } from "./executor";
 import { proximaExecucao } from "./agenda";
+
 import { appUrl } from "@/lib/app-url";
 
 type Automacao = typeof automacoes.$inferSelect;
@@ -227,11 +228,11 @@ export async function listarFluxos(organizacaoId: string, filtro: { busca?: stri
 
 // ─── Opções do inspetor e registros ────────────────────────────────────────
 
-export async function opcoesInspetor(organizacaoId: string): Promise<OpcoesInspetor> {
+export async function opcoesInspetor(organizacaoId: string, userId?: string): Promise<OpcoesInspetor> {
   const [us, tags, cads, tpls, agentes, sessoes] = await Promise.all([
     db.select({ id: usuarios.id, nome: usuarios.nome }).from(usuarios).where(and(eq(usuarios.organizacaoId, organizacaoId), eq(usuarios.ativo, true))).orderBy(usuarios.nome),
     db.select({ id: labels.id, nome: labels.nome, cor: labels.cor }).from(labels).where(eq(labels.organizacaoId, organizacaoId)).orderBy(labels.nome),
-    db.select({ id: cadenceDefinitions.id, nome: cadenceDefinitions.nome, status: cadenceDefinitions.status, ativo: cadenceDefinitions.ativo }).from(cadenceDefinitions).where(eq(cadenceDefinitions.organizacaoId, organizacaoId)).orderBy(cadenceDefinitions.nome),
+    db.select({ id: cadenceDefinitions.id, nome: cadenceDefinitions.nome, status: cadenceDefinitions.status, ativo: cadenceDefinitions.ativo, visibility: cadenceDefinitions.visibility, ownerId: cadenceDefinitions.ownerId }).from(cadenceDefinitions).where(eq(cadenceDefinitions.organizacaoId, organizacaoId)).orderBy(cadenceDefinitions.nome),
     db.select({ id: whatsappTemplates.id, nome: whatsappTemplates.nome }).from(whatsappTemplates).where(and(eq(whatsappTemplates.organizacaoId, organizacaoId), eq(whatsappTemplates.ativo, true))).orderBy(whatsappTemplates.nome),
     db.select({ id: aiAgents.id, nome: aiAgents.nome }).from(aiAgents).where(and(eq(aiAgents.organizacaoId, organizacaoId), isNull(aiAgents.archivedAt))).orderBy(aiAgents.nome),
     db.select({ id: whatsappSessao.id, label: whatsappSessao.label, nome: whatsappSessao.sessionName, status: whatsappSessao.status }).from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId)).orderBy(whatsappSessao.sessionName),
@@ -242,7 +243,9 @@ export async function opcoesInspetor(organizacaoId: string): Promise<OpcoesInspe
       lead: ETAPAS_PRE_VENDAS.map((e) => ({ valor: e, rotulo: ROTULO_ETAPA_PRE_VENDAS[e] })),
       negocio: ETAPAS_PIPELINE.map((e) => ({ valor: e, rotulo: ROTULO_ETAPA_PIPELINE[e] })),
     },
-    cadencias: cads.map((c) => ({ id: c.id, nome: c.nome, publicada: c.status === "published" && c.ativo })),
+    // Fluxos rodam sem identidade humana; não oferecer cadência pessoal
+    // que o executor nunca poderia inscrever.
+    cadencias: cads.filter((c) => c.visibility === "shared").map((c) => ({ id: c.id, nome: c.nome, publicada: c.status === "published" && c.ativo })),
     templatesWhatsapp: tpls, agentesIa: agentes,
     sessoesWhatsapp: sessoes.map((x) => ({ id: x.id, nome: x.label || x.nome, conectada: x.status === "connected" })),
   };

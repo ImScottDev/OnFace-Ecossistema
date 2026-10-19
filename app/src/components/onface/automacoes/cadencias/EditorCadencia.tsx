@@ -50,6 +50,8 @@ export type CadenciaEditavel = {
   id: string | null;
   nome: string;
   entityType: string;
+  visibility: "personal" | "shared";
+  ownerId: string | null;
   ativo: boolean;
   publishedAt: string | null;
   grafo: import("@/lib/ai-platform/followup/graph").FollowupGraph;
@@ -141,12 +143,13 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
   cadencia: CadenciaEditavel;
   podeGerenciar: boolean;
   aoFechar: () => void;
-  aoSalvar: (corpo: { nome: string; entityType: string; grafo: unknown }, publicar: boolean) => Promise<void>;
+  aoSalvar: (corpo: { nome: string; entityType: string; visibility: "personal" | "shared"; grafo: unknown }, publicar: boolean) => Promise<void>;
 }) {
   const leituraInicial = useMemo(() => grafoParaPassos(cadencia.grafo), [cadencia.grafo]);
   const [grafoEditado, setGrafoEditado] = useState<FollowupGraph>(cadencia.grafo);
   const [nome, setNome] = useState(cadencia.nome);
   const [entityType, setEntityType] = useState(cadencia.entityType);
+  const [visibility, setVisibility] = useState<"personal" | "shared">(cadencia.visibility);
   const [evento, setEvento] = useState(leituraInicial.evento);
   const [passos, setPassos] = useState<Passo[]>(leituraInicial.passos);
   // Abre fechado: a primeira leitura tem de ser a SEQUÊNCIA inteira. Cartão
@@ -219,7 +222,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
     if (!nome.trim()) { toast.error("Dê um nome à cadência."); return; }
     if (publicar && pendencias.length) { toast.error(pendencias[0].mensagem); return; }
     setSalvando(publicar ? "publicar" : "rascunho");
-    try { await aoSalvar({ nome: nome.trim(), entityType, grafo }, publicar); }
+    try { await aoSalvar({ nome: nome.trim(), entityType, visibility, grafo }, publicar); }
     finally { setSalvando(null); }
   };
 
@@ -305,6 +308,14 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
                   {Object.entries(ROTULO_ENTIDADE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
                 <span className="oa-dica">Decide as etapas e os campos oferecidos nos passos. Inscrição manual vale para lead, contato e negócio.</span>
+              </div>
+              <div className="ofx-campo">
+                <label className="ofx-campo-rotulo" htmlFor="cad-visibilidade">Visibilidade</label>
+                <select id="cad-visibilidade" className="oa-input" value={visibility} disabled={somenteLeitura} onChange={(e) => setVisibility(e.target.value as "personal" | "shared")}>
+                  <option value="personal">Pessoal — só você</option>
+                  <option value="shared">Compartilhada — equipe</option>
+                </select>
+                <span className="oa-dica">Proprietário: {cadencia.ownerId ? "usuário autenticado da criação" : "legado da equipe"}.</span>
               </div>
             </div>
           </section>

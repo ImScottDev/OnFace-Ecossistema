@@ -432,7 +432,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
     { lead_id: str("uuid do lead"), fluxo_id: str("uuid do fluxo publicado") }, ["lead_id", "fluxo_id"],
     async (ctx, u, i) => falta(ctx, "automation.manage") ?? comConfirmacao(ctx, "incluir_em_cadencia", "Incluir o lead na cadência (pode enviar mensagens)", i, async () => {
       const dono = await donoDe(ctx, "lead", String(i.lead_id)); if (dono === undefined) return { ok: false, error: "lead não encontrado" }; if (!meuAlvo(u, dono)) return alheio();
-      const [d] = await db.execute<{ id: string }>(sql`SELECT id::text FROM cadence_definitions WHERE id = ${String(i.fluxo_id)}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND ativo`);
+      const [d] = await db.execute<{ id: string }>(sql`SELECT id::text FROM cadence_definitions WHERE id = ${String(i.fluxo_id)}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND visibility = 'shared' AND ativo`);
       if (!d) return { ok: false, error: "fluxo publicado não encontrado" };
       const id = await (await motorDeCadencia()).iniciarCadencia({ cadenceDefinitionId: d.id, organizacaoId: ctx.organizacaoId, entityType: "lead", entityId: String(i.lead_id) });
       return id ? resumo("Lead incluído na cadência.", `/pessoas/${i.lead_id}`, { enrollmentId: id }) : { ok: false, error: "a cadência não iniciou (lead já inscrito ou fluxo sem passos)" };

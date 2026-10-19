@@ -75,8 +75,8 @@ export async function PreVendasPage({ searchParams }: {
 
   const leadIdsDaTela = dados.colunas.flatMap((col) => col.cards.map((c) => c.leadId));
   const [cadenciaPorLead, cadenciasPausadas] = await Promise.all([
-    passoDaCadenciaPorLead(ctx.organizacaoId, leadIdsDaTela),
-    pausasDaCadenciaPorLead(ctx.organizacaoId, leadIdsDaTela),
+    passoDaCadenciaPorLead(ctx.organizacaoId, ctx.userId, leadIdsDaTela),
+    pausasDaCadenciaPorLead(ctx.organizacaoId, ctx.userId, leadIdsDaTela),
   ]);
 
   return (

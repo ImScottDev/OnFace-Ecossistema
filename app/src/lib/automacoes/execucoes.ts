@@ -20,7 +20,7 @@ import {
   cadenceDefinitions, cadenceEnrollments, cadenceEnrollmentEvents,
   eventOutbox,
 } from "@/lib/db/schema";
-import { and, desc, eq, inArray, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
 
 export type FonteExecucao = "fila" | "automacao" | "cadencia";
 
@@ -119,6 +119,7 @@ export const LIMITE = 100;
 
 export async function listarExecucoes(
   organizacaoId: string,
+  userId: string,
   opts: { fonte: FonteExecucao | null; status: StatusExecucao | null; verFila: boolean },
 ): Promise<Execucao[]> {
   const { fonte, status, verFila } = opts;
@@ -202,7 +203,8 @@ export async function listarExecucoes(
     cancelado: ["cancelado", "cancel"],
   };
   if (quer("cadencia") && (!status || status === "marco" || statusCadencia[status])) {
-    const conds: SQL[] = [eq(cadenceEnrollments.organizacaoId, organizacaoId)];
+    const acessoCadencia = or(eq(cadenceDefinitions.visibility, "shared"), eq(cadenceDefinitions.ownerId, userId));
+    const conds: SQL[] = [eq(cadenceEnrollments.organizacaoId, organizacaoId), acessoCadencia!];
     // "marco" é o resto: tudo que não é valor de passo. Mesma regra de
     // statusDaCadencia, inclusive para valor desconhecido.
     if (status === "marco") conds.push(notInArray(cadenceEnrollmentEvents.status, Object.values(statusCadencia).flat() as string[]));
@@ -260,14 +262,18 @@ async function nomearEntidades(organizacaoId: string, itens: Execucao[]): Promis
   return itens.map((i) => ({ ...i, entidadeNome: nomes.get(i.entidadeId) ?? null }));
 }
 /** Contagens da org inteira (não só da página listada). */
-export async function resumoExecucoes(organizacaoId: string): Promise<ResumoExecucoes> {
+export async function resumoExecucoes(organizacaoId: string, userId: string): Promise<ResumoExecucoes> {
   const [fila, [auto], [cad]] = await Promise.all([
     db.select({ status: eventOutbox.status, n: sql<number>`count(*)::int`, maisAntigo: sql<string | null>`to_char(min(${eventOutbox.createdAt}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')` })
       .from(eventOutbox).where(eq(eventOutbox.organizacaoId, organizacaoId)).groupBy(eventOutbox.status),
     db.select({ n: sql<number>`count(*)::int` }).from(automacaoExecucoes).where(eq(automacaoExecucoes.organizacaoId, organizacaoId)),
     db.select({ n: sql<number>`count(*)::int` }).from(cadenceEnrollmentEvents)
       .innerJoin(cadenceEnrollments, eq(cadenceEnrollmentEvents.enrollmentId, cadenceEnrollments.id))
-      .where(eq(cadenceEnrollments.organizacaoId, organizacaoId)),
+      .innerJoin(cadenceDefinitions, and(
+        eq(cadenceDefinitions.id, cadenceEnrollments.cadenceDefinitionId),
+        eq(cadenceDefinitions.organizacaoId, cadenceEnrollments.organizacaoId),
+      ))
+      .where(and(eq(cadenceEnrollments.organizacaoId, organizacaoId), or(eq(cadenceDefinitions.visibility, "shared"), eq(cadenceDefinitions.ownerId, userId)))),
   ]);
   const por = (s: string) => fila.find((f) => f.status === s);
   return {

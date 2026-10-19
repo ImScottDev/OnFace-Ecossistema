@@ -73,8 +73,8 @@ export default async function AutomacoesExecucoesPage({
   const status = statusValidos.includes(p.status as StatusExecucao) ? (p.status as StatusExecucao) : null;
 
   const [execucoes, resumo] = await Promise.all([
-    listarExecucoes(ctx.organizacaoId, { fonte, status, verFila }),
-    resumoExecucoes(ctx.organizacaoId),
+    listarExecucoes(ctx.organizacaoId, ctx.userId, { fonte, status, verFila }),
+    resumoExecucoes(ctx.organizacaoId, ctx.userId),
   ]);
 
   const { fila } = resumo;

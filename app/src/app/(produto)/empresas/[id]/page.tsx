@@ -31,7 +31,7 @@ export default async function EmpresaPage({ params }: { params: Promise<{ id: st
     principal ? detalheLead(ctx.organizacaoId, principal) : null,
     arquivosDaEmpresa(ctx.organizacaoId, id),
     enriquecimentoDaEmpresa(ctx.organizacaoId, id),
-    principal ? cadenciaDoLead(ctx.organizacaoId, principal) : null,
+    principal ? cadenciaDoLead(ctx.organizacaoId, ctx.userId, principal) : null,
   ]);
 
   /* Tags: o catálogo real da organização (`labels`) e as da própria empresa (`entity_labels`). */

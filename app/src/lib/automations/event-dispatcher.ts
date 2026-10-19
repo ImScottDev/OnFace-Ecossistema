@@ -77,7 +77,10 @@ export async function dispatchAutomationEvent(event: EventRow): Promise<{ matche
     .from(cadenceDefinitions)
     .leftJoin(cadenceDefinitionPointers, eq(cadenceDefinitionPointers.cadenceDefinitionId, cadenceDefinitions.id))
     .leftJoin(cadenceVersions, eq(cadenceVersions.id, cadenceDefinitionPointers.publishedVersionId))
-    .where(and(eq(cadenceDefinitions.organizacaoId, event.organizacaoId), eq(cadenceDefinitions.ativo, true), eq(cadenceDefinitions.status, "published")));
+    // Evento de sistema não tem um usuário dono para autorizar uma cadência
+    // pessoal. Ela só entra por uma rota autenticada do proprietário; nunca
+    // vaza para um disparo global.
+    .where(and(eq(cadenceDefinitions.organizacaoId, event.organizacaoId), eq(cadenceDefinitions.visibility, "shared"), eq(cadenceDefinitions.ativo, true), eq(cadenceDefinitions.status, "published")));
 
   let matched = 0;
   let enrolled = 0;

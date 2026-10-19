@@ -49,7 +49,7 @@ test("filtro de lista restringe a página de prospecção antes do limite", asyn
          AND lb.nome = ${caso.lista}
     `)).map((linha) => linha.lead_id));
 
-    const resultado = await listaProspeccao(caso.organizacao_id, { lista: caso.lista, porPagina: 100 });
+    const resultado = await listaProspeccao(caso.organizacao_id, "00000000-0000-0000-0000-000000000000", { lista: caso.lista, porPagina: 100 });
 
     // A lista filtra ANTES de paginar: o total do recorte é o da lista inteira,
     // não o da primeira página (a versão com teto fixo de 400 cortava antes).

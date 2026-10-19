@@ -23,7 +23,8 @@
  * este refactor existe para acabar.
  */
 import { db } from "@/lib/db";
-import { sql } from "drizzle-orm";
+import { sql, and, eq, or } from "drizzle-orm";
+import { cadenceDefinitions } from "@/lib/db/schema";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { adicionarTag, removerTag } from "@/lib/crm/tags";
 
@@ -146,12 +147,18 @@ export async function executarEmMassa(params: {
 
         case "incluir_em_cadencia": {
           if (!valor) { itens.push({ leadId, desfecho: "falhou", motivo: "cadência não informada" }); break; }
+          if (!params.atorId) { itens.push({ leadId, desfecho: "falhou", motivo: "usuário autenticado não informado" }); break; }
+          const [cadencia] = await db.select({ id: cadenceDefinitions.id })
+            .from(cadenceDefinitions)
+            .where(and(eq(cadenceDefinitions.id, valor), eq(cadenceDefinitions.organizacaoId, organizacaoId), or(eq(cadenceDefinitions.visibility, "shared"), eq(cadenceDefinitions.ownerId, params.atorId))))
+            .limit(1);
+          if (!cadencia) { itens.push({ leadId, desfecho: "falhou", motivo: "cadência não encontrada ou sem acesso" }); break; }
           // O motor é a fonte única para conferir inscrição viva, tipo e tenant.
           const { iniciarCadencia } = await import("@/lib/cadencia/cadence-engine");
           // A chave de idempotência é do PAR cadência+lead: clicar duas vezes
           // no mesmo lote não inscreve duas vezes.
           const enrollmentId = await iniciarCadencia({
-            cadenceDefinitionId: valor, organizacaoId,
+            cadenceDefinitionId: valor, organizacaoId, actorId: params.atorId,
             entityType: "lead", entityId: leadId,
           });
           itens.push(enrollmentId

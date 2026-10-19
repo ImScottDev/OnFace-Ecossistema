@@ -20,6 +20,21 @@ import { autonomiaDaFerramenta, type ClasseAutonomia, type ModoAutonomia } from 
 import { solicitarHandoffNaAtribuicao } from "../operacao/atribuicoes";
 import { notificarSupervisor } from "../operacao/supervisao";
 
+/** Agentes executam sem identidade de proprietário: só podem mutar
+ * inscrições de cadências compartilhadas da própria organização. */
+function inscricoesCompartilhadas(organizacaoId: string) {
+  return db.select({ id: cadenceEnrollments.id })
+    .from(cadenceEnrollments)
+    .innerJoin(cadenceDefinitions, and(
+      eq(cadenceDefinitions.id, cadenceEnrollments.cadenceDefinitionId),
+      eq(cadenceDefinitions.organizacaoId, cadenceEnrollments.organizacaoId),
+    ))
+    .where(and(
+      eq(cadenceEnrollments.organizacaoId, organizacaoId),
+      eq(cadenceDefinitions.visibility, "shared"),
+    ));
+}
+
 export type AgentToolContext = {
   organizacaoId: string;
   agentId: string;
@@ -373,7 +388,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       const simulated = preview(ctx, "cadence.pause", input); if (simulated) return simulated;
       const entityIds = [ctx.contatoId, ctx.leadId].filter((id): id is string => Boolean(id));
       if (!entityIds.length) return { ok: false, error: "entidade ausente" };
-      const updated = await db.update(cadenceEnrollments).set({ status: "paused", cancelReason: input.motivo ? String(input.motivo) : "pausado pelo agente", updatedAt: new Date() }).where(and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), inArray(cadenceEnrollments.entityId, entityIds), inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply"]))).returning({ id: cadenceEnrollments.id });
+      const updated = await db.update(cadenceEnrollments).set({ status: "paused", cancelReason: input.motivo ? String(input.motivo) : "pausado pelo agente", updatedAt: new Date() }).where(and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), inArray(cadenceEnrollments.entityId, entityIds), inArray(cadenceEnrollments.id, inscricoesCompartilhadas(ctx.organizacaoId)), inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply"]))).returning({ id: cadenceEnrollments.id });
       return { ok: true, data: { paused: updated.length } };
     },
   },
@@ -384,7 +399,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       const simulated = preview(ctx, "followup.enroll", input); if (simulated) return simulated;
       const entityId = ctx.contatoId ?? ctx.leadId; const entityType = ctx.contatoId ? "contato" : "lead";
       if (!entityId) return { ok: false, error: "entidade ausente" };
-      const [definition] = await db.select({ id: cadenceDefinitions.id }).from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, String(input.definition_id)), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId), eq(cadenceDefinitions.ativo, true))).limit(1);
+      const [definition] = await db.select({ id: cadenceDefinitions.id }).from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, String(input.definition_id)), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId), eq(cadenceDefinitions.visibility, "shared"), eq(cadenceDefinitions.ativo, true))).limit(1);
       if (!definition) return { ok: false, error: "fluxo publicado não encontrado" };
       const { iniciarCadencia } = await import("@/lib/cadencia/cadence-engine");
       const id = await iniciarCadencia({ cadenceDefinitionId: definition.id, organizacaoId: ctx.organizacaoId, entityType, entityId });
@@ -396,7 +411,7 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     parameters: objectSchema({ enrollment_id: stringProp("UUID da inscrição"), motivo: stringProp("Motivo") }, ["enrollment_id", "motivo"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "followup.cancel", input); if (simulated) return simulated;
-      const [row] = await db.update(cadenceEnrollments).set({ status: "cancelled", cancelledAt: new Date(), cancelReason: String(input.motivo), updatedAt: new Date() }).where(and(eq(cadenceEnrollments.id, String(input.enrollment_id)), eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId))).returning({ id: cadenceEnrollments.id });
+      const [row] = await db.update(cadenceEnrollments).set({ status: "cancelled", cancelledAt: new Date(), cancelReason: String(input.motivo), updatedAt: new Date() }).where(and(eq(cadenceEnrollments.id, String(input.enrollment_id)), eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), inArray(cadenceEnrollments.id, inscricoesCompartilhadas(ctx.organizacaoId)))).returning({ id: cadenceEnrollments.id });
       return row ? { ok: true, data: row } : { ok: false, error: "inscrição não encontrada" };
     },
   },

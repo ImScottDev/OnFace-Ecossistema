@@ -8,8 +8,8 @@
 // resposta pra não passar a falsa impressão de que já é 1 motor só.
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, contatos, leads, negocios, whatsappTemplates } from "@/lib/db/schema";
-import { eq, sql, and, desc, inArray } from "drizzle-orm";
+import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, contatos, leads, negocios, whatsappTemplates, usuarios } from "@/lib/db/schema";
+import { eq, sql, and, or, desc, inArray } from "drizzle-orm";
 import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
 import { cancelarCadencia, iniciarCadencia } from "@/lib/cadencia/cadence-engine";
@@ -19,6 +19,7 @@ import { createEmptyFollowupGraph, followupGraphSchema, type FollowupGraph } fro
 import { legacyStepsToFollowupGraph } from "@/lib/ai-platform/followup/legacy";
 import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate";
 import { opcoesInspetor } from "@/lib/automacoes/fluxos-servico";
+import { dadosDeCriacaoDaCadencia, podeGerenciarCadencia, podeUsarCadencia, podeVerCadencia } from "@/lib/cadencia/acesso";
 
 const app = new Hono();
 
@@ -46,7 +47,7 @@ app.use("/automacoes/cadencias/*", async (c, next) => {
 app.get("/automacoes/cadencias/opcoes", async (c) => {
   const ctx = await getCtx(c);
   const [opcoes, templates] = await Promise.all([
-    opcoesInspetor(ctx.organizacaoId),
+    opcoesInspetor(ctx.organizacaoId, ctx.userId),
     db.select({ id: whatsappTemplates.id, nome: whatsappTemplates.nome, categoria: whatsappTemplates.categoria, conteudo: whatsappTemplates.conteudo })
       .from(whatsappTemplates)
       .where(and(eq(whatsappTemplates.organizacaoId, ctx.organizacaoId), eq(whatsappTemplates.ativo, true)))
@@ -58,10 +59,11 @@ app.get("/automacoes/cadencias/opcoes", async (c) => {
 app.get("/automacoes/cadencias", async (c) => {
   const ctx = await getCtx(c);
 
-  const [definicoes, pointers, versoes] = await Promise.all([
+  const [definicoes, pointers, versoes, donos] = await Promise.all([
     db.select().from(cadenceDefinitions).where(eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId)),
     db.select().from(cadenceDefinitionPointers).where(eq(cadenceDefinitionPointers.organizacaoId, ctx.organizacaoId)),
     db.select().from(cadenceVersions).where(eq(cadenceVersions.organizacaoId, ctx.organizacaoId)),
+    db.select({ id: usuarios.id, nome: usuarios.nome }).from(usuarios).where(eq(usuarios.organizacaoId, ctx.organizacaoId)),
   ]);
   const pointerByDefinition = new Map(pointers.map((pointer) => [pointer.cadenceDefinitionId, pointer]));
   const versionById = new Map(versoes.map((version) => [version.id, version]));
@@ -75,13 +77,18 @@ app.get("/automacoes/cadencias", async (c) => {
 
   const [legadoInbound] = await db.execute<{ n: number }>(sql`SELECT COUNT(*)::int AS n FROM cadencia_execucoes WHERE organizacao_id = ${ctx.organizacaoId}`);
 
+  const visiveis = definicoes.filter((d) => podeVerCadencia(d, ctx));
+  const idsVisiveis = new Set(visiveis.map((d) => d.id));
+  const donoPorId = new Map(donos.map((dono) => [dono.id, dono.nome]));
+
   return c.json({
-    cadencias: definicoes.map((d) => {
+    cadencias: visiveis.map((d) => {
       const pointer = pointerByDefinition.get(d.id);
       const draftVersion = pointer?.draftVersionId ? versionById.get(pointer.draftVersionId) : null;
       const publishedVersion = pointer?.publishedVersionId ? versionById.get(pointer.publishedVersionId) : null;
       return {
         ...d,
+        ownerName: d.ownerId ? donoPorId.get(d.ownerId) ?? null : null,
         draftSteps: d.draftSteps ?? d.steps,
         draftGraph: draftVersion?.graph ?? null,
         publishedGraph: publishedVersion?.graph ?? null,
@@ -89,7 +96,7 @@ app.get("/automacoes/cadencias", async (c) => {
         publishedVersionId: publishedVersion?.id ?? null,
         publishedVersionNumber: publishedVersion?.versionNumber ?? null,
         totalPassos: Array.isArray(publishedVersion?.compiledSteps) ? publishedVersion.compiledSteps.length : Array.isArray(d.steps) ? d.steps.length : 0,
-        enrollmentsPorStatus: contagens.filter((ct) => ct.cadence_definition_id === d.id).reduce((acc, ct) => ({ ...acc, [ct.status]: ct.n }), {} as Record<string, number>),
+        enrollmentsPorStatus: contagens.filter((ct) => idsVisiveis.has(ct.cadence_definition_id) && ct.cadence_definition_id === d.id).reduce((acc, ct) => ({ ...acc, [ct.status]: ct.n }), {} as Record<string, number>),
       };
     }),
     // Mecanismos paralelos ainda não unificados a este motor — visibilidade
@@ -118,12 +125,26 @@ app.get("/automacoes/cadencias/fila", async (c) => {
   else if (status && status !== "all") conditions.push(eq(cadenceEnrollments.status, status));
   if (definitionId && definitionId !== "all") conditions.push(eq(cadenceEnrollments.cadenceDefinitionId, definitionId));
 
-  const [definitions, enrollments] = await Promise.all([
+  const [definitions, enrollmentRows] = await Promise.all([
     db.select().from(cadenceDefinitions).where(eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId)),
-    db.select().from(cadenceEnrollments).where(and(...conditions)).orderBy(desc(cadenceEnrollments.updatedAt)).limit(250),
+    // A permissão tem de entrar ANTES do LIMIT; filtrar depois trunca a fila
+    // se outra pessoa tiver centenas de inscrições pessoais recentes.
+    db.select({ enrollment: cadenceEnrollments }).from(cadenceEnrollments)
+      .innerJoin(cadenceDefinitions, and(
+        eq(cadenceDefinitions.id, cadenceEnrollments.cadenceDefinitionId),
+        eq(cadenceDefinitions.organizacaoId, cadenceEnrollments.organizacaoId),
+      ))
+      .where(and(
+        ...conditions,
+        or(eq(cadenceDefinitions.visibility, "shared"), eq(cadenceDefinitions.ownerId, ctx.userId)),
+      ))
+      .orderBy(desc(cadenceEnrollments.updatedAt)).limit(250),
   ]);
-  const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
-  const idsByType = enrollments.reduce((acc, enrollment) => {
+  const visiveis = definitions.filter((definition) => podeVerCadencia(definition, ctx));
+  const visiveisIds = new Set(visiveis.map((definition) => definition.id));
+  const enrollmentVisiveis = enrollmentRows.map((row) => row.enrollment).filter((row) => visiveisIds.has(row.cadenceDefinitionId));
+  const definitionById = new Map(visiveis.map((definition) => [definition.id, definition]));
+  const idsByType = enrollmentVisiveis.reduce((acc, enrollment) => {
     if (enrollment.entityType === "lead" || enrollment.entityType === "negocio" || enrollment.entityType === "contato") acc[enrollment.entityType].push(enrollment.entityId);
     return acc;
   }, { lead: [] as string[], negocio: [] as string[], contato: [] as string[] });
@@ -136,7 +157,7 @@ app.get("/automacoes/cadencias/fila", async (c) => {
   const negocioById = new Map(negocioRows.map((row) => [row.id, row]));
   const contatoById = new Map(contatoRows.map((row) => [row.id, row]));
 
-  const items = enrollments.map((enrollment) => {
+  const items = enrollmentVisiveis.map((enrollment) => {
     const definition = definitionById.get(enrollment.cadenceDefinitionId);
     const steps = (definition?.steps ?? []) as Array<{ id?: string; tipo?: string; config?: Record<string, unknown>; esperaMinutos?: number }>;
     const currentStep = steps.find((step) => step.id === enrollment.currentStepId);
@@ -160,7 +181,7 @@ app.get("/automacoes/cadencias/fila", async (c) => {
     };
   }).filter((item) => !query || `${item.entityName} ${item.entityDetail ?? ""} ${item.definitionName}`.toLowerCase().includes(query));
 
-  return c.json({ items, total: items.length, definitions: definitions.map((definition) => ({ id: definition.id, nome: definition.nome })) });
+  return c.json({ items, total: items.length, definitions: visiveis.map((definition) => ({ id: definition.id, nome: definition.nome })) });
 });
 
 const stepSchema = z.object({
@@ -188,6 +209,7 @@ const stepsComRegraDeTipo = z.array(stepSchema).min(1).superRefine((steps, ctx) 
 const definitionSchema = z.object({
   nome: z.string().min(1).max(120),
   entityType: z.enum(["lead", "negocio", "contato", "oportunidade", "cliente", "empresa", "servico"]),
+  visibility: z.enum(["personal", "shared"]).default("shared"),
   steps: stepsComRegraDeTipo.optional(),
   graph: followupGraphSchema.optional(),
   triggerConfig: z.record(z.string(), z.unknown()).default({}),
@@ -215,6 +237,7 @@ app.post("/automacoes/cadencias", async (c) => {
   const result = await db.transaction(async (tx) => {
     const [cadencia] = await tx.insert(cadenceDefinitions).values({
       organizacaoId: ctx.organizacaoId,
+      ...dadosDeCriacaoDaCadencia(ctx.userId, parsed.data.visibility),
       nome: parsed.data.nome,
       entityType: parsed.data.entityType,
       steps: compiled,
@@ -251,6 +274,9 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
     eq(cadenceDefinitions.id, id), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId),
   )).limit(1);
   if (!current) return c.json({ error: "Cadencia nao encontrada" }, 404);
+  if (!podeGerenciarCadencia(current, { userId: ctx.userId, role: ctx.userRole, canManage: true })) {
+    return c.json({ error: "Cadência pessoal só pode ser alterada pelo proprietário." }, 403);
+  }
 
   const [pointer] = await db.select().from(cadenceDefinitionPointers).where(and(
     eq(cadenceDefinitionPointers.cadenceDefinitionId, id),
@@ -268,6 +294,7 @@ app.patch("/automacoes/cadencias/:id", async (c) => {
       const [updated] = await tx.update(cadenceDefinitions).set({
         ...(parsed.data.nome ? { nome: parsed.data.nome } : {}),
         ...(parsed.data.entityType ? { entityType: parsed.data.entityType } : {}),
+        ...(parsed.data.visibility ? { visibility: parsed.data.visibility, ownerId: parsed.data.visibility === "personal" ? ctx.userId : current.ownerId ?? ctx.userId } : {}),
         triggerConfig,
         ...(parsed.data.handoffPolicy ? { handoffPolicy: parsed.data.handoffPolicy } : {}),
         draftSteps: compiled,
@@ -357,7 +384,7 @@ app.get("/automacoes/cadencias/:id", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
   const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, id), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
-  if (!definition) return c.json({ error: "Cadencia nao encontrada" }, 404);
+  if (!definition || !podeVerCadencia(definition, ctx)) return c.json({ error: "Cadencia nao encontrada" }, 404);
   const [pointer, versions] = await Promise.all([
     db.select().from(cadenceDefinitionPointers).where(and(eq(cadenceDefinitionPointers.cadenceDefinitionId, id), eq(cadenceDefinitionPointers.organizacaoId, ctx.organizacaoId))).limit(1).then((rows) => rows[0] ?? null),
     db.select().from(cadenceVersions).where(and(eq(cadenceVersions.cadenceDefinitionId, id), eq(cadenceVersions.organizacaoId, ctx.organizacaoId))).orderBy(desc(cadenceVersions.versionNumber)),
@@ -368,6 +395,8 @@ app.get("/automacoes/cadencias/:id", async (c) => {
 
 app.get("/automacoes/cadencias/:id/enrollments", async (c) => {
   const ctx = await getCtx(c);
+  const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, c.req.param("id")), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!definition || !podeVerCadencia(definition, ctx)) return c.json({ error: "Cadencia nao encontrada" }, 404);
   const rows = await db.select().from(cadenceEnrollments).where(and(
     eq(cadenceEnrollments.cadenceDefinitionId, c.req.param("id")),
     eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId),
@@ -407,7 +436,7 @@ async function buscarEntidades(organizacaoId: string, tipo: EntidadeInscrevivel,
 app.get("/automacoes/cadencias/:id/candidatos", async (c) => {
   const ctx = await getCtx(c);
   const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, c.req.param("id")), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
-  if (!definition) return c.json({ error: "Cadencia nao encontrada" }, 404);
+  if (!definition || !podeUsarCadencia(definition, { userId: ctx.userId, role: ctx.userRole, canManage: true })) return c.json({ error: "Cadencia nao encontrada" }, 404);
   if (!ehInscrevivel(definition.entityType)) return c.json({ suportado: false, candidatos: [] });
   const candidatos = await buscarEntidades(ctx.organizacaoId, definition.entityType, (c.req.query("q") ?? "").trim().slice(0, 80));
   const ativos = candidatos.length ? await db.select({ entityId: cadenceEnrollments.entityId }).from(cadenceEnrollments).where(and(
@@ -423,7 +452,7 @@ app.post("/automacoes/cadencias/:id/enrollments", async (c) => {
   const parsed = z.object({ entityId: z.string().uuid(), sessaoId: z.string().uuid().optional() }).safeParse(await c.req.json());
   if (!parsed.success) return c.json({ error: "Registro invalido" }, 400);
   const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, c.req.param("id")), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
-  if (!definition) return c.json({ error: "Cadencia nao encontrada" }, 404);
+  if (!definition || !podeUsarCadencia(definition, { userId: ctx.userId, role: ctx.userRole, canManage: true })) return c.json({ error: "Cadencia nao encontrada" }, 404);
   if (!definition.ativo) return c.json({ error: "Publique a cadência antes de inscrever alguém." }, 409);
   if (!ehInscrevivel(definition.entityType)) return c.json({ error: "Inscrição manual disponível só para lead, contato ou negócio." }, 422);
   const [entidade] = await buscarEntidades(ctx.organizacaoId, definition.entityType, "", [parsed.data.entityId]);
@@ -433,7 +462,7 @@ app.post("/automacoes/cadencias/:id/enrollments", async (c) => {
     eq(cadenceEnrollments.entityId, entidade.id), inArray(cadenceEnrollments.status, ["active", "waiting", "waiting_reply", "paused"]),
   )).limit(1);
   if (jaAtivo) return c.json({ enrollmentId: jaAtivo.id, jaExistia: true });
-  const enrollmentId = await iniciarCadencia({ cadenceDefinitionId: definition.id, organizacaoId: ctx.organizacaoId, entityType: definition.entityType, entityId: entidade.id, varsIniciais: { nome: entidade.nome, ...(parsed.data.sessaoId ? { cadencia_sessao_id: parsed.data.sessaoId } : {}) } });
+  const enrollmentId = await iniciarCadencia({ cadenceDefinitionId: definition.id, organizacaoId: ctx.organizacaoId, actorId: ctx.userId, entityType: definition.entityType, entityId: entidade.id, varsIniciais: { nome: entidade.nome, ...(parsed.data.sessaoId ? { cadencia_sessao_id: parsed.data.sessaoId } : {}) } });
   if (!enrollmentId) return c.json({ error: "Cadência sem passos publicados." }, 409);
   await db.insert(cadenceEnrollmentEvents).values({ enrollmentId, stepId: "-", status: "enrolled", resultado: { actorId: ctx.userId, origem: "inscricao_manual" } });
   return c.json({ enrollmentId, jaExistia: false }, 201);
@@ -442,9 +471,11 @@ app.post("/automacoes/cadencias/:id/enrollments", async (c) => {
 app.get("/automacoes/cadencias/enrollments/:id/events", async (c) => {
   const ctx = await getCtx(c);
   const id = c.req.param("id");
-  const [enrollment] = await db.select({ id: cadenceEnrollments.id }).from(cadenceEnrollments)
+  const [enrollment] = await db.select({ id: cadenceEnrollments.id, cadenceDefinitionId: cadenceEnrollments.cadenceDefinitionId }).from(cadenceEnrollments)
     .where(and(eq(cadenceEnrollments.id, id), eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId))).limit(1);
   if (!enrollment) return c.json({ error: "Enrollment nao encontrado" }, 404);
+  const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, enrollment.cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!definition || !podeVerCadencia(definition, ctx)) return c.json({ error: "Enrollment nao encontrado" }, 404);
   const events = await db.select().from(cadenceEnrollmentEvents).where(eq(cadenceEnrollmentEvents.enrollmentId, id)).orderBy(desc(cadenceEnrollmentEvents.createdAt)).limit(200);
   return c.json({ events });
 });
@@ -458,13 +489,12 @@ app.post("/automacoes/cadencias/enrollments/:id/action", async (c) => {
     eq(cadenceEnrollments.id, id), eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId),
   )).limit(1);
   if (!enrollment) return c.json({ error: "Enrollment nao encontrado" }, 404);
+  const [definition] = await db.select().from(cadenceDefinitions).where(and(eq(cadenceDefinitions.id, enrollment.cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
+  if (!definition || !podeUsarCadencia(definition, { userId: ctx.userId, role: ctx.userRole, canManage: true })) return c.json({ error: "Enrollment nao encontrado" }, 404);
   const emCurso = ["active", "waiting", "waiting_reply"].includes(enrollment.status);
   if (parsed.data.action === "resume") {
     if (enrollment.status !== "paused") return c.json({ error: "Só inscrições pausadas podem ser retomadas." }, 409);
-    const [def] = await db.select({ ativo: cadenceDefinitions.ativo }).from(cadenceDefinitions)
-      .where(and(eq(cadenceDefinitions.id, enrollment.cadenceDefinitionId),
-        eq(cadenceDefinitions.organizacaoId, ctx.organizacaoId))).limit(1);
-    if (!def?.ativo) return c.json({ error: "Esta cadência está desativada. Publique-a antes de retomar." }, 409);
+    if (!definition.ativo) return c.json({ error: "Esta cadência está desativada. Publique-a antes de retomar." }, 409);
   } else if (!emCurso && !(parsed.data.action === "cancel" && enrollment.status === "paused")) {
     return c.json({ error: "Esta inscrição já está parada ou concluída." }, 409);
   }

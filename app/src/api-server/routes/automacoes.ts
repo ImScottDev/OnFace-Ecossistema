@@ -4,6 +4,7 @@ import { automacoes, automacaoExecucoes, cadenceDefinitions } from "@/lib/db/sch
 import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx, exigirCtx } from "../compat.js";
+import { podeUsarCadencia } from "@/lib/cadencia/acesso";
 
 const createAutomacaoSchema = z.object({
   nome: z.string().min(1).max(100),
@@ -117,15 +118,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
    checagem, uma regra da org A apontando para o UUID de uma cadência da org B
    matricularia e executaria os passos da org B dentro da org A. Por isso todo
    cadenceDefinitionId que entra por aqui precisa ser do tenant do request. */
-async function cadenciaInvalida(organizacaoId: string, acao: string | undefined, cadenceDefinitionId: string | undefined): Promise<string | null> {
+async function cadenciaInvalida(organizacaoId: string, userId: string, acao: string | undefined, cadenceDefinitionId: string | undefined): Promise<string | null> {
   if (acao === "iniciar_cadencia" && !cadenceDefinitionId) return "Escolha a cadência";
   if (!cadenceDefinitionId) return null;
   const [cad] = await db
-    .select({ id: cadenceDefinitions.id })
+    .select({ id: cadenceDefinitions.id, visibility: cadenceDefinitions.visibility, ownerId: cadenceDefinitions.ownerId })
     .from(cadenceDefinitions)
     .where(and(eq(cadenceDefinitions.id, cadenceDefinitionId), eq(cadenceDefinitions.organizacaoId, organizacaoId)))
     .limit(1);
-  return cad ? null : "Cadência não encontrada nesta organização";
+  return cad && cad.visibility === "shared" && podeUsarCadencia(cad, { userId, canManage: true })
+    ? null
+    : "Automações de sistema só podem iniciar cadências compartilhadas e acessíveis.";
 }
 
 // GET /automacoes — list all automations for current org
@@ -149,7 +152,7 @@ app.post("/", async (c) => {
   try {
     const body = await c.req.json();
     const data = createAutomacaoSchema.parse(body);
-    const erroCadencia = await cadenciaInvalida(ctx.organizacaoId, data.acao, data.acaoConfig?.cadenceDefinitionId ?? undefined);
+    const erroCadencia = await cadenciaInvalida(ctx.organizacaoId, ctx.userId, data.acao, data.acaoConfig?.cadenceDefinitionId ?? undefined);
     if (erroCadencia) return c.json({ error: erroCadencia }, 422);
 
     const [newAutomacao] = await db
@@ -261,7 +264,7 @@ app.patch("/:id", async (c) => {
       if (!atual) return c.json({ error: "Automação não encontrada" }, 404);
       const acao = data.acao ?? atual.acao;
       const config = data.acaoConfig !== undefined ? data.acaoConfig : (atual.acaoConfig as { cadenceDefinitionId?: string } | null);
-      const erroCadencia = await cadenciaInvalida(ctx.organizacaoId, acao, config?.cadenceDefinitionId ?? undefined);
+      const erroCadencia = await cadenciaInvalida(ctx.organizacaoId, ctx.userId, acao, config?.cadenceDefinitionId ?? undefined);
       if (erroCadencia) return c.json({ error: erroCadencia }, 422);
     }
 

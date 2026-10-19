@@ -20,7 +20,7 @@ test("passoDaCadenciaPorLead só conta inscrição viva: sem inscrição não h�
                         AND e.entity_id = x.lead_id AND e.status IN ('active', 'waiting'))
      LIMIT 1`);
   if (x) {
-    const mapa = await passoDaCadenciaPorLead(x.org, [x.lead]);
+    const mapa = await passoDaCadenciaPorLead(x.org, null, [x.lead]);
     assert.equal(mapa[x.lead], undefined);
   }
   // Quem tem inscrição viva mostra o nome da cadência, nunca "Toque N · canal".
@@ -28,10 +28,10 @@ test("passoDaCadenciaPorLead só conta inscrição viva: sem inscrição não h�
     SELECT organizacao_id::text AS org, entity_id::text AS lead FROM cadence_enrollments
      WHERE entity_type = 'lead' AND status IN ('active', 'waiting') LIMIT 1`);
   if (v) {
-    const mapa = await passoDaCadenciaPorLead(v.org, [v.lead]);
+    const mapa = await passoDaCadenciaPorLead(v.org, null, [v.lead]);
     assert.match(mapa[v.lead] ?? "", /^Cadência /);
   }
-  assert.deepEqual(await passoDaCadenciaPorLead("00000000-0000-0000-0000-000000000000", []), {});
+  assert.deepEqual(await passoDaCadenciaPorLead("00000000-0000-0000-0000-000000000000", null, []), {});
 });
 
 test("o Kanban único mostra cards de Nutrição e Desqualificado", async (t) => {

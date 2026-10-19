@@ -244,6 +244,7 @@ export async function acaoCadencias(): Promise<Array<{ id: string; nome: string 
   const linhas = await db.execute<{ id: string; nome: string }>(sql`
     SELECT id::text, nome FROM cadence_definitions
      WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo = true AND entity_type = 'lead'
+       AND (visibility = 'shared' OR owner_id = ${ctx.userId}::uuid)
      ORDER BY nome
   `);
   return linhas.map((l) => ({ id: l.id, nome: l.nome }));

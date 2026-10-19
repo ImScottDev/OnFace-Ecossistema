@@ -310,7 +310,7 @@ const STATUS_VIVOS = sql`ARRAY['active','waiting','waiting_reply','paused']`;
  * condição que `iniciarCadencia` aplica, verificada ANTES para devolver o
  * motivo exato em vez de um "indisponível" genérico.
  */
-async function exigirCadenciaValida(organizacaoId: string, cadenceDefinitionId: string): Promise<{ nome: string }> {
+async function exigirCadenciaValida(organizacaoId: string, userId: string | null, cadenceDefinitionId: string): Promise<{ nome: string }> {
   const [d] = await db.execute<{ nome: string; ativo: boolean; entity_type: string; passos: number }>(sql`
     SELECT cd.nome, cd.ativo, cd.entity_type,
            COALESCE(jsonb_array_length(COALESCE(cv.compiled_steps, cd.steps)), 0)::int AS passos
@@ -318,6 +318,7 @@ async function exigirCadenciaValida(organizacaoId: string, cadenceDefinitionId: 
       LEFT JOIN cadence_definition_pointers cp ON cp.cadence_definition_id = cd.id AND cp.organizacao_id = cd.organizacao_id
       LEFT JOIN cadence_versions cv ON cv.id = cp.published_version_id AND cv.organizacao_id = cd.organizacao_id
      WHERE cd.id = ${cadenceDefinitionId}::uuid AND cd.organizacao_id = ${organizacaoId}::uuid
+       AND (cd.visibility = 'shared' OR cd.owner_id = ${userId}::uuid)
   `);
   if (!d) throw new RegraDeNegocio("cadencia_invalida", "Cadência não encontrada nesta organização.");
   if (!d.ativo) throw new RegraDeNegocio("cadencia_invalida", `A cadência "${d.nome}" está inativa. Ative-a em Automações › Cadências.`);
@@ -346,7 +347,7 @@ export async function inscreverEmCadencia(params: {
     return { enrollmentId: viva?.id ?? null };
   }
 
-  const cadencia = await exigirCadenciaValida(params.organizacaoId, params.cadenceDefinitionId);
+  const cadencia = await exigirCadenciaValida(params.organizacaoId, params.ator.usuarioId, params.cadenceDefinitionId);
 
   // Uma cadência viva por prospect: duas fariam a mesma empresa receber duas
   // abordagens em paralelo e o "passo atual" deixaria de ter um dono.
@@ -363,6 +364,7 @@ export async function inscreverEmCadencia(params: {
   const enrollmentId = await iniciarCadencia({
     cadenceDefinitionId: params.cadenceDefinitionId,
     organizacaoId: params.organizacaoId,
+    actorId: params.ator.usuarioId,
     entityType: "lead",
     entityId: params.leadId,
     varsIniciais: {

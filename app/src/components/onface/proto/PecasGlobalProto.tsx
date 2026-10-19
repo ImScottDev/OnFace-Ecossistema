@@ -25,9 +25,11 @@ import {
   acaoCriarOportunidade, acaoCriarTarefa, acaoDesqualificar, acaoDetalhe,
   acaoMoverEtapa, acaoNutrir, acaoQualificar, acaoReativar,
   acaoRegistrarContato, acaoResponsaveis, acaoSalvarQualificacao,
-  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa, acaoRemoverDaCadencia,
+  acaoTagDoLead, acaoOpcoesEmMassa, acaoCadenciasDoSistema, acaoEmMassa,
+  acaoRemoverDaCadencia, acaoInserirCadenciaDoLead, acaoEstadoCadenciaDoLead,
 } from "@/app/(produto)/pre-vendas/actions";
 import type { AcoesPreVendas } from "../vendas/PreVendas";
+import { acaoPausarCadenciaDoLead } from "@/app/(produto)/contatos/actions";
 import type { CanalAtendimento } from "../vendas/atendimento";
 import {
   executarIntencao, PecasLigadas, qualDoDesenho, quando, type LeadDoDesenho,
@@ -42,7 +44,9 @@ const ACOES: AcoesPreVendas = {
   criarOportunidade: acaoCriarOportunidade, criarLead: acaoCriarLead,
   associarEmpresa: acaoAssociarEmpresa, detalhe: acaoDetalhe, criarTarefa: acaoCriarTarefa,
   atribuirEmMassa: acaoAtribuirEmMassa, tag: acaoTagDoLead, tagsDaOrg: acaoOpcoesEmMassa,
-  cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa, removerDaCadencia: acaoRemoverDaCadencia,
+  cadenciasDoSistema: acaoCadenciasDoSistema, emMassa: acaoEmMassa,
+  removerDaCadencia: acaoRemoverDaCadencia,
+  inserirCadencia: acaoInserirCadenciaDoLead, pausarCadencia: acaoPausarCadenciaDoLead,
 };
 
 const ETAPAS = Object.fromEntries(
@@ -114,21 +118,29 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
     },
   }), [contexto]);
 
-  const [carga, setCarga] = React.useState<{ detalhe: DetalheLead; equipe: Array<{ id: string; nome: string }> } | null>(null);
+  const [carga, setCarga] = React.useState<{
+    detalhe: DetalheLead; equipe: Array<{ id: string; nome: string }>;
+    cadencia: { nome: string; pausada: boolean } | null;
+  } | null>(null);
 
   React.useEffect(() => {
     if (!leadId) { toast("Sem lead vinculado — esta peça trabalha sobre um lead.", { id: "pecas-global" }); fechar(); return; }
     // Id que não é de lead (contato sem lead, id do protótipo): dizer, não consultar.
     if (!/^[0-9a-f-]{36}$/i.test(leadId)) { toast("Este contato ainda não é lead no CRM.", { id: "pecas-global" }); fechar(); return; }
     let vivo = true;
-    Promise.all([acaoDetalhe(leadId), acaoResponsaveis()]).then(([r, equipe]) => {
+    Promise.all([
+      acaoDetalhe(leadId), acaoResponsaveis(),
+      peca === "cadencia" || peca === "detalhe"
+        ? acaoEstadoCadenciaDoLead(leadId)
+        : Promise.resolve({ ok: true as const, dados: null }),
+    ]).then(([r, equipe, cadencia]) => {
       if (!vivo) return;
       if (!r.ok || !r.dados?.lead) {
         toast.error(r.ok ? "Não encontrei este lead." : (r.erro ?? "Não consegui abrir o lead."));
         fechar();
         return;
       }
-      setCarga({ detalhe: r.dados.lead, equipe });
+      setCarga({ detalhe: r.dados.lead, equipe, cadencia: cadencia.ok ? cadencia.dados ?? null : null });
     }, () => { if (vivo) { toast.error("Não consegui abrir o lead."); fechar(); } });
     return () => { vivo = false; };
   }, [leadId, fechar]);
@@ -217,7 +229,11 @@ export default function PecasGlobalProto({ peca, id, contexto, fechar, gravou }:
   return (
     <PecasGlobais
       ref={pecas}
-      dados={{ leads, qual }}
+      dados={{
+        leads, qual,
+        cadencias: carga?.cadencia && lead ? { [lead.id]: carga.cadencia.nome } : {},
+        cadenciasPausadas: carga?.cadencia && lead ? { [lead.id]: carga.cadencia.pausada } : {},
+      }}
       catalogo={catalogo}
       leads={leads}
       /* Sem `acoes` a peça de cadência não via nada ("Nenhuma cadência publicada" em toda

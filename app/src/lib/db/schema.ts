@@ -4135,6 +4135,10 @@ export const clientes = pgTable("clientes", {
 export const cadenceDefinitions = pgTable("cadence_definitions", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  // Nulo somente em cadências legadas anteriores à propriedade; novas criações
+  // sempre recebem o usuário autenticado pela rota de CRUD.
+  ownerId: uuid("owner_id").references(() => usuarios.id, { onDelete: "set null" }),
+  visibility: text("visibility").default("shared").notNull(), // personal | shared
   nome: text("nome").notNull(),
   entityType: text("entity_type").notNull(), // lead | negocio | contato
   // CadenceStep[] — ver tipo em cadence-engine.ts. Cada step: {id, tipo (wait|action|condition),

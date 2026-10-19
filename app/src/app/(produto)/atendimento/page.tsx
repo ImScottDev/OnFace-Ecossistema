@@ -39,6 +39,6 @@ export default async function AtendimentoPage({ searchParams }: {
   /* `?escopo=equipe` é o seletor Minhas / Equipe; sem permissão a tela volta para "Minhas". */
   const dados = await paginaDeAtendimento(ctx, escopo === "equipe" ? "equipe" : "minhas");
   const contexto = await contextoDosLeads(ctx.organizacaoId, dados.leads.map((l) => l.id));
-  const cadencias = await cadenciasDosLeads(ctx.organizacaoId, dados.leads.map((l) => l.id));
+  const cadencias = await cadenciasDosLeads(ctx.organizacaoId, ctx.userId, dados.leads.map((l) => l.id));
   return <AtendimentoProto dados={dados} contexto={contexto} cadencias={cadencias} leadInicial={leadId ?? null} />;
 }

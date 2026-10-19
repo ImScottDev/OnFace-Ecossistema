@@ -9,7 +9,7 @@ import {
   automacoes, automacaoExecucoes,
   cadenceDefinitions, cadenceEnrollments, cadenceEnrollmentEvents,
 } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, or } from "drizzle-orm";
 import { getCtx, qp } from "../compat.js";
 
 // Vocabulário unificado de status pra UI. `automacao_execucoes.status` usa
@@ -135,9 +135,10 @@ app.get("/automacoes/execucoes", async (c) => {
   let execCadencias: ExecucaoUnificada[] = [];
   const filtroCadenciaValor = statusFiltro ? FILTRO_CADENCIA[statusFiltro] : undefined;
   if (filtroCadenciaValor !== null) {
+    const acesso = or(eq(cadenceDefinitions.visibility, "shared"), eq(cadenceDefinitions.ownerId, ctx.userId));
     const whereCadencia = filtroCadenciaValor
-      ? and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), eq(cadenceEnrollmentEvents.status, filtroCadenciaValor))
-      : eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId);
+      ? and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), acesso, eq(cadenceEnrollmentEvents.status, filtroCadenciaValor))
+      : and(eq(cadenceEnrollments.organizacaoId, ctx.organizacaoId), acesso);
 
     const rows = await db
       .select({

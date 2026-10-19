@@ -411,6 +411,7 @@ export async function acaoOpcoesEmMassa(): Promise<
       db.execute<{ id: string; nome: string }>(sql`
         SELECT id::text, nome FROM cadence_definitions
          WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false
+           AND (visibility = 'shared' OR owner_id = ${ctx.ator.usuarioId}::uuid)
          ORDER BY nome LIMIT 40
       `),
     ]);
@@ -461,6 +462,7 @@ export async function acaoCadenciasDoSistema(): Promise<Resultado<{
     const defs = await db.execute<{ id: string; nome: string; steps: unknown }>(sql`
       SELECT id::text, nome, steps FROM cadence_definitions
        WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND ativo IS NOT false AND status = 'published' AND entity_type = 'lead'
+         AND (visibility = 'shared' OR owner_id = ${ctx.ator.usuarioId}::uuid)
        ORDER BY nome LIMIT 40`);
     const rotuloDia = (min: number) => `Dia ${Math.round(min / 1440)}`;
     const cadencias = [...defs].map((d) => {
@@ -498,9 +500,13 @@ export async function acaoRemoverDaCadencia(leadId: string): Promise<Resultado<{
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("remover da cadência", async () => {
     const vivas = await db.execute<{ id: string }>(sql`
-      SELECT id::text FROM cadence_enrollments
-       WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND entity_type = 'lead'
-         AND entity_id = ${leadId}::uuid AND status IN ('active', 'waiting', 'waiting_reply', 'paused')`);
+      SELECT ce.id::text FROM cadence_enrollments ce
+        JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+          AND cd.organizacao_id = ce.organizacao_id
+       WHERE ce.organizacao_id = ${ctx.organizacaoId}::uuid AND ce.entity_type = 'lead'
+         AND ce.entity_id = ${leadId}::uuid
+         AND (cd.visibility = 'shared' OR cd.owner_id = ${ctx.ator.usuarioId}::uuid)
+         AND ce.status IN ('active', 'waiting', 'waiting_reply', 'paused')`);
     const { cancelarCadencia } = await import("@/lib/cadencia/cadence-engine");
     for (const v of vivas) await cancelarCadencia(v.id, "removido_manualmente");
     revalidarLead();
@@ -603,7 +609,7 @@ export async function acaoInserirCadenciaDoLead(
   return executar("inserir na cadência", async () => {
     const [lead] = await db.execute<{ id: string }>(sql`SELECT id::text FROM leads WHERE id = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid LIMIT 1`);
     if (!lead) throw new RegraDeNegocio("lead_inexistente", "Este lead não pertence à sua organização.");
-    const [definition] = await db.execute<{ id: string }>(sql`SELECT id::text FROM cadence_definitions WHERE id = ${cadenciaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND entity_type = 'lead' AND ativo = true AND status = 'published' LIMIT 1`);
+    const [definition] = await db.execute<{ id: string }>(sql`SELECT id::text FROM cadence_definitions WHERE id = ${cadenciaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid AND entity_type = 'lead' AND ativo = true AND status = 'published' AND (visibility = 'shared' OR owner_id = ${ctx.ator.usuarioId}::uuid) LIMIT 1`);
     if (!definition) throw new RegraDeNegocio("cadencia_indisponivel", "Cadência não publicada ou incompatível com este lead.");
     if (sessaoId) {
       const [sessao] = await db.execute<{ id: string }>(sql`
@@ -619,6 +625,7 @@ export async function acaoInserirCadenciaDoLead(
     if (existente) return { enrollmentId: existente.id, jaExistia: true };
     const enrollmentId = await iniciarCadencia({
       organizacaoId: ctx.organizacaoId, cadenceDefinitionId: cadenciaId,
+      actorId: ctx.ator.usuarioId,
       entityType: "lead", entityId: leadId,
       varsIniciais: sessaoId ? { cadencia_sessao_id: sessaoId } : {},
     });
@@ -640,9 +647,13 @@ export async function acaoAlternarCadenciaDoLead(leadId: string): Promise<Result
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   const [row] = await db.execute<{ status: string }>(sql`
-    SELECT status FROM cadence_enrollments WHERE organizacao_id = ${ctx.organizacaoId}::uuid
-      AND entity_type = 'lead' AND entity_id = ${leadId}::uuid
-      AND status IN ('active','waiting','waiting_reply','paused')
+    SELECT ce.status FROM cadence_enrollments ce
+      JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
+        AND cd.organizacao_id = ce.organizacao_id
+      WHERE ce.organizacao_id = ${ctx.organizacaoId}::uuid
+      AND ce.entity_type = 'lead' AND ce.entity_id = ${leadId}::uuid
+      AND (cd.visibility = 'shared' OR cd.owner_id = ${ctx.ator.usuarioId}::uuid)
+      AND ce.status IN ('active','waiting','waiting_reply','paused')
     ORDER BY started_at DESC LIMIT 1`);
   if (!row) return { ok: false, erro: "Este lead não possui inscrição ativa ou pausada." };
   const pausar = row.status !== "paused";
@@ -651,4 +662,18 @@ export async function acaoAlternarCadenciaDoLead(leadId: string): Promise<Result
   if (!resultado.ok) return resultado;
   revalidarLead();
   return { ok: true, dados: { pausada: pausar } };
+}
+
+
+/** Estado da inscrição do lead, usando a mesma política de acesso da ficha. */
+export async function acaoEstadoCadenciaDoLead(
+  leadId: string,
+): Promise<Resultado<{ nome: string; pausada: boolean } | null>> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  if (!ctx.ator.usuarioId) return { ok: false, erro: "Sessão sem usuário autenticado." };
+  return executar("consultar cadência do lead", async () => {
+    const { cadenciaDoLead } = await import("@/lib/vendas/ficha-extras");
+    return cadenciaDoLead(ctx.organizacaoId, ctx.ator.usuarioId!, leadId);
+  });
 }

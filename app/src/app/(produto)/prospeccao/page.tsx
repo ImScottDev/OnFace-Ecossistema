@@ -56,9 +56,9 @@ export async function ProspeccaoPage({ searchParams }: {
 
   const [lista, kanban, operacao, cadencias, responsaveis, chaveApollo] = await Promise.all([
     visao === "lista"
-      ? listaProspeccao(ctx.organizacaoId, { ...consulta, pagina: Number.isFinite(pagina) ? pagina : 1, porPagina: (POR_PAGINA_PROSPECCAO as readonly number[]).includes(porPagina) ? porPagina : 25 })
+      ? listaProspeccao(ctx.organizacaoId, ctx.userId, { ...consulta, pagina: Number.isFinite(pagina) ? pagina : 1, porPagina: (POR_PAGINA_PROSPECCAO as readonly number[]).includes(porPagina) ? porPagina : 25 })
       : null,
-    visao === "kanban" ? kanbanProspeccao(ctx.organizacaoId, consulta, porColuna) : null,
+    visao === "kanban" ? kanbanProspeccao(ctx.organizacaoId, ctx.userId, consulta, porColuna) : null,
     visao === "operacao" || visao === "campanhas" || visao === "inteligencia" ? operacaoProspeccao(ctx.organizacaoId) : null,
     acaoCadencias(),
     acaoResponsaveis(),

@@ -19,7 +19,7 @@ export type CadenciaDoLead = {
   proximoEm: string | null;
 };
 
-export async function cadenciasDosLeads(organizacaoId: string, leadIds: string[]): Promise<Record<string, CadenciaDoLead>> {
+export async function cadenciasDosLeads(organizacaoId: string, userId: string, leadIds: string[]): Promise<Record<string, CadenciaDoLead>> {
   if (!leadIds.length) return {};
   const linhas = await db.execute<{
     lead_id: string; id: string; nome: string; status: string; atual: string | null; steps: unknown; proximo: string | null;
@@ -29,6 +29,7 @@ export async function cadenciasDosLeads(organizacaoId: string, leadIds: string[]
            to_json(COALESCE(ce.scheduled_at, ce.next_eval_at)) #>> '{}' AS proximo
       FROM cadence_enrollments ce JOIN cadence_definitions cd ON cd.id = ce.cadence_definition_id
      WHERE ce.organizacao_id = ${organizacaoId}::uuid AND ce.entity_type = 'lead'
+       AND (cd.visibility = 'shared' OR cd.owner_id = ${userId}::uuid)
        AND ce.entity_id = ANY(${literalDeTexto(leadIds)}::uuid[])
        AND ce.status IN ('active', 'waiting', 'waiting_reply', 'paused')
      ORDER BY ce.entity_id, ce.started_at DESC`);
