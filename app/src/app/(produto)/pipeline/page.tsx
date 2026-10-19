@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
-import { responsavelPadrao } from "@/lib/vendas/recorte-padrao";
+import { RESPONSAVEL_TODOS } from "@/lib/vendas/recorte-padrao";
 import { boardPipeline } from "@/lib/vendas/consultas";
 import { Pagina, PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
 /* A tela é o desenho do handoff, convertido por máquina
@@ -31,10 +31,18 @@ export async function PipelinePage({ searchParams }: {
   const aba: Aba | null =
     params.aba === "ganhas" || params.aba === "perdidas" || params.aba === "abertas" ? params.aba : null;
   const busca = params.busca?.trim() || "";
-  /* Abre nos meus, como Pré-vendas. `responsavel=todos` (o que "Limpar
-     filtros" escreve) devolve o quadro inteiro; qualquer outro recorte na URL
-     também vence o padrão, porque já é escolha de quem está olhando. */
-  const responsavelId = responsavelPadrao(ctx.userId, params.responsavel, [params.busca, params.familia, params.aba, params.oportunidade, params.loop]);
+  /* O recorte de dono NÃO é feito aqui, e isso é deliberado.
+     
+     O filtro "Responsável" desta tela é do lado do cliente: ele recorta os
+     cartões que o board entregou. Quando o servidor TAMBÉM recortava em
+     "meus", escolher outra pessoa no filtro buscava dentro de um conjunto que
+     já só tinha os seus, e a tela ficava vazia — foi o que o Scott viu em
+     19/10. Quem abre a tela nos seus é o filtro, que já vem marcado com você
+     (PipelineLiga): limpar ou trocar a pessoa mostra o que deve mostrar.
+     
+     Um `?responsavel=` explícito (link salvo, KPI) continua valendo, porque aí
+     é escolha de quem está olhando e vem de fora da tela. */
+  const responsavelId = params.responsavel && params.responsavel !== RESPONSAVEL_TODOS ? params.responsavel : null;
   const familia = params.familia || null;
   // Next Step Invariant: o número de "sem próxima ação" deixou de ser enfeite
   // no topo e virou um recorte do board.
@@ -50,6 +58,7 @@ export async function PipelinePage({ searchParams }: {
   return (
     <PipelineProto
       dados={dados}
+      abrirNosMeus={!params.responsavel}
       acoes={{
         moverEtapa: acaoMoverEtapa,
         perder: acaoPerder,

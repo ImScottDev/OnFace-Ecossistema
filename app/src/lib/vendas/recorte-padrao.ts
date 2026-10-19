@@ -6,7 +6,14 @@
  * trabalho; abrir no quadro da empresa inteira faz cada pessoa filtrar a
  * mesma coisa toda vez, e quem não filtra trabalha no lead dos outros.
  *
- * A regra é uma só, e vale para as quatro telas:
+ * QUEM usa isto: só as telas cujo filtro de responsável passa pela URL e
+ * reconsulta o servidor (Prospecção). Pré-vendas, Pipeline e Propostas têm
+ * filtro do lado do CLIENTE, e nelas quem abre a tela nos seus é o próprio
+ * filtro, que já vem marcado. Recortar nos dois lugares foi um defeito real
+ * (19/10): o servidor entregava só os seus, e escolher outra pessoa no filtro
+ * procurava dentro desse conjunto — a tela ficava vazia.
+ *
+ * A regra é uma só:
  *
  *   URL sem nenhum recorte  → o padrão (meus)
  *   URL com qualquer recorte → o que a URL diz, inclusive "todos"

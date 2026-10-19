@@ -165,8 +165,10 @@ function paraODesenho(card: CardPipeline) {
  * servidor confirma depois, e quando recusa a tela relê e o cartão volta.
  */
 class PipelineLigado extends PipelineLiga {
-  constructor(props: any) {
-    super(props);
+  // `context` repassado: é dele que a Liga tira o nome da sessão para abrir
+  // com o filtro "Responsável" já marcado em você.
+  constructor(props: any, context: any) {
+    super(props, context);
     // Sem isto o `irPara` da Liga perde o id do registro e cai em rota do protótipo (404).
     levarParametros(this as any);
   }
@@ -225,7 +227,12 @@ class PipelineLigado extends PipelineLiga {
 
 /* ── A tela ────────────────────────────────────────────────────────────── */
 
-export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: AcoesPipeline }) {
+export function PipelineProto({ dados, acoes, abrirNosMeus = true }: {
+  dados: BoardPipeline;
+  acoes: AcoesPipeline;
+  /** false quando a URL já traz um recorte de dono: aí o chip não impõe você por cima. */
+  abrirNosMeus?: boolean;
+}) {
   const router = useRouter();
 
   /* O protótipo guarda as oportunidades no PRÓPRIO estado, semeado uma vez no
@@ -346,6 +353,7 @@ export function PipelineProto({ dados, acoes }: { dados: BoardPipeline; acoes: A
         persistir={persistir}
         registrarNoShow={registrarNoShow}
         registrarNota={registrarNota}
+        abrirNosMeus={abrirNosMeus}
         carregarDetalhe={acoes.detalhe}
         ir={(href: string) => router.push(href)}
       />

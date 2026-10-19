@@ -3,7 +3,6 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { acaoPausarCadenciaDoLead } from "@/app/(produto)/contatos/actions";
 import { passoDaCadenciaPorLead, pausasDaCadenciaPorLead } from "@/lib/vendas/pre-vendas";
 import { boardPreVendas, ehView, type ViewPreVendas } from "@/lib/vendas/consultas";
-import { viewPadrao } from "@/lib/vendas/recorte-padrao";
 /* A tela é o desenho do Claude Design, convertido por máquina — não uma
    recriação. `PreVendasQuadro` era a versão feita à mão e saiu em 24/09:
    cada transcrição dela introduzia divergência visual que só aparecia na
@@ -54,15 +53,21 @@ export async function PreVendasPage({ searchParams }: {
 
   // `?loop=sem-dono` era o destino do KPI "Sem responsável" antes das views.
   // Continua funcionando, agora como a view que faz a mesma coisa.
-  /* A tela ABRE nos meus (pedido do Scott, 19/10/2026): quem entra em
-     Pré-vendas quer ver o próprio trabalho, não o quadro da empresa inteira.
-     Qualquer recorte na URL já é escolha de quem está olhando e vence o
-     padrão — inclusive `view=todos`, que é o que "Limpar filtros" escreve. */
+  /* O recorte de dono NÃO é feito aqui, e isso é deliberado.
+     
+     O filtro "Responsável" desta tela é do lado do cliente: ele recorta os
+     cartões que o board entregou. Quando o servidor TAMBÉM recortava em
+     "meus", escolher "Sem responsável" (ou qualquer outra opção) buscava
+     dentro de um conjunto que já só tinha os seus, e a coluna ficava vazia —
+     foi o que o Scott viu em 19/10. Quem abre a tela nos seus é o filtro, que
+     já vem marcado com "Minhas" (PreVendasLiga); limpar mostra o time todo.
+     
+     Uma `?view=` explícita (link salvo, KPI) continua valendo. */
   const view: ViewPreVendas = ehView(params.view)
     ? params.view
     : params.loop === "sem-dono"
       ? "sem-dono"
-      : viewPadrao<ViewPreVendas>(undefined, [params.responsavel, params.origem, params.campanha, params.busca, params.desde, params.aba], "meus", "todos");
+      : "todos";
 
   const busca = params.busca?.trim() || "";
   const responsavelId = params.responsavel || null;
@@ -89,11 +94,12 @@ export async function PreVendasPage({ searchParams }: {
   return (
     <PreVendasProto
       dados={dados}
-      /* A tela abriu nos meus? Então o chip "Responsável · Minhas" abre
-         marcado. Antes o recorte valia e o filtro parecia vazio: quem olhava
-         achava que estava vendo o quadro inteiro. Limpar o chip continua
-         mostrando o time todo. */
-      recorteResponsavel={view === "meus" ? "minhas" : null}
+      /* O chip "Responsável · Minhas" abre MARCADO, e é ele quem faz a tela
+         abrir no seu trabalho — o board vem inteiro do servidor. Limpar o
+         chip mostra o time todo; escolher outra opção funciona, porque há o
+         que escolher. Quem chegou por link com recorte na URL já escolheu:
+         aí o chip não impõe nada por cima. */
+      recorteResponsavel={ehView(params.view) || params.loop === "sem-dono" ? null : "minhas"}
       cadenciaPorLead={cadenciaPorLead}
       cadenciasPausadas={cadenciasPausadas}
       acoes={{

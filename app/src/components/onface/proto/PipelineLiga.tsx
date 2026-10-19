@@ -106,14 +106,20 @@ class Logica extends React.Component<any, any> {
   state = { visao: "quadro", busca: "", sel: { resp: [], familia: [], proposta: [], parado: [], tipo: [], motivo: [] }, filtroAberto: null, expandidas: {}, listaFechadas: {},
     arrastando: null, sobre: null, aberto: null, modal: null, form: {}, tentou: false, tlTudo: false, ni: { natureza: "MRR", qtd: "1" }, np: { papel: "Influenciador" }, na: { tipo: "Ligação" }, opps: null, leads: null };
 
-  constructor(props: any) {
-    super(props);
-    /* O chip "Responsável" abre marcado com quem está usando, igual a
-       Propostas. A tela já abria nos seus (o servidor recorta), mas o filtro
-       vinha visualmente vazio — parecia mostrar o quadro inteiro e mostrava
-       só os seus. Aqui o filtro é por NOME, e o nome da sessão só existe
-       depois do super(). Limpar o chip mostra o time todo. */
-    const euAgora = props.usuario?.nome ?? null;
+  constructor(props: any, context: any) {
+    super(props, context);
+    /* O chip "Responsável" abre marcado com quem está usando, e é ELE quem
+       faz a tela abrir no seu trabalho — o board vem inteiro do servidor.
+       
+       O servidor não recorta mais por dono (ver pipeline/page.tsx): quando
+       recortava, escolher outra pessoa no chip procurava dentro de um
+       conjunto que já só tinha os seus, e a tela ficava vazia. Agora limpar
+       mostra o time todo e trocar a pessoa mostra a dela.
+       
+       Aqui o filtro é por NOME, e o nome da sessão só existe depois do
+       super() — por isso não dá para pôr no `state` acima. O contexto chega
+       pelo segundo argumento do construtor (static contextType). */
+    const euAgora = props.abrirNosMeus === false ? null : (props.usuario?.nome ?? context?.nome ?? null);
     if (euAgora) (this.state as any) = { ...(this.state as any), sel: { ...(this.state as any).sel, resp: [euAgora] } };
     const d: any = props.dados ?? {};
     for (const k of Object.keys(this.state ?? {})) {
