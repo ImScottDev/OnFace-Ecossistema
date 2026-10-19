@@ -153,6 +153,7 @@ services:
     networks:
       - proxy-network
       - crm2dev-network
+      - whatsapp-network
     depends_on:
       api:
         condition: service_healthy
@@ -208,6 +209,7 @@ services:
     networks:
       - proxy-network
       - crm2dev-network
+      - whatsapp-network
     depends_on:
       postgres:
         condition: service_healthy
@@ -250,6 +252,7 @@ services:
       - ./uploads:/repo/app/public/uploads
     networks:
       - crm2dev-network
+      - whatsapp-network
     depends_on:
       postgres:
         condition: service_healthy
@@ -282,5 +285,14 @@ networks:
   proxy-network:
     external: true
     name: proxy-network
+  # O wuzapi (WhatsApp) vive na pilha de produção. Homologação usa o MESMO
+  # servidor, e até 19/10/2026 não o alcançava: cada pilha tem a sua rede
+  # (`crm2dev-network` x `crm2homolog-network`), então toda sessão aparecia
+  # "desconectada" lá e nenhuma cadência conseguia enviar. Esta rede existe só
+  # para isso e o wuzapi está nela; ela NÃO expõe banco nem redis de uma pilha
+  # à outra, que é o motivo de não bastar pôr as duas na mesma rede.
+  whatsapp-network:
+    external: true
+    name: whatsapp-network
   crm2dev-network:
     name: ${REDE:-crm2dev-network}
