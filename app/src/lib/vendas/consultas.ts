@@ -1563,7 +1563,10 @@ export interface Empresa360 {
   /** Rótulos dos campos que faltam, na mesma ordem do formulário. Existe para
    *  a tela dizer o que falta em vez de só dizer que falta alguma coisa. */
   dadosJuridicosFaltando: string[];
-  pessoas: Array<{ id: string; fonte: "pessoa" | "lead"; nome: string; cargo: string | null; papel: string | null; email: string | null; telefone: string | null }>;
+  /** `leadId`: o id de `leads` desta pessoa, quando existe. É o único id dela
+   *  que o motor de cadências aceita (`entity_type = 'lead'`); quem nasceu só
+   *  como `pessoas`, sem lead, não tem e não pode ser inscrito. */
+  pessoas: Array<{ id: string; fonte: "pessoa" | "lead"; leadId: string | null; nome: string; cargo: string | null; papel: string | null; email: string | null; telefone: string | null }>;
   /** Aquisições da empresa: etapa do board, de quem é, e a nutrição com motivo e data de entrada. */
   leads: Array<{
     id: string; etapa: string; etapaRotulo: string; origem: string | null; criadoEm: string;
@@ -1597,17 +1600,17 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
   const classeEmpresa = (await classificarEmpresas(organizacaoId, [empresaId])).get(empresaId) ?? { classe: "contato" as const, motivo: null, estagio: null };
 
   const pessoas = await db.execute<{
-    id: string; fonte: string; nome: string; cargo: string | null; papel: string | null;
+    id: string; fonte: string; lead_id: string | null; nome: string; cargo: string | null; papel: string | null;
     email: string | null; telefone: string | null;
   }>(sql`
-    SELECT p.id::text, 'pessoa' AS fonte, NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
+    SELECT p.id::text, 'pessoa' AS fonte, p.lead_id_legado::text AS lead_id, NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
            p.cargo, v.papel, p.email, p.telefone
       FROM pessoas p
       LEFT JOIN pessoa_empresa_vinculos v ON v.pessoa_id = p.id AND v.empresa_id = p.empresa_id AND v.encerrado_em IS NULL
      WHERE p.empresa_id = ${empresaId}::uuid
        AND ${pessoaNaoMesclada("p")}
     UNION ALL
-    SELECT l.id::text, 'lead' AS fonte, NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
+    SELECT l.id::text, 'lead' AS fonte, l.id::text AS lead_id, NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
            l.cargo, NULL AS papel, l.email, l.telefone
       FROM leads l
      WHERE l.empresa_id = ${empresaId}::uuid
@@ -1738,7 +1741,7 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     dadosJuridicosCompletos: juridicosFaltando.length === 0,
     dadosJuridicosFaltando: juridicosFaltando,
     pessoas: pessoas.map((p) => ({
-      id: p.id, fonte: p.fonte as "pessoa" | "lead", nome: p.nome ?? "Sem nome",
+      id: p.id, fonte: p.fonte as "pessoa" | "lead", leadId: p.lead_id ?? null, nome: p.nome ?? "Sem nome",
       cargo: p.cargo, papel: p.papel, email: p.email, telefone: p.telefone,
     })),
     leads: leads.map((l) => ({

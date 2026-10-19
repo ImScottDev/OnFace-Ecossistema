@@ -38,6 +38,8 @@ import type { ArquivoDaEmpresa, CadenciaDoLead, EnriquecimentoDaEmpresa } from "
    um ícone por tipo que não existe no domínio. `titulo` pronto vence o rótulo
    do tipo; data real formatada (nunca "20 set" fixo). */
 const ICONE_EVENTO = "M12 8v4l3 3M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z";
+/* O raio da cadência, o mesmo do Pipeline e de Prospecção. */
+const ICONE_CADENCIA = "M4 14h7l-1 7 10-11h-7l1-7z";
 const ROTULO_EVENTO: Record<string, string> = {
   call: "Ligação", ligacao: "Ligação", email: "E-mail", mail: "E-mail",
   meeting: "Reunião", reuniao: "Reunião", task: "Tarefa", tarefa: "Tarefa",
@@ -79,12 +81,23 @@ class EmpresaLigada extends EmpresaLiga {
        dava 404 (caso Ariene, 14/10/2026). A ficha da pessoa é chaveada pelo
        LEAD; quando só se tem o id canônico, a porta /contatos/pessoas resolve e
        redireciona. O nome é o que liga a linha do desenho à pessoa real. */
-    const reaisP: Array<{ id: string; fonte: "pessoa" | "lead"; nome: string }> = P.pessoasReais ?? [];
+    const reaisP: Array<{ id: string; fonte: "pessoa" | "lead"; leadId: string | null; nome: string }> = P.pessoasReais ?? [];
     vals.pessoas = (vals.pessoas ?? []).map((linha: any) => {
       const real = reaisP.find((x) => x.nome === linha.nome);
       if (!real) return linha;
       const rota = real.fonte === "lead" ? rotaDaPessoa(real.id) : rotaDaPessoaCanonica(real.id);
-      return { ...linha, abrir: () => P.ir?.(rota) };
+      /* Empresa NÃO recebe mensagem: quem entra na cadência é UM contato dela,
+         escolhido aqui. A ação só aparece para quem tem id real que o motor
+         aceita — o `leads.id` da pessoa. Contato de protótipo, ou pessoa que
+         nasceu sem lead, não ganha a ação: inscrever id inventado é pior do
+         que não ter o atalho. */
+      const acoes = real.leadId
+        ? [...(linha.acoes ?? []), { titulo: "Inserir em cadência", d: ICONE_CADENCIA, onClick: () => {
+            window.__ofCadAlvo = { chave: real.leadId!, nome: real.nome, tipo: "lead" };
+            P.abrir?.("cadencia", real.leadId);
+          } }]
+        : linha.acoes;
+      return { ...linha, acoes, abrir: () => P.ir?.(rota) };
     });
     /* "Passo 2 de 5" e a barra 2/5 eram do protótipo, para qualquer cadência.
        O motor não guarda a posição numérica do passo: não afirmar um. */

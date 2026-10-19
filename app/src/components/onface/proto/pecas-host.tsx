@@ -37,6 +37,26 @@ export interface PecaProps {
 
 export type AbrirPeca = (peca: string, id?: unknown, contexto?: Record<string, unknown>) => void;
 
+/**
+ * O alvo da peça de cadência, informado pela tela ANTES de `abrir("cadencia")`.
+ *
+ * É assim que a peça sabe o TIPO do registro (`lead`, `contato`, `negocio`) —
+ * sem isso ela assume lead em qualquer superfície. O canal é um global porque
+ * o barramento do protótipo só leva `(peça, id)`; a `PecasLiga` lê e limpa.
+ */
+export interface AlvoDaCadencia {
+  /** O id do registro, no tipo abaixo. */
+  chave: string;
+  /** Como ele aparece no aviso ("Acme inserido em …"). */
+  nome: string;
+  /** O tipo que o motor aceita. Mapa fechado em `acaoInserirEmCadencia`. */
+  tipo: "lead" | "contato" | "negocio";
+}
+
+declare global {
+  interface Window { __ofCadAlvo: AlvoDaCadencia | null }
+}
+
 const carregar = (f: () => Promise<{ default: React.ComponentType<PecaProps> }>) =>
   dynamic(f, { ssr: false, loading: () => null });
 
