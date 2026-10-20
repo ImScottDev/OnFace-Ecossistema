@@ -684,8 +684,26 @@ export async function getStatus(config?: WuzapiSessionConfig): Promise<{
     // o QR e invertia o botão (mostrava Desconectar sem ter logado). Por isso: isConnected = loggedIn.
     const loggedIn = data.data?.loggedIn === true;
     const connectedFlag = data.data?.connected === true;
-    const jid = data.data?.jid?.split("@")?.[0] || "";
+    let jid = data.data?.jid?.split("@")?.[0] || "";
     const isConnected = loggedIn;
+
+    // O estado da sessão diz "logado" e NÃO devolve o número.
+    //
+    // Medido em produção em 20/10/2026: `/session/status` da Lia respondia
+    // `loggedIn: true, connected: true, jid: ""` enquanto o cadastro do próprio
+    // wuzapi tinha o número. Perguntávamos num lugar que não responde essa
+    // pergunta, então nenhum pareamento, reconexão ou Atualizar preenchia o
+    // campo, e a tela ficava em "Pareamento incompleto" para sempre, com
+    // conversa acontecendo. A segunda chamada só acontece neste caso.
+    if (isConnected && !jid) {
+      try {
+        const nome = String(data.data?.name || "");
+        const id = String(data.data?.id || "");
+        const users = await wuzapiListUsers();
+        const dele = users.find((u) => (id && u.id === id) || (nome && u.name === nome));
+        jid = dele?.jid?.split("@")?.[0] || "";
+      } catch { /* cadastro indisponível: segue sem número, como antes */ }
+    }
     const qrCode = data.data?.qrcode || "";
     return {
       connected: isConnected,
@@ -797,7 +815,7 @@ export async function wuzapiDeleteUser(wuzapiUserId: string): Promise<void> {
 }
 
 /** List all wuzapi users */
-export async function wuzapiListUsers(): Promise<Array<{ id: string; name: string; token: string; connected: boolean }>> {
+export async function wuzapiListUsers(): Promise<Array<{ id: string; name: string; token: string; connected: boolean; jid?: string }>> {
   const res = await wuzapiAdminFetch("/admin/users");
   const data = await res.json();
   return data.data || [];
