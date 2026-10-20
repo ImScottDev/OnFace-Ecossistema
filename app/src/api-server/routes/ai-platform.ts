@@ -14,6 +14,8 @@ import { decryptCredential, encryptCredential, maskCredential } from "@/lib/ai-p
 import { runModelCall, type AiProvider } from "@/lib/ai-platform/runtime/provider-gateway";
 import { ClaudeSubscriptionAdapter } from "@/lib/ai-platform/runtime/claude-subscription-adapter";
 import { executeRegisteredTool } from "@/lib/ai-platform/tools/registry";
+import { contextoDeAprovacao, enviarMensagensAprovadas } from "@/lib/ai-platform/runtime/execute-agent";
+import { liberarAprovacaoNaAtribuicao } from "@/lib/ai-platform/operacao/atribuicoes";
 import { getCtx, exigirCtx } from "../compat.js";
 
 const app = new Hono();
@@ -276,19 +278,44 @@ app.post("/automacoes/ai/cases/:id/action", async (c) => {
   let execution: Awaited<ReturnType<typeof executeRegisteredTool>> | null = null;
   if (parsed.data.action === "approve") {
     const snapshot = current.contextSnapshot && typeof current.contextSnapshot === "object" ? current.contextSnapshot as Record<string, unknown> : {};
-    if (current.source !== "tool_approval" || current.status !== "awaiting_human" || typeof snapshot.toolName !== "string" || !snapshot.toolInput || typeof snapshot.toolInput !== "object") return c.json({ error: "Caso não possui ação pendente aprovável" }, 409);
+    if (current.source !== "tool_approval" || current.status !== "awaiting_human") return c.json({ error: "Caso não possui ação pendente aprovável" }, 409);
     if (!current.agentId || !current.runId) return c.json({ error: "Caso sem rastreabilidade do agente" }, 409);
-    execution = await executeRegisteredTool(snapshot.toolName, { organizacaoId: ctx.organizacaoId, agentId: current.agentId, runId: current.runId, contatoId: current.contatoId, leadId: current.leadId, mode: "live", autonomy: "autonomous" }, snapshot.toolInput as Record<string, unknown>);
-    if (!execution.ok) {
+    const falhou = async (erro: string) => {
       await db.update(aiCases).set({ status: "escalated", updatedAt: new Date() }).where(eq(aiCases.id, current.id));
-      await db.insert(aiCaseEvents).values({ organizacaoId: ctx.organizacaoId, caseId: current.id, kind: "approval_failed", actorKind: "human", actorUserId: ctx.userId, humanAction: "approve", body: execution.error ?? "Falha ao executar ação aprovada", metadata: { execution } });
-      return c.json({ error: execution.error ?? "Ação aprovada falhou", execution }, 422);
+      await db.insert(aiCaseEvents).values({ organizacaoId: ctx.organizacaoId, caseId: current.id, kind: "approval_failed", actorKind: "human", actorUserId: ctx.userId, humanAction: "approve", body: erro, metadata: { execution } });
+      return c.json({ error: erro, execution }, 422);
+    };
+    if (snapshot.kind === "mensagem" && typeof snapshot.toolName !== "string") {
+      // Resposta "sob aprovação": a pessoa aprova (opcionalmente editando) e o texto sai pelo caminho do agente.
+      const editado = parsed.data.body?.trim() || null;
+      const mensagens = editado ? [editado] : (Array.isArray(snapshot.mensagens) ? snapshot.mensagens.filter((m): m is string => typeof m === "string" && m.trim().length > 0) : []);
+      if (!mensagens.length) return c.json({ error: "Caso sem mensagem para enviar" }, 409);
+      try {
+        const enviadas = await enviarMensagensAprovadas({ organizacaoId: ctx.organizacaoId, runId: current.runId, contatoId: current.contatoId, leadId: current.leadId, mensagens, aprovadorId: ctx.userId });
+        execution = { ok: true, data: { mensagensEnviadas: enviadas, editado: Boolean(editado), aprovadoPorId: ctx.userId } };
+      } catch (err) {
+        execution = { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return falhou(execution.error ?? "Falha ao enviar a resposta aprovada");
+      }
+    } else {
+      if (typeof snapshot.toolName !== "string" || !snapshot.toolInput || typeof snapshot.toolInput !== "object") return c.json({ error: "Caso não possui ação pendente aprovável" }, 409);
+      const aprov = await contextoDeAprovacao({ organizacaoId: ctx.organizacaoId, runId: current.runId, aprovadorId: ctx.userId, aprovadorPapel: ctx.userRole });
+      if (!aprov) return c.json({ error: "Execução do agente não encontrada" }, 409);
+      execution = await executeRegisteredTool(snapshot.toolName, {
+        organizacaoId: ctx.organizacaoId, agentId: current.agentId, runId: current.runId, contatoId: current.contatoId, leadId: current.leadId, mode: "live", autonomy: "autonomous",
+        permissoesDelegadas: aprov.permissoesDelegadas, agenteUsuarioId: aprov.agenteUsuarioId, guardrails: aprov.guardrails, handoffConfig: aprov.handoffConfig,
+      }, snapshot.toolInput as Record<string, unknown>);
+      if (!execution.ok) return falhou(execution.error ?? "Falha ao executar ação aprovada");
     }
   }
   const status = parsed.data.action === "approve" ? "resolved" : { reply: "awaiting_contact", resolve: "resolved", escalate: "escalated", cancel: "cancelled" }[parsed.data.action];
   const [caseRow] = await db.update(aiCases).set({ status, ...(status === "resolved" || status === "cancelled" ? { closedAt: new Date() } : {}), updatedAt: new Date() }).where(eq(aiCases.id, current.id)).returning();
   await db.insert(aiCaseEvents).values({ organizacaoId: ctx.organizacaoId, caseId: caseRow.id, kind: parsed.data.action === "reply" ? "human_replied" : parsed.data.action, actorKind: "human", actorUserId: ctx.userId, humanAction: parsed.data.action, body: parsed.data.body ?? null, metadata: execution ? { execution } : {} });
-  await audit(ctx, `ai.case.${parsed.data.action}`, "ai_case", caseRow.id, execution ?? { status });
+  await audit(ctx, `ai.case.${parsed.data.action}`, "ai_case", caseRow.id, execution ? { execution, aprovadoPorId: ctx.userId, runId: current.runId } : { status });
+  // Caso de aprovação decidido: o atendimento sai de "aguardando_aprovacao" e o agente volta a responder.
+  if (current.source === "tool_approval" && ["approve", "resolve", "cancel"].includes(parsed.data.action)) {
+    await liberarAprovacaoNaAtribuicao({ organizacaoId: ctx.organizacaoId, contatoId: current.contatoId }).catch((err) => console.error("[ai-cases] liberar atribuição:", err));
+  }
   return c.json({ case: caseRow, execution });
 });
 
