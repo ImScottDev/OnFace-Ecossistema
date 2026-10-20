@@ -17,6 +17,7 @@ const compromissos = () => import("../operacao/compromissos");
 import { resolverCloser, sinaisDoLead } from "@/lib/crm/roteamento-closer";
 import { horariosLivresEquipe } from "@/lib/calendario/disponibilidade";
 import { agendarReuniao, cancelarReuniaoDoAgente, reagendarReuniao } from "@/lib/calendario/agendar-agente";
+import { atribuicaoViva, transferirParaHumano } from "../operacao/atribuicoes";
 
 const objectSchema = (properties: Record<string, unknown> = {}, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
 const str = (description: string) => ({ type: "string", description });
@@ -165,7 +166,9 @@ export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
         organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, closerId: escolhida ?? alvo.closer.id, inicioISO: String(input.inicio), duracaoMin: Number(input.duracao ?? 30),
         titulo: input.titulo ? String(input.titulo) : undefined, resumoParaCloser: String(input.resumo_para_closer), exigirOutlook: exigirOutlook(ctx), usuarioId: ctx.agenteUsuarioId ?? null,
       });
-      return r.ok ? { ok: true, data: r } : { ok: false, error: r.erro, data: { codigo: r.codigo } };
+      if (!r.ok) return { ok: false, error: r.erro, data: { codigo: r.codigo } };
+      await encerrarQualificacao(ctx, r.closerId, String(input.resumo_para_closer));
+      return { ok: true, data: { ...r, motivoEncerramento: "reuniao_agendada", atendimentoCom: r.closerNome }, encerraAtuacao: true };
     },
   },
   {
@@ -191,6 +194,26 @@ export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
     },
   },
 ];
+
+/**
+ * Reunião marcada = qualificação concluída: a atuação do agente neste atendimento passa para a closer
+ * (status "humano", motivo reuniao_agendada) e a IA para na conversa. Antes a atribuição ficava "ativa"
+ * e a Lia seguia respondendo o lead que já era da closer. A closer já foi avisada por agendarReuniao:
+ * aqui não se avisa de novo. A confirmação ao contato ainda sai neste run (encerraAtuacao).
+ */
+async function encerrarQualificacao(ctx: AgentToolContext, closerId: string, resumo: string) {
+  try {
+    const viva = await atribuicaoViva(ctx.organizacaoId, { contatoId: ctx.contatoId, leadId: ctx.leadId });
+    if (viva && viva.agentId !== ctx.agentId) return; // atendimento de outro agente: não é dela encerrar
+    await transferirParaHumano({
+      organizacaoId: ctx.organizacaoId, atribuicaoId: viva?.id, contatoId: ctx.contatoId ?? null, leadId: ctx.leadId ?? null,
+      motivo: "reuniao_agendada", resumo: `Reunião agendada. ${resumo}`.slice(0, 2000), humanoUsuarioId: closerId, notificar: false,
+    });
+  } catch (e) {
+    // A reunião está marcada; falhar a passagem não desfaz isso, mas precisa aparecer no log.
+    console.error("[agentes] reunião marcada, mas a passagem para a closer falhou:", e);
+  }
+}
 
 async function reuniaoDoLead(ctx: AgentToolContext, reuniaoId: string): Promise<boolean> {
   if (!ctx.leadId || !/^[0-9a-f-]{36}$/i.test(reuniaoId)) return false;

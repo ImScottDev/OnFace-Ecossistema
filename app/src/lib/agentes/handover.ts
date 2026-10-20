@@ -31,10 +31,20 @@ async function humanoAtivo(organizacaoId: string, id: string | null | undefined)
   return u?.id ?? null;
 }
 
-/** Para quem o atendimento volta: delegação ativa > regra do agente > padrão da org > gerente/admin. */
-export async function resolverHumanoDeDevolucao(p: { organizacaoId: string; agenteUsuarioId: string; leadId?: string | null; negocioId?: string | null }): Promise<{ id: string | null; origem: "delegacao" | "regra" | "padrao" | "gestor" | "nenhum" }> {
+/**
+ * Para quem o atendimento volta: dono HUMANO que o lead já tem > delegação ativa > regra do agente >
+ * padrão da org > gerente/admin. O dono humano vem primeiro porque é de quem é o negócio: antes a
+ * devolução ia para a regra/gestor mesmo com o lead já sendo de uma pessoa.
+ */
+export async function resolverHumanoDeDevolucao(p: { organizacaoId: string; agenteUsuarioId?: string | null; leadId?: string | null; negocioId?: string | null }): Promise<{ id: string | null; origem: "responsavel" | "delegacao" | "regra" | "padrao" | "gestor" | "nenhum" }> {
+  const leadId = p.leadId ?? (p.negocioId ? (await db.select({ l: negocios.leadId }).from(negocios).where(and(eq(negocios.id, p.negocioId), eq(negocios.organizacaoId, p.organizacaoId))).limit(1))[0]?.l ?? null : null);
+  if (leadId) {
+    const [l] = await db.select({ r: leads.responsavelId }).from(leads).where(and(eq(leads.id, leadId), eq(leads.organizacaoId, p.organizacaoId))).limit(1);
+    const dono = l?.r && l.r !== p.agenteUsuarioId ? await humanoAtivo(p.organizacaoId, l.r) : null;
+    if (dono) return { id: dono, origem: "responsavel" };
+  }
   const alvos = [p.negocioId ? eq(delegacoesAgente.negocioId, p.negocioId) : undefined, p.leadId ? eq(delegacoesAgente.leadId, p.leadId) : undefined].filter(Boolean);
-  if (alvos.length) {
+  if (alvos.length && p.agenteUsuarioId) {
     const [d] = await db.select({ h: delegacoesAgente.humanoUsuarioId }).from(delegacoesAgente)
       .where(and(eq(delegacoesAgente.organizacaoId, p.organizacaoId), eq(delegacoesAgente.status, "ativa"), eq(delegacoesAgente.agenteUsuarioId, p.agenteUsuarioId), sql`(${sql.join(alvos as never[], sql` OR `)})`))
       .orderBy(desc(delegacoesAgente.createdAt)).limit(1);
@@ -45,7 +55,7 @@ export async function resolverHumanoDeDevolucao(p: { organizacaoId: string; agen
     .where(and(eq(regrasDistribuicaoLeads.organizacaoId, p.organizacaoId), eq(regrasDistribuicaoLeads.ativo, true)))
     .orderBy(regrasDistribuicaoLeads.prioridade);
   for (const r of regras) {
-    const doAgente = r.alvoUsuarioId === p.agenteUsuarioId || r.rodizioUsuarioIds.includes(p.agenteUsuarioId);
+    const doAgente = Boolean(p.agenteUsuarioId) && (r.alvoUsuarioId === p.agenteUsuarioId || r.rodizioUsuarioIds.includes(p.agenteUsuarioId!));
     const h = doAgente ? await humanoAtivo(p.organizacaoId, r.humanoDevolucaoId) : null;
     if (h) return { id: h, origem: "regra" };
   }
@@ -56,6 +66,16 @@ export async function resolverHumanoDeDevolucao(p: { organizacaoId: string; agen
     .where(and(eq(usuarios.organizacaoId, p.organizacaoId), eq(usuarios.ativo, true), eq(usuarios.tipo, "humano"), inArray(usuarios.role, ["gerente", "admin"])))
     .orderBy(sql`CASE ${usuarios.role} WHEN 'gerente' THEN 0 ELSE 1 END`, usuarios.createdAt).limit(1);
   return gestor ? { id: gestor.id, origem: "gestor" } : { id: null, origem: "nenhum" };
+}
+
+/** Aviso de handover à pessoa que assume: o mesmo para toda devolução (agente, atribuição, reunião marcada). */
+export async function notificarHandover(p: { humanoId: string; motivo: string; prioridade?: string | null; titulo?: string; contatoId?: string | null; leadId?: string | null; negocioId?: string | null }) {
+  const link = p.negocioId ? `/pipeline/${p.negocioId}` : p.contatoId ? `/atendimento?contatoId=${p.contatoId}` : p.leadId ? `/pre-vendas?lead=${p.leadId}` : "/";
+  await db.insert(notificacoes).values({
+    usuarioId: p.humanoId, tipo: "handover_agente",
+    titulo: p.titulo ?? (p.prioridade === "urgente" ? "Atendimento urgente passado pela IA" : "Atendimento passado pela IA"),
+    mensagem: p.motivo.slice(0, 280), link,
+  });
 }
 
 export interface ResultadoHandover { humanoId: string | null; origem: string; leadReatribuido: boolean; negociosReatribuidos: number }
@@ -126,13 +146,6 @@ export async function devolverAoHumano(p: {
   }
 
   // Aviso ao humano (ou ao gestor): sem isso o handover vira lead parado.
-  if (humanoId) {
-    const link = p.negocioId ? `/pipeline/${p.negocioId}` : contatoId ? `/atendimento?contatoId=${contatoId}` : leadId ? `/pre-vendas?lead=${leadId}` : "/";
-    await db.insert(notificacoes).values({
-      usuarioId: humanoId, tipo: "handover_agente",
-      titulo: p.prioridade === "urgente" ? "Atendimento urgente passado pela IA" : "Atendimento passado pela IA",
-      mensagem: p.motivo.slice(0, 280), link,
-    });
-  }
+  if (humanoId) await notificarHandover({ humanoId, motivo: p.motivo, prioridade: p.prioridade, contatoId, leadId, negocioId: p.negocioId });
   return { humanoId, origem: alvo.origem, leadReatribuido, negociosReatribuidos };
 }

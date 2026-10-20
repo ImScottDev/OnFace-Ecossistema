@@ -6,9 +6,9 @@
  * API oficial pronta: fora da janela de 24h só template aprovado, e primeira
  * abordagem exige consentimento.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { aiMemoriaFatos, aiSdrContatoState, contatos, whatsappSessao } from "@/lib/db/schema";
+import { aiAgentAtribuicoes, aiMemoriaFatos, aiSdrContatoState, contatos, whatsappSessao } from "@/lib/db/schema";
 
 export type DecisaoDeCanal = { permitido: true } | { permitido: false; codigo: CodigoBloqueio; motivo: string; tentarDepois: boolean };
 export type CodigoBloqueio = "sem_contato" | "sem_telefone" | "sem_sessao" | "canal_desconectado" | "opt_out" | "bot_silenciado" | "ia_pausada" | "fora_da_janela_template" | "numero_privado";
@@ -21,6 +21,30 @@ export interface EntradaPolitica {
   /** Iniciativa do agente (retomada, abertura) em vez de resposta a uma mensagem. */
   proativo: boolean;
   agora?: Date;
+  /**
+   * A pausa foi causada pelo PRÓPRIO run que está enviando (handoff_request, reunião marcada):
+   * a mensagem de despedida/confirmação desse run ainda sai. Pausa de outra origem bloqueia.
+   */
+  pausaDoProprioRun?: boolean;
+}
+
+/** Handoff "leve" do SDR legado: não pausa a conversa (o worker reativa), como no gate do inbound. */
+const MOTIVOS_LEVES = ["criterio_concluido", "pedido_contato"];
+
+/**
+ * Uma pessoa assumiu ou pausou a IA nesta conversa: flag da conversa (ai_sdr_contato_state)
+ * desligada ou em handoff humano, ou atribuição do agente com uma pessoa / pausada.
+ * Antes nada disso era lido aqui e envios fora do inbound (cadência, retomada, sweeps)
+ * falavam por cima de quem tinha assumido.
+ */
+export async function iaPausadaNaConversa(organizacaoId: string, contatoId: string): Promise<string | null> {
+  const [s] = await db.select({ ativo: aiSdrContatoState.aiAtivo, status: aiSdrContatoState.handoffStatus, motivo: aiSdrContatoState.handoffMotivo })
+    .from(aiSdrContatoState).where(and(eq(aiSdrContatoState.contatoId, contatoId), eq(aiSdrContatoState.organizacaoId, organizacaoId))).limit(1);
+  if (s && (!s.ativo || s.status === "human_required" || s.status === "human_assigned") && !MOTIVOS_LEVES.includes(s.motivo ?? "")) return "IA pausada nesta conversa: uma pessoa assumiu o atendimento.";
+  const [a] = await db.select({ status: aiAgentAtribuicoes.status }).from(aiAgentAtribuicoes)
+    .where(and(eq(aiAgentAtribuicoes.organizacaoId, organizacaoId), eq(aiAgentAtribuicoes.contatoId, contatoId), inArray(aiAgentAtribuicoes.status, ["humano", "pausada"]))).limit(1);
+  if (a) return a.status === "humano" ? "Atendimento com uma pessoa: o agente não fala por cima." : "Agente pausado neste atendimento.";
+  return null;
 }
 
 export async function optOutAtivo(organizacaoId: string, contatoId: string): Promise<boolean> {
@@ -39,6 +63,10 @@ export async function avaliarEnvio(p: EntradaPolitica): Promise<DecisaoDeCanal> 
   if (!c.telefone) return { permitido: false, codigo: "sem_telefone", motivo: "Contato sem telefone.", tentarDepois: false };
   if (await optOutAtivo(p.organizacaoId, p.contatoId)) return { permitido: false, codigo: "opt_out", motivo: "O contato pediu para não receber mensagens.", tentarDepois: false };
   if (c.silenciado && c.silenciado > agora) return { permitido: false, codigo: "bot_silenciado", motivo: "Conversa silenciada por handoff em curso.", tentarDepois: true };
+  if (!p.pausaDoProprioRun) {
+    const pausa = await iaPausadaNaConversa(p.organizacaoId, p.contatoId);
+    if (pausa) return { permitido: false, codigo: "ia_pausada", motivo: pausa, tentarDepois: true };
+  }
   if (!c.sessaoId) return { permitido: false, codigo: "sem_sessao", motivo: "A conversa não tem número de WhatsApp vinculado.", tentarDepois: false };
   const [s] = await db.select({ status: whatsappSessao.status, tipo: whatsappSessao.tipo, privado: whatsappSessao.privado }).from(whatsappSessao).where(and(eq(whatsappSessao.id, c.sessaoId), eq(whatsappSessao.organizacaoId, p.organizacaoId))).limit(1);
   if (!s) return { permitido: false, codigo: "sem_sessao", motivo: "Número de WhatsApp não encontrado.", tentarDepois: false };

@@ -70,7 +70,14 @@ export type AgentToolContext = {
   analise?: boolean;
 };
 
-export type AgentToolResult = { ok: boolean; data?: unknown; error?: string; handoff?: boolean };
+export type AgentToolResult = {
+  ok: boolean; data?: unknown; error?: string; handoff?: boolean;
+  /**
+   * O agente concluiu a atuação e passou o atendimento adiante (ex.: reunião marcada vai para a closer).
+   * Diferente de `handoff`, o run continua: a mensagem final dele (a confirmação) ainda sai.
+   */
+  encerraAtuacao?: boolean;
+};
 type AgentToolExecutor = (ctx: AgentToolContext, input: Record<string, unknown>) => Promise<AgentToolResult>;
 
 export type AgentToolRegistration = {
@@ -239,13 +246,15 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
         .onConflictDoUpdate({ target: aiSdrContatoState.contatoId, set: { aiAtivo: false, handoffStatus: "human_required", handoffAt: new Date(), handoffMotivo: String(input.motivo), updatedAt: new Date() } });
       await db.insert(aiAlerts).values({ organizacaoId: ctx.organizacaoId, kind: "handoff", severity: prioridade === "urgente" ? "critical" : "warning", title: "Agente solicitou atendimento humano", body: `${String(input.motivo)}${resumo ? `\n${resumo}` : ""}`.slice(0, 1800), refKind: "contato", refId: ctx.contatoId });
       await notificarSupervisor(ctx.organizacaoId, ctx.guardrails, { titulo: "Agente passou um atendimento para uma pessoa", mensagem: `${String(input.motivo)}${resumo ? ` — ${resumo}` : ""}`, link: "/atendimento" }).catch(() => undefined);
-      await solicitarHandoffNaAtribuicao({ organizacaoId: ctx.organizacaoId, contatoId: ctx.contatoId, leadId: ctx.leadId, motivo: String(input.motivo), resumo: resumo || null, copiloto: cfg.copilotoAposHandoff === true });
-      // Agente que é responsável do lead devolve o responsável a uma pessoa (regra/delegação), com aviso e nota de contexto.
+      // A atribuição passa para a pessoa que recebe (dono humano do lead > delegação > regra > padrão > gestor).
+      // Um aviso só: com usuário da agente quem avisa é devolverAoHumano (mesma resolução); sem ele, a atribuição.
+      const humano = await solicitarHandoffNaAtribuicao({ organizacaoId: ctx.organizacaoId, contatoId: ctx.contatoId, leadId: ctx.leadId, motivo: String(input.motivo), resumo: resumo || null, copiloto: cfg.copilotoAposHandoff === true, notificar: !ctx.agenteUsuarioId });
+      // Agente que é responsável do lead devolve o responsável a uma pessoa, com aviso e nota de contexto.
       if (ctx.agenteUsuarioId) {
         const h = await devolverAoHumano({ organizacaoId: ctx.organizacaoId, agenteUsuarioId: ctx.agenteUsuarioId, agentId: ctx.agentId, leadId: ctx.leadId, contatoId: ctx.contatoId, motivo: String(input.motivo), resumo: resumo || null, prioridade });
         return { ok: true, data: { status: "human_required", responsavelId: h.humanoId, destino: h.origem, mensagemTransicao }, handoff: true };
       }
-      return { ok: true, data: { status: "human_required", mensagemTransicao }, handoff: true };
+      return { ok: true, data: { status: "human_required", responsavelId: humano, mensagemTransicao }, handoff: true };
     },
   },
   {

@@ -19,7 +19,7 @@ import { devolverAoHumano } from "@/lib/agentes/handover";
 import { usuarioDoAgente } from "@/lib/agentes/usuario-do-agente";
 import { lerExpressoesHandoff } from "@/lib/ai/agente-escopo";
 import {
-  ativaDesde, humanoRespondeuDesde, atribuicaoViva, atribuirAgente, AtribuicaoRecusada, registrarExecucaoNaAtribuicao, soltarLease, tomarLease, transferirParaHumano,
+  ativaDesde, quemRespondeuDesde, atribuicaoViva, atribuirAgente, AtribuicaoRecusada, registrarExecucaoNaAtribuicao, soltarLease, tomarLease, transferirParaHumano,
   type Atribuicao, type OrigemAtribuicao, type StatusAtribuicao,
 } from "./atribuicoes";
 import { avaliarEnvio } from "./politica-canal";
@@ -122,9 +122,14 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
       if (atrib.agentId !== e.agentId) { await registrarBloqueio(e, versao?.id ?? null, "outro_agente_atribuido"); return bloqueado("outro_agente_atribuido"); }
       if (atrib.status === "humano") { await registrarBloqueio(e, versao?.id ?? null, "humano_responsavel"); return { resultado: "pausado", motivo: "humano_responsavel" }; }
       if (atrib.status === "pausada") { await registrarBloqueio(e, versao?.id ?? null, "agente_pausado"); return { resultado: "pausado", motivo: "agente_pausado" }; }
+      // Ação ou resposta esperando uma pessoa decidir: o agente não age de novo por cima do que está pendente.
+      if (atrib.status === "aguardando_aprovacao") { await registrarBloqueio(e, versao?.id ?? null, "aguardando_aprovacao"); return { resultado: "pausado", motivo: "aguardando_aprovacao" }; }
       // Uma pessoa respondeu depois que o agente assumiu: ela retomou o atendimento. O agente para, o histórico fica.
-      if (e.contatoId && await humanoRespondeuDesde(e.contatoId, ativaDesde(atrib))) {
-        await transferirParaHumano({ organizacaoId: e.organizacaoId, atribuicaoId: atrib.id, motivo: "humano_respondeu_na_conversa", resumo: "Uma pessoa do time respondeu diretamente neste atendimento." });
+      const quem = e.contatoId ? await quemRespondeuDesde(e.contatoId, ativaDesde(atrib)) : undefined;
+      if (quem !== undefined) {
+        // Quem respondeu já está atendendo: fica como responsável, sem aviso a si mesma.
+        const transferir = (humanoUsuarioId: string | null) => transferirParaHumano({ organizacaoId: e.organizacaoId, atribuicaoId: atrib!.id, motivo: "humano_respondeu_na_conversa", resumo: "Uma pessoa do time respondeu diretamente neste atendimento.", humanoUsuarioId, notificar: false });
+        await transferir(quem).catch((err) => { if (err instanceof AtribuicaoRecusada) return transferir(null); throw err; });
         await registrarBloqueio(e, versao?.id ?? null, "humano_respondeu_na_conversa");
         return { resultado: "pausado", motivo: "humano_respondeu_na_conversa" };
       }
@@ -166,8 +171,9 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
         if (parada === "descadastro") {
           await lembrar({ organizacaoId: e.organizacaoId, escopo: "pessoa", contatoId: e.contatoId, leadId: e.leadId ?? null, tipo: "preferencia", chave: "opt_out", valor: "O contato pediu para não receber mensagens", fonte: "mensagem", fonteRef: e.sourceMessageId ?? null, confirmado: Boolean(e.sourceMessageId), agentId: e.agentId, runId });
         }
-        if (agenteUsuarioId) await devolverAoHumano({ organizacaoId: e.organizacaoId, agenteUsuarioId, agentId: e.agentId, leadId: e.leadId ?? null, contatoId: e.contatoId, motivo, prioridade: parada === "pedido_humano" ? "normal" : "urgente" });
-        await transferirParaHumano({ organizacaoId: e.organizacaoId, contatoId: e.contatoId, leadId: e.leadId, motivo: parada === "descadastro" ? "descadastro" : motivo, resumo: `Última mensagem do contato: "${e.mensagem.slice(0, 300)}"` });
+        // devolverAoHumano já avisa a pessoa; a atribuição só registra quem recebeu (um aviso por handoff).
+        const devolvido = agenteUsuarioId ? await devolverAoHumano({ organizacaoId: e.organizacaoId, agenteUsuarioId, agentId: e.agentId, leadId: e.leadId ?? null, contatoId: e.contatoId, motivo, prioridade: parada === "pedido_humano" ? "normal" : "urgente" }) : null;
+        await transferirParaHumano({ organizacaoId: e.organizacaoId, contatoId: e.contatoId, leadId: e.leadId, motivo: parada === "descadastro" ? "descadastro" : motivo, resumo: `Última mensagem do contato: "${e.mensagem.slice(0, 300)}"`, humanoUsuarioId: devolvido?.humanoId ?? null, notificar: !devolvido?.humanoId });
         return { resultado: "handover", motivo: parada, runId };
       }
     }

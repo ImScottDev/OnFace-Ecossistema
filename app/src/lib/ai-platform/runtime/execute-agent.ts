@@ -9,7 +9,7 @@ import {
 } from "@/lib/db/schema";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { decryptCredential } from "../security/credentials";
-import { executeRegisteredTool, modelToolsForIds } from "../tools/registry";
+import { executeRegisteredTool, modelToolsForIds, type AgentToolResult } from "../tools/registry";
 import { runModelCall, type AgentMessage, type AiProvider } from "./provider-gateway";
 import { ClaudeSubscriptionAdapter } from "./claude-subscription-adapter";
 import { usuarioDoAgente } from "@/lib/agentes/usuario-do-agente";
@@ -154,6 +154,13 @@ async function resolveApiKey(version: typeof aiAgentVersions.$inferSelect): Prom
   return { apiKey, baseUrl: process.env.NODE_ENV !== "production" ? process.env.ONFACE_AI_BASE_URL_TESTE ?? null : null };
 }
 
+/** Motivo do handoff para ai_agent_runs.handoff_motivo (Execuções mostra por que o agente passou a bola). */
+function motivoDoHandoff(nome: string, entrada: unknown, resultado: { data?: unknown }): string | null {
+  if (nome === "handoff_request") { const m = (entrada as { motivo?: unknown } | null)?.motivo; return typeof m === "string" && m.trim() ? m.trim().slice(0, 300) : "handoff_request"; }
+  const m = (resultado.data as { motivoEncerramento?: unknown } | null)?.motivoEncerramento;
+  return typeof m === "string" ? m : nome;
+}
+
 function sanitizeResponse(raw: string): string {
   return raw
     .replace(/<function=[^>]+>[\s\S]*?<\/function>/gi, "")
@@ -202,12 +209,19 @@ async function persistStep(args: {
   });
 }
 
-async function sendMessages(input: ExecuteAgentInput, runId: string, messages: string[]): Promise<string[]> {
+type OpcoesEnvio = {
+  /** O próprio run pausou a conversa (handoff, reunião marcada): a mensagem final dele ainda sai. */
+  pausaDoProprioRun?: boolean;
+  /** Pessoa que aprovou o texto (caso "sob aprovação"): fica em `dados` da mensagem. */
+  aprovadoPorId?: string | null;
+};
+
+async function sendMessages(input: Pick<ExecuteAgentInput, "organizacaoId" | "contatoId" | "leadId" | "mode" | "suppressEgress" | "eventType">, runId: string, messages: string[], opcoes: OpcoesEnvio = {}): Promise<string[]> {
   if (input.mode !== "live" || input.suppressEgress || !input.contatoId || !messages.length) return [];
   const [contact] = await db.select().from(contatos).where(and(eq(contatos.id, input.contatoId), eq(contatos.organizacaoId, input.organizacaoId))).limit(1);
   if (!contact?.telefone || !contact.sessaoId) throw new Error("Contato sem telefone/sessão para egress");
-  // Política de canal aplicada pelo backend: opt-out, número desconectado, janela. O modelo não decide isto.
-  const politica = await avaliarEnvio({ organizacaoId: input.organizacaoId, contatoId: contact.id, proativo: input.eventType !== "conversation.message_received" });
+  // Política de canal aplicada pelo backend: opt-out, número desconectado, janela, IA pausada. O modelo não decide isto.
+  const politica = await avaliarEnvio({ organizacaoId: input.organizacaoId, contatoId: contact.id, proativo: input.eventType !== "conversation.message_received", pausaDoProprioRun: opcoes.pausaDoProprioRun });
   if (!politica.permitido) throw new Error(`Envio bloqueado pela política de canal: ${politica.motivo}`);
   const sentIds: string[] = [];
   for (let sequence = 0; sequence < messages.length; sequence++) {
@@ -215,7 +229,8 @@ async function sendMessages(input: ExecuteAgentInput, runId: string, messages: s
     const bodyHash = createHash("sha256").update(body).digest("hex");
     const [ledger] = await db.insert(aiSendLedger).values({ organizacaoId: input.organizacaoId, runId, sequence, bodyHash, channel: "whatsapp" }).onConflictDoNothing().returning();
     if (!ledger) continue;
-    const [row] = await db.insert(whatsappMensagens).values({ contatoId: contact.id, leadId: input.leadId ?? contact.leadId ?? null, sessaoId: contact.sessaoId, telefone: contact.telefone, direcao: "out", tipo: "text", conteudo: body, status: "pending", dados: { aiGenerated: true, aiRunId: runId } }).returning({ id: whatsappMensagens.id });
+    const dados = { aiGenerated: true, aiRunId: runId, aiSequence: sequence, ...(opcoes.aprovadoPorId ? { aprovadoPorId: opcoes.aprovadoPorId } : {}) };
+    const [row] = await db.insert(whatsappMensagens).values({ contatoId: contact.id, leadId: input.leadId ?? contact.leadId ?? null, sessaoId: contact.sessaoId, telefone: contact.telefone, direcao: "out", tipo: "text", conteudo: body, status: "pending", dados }).returning({ id: whatsappMensagens.id });
     await whatsappOutgoingQueue.add("send", { messageId: row.id, phone: contact.telefone, conteudo: body, tipo: "text", sessaoId: contact.sessaoId }, { jobId: `ai:${runId}:${sequence}` });
     await db.update(aiSendLedger).set({ status: "queued", externalMessageId: row.id, attempts: 1 }).where(eq(aiSendLedger.id, ledger.id));
     sentIds.push(row.id);
@@ -223,6 +238,48 @@ async function sendMessages(input: ExecuteAgentInput, runId: string, messages: s
   const last = messages.at(-1);
   if (last) await db.update(contatos).set({ ultimaMsg: last.slice(0, 100), ultimaMsgAt: new Date(), updatedAt: new Date() }).where(eq(contatos.id, contact.id));
   return sentIds;
+}
+
+/**
+ * Resposta do agente que estava "sob aprovação": a pessoa aprovou, o texto sai pelo MESMO caminho
+ * do agente (política de canal, ai_send_ledger do run, whatsapp_mensagens, fila). Idempotente pelo
+ * ledger: aprovar duas vezes não manda duas vezes.
+ */
+export async function enviarMensagensAprovadas(p: { organizacaoId: string; runId: string; contatoId: string; leadId?: string | null; mensagens: string[]; aprovadorId: string }): Promise<string[]> {
+  const [run] = await db.select({ input: aiAgentRuns.input }).from(aiAgentRuns).where(and(eq(aiAgentRuns.id, p.runId), eq(aiAgentRuns.organizacaoId, p.organizacaoId))).limit(1);
+  if (!run) throw new Error("Execução do agente não encontrada nesta organização");
+  const eventType = typeof (run.input as Record<string, unknown> | null)?.eventType === "string" ? String((run.input as Record<string, unknown>).eventType) : "conversation.message_received";
+  const ids = await sendMessages({ organizacaoId: p.organizacaoId, contatoId: p.contatoId, leadId: p.leadId ?? null, mode: "live", eventType }, p.runId, p.mensagens.map(sanitizeResponse).filter(Boolean).slice(0, 8), { aprovadoPorId: p.aprovadorId });
+  return ids;
+}
+
+/**
+ * Contexto para executar a ação de um caso aprovado. O teto de permissão é o que o run TINHA (gravado no
+ * trace, ou recalculado da versão com o usuário da agente) INTERSEÇÃO o que a pessoa que aprova pode.
+ * Aprovar nunca dá ao agente mais do que ele tinha, nem mais do que quem aprova poderia fazer. Antes a
+ * aprovação ia sem teto nenhum e toda ferramenta mapeada a permissão (ex.: sales.manage) era negada.
+ */
+export async function contextoDeAprovacao(p: { organizacaoId: string; runId: string; aprovadorId: string; aprovadorPapel?: string | null }): Promise<{
+  permissoesDelegadas: Set<string>; agenteUsuarioId: string | null; guardrails: Record<string, unknown>; handoffConfig: Record<string, unknown>;
+} | null> {
+  const [run] = await db.select({ agentId: aiAgentRuns.agentId, versionId: aiAgentRuns.versionId, trace: aiAgentRuns.trace }).from(aiAgentRuns)
+    .where(and(eq(aiAgentRuns.id, p.runId), eq(aiAgentRuns.organizacaoId, p.organizacaoId))).limit(1);
+  if (!run) return null;
+  const agenteUsuarioId = await usuarioDoAgente(run.agentId);
+  const gravado = Array.isArray(run.trace) ? (run.trace as Array<Record<string, unknown>>).find((t) => t?.type === "permissoes") : undefined;
+  let doRun: string[];
+  if (gravado && Array.isArray(gravado.concedidas)) doRun = gravado.concedidas.filter((x): x is string => typeof x === "string");
+  else {
+    const { delegacaoDoRun } = await import("../permissao-delegada");
+    doRun = [...(await delegacaoDoRun({ organizacaoId: p.organizacaoId, agentVersionId: run.versionId, usuarioId: agenteUsuarioId })).permissoes];
+  }
+  const { permissoesEfetivas } = await import("@/lib/auth/permissoes");
+  const doAprovador = await permissoesEfetivas({ usuarioId: p.aprovadorId, organizacaoId: p.organizacaoId, role: p.aprovadorPapel ?? null, tipo: "HUMAN" });
+  const [versao] = run.versionId
+    ? await db.select({ guardrails: aiAgentVersions.guardrailConfig, handoff: aiAgentVersions.handoffConfig }).from(aiAgentVersions).where(and(eq(aiAgentVersions.id, run.versionId), eq(aiAgentVersions.organizacaoId, p.organizacaoId))).limit(1)
+    : [];
+  const obj = (v: unknown) => (v && typeof v === "object" ? v as Record<string, unknown> : {});
+  return { permissoesDelegadas: new Set(doRun.filter((c) => doAprovador.has(c as never))), agenteUsuarioId, guardrails: obj(versao?.guardrails), handoffConfig: obj(versao?.handoff) };
 }
 
 export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAgentResult> {
@@ -242,6 +299,9 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
   let tokensOutput = 0;
   let cost = 0;
   let handoff = false;
+  // Pausa causada por este run (handoff pedido, reunião marcada): não barra a mensagem final dele.
+  let pausouNesteRun = false;
+  let handoffMotivo: string | null = null;
   const trace: Array<Record<string, unknown>> = [{ type: "selected", agentId: selected.agent.id, versionId: selected.version.id, provider, model: selected.version.modelo }];
   try {
     const guardrails = selected.version.guardrailConfig && typeof selected.version.guardrailConfig === "object" ? selected.version.guardrailConfig as Record<string, unknown> : {};
@@ -364,6 +424,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         }
         handoff ||= Boolean(call.result.handoff);
         if (call.name === "handoff_request" && call.result.ok) { const t = (call.result.data as { mensagemTransicao?: unknown } | undefined)?.mensagemTransicao; if (typeof t === "string") transicao = t; }
+        if (call.result.ok && (call.name === "handoff_request" || (call.result as AgentToolResult).encerraAtuacao)) { pausouNesteRun = true; handoffMotivo ??= motivoDoHandoff(call.name, call.input, call.result); }
         trace.push({ type: "tool_call", name: call.name, ok: call.result.ok, handoff: Boolean(call.result.handoff) });
       }
     } else for (let iteration = 0; iteration < maxSteps; iteration++) {
@@ -398,6 +459,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         }
         handoff ||= Boolean(result.handoff);
         if (call.name === "handoff_request" && result.ok) { const t = (result.data as { mensagemTransicao?: unknown } | undefined)?.mensagemTransicao; if (typeof t === "string") transicao = t; }
+        if (result.ok && (call.name === "handoff_request" || result.encerraAtuacao)) { pausouNesteRun = true; handoffMotivo ??= motivoDoHandoff(call.name, call.input, result); }
         messages.push({ role: "tool", toolCallId: call.id, toolName: call.name, content: JSON.stringify(result) });
         trace.push({ type: "tool_call", name: call.name, ok: result.ok, handoff: Boolean(result.handoff) });
       }
@@ -414,10 +476,14 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       await db.insert(aiCases).values({ organizacaoId: input.organizacaoId, contatoId: input.contatoId, leadId: input.leadId ?? null, agentId: selected.agent.id, runId: run.id, title: "Aprovar resposta do agente", summary: "O agente preparou uma resposta e aguarda decisão humana.", blocker: "Mensagens estão em modo sob aprovação.", source: "tool_approval", contextSnapshot: { kind: "mensagem", mensagens: outgoing } });
       handoff = true;
     }
-    const sentMessageIds = await sendMessages({ ...input, suppressEgress: input.suppressEgress || autonomiaMensagens !== "autonomous" }, run.id, outgoing);
+    const sentMessageIds = await sendMessages({ ...input, suppressEgress: input.suppressEgress || autonomiaMensagens !== "autonomous" }, run.id, outgoing, { pausaDoProprioRun: pausouNesteRun });
     if (sentMessageIds.length) await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "egress", name: "whatsapp", status: "completed", output: { messageIds: sentMessageIds } });
     const status = handoff ? "handed_off" : "completed";
-    await db.update(aiAgentRuns).set({ status, trace, tokens: tokensInput + tokensOutput, tokensInput, tokensOutput, custo: String(cost), stepsCount: sequence, completedAt: new Date() }).where(eq(aiAgentRuns.id, run.id));
+    if (handoff && !handoffMotivo) {
+      const [aprov] = await db.select({ id: aiCases.id }).from(aiCases).where(and(eq(aiCases.runId, run.id), eq(aiCases.source, "tool_approval"))).limit(1);
+      handoffMotivo = aprov ? "aguardando_aprovacao" : null;
+    }
+    await db.update(aiAgentRuns).set({ status, handoffMotivo, trace, tokens: tokensInput + tokensOutput, tokensInput, tokensOutput, custo: String(cost), stepsCount: sequence, completedAt: new Date() }).where(eq(aiAgentRuns.id, run.id));
     return { runId: run.id, agentId: selected.agent.id, versionId: selected.version.id, status, responseText: outgoing.join("\n---SPLIT---\n") || null, sentMessageIds, tokensInput, tokensOutput, cost, handoff, contexto: contexto ? { secoes: contexto.secoes, fontes: contexto.fontes, sinais: contexto.sinais, tokensAprox: contexto.tokensAprox } : null };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

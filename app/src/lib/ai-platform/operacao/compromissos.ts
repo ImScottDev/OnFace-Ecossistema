@@ -129,6 +129,8 @@ async function cumprir(c: Compromisso, agora: Date): Promise<Desfecho> {
     if (atrib.agentId !== c.agentId) return { fim: "bloqueado", motivo: "outro_agente_assumiu" };
     if (atrib.status === "humano") return { fim: "bloqueado", motivo: "humano_assumiu" };
     if (atrib.status === "pausada") return { fim: "bloqueado", motivo: "agente_pausado" };
+    // Uma pessoa ainda vai decidir o caso pendente: a retomada espera, não se perde.
+    if (atrib.status === "aguardando_aprovacao") return { fim: "adiado", motivo: "aguardando_aprovacao" };
   } else if (c.atribuicaoId) {
     return { fim: "cancelado", motivo: "atribuição encerrada" };
   }

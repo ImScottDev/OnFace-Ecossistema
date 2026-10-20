@@ -53,23 +53,35 @@ export async function atribuicaoViva(organizacaoId: string, alvo: Alvo): Promise
   return a ?? null;
 }
 
+/**
+ * Mensagem de saída escrita por uma PESSOA: pelo CRM (enviado_por_id) ou direto no celular do número
+ * (o worker marca `dados.enviadoPeloCelular`; num número compartilhado não há dono para assinar).
+ * O eco de um envio da IA nunca entra: é deduplicado no worker e, se gravado, traz aiGenerated.
+ */
+const SAIDA_HUMANA = sql`direcao = 'out' AND (enviado_por_id IS NOT NULL OR dados->>'enviadoPeloCelular' = 'true')
+       AND coalesce(dados->>'aiGenerated','false') <> 'true'`;
+
 /** Última mensagem enviada por uma PESSOA (não por IA) nesta conversa. */
 export async function humanoAtendendoRecentemente(contatoId: string, horas = JANELA_HUMANO_HORAS): Promise<boolean> {
   const [r] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM whatsapp_mensagens
-     WHERE contato_id = ${contatoId}::uuid AND direcao = 'out' AND enviado_por_id IS NOT NULL
-       AND coalesce(dados->>'aiGenerated','false') <> 'true'
+     WHERE contato_id = ${contatoId}::uuid AND ${SAIDA_HUMANA}
        AND created_at > ${new Date(Date.now() - horas * MS_HORA).toISOString()}::timestamptz`);
   return (r?.n ?? 0) > 0;
 }
 
 /** Pessoa do time escreveu nesta conversa depois de `desde` (o agente deixou de ser o único a falar). */
 export async function humanoRespondeuDesde(contatoId: string, desde: Date): Promise<boolean> {
-  const [r] = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n FROM whatsapp_mensagens
-     WHERE contato_id = ${contatoId}::uuid AND direcao = 'out' AND enviado_por_id IS NOT NULL
-       AND coalesce(dados->>'aiGenerated','false') <> 'true' AND created_at > ${desde.toISOString()}::timestamptz`);
-  return (r?.n ?? 0) > 0;
+  return (await quemRespondeuDesde(contatoId, desde)) !== undefined;
+}
+
+/** Quem (usuário) respondeu por último desde `desde`: id, null (celular de número compartilhado) ou undefined (ninguém). */
+export async function quemRespondeuDesde(contatoId: string, desde: Date): Promise<string | null | undefined> {
+  const [r] = await db.execute<{ por: string | null }>(sql`
+    SELECT enviado_por_id::text AS por FROM whatsapp_mensagens
+     WHERE contato_id = ${contatoId}::uuid AND ${SAIDA_HUMANA} AND created_at > ${desde.toISOString()}::timestamptz
+     ORDER BY created_at DESC LIMIT 1`);
+  return r ? r.por : undefined;
 }
 
 /** Desde quando o agente conduz (criação ou última retomada). */
@@ -222,6 +234,29 @@ export interface EntradaTransferencia {
   humanoUsuarioId?: string | null;
   copiloto?: boolean;
   ator?: AtorAtribuicao;
+  /**
+   * Avisar a pessoa que assume (padrão: sim). Desligue só quando quem chama já avisou
+   * (devolverAoHumano, reunião marcada) ou quando a própria pessoa assumiu.
+   */
+  notificar?: boolean;
+}
+
+/**
+ * Pessoa que recebe o atendimento quando ninguém foi escolhido: o dono humano do lead, delegação,
+ * regra, padrão da org ou gestor (a mesma resolução do handover da agente-responsável).
+ */
+async function humanoParaReceber(a: Pick<Atribuicao, "organizacaoId" | "agentId" | "leadId" | "negocioId">): Promise<string | null> {
+  const [{ resolverHumanoDeDevolucao }, { usuarioDoAgente }] = await Promise.all([import("@/lib/agentes/handover"), import("@/lib/agentes/usuario-do-agente")]);
+  const agenteUsuarioId = await usuarioDoAgente(a.agentId).catch(() => null);
+  return (await resolverHumanoDeDevolucao({ organizacaoId: a.organizacaoId, agenteUsuarioId, leadId: a.leadId, negocioId: a.negocioId })).id;
+}
+
+async function avisarQuemAssume(p: { humanoId: string | null; ator?: AtorAtribuicao; motivo: string; contatoId?: string | null; leadId?: string | null; negocioId?: string | null }) {
+  // Quem assumiu por conta própria não precisa de aviso de si mesmo.
+  if (!p.humanoId || p.humanoId === p.ator?.usuarioId) return;
+  const { notificarHandover } = await import("@/lib/agentes/handover");
+  await notificarHandover({ humanoId: p.humanoId, motivo: p.motivo, contatoId: p.contatoId, leadId: p.leadId, negocioId: p.negocioId })
+    .catch((err) => console.error("[agentes] aviso de handover falhou:", err));
 }
 
 /** Humano assume (ou o agente passa): a IA para de responder, o histórico fica, o resumo vai para a timeline. */
@@ -232,13 +267,15 @@ export async function transferirParaHumano(e: EntradaTransferencia): Promise<Atr
   if (!a) {
     // Sem atribuição, a conversa ainda pode ter IA ligada: desliga para a IA parar.
     await sincronizarEstadoDaConversa({ organizacaoId: e.organizacaoId, contatoId: e.contatoId ?? null, ativo: false, motivo: e.motivo, usuarioId: e.humanoUsuarioId ?? e.ator?.usuarioId ?? null });
+    if (e.notificar !== false) await avisarQuemAssume({ humanoId: e.humanoUsuarioId ?? null, ator: e.ator, motivo: e.motivo, contatoId: e.contatoId, leadId: e.leadId });
     return null;
   }
   if (e.humanoUsuarioId) {
     const [h] = await db.select({ id: usuarios.id }).from(usuarios).where(and(eq(usuarios.id, e.humanoUsuarioId), eq(usuarios.organizacaoId, e.organizacaoId), eq(usuarios.ativo, true), sql`${usuarios.tipo} <> 'agente'`)).limit(1);
     if (!h) throw new AtribuicaoRecusada("humano_invalido", "Escolha uma pessoa ativa desta organização.");
   }
-  const humano = e.humanoUsuarioId ?? e.ator?.usuarioId ?? null;
+  // Sem pessoa escolhida (automação, agente, sistema): resolve quem recebe, para o atendimento não ficar sem dono.
+  const humano = e.humanoUsuarioId ?? e.ator?.usuarioId ?? (a.status === "humano" ? a.humanoUsuarioId : null) ?? await humanoParaReceber(a).catch(() => null);
   const [n] = await db.update(aiAgentAtribuicoes).set({
     status: "humano", motivoEstado: e.motivo, resumoHandoff: e.resumo ?? a.resumoHandoff, humanoUsuarioId: humano, copiloto: e.copiloto ?? a.copiloto, updatedAt: new Date(),
   }).where(eq(aiAgentAtribuicoes.id, a.id)).returning();
@@ -247,6 +284,10 @@ export async function transferirParaHumano(e: EntradaTransferencia): Promise<Atr
     organizacaoId: e.organizacaoId, leadId: a.leadId, usuarioId: e.ator?.usuarioId ?? null, titulo: "Atendimento passou para uma pessoa",
     descricao: [`Motivo: ${e.motivo}`, e.resumo ? `Resumo para quem assume:\n${e.resumo}` : null].filter(Boolean).join("\n"), dados: { atribuicaoId: a.id, humanoUsuarioId: humano },
   });
+  // Um aviso por handoff: atribuição que já estava com a mesma pessoa não avisa de novo.
+  if (e.notificar !== false && !(a.status === "humano" && a.humanoUsuarioId === humano)) {
+    await avisarQuemAssume({ humanoId: humano, ator: e.ator, motivo: e.resumo ? `${e.motivo} — ${e.resumo}` : e.motivo, contatoId: a.contatoId, leadId: a.leadId, negocioId: a.negocioId });
+  }
   return n;
 }
 
@@ -260,10 +301,16 @@ export async function encerrarAtribuicao(p: { organizacaoId: string; atribuicaoI
   return n;
 }
 
-/** Registro que o runtime atualiza ao fim de cada execução. */
+/**
+ * Registro que o runtime atualiza ao fim de cada execução. Um run que terminou "ativa" não desfaz uma
+ * passagem para pessoa (ou pausa) feita DURANTE ele: reunião marcada, pessoa que assumiu no meio.
+ */
 export async function registrarExecucaoNaAtribuicao(atribuicaoId: string, p: { runId?: string | null; status: StatusAtribuicao; estado?: Record<string, unknown>; motivo?: string | null }) {
+  const mantem = sql`${aiAgentAtribuicoes.status} IN ('humano','pausada') AND ${p.status} = 'ativa'`;
   await db.update(aiAgentAtribuicoes).set({
-    ...(p.runId ? { ultimoRunId: p.runId } : {}), ultimaExecucaoEm: new Date(), status: p.status, motivoEstado: p.motivo ?? null, updatedAt: new Date(),
+    ...(p.runId ? { ultimoRunId: p.runId } : {}), ultimaExecucaoEm: new Date(),
+    status: sql`CASE WHEN ${mantem} THEN ${aiAgentAtribuicoes.status} ELSE ${p.status} END`,
+    motivoEstado: sql`CASE WHEN ${mantem} THEN ${aiAgentAtribuicoes.motivoEstado} ELSE ${p.motivo ?? null} END`, updatedAt: new Date(),
     ...(p.estado ? { estado: sql`${aiAgentAtribuicoes.estado} || ${JSON.stringify(p.estado)}::jsonb` } : {}),
   }).where(and(eq(aiAgentAtribuicoes.id, atribuicaoId), sql`${aiAgentAtribuicoes.status} <> 'encerrada'`));
 }
@@ -294,11 +341,31 @@ export async function listarAtribuicoes(organizacaoId: string, filtro: { agentId
 }
 
 
-/** O agente pediu uma pessoa: o estado da atribuição acompanha a flag da conversa que a ferramenta já grava. */
-export async function solicitarHandoffNaAtribuicao(p: { organizacaoId: string; contatoId?: string | null; leadId?: string | null; motivo: string; resumo?: string | null; copiloto?: boolean }): Promise<void> {
+/**
+ * O agente pediu uma pessoa: o estado da atribuição acompanha a flag da conversa que a ferramenta já grava.
+ * Grava quem recebe (o informado ou o resolvido) e avisa essa pessoa, salvo quando quem chamou já avisou.
+ */
+export async function solicitarHandoffNaAtribuicao(p: { organizacaoId: string; contatoId?: string | null; leadId?: string | null; motivo: string; resumo?: string | null; copiloto?: boolean; humanoUsuarioId?: string | null; notificar?: boolean }): Promise<string | null> {
   const a = await atribuicaoViva(p.organizacaoId, { contatoId: p.contatoId, leadId: p.leadId });
-  if (!a || a.status === "humano") return;
-  await db.update(aiAgentAtribuicoes).set({ status: "humano", motivoEstado: p.motivo, resumoHandoff: p.resumo ?? a.resumoHandoff, copiloto: p.copiloto ?? a.copiloto, updatedAt: new Date() }).where(eq(aiAgentAtribuicoes.id, a.id));
+  if (!a || a.status === "humano") return a?.humanoUsuarioId ?? null;
+  const humano = p.humanoUsuarioId ?? await humanoParaReceber(a).catch(() => null);
+  await db.update(aiAgentAtribuicoes).set({ status: "humano", motivoEstado: p.motivo, resumoHandoff: p.resumo ?? a.resumoHandoff, humanoUsuarioId: humano, copiloto: p.copiloto ?? a.copiloto, updatedAt: new Date() }).where(eq(aiAgentAtribuicoes.id, a.id));
+  if (p.notificar !== false) await avisarQuemAssume({ humanoId: humano, motivo: p.resumo ? `${p.motivo} — ${p.resumo}` : p.motivo, contatoId: a.contatoId, leadId: a.leadId, negocioId: a.negocioId });
+  return humano;
+}
+
+/**
+ * A pessoa decidiu o caso de aprovação (aprovou, resolveu, cancelou): sem outro caso pendente na
+ * conversa, a atribuição sai de "aguardando_aprovacao" e o agente volta a atender.
+ */
+export async function liberarAprovacaoNaAtribuicao(p: { organizacaoId: string; contatoId: string }): Promise<boolean> {
+  const r = await db.execute<{ id: string }>(sql`
+    UPDATE ai_agent_atribuicoes SET status = 'ativa', motivo_estado = NULL, updated_at = now()
+     WHERE organizacao_id = ${p.organizacaoId}::uuid AND contato_id = ${p.contatoId}::uuid AND status = 'aguardando_aprovacao'
+       AND NOT EXISTS (SELECT 1 FROM ai_cases c WHERE c.organizacao_id = ${p.organizacaoId}::uuid AND c.contato_id = ${p.contatoId}::uuid
+                         AND c.source = 'tool_approval' AND c.status = 'awaiting_human')
+    RETURNING id::text`);
+  return r.length > 0;
 }
 
 
