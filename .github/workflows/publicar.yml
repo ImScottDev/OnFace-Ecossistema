@@ -38,6 +38,10 @@ concurrency:
   group: publicar-${{ inputs.ambiente }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write # para pedir a montagem da imagem quando o sha ainda não tem uma
+
 jobs:
   publicar:
     runs-on: ubuntu-latest
@@ -69,6 +73,9 @@ jobs:
         env:
           DEPLOY_CHAVE: /home/runner/.ssh/deploy.pem
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST || 'ubuntu@34.204.200.52' }}
+          # Com ele o deploy consegue PEDIR a montagem da imagem se o sha ainda
+          # não tiver uma; sem ele, só esperaria.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHA="${{ inputs.versao }}"
           [ -n "$SHA" ] || SHA="$(git rev-parse HEAD)"

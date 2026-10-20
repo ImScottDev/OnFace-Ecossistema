@@ -150,7 +150,18 @@ fi
 # Só pede se faltar: deploy repetido do mesmo sha (promoção, rollback) acha a
 # imagem pronta e não gasta nada.
 if [ "$MODO" != "--construir-aqui" ]; then
-  GH_TOKEN_DEPLOY="$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null | sed -n 's/^password=//p')"
+  # O token sai do ambiente quando existe (GitHub Actions passa GITHUB_TOKEN) e
+  # só então do credential helper do git, que é o caso da máquina de alguém.
+  #
+  # O `|| true` não é descuido: dentro do runner não há credencial configurada,
+  # `git credential fill` sai com 128, e com `set -euo pipefail` o deploy morria
+  # na primeira linha útil (20/10/2026). Ficar sem token aqui é estado
+  # conhecido — significa só que o script não vai conseguir PEDIR a imagem, e
+  # logo abaixo ele segue esperando que ela apareça.
+  GH_TOKEN_DEPLOY="${GH_TOKEN_DEPLOY:-${GITHUB_TOKEN:-}}"
+  if [ -z "$GH_TOKEN_DEPLOY" ]; then
+    GH_TOKEN_DEPLOY="$( (printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null || true) | sed -n 's/^password=//p' || true)"
+  fi
   if [ -n "$GH_TOKEN_DEPLOY" ]; then
     JA_TEM=0
     for ALVO_IMG in app backend; do
