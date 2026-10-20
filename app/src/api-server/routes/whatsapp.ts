@@ -1011,8 +1011,20 @@ app.get("/whatsapp/status", async (c) => {
 
     // O estado traz o QR de pareamento: é de quem USA o número. Supervisão e cargo veem o número em
     // /whatsapp/numeros (status), nunca o QR.
+    //
+    // EXCEÇÃO: número cujo dono é um AGENTE de IA. Agente não abre tela e não
+    // escaneia nada, então, com só a regra acima, ninguém no mundo consegue
+    // consultar o estado nem parear o número dele — e ele fica preso em
+    // "Pareamento incompleto" para sempre. Foi o que aconteceu em produção em
+    // 20/10/2026: o Scott pareou pela conta dele, transferiu o número para a
+    // Lia e, a partir daí, o próprio botão Atualizar devolvia 404. Quem
+    // administra o número responde por ele.
     const [uso] = await db.execute<{ ok: boolean }>(sql`SELECT ${sessaoMinha(ctx.userId, sql`${sessao.id}::uuid`, sql`${sessao.usuarioId}::uuid`)} AS ok`);
-    if (uso?.ok !== true) return c.json({ error: "Sessão não encontrada" }, 404);
+    const [dono] = sessao.usuarioId ? await db.execute<{ tipo: string; agente_id: string | null }>(sql`
+      SELECT tipo, agente_id::text FROM usuarios WHERE id = ${sessao.usuarioId}::uuid`) : [];
+    const deAgente = !!dono && ehAgenteUsuario({ tipo: dono.tipo, agenteId: dono.agente_id });
+    const podeAdministrar = deAgente && escopoDeGestao(ctx) !== null;
+    if (uso?.ok !== true && !podeAdministrar) return c.json({ error: "Sessão não encontrada" }, 404);
 
     const config = sessionToConfig(sessao);
     let live = { connected: false, phone: "", status: "disconnected", qrCode: "" };
