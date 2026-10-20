@@ -41,6 +41,49 @@ export function variaveisPara(grafo: GrafoFluxo, noId: string | null): GrupoVari
   return grupos;
 }
 
+/**
+ * Escolher OU digitar, numa peça só — a variante do seletor para os campos
+ * que não são texto corrido (campo e valor de uma regra).
+ *
+ * `grupos` liga o mesmo popup de variáveis dos Fluxos, que escreve a chave
+ * certa no lugar de deixar a pessoa adivinhar. `sugestoes` liga o datalist
+ * nativo, com o que a conta já tem. O campo continua sendo um input comum:
+ * quem precisa de uma chave fora da lista digita e segue.
+ */
+export function EntradaComLista({ id, valor, aoMudar, rotulo, placeholder, grupos, contexto, sugestoes, desabilitado }: {
+  id?: string;
+  valor: string;
+  aoMudar: (valor: string) => void;
+  rotulo: string;
+  placeholder?: string;
+  /** Com grupos, aparece o botão que escolhe a chave da variável. */
+  grupos?: GrupoVariaveis[];
+  contexto?: Record<string, unknown> | null;
+  /** Valores conhecidos (etapas, tags…) para o datalist nativo. */
+  sugestoes?: { valor: string; rotulo: string }[];
+  desabilitado?: boolean;
+}) {
+  const idLista = `${id ?? rotulo}-lista`;
+  const comLista = Boolean(sugestoes?.length);
+  return (
+    <div className="ofx-campo-linha">
+      <input
+        id={id} className="oa-input" value={valor} aria-label={rotulo} placeholder={placeholder}
+        disabled={desabilitado} list={comLista ? idLista : undefined}
+        onChange={(e) => aoMudar(e.target.value)}
+      />
+      {comLista && (
+        <datalist id={idLista}>
+          {sugestoes!.map((s) => <option key={s.valor} value={s.valor} label={s.rotulo !== s.valor ? s.rotulo : undefined} />)}
+        </datalist>
+      )}
+      {grupos && (
+        <SeletorVariaveis grupos={grupos} contexto={contexto ?? null} desabilitado={desabilitado} aoInserir={aoMudar} />
+      )}
+    </div>
+  );
+}
+
 function previa(v: unknown): string {
   if (v === undefined || v === null || v === "") return "vazio";
   const t = typeof v === "object" ? JSON.stringify(v) : String(v);

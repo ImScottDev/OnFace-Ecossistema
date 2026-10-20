@@ -33,11 +33,11 @@ import { followupGraphSchema } from "@/lib/ai-platform/followup/graph";
 import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate";
 import type { FollowupGraph, FollowupNode } from "@/lib/ai-platform/followup/graph";
 import { Campo, type ContextoCampo } from "../fluxos/Campos";
-import type { GrupoVariaveis } from "../fluxos/SeletorVariaveis";
+import { EntradaComLista } from "../fluxos/SeletorVariaveis";
 import {
-  OPERADORES_CONDICAO, ROTULO_ACAO_CRM, ROTULO_CANAL, ROTULO_TIPO,
-  VARIAVEIS_CADENCIA, camposDoPasso, grafoParaPassos, novoId, passoNovo, passosParaGrafo,
-  pendenciasDosPassos, previaTexto, textoEspera,
+  GRUPOS_VARIAVEIS_CADENCIA, OPERADORES_CONDICAO, ROTULO_ACAO_CRM, ROTULO_CANAL, ROTULO_TIPO,
+  SUGESTOES_CAMPO_CADENCIA, camposDoPasso, grafoParaPassos, novoId, passoNovo, passosParaGrafo,
+  pendenciasDosPassos, previaTexto, sugestoesDeValor, textoEspera,
   type AcaoCrm, type Canal, type OperadorCondicao, type Passo, type TipoPasso,
 } from "./passos";
 import "../automacoes.css";
@@ -81,12 +81,6 @@ const TIPOS_PARA_ADICIONAR: { tipo: TipoPasso; icone: typeof MessageCircle; dica
   { tipo: "crm", icone: Tag, dica: "Nota, tag, etapa ou responsável." },
   { tipo: "condicao", icone: GitBranch, dica: "Segue só se a regra bater; senão encerra." },
   { tipo: "classificar", icone: Sparkles, dica: "Espera a resposta e a IA diz o que ela quer." },
-];
-
-/** As variáveis que o motor resolve em qualquer passo de texto — sempre as
- *  mesmas, porque o snapshot do enrollment é o mesmo em todo passo. */
-const GRUPOS_VARIAVEIS: GrupoVariaveis[] = [
-  { rotulo: "Do registro inscrito", itens: VARIAVEIS_CADENCIA.map((v) => ({ caminho: v.chave, rotulo: v.rotulo })) },
 ];
 
 function iconeDoPasso(passo: Passo) {
@@ -211,7 +205,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
 
   const ctx: ContextoCampo = {
     opcoes: opcoes.data,
-    grupos: GRUPOS_VARIAVEIS,
+    grupos: GRUPOS_VARIAVEIS_CADENCIA,
     ensaio: null,
     entidade: (entityType as TipoEntidade) ?? null,
     somenteLeitura,
@@ -639,17 +633,16 @@ function EditorCondicao({ passo, ctx, aoTrocar }: {
         {passo.regras.map((regra, i) => (
           <div key={i} className="ofx-lista-item">
             <div className="ofx-lista-corpo ofc-regra">
-              <select className="oa-input" value={regra.campo} disabled={ctx.somenteLeitura} aria-label="Campo"
-                onChange={(e) => trocarRegra(i, { campo: e.target.value })}>
-                {!VARIAVEIS_CADENCIA.some((v) => v.chave === regra.campo) && <option value={regra.campo}>{regra.campo || "Escolha o campo"}</option>}
-                {VARIAVEIS_CADENCIA.map((v) => <option key={v.chave} value={v.chave}>{v.rotulo}</option>)}
-              </select>
+              <EntradaComLista id={`${passo.id}-campo-${i}`} rotulo="Campo" valor={regra.campo} placeholder="escolha ou digite o campo"
+                grupos={GRUPOS_VARIAVEIS_CADENCIA} sugestoes={SUGESTOES_CAMPO_CADENCIA} contexto={ctx.ensaio}
+                desabilitado={ctx.somenteLeitura} aoMudar={(campo) => trocarRegra(i, { campo })} />
               <select className="oa-input" value={regra.op} disabled={ctx.somenteLeitura} aria-label="Operador"
                 onChange={(e) => trocarRegra(i, { op: e.target.value as OperadorCondicao })}>
                 {OPERADORES_CONDICAO.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
               </select>
-              <input className="oa-input" value={regra.valor} disabled={ctx.somenteLeitura} placeholder="valor" aria-label="Valor"
-                onChange={(e) => trocarRegra(i, { valor: e.target.value })} />
+              <EntradaComLista id={`${passo.id}-valor-${i}`} rotulo="Valor" valor={regra.valor} placeholder="valor"
+                sugestoes={sugestoesDeValor(regra.campo, ctx.opcoes)}
+                desabilitado={ctx.somenteLeitura} aoMudar={(valor) => trocarRegra(i, { valor })} />
             </div>
             {!ctx.somenteLeitura && passo.regras.length > 1 && (
               <button type="button" className="oa-icone" aria-label="Remover regra" onClick={() => aoTrocar({ regras: passo.regras.filter((_, j) => j !== i) })}><Trash2 size={13} /></button>

@@ -24,7 +24,8 @@
 import {
   branchesForNode, type FollowupEdge, type FollowupGraph, type FollowupNode,
 } from "@/lib/ai-platform/followup/graph";
-import type { CampoConfig } from "@/lib/automacoes/grafo";
+import type { CampoConfig, OpcoesInspetor } from "@/lib/automacoes/grafo";
+import type { GrupoVariaveis } from "../fluxos/SeletorVariaveis";
 
 // ─── Modelo da lista ──────────────────────────────────────────────────────
 
@@ -112,6 +113,39 @@ export const VARIAVEIS_CADENCIA: { chave: string; rotulo: string; exemplo: strin
   { chave: "status", rotulo: "Status do lead", exemplo: "aberto" },
   { chave: "origin", rotulo: "Origem", exemplo: "site" },
 ];
+
+/**
+ * As mesmas variáveis como grupo do seletor — fonte única para a Lista
+ * detalhada e para o Fluxo visual. Duas listas diferentes nas duas abas do
+ * mesmo editor seriam duas verdades sobre o que o motor sabe ler.
+ */
+export const GRUPOS_VARIAVEIS_CADENCIA: GrupoVariaveis[] = [
+  { rotulo: "Do registro inscrito", itens: VARIAVEIS_CADENCIA.map((v) => ({ caminho: v.chave, rotulo: v.rotulo })) },
+];
+
+/** As mesmas chaves como sugestão de datalist, para aparecerem enquanto se digita. */
+export const SUGESTOES_CAMPO_CADENCIA: { valor: string; rotulo: string }[] =
+  VARIAVEIS_CADENCIA.map((v) => ({ valor: v.chave, rotulo: v.rotulo }));
+
+/**
+ * Valores que a conta já tem para o campo escolhido. Etapa e tag são dado da
+ * organização; o resto é texto livre.
+ *
+ * Aqui nunca se oferece `{{variável}}`: o motor compara o valor como texto
+ * literal (`avaliarCondicao`), então uma variável no valor sairia literal e a
+ * regra nunca bateria.
+ */
+export function sugestoesDeValor(campo: string, opcoes?: OpcoesInspetor): { valor: string; rotulo: string }[] {
+  const chave = campo.trim();
+  if (chave === "stage" || chave === "lead_stage") {
+    const todas = [...(opcoes?.etapas.lead ?? []), ...(opcoes?.etapas.negocio ?? [])];
+    return [...new Map(todas.map((e) => [e.valor, e])).values()];
+  }
+  if (chave === "tag" || chave === "tags") {
+    return [...new Map((opcoes?.tags ?? []).map((t) => [t.nome, { valor: t.nome, rotulo: t.nome }])).values()];
+  }
+  return [];
+}
 
 /**
  * Prévia do texto com valores de exemplo — mesma sintaxe e mesma regra de

@@ -3,7 +3,11 @@
 import { Copy, MousePointerClick, Plus, Trash2 } from "lucide-react";
 import { EVENT_CATALOG } from "@/components/crm2/automacoes/followup-types";
 import type { FollowupNode } from "@/lib/ai-platform/followup/graph";
-import { previaTexto, ROTULO_TIPO_NO, VARIAVEIS_CADENCIA } from "./passos";
+import {
+  GRUPOS_VARIAVEIS_CADENCIA, SUGESTOES_CAMPO_CADENCIA, previaTexto, ROTULO_TIPO_NO,
+  sugestoesDeValor, VARIAVEIS_CADENCIA,
+} from "./passos";
+import { EntradaComLista } from "../fluxos/SeletorVariaveis";
 import type { OpcoesInspetor } from "@/lib/automacoes/grafo";
 
 type Props = { node: FollowupNode | null; somenteLeitura: boolean; opcoes?: OpcoesInspetor; onChange: (node: FollowupNode) => void; onDelete: () => void; onDuplicate: () => void };
@@ -24,7 +28,7 @@ export function FollowupInspector({ node, somenteLeitura, opcoes, onChange, onDe
     {text("Título no desenho", node.label, (label) => onChange({ ...node, label } as FollowupNode))}
     {node.type === "trigger" && <label className="ofx-campo"><span className="ofx-campo-rotulo">Quando entra</span><select className={input} value={node.config.event} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, event: e.target.value })}>{EVENT_CATALOG.map((event) => <option key={event.id} value={event.id}>{event.nome}</option>)}</select></label>}
     {node.type === "wait" && <WaitFields node={node} somenteLeitura={somenteLeitura} set={set} />}
-    {node.type === "condition" && <ConditionFields node={node} somenteLeitura={somenteLeitura} set={set} />}
+    {node.type === "condition" && <ConditionFields node={node} somenteLeitura={somenteLeitura} set={set} opcoes={opcoes} />}
     {node.type === "ai_classify" && <ClassifyFields node={node} somenteLeitura={somenteLeitura} set={set} opcoes={opcoes} />}
     {node.type === "action" && <ActionFields node={node} somenteLeitura={somenteLeitura} set={set} opcoes={opcoes} />}
     {node.type === "end" && <label className="ofx-campo"><span className="ofx-campo-rotulo">Resultado</span><select className={input} value={node.config.outcome} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, outcome: e.target.value })}><option value="exhausted">Cadência concluída</option><option value="converted">Convertido</option><option value="custom">Outro</option></select></label>}
@@ -37,9 +41,22 @@ function WaitFields({ node, somenteLeitura, set }: { node: Extract<FollowupNode,
   return <div className="ofc-espera-editor"><label className="ofx-campo"><span className="ofx-campo-rotulo">Esperar</span><input className={input} type="number" min={1} value={Math.max(1, Math.round(ms / unit))} disabled={somenteLeitura} onChange={(e) => set({ mode: "fixed", duration_ms: Math.max(1000, Number(e.target.value) * unit) })} /></label><label className="ofx-campo"><span className="ofx-campo-rotulo">Unidade</span><select className={input} value={unit} disabled={somenteLeitura} onChange={(e) => set({ mode: "fixed", duration_ms: Math.max(1000, Number(e.target.value) * Math.max(1, Math.round(ms / unit))) })}><option value={1000}>segundo(s)</option><option value={60000}>minuto(s)</option><option value={3600000}>hora(s)</option><option value={86400000}>dia(s)</option><option value={604800000}>semana(s)</option></select></label></div>;
 }
 
-function ConditionFields({ node, somenteLeitura, set }: { node: Extract<FollowupNode, { type: "condition" }>; somenteLeitura: boolean; set: (c: Record<string, unknown>) => void }) {
+function ConditionFields({ node, somenteLeitura, set, opcoes }: { node: Extract<FollowupNode, { type: "condition" }>; somenteLeitura: boolean; set: (c: Record<string, unknown>) => void; opcoes?: Props["opcoes"] }) {
   const checks = node.config.checks;
-  return <><label className="ofx-campo"><span className="ofx-campo-rotulo">Combinar regras</span><select className={input} value={node.config.combinator} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, combinator: e.target.value })}><option value="and">Todas (E)</option><option value="or">Qualquer (OU)</option></select></label><label className="ofx-campo"><span className="ofx-campo-rotulo">Saídas</span><select className={input} value={node.config.branching} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, branching: e.target.value, checks: e.target.value === "per_check" ? checks.map((check, i) => ({ ...check, id: check.id ?? `regra-${i + 1}` })) : checks })}><option value="combined">Sim / Não</option><option value="per_check">Uma saída por regra</option></select></label>{checks.map((check, i) => <div className="ofc-regra" key={check.id ?? i}>{text("Campo", check.field, (v) => set({ ...node.config, checks: checks.map((x, j) => j === i ? { ...x, field: v } : x) }), false, somenteLeitura)}<label className="ofx-campo"><span className="ofx-campo-rotulo">Operador</span><select className={input} value={check.op} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, checks: checks.map((x, j) => j === i ? { ...x, op: e.target.value } : x) })}><option value="eq">é igual a</option><option value="neq">é diferente de</option><option value="contains">contém</option><option value="gte">maior ou igual</option><option value="lte">menor ou igual</option></select></label>{text("Valor", String(check.value), (v) => set({ ...node.config, checks: checks.map((x, j) => j === i ? { ...x, value: v } : x) }), false, somenteLeitura)}{!somenteLeitura && checks.length > 1 && <button type="button" className="oa-icone" onClick={() => set({ ...node.config, checks: checks.filter((_, j) => j !== i) })} aria-label="Remover regra"><Trash2 size={13} /></button>}</div>)}{!somenteLeitura && checks.length < 10 && <button type="button" className="oa-btn oa-btn-secundario" onClick={() => set({ ...node.config, checks: [...checks, { id: `regra-${checks.length + 1}`, field: "status", op: "eq", value: "" }] })}><Plus size={13} /> Adicionar regra</button>}</>;
+  // Campo e valor usam a MESMA peça e a MESMA lista da Lista detalhada: aqui
+  // eram duas caixas vazias, e quem clicava num passo de Condição tinha de
+  // adivinhar o nome do campo e digitar na mão.
+  const campoDaRegra = (i: number, check: (typeof checks)[number]) => <label className="ofx-campo"><span className="ofx-campo-rotulo">Campo</span>
+    <EntradaComLista id={`${node.id}-campo-${i}`} rotulo="Campo" valor={check.field} placeholder="escolha ou digite o campo"
+      grupos={GRUPOS_VARIAVEIS_CADENCIA} sugestoes={SUGESTOES_CAMPO_CADENCIA} desabilitado={somenteLeitura}
+      aoMudar={(field) => set({ ...node.config, checks: checks.map((x, j) => j === i ? { ...x, field } : x) })} />
+  </label>;
+  const valorDaRegra = (i: number, check: (typeof checks)[number]) => <label className="ofx-campo"><span className="ofx-campo-rotulo">Valor</span>
+    <EntradaComLista id={`${node.id}-valor-${i}`} rotulo="Valor" valor={String(check.value ?? "")} placeholder="valor"
+      sugestoes={sugestoesDeValor(check.field, opcoes)} desabilitado={somenteLeitura}
+      aoMudar={(value) => set({ ...node.config, checks: checks.map((x, j) => j === i ? { ...x, value } : x) })} />
+  </label>;
+  return <><label className="ofx-campo"><span className="ofx-campo-rotulo">Combinar regras</span><select className={input} value={node.config.combinator} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, combinator: e.target.value })}><option value="and">Todas (E)</option><option value="or">Qualquer (OU)</option></select></label><label className="ofx-campo"><span className="ofx-campo-rotulo">Saídas</span><select className={input} value={node.config.branching} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, branching: e.target.value, checks: e.target.value === "per_check" ? checks.map((check, i) => ({ ...check, id: check.id ?? `regra-${i + 1}` })) : checks })}><option value="combined">Sim / Não</option><option value="per_check">Uma saída por regra</option></select></label>{checks.map((check, i) => <div className="ofc-regra" key={check.id ?? i}>{campoDaRegra(i, check)}<label className="ofx-campo"><span className="ofx-campo-rotulo">Operador</span><select className={input} value={check.op} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, checks: checks.map((x, j) => j === i ? { ...x, op: e.target.value } : x) })}><option value="eq">é igual a</option><option value="neq">é diferente de</option><option value="contains">contém</option><option value="gte">maior ou igual</option><option value="lte">menor ou igual</option></select></label>{valorDaRegra(i, check)}{!somenteLeitura && checks.length > 1 && <button type="button" className="oa-icone" onClick={() => set({ ...node.config, checks: checks.filter((_, j) => j !== i) })} aria-label="Remover regra"><Trash2 size={13} /></button>}</div>)}{!somenteLeitura && checks.length < 10 && <button type="button" className="oa-btn oa-btn-secundario" onClick={() => set({ ...node.config, checks: [...checks, { id: `regra-${checks.length + 1}`, field: "status", op: "eq", value: "" }] })}><Plus size={13} /> Adicionar regra</button>}</>;
 }
 
 function ClassifyFields({ node, somenteLeitura, set, opcoes }: { node: Extract<FollowupNode, { type: "ai_classify" }>; somenteLeitura: boolean; set: (c: Record<string, unknown>) => void; opcoes?: Props["opcoes"] }) {

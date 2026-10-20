@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { followupGraphSchema } from "@/lib/ai-platform/followup/graph";
 import { compileFollowupGraph } from "@/lib/ai-platform/followup/compile";
 import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate";
-import { grafoParaPassos, organizarGrafo, passosParaGrafo, pendenciasDosPassos, previaTexto, textoEspera, type Passo } from "./passos";
+import { GRUPOS_VARIAVEIS_CADENCIA, SUGESTOES_CAMPO_CADENCIA, grafoParaPassos, organizarGrafo, passosParaGrafo, pendenciasDosPassos, previaTexto, sugestoesDeValor, textoEspera, type Passo } from "./passos";
 
 const SESSAO = "11111111-1111-4111-8111-111111111111";
 const TAG = "22222222-2222-4222-8222-222222222222";
@@ -183,4 +183,23 @@ test("organizar não entra em laço com grafo que volta", () => {
   const comVolta = { ...grafo, edges: [...grafo.edges, { id: "volta", source: acao.id, target: gatilho.id, priority: 1, condition: { type: "always" as const } }] };
   const posto = organizarGrafo(comVolta);
   assert.equal(posto.nodes.length, comVolta.nodes.length);
+});
+
+test("campo da condição e valor saem da mesma fonte da lista detalhada", () => {
+  // Chave que a lista oferece é chave que o motor sabe ler.
+  assert.ok(GRUPOS_VARIAVEIS_CADENCIA[0].itens.some((i) => i.caminho === "status"));
+  assert.deepEqual(
+    SUGESTOES_CAMPO_CADENCIA.map((s) => s.valor),
+    GRUPOS_VARIAVEIS_CADENCIA.flatMap((g) => g.itens).map((i) => i.caminho),
+  );
+  // Etapa e tag vêm da conta; o resto é texto livre, nunca opção inventada.
+  const opcoes = {
+    usuarios: [], cadencias: [], templatesWhatsapp: [], sessoesWhatsapp: [], agentesIa: [],
+    tags: [{ id: TAG, nome: "quente", cor: null }],
+    etapas: { lead: [{ valor: "qualificacao", rotulo: "Qualificação" }], negocio: [{ valor: "qualificacao", rotulo: "Qualificação" }] },
+  };
+  assert.deepEqual(sugestoesDeValor("stage", opcoes).map((s) => s.valor), ["qualificacao"]);
+  assert.deepEqual(sugestoesDeValor("tags", opcoes).map((s) => s.valor), ["quente"]);
+  assert.deepEqual(sugestoesDeValor("status", opcoes), []);
+  assert.deepEqual(sugestoesDeValor("campo_que_a_pessoa_digitou", opcoes), []);
 });
