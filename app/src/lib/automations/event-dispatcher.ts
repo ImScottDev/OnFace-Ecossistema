@@ -43,10 +43,18 @@ export function triggerFiltersMatch(filters: Record<string, unknown>, facts: Rec
   });
 }
 
-function entityIdFor(definitionType: string, event: EventRow, payload: Record<string, unknown>): string | null {
+export function entityIdFor(definitionType: string, event: EventRow, payload: Record<string, unknown>): string | null {
   if (definitionType === event.aggregateType) return event.aggregateId;
   const keys: Record<string, string[]> = {
-    lead: ["leadId", "lead_id"], negocio: ["negocioId", "negocio_id", "dealId", "deal_id"], contato: ["contatoId", "contato_id", "contactId"],
+    // `*_legado_id` não é sinônimo de luxo: é como a PONTE canônica nomeia o
+    // registro (ponte-evento-canonico.ts). Sem essas duas chaves, cadência com
+    // gatilho de Proposta enviada/aceita casava o evento, não resolvia registro
+    // nenhum e saía calada — os 12 ProposalSent perdidos de 15/10 bateram aqui
+    // depois que o LEFT JOIN foi consertado. Os fluxos já traduziam (CHAVES em
+    // automacoes/disparo.ts); só a cadência não.
+    lead: ["leadId", "lead_id", "lead_legado_id"],
+    negocio: ["negocioId", "negocio_id", "dealId", "deal_id", "negocio_legado_id"],
+    contato: ["contatoId", "contato_id", "contactId"],
     oportunidade: ["oportunidadeId", "oportunidade_id"], cliente: ["clienteId", "cliente_id"], empresa: ["empresaId", "empresa_id"], servico: ["servicoId", "servico_id", "servicoCanonicoId"],
   };
   for (const key of keys[definitionType] ?? []) {
