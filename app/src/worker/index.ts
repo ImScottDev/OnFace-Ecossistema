@@ -916,6 +916,8 @@ async function handleAiSdrResponse(params: {
   currentMessage: string;
   phone: string;
   sourceMessageId?: string | null;
+  /** Uma automação já tratou a mensagem: só o agente que CONDUZ a conversa (atribuição ou responsável) responde. */
+  somenteAgenteDaConversa?: boolean;
 }) {
   const { contatoId, contatoNome, leadId, organizacaoId, sessaoId, currentMessage, phone, sourceMessageId } = params;
 
@@ -963,6 +965,12 @@ async function handleAiSdrResponse(params: {
     }
   } catch (err) {
     console.error(`[Agentes] falha ao acionar a agente responsável do contato ${contatoId}:`, err);
+    return;
+  }
+
+  // Automação assumiu o turno: o caminho genérico (agente por evento / SDR legado) não responde por cima dela.
+  if (params.somenteAgenteDaConversa) {
+    console.log(`[AI] conversa ${contatoId} roteada por automação e sem agente conduzindo: não responde automaticamente`);
     return;
   }
 
@@ -2604,7 +2612,10 @@ const whatsappIncomingWorker = new Worker(
     const aiSdrTypes = ["text", "image", "audio", "video", "document", "sticker", "location", "contact"];
     // Homologação recebe a mesma mensagem que produção (espelho do relé): a IA só responde
     // se o número estiver na WHATSAPP_ALLOWLIST. Sem isso ela gastaria crédito para uma resposta que a trava barra.
-    if (!numeroPrivado && !roteadoPorAutomacao && aiSdrTypes.includes(msgType) && destinatarioPermitido(normalized)) {
+    // Automação que casou com a mensagem não cala o agente que conduz a conversa (atribuição viva ou
+    // agente responsável): antes bastava uma automação qualquer para a Lia nunca mais responder.
+    // Ela só suprime o caminho genérico/legado (ver somenteAgenteDaConversa).
+    if (!numeroPrivado && aiSdrTypes.includes(msgType) && destinatarioPermitido(normalized)) {
       const tipoLabel: Record<string, string> = {
         image: "Imagem recebida", audio: "Audio recebido", video: "Video recebido",
         document: "Documento recebido", sticker: "Sticker recebido",
@@ -2622,6 +2633,7 @@ const whatsappIncomingWorker = new Worker(
             currentMessage: sdrMessage,
             phone: normalized,
             sourceMessageId: inboundMsgRow?.id ?? null,
+            somenteAgenteDaConversa: roteadoPorAutomacao,
           });
         } catch (sdrErr) {
           console.error(`[AI-SDR] Error processing for contato ${contato.id}:`, sdrErr);
