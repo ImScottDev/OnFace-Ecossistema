@@ -424,7 +424,7 @@ elevação por `box-shadow: inset 0 0 0 1px #e3e7e8`. Plus Jakarta Sans em
 títulos e números, Inter no corpo. Nó do canvas = linguagem `fx-no` do DS
 (cartão branco, rótulo de tipo em caixa alta pequena com ícone, título,
 resumo, rodapé de execução); fundo do canvas = `FundoGrafico variante="pontos"`.
-Nada de cartão escuro do `FollowupFlowCanvas` nem shadcn cru.
+Nada de cartão escuro de canvas antigo nem shadcn cru.
 
 ### 7.1 Lista — `/automacoes/fluxos`
 
@@ -599,8 +599,8 @@ que preencher.
 - `app/src/components/onface/automacoes/Fluxos.tsx` (vira a lista nova)
 - `app/src/components/onface/automacoes/formato.ts` (rótulos de `aguardando`, modos)
 
-Ninguém edita `components/onface/proto/*Desenho.tsx|*Liga.tsx` (gerados),
-`FollowupFlowCanvas.tsx`, nem o editor de Cadências.
+Ninguém edita `components/onface/proto/*Desenho.tsx|*Liga.tsx` (gerados)
+nem o editor de Cadências.
 
 ### Paralelismo
 
