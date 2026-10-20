@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { leads, organizacoes } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
-import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
-import { criarLead, garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
-import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
-import { dominioDoEmail } from "@/lib/vendas/identidade";
-import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
-import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "@/lib/vendas/ponte-canonica";
-import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
-import { respostasDoFormularioDoSite } from "@/lib/vendas/respostas-formulario";
-import { abrirEntrega, chavePorMinuto, fecharEntrega } from "@/lib/captacao/entregas";
+import { organizacoes } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+import { resolverResponsavelInbound } from "@/lib/vendas/pre-vendas";
+import { abrirEntrega, chavePorMinuto } from "@/lib/captacao/entregas";
+import { clean, lerFormularioSite, processarFormularioSite } from "@/lib/captacao/processar-site";
 
 /**
  * Webhook do FORMULÁRIO do site institucional (site.callface.io).
@@ -56,25 +50,6 @@ export async function OPTIONS(req: NextRequest) {
   return new NextResponse(null, { status: 204, headers: corsHeaders(req.headers.get("origin")) });
 }
 
-function clean(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const t = v.trim();
-  return t.length ? t.slice(0, 300) : null;
-}
-
-/** Mescla as respostas no `campos_custom` do lead sem apagar o que já está lá
- *  (qualificação, custom de Ajustes): a resposta do formulário manda no conflito. */
-async function guardarRespostas(leadId: string, respostas: Record<string, string>) {
-  if (Object.keys(respostas).length === 0) return;
-  await db
-    .update(leads)
-    .set({
-      camposCustom: sql`COALESCE(${leads.camposCustom}, '{}'::jsonb) || ${JSON.stringify(respostas)}::jsonb`,
-      updatedAt: new Date(),
-    })
-    .where(eq(leads.id, leadId));
-}
-
 export async function POST(req: NextRequest) {
   const cors = corsHeaders(req.headers.get("origin"));
 
@@ -85,49 +60,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400, headers: cors });
   }
 
-  // Honeypot: bots preenchem o campo oculto "website" → finge sucesso e ignora
-  if (clean(body.website)) {
-    return NextResponse.json({ ok: true, skipped: "honeypot" }, { status: 200, headers: cors });
-  }
-
-  const nome = clean(body.nome);
-  const email = clean(body.email)?.toLowerCase() ?? null;
-  // Mesmo lixo do RD pode chegar por aqui (bug de template no form manda "undefined").
-  const telefone = telefoneUsavel(clean(body.telefone));
-  const cargo = clean(body.cargo);
-  const empresa = clean(body.empresa);
-  const respostas = respostasDoFormularioDoSite(body);
-
-  if (!nome) {
-    return NextResponse.json(
-      { ok: false, error: "nome é obrigatório" },
-      { status: 422, headers: cors }
-    );
-  }
-  if (!email && !telefone) {
-    return NextResponse.json(
-      { ok: false, error: "informe email ou telefone" },
-      { status: 422, headers: cors }
-    );
-  }
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json(
-      { ok: false, error: "email inválido" },
-      { status: 422, headers: cors }
-    );
-  }
-
-  // Bloqueia o feed de "descoberta"/scraping: essas fontes mandam o e-mail como
-  // se fosse o nome (nome = "fulano@dominio.com"), sem nome real de pessoa. O
-  // formulário legítimo do site sempre tem nome. Finge sucesso (não retenta) e ignora.
-  if (/^[^\s]+@[^\s]+\.[^\s]+$/.test(nome) || (email && nome.trim().toLowerCase() === email)) {
-    return NextResponse.json({ ok: true, skipped: "sem-nome-real" }, { status: 200, headers: cors });
-  }
-
-  // separa nome / sobrenome
-  const partes = nome.split(/\s+/);
-  const primeiro = partes.shift() || nome;
-  const sobrenome = partes.length ? partes.join(" ") : null;
+  // Honeypot, validação e nome/sobrenome (lib/captacao/processar-site.ts).
+  const lido = lerFormularioSite(body);
+  if (!lido.ok) return NextResponse.json(lido.resposta.corpo, { status: lido.resposta.status, headers: cors });
+  const { campos } = lido;
 
   // Resolve org Callface
   const [org] = await db
@@ -172,125 +108,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const soltarEntrada = await travarEntrada(org.id, email, telefone);
-  try {
-  const achado = await acharLeadPorContato(org.id, email, telefone);
-  const existing = achado && {
-    id: achado.id, tipo: achado.tipo,
-    responsavelId: achado.responsavelId, empresaId: achado.empresaId,
-  };
-
-  // Empresa como entidade, não só texto (senão o lead entra sem vínculo no drawer).
-  const empresaIdResolvida = await resolverEmpresaId({
-    organizacaoId: org.id,
-    nome: empresa,
-    website: dominioCorporativo(email),
+  // O processamento é o mesmo do reprocessamento manual (lib/captacao/processar-site.ts).
+  const r = await processarFormularioSite({
+    organizacaoId: org.id, body, campos, entregaId: entrega.id, responsavelInboundId, ipAddress, userAgent, landingPage,
   });
-
-  if (existing) {
-    await fecharEntrega(entrega.id, { status: "duplicada", leadId: existing.id });
-    if (existing.tipo === "cliente") {
-      return NextResponse.json(
-        { ok: true, status: "already-client", leadId: existing.id },
-        { status: 200, headers: cors }
-      );
-    }
-    await db
-      .update(leads)
-      .set({
-        empresa: empresa ?? undefined,
-        // Não sobrescreve vínculo já existente.
-        ...(empresaIdResolvida
-          ? { empresaId: sql`COALESCE(${leads.empresaId}, ${empresaIdResolvida}::uuid)` }
-          : {}),
-        cargo: cargo ?? undefined,
-        telefone: telefone ?? undefined,
-        updatedAt: new Date(),
-      })
-      .where(eq(leads.id, existing.id));
-    await guardarRespostas(existing.id, respostas);
-    await syncPessoaFromLead(existing.id); // F1/dual-write, best-effort
-    await garantirAtividadePrimeiroContato({
-      organizacaoId: org.id,
-      leadId: existing.id,
-      empresaId: existing.empresaId,
-      responsavelId: existing.responsavelId ?? responsavelInboundId,
-    });
-    return NextResponse.json(
-      { ok: true, status: "updated", leadId: existing.id },
-      { status: 200, headers: cors }
-    );
-  }
-
-  // O formulário publicado ainda não pergunta a empresa. Quando ela não vem, o
-  // domínio corporativo do e-mail é o único identificador confiável disponível;
-  // e-mail pessoal não identifica empresa nenhuma, então o lead entra sem ela e
-  // a tela pede a associação antes de qualquer passo que exija Empresa.
-  // Registrado como dependência em docs/produto/modulo-01-vendas-implementacao.md.
-  const dominio = dominioDoEmail(email);
-  const nomeEmpresa = empresa ?? (dominio ? dominio.split(".")[0] : null);
-
-  const criado = await criarLead({
-    organizacaoId: org.id,
-    empresa: nomeEmpresa ? { nome: nomeEmpresa, dominio, email } : null,
-    pessoa: { nome: primeiro, sobrenome, email, telefone, cargo },
-    touchpoint: {
-      tipoOrigem: "organica",
-      source: clean(body.utmSource) ?? "site",
-      medium: clean(body.utmMedium),
-      campaign: clean(body.utmCampaign),
-      term: clean(body.utmTerm),
-      content: clean(body.utmContent),
-      landingPage,
-      raw: { ipAddress, userAgent },
-    },
-    origem: "Site",
-    // A política é resolvida dentro do motor, que também cria a atividade de
-    // primeiro contato ligada ao responsável escolhido.
-    responsavelId: null,
-    // Regra de distribuição por campanha/formulário (0131).
-    atribuicao: {
-      origem: "Site",
-      utmSource: clean(body.utmSource) ?? "site",
-      utmCampaign: clean(body.utmCampaign),
-      formulario: clean(body.formulario) ?? clean(body.formId),
-    },
-  }, ATOR_SISTEMA);
-  await fecharEntrega(entrega.id, {
-    status: criado.reaproveitado ? "duplicada" : "processada",
-    leadId: criado.leadId, regraId: criado.distribuicaoRegraId ?? null,
-  });
-
-  // As respostas vão para o lead depois de criado: `criarLead` não grava
-  // `campos_custom` (e pode devolver um lead já aberto, que também recebe).
-  await guardarRespostas(criado.leadId, respostas);
-
-  // CUTOVER (fase 16): o mesmo fato no modelo canônico. `criarLead` acima já é
-  // o motor canônico do CRM atual; esta chamada acrescenta aquisição, touchpoint
-  // e evento de domínio, que ele não produz. Sai na fase 25.
-  await garantirEntradaCanonica({
-    organizacaoId: org.id,
-    tipo: "INBOUND",
-    origem: "Site",
-    provider: "site",
-    pessoa: { nome: primeiro, sobrenome, email, telefone, cargo },
-    empresa: nomeEmpresa ? { nome: nomeEmpresa, dominio } : null,
-    atribuicao: {
-      utmSource: clean(body.utmSource), utmMedium: clean(body.utmMedium),
-      utmCampaign: clean(body.utmCampaign), utmTerm: clean(body.utmTerm),
-      utmContent: clean(body.utmContent), landingPage,
-    },
-    idempotencyKey: email ? `site:${org.id}:${email}` : null,
-  }, criado.leadId);
-
-  return NextResponse.json(
-    { ok: true, status: "created", leadId: criado.leadId, empresaId: criado.empresaId },
-    { status: 201, headers: cors }
-  );
-  } catch (e) {
-    await fecharEntrega(entrega.id, { status: "falhou", erro: e });
-    throw e;
-  } finally {
-    soltarEntrada();
-  }
+  return NextResponse.json(r.corpo, { status: r.status, headers: cors });
 }

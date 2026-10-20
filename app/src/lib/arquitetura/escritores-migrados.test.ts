@@ -30,8 +30,11 @@ const corpo = (p: string) =>
 
 /** Caminhos que CRIAM identidade comercial e já passam pela porta canônica. */
 const MIGRADOS = [
-  "app/api/webhooks/rd-lead/route.ts",
-  "app/api/webhooks/site-lead/route.ts",
+  // O processamento dos webhooks do RD e do site mora em lib/captacao (o mesmo
+  // código serve o webhook e o reprocessamento manual de entrega que falhou).
+  "lib/captacao/processar-rd.ts",
+  "lib/captacao/processar-site.ts",
+  "lib/captacao/processar-meta.ts",
   "api-server/routes/leads.ts",
   "api-server/routes/contatos.ts",
   "api-server/routes/prospeccao.ts",
