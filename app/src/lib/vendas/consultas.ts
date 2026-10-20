@@ -403,7 +403,15 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       // provam que ninguém lembra. Deixar o legado sobrescrever punha o card em
       // "Novo" enquanto o contador do canônico dizia "Em contato 531" — total e
       // cards discordando dentro da mesma tela.
-      const etapa = (l?.estagio === "qualificacao" ? "qualificacao" : c.etapa) as EstagioPreVendas;
+      // ...MENOS quando o canônico apurou um FATO. `oportunidade` sai de
+      // "existe negócio aberto" e `desqualificado` de `desqualificado_em`: são
+      // provas, não campo que alguém precisa lembrar de atualizar. Deixar o
+      // legado sobrescrever punha UM cartão na coluna Qualificação enquanto o
+      // total dela, que vem do canônico, contava 219 com 220 cartões embaixo —
+      // e Oportunidade dizia 226 com 225. Medido em homologação, 20/10.
+      const etapa = (l?.estagio === "qualificacao" && c.etapa !== "oportunidade" && c.etapa !== "desqualificado"
+        ? "qualificacao"
+        : c.etapa) as EstagioPreVendas;
       return {
         leadId: c.leadId ?? c.aquisicaoId,
         empresa: c.empresa?.trim() || "Empresa não informada",
