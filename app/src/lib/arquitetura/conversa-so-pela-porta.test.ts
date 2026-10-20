@@ -61,6 +61,7 @@ const SEM_A_PORTA: Record<string, string> = {
   "src/lib/ai-platform/midia/transcrever.ts": "runtime de agente: transcrição da mídia da conversa que ele conduz",
   "src/lib/ai-platform/observabilidade.ts": "observabilidade do agente: só as mensagens que o AGENTE escreveu (aiRunId)",
   "src/lib/ai-platform/operacao/acionar.ts": "operação de agente sobre a conversa atribuída a ele",
+  "src/lib/ai-platform/operacao/numero-do-agente.ts": "conversa que chegou no número do próprio agente (nunca privado): lead, nome e telefone para cadastrar quem escreveu",
   "src/lib/ai-platform/operacao/alvo.ts": "resolve o alvo (contato) da atribuição do agente",
   "src/lib/ai-platform/operacao/atribuicoes.ts": "atribuição de agente à conversa",
   "src/lib/ai-platform/operacao/compromissos.ts": "retomada que o próprio agente agendou",

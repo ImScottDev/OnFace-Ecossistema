@@ -913,6 +913,21 @@ async function handleAiSdrResponse(params: {
 }) {
   const { contatoId, contatoNome, leadId, organizacaoId, sessaoId, currentMessage, phone, sourceMessageId } = params;
 
+  /* Número de um agente (a Lia): quem escreve ali é atendido por ele, com ou sem cadastro, e
+     handoff sem ninguém atendendo não deixa o cliente no vácuo. Vem antes da pausa e do
+     opt-in por conversa, que valem para número de gente. Ver lib/ai-platform/operacao/numero-do-agente.ts. */
+  try {
+    const { atenderPeloNumeroDoAgente } = await import("../lib/ai-platform/operacao/numero-do-agente");
+    const r = await atenderPeloNumeroDoAgente({ organizacaoId, contatoId, leadId, sessaoId, mensagem: currentMessage, sourceMessageId: sourceMessageId ?? null });
+    if (r.tratado) {
+      console.log(`[Agentes] número do agente, contato ${contatoId}: ${r.resultado}${r.motivo ? ` (${r.motivo})` : ""}${r.leadCriado ? " — lead criado em Pré-vendas" : ""}`);
+      return;
+    }
+  } catch (err) {
+    console.error(`[Agentes] falha ao atender pelo número do agente o contato ${contatoId}:`, err);
+    return;
+  }
+
   /* IA pausada nesta conversa (botão do Atendimento ou handoff do agente): vale para o
      agente nativo também. Antes só o SDR legado lia `ai_ativo`; o agente publicado seguia
      respondendo a conversa que uma pessoa tinha assumido. Handoff "leve" não pausa (o
