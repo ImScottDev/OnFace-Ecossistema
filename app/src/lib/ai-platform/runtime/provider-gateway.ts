@@ -119,7 +119,7 @@ async function callAnthropic(input: ModelCallInput): Promise<ModelCallResult> {
   const response = await fetch(`${(input.baseUrl || "https://api.anthropic.com").replace(/\/$/, "")}/v1/messages`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": input.apiKey, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: input.model, system, messages, max_tokens: input.maxTokens, temperature: input.temperature ?? 0.3, tools: input.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) }),
+    body: JSON.stringify({ model: input.model, system, messages, max_tokens: input.maxTokens, temperature: input.temperature ?? 0.3, ...(input.tools.length ? { tools: input.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}) }),
   });
   return parseAnthropicResponse(await readResponse(response));
 }
