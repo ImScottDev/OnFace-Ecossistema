@@ -1090,7 +1090,7 @@ app.post("/whatsapp/status", async (c) => {
   if (ctx.isViewingAs) return c.json({ error: "Ver como e somente leitura." }, 403);
 
   const body = await c.req.json();
-  const { action, sessionId, sessionName, label, telefone, usuarioId, finalidade, tipo, acessos, privado } = body as {
+  const { action, sessionId, sessionName, label, telefone, usuarioId, finalidade, tipo, acessos, privado, operacional } = body as {
     action: string;
     sessionId?: string;
     sessionName?: string;
@@ -1104,6 +1104,8 @@ app.post("/whatsapp/status", async (c) => {
     acessos?: string[];
     /** Número pessoal/privado: nem a supervisão o alcança. Só o dono (ou o super admin) muda. */
     privado?: boolean;
+    /** Pool operacional: o número pode ser usado por distribuição, agentes de IA e automações. Nunca junto com `privado`. */
+    operacional?: boolean;
   };
 
   const gestao = escopoDeGestao(ctx);
@@ -1250,12 +1252,15 @@ app.post("/whatsapp/status", async (c) => {
     const novoTipo = dono === null ? "compartilhada" : (tipo ?? sessao.tipo);
     // Número que muda de dono deixa de ser "pessoal privado" de quem era: o novo dono decide.
     const novoPrivado = dono === null ? false : (mudaDono ? false : (typeof privado === "boolean" ? privado : sessao.privado));
-    const antes = { usuarioId: sessao.usuarioId, finalidade: sessao.finalidade, tipo: sessao.tipo, privado: sessao.privado };
+    // Privado e operacional não convivem: virar privado tira o número do pool de trabalho automático.
+    const novoOperacional = novoPrivado ? false : sessao.operacional;
+    const antes = { usuarioId: sessao.usuarioId, finalidade: sessao.finalidade, tipo: sessao.tipo, privado: sessao.privado, operacional: sessao.operacional };
     await db.transaction(async (tx) => {
       await tx.update(whatsappSessao).set({
         usuarioId: dono,
         tipo: novoTipo,
         privado: novoPrivado,
+        operacional: novoOperacional,
         ...(finalidade !== undefined && { finalidade: finalidade || null }),
         ...(label !== undefined && { label }),
         updatedAt: new Date(),
@@ -1273,7 +1278,7 @@ app.post("/whatsapp/status", async (c) => {
         }
       }
     });
-    await auditar("whatsapp.numero_vinculado", sessao.id, antes, { usuarioId: dono, finalidade: finalidade ?? sessao.finalidade, tipo: novoTipo, privado: novoPrivado, acessos });
+    await auditar("whatsapp.numero_vinculado", sessao.id, antes, { usuarioId: dono, finalidade: finalidade ?? sessao.finalidade, tipo: novoTipo, privado: novoPrivado, operacional: novoOperacional, acessos });
     return c.json({ ok: true });
   }
 
@@ -1313,11 +1318,25 @@ app.post("/whatsapp/status", async (c) => {
     return c.json({ ok: true });
   }
 
+  /* `update`: rótulo e pertencimento ao pool operacional. Só quem administra o
+     número chega aqui (checado acima). Operacional = distribuição, agentes de IA
+     e automações podem trabalhar por ele; número privado nunca entra no pool. */
   if (action === "update") {
+    if (operacional !== undefined && typeof operacional !== "boolean") {
+      return c.json({ error: "operacional deve ser verdadeiro ou falso." }, 400);
+    }
+    if (operacional === true && sessao.privado) {
+      return c.json({ error: "Número privado não pode ser operacional: IA e automações nunca usam número privado. Torne-o não privado antes." }, 409);
+    }
+    const mudaOperacional = operacional !== undefined && operacional !== sessao.operacional;
     await db.update(whatsappSessao).set({
       ...(label !== undefined && { label }),
+      ...(mudaOperacional && { operacional }),
       updatedAt: new Date(),
     }).where(eq(whatsappSessao.id, sessao.id));
+    if (mudaOperacional) {
+      await auditar("whatsapp.numero_operacional", sessao.id, { operacional: sessao.operacional }, { operacional });
+    }
     return c.json({ ok: true });
   }
 
@@ -1390,9 +1409,9 @@ app.get("/whatsapp/numeros", async (c) => {
     usuario_id: string | null; usuario_nome: string | null; usuario_tipo: string | null; usuario_agente_id: string | null;
     time_id: string | null; time_nome: string | null;
     agente_id: string | null; agente_nome: string | null;
-    conversas: number; minha: boolean; privado: boolean; acessos: Array<{ id: string; nome: string }> | null;
+    conversas: number; minha: boolean; privado: boolean; operacional: boolean; acessos: Array<{ id: string; nome: string }> | null;
   }>(sql`
-    SELECT s.id::text, s.session_name, s.label, s.phone_number, s.status, s.is_default, s.tipo, s.finalidade, s.privado,
+    SELECT s.id::text, s.session_name, s.label, s.phone_number, s.status, s.is_default, s.tipo, s.finalidade, s.privado, s.operacional,
            s.last_connected_at::text,
            s.usuario_id::text, u.nome AS usuario_nome, u.tipo AS usuario_tipo, u.agente_id::text AS usuario_agente_id,
            t.id::text AS time_id, t.nome AS time_nome,
@@ -1440,7 +1459,12 @@ app.get("/whatsapp/numeros", async (c) => {
       usuario: l.usuario_id ? { id: l.usuario_id, nome: l.usuario_nome ?? "", tipo: l.usuario_tipo ?? "humano", agenteId: l.usuario_agente_id } : null,
       time: l.time_id ? { id: l.time_id, nome: l.time_nome ?? "" } : null,
       agente: l.agente_id ? { id: l.agente_id, nome: l.agente_nome ?? "" } : null,
-      conversas: l.conversas, minha: l.minha, privado: l.privado, acessos: l.acessos ?? [],
+      conversas: l.conversas, minha: l.minha, privado: l.privado, operacional: l.operacional, acessos: l.acessos ?? [],
+      // Mesma regra do POST /whatsapp/status: a tela só oferece o que o servidor aceitaria.
+      administra: podeAdministrarNumero(ctx, {
+        usuarioId: l.usuario_id,
+        donoEhHumano: !!l.usuario_id && !ehAgenteUsuario({ tipo: l.usuario_tipo ?? "humano", agenteId: l.usuario_agente_id }),
+      }),
     })),
     filtros: { usuarios: [...usuariosOpt], equipes: [...equipesOpt], agentes: [...agentesOpt] },
   });

@@ -8,6 +8,8 @@ import { Cf2Button } from "@/components/crm2/ui/Button";
 import { Cf2Input } from "@/components/crm2/ui/Input";
 import { Cf2Sheet, Cf2SheetContent, Cf2SheetHeader, Cf2SheetTitle, Cf2SheetDescription } from "@/components/crm2/ui/Sheet";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { SecaoAjuste, PilulaEstado } from "@/components/onface/ajustes/Secao";
 
 /**
@@ -27,6 +29,12 @@ type Numero = {
   isDefault: boolean; tipo: string; finalidade: string | null; lastConnectedAt: string | null;
   usuario: Pessoa | null; time: { id: string; nome: string } | null; agente: { id: string; nome: string } | null;
   conversas: number; minha: boolean; acessos: Array<{ id: string; nome: string }>;
+  /** Pessoal/privado: nunca usado por IA nem automação. */
+  privado: boolean;
+  /** Pool operacional: distribuição, Lia e automações trabalham por ele. Nunca junto com `privado`. */
+  operacional?: boolean;
+  /** Quem está vendo pode reconfigurar o número (mesma regra do servidor). */
+  administra?: boolean;
 };
 type Resposta = {
   gestao: "organizacao" | "time" | null; eu: string; numeros: Numero[];
@@ -187,6 +195,8 @@ export function NumerosWhatsapp() {
           {temFiltro && <Cf2Button variant="ghost" size="sm" onClick={limpar}>Limpar filtros</Cf2Button>}
         </div>
 
+        <LegendaUso />
+
         {isLoading ? (
           <p className="aj-grupo-ajuda">Carregando números…</p>
         ) : isError ? (
@@ -229,6 +239,7 @@ export function NumerosWhatsapp() {
                 <Fato rotulo="Finalidade">{rotuloFinalidade(n.finalidade)}</Fato>
                 <Fato rotulo="Conversas">{n.conversas}</Fato>
                 {n.isDefault ? <span className="aj-pilula"><Star aria-hidden style={{ width: 12, height: 12 }} /> Padrão</span> : null}
+                <SelosUso n={n} />
                 <div className="aj-linha-acoes">
                   {n.status !== "connected" && n.minha ? (
                     <Cf2Button size="sm" onClick={() => setAberto(n.id)}>Conectar</Cf2Button>
@@ -266,6 +277,26 @@ export function NumerosWhatsapp() {
         </Cf2SheetContent>
       </Cf2Sheet>
     </div>
+  );
+}
+
+/** Selos de uso do número: privado (fora de IA/automação) e operacional (pool de trabalho automático). */
+function SelosUso({ n }: { n: Numero }) {
+  if (!n.privado && !n.operacional) return null;
+  return (
+    <span className="inline-flex items-center gap-1">
+      {n.privado ? <Badge variant="warning">Privado</Badge> : null}
+      {n.operacional ? <Badge variant="info">Operacional</Badge> : null}
+    </span>
+  );
+}
+
+function LegendaUso() {
+  return (
+    <p className="aj-grupo-ajuda inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="inline-flex items-center gap-1.5"><Badge variant="warning">Privado</Badge> nunca é usado por IA nem por automação.</span>
+      <span className="inline-flex items-center gap-1.5"><Badge variant="info">Operacional</Badge> entra no pool de trabalho automático: distribuição de leads, Lia e automações.</span>
+    </p>
   );
 }
 
@@ -429,6 +460,7 @@ function DetalheNumero({ n, gestao, pessoas, eu, mudou, fechar }: {
         <Cf2SheetTitle className="flex items-center gap-2"><span className="aj-conexao-icone" aria-hidden><IconeWa /></span>{n.label}</Cf2SheetTitle>
         <Cf2SheetDescription className="flex items-center gap-2">
           {fmtTel(vivo?.phoneNumber ?? n.phoneNumber) ?? "Sem número vinculado"} <PilulaEstado estado={estadoDe(status, vivo?.phoneNumber ?? n.phoneNumber)}>{textoEstado(status, vivo?.phoneNumber ?? n.phoneNumber)}</PilulaEstado>
+          <SelosUso n={n} />
         </Cf2SheetDescription>
       </Cf2SheetHeader>
 
@@ -484,6 +516,25 @@ function DetalheNumero({ n, gestao, pessoas, eu, mudou, fechar }: {
           </dd>
         </div>
       </dl>
+
+      {n.administra && (
+        <div className="flex flex-col gap-2 border-t border-[var(--line-hairline)] pt-4">
+          <span className="aj-grupo-titulo">Uso automático</span>
+          <div className="flex items-start justify-between gap-3">
+            <label htmlFor={`operacional-${n.id}`} className="aj-campo">
+              <span>Número operacional (Lia, distribuição e automações)</span>
+              <small>
+                {n.privado
+                  ? "Indisponível: este número é privado, e número privado nunca é usado por IA nem por automação."
+                  : "Ligado, o número entra no pool de trabalho automático: regras de distribuição podem mandar leads para ele, e a Lia e as automações podem falar por ele."}
+              </small>
+            </label>
+            <Switch id={`operacional-${n.id}`} checked={!!n.operacional} disabled={n.privado || ocupado === "operacional"}
+              onCheckedChange={(v) => void rodar("operacional", "update", { operacional: v },
+                v ? `${n.label} agora é operacional.` : `${n.label} saiu do pool operacional.`)} />
+          </div>
+        </div>
+      )}
 
       {(podeEditarVinculo || podeEditarFinalidade) && (
         <form className="flex flex-col gap-3 border-t border-[var(--line-hairline)] pt-4" onSubmit={(e) => {
