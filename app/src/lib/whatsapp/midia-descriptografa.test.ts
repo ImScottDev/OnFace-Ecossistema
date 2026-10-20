@@ -55,7 +55,11 @@ test("ninguém tenta baixar mídia por MessageId: esse campo não existe no wuza
   const client = semComentarios(fs.readFileSync(CLIENT, "utf8"));
   const worker = semComentarios(fs.readFileSync(WORKER, "utf8"));
   for (const [nome, fonte] of [["client.ts", client], ["worker/index.ts", worker]] as const) {
-    assert.doesNotMatch(fonte, /MessageId:\s*messageId|downloadMediaByMessageId/,
+    // O `(?<![A-Za-z])` existe porque o campo é `MessageId`, com M maiúsculo e
+    // sozinho: sem ele, `outboundMessageId: messageId` (rastreio do envio do
+    // agente, 20/10) casava e a trava acusava o worker de uma tentativa de
+    // download que ele nunca fez.
+    assert.doesNotMatch(fonte, /(?<![A-Za-z])MessageId:\s*messageId|downloadMediaByMessageId/,
       `${nome} voltou a tentar baixar mídia por MessageId — o wuzapi não tem esse campo, então é uma tentativa que nunca funciona e esconde a falha real`);
   }
 });

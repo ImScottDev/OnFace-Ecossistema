@@ -37,10 +37,21 @@ test("coluna de array não é projetada crua em consulta SQL", async (t) => {
   const sql = postgres(DB_URL, { max: 1, fetch_types: false });
   let colunas: string[];
   try {
-    const linhas = await sql<{ column_name: string }[]>`
-      SELECT DISTINCT column_name FROM information_schema.columns
-       WHERE table_schema = 'public' AND data_type = 'ARRAY'`;
-    colunas = linhas.map((l) => l.column_name);
+    // Só entra na lista o nome que é ARRAY em TODA tabela onde aparece.
+    //
+    // O teste casa pelo nome da coluna, e a linha do SELECT nem sempre diz de
+    // que tabela ela vem. Quando o mesmo nome é array numa tabela e escalar em
+    // outra, não há como decidir — e acusar é pior que calar: a 0131 criou
+    // `regras_distribuicao_leads.origem text[]` e, da noite para o dia, todo
+    // `SELECT l.origem` de `leads.origem` (que é `text`) virou suspeito em 14
+    // arquivos que ninguém havia encostado.
+    const linhas = await sql<{ column_name: string; e_array: boolean }[]>`
+      SELECT column_name, bool_and(data_type = 'ARRAY') AS e_array
+        FROM information_schema.columns
+       WHERE table_schema = 'public'
+       GROUP BY column_name
+      HAVING bool_or(data_type = 'ARRAY')`;
+    colunas = linhas.filter((l) => l.e_array).map((l) => l.column_name);
   } finally {
     await sql.end();
   }
