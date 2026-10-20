@@ -93,7 +93,7 @@ Está tudo no arquivo; aqui só o mapa.
 - `GrafoFluxo { versao: 1; nos: NoFluxo[]; arestas: ArestaFluxo[] }`.
   `NoFluxo { id ("n1"), tipo, rotulo?, posicao, config, falha?, desativado?, nota? }`.
   `ArestaFluxo { id, origem, saida, destino }` — `saida` é o id do handle de origem.
-- `ConfigFluxo { reentrada, fuso, horarioComercial }` vai em `automacao_versoes.settings`.
+- `ConfigFluxo { reentrada, fuso, horarioComercial, aoResponder? }` vai em `automacao_versoes.settings`.
   `trigger_config` da versão = `config` do nó gatilho (cópia para consulta rápida do dispatcher).
 - `CATALOGO_NOS[tipo]`: categoria, rótulo, descrição, ícone lucide, `campos`
   (com `tipo` de input, obrigatoriedade, `mostrarSe`, `aceitaExpressao`,
@@ -650,3 +650,16 @@ Frontend:
 ## Changelog do contrato
 
 - 01/10/2026 — versão inicial (grafo.ts + este documento).
+- 20/10/2026 — `ConfigFluxo.aoResponder?: "continuar" | "parar"` (aditivo, opcional;
+  ausente = `continuar`, que é o comportamento de todo fluxo publicado antes).
+  Quando o lead responde, `registrarRespostaEmCadencias` (chamada pelo canal a
+  cada mensagem recebida) chama `registrarRespostaEmFluxos` do executor: execução
+  `aguardando` do mesmo registro (contato, o lead dele, negócios/oportunidades
+  abertos do lead), iniciada antes da resposta, numa versão com `aoResponder:
+  "parar"`, é cancelada com motivo "lead respondeu"; o bloco em que ela retomaria
+  aparece em Execuções como `SKIPPED` com esse motivo. O inspetor ainda não
+  mostra a opção (frente de tela).
+- 20/10/2026 — `ia_responder` publica em `resposta` o texto que o agente de fato
+  enfileirou (e `mensagemIds`), em vez de sempre `null`. `ia_gerar_texto` e
+  `ia_classificar` rodam o agente SEM ferramentas (antes: todas as da versão, só
+  com o envio suprimido) e com contato/lead do registro no run.

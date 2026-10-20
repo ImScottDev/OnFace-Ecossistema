@@ -426,6 +426,61 @@ export async function cancelarExecucao(execId: string, automacaoId: string, moti
   return true;
 }
 
+export const MOTIVO_LEAD_RESPONDEU = "lead respondeu";
+
+/**
+ * O lead respondeu (chamado por `registrarRespostaEmCadencias`, que o canal
+ * chama a cada mensagem recebida). Execuções ESPERANDO pelo mesmo registro —
+ * contato, o lead dele, negócios/oportunidades abertos do lead — seguem a
+ * `ConfigFluxo.aoResponder` da versão em que começaram:
+ *  - `continuar` (padrão, e o de todo fluxo publicado antes desta opção):
+ *    nada muda, a espera vence no horário;
+ *  - `parar`: a execução é cancelada com motivo "lead respondeu", e o bloco
+ *    onde ela retomaria aparece em Execuções como pulado, com o motivo.
+ *
+ * Só para execução que começou ANTES da resposta: a mesma mensagem reentregue
+ * não derruba o fluxo que ela própria disparou. Execução no meio de um bloco
+ * (claim vivo) não é tocada: ela termina o bloco e o próximo sweep decide.
+ */
+export async function registrarRespostaEmFluxos(input: { organizacaoId: string; contatoId: string; entidadeIds: string[]; recebidaEm?: Date }): Promise<number> {
+  const ids = [...new Set(input.entidadeIds.filter(Boolean))];
+  if (!ids.length) return 0;
+  const recebidaEm = input.recebidaEm ?? new Date();
+  const candidatas = await db.select({ id: automacaoExecucoes.id, nodes: automacaoVersoes.nodes })
+    .from(automacaoExecucoes)
+    .innerJoin(automacaoVersoes, eq(automacaoVersoes.id, automacaoExecucoes.versionId))
+    .where(and(
+      eq(automacaoExecucoes.organizacaoId, input.organizacaoId),
+      eq(automacaoExecucoes.status, "aguardando"),
+      inArray(automacaoExecucoes.entityId, ids),
+      sql`coalesce(${automacaoExecucoes.startedAt}, ${automacaoExecucoes.executedAt}) < ${recebidaEm.toISOString()}::timestamptz`,
+      sql`${automacaoVersoes.settings}->>'aoResponder' = 'parar'`,
+    ));
+  let paradas = 0;
+  for (const c of candidatas) {
+    // Claim curto: o sweep não retoma enquanto paramos, e quem já está andando a execução vence.
+    const [exec] = await db.update(automacaoExecucoes).set({ claimedUntil: sql`now() + interval '1 minute'` }).where(and(
+      eq(automacaoExecucoes.id, c.id), eq(automacaoExecucoes.status, "aguardando"),
+      or(isNull(automacaoExecucoes.claimedUntil), lt(automacaoExecucoes.claimedUntil, sql`now()`)),
+    )).returning();
+    if (!exec) continue;
+    const estado = { ...estadoVazio(), ...(exec.estado as EstadoExecucao) };
+    const no = (c.nodes as NoFluxo[] | null)?.find((n) => n.id === exec.noAtual);
+    if (no) {
+      const [{ n: ordem }] = await db.select({ n: sql<number>`count(*)::int` }).from(automacaoPassosExecucao).where(eq(automacaoPassosExecucao.execucaoId, exec.id));
+      await db.insert(automacaoPassosExecucao).values({
+        organizacaoId: exec.organizacaoId, execucaoId: exec.id, nodeId: no.id, nodeType: no.tipo, ordem,
+        status: "SKIPPED", saida: null, erro: MOTIVO_LEAD_RESPONDEU,
+        output: { motivo: MOTIVO_LEAD_RESPONDEU, contatoId: input.contatoId, respondidoEm: recebidaEm.toISOString() },
+        idempotencyKey: `${exec.id}:resposta`, startedAt: new Date(), finishedAt: new Date(),
+      }).onConflictDoNothing();
+    }
+    await finalizar(exec.id, exec.automacaoId, "cancelado", MOTIVO_LEAD_RESPONDEU, estado);
+    paradas++;
+  }
+  return paradas;
+}
+
 /**
  * Anda uma execução a partir de `no_atual`. Só uma chamada por vez anda a
  * mesma execução (claim por `claimed_until`); quem perde o claim sai calado.

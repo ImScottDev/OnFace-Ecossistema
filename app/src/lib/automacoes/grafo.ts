@@ -85,6 +85,10 @@ export interface ConfigFluxo {
   reentrada: "uma_viva" | "sempre" | "uma_vez";
   fuso: string;
   horarioComercial: { dias: number[]; inicio: string; fim: string };
+  /** O lead respondeu enquanto a execução ESPERA (espera, horário, nova tentativa):
+   *  continuar = a espera vence no horário, como sempre foi (padrão; ausente = continuar);
+   *  parar = a execução é cancelada com motivo "lead respondeu". Lido em `registrarRespostaEmFluxos`. */
+  aoResponder?: "continuar" | "parar";
 }
 
 export const FALHA_PADRAO: FalhaNo = { politica: "parar", timeoutSeg: 30, tentativas: 0 };
@@ -126,6 +130,7 @@ export const configFluxoSchema = z.object({
     inicio: z.string().regex(/^\d{2}:\d{2}$/),
     fim: z.string().regex(/^\d{2}:\d{2}$/),
   }),
+  aoResponder: z.enum(["continuar", "parar"]).optional(),
 });
 
 // ─── Entidades e eventos reais ─────────────────────────────────────────────

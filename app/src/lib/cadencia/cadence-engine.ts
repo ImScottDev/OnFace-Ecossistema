@@ -1127,6 +1127,17 @@ export async function registrarRespostaEmCadencias(input: { organizacaoId: strin
     if (pause) await avisarResponsavel(row, "pausado_por_resposta", "Lead respondeu — cadência pausada", "respondeu e a cadência parou. A conversa é sua agora.");
     atualizados++;
   }
+  // Fluxos (Automações) esperando pelo MESMO registro decidem pela configuração
+  // deles (`aoResponder`). Entra aqui porque é esta a função que o canal chama
+  // a cada resposta: os fluxos não tinham parada por resposta e retomavam no
+  // `retomar_em` como se o lead não tivesse falado. Best-effort: falha nos
+  // fluxos nunca impede a cadência de pausar.
+  try {
+    const { registrarRespostaEmFluxos } = await import("@/lib/automacoes/executor");
+    await registrarRespostaEmFluxos({ organizacaoId: input.organizacaoId, contatoId: input.contatoId, entidadeIds: ids, recebidaEm: input.recebidaEm });
+  } catch (err) {
+    console.error("[cadence-engine] resposta registrada nas cadências, mas os fluxos falharam (best-effort):", err);
+  }
   return atualizados;
 }
 
