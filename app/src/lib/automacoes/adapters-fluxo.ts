@@ -14,7 +14,8 @@ import { isIP } from "node:net";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auditLog, cadenceEnrollments, notificacoes, usuarios } from "@/lib/db/schema";
-import { registrarAdapter, iniciarCadencia, cancelarCadencia, type CadenceActionContext } from "@/lib/cadencia/cadence-engine";
+import { registrarAdapter, iniciarCadencia, cancelarCadencia, executarIaSemFerramentas, type CadenceActionContext } from "@/lib/cadencia/cadence-engine";
+import { alvoDaEntidade } from "@/lib/ai-platform/operacao/alvo";
 import { CAMPOS_ATUALIZAVEIS } from "./grafo";
 
 const cfg = (ctx: CadenceActionContext) => (ctx.step.config ?? {}) as Record<string, unknown>;
@@ -177,17 +178,24 @@ registrarAdapter("fluxo_http", async (ctx) => {
 });
 
 // ─── IA ────────────────────────────────────────────────────────────────────
-// Gerar e classificar NÃO enviam nada (suppressEgress): o texto volta para o
-// grafo, e quem decide mandar é um bloco seguinte, visível no canvas.
+// Gerar e classificar NÃO enviam nada nem agem: rodam sem ferramenta nenhuma
+// (`executarIaSemFerramentas`). O texto volta para o grafo, e quem decide
+// mandar ou mudar o CRM é um bloco seguinte, visível no canvas.
+
+/** Contato e lead do registro, para o run da IA ficar ligado a quem ele leu. */
+async function quemDoRegistro(ctx: CadenceActionContext): Promise<{ contatoId: string | null; leadId: string | null }> {
+  if (!ctx.entityType || !ctx.entityId) return { contatoId: null, leadId: null };
+  const a = await alvoDaEntidade(ctx.organizacaoId, ctx.entityType, ctx.entityId).catch(() => null);
+  return { contatoId: a?.contatoId ?? null, leadId: a?.leadId ?? null };
+}
 registrarAdapter("fluxo_ia_texto", async (ctx) => {
   const c = cfg(ctx);
   const instrucao = str(c.instrucao);
   if (!instrucao) return { sucesso: false, erro: "instrução vazia" };
   try {
-    const { executeAgent } = await import("@/lib/ai-platform/runtime/execute-agent");
-    const r = await executeAgent({
+    const r = await executarIaSemFerramentas({
       organizacaoId: ctx.organizacaoId, agentId: str(c.agenteId) || undefined, eventType: "automacao.fluxo",
-      message: instrucao, mode: "live", suppressEgress: true,
+      message: instrucao, ...(await quemDoRegistro(ctx)),
     });
     return { sucesso: true, resultado: { texto: r.responseText ?? "", runId: r.runId } };
   } catch (e) {
@@ -205,12 +213,11 @@ registrarAdapter("fluxo_ia_classificar", async (ctx) => {
   // Sem texto não há o que classificar: segue por "Nenhuma das classes" sem chamar modelo.
   if (!texto) return { sucesso: true, resultado: { classe: "outra", motivo: "texto vazio" } };
   try {
-    const { executeAgent } = await import("@/lib/ai-platform/runtime/execute-agent");
     const dica = str(c.dica);
-    const r = await executeAgent({
+    const r = await executarIaSemFerramentas({
       organizacaoId: ctx.organizacaoId, agentId: str(c.agenteId) || undefined, eventType: "automacao.fluxo",
       message: `Classifique a mensagem do contato em exatamente uma destas classes: ${ids.join(", ")}.${dica ? ` Contexto: ${dica}.` : ""} Responda apenas com o id da classe, sem mais nada.\n\nMensagem do contato: """${texto}"""`,
-      mode: "live", suppressEgress: true,
+      ...(await quemDoRegistro(ctx)),
     });
     const bruto = (r.responseText ?? "").trim().toLowerCase();
     const classe = ids.find((id) => bruto === id.toLowerCase()) ?? ids.find((id) => bruto.includes(id.toLowerCase())) ?? "outra";

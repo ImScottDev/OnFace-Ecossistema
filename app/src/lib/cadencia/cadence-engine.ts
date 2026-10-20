@@ -445,6 +445,32 @@ async function enviarWhatsappTemplate(args: { organizacaoId: string; contato: ty
   return enfileirarWhatsapp({ contato: args.contato, texto, templateNome: template.nome });
 }
 
+/**
+ * IA que só LÊ e devolve texto (classificar, gerar): sem nenhuma ferramenta e
+ * sem envio. Antes rodava com o conjunto inteiro de ferramentas da versão e só
+ * o envio suprimido — uma classificação podia mover etapa, criar tarefa ou
+ * atribuir dono se o modelo resolvesse chamar uma ferramenta.
+ *
+ * Contato e lead vão no run para rastreio (Execuções mostra de quem era). Se o
+ * contato já tem um run vivo (um por contato, `uq_ai_agent_runs_one_live_per_contact`),
+ * a leitura roda sem o contato em vez de falhar: ela não fala com ninguém.
+ */
+export async function executarIaSemFerramentas(p: {
+  organizacaoId: string; agentId?: string | null; eventType: string; message: string; contatoId?: string | null; leadId?: string | null;
+}) {
+  const base = {
+    organizacaoId: p.organizacaoId, agentId: p.agentId || undefined, eventType: p.eventType, message: p.message, leadId: p.leadId ?? null,
+    mode: "live" as const, suppressEgress: true, somenteFerramentasExtras: true, extraToolIds: [] as string[],
+  };
+  try {
+    return await executeAgent({ ...base, contatoId: p.contatoId ?? null });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (p.contatoId && /uq_ai_agent_runs_one_live_per_contact|duplicate key/i.test(msg)) return executeAgent({ ...base, contatoId: null });
+    throw err;
+  }
+}
+
 /** Adapter real — chama o agente publicado configurado no nó (mesmo runtime do chat ao vivo). Egress passa pela fila/ledger do próprio `executeAgent`, não duplica envio aqui. Se falhar e houver `fallback_template_id`, tenta o template antes de reportar erro. */
 registrarAdapter("ai_agent_message", async (ctx) => {
   const config = ctx.step.config as { agent_id?: string; prompt_hint?: string; fallback_template_id?: string; sessao_id?: string };
@@ -528,10 +554,12 @@ registrarAdapter("ai_classify", async (ctx) => {
   const classIds = config.classes.map((item) => item.id);
 
   let inputText = "";
+  let contatoId: string | null = null;
   if (config.target === "summary") {
     inputText = typeof ctx.vars.summary === "string" ? ctx.vars.summary : "";
   } else {
     const contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId);
+    contatoId = contato?.id ?? null;
     if (contato) {
       const [reply] = await db.select({ conteudo: whatsappMensagens.conteudo }).from(whatsappMensagens)
         .where(and(eq(whatsappMensagens.contatoId, contato.id), eq(whatsappMensagens.direcao, "in")))
@@ -544,13 +572,15 @@ registrarAdapter("ai_classify", async (ctx) => {
   if (!config.agent_id) return { sucesso: false, erro: "nó de classificação sem agente configurado" };
 
   try {
-    const result = await executeAgent({
+    // Classificar só lê: sem ferramenta nenhuma (ver executarIaSemFerramentas).
+    const { leadId } = await entityLinks(ctx);
+    const result = await executarIaSemFerramentas({
       organizacaoId: ctx.organizacaoId,
       agentId: config.agent_id,
       eventType: "cadence.step_due",
       message: `Classifique a mensagem do contato em exatamente uma destas classes: ${classIds.join(", ")}.${config.hint ? ` Contexto: ${config.hint}.` : ""} Responda apenas com o id da classe, sem mais nada.\n\nMensagem do contato: """${inputText}"""`,
-      mode: "live",
-      suppressEgress: true,
+      contatoId,
+      leadId,
     });
     const raw = (result.responseText ?? "").trim().toLowerCase();
     const classId = classIds.find((id) => raw === id.toLowerCase() || raw.includes(id.toLowerCase())) ?? "else";
