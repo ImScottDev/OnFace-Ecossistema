@@ -16,7 +16,7 @@
  * e o editor é uma lista de passos, não um grafo.
  * ───────────────────────────────────────────────────────────────────────── */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -310,6 +310,7 @@ function ListaInscricoes({ data, loading, error, podeGerenciar, busy, status, fl
   onStatus: (x: string) => void; onFluxo: (x: string) => void; onBusca: (x: string) => void; onAcao: (id: string, a: "pause" | "resume" | "cancel") => void; onEventos: (id: string) => void;
 }) {
   const motivo = podeGerenciar ? undefined : SEM_PERMISSAO;
+  const filtrado = status !== "all" || fluxo !== "all" || busca.trim() !== "";
   return (
     <>
       <div className="ofx-lista-barra">
@@ -335,8 +336,15 @@ function ListaInscricoes({ data, loading, error, podeGerenciar, busy, status, fl
         : !data?.items.length ? (
           <div className="ofx-vazio">
             <span className="ofx-vazio-icone"><UserPlus size={20} /></span>
-            <h2>Nenhuma inscrição com estes filtros</h2>
+            <h2>{filtrado ? "Nenhuma inscrição com estes filtros" : "Nenhuma inscrição ainda"}</h2>
             <p>Inscreva um registro a partir de uma cadência publicada, ou aguarde o gatilho de evento.</p>
+            {/* O vazio com filtro ligado precisa de saída: antes dizia "com
+                estes filtros" e deixava a pessoa procurar qual era. */}
+            {filtrado ? (
+              <button type="button" className="oa-btn oa-btn-secundario" onClick={() => { onStatus("all"); onFluxo("all"); onBusca(""); }}>
+                Limpar filtros
+              </button>
+            ) : null}
           </div>
         ) : (
           <ul className="ofx-tabela ofc-tabela-fila">
@@ -359,8 +367,11 @@ function ListaInscricoes({ data, loading, error, podeGerenciar, busy, status, fl
                     {it.status === "active" || it.status === "waiting" || it.status === "waiting_reply"
                       ? <button type="button" className="oa-icone" disabled={busy || !podeGerenciar} title={motivo ?? "Pausar"} aria-label="Pausar" onClick={() => onAcao(it.id, "pause")}><CirclePause size={14} /></button>
                       : it.status === "paused" ? <button type="button" className="oa-icone" disabled={busy || !podeGerenciar} title={motivo ?? "Retomar"} aria-label="Retomar" onClick={() => onAcao(it.id, "resume")}><Play size={14} /></button> : null}
+                    {/* Cancelar tira o registro da cadência no servidor e não
+                        volta: retomar só existe para quem está pausado. */}
                     {!["completed", "cancelled"].includes(it.status)
-                      ? <button type="button" className="oa-icone ofx-menu-perigo" disabled={busy || !podeGerenciar} title={motivo ?? "Cancelar"} aria-label="Cancelar" onClick={() => onAcao(it.id, "cancel")}><XCircle size={14} /></button> : null}
+                      ? <button type="button" className="oa-icone ofx-menu-perigo" disabled={busy || !podeGerenciar} title={motivo ?? "Cancelar a inscrição"} aria-label="Cancelar a inscrição"
+                          onClick={() => { if (window.confirm(`Cancelar a inscrição de ${it.entityName} em “${it.definitionName}”? Os passos que faltam não serão enviados, e não há como retomar.`)) onAcao(it.id, "cancel"); }}><XCircle size={14} /></button> : null}
                   </span>
                 </li>
               );
@@ -372,15 +383,22 @@ function ListaInscricoes({ data, loading, error, podeGerenciar, busy, status, fl
 }
 
 function Modal({ titulo, children, onClose }: { titulo: string; children: React.ReactNode; onClose: () => void }) {
+  const caixa = useRef<HTMLDivElement>(null);
   // Esc fecha: listener só no efeito, nunca no corpo (SSR).
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
+  // Sem isto o foco ficava no botão ATRÁS do véu: quem usa teclado abria
+  // Versões e seguia tabulando a lista escondida embaixo.
+  useEffect(() => {
+    if (caixa.current?.contains(document.activeElement)) return;
+    caixa.current?.focus();
+  }, []);
   return (
     <div className="oa-veu" onMouseDown={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={titulo} className="oa-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={caixa} tabIndex={-1} role="dialog" aria-modal="true" aria-label={titulo} className="oa-modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="oa-modal-topo">
           <h2 className="oa-modal-titulo">{titulo}</h2>
           <button type="button" className="oa-icone" aria-label="Fechar" onClick={onClose}><X size={16} /></button>

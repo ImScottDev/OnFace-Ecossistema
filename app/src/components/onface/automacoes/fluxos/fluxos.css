@@ -407,6 +407,36 @@
 .ofx-rotinas[open] summary svg { transform: none; }
 .ofx-rotinas > .oa-dica { margin: 0 0 10px; }
 
+/* ═══ Foco de teclado ═══════════════════════════════════════════════════ */
+/* `automacoes.css` cobre oa-btn/oa-aba/oa-icone. As peças próprias do
+   construtor (o "+" do palco, o "+" de uma saída, o X de uma ligação, item da
+   paleta, chips de categoria, dias, segmentos, passo do ensaio e linha de
+   execução) não tinham anel da casa: herdavam o genérico do globals, de outra
+   cor. Anel por token, só para teclado. */
+.ofx-botao-mais:focus-visible,
+.ofx-mais:focus-visible,
+.ofx-aresta-x:focus-visible,
+.ofx-paleta-item:focus-visible,
+.ofx-paleta-cats button:focus-visible,
+.ofx-chips button:focus-visible,
+.ofx-dias button:focus-visible,
+.ofx-segmentos button:focus-visible,
+.ofx-adicionar:focus-visible,
+.ofx-vars-botao:focus-visible,
+.ofx-vars-item:focus-visible,
+.ofx-passo:focus-visible,
+.ofx-exec:focus-visible,
+.ofx-modelo:focus-visible,
+.ofx-menu-pop button:focus-visible,
+.ofx-pendencias li button:focus-visible,
+.ofx-voltar:focus-visible,
+.ofx-rotinas summary:focus-visible {
+  outline: 2px solid var(--of-coral-marca);
+  outline-offset: 2px;
+}
+/* O anel da busca é o box-shadow da moldura: o outline do input dobraria. */
+.ofx-paleta-busca input:focus-visible { outline: none; }
+
 /* ═══ Responsivo ════════════════════════════════════════════════════════ */
 @media (max-width: 1100px) {
   .ofx-linha { grid-template-columns: minmax(0, 1fr) auto auto auto; }
@@ -431,4 +461,9 @@
   .ofx-linha > .oa-icone:last-child { display: none; }
   .ofx-lista-total { margin-left: 0; }
   .ofx-vazio { padding: 20px 16px; }
+}
+@media (max-width: 640px) {
+  /* O minimapa tem 200px fixos: em 390px cobre metade do palco e tapa o
+     cartão que a pessoa acabou de tocar. Os controles de zoom ficam. */
+  .ofx-minimapa { display: none; }
 }

@@ -423,12 +423,14 @@ function EditorCarregado({ detalhe }: { detalhe: FluxoDetalhe }) {
         </div>
 
         <aside className="ofx-painel" aria-label="Painel da automação">
-          <div className="oa-abas ofx-abas" role="tablist">
-            <button type="button" role="tab" className="oa-aba" aria-current={aba === "inspetor" ? "page" : undefined} onClick={() => setAba("inspetor")}>
+          {/* `role="tab"` pede `aria-selected`: só com `aria-current="page"` o
+              leitor de tela anunciava três abas e nenhuma escolhida. */}
+          <div className="oa-abas ofx-abas" role="tablist" aria-label="Painel da automação">
+            <button type="button" role="tab" className="oa-aba" aria-selected={aba === "inspetor"} aria-current={aba === "inspetor" ? "page" : undefined} onClick={() => setAba("inspetor")}>
               {noSelecionado ? "Bloco" : "Automação"}
             </button>
-            <button type="button" role="tab" className="oa-aba" aria-current={aba === "testar" ? "page" : undefined} onClick={() => setAba("testar")}>Testar</button>
-            <button type="button" role="tab" className="oa-aba" aria-current={aba === "versoes" ? "page" : undefined} onClick={() => setAba("versoes")}>Versões</button>
+            <button type="button" role="tab" className="oa-aba" aria-selected={aba === "testar"} aria-current={aba === "testar" ? "page" : undefined} onClick={() => setAba("testar")}>Testar</button>
+            <button type="button" role="tab" className="oa-aba" aria-selected={aba === "versoes"} aria-current={aba === "versoes" ? "page" : undefined} onClick={() => setAba("versoes")}>Versões</button>
           </div>
           <div className="ofx-painel-rolagem">
             {aba === "inspetor" && (

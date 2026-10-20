@@ -254,6 +254,8 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
   };
   const excluirNo = () => {
     if (!noSelecionado || noSelecionado.type === "trigger") return;
+    // Apaga o passo E as ligações dele. Sem desfazer nesta tela, pergunta.
+    if (!window.confirm(`Excluir “${noSelecionado.label}”? As ligações deste passo saem com ele, e não há como desfazer.`)) return;
     mudarGrafo({ ...grafo, nodes: grafo.nodes.filter((n) => n.id !== noSelecionado.id), edges: grafo.edges.filter((e) => e.source !== noSelecionado.id && e.target !== noSelecionado.id) }); setSelecionado(null);
   };
 
@@ -271,10 +273,17 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
 
   const estado = cadencia.ativo ? "Publicada" : cadencia.publishedAt ? "Pausada" : "Rascunho";
 
+  // Sair descartava trabalho em silêncio: esta tela não tem autosave, e o
+  // selo "Não salvo" no topo já sabia que havia mudança. Pergunta antes.
+  const voltar = () => {
+    if (sujo && !window.confirm("Sair sem salvar? As mudanças desta cadência serão perdidas.")) return;
+    aoFechar();
+  };
+
   return (
     <div className="ofc-editor" data-modo={modoVisual ? "visual" : "lista"}>
       <header className="ofx-topo">
-        <button type="button" className="oa-icone ofx-voltar-topo" aria-label="Voltar às cadências" title="Voltar às cadências" onClick={aoFechar}>
+        <button type="button" className="oa-icone ofx-voltar-topo" aria-label="Voltar às cadências" title="Voltar às cadências" onClick={voltar}>
           <ArrowLeft size={16} />
         </button>
         <input className="ofx-nome" value={nome} maxLength={120} disabled={somenteLeitura} placeholder="Cadência sem nome"
@@ -309,7 +318,9 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
 
       <div className="ofc-rolagem">
         <div className="ofc-coluna">
-          <section className="ofx-insp-secao ofc-gatilho" aria-label="Quando a cadência começa">
+          {/* `fieldset`, não `section`: `legend` só rotula um fieldset — numa
+              section ela aparecia mas não dava nome ao grupo. */}
+          <fieldset className="ofx-insp-secao ofc-gatilho">
             <legend>Quando começa</legend>
             <div className="ofc-dupla">
               <div className="ofx-campo">
@@ -335,7 +346,7 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
                 <span className="oa-dica">Proprietário: {cadencia.ownerId ? "usuário autenticado da criação" : "legado da equipe"}.</span>
               </div>
             </div>
-          </section>
+          </fieldset>
 
           <div className="ofc-vars" role="note">
             <Braces size={14} aria-hidden />
@@ -379,10 +390,13 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
                 return (
                   <li key={passo.id} data-aberto={expandido ? "true" : undefined} data-alvo={alvo === i ? "true" : undefined}
                     onDragOver={(e) => { if (arrastando.current !== null) { e.preventDefault(); setAlvo(i); } }}
+                    onDragLeave={() => setAlvo((a) => (a === i ? null : a))}
                     onDrop={(e) => { e.preventDefault(); if (arrastando.current !== null) mover(arrastando.current, i); arrastando.current = null; setAlvo(null); }}>
                     <div className="ofc-passo">
+                      {/* `setData` não é enfeite: sem ele o Firefox nem começa
+                          o arraste, e reordenar não funcionava lá. */}
                       <span className="ofc-arrasta" draggable={!somenteLeitura} aria-hidden
-                        onDragStart={() => { arrastando.current = i; }}
+                        onDragStart={(e) => { arrastando.current = i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", passo.id); }}
                         onDragEnd={() => { arrastando.current = null; setAlvo(null); }}>
                         <GripVertical size={14} />
                       </span>
@@ -406,7 +420,10 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
                             setPassos((atual) => [...atual.slice(0, i + 1), copia, ...atual.slice(i + 1)]);
                             setAberto(copia.id);
                           }}><Copy size={13} /></button>
+                          {/* Não há desfazer nesta tela: apagar é definitivo
+                              até recarregar sem salvar. Pergunta antes. */}
                           <button type="button" className="oa-icone ofx-menu-perigo" aria-label="Remover" title="Remover" onClick={() => {
+                            if (!window.confirm(`Remover o passo ${i + 1} (${tituloDoPasso(passo)})? Não há como desfazer.`)) return;
                             setPassos((atual) => atual.filter((p) => p.id !== passo.id));
                             if (aberto === passo.id) setAberto(null);
                           }}><Trash2 size={13} /></button>

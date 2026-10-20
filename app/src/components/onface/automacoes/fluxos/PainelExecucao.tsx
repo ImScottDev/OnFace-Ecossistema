@@ -131,9 +131,12 @@ export function PainelExecucao({
 
   return (
     <div className="ofx-teste">
-      <div className="ofx-segmentos ofx-segmentos-largo" role="tablist" aria-label="Tipo de teste">
-        <button type="button" role="tab" aria-checked={modo === "ensaiar"} onClick={() => setModo("ensaiar")}><FlaskConical size={13} /> Ensaiar</button>
-        <button type="button" role="tab" aria-checked={modo === "rodar"} onClick={() => setModo("rodar")}><Play size={13} /> Rodar de verdade</button>
+      {/* `aria-checked` não vale em `role="tab"`: o segmento escolhido não era
+          anunciado. É o mesmo par de opções exclusivas dos outros segmentos da
+          casa, então é um radiogroup, como eles. */}
+      <div className="ofx-segmentos ofx-segmentos-largo" role="radiogroup" aria-label="Tipo de teste">
+        <button type="button" role="radio" aria-checked={modo === "ensaiar"} onClick={() => setModo("ensaiar")}><FlaskConical size={13} /> Ensaiar</button>
+        <button type="button" role="radio" aria-checked={modo === "rodar"} onClick={() => setModo("rodar")}><Play size={13} /> Rodar de verdade</button>
       </div>
 
       {modo === "ensaiar" ? (
@@ -262,7 +265,7 @@ function ResultadoEnsaioView({ ensaio, grafo, noSelecionado, aoSelecionarNo, aoL
           const s = STATUS_ENSAIO[p.status];
           return (
             <li key={`${p.noId}-${i}`} data-aberto={aberto === p ? "true" : undefined}>
-              <button type="button" className="ofx-passo" onClick={() => aoSelecionarNo(p.noId)}>
+              <button type="button" className="ofx-passo" aria-expanded={aberto === p} onClick={() => aoSelecionarNo(p.noId)}>
                 <span className="ofx-passo-num">{i + 1}</span>
                 <span className="ofx-passo-corpo">
                   <strong>{nomeNo(grafo, p.noId)} <span className={`oa-selo oa-${s.tom === "neutro" ? "" : s.tom}`}>{s.rotulo}</span></strong>
@@ -318,7 +321,7 @@ function DetalheExec({ detalhe, noSelecionado, aoSelecionarNo, aoVoltar, podeCan
             const aberto = p.noId === noSelecionado;
             return (
               <li key={`${p.noId}-${p.ordem}`} data-aberto={aberto ? "true" : undefined}>
-                <button type="button" className="ofx-passo" onClick={() => aoSelecionarNo(p.noId)}>
+                <button type="button" className="ofx-passo" aria-expanded={aberto} onClick={() => aoSelecionarNo(p.noId)}>
                   <span className="ofx-passo-num">{p.status === "DONE" ? <Check size={11} strokeWidth={3} /> : p.ordem}</span>
                   <span className="ofx-passo-corpo">
                     <strong>{nomeNo(grafo, p.noId)} <span className={`oa-selo oa-${st.tom === "neutro" ? "" : st.tom}`}>{st.rotulo}</span></strong>

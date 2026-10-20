@@ -124,13 +124,13 @@
 .ofc-modos { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
 .ofc-modos > span { flex:1 1 230px; text-align:right; font-size:11.5px; color:var(--of-tinta-3); }
 .ofc-modos-grupo { display:inline-flex; gap:3px; padding:4px; border-radius:12px; background:var(--of-neutro); }
-.ofc-modos-grupo button { border:0; background:transparent; border-radius:9px; color:var(--of-tinta-2); display:flex; align-items:center; gap:7px; padding:8px 13px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.ofc-modos-grupo button { border:0; background:transparent; border-radius:9px; color:var(--of-tinta-2); display:flex; align-items:center; gap:7px; padding:8px 13px; font:inherit; font-size:12px; font-weight:var(--of-peso-semi); cursor:pointer; }
 .ofc-modos-grupo button:hover { color:var(--of-tinta-forte); }
 .ofc-modos-grupo button.ofc-modo-ativo { background:var(--of-papel); box-shadow:0 1px 5px var(--of-fio); color:var(--of-tinta-forte); }
 .ofc-workspace { display:grid; grid-template-columns:minmax(0, 1fr) minmax(320px, .78fr); gap:16px; align-items:start; }
 .ofc-inspector { min-width:0; position:sticky; top:14px; max-height:calc(100vh - 28px); overflow-y:auto; background:var(--of-papel); border:1px solid var(--of-linha); border-radius:18px; box-shadow:var(--of-sombra-popover); }
 .ofc-inspector-header { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:18px 18px 14px; border-bottom:1px solid var(--of-fio); }
-.ofc-inspector-header small { font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--of-coral-texto-forte); }
+.ofc-inspector-header small { font-size:10px; font-weight:var(--of-peso-forte); letter-spacing:var(--of-tracking-caps); text-transform:uppercase; color:var(--of-coral-texto-forte); }
 .ofc-inspector-header h2 { margin:5px 0 0; font-size:17px; color:var(--of-tinta-forte); }
 .ofc-inspector-fields { display:flex; flex-direction:column; gap:14px; padding:16px; }
 .ofc-inspector-fields .ofx-insp-secao { min-width:0; }
@@ -154,7 +154,7 @@
 .ofc-rf-canvas.ofc-rf-drop { box-shadow:inset 0 0 0 2px var(--of-coral-contorno); }
 .ofc-rf-no { width:250px; min-height:100px; padding:12px 14px; border:1px solid var(--of-linha); border-radius:13px; background:var(--of-papel); box-shadow:0 3px 14px var(--of-fio); color:var(--of-tinta); cursor:pointer; }
 .ofc-rf-no[data-selecionado="true"] { border-color:var(--of-coral-contorno); box-shadow:0 0 0 2px var(--of-coral-fundo), 0 6px 20px var(--of-fio); }
-.ofc-rf-cab { display:flex; align-items:center; gap:6px; color:var(--of-tinta-3); font-size:10px; letter-spacing:.06em; text-transform:uppercase; font-weight:700; }
+.ofc-rf-cab { display:flex; align-items:center; gap:6px; color:var(--of-tinta-3); font-size:10px; letter-spacing:var(--of-tracking-caps); text-transform:uppercase; font-weight:var(--of-peso-forte); }
 .ofc-rf-icone { display:grid; place-items:center; width:22px; height:22px; border-radius:7px; color:var(--of-coral-texto-forte); background:var(--of-coral-fundo); }
 .ofc-rf-no strong { display:block; margin-top:8px; color:var(--of-tinta-forte); font-size:13px; }
 .ofc-rf-no p { margin:4px 0 0; color:var(--of-tinta-2); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -165,8 +165,11 @@
 .ofc-rf-label { display:flex; align-items:center; gap:3px; padding:3px 6px; border:1px solid var(--of-linha); border-radius:6px; background:var(--of-papel); color:var(--of-tinta-2); font-size:10px; box-shadow:0 1px 5px var(--of-fio); pointer-events:all; }
 .ofc-rf-label button { display:grid; place-items:center; border:0; background:transparent; color:var(--of-tinta-3); cursor:pointer; padding:0; }
 .ofc-insp-acoes { display:flex; gap:4px; }
-.ofc-regra { display:flex; flex-direction:column; gap:6px; padding:10px; border:1px solid var(--of-fio); border-radius:10px; background:var(--of-papel-alterno); }
-.ofc-regra .ofx-campo { margin:0; }
+/* Só a regra DENTRO do inspetor é cartão empilhado. Sem o escopo, esta regra
+   vinha depois e achatava a regra da Lista detalhada (campo · operador ·
+   valor), que é grade de três colunas lá em cima — e matava o 1fr do 640px. */
+.ofc-inspector .ofc-regra { display:flex; flex-direction:column; gap:6px; padding:10px; border:1px solid var(--of-fio); border-radius:10px; background:var(--of-papel-alterno); }
+.ofc-inspector .ofc-regra .ofx-campo { margin:0; }
 @media(max-width:980px) { .ofc-rf-canvas { height:560px; min-height:420px; } }
 
 .ofc-inspector-vars { display:flex;flex-wrap:wrap;gap:6px;margin-top:8px; }
@@ -264,4 +267,22 @@
   .ofc-rf-toolbar-rotulo { flex: 1 1 100%; padding-bottom: 2px; }
   .ofc-rf-toolbar-espaco { display: none; }
   .ofc-rf-canvas { height: 58dvh; }
+  /* O minimapa tem 200px fixos: em 390px ele cobre metade do desenho e tapa
+     justamente o cartão que a pessoa acabou de tocar. Os controles ficam. */
+  .ofc-rf-minimapa { display: none; }
+}
+
+/* ─── Foco de teclado ───────────────────────────────────────────────────── */
+/* Estes botões são feitos à mão (barra do desenho, cabeçalho do passo, menu
+   de adicionar, pílulas de variável, X da aresta) e só herdavam o anel
+   genérico do globals. Anel da casa, por token. */
+.ofc-rf-toolbar button:focus-visible,
+.ofc-passo-cab:focus-visible,
+.ofc-add-pop button:focus-visible,
+.ofc-inspector-vars button:focus-visible,
+.ofc-rf-label button:focus-visible,
+.ofc-modos-grupo button:focus-visible,
+.ofc-pendencias button:focus-visible {
+  outline: 2px solid var(--of-coral-marca);
+  outline-offset: 2px;
 }
