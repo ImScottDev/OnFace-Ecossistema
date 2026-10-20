@@ -236,6 +236,11 @@ export const leads = pgTable(
     fbp: text("fbp"),
     eventId: text("event_id"),
     landingPage: text("landing_page"),
+    // Proveniência da atribuição (migration 0131): qual regra de distribuição
+    // escolheu o dono, por quê, e o número operacional de onde trabalhar o lead.
+    distribuicaoRegraId: uuid("distribuicao_regra_id"),
+    distribuicaoMotivo: text("distribuicao_motivo"),
+    sessaoWhatsappPreferidaId: uuid("sessao_whatsapp_preferida_id"),
     ipAddress: inet("ip_address"),
     userAgent: text("user_agent"),
     // Comercial
@@ -1324,6 +1329,8 @@ export const whatsappSessao = pgTable("whatsapp_sessao", {
   finalidade: text("finalidade"),
   /** Número pessoal/privado (migration 0126): nem a supervisão o alcança; só dono, compartilhados e super admin (auditado). */
   privado: boolean("privado").default(false).notNull(),
+  /** Pool operacional (migration 0131): número que distribuição, agentes e automações podem usar. Nunca junto com `privado` (CHECK). */
+  operacional: boolean("operacional").default(false).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_wa_sessao_org").on(table.organizacaoId),
@@ -5251,6 +5258,16 @@ export const regrasDistribuicaoLeads = pgTable("regras_distribuicao_leads", {
   horaInicio: text("hora_inicio"),
   horaFim: text("hora_fim"),
   humanoDevolucaoId: uuid("humano_devolucao_id").references(() => usuarios.id),
+  /* Critérios de atribuição (migration 0131). Nulo ou vazio = qualquer valor;
+     a regra casa só quando TODOS os critérios preenchidos casam. */
+  descricao: text("descricao"),
+  origem: text("origem").array(),
+  utmSource: text("utm_source").array(),
+  utmCampaign: text("utm_campaign").array(),
+  metaCampaignIds: text("meta_campaign_ids").array(),
+  formulario: text("formulario").array(),
+  /** Número operacional de onde o lead deve ser trabalhado. Nunca privado. */
+  sessaoWhatsappId: uuid("sessao_whatsapp_id").references(() => whatsappSessao.id, { onDelete: "set null" }),
   prioridade: integer("prioridade").default(100).notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   createdBy: uuid("created_by").references(() => usuarios.id),
@@ -5520,3 +5537,27 @@ export const nexoMemoria = pgTable("nexo_memoria", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Caixa de entrada crua da captação (migration 0131): toda entrega de Meta, RD,
+ * site e API como chegou, com chave de idempotência por canal. Reentrega do
+ * mesmo fato soma em `entregas` e não cria lead nem gasta vez de rodízio; o
+ * que falhou fica com `erro` e o payload para reprocessar.
+ */
+export const captacaoEntregas = pgTable("captacao_entregas", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  canal: text("canal").notNull(), // 'meta' | 'rd' | 'site' | 'api'
+  chaveIdempotencia: text("chave_idempotencia").notNull(),
+  payload: jsonb("payload").notNull(),
+  status: text("status").default("recebida").notNull(), // 'recebida' | 'processada' | 'duplicada' | 'falhou'
+  erro: text("erro"),
+  leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  regraId: uuid("regra_id").references(() => regrasDistribuicaoLeads.id, { onDelete: "set null" }),
+  entregas: integer("entregas").default(1).notNull(),
+  ultimaEntregaEm: timestamp("ultima_entrega_em", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  processadaEm: timestamp("processada_em", { withTimezone: true }),
+}, (t) => [
+  uniqueIndex("uq_captacao_entregas_chave").on(t.organizacaoId, t.canal, t.chaveIdempotencia),
+  index("idx_captacao_entregas_org_data").on(t.organizacaoId, t.createdAt),
+]);
