@@ -6,6 +6,11 @@ test("aceita evento canônico e aliases estáveis", () => {
   assert.equal(eventMatches("LeadCreated", "LeadCreated"), true);
   assert.equal(eventMatches("lead.created", "LeadCreated"), true);
   assert.equal(eventMatches("PaymentFailed", "LeadCreated"), false);
+  // Lead da Meta, do RD, do site e da Pré-vendas chega como `AcquisitionCreated`:
+  // é o nome canônico do mesmo fato, e o gatilho "Lead criado" tem que casar.
+  assert.equal(eventMatches("LeadCreated", "AcquisitionCreated"), true);
+  assert.equal(eventMatches("lead.created", "AcquisitionCreated"), true);
+  assert.equal(eventMatches("ProposalSent", "AcquisitionCreated"), false);
 });
 
 test("filtros do gatilho aceitam campo, lista e caminho aninhado", () => {

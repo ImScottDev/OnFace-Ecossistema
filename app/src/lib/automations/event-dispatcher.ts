@@ -8,6 +8,20 @@ type EventRow = typeof eventOutbox.$inferSelect;
 
 const EVENT_ALIASES: Record<string, string[]> = {
   LeadCreated: ["lead.created", "novo_lead"],
+  /* O MESMO fato com o nome canônico — e o que a captação paga de fato publica.
+   *
+   * `LeadCreated` só sai na rota legada `POST /api/leads`. Meta, RD, site,
+   * Pré-vendas e prospecção publicam `AcquisitionCreated` (a ponte canônica, em
+   * `lib/vendas/ponte-canonica.ts`, na mesma transação em que a aquisição
+   * nasce). Os fluxos já ouviam os dois nomes (`fontes.outbox` em
+   * automacoes/grafo.ts); a cadência não, então cadência com gatilho "Lead
+   * criado" casava só o lead criado na mão pela API e ignorava as duas maiores
+   * fontes da empresa — sem erro e sem aviso.
+   *
+   * Inscrever duas vezes quando a rota legada publica os dois nomes não
+   * acontece: `iniciarCadencia` já devolve a inscrição ativa do mesmo registro
+   * na mesma cadência em vez de abrir uma segunda. */
+  AcquisitionCreated: ["lead.created", "novo_lead", "LeadCreated"],
   DealCreated: ["deal.created", "novo_negocio"],
   StageChanged: ["stage.changed", "mudanca_status"],
   ProposalSent: ["proposal.sent", "proposta_enviada"],
