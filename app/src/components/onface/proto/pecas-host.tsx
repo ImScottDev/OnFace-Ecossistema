@@ -18,6 +18,7 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { guardarVisao, lerVisao, restaurarRolagem } from "./memoria-da-visao";
 import { toast } from "sonner";
 
 /** O contrato de toda peça registrada. */
@@ -115,6 +116,17 @@ export function usePecas() {
   return React.useContext(PecasContexto);
 }
 
+/**
+ * Peças que o VOLTAR reabre.
+ *
+ * Só as que são "ver alguma coisa" e que se montam a partir do id sozinho.
+ * Peça de CRIAR (nova atividade, nova reunião) fica de fora de propósito:
+ * voltar e encontrar um formulário em branco reaberto não é a tela de antes,
+ * é uma tela nova no caminho. Peça que precisa de contexto rico também fica
+ * de fora — reabrir sem ele daria uma peça pela metade.
+ */
+const REABRE_NO_VOLTAR = new Set(["detalhe", "verAtividade", "atividade", "reuniao"]);
+
 export function PecasHost({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [pilha, setPilha] = React.useState<Aberta[]>([]);
@@ -126,12 +138,30 @@ export function PecasHost({ children }: { children: React.ReactNode }) {
       return;
     }
     const p = normalizarPedido(id, contexto);
+    /* A peça aberta entra na entrada ATUAL do histórico. Quem sai daqui
+       (abrir lead, abrir empresa, abrir oportunidade) deixa para trás uma
+       entrada que sabe o que estava aberto — e o voltar reabre. */
+    if (REABRE_NO_VOLTAR.has(peca)) guardarVisao({ peca: { nome: peca, id: p.id } });
     setPilha((s) => [...s, { chave: ++seq.current, peca, ...p }]);
+  }, []);
+
+  /* Ao chegar nesta entrada do histórico — inclusive voltando — reabre o que
+     estava aberto e devolve a rolagem de dentro das colunas. */
+  React.useEffect(() => {
+    const { peca } = lerVisao();
+    if (peca?.nome && REGISTRO_DE_PECAS[peca.nome]) {
+      setPilha((s) => (s.length ? s : [{ chave: ++seq.current, peca: peca.nome, id: peca.id, contexto: {} }]));
+    }
+    restaurarRolagem();
   }, []);
 
   const valor = React.useMemo(() => ({ abrir }), [abrir]);
   const gravou = React.useCallback(() => router.refresh(), [router]);
-  const remover = React.useCallback((chave: number) => setPilha((s) => s.filter((x) => x.chave !== chave)), []);
+  const remover = React.useCallback((chave: number) => {
+    // Fechou de propósito: o voltar não deve reabrir o que a pessoa fechou.
+    guardarVisao({ peca: null });
+    setPilha((s) => s.filter((x) => x.chave !== chave));
+  }, []);
 
   return (
     <PecasContexto.Provider value={valor}>

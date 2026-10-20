@@ -21,6 +21,7 @@ import { arvoreDoMenu, trilhaAtual } from "../navegacao";
 import { CascaLiga } from "./CascaLiga";
 import { rotaDoDesenho } from "./rota-do-desenho";
 import { PecasHost } from "./pecas-host";
+import { guardarRolagem } from "./memoria-da-visao";
 import { AgentesDaOrgContexto } from "@/components/ui/avatar";
 import { VerComo } from "../VerComo";
 import { UsuarioDoProtoContexto, iniciaisDe, type UsuarioDoProto } from "./usuario-do-proto";
@@ -447,6 +448,35 @@ export function CascaProto({
     window.addEventListener("onface:dados-mudaram", reler);
     return () => window.removeEventListener("onface:dados-mudaram", reler);
   }, [router]);
+  /* A rolagem é fotografada ENQUANTO acontece, não na hora de sair.
+     
+     O navegador devolve sozinho a rolagem da JANELA; aqui quem rola é o
+     contêiner de dentro (a coluna do quadro, a lista), e isso nenhum
+     navegador restaura. Sem a foto, voltar de "Abrir lead" jogava quem estava
+     no cartão 80 de volta ao topo dos 167.
+     
+     Gravar durante a rolagem, e não ao navegar, é de propósito: cada tela tem
+     o próprio `ir`, e amarrar em cada um deixaria buraco no dia em que
+     alguém criar o próximo. Assim a entrada do histórico já está atualizada
+     quando a navegação acontece, venha ela de onde vier.
+     
+     `capture: true` porque evento de rolagem de contêiner não sobe; o
+     intervalo evita gravar a cada quadro da rolagem. */
+  React.useEffect(() => {
+    let agendado: ReturnType<typeof setTimeout> | null = null;
+    const aoRolar = () => {
+      if (agendado) return;
+      agendado = setTimeout(() => { agendado = null; guardarRolagem(); }, 250);
+    };
+    window.addEventListener("scroll", aoRolar, { capture: true, passive: true });
+    window.addEventListener("pagehide", guardarRolagem);
+    return () => {
+      if (agendado) clearTimeout(agendado);
+      window.removeEventListener("scroll", aoRolar, { capture: true } as never);
+      window.removeEventListener("pagehide", guardarRolagem);
+    };
+  }, []);
+
   const trilha = trilhaAtual(pathname);
   const usuario = React.useMemo<UsuarioDoProto>(
     () => ({ ...sessao, iniciais: iniciaisDe(sessao.nome) }),

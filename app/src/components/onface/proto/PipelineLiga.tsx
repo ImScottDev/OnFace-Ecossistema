@@ -168,6 +168,22 @@ class Logica extends React.Component<any, any> {
     document.addEventListener("mousedown", this._fora);
     document.addEventListener("keydown", this._esc);
   }
+
+  /* O drawer aberto entra na entrada ATUAL do histórico (?opp=...).
+
+     Esta tela já LIA o parâmetro ao montar e ninguém nunca o escrevia: abrir
+     a oportunidade e voltar devolvia o quadro com o drawer fechado. Aqui é
+     `replaceState`, não push: não cria entrada nova (o voltar continua indo
+     para a tela anterior, não "fechando o drawer"), só deixa a entrada que
+     fica para trás sabendo o que estava aberto. */
+  componentDidUpdate(_props, anterior) {
+    if (typeof window === "undefined" || !anterior || anterior.aberto === this.state.aberto) return;
+    const u = new URL(window.location.href);
+    if (this.state.aberto) u.searchParams.set("opp", this.state.aberto);
+    else u.searchParams.delete("opp");
+    try { window.history.replaceState(window.history.state, "", u.toString()); } catch { /* sem histórico: segue sem lembrar */ }
+  }
+
   componentWillUnmount() {
     if (this._off) this._off();
     document.removeEventListener("mousedown", this._fora);
