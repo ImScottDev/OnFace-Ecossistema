@@ -135,6 +135,16 @@
 .exa-erro { margin: 0; padding: 9px 11px; border-radius: 8px; background: var(--of-coral-fundo); color: var(--of-coral-texto-forte); font-size: 12.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .exa-fraco { font-size: 12px; color: var(--of-tinta-3); }
 
+/* Fila da equipe (aguardando aprovação / com humano) */
+.exa-fila { display: flex; flex-direction: column; gap: 8px; padding: 11px 13px; border-radius: 12px; background: var(--of-papel); box-shadow: inset 0 0 0 1px var(--of-linha); }
+.exa-fila-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.exa-fila-topo h3 { margin: 0; font-size: 12px; font-weight: 700; color: var(--of-tinta-forte); }
+.exa-fila-chip { border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.exa-fila-chip:focus-visible { outline: 2px solid var(--of-coral-marca); outline-offset: 2px; }
+.exa-fila-lista a { color: var(--of-coral-texto); font-weight: 600; }
+.exa-fila-lista li { padding-top: 6px; box-shadow: inset 0 1px 0 var(--of-fio); }
+.exa-fila-lista li:first-child { padding-top: 0; box-shadow: none; }
+
 /* Gaveta de detalhe */
 .exa-gaveta { width: min(560px, 100vw) !important; max-width: 100vw !important; background: var(--of-papel); color: var(--of-tinta); font-family: var(--of-fonte); }
 .exa-gaveta [data-slot="sheet-title"] { font-family: var(--of-fonte-titulo); color: var(--of-tinta-forte); }

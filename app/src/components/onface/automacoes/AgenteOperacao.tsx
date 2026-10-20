@@ -18,6 +18,7 @@ import { Check, ChevronDown, CircleAlert, Loader2, Lock, Play, Plus, RotateCcw, 
 import { AGENT_EVENT_CATALOG } from "@/lib/ai/agent-studio";
 import type { VersaoDoEditor } from "@/lib/automacoes/agente-detalhe";
 import { Aviso, Interruptor, Secao, api, num, quando, useApi } from "./agente-pecas";
+import { rotuloMotivo } from "@/components/onface/atendimento/agente-operacao";
 
 const BASE = "/api/automacoes/agentes-op";
 const DOMINIOS = ["Leitura", "Atendimento", "Comercial", "Atividades", "Calendário", "Cadências", "Integrações"] as const;
@@ -26,7 +27,7 @@ const DOMINIO_AJUDA: Record<string, string> = {
   Atividades: "Notas e tarefas.", Calendário: "Horários e reuniões reais.", Cadências: "Cadência do time. Opcional: o agente não depende dela.", Integrações: "Sistemas externos.",
 };
 const STATUS_VERSAO: Record<string, string> = { draft: "Rascunho", published: "No ar", superseded: "Substituída" };
-const STATUS_ATRIB: Record<string, string> = { ativa: "Conduzindo", pausada: "Pausada", aguardando_aprovacao: "Aguardando aprovação", humano: "Com uma pessoa", falha: "Falhou" };
+const STATUS_ATRIB: Record<string, string> = { ativa: "Conduzindo", pausada: "Pausada", aguardando_aprovacao: "Aguardando aprovação", humano: "Com humano", falha: "Falhou" };
 const RUN_STATUS: Record<string, string> = { completed: "Concluída", failed: "Falhou", running: "Rodando", queued: "Na fila", handed_off: "Passou para humano", aborted: "Abortada", blocked: "Bloqueada" };
 const MODO_RUN: Record<string, string> = { live: "Real", test: "Simulação", dry_run: "Simulação" };
 
@@ -121,7 +122,7 @@ export function AbaFerramentas({ tools, onToggle, travado, ferramentasLegadas, p
 interface Gatilhos {
   fluxos: { id: string; nome: string; ativo: boolean; evento: string | null; nos: string | null }[];
   eventos: string[];
-  atribuicoes: { id: string; status: string; objetivo: string | null; motivoEstado: string | null; lead: string | null; contato: string | null; updatedAt: string }[];
+  atribuicoes: { id: string; status: string; objetivo: string | null; motivoEstado: string | null; lead: string | null; leadId: string | null; contato: string | null; updatedAt: string }[];
 }
 
 export function AbaGatilhos({ agenteId, events, onToggleEvento, prioridade, onPrioridade, travado }: {
@@ -130,6 +131,7 @@ export function AbaGatilhos({ agenteId, events, onToggleEvento, prioridade, onPr
   const router = useRouter();
   const { dados, erro, carregando } = useApi<Gatilhos>(`/api/automacoes/agentes/${agenteId}/gatilhos`);
   const [criando, setCriando] = React.useState(false);
+  const [fila, setFila] = React.useState<"" | "aguardando_aprovacao" | "humano">("");
 
   async function criarFluxo() {
     setCriando(true);
@@ -184,16 +186,26 @@ export function AbaGatilhos({ agenteId, events, onToggleEvento, prioridade, onPr
       </Secao>
 
       <Secao titulo="Atribuições vivas" ajuda="Atendimentos que este agente conduz agora. A atribuição é o que o torna responsável pela conversa; quem quiser pausar ou transferir faz isso no Atendimento.">
+        {dados && dados.atribuicoes.length ? (
+          <div className="age-chips" role="group" aria-label="Filtrar atribuições" style={{ marginBottom: 10 }}>
+            {([["", "Todas", dados.atribuicoes.length], ["aguardando_aprovacao", "Aguardando aprovação", dados.atribuicoes.filter((a) => a.status === "aguardando_aprovacao").length], ["humano", "Com humano", dados.atribuicoes.filter((a) => a.status === "humano").length]] as const).map(([v, r, n]) => (
+              <button key={v || "todas"} type="button" className="age-chip age-chip-botao" aria-pressed={fila === v} onClick={() => setFila(v)}>{r} · {num(n)}</button>
+            ))}
+          </div>
+        ) : null}
+        {dados && dados.atribuicoes.length > 0 && fila && !dados.atribuicoes.some((a) => a.status === fila) ? (
+          <p className="age-texto-fraco">{fila === "humano" ? "Nenhum atendimento deste agente está com uma pessoa agora." : "Nada aguardando aprovação neste agente."}</p>
+        ) : null}
         {dados && dados.atribuicoes.length === 0 ? (
           <div className="age-vazio"><strong>Nenhuma atribuição neste momento</strong><span>Quando um fluxo ou uma pessoa atribuir uma conversa ou lead a este agente, ela aparece aqui.</span></div>
         ) : null}
         {dados && dados.atribuicoes.length ? (
           <ul className="age-fontes">
-            {dados.atribuicoes.map((a) => (
+            {dados.atribuicoes.filter((a) => !fila || a.status === fila).map((a) => (
               <li key={a.id}>
-                <strong>{a.lead ?? a.contato ?? "Sem nome"}</strong>
-                <span>{a.objetivo ?? a.motivoEstado ?? "Sem objetivo informado"} · {quando(a.updatedAt)}</span>
-                <span className="agn-selo" data-tom={a.status === "ativa" ? "ok" : a.status === "falha" ? "alerta" : undefined}><i />{STATUS_ATRIB[a.status] ?? a.status}</span>
+                <strong>{a.leadId ? <Link href={`/atendimento?leadId=${a.leadId}`}>{a.lead ?? a.contato ?? "Sem nome"}</Link> : a.lead ?? a.contato ?? "Sem nome"}</strong>
+                <span>{(a.status === "humano" || a.status === "pausada" ? rotuloMotivo(a.motivoEstado) : null) ?? a.objetivo ?? rotuloMotivo(a.motivoEstado) ?? "Sem objetivo informado"} · {quando(a.updatedAt)}</span>
+                <span className="agn-selo" data-tom={a.status === "ativa" ? "ok" : a.status === "falha" || a.status === "aguardando_aprovacao" ? "alerta" : undefined}><i />{STATUS_ATRIB[a.status] ?? a.status}</span>
               </li>
             ))}
           </ul>

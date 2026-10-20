@@ -8,6 +8,7 @@
 
 import * as React from "react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { rotuloMotivo } from "@/components/onface/atendimento/agente-operacao";
 import "./execucoes.css";
 
 type Linha = {
@@ -237,6 +238,72 @@ function Gaveta({ id, onClose, voltarFoco }: { id: string | null; onClose: () =>
   );
 }
 
+/* ── Fila da equipe: atendimentos que esperam uma pessoa ─────────────────
+ * Lê /agentes-op/atribuicoes com os dois estados que pedem gente: "aguardando_aprovacao"
+ * (o agente preparou e espera decisão) e "humano" (a conversa está com uma pessoa). A decisão
+ * acontece na conversa (Atendimento, painel do agente); aqui o gestor vê o tamanho e quem é. */
+type Atribuicao = {
+  id: string; status: string; agente: string; lead: string | null; contato: string | null; leadId: string | null;
+  objetivo: string | null; motivoEstado: string | null; updatedAt: string;
+};
+const FILAS: Record<string, [string, "atencao" | "neutro"]> = { aguardando_aprovacao: ["Aguardando aprovação", "atencao"], humano: ["Com humano", "neutro"] };
+
+function FilaDaEquipe({ agenteId }: { agenteId: string }) {
+  const [linhas, setLinhas] = React.useState<Atribuicao[] | null>(null);
+  const [erro, setErro] = React.useState<string | null>(null);
+  const [filtro, setFiltro] = React.useState<"" | "aguardando_aprovacao" | "humano">("");
+  const [aberta, setAberta] = React.useState(false);
+  const [tentativa, setTentativa] = React.useState(0);
+  React.useEffect(() => {
+    let vivo = true;
+    setLinhas(null); setErro(null);
+    const p = new URLSearchParams({ status: "aguardando_aprovacao,humano" });
+    if (agenteId) p.set("agentId", agenteId);
+    pegar<{ atribuicoes: Atribuicao[] }>(`/api/automacoes/agentes-op/atribuicoes?${p}`)
+      .then((r) => vivo && setLinhas(r.atribuicoes)).catch((e: Error) => vivo && setErro(e.message));
+    return () => { vivo = false; };
+  }, [agenteId, tentativa]);
+
+  if (erro) return <p className="exa-erro" role="alert">Não foi possível carregar a fila da equipe: {erro} <button type="button" className="exe-btn" onClick={() => setTentativa((n) => n + 1)}>Tentar de novo</button></p>;
+  const n = (st: string) => (linhas ?? []).filter((l) => l.status === st).length;
+  const visiveis = (linhas ?? []).filter((l) => !filtro || l.status === filtro);
+  const escolher = (f: typeof filtro) => { setFiltro(f); setAberta(true); };
+  return (
+    <section className="exa-fila" aria-label="Fila da equipe">
+      <div className="exa-fila-topo">
+        <h3>Fila da equipe</h3>
+        <div className="exe-chips" role="group" aria-label="Filtrar a fila">
+          {linhas === null ? <span className="exa-fraco" aria-busy="true">Carregando…</span> : (
+            <>
+              <button type="button" className="exe-chip exa-fila-chip" aria-current={aberta && filtro === "aguardando_aprovacao" ? "true" : undefined} onClick={() => escolher("aguardando_aprovacao")}>Aguardando aprovação · {n("aguardando_aprovacao").toLocaleString("pt-BR")}</button>
+              <button type="button" className="exe-chip exa-fila-chip" aria-current={aberta && filtro === "humano" ? "true" : undefined} onClick={() => escolher("humano")}>Com humano · {n("humano").toLocaleString("pt-BR")}</button>
+              {aberta ? <button type="button" className="exe-btn" onClick={() => setAberta(false)}>Recolher</button> : null}
+            </>
+          )}
+        </div>
+      </div>
+      {aberta && linhas ? (
+        visiveis.length === 0 ? (
+          <p className="exa-fraco">{filtro === "humano" ? "Nenhum atendimento está com uma pessoa agora." : "Nada aguardando aprovação agora."}</p>
+        ) : (
+          <ul className="exa-lista exa-fila-lista">
+            {visiveis.map((l) => {
+              const [rotulo, tom] = FILAS[l.status] ?? [l.status, "neutro" as const];
+              const motivo = rotuloMotivo(l.motivoEstado);
+              return (
+                <li key={l.id}>
+                  <strong>{l.leadId ? <a href={`/atendimento?leadId=${l.leadId}`}>{l.lead ?? l.contato ?? "Sem nome"}</a> : l.lead ?? l.contato ?? "Sem nome"}</strong>
+                  <span><span className="exe-selo" data-tom={tom}>{rotulo}</span> {l.agente}{motivo ? ` · ${motivo}` : ""} · desde {dataHora.format(new Date(l.updatedAt))}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )
+      ) : null}
+    </section>
+  );
+}
+
 const LIMITE = 50;
 
 export function ExecucoesAgentes({ agentes, agenteInicial, execInicial }: { agentes: { id: string; nome: string }[]; agenteInicial: string; execInicial: string | null }) {
@@ -287,6 +354,7 @@ export function ExecucoesAgentes({ agentes, agenteInicial, execInicial }: { agen
   return (
     <div className="exa">
       <Faixa agenteId={agente} />
+      <FilaDaEquipe agenteId={agente} />
 
       <form className="exa-filtros" role="search" aria-label="Filtrar execuções de agentes" onSubmit={(e) => e.preventDefault()}>
         <label>Agente
