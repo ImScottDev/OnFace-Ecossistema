@@ -2644,6 +2644,23 @@ const whatsappIncomingWorker = new Worker(
   { connection, concurrency: 2 }
 );
 
+/* Rastreabilidade do envio do agente: a mensagem saiu (ou falhou) de verdade. O ledger do run passa de
+   "queued" para "sent"/"failed" e o run ganha a mensagem de saída. Antes o ledger parava em "queued"
+   e Execuções não sabia se a resposta chegou. Best-effort: nunca derruba o envio. */
+async function registrarEnvioDoAgente(messageId: string, r: { ok: true } | { ok: false; erro: string }) {
+  try {
+    const { whatsappMensagens: waT, aiSendLedger: ledgerT, aiAgentRuns: runsT } = await import("../lib/db/schema");
+    const [m] = await db.select({ dados: waT.dados }).from(waT).where(eq(waT.id, messageId)).limit(1);
+    const runId = (m?.dados as Record<string, unknown> | null)?.aiRunId;
+    if (typeof runId !== "string") return;
+    await db.update(ledgerT).set(r.ok ? { status: "sent", sentAt: new Date(), lastError: null } : { status: "failed", lastError: r.erro.slice(0, 500) })
+      .where(and(eq(ledgerT.runId, runId), eq(ledgerT.externalMessageId, messageId)));
+    if (r.ok) await db.update(runsT).set({ outboundMessageId: messageId }).where(and(eq(runsT.id, runId), isNull(runsT.outboundMessageId)));
+  } catch (err) {
+    console.error(`[WA-Out] rastreio do envio do agente falhou (msg ${messageId}):`, err);
+  }
+}
+
 // ─── WhatsApp Outgoing Worker ────────────────────────────────
 const whatsappOutgoingWorker = new Worker(
   "whatsapp-outgoing",
@@ -2804,12 +2821,14 @@ const whatsappOutgoingWorker = new Worker(
       }
 
       console.log(`[WA-Out] Sent successfully: ${result.messageId}`);
+      await registrarEnvioDoAgente(messageId, { ok: true });
     } catch (error) {
       console.error(`[WA-Out] Failed to send:`, error);
       await db.update(whatsappMensagens).set({
         status: "failed",
         statusAt: new Date(),
       }).where(eq(whatsappMensagens.id, messageId));
+      await registrarEnvioDoAgente(messageId, { ok: false, erro: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   },
