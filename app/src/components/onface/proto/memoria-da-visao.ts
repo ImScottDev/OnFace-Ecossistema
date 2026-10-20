@@ -100,27 +100,47 @@ export function guardarRolagem(): void {
 /**
  * Devolve a rolagem guardada.
  *
- * Tenta de novo por alguns quadros porque o conteúdo chega depois da primeira
- * pintura (os cartões são montados pelo cliente): pôr `scrollTop` numa lista
- * ainda vazia não faz nada, e sem a repetição a tela voltaria ao topo.
+ * Insiste por alguns segundos, e não por alguns quadros: os cartões são
+ * montados pelo cliente e chegam MUITO depois da primeira pintura. Medido em
+ * 20/10/2026 — com dez quadros (~160 ms) a lista ainda estava vazia, pôr
+ * `scrollTop` não fazia nada e a tela voltava ao topo mesmo com a posição
+ * guardada.
+ *
+ * Para assim que acerta, e desiste no primeiro gesto de quem está olhando:
+ * insistir por cima de alguém que já começou a rolar é pior que não lembrar.
  */
-export function restaurarRolagem(tentativas = 10): void {
+export function restaurarRolagem(limiteMs = 5000): void {
   if (typeof window === "undefined") return;
   const { rolagem } = lerVisao();
   if (!rolagem || Object.keys(rolagem).length === 0) return;
 
-  let faltam = tentativas;
+  const ate = Date.now() + limiteMs;
+  let desistir = false;
+  const aoTocar = () => { desistir = true; };
+  window.addEventListener("wheel", aoTocar, { once: true, passive: true });
+  window.addEventListener("touchstart", aoTocar, { once: true, passive: true });
+  window.addEventListener("keydown", aoTocar, { once: true });
+
+  const parar = () => {
+    window.removeEventListener("wheel", aoTocar);
+    window.removeEventListener("touchstart", aoTocar);
+    window.removeEventListener("keydown", aoTocar);
+  };
+
   const tentar = () => {
+    if (desistir) return parar();
     let tudoNoLugar = true;
     for (const [p, topo] of Object.entries(rolagem)) {
       const el = porCaminho(p);
       if (!el) { tudoNoLugar = false; continue; }
       if (el.scrollTop !== topo) {
         el.scrollTop = topo;
-        if (el.scrollTop !== topo) tudoNoLugar = false; // ainda não tem altura
+        // Ainda sem altura para rolar até lá: o conteúdo não chegou todo.
+        if (Math.abs(el.scrollTop - topo) > 1) tudoNoLugar = false;
       }
     }
-    if (!tudoNoLugar && --faltam > 0) requestAnimationFrame(tentar);
+    if (tudoNoLugar || Date.now() > ate) return parar();
+    setTimeout(tentar, 120);
   };
-  requestAnimationFrame(tentar);
+  setTimeout(tentar, 0);
 }
