@@ -36,12 +36,18 @@ test("o board de pré-vendas conta toda aquisição aberta do seu universo, sem 
   // tem aba própria: o comando `nutrir` mantém a aquisição aberta, mas o board
   // de "ativos" não a mostra (só a carga antiga as tinha fechadas, por isso o teste
   // passava sem este filtro).
-  const { somenteDePreVendas } = await import("@onface/acquisition");
+  // A aquisição FECHADA com negócio aberto também é do universo desde 19/10:
+  // o lead que avançou para o Pipeline sumia do quadro de Pré-vendas, e agora
+  // aparece na coluna Oportunidade. O universo usa a MESMA expressão do board
+  // (`convertidaComNegocioAberto`) de propósito — duas cópias da regra voltariam
+  // a divergir em silêncio, que é o defeito que este arquivo existe para pegar.
+  const { somenteDePreVendas, convertidaComNegocioAberto } = await import("@onface/acquisition");
   const [real] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM aquisicoes a
       LEFT JOIN leads lg ON lg.id = a.lead_legado_id
       LEFT JOIN pipeline_etapas pe ON pe.id = a.etapa_id
-     WHERE a.organizacao_id = ${org.id}::uuid AND a.closed_at IS NULL
+     WHERE a.organizacao_id = ${org.id}::uuid
+       AND (a.closed_at IS NULL OR ${convertidaComNegocioAberto(sql)})
        AND pe.codigo IS DISTINCT FROM 'nutricao'
        AND ${somenteDePreVendas(sql)}`);
 

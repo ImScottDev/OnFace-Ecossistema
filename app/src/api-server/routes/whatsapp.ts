@@ -1408,14 +1408,14 @@ app.get("/whatsapp/numeros", async (c) => {
     is_default: boolean; tipo: string; finalidade: string | null; last_connected_at: string | null;
     usuario_id: string | null; usuario_nome: string | null; usuario_tipo: string | null; usuario_agente_id: string | null;
     time_id: string | null; time_nome: string | null;
-    agente_id: string | null; agente_nome: string | null;
+    agente_id: string | null; agente_nome: string | null; agente_por_pool: boolean | null;
     conversas: number; minha: boolean; privado: boolean; operacional: boolean; acessos: Array<{ id: string; nome: string }> | null;
   }>(sql`
     SELECT s.id::text, s.session_name, s.label, s.phone_number, s.status, s.is_default, s.tipo, s.finalidade, s.privado, s.operacional,
            s.last_connected_at::text,
            s.usuario_id::text, u.nome AS usuario_nome, u.tipo AS usuario_tipo, u.agente_id::text AS usuario_agente_id,
            t.id::text AS time_id, t.nome AS time_nome,
-           ag.id::text AS agente_id, ag.nome AS agente_nome,
+           ag.id::text AS agente_id, ag.nome AS agente_nome, ag.por_pool AS agente_por_pool,
            (SELECT count(*)::int FROM contatos c WHERE c.sessao_id = s.id AND c.canal = 'whatsapp') AS conversas,
            ${sessaoMinha(ctx.userId, sql`s.id`, sql`s.usuario_id`)} AS minha,
            (SELECT json_agg(json_build_object('id', au.id, 'nome', au.nome) ORDER BY au.nome)
@@ -1423,11 +1423,21 @@ app.get("/whatsapp/numeros", async (c) => {
       FROM whatsapp_sessao s
       LEFT JOIN usuarios u ON u.id = s.usuario_id
       LEFT JOIN teams t ON t.id = u.team_id
-      -- Agente que ATENDE por este número: a versão publicada ligada a ele (é o que o runtime lê).
+      -- Agente que ATENDE por este número: a versão publicada que o runtime lê.
+      --
+      -- São DOIS jeitos de atender, e ler só o primeiro fazia a tela mentir.
+      -- Preso a este número (channel_session_id), ou pelo POOL: desde 20/10
+      -- a Lia atende por canais.pool = 'operacional', sem número fixo (a
+      -- migration 0132 zerou o channel_session_id dela de propósito). Com só
+      -- a primeira condição, todo número operacional dizia "Agente que atende
+      -- por aqui: Nenhum" enquanto a Lia atendia por ele.
       LEFT JOIN LATERAL (
-        SELECT a.id, a.nome FROM ai_agents a JOIN ai_agent_versions v ON v.id = a.published_version_id
-         WHERE v.channel_session_id = s.id AND a.status = 'published' AND a.archived_at IS NULL
-         ORDER BY a.prioridade DESC LIMIT 1
+        SELECT a.id, a.nome, v.channel_session_id IS DISTINCT FROM s.id AS por_pool
+          FROM ai_agents a JOIN ai_agent_versions v ON v.id = a.published_version_id
+         WHERE a.status = 'published' AND a.archived_at IS NULL
+           AND (v.channel_session_id = s.id
+                OR (s.operacional AND v.guardrail_config->'canais'->>'pool' = 'operacional'))
+         ORDER BY (v.channel_session_id = s.id) DESC, a.prioridade DESC LIMIT 1
       ) ag ON TRUE
      WHERE ${sql.join(cond, sql` AND `)}
      ORDER BY (s.usuario_id = ${ctx.userId}::uuid) DESC NULLS LAST, (s.status = 'connected') DESC, u.nome NULLS LAST, s.label`);
@@ -1458,7 +1468,7 @@ app.get("/whatsapp/numeros", async (c) => {
       lastConnectedAt: l.last_connected_at,
       usuario: l.usuario_id ? { id: l.usuario_id, nome: l.usuario_nome ?? "", tipo: l.usuario_tipo ?? "humano", agenteId: l.usuario_agente_id } : null,
       time: l.time_id ? { id: l.time_id, nome: l.time_nome ?? "" } : null,
-      agente: l.agente_id ? { id: l.agente_id, nome: l.agente_nome ?? "" } : null,
+      agente: l.agente_id ? { id: l.agente_id, nome: l.agente_nome ?? "", porPool: !!l.agente_por_pool } : null,
       conversas: l.conversas, minha: l.minha, privado: l.privado, operacional: l.operacional, acessos: l.acessos ?? [],
       // Mesma regra do POST /whatsapp/status: a tela só oferece o que o servidor aceitaria.
       administra: podeAdministrarNumero(ctx, {

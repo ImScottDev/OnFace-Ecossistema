@@ -19,6 +19,7 @@ export {
 export {
   boardDeAquisicoes,
   somenteDePreVendas,
+  convertidaComNegocioAberto,
   type CardAquisicao,
   type EstagioAquisicao,
   type FiltrosBoard,

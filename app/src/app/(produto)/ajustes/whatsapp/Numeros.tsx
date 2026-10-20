@@ -10,6 +10,7 @@ import { Cf2Sheet, Cf2SheetContent, Cf2SheetHeader, Cf2SheetTitle, Cf2SheetDescr
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Radiogroup } from "@/components/onface/ds/escolha";
 import { SecaoAjuste, PilulaEstado } from "@/components/onface/ajustes/Secao";
 
 /**
@@ -27,7 +28,9 @@ type Pessoa = { id: string; nome: string; tipo: "humano" | "agente"; agenteId?: 
 type Numero = {
   id: string; sessionName: string; label: string; phoneNumber: string | null; status: string;
   isDefault: boolean; tipo: string; finalidade: string | null; lastConnectedAt: string | null;
-  usuario: Pessoa | null; time: { id: string; nome: string } | null; agente: { id: string; nome: string } | null;
+  usuario: Pessoa | null; time: { id: string; nome: string } | null;
+  /** Quem atende por aqui. `porPool`: atende por ser número operacional, não por estar preso a ele. */
+  agente: { id: string; nome: string; porPool?: boolean } | null;
   conversas: number; minha: boolean; acessos: Array<{ id: string; nome: string }>;
   /** Pessoal/privado: nunca usado por IA nem automação. */
   privado: boolean;
@@ -147,13 +150,15 @@ export function NumerosWhatsapp() {
           </>
         }
       >
-        <div className="aj-abas" role="tablist" aria-label="Escopo dos números">
+        {/* Escopo é filtro da mesma tabela (os filtros e a lista abaixo não
+            trocam de lugar), então radiogroup — e com seta. */}
+        <Radiogroup className="aj-abas" rotulo="Escopo dos números" orientacao="horizontal">
           {abas.map(([k, l]) => (
-            <button key={k} type="button" role="tab" aria-selected={aba === k} className="aj-aba" onClick={() => setAba(k)}>
+            <button key={k} type="button" role="radio" aria-checked={aba === k} className="aj-aba" onClick={() => setAba(k)}>
               {l}{k !== "meus" && data ? <span className="aj-aba-conta">{numeros.filter((n) => k === "agentes" ? n.usuario?.tipo === "agente" : k === "compartilhados" ? (!n.usuario || n.tipo === "compartilhada") : n.usuario?.tipo !== "agente").length}</span> : null}
             </button>
           ))}
-        </div>
+        </Radiogroup>
 
         <div className="aj-filtros">
           <label className="aj-filtro-busca">
@@ -505,7 +510,9 @@ function DetalheNumero({ n, gestao, pessoas, eu, mudou, fechar }: {
 
       <dl className="aj-fatos">
         <div className="aj-fato"><dt>Usuário responsável</dt><dd>{n.usuario ? `${n.usuario.nome}${n.usuario.tipo === "agente" ? " · agente" : ""}` : "Compartilhado"}</dd></div>
-        <div className="aj-fato"><dt>Agente que atende por aqui</dt><dd>{n.agente?.nome ?? "Nenhum"}</dd></div>
+        <div className="aj-fato"><dt>Agente que atende por aqui</dt><dd>
+          {n.agente ? `${n.agente.nome}${n.agente.porPool ? " · pelo pool operacional" : ""}` : "Nenhum"}
+        </dd></div>
         <div className="aj-fato"><dt>Equipe</dt><dd>{n.time?.nome ?? "—"}</dd></div>
         <div className="aj-fato"><dt>Conversas</dt><dd>{n.conversas}</dd></div>
         <div className="aj-fato"><dt>É o número padrão</dt><dd>{n.isDefault ? "Sim" : "Não"}</dd></div>

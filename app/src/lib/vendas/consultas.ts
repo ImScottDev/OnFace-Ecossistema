@@ -28,7 +28,7 @@ import {
 import { HORAS_ATRASO } from "./sla";
 import { VIEWS_PRE_VENDAS, ehView, type ViewPreVendas } from "./dominio";
 import { resumoSlaPreVendas } from "./sla-lead";
-import { boardDeAquisicoes, somenteDePreVendas, type EstagioAquisicao } from "@onface/acquisition";
+import { boardDeAquisicoes, somenteDePreVendas, convertidaComNegocioAberto, type EstagioAquisicao } from "@onface/acquisition";
 import { boardDeOportunidades } from "@onface/sales";
 import { horasDesde } from "./tempo-na-etapa";
 
@@ -454,17 +454,25 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
   });
 
   // Resumo sobre o universo canônico inteiro.
+  //
+  // "Aberta no quadro" NÃO é `closed_at IS NULL`: desde 19/10 a aquisição
+  // fechada que tem negócio aberto continua no quadro, na coluna Oportunidade
+  // (era o lead que avançava para o Pipeline e sumia de Pré-vendas). Enquanto
+  // os contadores olhavam só `closed_at`, a tela voltou a dizer "ativos 971"
+  // com 1.192 cartões embaixo — exatamente o que o comentário do JOIN abaixo
+  // mandava não deixar acontecer. Uma expressão, usada por todos.
+  const abertaNoQuadro = sql`(a.closed_at IS NULL OR ${convertidaComNegocioAberto(sql)})`;
   const [resumo] = await db.execute<{
     ativos: number; nutricao: number; desqualificados: number;
     sem_responsavel: number; sem_primeiro_contato: number;
     sem_proxima_acao: number; qualificados_no_mes: number; horas_ate_contato: number | null;
   }>(sql`
     SELECT
-      count(*) FILTER (WHERE a.closed_at IS NULL AND a.desqualificado_em IS NULL
+      count(*) FILTER (WHERE ${abertaNoQuadro} AND a.desqualificado_em IS NULL
                          AND COALESCE(a.nutricao_status,'') = '')::int AS ativos,
       count(*) FILTER (WHERE COALESCE(a.nutricao_status,'') <> '')::int AS nutricao,
       count(*) FILTER (WHERE a.desqualificado_em IS NOT NULL)::int AS desqualificados,
-      count(*) FILTER (WHERE a.closed_at IS NULL AND a.responsavel_id IS NULL)::int AS sem_responsavel,
+      count(*) FILTER (WHERE ${abertaNoQuadro} AND a.responsavel_id IS NULL)::int AS sem_responsavel,
       -- "Sem 1o contato" e NAO ter havido toque DEPOIS da chegada, e nao
       -- last_touch_at nulo.
       --
@@ -478,7 +486,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       -- Conferido por um segundo caminho, independente do canonico: leads
       -- abertos com last_contact_at nulo dao exatamente os mesmos 3.060.
       count(*) FILTER (
-        WHERE a.closed_at IS NULL
+        WHERE ${abertaNoQuadro}
           AND (a.last_touch_at IS NULL OR a.last_touch_at <= a.first_touch_at)
       )::int AS sem_primeiro_contato,
       -- Os tres abaixo existem porque a faixa de indicadores do protótipo
@@ -488,7 +496,7 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
       -- "Sem próxima ação" é a mesma definição do cartão: lead aberto sem
       -- tarefa em aberto. O join é pelo lead legado, igual ao resto do arquivo.
       count(*) FILTER (
-        WHERE a.closed_at IS NULL
+        WHERE ${abertaNoQuadro}
           AND NOT ${temCompromissoAberto("lead_id", sql.raw("a.lead_legado_id"))}
       )::int AS sem_proxima_acao,
       count(*) FILTER (
