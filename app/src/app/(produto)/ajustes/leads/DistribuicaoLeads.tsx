@@ -2,14 +2,32 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bot, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { OpcoesDePessoa } from "@/components/onface/OpcoesDePessoa";
 
 type Regra = {
   id: string; nome: string; etapa: string; alvoTipo: "usuario" | "rodizio"; alvoUsuarioId: string | null; rodizioUsuarioIds: string[];
   diasSemana: number[] | null; horaInicio: string | null; horaFim: string | null; humanoDevolucaoId: string | null; prioridade: number; ativo: boolean;
+  /* Critérios (migration 0131): nulo ou vazio = qualquer valor; a regra casa quando TODOS os preenchidos casam. */
+  descricao?: string | null; origem?: string[] | null; utmSource?: string[] | null; utmCampaign?: string[] | null;
+  metaCampaignIds?: string[] | null; formulario?: string[] | null;
+  /** Número operacional de onde o lead é trabalhado. */
+  sessaoWhatsappId?: string | null;
 };
+/** Número de WhatsApp como /api/whatsapp/numeros devolve (só o que a regra precisa). */
+type NumeroWa = { id: string; label: string; phoneNumber: string | null; privado?: boolean; operacional?: boolean };
+
+/** Critérios de "Quando", na ordem da tela e do resumo. Chave = campo da regra na API. */
+const CRITERIOS = [
+  ["utmCampaign", "Campanha", "utm_campaign. Ex.: black-friday"],
+  ["utmSource", "Fonte", "utm_source. Ex.: facebook, google"],
+  ["origem", "Origem", "Ex.: meta_leads, site, whatsapp"],
+  ["metaCampaignIds", "ID de campanha Meta", "Ex.: 120210000000000000"],
+  ["formulario", "Formulário", "Nome ou ID do formulário"],
+] as const;
+type ChaveCriterio = (typeof CRITERIOS)[number][0];
 type Estado = {
   regras: Regra[];
   historico: { id: string; quando: string; quem: string | null; acao: string; regra: string; resumo: string }[];
@@ -18,7 +36,12 @@ type Estado = {
 
 const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 const hhmm = (h: string | null) => (h ? h.slice(0, 5) : "");
-const VAZIA = { nome: "", alvoTipo: "usuario" as "usuario" | "rodizio", alvoUsuarioId: "", rodizioUsuarioIds: [] as string[], diasSemana: [] as number[], horaInicio: "", horaFim: "", humanoDevolucaoId: "", prioridade: 100, ativo: true };
+const VAZIA = {
+  nome: "", alvoTipo: "usuario" as "usuario" | "rodizio", alvoUsuarioId: "", rodizioUsuarioIds: [] as string[], diasSemana: [] as number[], horaInicio: "", horaFim: "", humanoDevolucaoId: "", prioridade: 100, ativo: true,
+  descricao: "", utmCampaign: [] as string[], utmSource: [] as string[], origem: [] as string[], metaCampaignIds: [] as string[], formulario: [] as string[], sessaoWhatsappId: "",
+};
+const lista = (v: string[]) => (v.length ? v : null);
+const fmtTel = (t: string | null) => (t ? `+${t.replace(/\D/g, "")}` : null);
 type Form = typeof VAZIA & { id?: string };
 
 const campo = { background: "var(--cf2-bg-page)", border: "1px solid var(--cf2-border-default)", color: "var(--cf2-text-primary)" } as const;
@@ -45,6 +68,23 @@ export function DistribuicaoLeads() {
       return r.json();
     },
   });
+  /* Números de atendimento: só os operacionais e não privados da organização. É a mesma
+     lista de Ajustes > WhatsApp, com o escopo resolvido no servidor. */
+  const { data: numerosResp } = useQuery<{ numeros: NumeroWa[] }>({
+    queryKey: ["whatsapp-numeros", ""],
+    queryFn: async () => {
+      const r = await fetch("/api/whatsapp/numeros");
+      if (!r.ok) throw new Error("Falha ao carregar os números");
+      return r.json();
+    },
+  });
+  const todosNumeros = useMemo(() => numerosResp?.numeros ?? [], [numerosResp]);
+  const numerosOperacionais = useMemo(() => todosNumeros.filter((n) => n.operacional && !n.privado), [todosNumeros]);
+  const rotuloNumero = (id: string | null | undefined) => {
+    if (!id) return null;
+    const n = todosNumeros.find((x) => x.id === id);
+    return n ? n.label : "número indisponível";
+  };
   const recarregar = () => { qc.invalidateQueries({ queryKey: ["distribuicao-leads"] }); qc.invalidateQueries({ queryKey: ["org-usuarios"] }); };
 
   const salvar = useMutation({
@@ -56,6 +96,10 @@ export function DistribuicaoLeads() {
           alvoUsuarioId: f.alvoTipo === "usuario" ? f.alvoUsuarioId || null : null, rodizioUsuarioIds: f.alvoTipo === "rodizio" ? f.rodizioUsuarioIds : [],
           diasSemana: f.diasSemana.length ? f.diasSemana : null, horaInicio: f.horaInicio || null, horaFim: f.horaFim || null,
           humanoDevolucaoId: f.humanoDevolucaoId || null, prioridade: Number(f.prioridade) || 100, ativo: f.ativo,
+          descricao: f.descricao.trim() || null,
+          utmCampaign: lista(f.utmCampaign), utmSource: lista(f.utmSource), origem: lista(f.origem),
+          metaCampaignIds: lista(f.metaCampaignIds), formulario: lista(f.formulario),
+          sessaoWhatsappId: f.sessaoWhatsappId || null,
         }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Não foi possível salvar a regra.");
@@ -84,9 +128,11 @@ export function DistribuicaoLeads() {
 
   const nome = (id: string | null) => (id ? byId.get(id)?.nome ?? "—" : "—");
   const descrever = (r: Regra) => {
-    const alvo = r.alvoTipo === "rodizio" ? `rodízio entre ${r.rodizioUsuarioIds.map(nome).join(", ")}` : nome(r.alvoUsuarioId);
+    const alvo = r.alvoTipo === "rodizio" ? `Rodízio (${r.rodizioUsuarioIds.length}): ${r.rodizioUsuarioIds.map(nome).join(", ")}` : nome(r.alvoUsuarioId);
     const quando = [r.diasSemana?.length ? r.diasSemana.map((d) => DIAS[d]).join(", ") : "todos os dias", r.horaInicio && r.horaFim ? `${hhmm(r.horaInicio)} às ${hhmm(r.horaFim)}` : "o dia todo"].join(" · ");
-    return { alvo, quando };
+    // Sem nenhum critério a regra vale para qualquer lead novo (o comportamento de antes dos critérios).
+    const criterios = CRITERIOS.flatMap(([k, rotulo]) => (r[k]?.length ? [`${rotulo}: ${r[k]!.join(", ")}`] : [])).join(" · ") || "Qualquer lead novo";
+    return { alvo, quando, criterios, numero: rotuloNumero(r.sessaoWhatsappId) };
   };
   const padroes = data?.padroes ?? {};
 
@@ -127,6 +173,18 @@ export function DistribuicaoLeads() {
               </select>
             </label>
           </div>
+          <fieldset className="flex flex-col gap-2 text-xs text-[var(--cf2-text-secondary)]">
+            <legend className="mb-1 text-[var(--cf2-text-primary)] font-medium">Quando</legend>
+            <p className="text-[var(--cf2-text-tertiary)]">
+              Deixe em branco para valer para qualquer lead novo. Preenchido, o lead precisa casar com todos os campos preenchidos; dentro de um campo, basta um dos valores. Enter ou vírgula adiciona.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {CRITERIOS.map(([k, rotulo, dica]) => (
+                <CampoMultiplo key={k} rotulo={rotulo} dica={dica} valores={form[k]}
+                  onChange={(v) => setForm({ ...form, [k]: v } as Form)} />
+              ))}
+            </div>
+          </fieldset>
           {form.alvoTipo === "usuario" ? (
             <label className="flex flex-col gap-1 text-xs text-[var(--cf2-text-secondary)]">Responsável
               <select value={form.alvoUsuarioId} onChange={(e) => setForm({ ...form, alvoUsuarioId: e.target.value })} className="h-9 px-2 rounded-lg text-sm outline-none" style={campo}>
@@ -176,6 +234,23 @@ export function DistribuicaoLeads() {
               <input type="number" min={0} max={1000} value={form.prioridade} onChange={(e) => setForm({ ...form, prioridade: Number(e.target.value) })} className="h-9 px-2.5 rounded-lg text-sm outline-none" style={campo} />
             </label>
           </div>
+          <label className="flex flex-col gap-1 text-xs text-[var(--cf2-text-secondary)]">Número de atendimento
+            <select value={form.sessaoWhatsappId} onChange={(e) => setForm({ ...form, sessaoWhatsappId: e.target.value })} className="h-9 px-2 rounded-control text-sm outline-none" style={campo}>
+              <option value="">Nenhum fixo (segue o número do responsável)</option>
+              {numerosOperacionais.map((n) => <option key={n.id} value={n.id}>{n.label}{n.phoneNumber ? ` · ${fmtTel(n.phoneNumber)}` : ""}</option>)}
+              {form.sessaoWhatsappId && !numerosOperacionais.some((n) => n.id === form.sessaoWhatsappId) && (
+                <option value={form.sessaoWhatsappId}>{rotuloNumero(form.sessaoWhatsappId)} (não está mais no pool operacional)</option>
+              )}
+            </select>
+            <span className="text-[var(--cf2-text-tertiary)]">
+              {numerosOperacionais.length
+                ? "Só aparecem números operacionais e não privados. O lead é trabalhado por este número."
+                : "Nenhum número operacional. Marque um em Ajustes > WhatsApp para ele aparecer aqui."}
+            </span>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-[var(--cf2-text-secondary)]">Descrição (opcional)
+            <input value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} placeholder="Ex.: Leads da campanha de Black Friday vão para o time de SP" className="h-9 px-2.5 rounded-control text-sm outline-none" style={campo} />
+          </label>
           <label className="flex flex-col gap-1 text-xs text-[var(--cf2-text-secondary)]">Se a agente passar para humano, volta para
             <select value={form.humanoDevolucaoId} onChange={(e) => setForm({ ...form, humanoDevolucaoId: e.target.value })} className="h-9 px-2 rounded-lg text-sm outline-none" style={campo}>
               <option value="">Padrão da organização</option>
@@ -205,10 +280,13 @@ export function DistribuicaoLeads() {
                   {r.nome}{ia && <Bot className="size-3.5" aria-label="Agente de IA" />}
                   {!r.ativo && <span className="text-[11px] font-normal text-[var(--cf2-text-tertiary)]">(desativada)</span>}
                 </p>
-                <p className="text-xs text-[var(--cf2-text-secondary)]">Novos leads em Novo para <strong>{d.alvo}</strong> · {d.quando}</p>
+                <p className="text-xs text-[var(--cf2-text-secondary)]">
+                  {d.criterios} → <strong>{d.alvo}</strong>{d.numero ? <> · Número: <strong>{d.numero}</strong></> : null} · {d.quando}
+                </p>
+                {r.descricao ? <p className="text-xs text-[var(--cf2-text-tertiary)]">{r.descricao}</p> : null}
               </div>
               <button onClick={() => alternar.mutate(r)} className="h-8 px-2.5 rounded-lg text-xs border" style={campo} aria-label={r.ativo ? `Desativar ${r.nome}` : `Ativar ${r.nome}`}>{r.ativo ? "Desativar" : "Ativar"}</button>
-              <button onClick={() => { setErro(null); setForm({ id: r.id, nome: r.nome, alvoTipo: r.alvoTipo, alvoUsuarioId: r.alvoUsuarioId ?? "", rodizioUsuarioIds: r.rodizioUsuarioIds, diasSemana: r.diasSemana ?? [], horaInicio: hhmm(r.horaInicio), horaFim: hhmm(r.horaFim), humanoDevolucaoId: r.humanoDevolucaoId ?? "", prioridade: r.prioridade, ativo: r.ativo }); }} className="size-8 grid place-items-center rounded-lg border" style={campo} aria-label={`Editar ${r.nome}`}><Pencil className="size-3.5" /></button>
+              <button onClick={() => { setErro(null); setForm({ id: r.id, nome: r.nome, alvoTipo: r.alvoTipo, alvoUsuarioId: r.alvoUsuarioId ?? "", rodizioUsuarioIds: r.rodizioUsuarioIds, diasSemana: r.diasSemana ?? [], horaInicio: hhmm(r.horaInicio), horaFim: hhmm(r.horaFim), humanoDevolucaoId: r.humanoDevolucaoId ?? "", prioridade: r.prioridade, ativo: r.ativo, descricao: r.descricao ?? "", utmCampaign: r.utmCampaign ?? [], utmSource: r.utmSource ?? [], origem: r.origem ?? [], metaCampaignIds: r.metaCampaignIds ?? [], formulario: r.formulario ?? [], sessaoWhatsappId: r.sessaoWhatsappId ?? "" }); }} className="size-8 grid place-items-center rounded-lg border" style={campo} aria-label={`Editar ${r.nome}`}><Pencil className="size-3.5" /></button>
               <button onClick={() => { if (confirm(`Remover a regra "${r.nome}"?`)) remover.mutate(r.id); }} className="size-8 grid place-items-center rounded-lg border" style={campo} aria-label={`Remover ${r.nome}`}><Trash2 className="size-3.5" /></button>
             </li>
           );
@@ -244,5 +322,42 @@ export function DistribuicaoLeads() {
         </details>
       )}
     </section>
+  );
+}
+
+/**
+ * Campo de vários valores do "Quando": o mesmo input da regra, com os valores
+ * já digitados como selos (`Badge` do DS) removíveis. Enter, vírgula ou sair do
+ * campo adiciona; colar "a, b, c" adiciona os três; Backspace vazio tira o último.
+ */
+function CampoMultiplo({ rotulo, dica, valores, onChange }: { rotulo: string; dica: string; valores: string[]; onChange: (v: string[]) => void }) {
+  const [texto, setTexto] = useState("");
+  const adicionar = (bruto: string) => {
+    const novos = bruto.split(",").map((v) => v.trim()).filter((v) => v && !valores.includes(v));
+    if (novos.length) onChange([...valores, ...new Set(novos)]);
+    setTexto("");
+  };
+  return (
+    <label className="flex flex-col gap-1 text-xs text-[var(--cf2-text-secondary)]">{rotulo}
+      {valores.length > 0 && (
+        <span className="flex flex-wrap gap-1">
+          {valores.map((v) => (
+            <Badge key={v} variant="secondary" className="max-w-full">
+              <span className="truncate">{v}</span>
+              <button type="button" onClick={() => onChange(valores.filter((x) => x !== v))} aria-label={`Tirar ${v} de ${rotulo}`} className="inline-grid place-items-center">
+                <X aria-hidden />
+              </button>
+            </Badge>
+          ))}
+        </span>
+      )}
+      <input value={texto} placeholder={dica} className="h-9 px-2.5 rounded-control text-sm outline-none" style={campo}
+        onChange={(e) => (e.target.value.includes(",") ? adicionar(e.target.value) : setTexto(e.target.value))}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); adicionar(texto); }
+          else if (e.key === "Backspace" && !texto && valores.length) onChange(valores.slice(0, -1));
+        }}
+        onBlur={() => { if (texto.trim()) adicionar(texto); }} />
+    </label>
   );
 }
