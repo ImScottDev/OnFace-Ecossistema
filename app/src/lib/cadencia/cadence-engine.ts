@@ -33,7 +33,7 @@ import { db } from "@/lib/db";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { moverEtapa as moverEtapaPreVendas } from "@/lib/vendas/pre-vendas";
 import { ETAPAS_PRE_VENDAS, ETAPAS_FECHADAS, type EtapaPreVendas, type Ator } from "@/lib/vendas/dominio";
-import { aiAgentVersions, cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels, empresas, pessoas, notificacoes } from "@/lib/db/schema";
+import { aiAgentVersions, cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels, empresas, pessoas, notificacoes, usuarios } from "@/lib/db/schema";
 import { eq, and, lte, inArray, notInArray, desc, or, isNull, lt, sql } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
 import { resultadoCondicaoCadencia } from "./cadence-conditions";
@@ -985,13 +985,25 @@ async function avisarResponsavel(
     resultado: { motivo }, idempotencyKey: `aviso:${enrollment.id}:${motivo}`,
   }).onConflictDoNothing().returning({ id: cadenceEnrollmentEvents.id });
   if (!marca) return;
-  const { leadId } = await entityLinks(enrollment);
+  const { leadId, negocioId } = await entityLinks(enrollment);
   if (!leadId) return;
   const [lead] = await db.select({ nome: leads.nome, responsavelId: leads.responsavelId }).from(leads)
     .where(and(eq(leads.id, leadId), eq(leads.organizacaoId, enrollment.organizacaoId))).limit(1);
   if (!lead?.responsavelId) return;
+  // Dono que é uma agente de IA (usuarios.tipo = 'agente') não lê notificação:
+  // "a conversa é sua agora" ia para a caixa de quem não tem caixa, e o lead
+  // quente ficava sem ninguém. O aviso vai para a pessoa que receberia o
+  // atendimento de volta da agente (mesma regra do handover); sem ninguém, não avisa.
+  let destino: string | null = lead.responsavelId;
+  const [dono] = await db.select({ tipo: usuarios.tipo }).from(usuarios)
+    .where(and(eq(usuarios.id, lead.responsavelId), eq(usuarios.organizacaoId, enrollment.organizacaoId))).limit(1);
+  if (dono?.tipo === "agente") {
+    const { resolverHumanoDeDevolucao } = await import("@/lib/agentes/handover");
+    destino = (await resolverHumanoDeDevolucao({ organizacaoId: enrollment.organizacaoId, agenteUsuarioId: lead.responsavelId, leadId, negocioId })).id;
+  }
+  if (!destino) return;
   await db.insert(notificacoes).values({
-    usuarioId: lead.responsavelId, tipo: "cadencia",
+    usuarioId: destino, tipo: "cadencia",
     titulo, mensagem: `${lead.nome ?? "Lead"}: ${mensagem}`, link: `/pre-vendas/${leadId}`,
   });
 }
