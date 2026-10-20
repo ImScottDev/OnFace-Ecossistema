@@ -11,7 +11,7 @@ import {
   CATALOGO_NOS, VARIAVEIS_CONTEXTO, eventoPorId, lerCaminho,
   type GrafoFluxo,
 } from "@/lib/automacoes/grafo";
-import { anteriores } from "./operacoes";
+import { anteriores, gruposContexto } from "./operacoes";
 
 export interface GrupoVariaveis { rotulo: string; itens: { caminho: string; rotulo: string }[] }
 
@@ -25,10 +25,7 @@ export function variaveisPara(grafo: GrafoFluxo, noId: string | null): GrupoVari
   if (gatilho?.config.modo === "webhook") {
     grupos.push({ rotulo: "Chamada recebida", itens: [{ caminho: "gatilho.body", rotulo: "Corpo inteiro (use gatilho.body.campo)" }] });
   }
-  for (const v of VARIAVEIS_CONTEXTO) {
-    if (v.raiz === "vars") continue;
-    grupos.push({ rotulo: v.rotulo, itens: v.campos.map((c) => ({ caminho: v.raiz ? `${v.raiz}.${c.chave}` : c.chave, rotulo: c.rotulo })) });
-  }
+  grupos.push(...gruposContexto(VARIAVEIS_CONTEXTO));
   const antes = noId ? new Set(anteriores(grafo, noId)) : new Set<string>();
   const nosAntes = grafo.nos.filter((n) => antes.has(n.id));
   const vars = nosAntes.flatMap((n) => n.tipo === "definir_variavel"

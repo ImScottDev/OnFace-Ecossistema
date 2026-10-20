@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { grafoInicial, validarGrafo } from "@/lib/automacoes/grafo";
-import { adicionarNo, anteriores, duplicar, ligar, motivoNaoLigar, remover, trocarNo } from "./operacoes";
+import { VARIAVEIS_CONTEXTO, grafoInicial, validarGrafo } from "@/lib/automacoes/grafo";
+import { adicionarNo, anteriores, duplicar, gruposContexto, ligar, motivoNaoLigar, remover, trocarNo } from "./operacoes";
 import { MODELOS } from "./modelos";
 
 test("adicionar depois de uma saída liga e posiciona à direita", () => {
@@ -46,4 +46,28 @@ test("modelos só pendem do que depende da conta (tag, etapa, agente)", () => {
     const outras = pend.filter((p) => !["tagId", "etapa", "agenteId"].includes(p.campo ?? ""));
     assert.deepEqual(outras, [], `${m.id}: ${JSON.stringify(outras)}`);
   }
+});
+
+test("variáveis de campanha do lead ganham o grupo Campanha, logo depois de Lead", () => {
+  const grupos = gruposContexto([
+    { raiz: "lead", rotulo: "Lead", campos: [
+      { chave: "nome", rotulo: "Nome" }, { chave: "origem", rotulo: "Origem" }, { chave: "utm_source", rotulo: "UTM source" },
+      { chave: "meta_campaign_id", rotulo: "Campanha Meta (id)" }, { chave: "distribuicao_motivo", rotulo: "Motivo" },
+    ] },
+    { raiz: "negocio", rotulo: "Negócio", campos: [{ chave: "origem", rotulo: "Origem" }] },
+    { raiz: "vars", rotulo: "Variáveis definidas", campos: [] },
+    { raiz: "", rotulo: "Agora", campos: [{ chave: "agora", rotulo: "Data e hora" }] },
+  ]);
+  assert.deepEqual(grupos.map((g) => g.rotulo), ["Lead", "Campanha", "Negócio", "Agora"]);
+  assert.deepEqual(grupos[0].itens.map((i) => i.caminho), ["lead.nome"]);
+  assert.deepEqual(grupos[1].itens.map((i) => i.caminho), ["lead.origem", "lead.utm_source", "lead.meta_campaign_id", "lead.distribuicao_motivo"]);
+  assert.deepEqual(grupos[2].itens.map((i) => i.caminho), ["negocio.origem"]);
+  assert.deepEqual(grupos[3].itens.map((i) => i.caminho), ["agora"]);
+});
+
+test("o seletor oferece toda variável de contexto, uma vez só", () => {
+  const caminhos = gruposContexto(VARIAVEIS_CONTEXTO).flatMap((g) => g.itens.map((i) => i.caminho));
+  const esperados = VARIAVEIS_CONTEXTO.filter((v) => v.raiz !== "vars").flatMap((v) => v.campos.map((c) => (v.raiz ? `${v.raiz}.${c.chave}` : c.chave)));
+  assert.deepEqual([...caminhos].sort(), [...esperados].sort());
+  assert.equal(new Set(caminhos).size, caminhos.length);
 });

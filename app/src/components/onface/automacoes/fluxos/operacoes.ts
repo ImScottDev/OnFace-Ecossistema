@@ -126,3 +126,34 @@ export function anteriores(grafo: GrafoFluxo, noId: string): string[] {
   }
   return grafo.nos.filter((n) => visto.has(n.id)).map((n) => n.id);
 }
+
+// ─── Variáveis de contexto em grupos ───────────────────────────────────────
+
+/** Campo do lead que descreve DE ONDE ele veio (campanha, anúncio, regra que o
+ *  distribuiu). É regra, não lista: campo novo com esses prefixos em
+ *  `VARIAVEIS_CONTEXTO` cai no grupo sozinho. */
+const CAMPO_DE_CAMPANHA = /^(origem$|utm_|meta_|distribuicao_)/;
+
+export interface GrupoContexto { rotulo: string; itens: { caminho: string; rotulo: string }[] }
+
+/** Os grupos do seletor a partir de `VARIAVEIS_CONTEXTO`: um por raiz, com os
+ *  dados de campanha do lead separados em "Campanha" (logo depois de "Lead"),
+ *  e grupos de mesmo rótulo juntos. `vars` fica de fora: o seletor lista só as
+ *  variáveis que um bloco anterior definiu. */
+export function gruposContexto(variaveis: readonly { raiz: string; rotulo: string; campos: readonly { chave: string; rotulo: string }[] }[]): GrupoContexto[] {
+  const grupos: GrupoContexto[] = [];
+  const grupo = (rotulo: string) => {
+    let g = grupos.find((x) => x.rotulo === rotulo);
+    if (!g) { g = { rotulo, itens: [] }; grupos.push(g); }
+    return g;
+  };
+  for (const v of variaveis) {
+    if (v.raiz === "vars") continue;
+    const proprio = grupo(v.rotulo);
+    for (const c of v.campos) {
+      const destino = v.raiz === "lead" && CAMPO_DE_CAMPANHA.test(c.chave) ? grupo("Campanha") : proprio;
+      destino.itens.push({ caminho: v.raiz ? `${v.raiz}.${c.chave}` : c.chave, rotulo: c.rotulo });
+    }
+  }
+  return grupos.filter((g) => g.itens.length);
+}
