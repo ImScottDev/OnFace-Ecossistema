@@ -1,0 +1,84 @@
+name: publicar
+
+# Deploy como BOTÃO do GitHub, para quem não tem a chave do servidor.
+#
+# Nasceu de uma necessidade concreta (20/10/2026): sessões que só têm o
+# repositório — na nuvem, num contratado, num CI — conseguiam escrever código e
+# não conseguiam publicar, porque `./deploy.sh` entra por SSH com uma chave
+# privada que só existe na máquina do Scott.
+#
+# A chave NÃO vai para o repositório: mora em `secrets.DEPLOY_SSH_KEY`, que é o
+# lugar de segredo. O workflow a escreve num arquivo temporário do runner, que
+# morre com o job, e chama o MESMO `deploy.sh` de sempre — nenhum caminho de
+# publicação novo, nenhuma regra do script contornada.
+#
+# Quem pode disparar: só quem tem acesso de escrita no repositório. Repositório
+# público não muda isso, e segredo nunca é entregue a execução vinda de fork.
+#
+#   gh workflow run publicar.yml -f ambiente=homolog -f versao=<sha>
+#
+# Ou pela aba Actions → publicar → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ambiente:
+        description: "Onde publicar"
+        type: choice
+        required: true
+        default: homolog
+        options: [homolog, producao]
+      versao:
+        description: "Commit (sha completo). Vazio = o HEAD da main."
+        type: string
+        required: false
+
+# Dois deploys ao mesmo tempo no mesmo ambiente se atropelam no servidor.
+concurrency:
+  group: publicar-${{ inputs.ambiente }}
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    # O deploy só espera a imagem e troca container; não constrói nada. Se
+    # estourar daqui, estourou no servidor e o log diz onde.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `deploy.sh` manda o código por `git archive` do sha: precisa do
+          # histórico, não do último commit só.
+          fetch-depth: 0
+
+      - name: preparar a chave
+        env:
+          CHAVE: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$CHAVE" ]; then
+            echo "::error::Falta o segredo DEPLOY_SSH_KEY no repositório (Settings → Secrets → Actions)."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$CHAVE" > ~/.ssh/deploy.pem
+          chmod 600 ~/.ssh/deploy.pem
+          # Sem isto o ssh pergunta sobre o host e o deploy trava esperando.
+          ssh-keyscan -H "${DEPLOY_IP:-34.204.200.52}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: publicar
+        env:
+          DEPLOY_CHAVE: /home/runner/.ssh/deploy.pem
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST || 'ubuntu@34.204.200.52' }}
+        run: |
+          SHA="${{ inputs.versao }}"
+          [ -n "$SHA" ] || SHA="$(git rev-parse HEAD)"
+          echo "Publicando $SHA em ${{ inputs.ambiente }}"
+          if [ "${{ inputs.ambiente }}" = "producao" ]; then
+            ./deploy.sh dev --versao "$SHA"
+          else
+            ./deploy.sh homolog "$SHA"
+          fi
+
+      - name: apagar a chave
+        if: always()
+        run: rm -f ~/.ssh/deploy.pem
