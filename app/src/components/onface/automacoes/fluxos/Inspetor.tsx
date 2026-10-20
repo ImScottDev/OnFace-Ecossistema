@@ -3,7 +3,8 @@
 /* Inspetor (painel direito). Com um bloco selecionado: título e descrição do
  * catálogo, os campos na ordem respeitando `mostrarSe`, a política de falha
  * nos blocos com efeito externo e IA, desligar e nota. Sem seleção: as
- * configurações da automação (pasta, reentrada, fuso, expediente). */
+ * configurações da automação (pasta, reentrada, o que fazer quando o lead
+ * responde, fuso, expediente). */
 import { useEffect } from "react";
 import { Copy, Trash2 } from "lucide-react";
 import {
@@ -203,6 +204,21 @@ function ConfigAutomacao({ doc, mudar, somenteLeitura, pastas, pendencias }: {
           ] as const).map(([v, r, a]) => (
             <label key={v} className="ofx-radio">
               <input type="radio" name="reentrada" checked={c.reentrada === v} disabled={somenteLeitura} onChange={() => setConfig({ reentrada: v })} />
+              <span><strong>{r}</strong><em>{a}</em></span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="ofx-campo">
+        <span className="ofx-campo-rotulo">Quando o lead responder</span>
+        <div className="ofx-radios">
+          {([
+            ["continuar", "Continuar o fluxo", "A resposta não muda nada: as esperas vencem no horário e a automação segue."],
+            ["parar", "Parar o fluxo", "Se o lead responder enquanto a automação espera, ela é encerrada ali."],
+          ] as const).map(([v, r, a]) => (
+            <label key={v} className="ofx-radio">
+              <input type="radio" name="ao-responder" checked={(c.aoResponder ?? "continuar") === v} disabled={somenteLeitura} onChange={() => setConfig({ aoResponder: v })} />
               <span><strong>{r}</strong><em>{a}</em></span>
             </label>
           ))}
