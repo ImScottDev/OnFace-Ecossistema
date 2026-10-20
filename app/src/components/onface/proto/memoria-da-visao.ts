@@ -22,8 +22,8 @@ const CHAVE = "onface:visao";
 type Visao = {
   /** A peça aberta sobre a tela (ficha do lead, reunião, atividade…). */
   peca?: { nome: string; id: string | null } | null;
-  /** Rolagem dos contêineres que rolam por dentro, por caminho no DOM. */
-  rolagem?: Record<string, number>;
+  /** Posição do contêiner que rola por dentro da tela. */
+  rolagem?: number;
 };
 
 function estadoAtual(): Record<string, unknown> {
@@ -59,87 +59,65 @@ export function guardarVisao(parcial: Visao): void {
 
 /* ── Rolagem ──────────────────────────────────────────────────────────── */
 
-/** Caminho estável de um elemento: índice de cada filho até o body. */
-function caminho(el: Element): string {
-  const partes: number[] = [];
-  let atual: Element | null = el;
-  while (atual && atual !== document.body) {
-    const pai: Element | null = atual.parentElement;
-    if (!pai) break;
-    partes.unshift(Array.prototype.indexOf.call(pai.children, atual));
-    atual = pai;
+/**
+ * O contêiner que rola por dentro da tela.
+ *
+ * É um só por tela (a área do quadro, a lista), e é o maior: o que tem mais
+ * conteúdo para rolar. Identificar assim, e não por caminho no DOM, é o que
+ * sobrevive à tela voltar com a ficha aberta — a gaveta acrescenta nós e todo
+ * caminho guardado antes deixa de resolver. Medido em 20/10/2026: com
+ * caminho, a rolagem nunca voltava.
+ */
+function contêinerQueRola(): Element | null {
+  let maior: Element | null = null;
+  for (const el of Array.from(document.querySelectorAll("div, section, main, ul, ol"))) {
+    const sobra = el.scrollHeight - el.clientHeight;
+    if (sobra < 200) continue; // ruído: caixa com meia linha a mais
+    if (!maior || el.scrollHeight > maior.scrollHeight) maior = el;
   }
-  return partes.join("-");
+  return maior;
 }
 
-function porCaminho(p: string): Element | null {
-  let atual: Element | null = document.body;
-  for (const i of p.split("-")) {
-    if (!atual) return null;
-    atual = atual.children[Number(i)] ?? null;
-  }
-  return atual;
-}
-
-/** Quem rola por dentro agora. A tela só tem alguns; varrer é barato. */
-function contêineresComRolagem(): Element[] {
-  return Array.prototype.filter.call(
-    document.querySelectorAll("div, section, main, ul, ol"),
-    (el: Element) => el.scrollTop > 0,
-  ) as Element[];
-}
-
-/** Fotografa a rolagem de todos os contêineres internos na entrada atual. */
+/** Fotografa a posição na entrada atual do histórico. */
 export function guardarRolagem(): void {
   if (typeof window === "undefined") return;
-  const rolagem: Record<string, number> = {};
-  for (const el of contêineresComRolagem()) rolagem[caminho(el)] = el.scrollTop;
-  guardarVisao({ rolagem });
+  const el = contêinerQueRola();
+  if (!el || el.scrollTop <= 0) return;
+  guardarVisao({ rolagem: el.scrollTop });
 }
 
 /**
- * Devolve a rolagem guardada.
+ * Devolve a posição guardada.
  *
  * Insiste por alguns segundos, e não por alguns quadros: os cartões são
- * montados pelo cliente e chegam MUITO depois da primeira pintura. Medido em
- * 20/10/2026 — com dez quadros (~160 ms) a lista ainda estava vazia, pôr
- * `scrollTop` não fazia nada e a tela voltava ao topo mesmo com a posição
- * guardada.
+ * montados pelo cliente e chegam MUITO depois da primeira pintura — pôr
+ * `scrollTop` numa lista ainda vazia não faz nada.
  *
  * Para assim que acerta, e desiste no primeiro gesto de quem está olhando:
  * insistir por cima de alguém que já começou a rolar é pior que não lembrar.
  */
-export function restaurarRolagem(limiteMs = 5000): void {
+export function restaurarRolagem(limiteMs = 6000): void {
   if (typeof window === "undefined") return;
-  const { rolagem } = lerVisao();
-  if (!rolagem || Object.keys(rolagem).length === 0) return;
+  const topo = lerVisao().rolagem;
+  if (!topo || topo <= 0) return;
 
   const ate = Date.now() + limiteMs;
   let desistir = false;
   const aoTocar = () => { desistir = true; };
-  window.addEventListener("wheel", aoTocar, { once: true, passive: true });
-  window.addEventListener("touchstart", aoTocar, { once: true, passive: true });
-  window.addEventListener("keydown", aoTocar, { once: true });
-
+  for (const ev of ["wheel", "touchstart", "keydown"]) {
+    window.addEventListener(ev, aoTocar, { once: true, passive: true } as never);
+  }
   const parar = () => {
-    window.removeEventListener("wheel", aoTocar);
-    window.removeEventListener("touchstart", aoTocar);
-    window.removeEventListener("keydown", aoTocar);
+    for (const ev of ["wheel", "touchstart", "keydown"]) window.removeEventListener(ev, aoTocar);
   };
 
   const tentar = () => {
-    if (desistir) return parar();
-    let tudoNoLugar = true;
-    for (const [p, topo] of Object.entries(rolagem)) {
-      const el = porCaminho(p);
-      if (!el) { tudoNoLugar = false; continue; }
-      if (el.scrollTop !== topo) {
-        el.scrollTop = topo;
-        // Ainda sem altura para rolar até lá: o conteúdo não chegou todo.
-        if (Math.abs(el.scrollTop - topo) > 1) tudoNoLugar = false;
-      }
+    if (desistir || Date.now() > ate) return parar();
+    const el = contêinerQueRola();
+    if (el) {
+      el.scrollTop = topo;
+      if (Math.abs(el.scrollTop - topo) <= 1) return parar(); // chegou
     }
-    if (tudoNoLugar || Date.now() > ate) return parar();
     setTimeout(tentar, 120);
   };
   setTimeout(tentar, 0);
