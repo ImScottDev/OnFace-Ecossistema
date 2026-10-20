@@ -6,6 +6,7 @@ import { EditableList } from "@/components/crm2/ajustes/EditableList";
 import { useOrgUsuarios } from "@/components/crm/BoardFilters";
 import { Save, RotateCcw } from "lucide-react";
 import { DistribuicaoLeads } from "./DistribuicaoLeads";
+import { CaixaEntradaCaptacao } from "./CaixaEntradaCaptacao";
 import { OpcoesDePessoa } from "@/components/onface/OpcoesDePessoa";
 
 export default function LeadsConfigPage() {
@@ -161,6 +162,8 @@ export default function LeadsConfigPage() {
       />
 
       <DistribuicaoLeads />
+
+      <CaixaEntradaCaptacao />
 
       <section className="rounded-xl border p-4" style={{ borderColor: "var(--cf2-border-default)", background: "var(--cf2-bg-surface)" }}>
         <div className="flex flex-col gap-1 mb-3">
