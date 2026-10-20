@@ -39,6 +39,7 @@ import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
 import { resultadoCondicaoCadencia } from "./cadence-conditions";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
+import { optOutAtivo } from "@/lib/ai-platform/operacao/politica-canal";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 import { enviarParaDiscagem } from "@/lib/integrations/callface";
 import { publicarEvento } from "@/lib/events/outbox";
@@ -407,6 +408,12 @@ async function resolverContatoCompleto(
 async function enfileirarWhatsapp(args: { contato: typeof contatos.$inferSelect; texto: string; templateNome?: string; jobId?: string }): Promise<CadenceActionResult> {
   const { contato, texto } = args;
   if (!contato.telefone) return { sucesso: false, erro: "contato sem telefone" };
+  // Opt-out vale para TODA mensagem automática ao contato, inclusive a que uma
+  // pessoa escreveu no passo da cadência ou no bloco do fluxo. Só o agente
+  // conferia (política de canal): quem pediu para sair continuava recebendo a
+  // régua de texto pronto. Passam por aqui WhatsApp, modelo e o modelo de
+  // reserva do passo de IA.
+  if (await optOutAtivo(contato.organizacaoId, contato.id)) return { sucesso: false, erro: "opt-out: o contato pediu para não receber mensagens — nada foi enviado" };
   if (!contato.sessaoId) return { sucesso: false, erro: "contato sem sessão de WhatsApp" };
   // Fila para número desconectado só gera mensagem "pendente" para sempre: melhor falhar já, com o motivo visível em Execuções.
   const [sessao] = await db.select({ status: whatsappSessao.status, nome: whatsappSessao.label }).from(whatsappSessao).where(eq(whatsappSessao.id, contato.sessaoId)).limit(1);
