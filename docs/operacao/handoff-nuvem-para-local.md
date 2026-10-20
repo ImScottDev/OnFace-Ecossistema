@@ -153,15 +153,21 @@ anterior mostra `qualificacao` nula em 9/10 cenários) — não mexido.
 
 ## 6. Achados NÃO resolvidos
 
-- `lembrete-reuniao.ts`: usa o primeiro número do responsável (pode ser
-  privado) e, sem número, enfileira sem `sessaoId` → worker manda pelo token
-  do env. Não mexi: é operação em uso e mudar o remetente do lembrete é
-  decisão de produto.
-- Worker `findOrCreateContato`: rodízio/carga em número compartilhado escolhe
-  entre TODOS os usuários ativos da org (inclui agentes e quem não tem acesso
-  ao número). Não mexi (muda distribuição de conversas em uso).
-- `WHATSAPP_ALLOWLIST` é fail-open (vazia = não bloqueia nada) e nada checa
-  isso no boot de homolog. Não mexi (infra/env).
+- ~~`lembrete-reuniao.ts`: primeiro número do responsável (pode ser privado)~~
+  **resolvido em f8e97604**: passa por `escolherNumeroAutomatico`
+  (`lib/whatsapp/uso-automatico.ts`) — pool operacional primeiro, privado
+  nunca; fallback mantém o número do responsável enquanto nenhum número for
+  operacional, e sem número segue sem `sessaoId` como antes.
+- ~~Worker `findOrCreateContato`: rodízio entre TODOS os usuários ativos~~
+  **resolvido em f8e97604**: `atendentesDoNumero` (`lib/whatsapp/acesso.ts`) —
+  pessoa ativa, nunca agente de IA, dona do número ou com acesso a ele. Número
+  compartilhado sem nenhum acesso concedido mantém a distribuição antiga (sem
+  agentes), porque responsável nulo com número preenchido esconde a conversa.
+  Não exercitado com Redis/banco: conferir no primeiro lead novo de número
+  compartilhado com `assign_strategy` round_robin/carga.
+- ~~`WHATSAPP_ALLOWLIST` é fail-open e nada checa no boot~~ **resolvido em
+  f8e97604** (só o aviso: `avisoAllowlistVazia`, logado no boot do worker; o
+  envio não mudou).
 - Escolha EXPLÍCITA de número privado no passo de cadência/fluxo ainda é
   aceita por `escolherSessao` (dono falando pelo que é dele); o seletor do
   fluxo já não oferece. Fluxo antigo salvo com número privado continua
