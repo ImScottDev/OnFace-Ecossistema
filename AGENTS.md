@@ -83,6 +83,15 @@ npx tsx --env-file=.env src/scripts/checar-rotas-onface.ts   # telas do menu, lo
 
 E abra a tela no navegador: teste verde não prova que a tela funciona.
 
+## Sessão sem a máquina do Scott (nuvem, CI, contratado)
+
+Trabalhando só com o repositório — sem o vault, sem a chave do servidor, sem
+banco e sem sessão logada no produto: leia
+[`docs/operacao/handoff-sessao-nuvem.md`](./docs/operacao/handoff-sessao-nuvem.md).
+Ele diz o que dá para verificar aí (typecheck, travas de arquitetura e build
+rodam sem banco), o que não dá (deploy e suíte completa) e como devolver o
+trabalho sem anunciar como pronto o que não foi aberto no navegador.
+
 ## Referências
 
 - Stripe (checkout, invoice, assinatura): leia
