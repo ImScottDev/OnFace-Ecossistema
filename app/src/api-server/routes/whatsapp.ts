@@ -1020,9 +1020,20 @@ app.get("/whatsapp/status", async (c) => {
       live = await getStatus(config);
     } catch { /* wuzapi unreachable */ }
 
-    if (live.connected && sessao.status !== "connected") {
+    // Grava também quando a sessão JÁ estava conectada e o número só apareceu
+    // depois.
+    //
+    // O wuzapi responde `connected` assim que a sessão sobe, e o número do
+    // aparelho às vezes só é resolvido em seguida. Como a gravação dependia da
+    // TROCA de estado, o primeiro retorno guardava `connected` com telefone
+    // vazio e nenhuma chamada posterior tentava de novo: a tela ficava em
+    // "Sem número vinculado · Pareamento incompleto" para sempre, mesmo com
+    // conversa acontecendo. Visto em produção em 20/10/2026, nos três números
+    // da Lia, e em "Scott Corporativo".
+    const numeroNovo = live.phone && live.phone !== sessao.phoneNumber;
+    if (live.connected && (sessao.status !== "connected" || numeroNovo)) {
       await db.update(whatsappSessao).set({
-        status: "connected", phoneNumber: live.phone || null,
+        status: "connected", phoneNumber: live.phone || sessao.phoneNumber || null,
         qrCode: null, lastConnectedAt: new Date(), updatedAt: new Date(),
       }).where(eq(whatsappSessao.id, sessao.id));
     } else if (!live.connected && sessao.status === "connected") {
@@ -1059,9 +1070,20 @@ app.get("/whatsapp/status", async (c) => {
       live = await getStatus(config);
     } catch { /* */ }
 
-    if (live.connected && sessao.status !== "connected") {
+    // Grava também quando a sessão JÁ estava conectada e o número só apareceu
+    // depois.
+    //
+    // O wuzapi responde `connected` assim que a sessão sobe, e o número do
+    // aparelho às vezes só é resolvido em seguida. Como a gravação dependia da
+    // TROCA de estado, o primeiro retorno guardava `connected` com telefone
+    // vazio e nenhuma chamada posterior tentava de novo: a tela ficava em
+    // "Sem número vinculado · Pareamento incompleto" para sempre, mesmo com
+    // conversa acontecendo. Visto em produção em 20/10/2026, nos três números
+    // da Lia, e em "Scott Corporativo".
+    const numeroNovo = live.phone && live.phone !== sessao.phoneNumber;
+    if (live.connected && (sessao.status !== "connected" || numeroNovo)) {
       await db.update(whatsappSessao).set({
-        status: "connected", phoneNumber: live.phone || null,
+        status: "connected", phoneNumber: live.phone || sessao.phoneNumber || null,
         qrCode: null, lastConnectedAt: new Date(), updatedAt: new Date(),
       }).where(eq(whatsappSessao.id, sessao.id));
     } else if (!live.connected && sessao.status === "connected") {
