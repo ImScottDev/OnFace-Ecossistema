@@ -1,4 +1,4 @@
-import { MOTIVO_NUMERO_PRIVADO, sessaoEhPrivada } from "@/lib/whatsapp/uso-automatico";
+import { MOTIVO_NUMERO_PRIVADO, sessaoEhOperacional, sessaoEhPrivada, usaPoolOperacional } from "@/lib/whatsapp/uso-automatico";
 import { createHash, randomUUID } from "node:crypto";
 import { compilarPrompt } from "@/lib/ai/agente-escopo";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -112,6 +112,8 @@ async function selectAgent(input: ExecuteAgentInput): Promise<SelectedAgent> {
     if (await sessaoEhPrivada(input.organizacaoId, sessaoDoContato)) throw new NoEligibleAgentError(MOTIVO_NUMERO_PRIVADO);
   }
 
+  const operacionais = new Set(sessaoDoContato && rows.some(({ version }) => usaPoolOperacional(version.guardrailConfig))
+    && await sessaoEhOperacional(input.organizacaoId, sessaoDoContato) ? [sessaoDoContato] : []);
   const selected = rows.find(({ agent, version }) => {
     if (input.versionId && version.id !== input.versionId) return false;
     if (input.mode === "live") {
@@ -122,6 +124,8 @@ async function selectAgent(input: ExecuteAgentInput): Promise<SelectedAgent> {
       // evento inbound quando múltiplos agentes publicados competem por prioridade.
       if (input.agentId) return true;
       if (!versaoAtendeSessao(version.channelSessionId, sessaoDoContato)) return false;
+      // Agente no pool operacional só atende conversa de número operacional.
+      if (usaPoolOperacional(version.guardrailConfig) && !(sessaoDoContato && operacionais.has(sessaoDoContato))) return false;
       return configuredEvents(version.triggerConfig).includes(input.eventType);
     }
     return input.versionId ? version.id === input.versionId : version.status === "published" || version.status === "draft";

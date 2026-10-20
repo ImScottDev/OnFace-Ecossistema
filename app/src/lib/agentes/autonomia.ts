@@ -10,7 +10,7 @@
  * e depois dele, o que a agente fez já saiu pelas ferramentas (timeline assinada
  * por ela). O envio é só pela sessão de WhatsApp da conversa (`executeAgent`).
  */
-import { numeroAceitaAutomacao } from "@/lib/whatsapp/uso-automatico";
+import { numeroAceitaAutomacao, numeroOperacional, usaPoolOperacional } from "@/lib/whatsapp/uso-automatico";
 import { condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { and, asc, desc, eq, gt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -157,18 +157,28 @@ export async function acionarAgenteParaMensagem(p: {
 
 /* ── Conversa do lead (contato) ────────────────────────────────────────── */
 
-/** Contato de WhatsApp do lead; cria na sessão do agente (ou a padrão) quando não existe. */
-export async function contatoDoLead(organizacaoId: string, leadId: string, sessaoDoAgente: string | null) {
+/**
+ * Contato de WhatsApp do lead; cria na sessão do agente (ou a padrão) quando não existe.
+ * Com `poolOperacional`, só vale conversa em número operacional, e a nova nasce no número que a
+ * distribuição escolheu para o lead (`leads.sessao_whatsapp_preferida_id`) ou no primeiro operacional.
+ */
+export async function contatoDoLead(organizacaoId: string, leadId: string, sessaoDoAgente: string | null, opts: { poolOperacional?: boolean } = {}) {
+  const pool = opts.poolOperacional ? sql`EXISTS (SELECT 1 FROM whatsapp_sessao so WHERE so.id = ${contatos.sessaoId} AND so.operacional AND NOT so.privado)` : undefined;
   // Conversa em número privado não serve: o agente não fala pelo WhatsApp pessoal de ninguém.
-  const [ja] = await db.select().from(contatos).where(and(eq(contatos.organizacaoId, organizacaoId), eq(contatos.leadId, leadId), condicaoConversaNaoPrivada(contatos.sessaoId)))
+  const [ja] = await db.select().from(contatos).where(and(eq(contatos.organizacaoId, organizacaoId), eq(contatos.leadId, leadId), condicaoConversaNaoPrivada(contatos.sessaoId), pool))
     .orderBy(...(sessaoDoAgente ? [sql`(${contatos.sessaoId} = ${sessaoDoAgente}::uuid) DESC`] : []), desc(contatos.ultimaMsgAt)).limit(1);
   if (ja) return ja;
-  const [lead] = await db.select({ nome: leads.nome, telefone: leads.telefone, email: leads.email, r: leads.responsavelId }).from(leads).where(eq(leads.id, leadId)).limit(1);
+  const [lead] = await db.select({ nome: leads.nome, telefone: leads.telefone, email: leads.email, r: leads.responsavelId, preferida: leads.sessaoWhatsappPreferidaId }).from(leads).where(eq(leads.id, leadId)).limit(1);
   let tel = lead?.telefone?.replace(/\D/g, "");
   if (!lead || !tel) return null;
   if (tel.length === 10 || tel.length === 11) tel = "55" + tel;
   const sessoes = (await db.select().from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId))).filter(numeroAceitaAutomacao);
-  const sessao = sessoes.find((s) => s.id === sessaoDoAgente) ?? sessoes.find((s) => s.status === "connected" && s.isDefault) ?? sessoes.find((s) => s.status === "connected") ?? sessoes.find((s) => s.isDefault) ?? sessoes[0];
+  const sessao = opts.poolOperacional
+    ? (() => {
+        const operacionais = sessoes.filter((s) => numeroOperacional(s) && s.status === "connected");
+        return operacionais.find((s) => s.id === lead.preferida) ?? operacionais.find((s) => s.id === sessaoDoAgente) ?? operacionais.find((s) => s.isDefault) ?? operacionais[0];
+      })()
+    : sessoes.find((s) => s.id === sessaoDoAgente) ?? sessoes.find((s) => s.status === "connected" && s.isDefault) ?? sessoes.find((s) => s.status === "connected") ?? sessoes.find((s) => s.isDefault) ?? sessoes[0];
   if (!sessao) return null;
   // Um lead tem uma conversa por responsável: se a dele está num número privado, não há
   // conversa utilizável para o agente (null) — nunca reaproveita a privada nem derruba o ciclo.
@@ -205,7 +215,7 @@ export async function iniciarLeadsNovosDaAgente(agora = new Date(), limite = 10)
       const limites = lerLimites(versao.guardrailConfig);
       // Contato ATIVO só em horário comercial: fora dele o lead espera (sem marcar run, tenta no próximo sweep).
       if (!dentroDoHorario(limites.horario, agora)) { bloqueados++; continue; }
-      const contato = await contatoDoLead(c.organizacao_id, c.id, versao.channelSessionId);
+      const contato = await contatoDoLead(c.organizacao_id, c.id, versao.channelSessionId, { poolOperacional: usaPoolOperacional(versao.guardrailConfig) });
       if (!contato?.telefone) {
         await registrarRunBloqueado({ organizacaoId: c.organizacao_id, agentId: agente.agenteId, versionId: versao.id, contatoId: null, leadId: c.id, evento: "lead.atribuido_ao_agente", status: "aborted", motivo: "lead_sem_whatsapp" });
         await db.insert(atividades).values({ organizacaoId: c.organizacao_id, leadId: c.id, usuarioId: agente.usuarioId, tipo: "nota_agente", titulo: `${agente.nome} não conseguiu iniciar o contato`, descricao: "O lead não tem telefone/WhatsApp ou a organização não tem sessão de WhatsApp. Um humano precisa completar o contato." });
@@ -275,7 +285,7 @@ export async function processarDelegacoesVencidas(agora = new Date(), limite = 1
 
       // Cliente respondeu desde o último toque: a conversa é tratada pelo fluxo de mensagem recebida.
       const leadId = d.leadId ?? (d.negocioId ? (await db.select({ l: negocios.leadId }).from(negocios).where(eq(negocios.id, d.negocioId)).limit(1))[0]?.l ?? null : null);
-      const contato = leadId ? await contatoDoLead(d.organizacaoId, leadId, versao.channelSessionId) : null;
+      const contato = leadId ? await contatoDoLead(d.organizacaoId, leadId, versao.channelSessionId, { poolOperacional: usaPoolOperacional(versao.guardrailConfig) }) : null;
       const desde = d.ultimoToqueEm ?? d.createdAt;
       if (contato) {
         const [resp] = await db.select({ id: whatsappMensagens.id }).from(whatsappMensagens)

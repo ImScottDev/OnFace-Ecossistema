@@ -83,7 +83,8 @@ before(async () => {
   process.env.OPENAI_API_KEY = "chave-de-teste";
   [{ id: org }] = await q<{ id: string }>(sql`SELECT id::text FROM organizacoes ORDER BY created_at LIMIT 1`);
 
-  [{ id: sessaoId }] = await q<{ id: string }>(sql`INSERT INTO whatsapp_sessao (organizacao_id, session_name, label, status, tipo, api_token) VALUES (${org}::uuid, ${`${T}-sessao`}, ${`${T} número`}, 'connected', 'compartilhada', 'token-falso') RETURNING id::text`);
+  // Operacional: a Lia (LIA_VERSAO) atende pelo pool de números operacionais (0132).
+  [{ id: sessaoId }] = await q<{ id: string }>(sql`INSERT INTO whatsapp_sessao (organizacao_id, session_name, label, status, tipo, api_token, operacional) VALUES (${org}::uuid, ${`${T}-sessao`}, ${`${T} número`}, 'connected', 'compartilhada', 'token-falso', true) RETURNING id::text`);
   ids.sessoes.push(sessaoId);
   for (const nome of ["A", "B"]) {
     const [{ id }] = await q<{ id: string }>(sql`INSERT INTO usuarios (organizacao_id, nome, email, senha_hash, role, tipo, ativo) VALUES (${org}::uuid, ${`${T} Closer ${nome}`}, ${`${T}-${nome}-${Math.random().toString(36).slice(2)}@qa.local`}, 'x', 'closer', 'humano', true) RETURNING id::text`);

@@ -96,6 +96,8 @@ export const LIA_VERSAO = {
     // Retomadas que a própria Lia agenda (follow-up inteligente, sem cadência).
     followup: { maxRetomadas: 3, janelaDias: 30, maxDiasRetomada: 30 },
     agendaExigirOutlook: true,
+    // Atende e abre conversa nos números do pool operacional (Ajustes › WhatsApp), não num número fixo.
+    canais: { whatsapp: true, pool: "operacional" },
   },
   maxSteps: 10,
   tokenBudget: 4000,

@@ -116,3 +116,15 @@ export async function marcarOperacional(organizacaoId: string, sessaoId: string,
   await db.update(whatsappSessao).set({ operacional, updatedAt: new Date() })
     .where(and(eq(whatsappSessao.id, sessaoId), eq(whatsappSessao.organizacaoId, organizacaoId)));
 }
+
+/**
+ * Agente preso ao POOL operacional (`guardrail_config.canais.pool = "operacional"`):
+ * atende e abre conversa só nos números operacionais, em vez de um número fixo.
+ * Decisão de 20/10/2026 para a Lia: a versão publicada estava presa a um número
+ * que não existe mais e não respondia em lugar nenhum; agora vale o pool, e os
+ * números entram e saem dele por Ajustes › WhatsApp, sem republicar o agente.
+ */
+export function usaPoolOperacional(guardrailConfig: unknown): boolean {
+  const canais = (guardrailConfig as { canais?: { pool?: unknown } } | null | undefined)?.canais;
+  return canais?.pool === "operacional";
+}

@@ -13,6 +13,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentRuns, aiAlerts, aiCases, aiAgents, whatsappMensagens } from "@/lib/db/schema";
 import { executeAgent, NoEligibleAgentError } from "@/lib/ai-platform/runtime/execute-agent";
+import { sessaoEhOperacional, usaPoolOperacional } from "@/lib/whatsapp/uso-automatico";
 import { contagemDeMensagens, contatoDoLead, registrarRunBloqueado, versaoPublicada } from "@/lib/agentes/autonomia";
 import { dentroDoHorario, excedeTaxa, lerLimites, motivoDeParada, ROTULO_PARADA } from "@/lib/agentes/guardrails";
 import { devolverAoHumano } from "@/lib/agentes/handover";
@@ -101,7 +102,7 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
 
   // Atendimento que começou pelo lead: o contato de WhatsApp é resolvido (ou criado no número do agente) aqui, uma vez.
   if (mode === "live" && !e.contatoId && e.leadId) {
-    const ct = await contatoDoLead(e.organizacaoId, e.leadId, versao?.channelSessionId ?? null).catch(() => null);
+    const ct = await contatoDoLead(e.organizacaoId, e.leadId, versao?.channelSessionId ?? null, { poolOperacional: usaPoolOperacional(versao?.guardrailConfig) }).catch(() => null);
     if (ct) e = { ...e, contatoId: ct.id };
     else { const runId = await registrarBloqueio(e, versao?.id ?? null, "lead_sem_whatsapp"); return bloqueado("lead_sem_whatsapp", runId); }
   }
@@ -156,9 +157,12 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
     const canais = ((versao?.guardrailConfig as Record<string, unknown> | null)?.canais ?? {}) as { whatsapp?: boolean; sessoes?: string[] };
     if (canais.whatsapp === false) { const runId = await registrarBloqueio(e, versao?.id ?? null, "canal_whatsapp_desligado"); return bloqueado("canal_whatsapp_desligado", runId); }
     const autorizadas = [versao?.channelSessionId, ...(Array.isArray(canais.sessoes) ? canais.sessoes : [])].filter((x): x is string => typeof x === "string" && x.length > 0);
-    if (autorizadas.length) {
+    // Pool operacional: além dos números escolhidos, vale qualquer número operacional (Ajustes › WhatsApp).
+    const pool = usaPoolOperacional(versao?.guardrailConfig);
+    if (autorizadas.length || pool) {
       const [ct] = await db.execute<{ sessao_id: string | null }>(sql`SELECT sessao_id::text FROM contatos WHERE id = ${e.contatoId}::uuid AND organizacao_id = ${e.organizacaoId}::uuid`);
-      if (!ct?.sessao_id || !autorizadas.includes(ct.sessao_id)) { const runId = await registrarBloqueio(e, versao?.id ?? null, "numero_nao_autorizado_para_o_agente"); return bloqueado("numero_nao_autorizado_para_o_agente", runId); }
+      const noPool = pool && await sessaoEhOperacional(e.organizacaoId, ct?.sessao_id);
+      if (!ct?.sessao_id || (!autorizadas.includes(ct.sessao_id) && !noPool)) { const runId = await registrarBloqueio(e, versao?.id ?? null, "numero_nao_autorizado_para_o_agente"); return bloqueado("numero_nao_autorizado_para_o_agente", runId); }
     }
     const canal = await avaliarEnvio({ organizacaoId: e.organizacaoId, contatoId: e.contatoId, proativo: Boolean(e.proativo), agora });
     if (!canal.permitido) { const runId = await registrarBloqueio(e, versao?.id ?? null, canal.codigo); return bloqueado(canal.codigo, runId); }
