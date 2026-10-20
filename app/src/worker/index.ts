@@ -498,6 +498,39 @@ async function handlePhoneOutgoing(data: {
     }
   }
 
+  /* Eco de um envio do CRM (IA, cadência, Atendimento) que chegou antes de o job de saída gravar o
+     id do WhatsApp: sem isto o eco virava uma SEGUNDA mensagem, agora atribuída a uma pessoa — e o
+     agente se calava achando que alguém do time tinha respondido. Mesmo número, mesmo texto, ainda
+     sem id externo, nos últimos minutos = é o mesmo envio: amarra o id e não grava de novo. */
+  const textoEco = message.text || message.caption || "";
+  if (message.id && sessaoId && textoEco) {
+    const ecoRows = await db.execute<{ id: string }>(rawSql`
+      UPDATE whatsapp_mensagens SET uazapi_message_id = ${message.id}
+       WHERE id = (SELECT id FROM whatsapp_mensagens
+                    WHERE sessao_id = ${sessaoId}::uuid AND direcao = 'out' AND uazapi_message_id IS NULL
+                      AND right(regexp_replace(telefone, '\\D', '', 'g'), 8) = ${last8.slice(-8)} AND conteudo = ${textoEco}
+                      AND created_at > now() - interval '15 minutes'
+                    ORDER BY created_at DESC LIMIT 1)
+      RETURNING id::text`).catch((err) => { console.error("[WA-PhoneOut] dedup por conteúdo falhou:", err); return []; });
+    if (ecoRows.length) {
+      console.log(`[WA-PhoneOut] Dedup: eco do envio ${ecoRows[0].id} do CRM, não grava de novo`);
+      return;
+    }
+  }
+
+  /* Quem escreveu no celular: o dono do número, se for uma PESSOA. Sem isto a mensagem entrava sem
+     autor e a resposta humana pelo celular era invisível para "humano respondeu" (o agente seguia
+     falando por cima). Número de agente ou compartilhado (sem dono) não assina; a marca
+     `enviadoPeloCelular` ainda conta como resposta humana. */
+  let enviadoPorId: string | null = null;
+  if (sessaoId) {
+    const [dono] = await db.execute<{ id: string }>(rawSql`
+      SELECT u.id::text FROM whatsapp_sessao s JOIN usuarios u ON u.id = s.usuario_id
+       WHERE s.id = ${sessaoId}::uuid AND s.organizacao_id = ${organizacaoId}::uuid AND u.organizacao_id = ${organizacaoId}::uuid
+         AND u.tipo <> 'agente' AND u.agente_id IS NULL LIMIT 1`).catch(() => []);
+    enviadoPorId = dono?.id ?? null;
+  }
+
   // Find or create contato (not lead)
   const contato = await findOrCreateContato({
     phone, normalized, last8, organizacaoId, sessaoId: sessaoId || null,
@@ -566,6 +599,8 @@ async function handlePhoneOutgoing(data: {
     uazapiMessageId: message.id || null,
     status: "sent",
     statusAt: new Date(timestamp * 1000),
+    enviadoPorId,
+    dados: { enviadoPeloCelular: true },
   });
 
   // Update contato preview
