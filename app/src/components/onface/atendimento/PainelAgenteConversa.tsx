@@ -2,8 +2,8 @@
 
 /* Gaveta "Agente nesta conversa": estado completo, ações, retomadas, contexto e memória.
  * Aberta pelo botão IA do Atendimento. Lê /atribuicoes/conversa/:contatoId (atribuição +
- * retomadas pendentes), /contexto e /memoria; todo botão chama a rota de operação e
- * recarrega do servidor, então o que se vê é o que persistiu. */
+ * retomadas pendentes), /contexto, /memoria e os casos de aprovação da conversa (ai_cases);
+ * todo botão chama a rota de operação e recarrega do servidor, então o que se vê é o que persistiu. */
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -12,13 +12,17 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
-  AO, FormDelegar, SeloEstadoAgente, AUTONOMIAS, api, enviar, linkExecucao, quando,
+  AO, AprovacoesPendentes, FormDelegar, SeloEstadoAgente, AUTONOMIAS, api, enviar, linkExecucao, quando, rotuloMotivo, useAprovacoesDaConversa,
   type AtribuicaoOp, type CompromissoOp,
 } from "./agente-operacao";
 
 type Fato = { id: string; tipo: string; chave: string; valor: string; fonte: string; confirmado: boolean; status: string };
 type Contexto = { texto: string; secoes: { titulo?: string; nome?: string }[]; tokensAprox: number };
-type Estado = { estado: string; motivo: string; aviso: string | null; semResposta: string | null; agente: { id: string | null; nome: string } | null };
+type Estado = {
+  estado: string; motivo: string; aviso: string | null; semResposta: string | null; agente: { id: string | null; nome: string } | null;
+  /** Atribuição como a rota /ia devolve: traz o NOME de quem está com a conversa (`humano`). */
+  atribuicao?: { humano: string | null; motivoEstado: string | null } | null;
+};
 
 const Secao = ({ titulo, children }: { titulo: string; children: React.ReactNode }) => (
   <section className="flex flex-col gap-2 border-t border-linha pt-4">
@@ -53,6 +57,8 @@ export function PainelAgenteConversa({ contatoId, aberto, aoFechar, estado, aoMu
   const [editando, setEditando] = React.useState<{ id: string; valor: string } | null>(null);
   const [excluindo, setExcluindo] = React.useState<string | null>(null);
   const [reagendando, setReagendando] = React.useState<{ id: string; quando: string } | null>(null);
+  const aprov = useAprovacoesDaConversa(contatoId, aberto);
+  const recarregarAprov = aprov.recarregar;
 
   const carregar = React.useCallback(async () => {
     if (!contatoId) return;
@@ -63,7 +69,8 @@ export function PainelAgenteConversa({ contatoId, aberto, aoFechar, estado, aoMu
       ]);
       setAtrib(a.atribuicao); setComp(a.compromissos ?? []); setFatos(m.fatos);
     } catch (e) { toast.error((e as Error).message); } finally { setCarregando(false); }
-  }, [contatoId]);
+    void recarregarAprov();
+  }, [contatoId, recarregarAprov]);
 
   React.useEffect(() => {
     if (!aberto) return;
@@ -127,8 +134,8 @@ export function PainelAgenteConversa({ contatoId, aberto, aoFechar, estado, aoMu
             <>
               <div className="flex flex-col gap-2" data-testid="agente-estado">
                 <div className="flex flex-wrap items-center gap-2">
-                  <SeloEstadoAgente estado={st} />
-                  {(at?.agente ?? estado?.agente?.nome) && <strong className="text-corpo text-tinta">{at?.agente ?? estado?.agente?.nome}</strong>}
+                  <SeloEstadoAgente estado={st} conversa={{ humano: estado?.atribuicao?.humano ?? null, motivo: at?.motivoEstado ?? estado?.atribuicao?.motivoEstado ?? null }} />
+                  {(at?.agente ?? estado?.agente?.nome) && <span className="text-micro text-tinta-suave">Agente: <strong className="text-tinta">{at?.agente ?? estado?.agente?.nome}</strong></span>}
                 </div>
                 {estado?.motivo && <p className="text-corpo text-tinta-suave">{estado.motivo}</p>}
                 {estado?.aviso && <p className="text-corpo text-tinta-suave">{estado.aviso}</p>}
@@ -143,12 +150,20 @@ export function PainelAgenteConversa({ contatoId, aberto, aoFechar, estado, aoMu
                 )}
               </div>
 
-              {st === "humano" && vivo && (
+              {vivo && (st === "humano" || at?.resumoHandoff) && (
                 <div className="rounded-lg border border-linha bg-superficie-alt p-3" data-testid="agente-handoff">
-                  <h3 className="text-corpo font-semibold text-tinta">Resumo da passagem</h3>
+                  <h3 className="text-corpo font-semibold text-tinta">{st === "humano" ? "Resumo da passagem" : "Resumo da última passagem"}</h3>
                   <p className="mt-1 whitespace-pre-wrap text-corpo text-tinta">{at?.resumoHandoff || "O agente não deixou resumo. Veja o contexto e a memória abaixo."}</p>
-                  {at?.motivoEstado && <p className="mt-2 text-micro text-tinta-suave">Motivo: {at.motivoEstado}</p>}
+                  {st === "humano" && at?.motivoEstado && <p className="mt-2 text-micro text-tinta-suave">Motivo: {rotuloMotivo(at.motivoEstado)}</p>}
                 </div>
+              )}
+
+              {/* Aprovações pendentes: o agente preparou e espera uma pessoa decidir. */}
+              {(aprov.erro || (aprov.casos?.length ?? 0) > 0) && (
+                <section className="flex flex-col gap-2" aria-label="Aprovações pendentes">
+                  <h3 className="text-corpo font-semibold text-tinta">Aguardando sua aprovação{aprov.casos?.length ? ` (${aprov.casos.length})` : ""}</h3>
+                  <AprovacoesPendentes casos={aprov.casos} erro={aprov.erro} aoDecidir={async () => { await carregar(); aoMudar(); }} />
+                </section>
               )}
 
               {/* Ações */}
