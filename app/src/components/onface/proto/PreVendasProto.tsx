@@ -32,6 +32,7 @@ import type { AcoesPreVendas } from "../vendas/PreVendas";
 import { PreVendasLiga } from "./PreVendasLiga";
 import { PecasLiga } from "./PecasLiga";
 import { levarParametros } from "./rota-do-desenho";
+import { guardarVisao, lerVisao, restaurarRolagem } from "./memoria-da-visao";
 import { usePecas } from "./pecas-host";
 import {
   intencoesDoPatch, motivoDeDesqualificacao, motivoDeNutricao,
@@ -381,10 +382,35 @@ export class PecasLigadas extends PecasLiga {
       });
       if (id) this.carregarDetalhe(id);
     }
+    /* Fechou de propósito? O voltar não deve reabrir o que a pessoa fechou.
+       A gaveta fecha por vários caminhos (Esc, clique fora, botão) e todos
+       terminam em `detalhe: false`: observar o estado cobre todos, inclusive
+       o próximo que alguém criar. */
+    if (prevState && prevState.detalhe && !(this as any).state.detalhe) guardarVisao({ peca: null });
+  }
+
+  /* Chegou nesta entrada do histórico — inclusive voltando: reabre a ficha
+     que estava aberta e devolve a rolagem de dentro da coluna.
+     
+     No tique seguinte, porque a gaveta lê o lead da LISTA, e a lista chega
+     com os dados depois da montagem. */
+  componentDidMount() {
+    (super.componentDidMount as any)?.call(this);
+    const guardada = lerVisao().peca;
+    if (guardada?.nome === "detalhe" && guardada.id) {
+      const id = guardada.id;
+      setTimeout(() => { if (!(this as any).state?.detalhe) this.abrirPeca("detalhe", id); }, 0);
+    }
+    restaurarRolagem();
   }
 
   abrirPeca(peca: string, leadId: string) {
     (super.abrirPeca as any).call(this, peca, leadId);
+    /* A FICHA ABERTA entra na entrada atual do histórico, e o voltar a reabre.
+       Esta gaveta é estado desta classe (`detalhe`/`detalheId`), não do
+       `PecasHost` — então ela guarda a si mesma. Sair dela para o lead, a
+       empresa ou o Atendimento e voltar devolvia a tela sem a ficha. */
+    if (peca === "detalhe" && leadId) guardarVisao({ peca: { nome: "detalhe", id: leadId } });
     if (peca === "detalhe" && leadId) this.carregarDetalhe(leadId);
     /* O gerado (PecasLiga.abrirPeca) dá `return` no ramo "cadencia" ANTES da linha que carrega a
        lista (código morto logo abaixo): só o picker interno da gaveta carregava. Aberta de fora
