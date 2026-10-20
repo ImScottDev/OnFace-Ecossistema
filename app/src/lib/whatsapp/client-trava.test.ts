@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { checarAllowlist, destinatarioPermitido, ROTAS_COM_DESTINO, ROTAS_SO_LEITURA } from "./client";
+import { avisoAllowlistVazia, checarAllowlist, destinatarioPermitido, ROTAS_COM_DESTINO, ROTAS_SO_LEITURA } from "./client";
 
 const LISTA = ["5511999998888"];
 const corpo = (phone: string) => ({ method: "POST", body: JSON.stringify({ Phone: phone, ChatPhone: phone }) });
@@ -70,4 +70,14 @@ test("nenhum outro arquivo do app fala com o wuzapi fora do client.ts", () => {
   };
   varrer(raiz);
   assert.deepEqual(achados, [], "envio ao WhatsApp só pelo client.ts (tem a trava)");
+});
+
+test("allowlist vazia em produção/homologação grita no boot (e só em produção)", () => {
+  const vazia = { NODE_ENV: "production", WHATSAPP_ALLOWLIST: "" };
+  assert.match(avisoAllowlistVazia(vazia, "https://dev.crm.callface.io")!, /WHATSAPP_ALLOWLIST vazia em https:\/\/dev\.crm\.callface\.io/);
+  assert.match(avisoAllowlistVazia({ NODE_ENV: "production" })!, /NENHUM destino está travado/);
+  // Lista só com lixo (vírgula, espaço) é lista vazia: a trava não bloqueia nada.
+  assert.ok(avisoAllowlistVazia({ NODE_ENV: "production", WHATSAPP_ALLOWLIST: " , " }));
+  assert.equal(avisoAllowlistVazia({ NODE_ENV: "production", WHATSAPP_ALLOWLIST: LISTA[0] }), null);
+  assert.equal(avisoAllowlistVazia({ NODE_ENV: "development", WHATSAPP_ALLOWLIST: "" }), null, "dev local não manda nada de verdade");
 });

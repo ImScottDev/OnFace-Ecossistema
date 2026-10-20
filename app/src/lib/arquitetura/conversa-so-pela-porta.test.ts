@@ -70,8 +70,8 @@ const SEM_A_PORTA: Record<string, string> = {
   "src/lib/ai-platform/tools/registry.ts": "ferramenta de agente: lê só a conversa do contexto da execução (ctx.contatoId)",
   "src/lib/atendimento/ia-conversa.ts": "estado da IA; as duas rotas que o chamam checam a porta antes",
   "src/lib/atendimento/lead-da-conversa.ts": "casamento por telefone e checagem da conversa irmã do lead (identidade, nunca o texto da conversa)",
-  // Ingestão.
-  "src/worker/index.ts": "worker de ingestão e envio: grava e despacha mensagem, não responde a usuário",
+  // Ingestão: `src/worker/index.ts` saiu desta lista em 20/10/2026 — o rodízio de
+  // número compartilhado passou a chamar `atendentesDoNumero` da porta.
   // vendas/**: a ficha do prospect e a linha do tempo passaram pela porta em 14/10
   // (sessaoPrivada e condicaoComunicacaoNaoPrivada). Esta última só lê data.
   "src/lib/vendas/prospeccao.ts": "só a data da última mensagem recebida do lead (sem texto)",

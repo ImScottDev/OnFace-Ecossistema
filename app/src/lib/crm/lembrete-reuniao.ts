@@ -14,7 +14,8 @@
  */
 import { db } from "@/lib/db";
 import { reunioes, leads, usuarios, whatsappSessao, whatsappMensagens } from "@/lib/db/schema";
-import { and, eq, gte, lte, isNull, desc } from "drizzle-orm";
+import { and, eq, gte, lte, isNull } from "drizzle-orm";
+import { escolherNumeroAutomatico } from "@/lib/whatsapp/uso-automatico";
 import { whatsappOutgoingQueue } from "@/lib/queue";
 import { normalizePhone } from "@/lib/whatsapp/phone-utils";
 import { conversaParaEnvio } from "@/lib/atendimento/garantir-conversa";
@@ -23,14 +24,21 @@ function firstName(nome: string | null | undefined): string {
   return (nome || "").trim().split(/\s+/)[0] || "";
 }
 
+/**
+ * Por qual número o lembrete sai. Antes era "o PRIMEIRO número do responsável",
+ * sem olhar privacidade: o lembrete podia sair pelo WhatsApp PESSOAL de quem
+ * conduz a reunião. Agora passa pela regra única de uso automático
+ * (`lib/whatsapp/uso-automatico.ts`): pool operacional primeiro, número privado
+ * nunca, e o fallback do responsável mantém o lembrete saindo enquanto nenhum
+ * número estiver marcado como operacional. `null` = sem número: segue como
+ * antes, pelo token do ambiente, em vez de o lembrete sumir.
+ */
 async function resolveSessaoResponsavel(organizacaoId: string, responsavelId: string | null): Promise<string | null> {
-  if (!responsavelId) return null;
-  const [sessao] = await db.select({ id: whatsappSessao.id })
-    .from(whatsappSessao)
-    .where(and(eq(whatsappSessao.organizacaoId, organizacaoId), eq(whatsappSessao.usuarioId, responsavelId)))
-    .orderBy(desc(whatsappSessao.isDefault))
-    .limit(1);
-  return sessao?.id ?? null;
+  const numeros = await db.select({
+    id: whatsappSessao.id, usuarioId: whatsappSessao.usuarioId, privado: whatsappSessao.privado,
+    operacional: whatsappSessao.operacional, status: whatsappSessao.status, isDefault: whatsappSessao.isDefault,
+  }).from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId));
+  return escolherNumeroAutomatico(numeros, responsavelId);
 }
 
 export async function enviarLembretesReunioes30min(): Promise<{ enviados: number; falhados: number }> {

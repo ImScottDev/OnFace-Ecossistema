@@ -117,6 +117,58 @@ export async function marcarOperacional(organizacaoId: string, sessaoId: string,
     .where(and(eq(whatsappSessao.id, sessaoId), eq(whatsappSessao.organizacaoId, organizacaoId)));
 }
 
+/** Número candidato à escolha automática (linha de `whatsapp_sessao`, só o que decide). */
+export interface CandidatoDeNumero {
+  id: string;
+  usuarioId?: string | null;
+  privado?: boolean | null;
+  operacional?: boolean | null;
+  status?: string | null;
+  isDefault?: boolean | null;
+}
+
+/**
+ * Escolha AUTOMÁTICA de número (nenhuma pessoa apontou o remetente): a regra
+ * única para quem só tem a organização e o responsável na mão. Ordem:
+ *
+ *   1. número OPERACIONAL conectado do responsável (o padrão dele primeiro);
+ *   2. qualquer número operacional conectado da organização (padrão primeiro);
+ *   3. FALLBACK — número não privado do responsável, conectado e depois
+ *      qualquer um, que é exatamente o que o lembrete de reunião fazia antes.
+ *
+ * Número PRIVADO nunca entra: automática é a máquina falando, e ela não fala
+ * pelo WhatsApp pessoal de ninguém (escolha explícita pelo dono continua em
+ * `escolherSessao`, com `preferidaId`).
+ *
+ * O passo 3 existe porque em 20/10/2026 NENHUM número de produção está marcado
+ * como operacional: sem fallback, o lembrete de reunião pararia de sair no dia
+ * em que esta regra entrou — e lembrete que some é pior que lembrete pelo
+ * número errado. Quando a operação marcar o pool (Ajustes › WhatsApp), o passo
+ * 1/2 passa a ganhar sozinho e o fallback deixa de ser usado; ele fica como
+ * rede, não como caminho normal.
+ *
+ * Devolve `null` quando não há número nenhum — quem chama decide o que fazer
+ * (o lembrete segue sem `sessaoId`, como antes).
+ */
+export function escolherNumeroAutomatico(
+  numeros: CandidatoDeNumero[],
+  responsavelId: string | null | undefined,
+): string | null {
+  const naoPrivados = numeros.filter((n) => !n.privado);
+  const conectados = naoPrivados.filter((n) => n.status === "connected");
+  const padraoPrimeiro = (lista: CandidatoDeNumero[]) => lista.find((n) => n.isDefault) ?? lista[0] ?? null;
+  const doResponsavel = (lista: CandidatoDeNumero[]) =>
+    responsavelId ? lista.filter((n) => n.usuarioId === responsavelId) : [];
+  const operacionais = conectados.filter((n) => n.operacional);
+
+  const escolhido =
+    padraoPrimeiro(doResponsavel(operacionais)) ??
+    padraoPrimeiro(operacionais) ??
+    padraoPrimeiro(doResponsavel(conectados)) ??
+    padraoPrimeiro(doResponsavel(naoPrivados));
+  return escolhido?.id ?? null;
+}
+
 /**
  * Agente preso ao POOL operacional (`guardrail_config.canais.pool = "operacional"`):
  * atende e abre conversa só nos números operacionais, em vez de um número fixo.

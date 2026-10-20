@@ -40,6 +40,22 @@ const ALLOWLIST = (process.env.WHATSAPP_ALLOWLIST || "")
   .map(n => n.replace(/\D/g, ""))
   .filter(Boolean);
 
+/**
+ * A allowlist é FAIL-OPEN de propósito (produção não tem trava de destino), e
+ * por isso o esquecimento dela não aparece em lugar nenhum: homologação roda com
+ * uma cópia do banco de produção, então sem `WHATSAPP_ALLOWLIST` um teste manda
+ * mensagem de verdade para o cliente de verdade. Este aviso só FALA; não muda
+ * uma linha do envio. Devolve a frase, ou `null` quando não há o que avisar.
+ */
+export function avisoAllowlistVazia(
+  env: { NODE_ENV?: string; WHATSAPP_ALLOWLIST?: string } = process.env,
+  onde = "",
+): string | null {
+  if (env.NODE_ENV !== "production") return null; // dev local não manda nada de verdade
+  if ((env.WHATSAPP_ALLOWLIST || "").replace(/\D/g, "")) return null;
+  return `WHATSAPP_ALLOWLIST vazia${onde ? ` em ${onde}` : ""}: NENHUM destino está travado — todo envio de WhatsApp sai para o número real do cliente. Em homologação, preencha WHATSAPP_ALLOWLIST antes de mexer no banco cópia.`;
+}
+
 /** Últimos 8 dígitos: ignora DDI e o nono dígito, que variam na mesma linha. */
 function nucleoDoNumero(phone: string): string {
   return phone.replace(/\D/g, "").slice(-8);

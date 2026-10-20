@@ -222,14 +222,32 @@ async function findOrCreateContato(data: {
       if (sessaoTipo === "pessoal" && sess.usuarioId) {
         responsavelId = sess.usuarioId;
       } else if (sessaoTipo === "compartilhada") {
-        if (assignStrategy === "round_robin") {
-          // Get all active users, find who has fewest recent assignments
-          const activeUsers = await db.select({ id: usuarios.id })
-            .from(usuarios)
-            .where(and(eq(usuarios.organizacaoId, organizacaoId), eq(usuarios.ativo, true)))
-            .limit(50);
-          if (activeUsers.length > 0) {
-            // Simple round-robin: count contatos per user, pick lowest
+        // `round_robin` e `carga` são a mesma distribuição por menor carga; muda
+        // só o que se conta (carga = conversas ainda sem lead).
+        if (assignStrategy === "round_robin" || assignStrategy === "carga") {
+          /* O rodízio escolhia entre TODOS os usuários ativos da organização:
+             caíam dentro os agentes de IA (usuarios.tipo = 'agente', que não
+             abrem tela) e gente sem acesso àquele número — recebia uma conversa
+             que a porta (lib/whatsapp/acesso) não deixa ela abrir. Agora só quem
+             pode ATENDER por este número. */
+          const { atendentesDoNumero } = await import("../lib/whatsapp/acesso");
+          const comAcesso = await atendentesDoNumero(organizacaoId, sessaoId);
+          /* Fallback: número compartilhado sem NENHUM acesso concedido continua
+             distribuindo entre as pessoas ativas (nunca agentes), como antes.
+             Deixar `responsavel_id` nulo aqui esconderia a conversa de todo
+             mundo — conversa COM número e sem responsável não entra na fila
+             aberta da organização (ver `filaAberta` em lib/whatsapp/acesso). */
+          const candidatos = comAcesso.length
+            ? comAcesso
+            : (await db.select({ id: usuarios.id })
+                .from(usuarios)
+                .where(and(
+                  eq(usuarios.organizacaoId, organizacaoId),
+                  eq(usuarios.ativo, true),
+                  rawSql`${usuarios.tipo} <> 'agente'`,
+                ))
+                .limit(50)).map(u => u.id);
+          if (candidatos.length > 0) {
             const counts = await db.select({
               responsavelId: contatos.responsavelId,
               cnt: drizzleCount(),
@@ -238,41 +256,15 @@ async function findOrCreateContato(data: {
               .where(and(
                 eq(contatos.organizacaoId, organizacaoId),
                 eq(contatos.canal, "whatsapp"),
+                ...(assignStrategy === "carga" ? [isNull(contatos.leadId)] : []),
               ))
               .groupBy(contatos.responsavelId);
             const countMap = new Map(counts.map(c => [c.responsavelId, Number(c.cnt)]));
             let minCount = Infinity;
-            let minUser = activeUsers[0].id;
-            for (const u of activeUsers) {
-              const c = countMap.get(u.id) || 0;
-              if (c < minCount) { minCount = c; minUser = u.id; }
-            }
-            responsavelId = minUser;
-          }
-        } else if (assignStrategy === "carga") {
-          // Same as round_robin for now (both use load-based)
-          const activeUsers = await db.select({ id: usuarios.id })
-            .from(usuarios)
-            .where(and(eq(usuarios.organizacaoId, organizacaoId), eq(usuarios.ativo, true)))
-            .limit(50);
-          if (activeUsers.length > 0) {
-            const counts = await db.select({
-              responsavelId: contatos.responsavelId,
-              cnt: drizzleCount(),
-            })
-              .from(contatos)
-              .where(and(
-                eq(contatos.organizacaoId, organizacaoId),
-                eq(contatos.canal, "whatsapp"),
-                isNull(contatos.leadId), // carga: only unresolved contacts
-              ))
-              .groupBy(contatos.responsavelId);
-            const countMap = new Map(counts.map(c => [c.responsavelId, Number(c.cnt)]));
-            let minCount = Infinity;
-            let minUser = activeUsers[0].id;
-            for (const u of activeUsers) {
-              const c = countMap.get(u.id) || 0;
-              if (c < minCount) { minCount = c; minUser = u.id; }
+            let minUser = candidatos[0];
+            for (const id of candidatos) {
+              const c = countMap.get(id) || 0;
+              if (c < minCount) { minCount = c; minUser = id; }
             }
             responsavelId = minUser;
           }
@@ -4577,3 +4569,11 @@ process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
 console.log("[Worker] All workers started successfully");
+
+// Trava de destino do WhatsApp: fail-open, então o esquecimento tem que gritar no boot.
+void (async () => {
+  const { avisoAllowlistVazia } = await import("../lib/whatsapp/client");
+  const { appUrl } = await import("../lib/app-url");
+  const aviso = avisoAllowlistVazia(process.env, appUrl());
+  if (aviso) console.warn(`[Worker] ATENÇÃO: ${aviso}`);
+})();

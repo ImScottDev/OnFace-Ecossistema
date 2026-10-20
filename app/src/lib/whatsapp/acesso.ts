@@ -327,6 +327,41 @@ export function podeAdministrarNumero(
   return false;
 }
 
+/**
+ * Quem pode ATENDER por um número, para o rodízio/carga de número compartilhado.
+ *
+ * Regra pura (os fatos vêm do banco em `atendentesDoNumero`): pessoa ATIVA — e
+ * pessoa mesmo, nunca agente de IA (`usuarios.tipo = 'agente'`, que não abre
+ * tela e não atende) — que é dona do número ou recebeu acesso a ele
+ * (`whatsapp_sessao_acesso`). É o mesmo par de papéis de `sessaoMinha`, do lado
+ * de quem RECEBE a conversa.
+ */
+export function podeAtenderPeloNumero(
+  usuario: { ativo?: boolean | null; tipo?: string | null },
+  vinculo: { ehDono: boolean; temAcesso: boolean },
+): boolean {
+  return usuario.ativo !== false && usuario.tipo !== "agente" && (vinculo.ehDono || vinculo.temAcesso);
+}
+
+/**
+ * Ids de quem pode atender por este número, na ordem de criação (estável).
+ * Lista vazia = número compartilhado sem nenhum acesso concedido; quem chama
+ * decide o fallback (ver o rodízio no worker).
+ */
+export async function atendentesDoNumero(organizacaoId: string, sessaoId: string): Promise<string[]> {
+  const linhas = await db.execute<{ id: string; ativo: boolean; tipo: string; dono: boolean; acesso: boolean }>(sql`
+    SELECT u.id::text, u.ativo, u.tipo,
+           (s.usuario_id = u.id) AS dono,
+           EXISTS (SELECT 1 FROM whatsapp_sessao_acesso a WHERE a.sessao_id = s.id AND a.usuario_id = u.id) AS acesso
+      FROM usuarios u
+      JOIN whatsapp_sessao s ON s.id = ${sessaoId}::uuid AND s.organizacao_id = ${organizacaoId}::uuid
+     WHERE u.organizacao_id = ${organizacaoId}::uuid
+     ORDER BY u.created_at`);
+  return linhas
+    .filter((l) => podeAtenderPeloNumero(l, { ehDono: l.dono === true, temAcesso: l.acesso === true }))
+    .map((l) => l.id);
+}
+
 /** Resposta padrão — 404 pra não confirmar a existência de conversa alheia. */
 export function respostaSemAcesso() {
   return Response.json({ error: "Conversa nao encontrada" }, { status: 404 });
