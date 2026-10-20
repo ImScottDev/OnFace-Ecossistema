@@ -12,6 +12,9 @@ import { lerPadroesDeAgentes } from "@/lib/agentes/handover";
 const app = new Hono();
 const GESTAO = ["admin", "gerente", "super_admin"];
 
+/** Lista de valores aceitos para um critério; nula ou vazia = qualquer valor. */
+const criterio = z.array(z.string().trim().min(1).max(200)).max(50).nullish();
+
 const regraSchema = z.object({
   id: z.string().uuid().optional(),
   nome: z.string().min(1),
@@ -25,6 +28,15 @@ const regraSchema = z.object({
   humanoDevolucaoId: z.string().uuid().nullish(),
   prioridade: z.number().int().min(0).max(1000).default(100),
   ativo: z.boolean().default(true),
+  // Migration 0131: critérios de atribuição (vazio = qualquer lead) e o
+  // número operacional de onde o lead deve ser trabalhado.
+  descricao: z.string().max(500).nullish(),
+  origem: criterio,
+  utmSource: criterio,
+  utmCampaign: criterio,
+  metaCampaignIds: criterio,
+  formulario: criterio,
+  sessaoWhatsappId: z.string().uuid().nullish(),
 });
 
 const padroesSchema = z.object({
