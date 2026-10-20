@@ -1008,6 +1008,6 @@ export interface OpcoesInspetor {
   etapas: { lead: { valor: string; rotulo: string }[]; negocio: { valor: string; rotulo: string }[] };
   cadencias: { id: string; nome: string; publicada: boolean }[];
   templatesWhatsapp: { id: string; nome: string }[];
-  sessoesWhatsapp: { id: string; nome: string; conectada: boolean }[];
+  sessoesWhatsapp: { id: string; nome: string; conectada: boolean; operacional?: boolean }[];
   agentesIa: { id: string; nome: string }[];
 }

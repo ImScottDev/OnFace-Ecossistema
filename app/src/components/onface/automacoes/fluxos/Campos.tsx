@@ -272,7 +272,7 @@ export function Campo({ campo, valor, aoMudar, ctx, idBase, pendencia }: {
       }
       case "sessao_whatsapp": {
         const lista = ctx.opcoes?.sessoesWhatsapp ?? [];
-        return <Selecao id={id} valor={valor} aoMudar={aoMudar} ctx={ctx} vazio="Automático" opcoes={lista.map((x) => ({ valor: x.id, rotulo: x.conectada ? x.nome : `${x.nome} (desconectado)` }))} />;
+        return <Selecao id={id} valor={valor} aoMudar={aoMudar} ctx={ctx} vazio="Automático" opcoes={lista.map((x) => ({ valor: x.id, rotulo: `${x.nome}${x.operacional ? " (operacional)" : ""}${x.conectada ? "" : " (desconectado)"}` }))} />;
       }
       case "agente_ia": {
         const lista = ctx.opcoes?.agentesIa ?? [];

@@ -663,3 +663,6 @@ Frontend:
   enfileirou (e `mensagemIds`), em vez de sempre `null`. `ia_gerar_texto` e
   `ia_classificar` rodam o agente SEM ferramentas (antes: todas as da versão, só
   com o envio suprimido) e com contato/lead do registro no run.
+- 20/10/2026 — `OpcoesInspetor.sessoesWhatsapp[].operacional?: boolean` (aditivo).
+  `opcoesInspetor` deixa de listar número privado (nunca é canal de automação) e
+  marca os números do pool operacional (migration 0131).

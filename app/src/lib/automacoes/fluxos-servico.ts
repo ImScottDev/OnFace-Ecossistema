@@ -235,7 +235,8 @@ export async function opcoesInspetor(organizacaoId: string, userId?: string): Pr
     db.select({ id: cadenceDefinitions.id, nome: cadenceDefinitions.nome, status: cadenceDefinitions.status, ativo: cadenceDefinitions.ativo, visibility: cadenceDefinitions.visibility, ownerId: cadenceDefinitions.ownerId }).from(cadenceDefinitions).where(eq(cadenceDefinitions.organizacaoId, organizacaoId)).orderBy(cadenceDefinitions.nome),
     db.select({ id: whatsappTemplates.id, nome: whatsappTemplates.nome }).from(whatsappTemplates).where(and(eq(whatsappTemplates.organizacaoId, organizacaoId), eq(whatsappTemplates.ativo, true))).orderBy(whatsappTemplates.nome),
     db.select({ id: aiAgents.id, nome: aiAgents.nome }).from(aiAgents).where(and(eq(aiAgents.organizacaoId, organizacaoId), isNull(aiAgents.archivedAt))).orderBy(aiAgents.nome),
-    db.select({ id: whatsappSessao.id, label: whatsappSessao.label, nome: whatsappSessao.sessionName, status: whatsappSessao.status }).from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId)).orderBy(whatsappSessao.sessionName),
+    // Número privado nunca é canal de automação (lib/whatsapp/uso-automatico.ts): nem aparece para escolha.
+    db.select({ id: whatsappSessao.id, label: whatsappSessao.label, nome: whatsappSessao.sessionName, status: whatsappSessao.status, operacional: whatsappSessao.operacional }).from(whatsappSessao).where(and(eq(whatsappSessao.organizacaoId, organizacaoId), eq(whatsappSessao.privado, false))).orderBy(whatsappSessao.sessionName),
   ]);
   return {
     usuarios: us, tags,
@@ -247,7 +248,7 @@ export async function opcoesInspetor(organizacaoId: string, userId?: string): Pr
     // que o executor nunca poderia inscrever.
     cadencias: cads.filter((c) => c.visibility === "shared").map((c) => ({ id: c.id, nome: c.nome, publicada: c.status === "published" && c.ativo })),
     templatesWhatsapp: tpls, agentesIa: agentes,
-    sessoesWhatsapp: sessoes.map((x) => ({ id: x.id, nome: x.label || x.nome, conectada: x.status === "connected" })),
+    sessoesWhatsapp: sessoes.map((x) => ({ id: x.id, nome: x.label || x.nome, conectada: x.status === "connected", operacional: x.operacional })),
   };
 }
 
