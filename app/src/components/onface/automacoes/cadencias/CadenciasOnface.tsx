@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle, CirclePause, Clock, History, Info, Pencil, Play, Plus, Search, Send, UserPlus, X, XCircle,
 } from "lucide-react";
-import { EVENT_CATALOG, type FollowupGraph } from "@/components/crm2/automacoes/followup-types";
+import { AVISO_GATILHO_INVALIDO, EVENT_CATALOG, type FollowupGraph } from "@/components/crm2/automacoes/followup-types";
 import { createEmptyFollowupGraph } from "@/lib/ai-platform/followup/graph";
 import { legacyStepsToFollowupGraph } from "@/lib/ai-platform/followup/legacy";
 import type { CadenceStep } from "@/lib/cadencia/cadence-engine";
@@ -289,7 +289,9 @@ function ListaCadencias({ cadencias, loading, error, podeGerenciar, onNova, onEd
               <strong>{cd.nome}</strong>
               <span>{ENTIDADE[cd.entityType] ?? cd.entityType} · {cd.visibility === "personal" ? "Pessoal" : "Equipe"}{cd.ownerName ? ` · ${cd.ownerName}` : ""} · versão {cd.versao}{cd.publishedAt ? ` · publicada ${fmtData(cd.publishedAt)}` : ""}</span>
             </BotaoMotivo>
-            <span className="ofx-linha-exec">{EVENTO.get(evento) ?? evento}</span>
+            {/* Gatilho morto é dito na lista, não só no editor: quem olha a
+                lista precisa saber que aquela cadência nunca entrou. */}
+            <span className="ofx-linha-exec">{EVENTO.get(evento) ?? <span className="oa-dica oa-alerta" title={AVISO_GATILHO_INVALIDO}>{evento} · gatilho inválido</span>}</span>
             <span className="ofx-linha-estado"><span className={`oa-selo ${tom ? `oa-${tom}` : ""}`}>{rotulo}</span></span>
             <span className="ofx-linha-num">{cd.totalPassos === 1 ? "1 passo" : `${cd.totalPassos} passos`}</span>
             <span className="ofx-linha-num" title="Inscrições ativas ou aguardando">{emCurso} em curso</span>

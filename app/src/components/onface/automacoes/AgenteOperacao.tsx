@@ -15,7 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, ChevronDown, CircleAlert, Loader2, Lock, Play, Plus, RotateCcw, Send, ShieldCheck, Workflow } from "lucide-react";
-import { AGENT_EVENT_CATALOG } from "@/lib/ai/agent-studio";
+import { AGENT_TRIGGER_EVENTS } from "@/lib/ai/agent-studio";
 import type { VersaoDoEditor } from "@/lib/automacoes/agente-detalhe";
 import { BotaoMotivo, Radiogroup } from "@/components/onface/ds/escolha";
 import { Aviso, Interruptor, Secao, api, num, quando, useApi } from "./agente-pecas";
@@ -133,6 +133,7 @@ export function AbaGatilhos({ agenteId, events, onToggleEvento, prioridade, onPr
   const { dados, erro, carregando } = useApi<Gatilhos>(`/api/automacoes/agentes/${agenteId}/gatilhos`);
   const [criando, setCriando] = React.useState(false);
   const [fila, setFila] = React.useState<"" | "aguardando_aprovacao" | "humano">("");
+  const eventosMortos = events.filter((id) => !AGENT_TRIGGER_EVENTS.some((ev) => ev.id === id));
 
   async function criarFluxo() {
     setCriando(true);
@@ -150,7 +151,7 @@ export function AbaGatilhos({ agenteId, events, onToggleEvento, prioridade, onPr
     <>
       <Secao titulo="Eventos do agente" ajuda="Em produção, o agente publicado responde por conta própria só a estes eventos. Fluxos e pessoas também podem acioná-lo (abaixo).">
         <div className="age-eventos">
-          {AGENT_EVENT_CATALOG.map((ev) => {
+          {AGENT_TRIGGER_EVENTS.map((ev) => {
             const on = events.includes(ev.id);
             return (
               <button key={ev.id} type="button" className="age-evento" aria-pressed={on} disabled={travado} onClick={() => onToggleEvento(ev.id)}>
@@ -160,6 +161,27 @@ export function AbaGatilhos({ agenteId, events, onToggleEvento, prioridade, onPr
             );
           })}
         </div>
+        {/* Gatilho gravado que esta lista não oferece mais (ex.: `LeadCreated`,
+            que o preset Pré-vendas trazia, ou os `prospect.*` que nunca
+            existiram). Continua visível e desmarcável, em vez de desaparecer em
+            silêncio de uma versão que a pessoa configurou e publicou. */}
+        {eventosMortos.length ? (
+          <>
+            <Aviso tom="alerta">
+              {eventosMortos.length === 1 ? "Esta versão tem um gatilho que nunca dispara: " : "Esta versão tem gatilhos que nunca disparam: "}
+              <strong>{eventosMortos.join(", ")}</strong>. Nenhum chamador entrega esses eventos ao agente, então ele nunca acordou por eles.
+              Para “lead novo acorda o agente”, use “Criar fluxo de entrada” abaixo (gatilho de evento + bloco Agente: acionar). Desmarque-os e publique.
+            </Aviso>
+            <div className="age-eventos">
+              {eventosMortos.map((id) => (
+                <button key={id} type="button" className="age-evento" aria-pressed data-tom="alerta" disabled={travado} onClick={() => onToggleEvento(id)}>
+                  <span className="age-check"><Check size={11} strokeWidth={3} /></span>
+                  <span><strong>{id}</strong><span>Gatilho inválido. Clique para desmarcar.</span></span>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
         <div className="age-form" style={{ marginTop: 14, maxWidth: 260 }}>
           <label>Prioridade<input type="number" min={0} max={10000} value={prioridade} disabled={travado} onChange={(e) => onPrioridade(Math.min(10000, Math.max(0, Number(e.target.value) || 0)))} /></label>
           <span className="age-texto-fraco">Dois agentes publicados no mesmo evento: vence o de maior prioridade.</span>
@@ -325,8 +347,10 @@ export function AbaTestes({ agenteId, versoes, trabalho, rascunho, publicada, po
             </label>
             <label>Evento
               <select value={evento} onChange={(e) => setEvento(e.target.value)}>
-                {AGENT_EVENT_CATALOG.map((ev) => <option key={ev.id} value={ev.id}>{ev.nome}</option>)}
-                <option value="agent.retomada">Retomada combinada venceu</option>
+                {/* Só o que o runtime recebe de verdade: simular um evento que
+                    nenhum chamador entrega não prova nada. "agent.retomada"
+                    deixou de ser opção à parte porque entrou no catálogo. */}
+                {AGENT_TRIGGER_EVENTS.map((ev) => <option key={ev.id} value={ev.id}>{ev.nome}</option>)}
               </select>
             </label>
             <label>Contexto

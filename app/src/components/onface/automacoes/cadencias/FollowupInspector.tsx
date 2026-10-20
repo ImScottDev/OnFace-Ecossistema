@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, MousePointerClick, Plus, Trash2 } from "lucide-react";
-import { EVENT_CATALOG } from "@/components/crm2/automacoes/followup-types";
+import { AVISO_GATILHO_INVALIDO, EVENT_CATALOG, eventoDeCadenciaInvalido } from "@/components/crm2/automacoes/followup-types";
 import type { FollowupNode } from "@/lib/ai-platform/followup/graph";
 import {
   GRUPOS_VARIAVEIS_CADENCIA, SUGESTOES_CAMPO_CADENCIA, previaTexto, ROTULO_TIPO_NO,
@@ -26,7 +26,10 @@ export function FollowupInspector({ node, somenteLeitura, opcoes, onChange, onDe
   const text = (label: string, value: string, change: (v: string) => void, multiline = false) => <label className="ofx-campo"><span className="ofx-campo-rotulo">{label}</span>{multiline ? <textarea className={input} rows={4} value={value} disabled={somenteLeitura} onChange={(e) => change(e.target.value)} /> : <input className={input} value={value} disabled={somenteLeitura} onChange={(e) => change(e.target.value)} />}</label>;
   return <div className="ofc-inspector"><header className="ofc-inspector-header"><div><small>{ROTULO_TIPO_NO[node.type]}</small><h2>{node.label}</h2></div>{!somenteLeitura && <div className="ofc-insp-acoes"><button type="button" className="oa-icone" onClick={onDuplicate} aria-label="Duplicar passo" title="Duplicar passo"><Copy size={14} /></button>{node.type !== "trigger" && <button type="button" className="oa-icone ofx-menu-perigo" onClick={onDelete} aria-label="Excluir passo" title="Excluir passo"><Trash2 size={14} /></button>}</div>}</header><div className="ofc-inspector-fields">
     {text("Título no desenho", node.label, (label) => onChange({ ...node, label } as FollowupNode))}
-    {node.type === "trigger" && <label className="ofx-campo"><span className="ofx-campo-rotulo">Quando entra</span><select className={input} value={node.config.event} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, event: e.target.value })}>{EVENT_CATALOG.map((event) => <option key={event.id} value={event.id}>{event.nome}</option>)}</select></label>}
+    {/* O gatilho salvo que não chega mais continua no select, marcado: sem essa
+        opção o `value` não casaria nenhuma e o campo mostraria o primeiro item
+        da lista, mentindo sobre o que está gravado. */}
+    {node.type === "trigger" && <label className="ofx-campo"><span className="ofx-campo-rotulo">Quando entra</span><select className={input} value={node.config.event} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, event: e.target.value })}>{eventoDeCadenciaInvalido(node.config.event) && <option value={node.config.event}>{node.config.event} · gatilho inválido</option>}{EVENT_CATALOG.map((event) => <option key={event.id} value={event.id}>{event.nome}</option>)}</select>{eventoDeCadenciaInvalido(node.config.event) && <span className="oa-dica oa-alerta">{AVISO_GATILHO_INVALIDO}</span>}</label>}
     {node.type === "wait" && <WaitFields node={node} somenteLeitura={somenteLeitura} set={set} />}
     {node.type === "condition" && <ConditionFields node={node} somenteLeitura={somenteLeitura} set={set} opcoes={opcoes} />}
     {node.type === "ai_classify" && <ClassifyFields node={node} somenteLeitura={somenteLeitura} set={set} opcoes={opcoes} />}

@@ -54,27 +54,57 @@ export const AGENT_TOOL_CATALOG: AgentToolDefinition[] = [
   { id: "budget.read", nome: "Consultar orçamento", descricao: "Consulta limites e consumo mensal da organização.", categoria: "contexto", modo: "leitura", disponibilidade: "live" },
 ];
 
-export const AGENT_EVENT_CATALOG = [
-  { id: "conversation.message_received", nome: "Mensagem recebida", descricao: "Quando chega uma nova mensagem de um contato." },
-  { id: "LeadCreated", nome: "Lead criado", descricao: "Quando um lead novo é persistido no CRM." },
-  { id: "DealCreated", nome: "Oportunidade criada", descricao: "Quando uma nova negociação é criada." },
-  { id: "StageChanged", nome: "Etapa alterada", descricao: "Quando Lead, Negócio ou Oportunidade muda de etapa." },
-  { id: "TagAdded", nome: "Tag adicionada", descricao: "Quando uma tag é adicionada a uma entidade do CRM." },
-  { id: "TagRemoved", nome: "Tag removida", descricao: "Quando uma tag é removida de uma entidade do CRM." },
-  { id: "ProposalSent", nome: "Proposta enviada", descricao: "Quando uma proposta é enviada ao cliente." },
-  { id: "ProposalAccepted", nome: "Proposta aceita", descricao: "Quando o cliente aceita uma proposta." },
-  { id: "ProposalRejected", nome: "Proposta recusada", descricao: "Quando o cliente recusa uma proposta." },
-  { id: "DealWon", nome: "Venda ganha", descricao: "Quando a evidência de Won é validada." },
-  { id: "PaymentFailed", nome: "Pagamento falhou", descricao: "Quando uma tentativa de cobrança falha." },
-  { id: "PaymentCompleted", nome: "Pagamento confirmado", descricao: "Quando um pagamento é confirmado." },
-  { id: "ContractSigned", nome: "Contrato assinado", descricao: "Quando o contrato conclui a assinatura." },
-  { id: "CanonicalServiceActivated", nome: "Serviço ativado", descricao: "Quando o serviço canônico entra na operação." },
-  { id: "prospect.created", nome: "Prospect criado", descricao: "Quando um prospect entra na base outbound." },
-  { id: "prospect.response_received", nome: "Prospect respondeu", descricao: "Quando um prospect responde uma abordagem." },
-  { id: "lead.atribuido_ao_agente", nome: "Atendimento atribuído ao agente", descricao: "Quando uma automação, regra ou pessoa atribui o atendimento ao agente, inclusive colocando-o como responsável pelo lead, oportunidade ou conversa." },
-  { id: "agent.retomada", nome: "Retomada combinada venceu", descricao: "Quando chega o horário de uma retomada que o próprio agente agendou." },
-  { id: "cadence.step_due", nome: "Passo de cadência vencido", descricao: "Quando uma etapa de cadência está pronta para executar." },
-] as const;
+export interface AgentEventDefinition {
+  id: string;
+  nome: string;
+  descricao: string;
+  /**
+   * Quem recebe este evento DE VERDADE — a lista sai do consumidor, não do
+   * desejo de quem escreveu o catálogo:
+   *
+   *  - `"agente"`: chega em `executeAgent` como `input.eventType`, e lá o gate
+   *    `configuredEvents(version.triggerConfig).includes(input.eventType)`
+   *    (`lib/ai-platform/runtime/execute-agent.ts`) compara com os gatilhos da
+   *    versão. Só quatro eventos são passados assim por algum chamador.
+   *  - `"cadencia"`: é um fato do outbox que `dispatchAutomationEvent`
+   *    (`lib/automations/event-dispatcher.ts`) resolve via `eventMatches` até
+   *    uma inscrição.
+   *
+   * Evento sem nenhum dos dois não entra aqui. Era o defeito da auditoria de
+   * 20/10/2026: `prospect.created` e `prospect.response_received` não existiam
+   * em lugar nenhum do código, e os três internos do runtime de agente eram
+   * oferecidos à cadência, que nunca os recebe. Quem configurava salvava,
+   * nada acontecia, e nada avisava. A trava é
+   * `lib/arquitetura/gatilho-que-chega.test.ts`.
+   */
+  chega: readonly ("agente" | "cadencia")[];
+}
+
+export const AGENT_EVENT_CATALOG: readonly AgentEventDefinition[] = [
+  { id: "conversation.message_received", nome: "Mensagem recebida", descricao: "Quando chega uma nova mensagem de um contato.", chega: ["agente", "cadencia"] },
+  { id: "LeadCreated", nome: "Lead criado", descricao: "Quando um lead novo é persistido no CRM.", chega: ["cadencia"] },
+  { id: "DealCreated", nome: "Oportunidade criada", descricao: "Quando uma nova negociação é criada.", chega: ["cadencia"] },
+  { id: "StageChanged", nome: "Etapa alterada", descricao: "Quando Lead, Negócio ou Oportunidade muda de etapa.", chega: ["cadencia"] },
+  { id: "TagAdded", nome: "Tag adicionada", descricao: "Quando uma tag é adicionada a uma entidade do CRM.", chega: ["cadencia"] },
+  { id: "TagRemoved", nome: "Tag removida", descricao: "Quando uma tag é removida de uma entidade do CRM.", chega: ["cadencia"] },
+  { id: "ProposalSent", nome: "Proposta enviada", descricao: "Quando uma proposta é enviada ao cliente.", chega: ["cadencia"] },
+  { id: "ProposalAccepted", nome: "Proposta aceita", descricao: "Quando o cliente aceita uma proposta.", chega: ["cadencia"] },
+  { id: "ProposalRejected", nome: "Proposta recusada", descricao: "Quando o cliente recusa uma proposta.", chega: ["cadencia"] },
+  { id: "DealWon", nome: "Venda ganha", descricao: "Quando a evidência de Won é validada.", chega: ["cadencia"] },
+  { id: "PaymentFailed", nome: "Pagamento falhou", descricao: "Quando uma tentativa de cobrança falha.", chega: ["cadencia"] },
+  { id: "PaymentCompleted", nome: "Pagamento confirmado", descricao: "Quando um pagamento é confirmado.", chega: ["cadencia"] },
+  { id: "ContractSigned", nome: "Contrato assinado", descricao: "Quando o contrato conclui a assinatura.", chega: ["cadencia"] },
+  { id: "CanonicalServiceActivated", nome: "Serviço ativado", descricao: "Quando o serviço canônico entra na operação.", chega: ["cadencia"] },
+  { id: "lead.atribuido_ao_agente", nome: "Atendimento atribuído ao agente", descricao: "Quando uma automação, regra ou pessoa atribui o atendimento ao agente, inclusive colocando-o como responsável pelo lead, oportunidade ou conversa.", chega: ["agente"] },
+  { id: "agent.retomada", nome: "Retomada combinada venceu", descricao: "Quando chega o horário de uma retomada que o próprio agente agendou.", chega: ["agente"] },
+  { id: "cadence.step_due", nome: "Passo de cadência vencido", descricao: "Quando uma etapa de cadência está pronta para executar.", chega: ["agente"] },
+];
+
+/** O que a tela de Gatilhos do agente pode oferecer: só o que acorda agente. */
+export const AGENT_TRIGGER_EVENTS = AGENT_EVENT_CATALOG.filter((e) => e.chega.includes("agente"));
+
+/** O que o editor de cadência pode oferecer (além de "manual"): só o que o dispatcher resolve. */
+export const CADENCE_TRIGGER_EVENTS = AGENT_EVENT_CATALOG.filter((e) => e.chega.includes("cadencia"));
 
 export const AGENT_PURPOSES = [
   { id: "prospeccao", nome: "Prospecção", descricao: "Pesquisa, aborda e classifica prospects dentro das regras outbound." },
@@ -88,12 +118,21 @@ export const AGENT_PRESETS: Record<string, { prompt: string; tools: string[]; ev
   prospeccao: {
     prompt: "Você é um agente de prospecção da Callface. Analise o contexto disponível, personalize a abordagem sem inventar informações, classifique respostas e encaminhe para uma pessoa quando houver interesse, dúvida sensível ou pedido explícito de atendimento humano.",
     tools: ["context.read_contact", "context.read_conversation", "context.read_crm", "knowledge.search", "response.classify", "message.prepare", "handoff.request", "lead.update_status", "lead.qualify", "lead.tag", "activity.note", "meeting.schedule", "callface.call", "cadence.pause"],
-    events: ["prospect.response_received"],
+    // O preset só promete gatilho que acorda agente (AGENT_TRIGGER_EVENTS).
+    // `prospect.response_received` não existia no código: agente nascido do
+    // preset nascia com gatilho morto. Resposta de prospect chega como
+    // mensagem recebida, que é o evento real.
+    events: ["conversation.message_received"],
   },
   pre_vendas: {
     prompt: "Você é um agente de pré-vendas da Callface. Qualifique o contexto com clareza, não invente preço ou condição comercial e encaminhe para uma pessoa quando a conversa exigir decisão humana.",
     tools: ["context.read_contact", "context.read_conversation", "context.read_crm", "response.classify", "message.prepare", "handoff.request", "task.create", "lead.update_status", "lead.qualify", "lead.tag", "activity.note", "meeting.schedule", "callface.call", "cadence.pause"],
-    events: ["LeadCreated", "conversation.message_received"],
+    // `LeadCreated` saiu: é fato do outbox, nunca chega em `executeAgent`, e o
+    // preset prometia um gatilho que jamais disparava. "Lead novo acorda o
+    // agente" tem um caminho que funciona e que o preset não consegue montar
+    // sozinho: fluxo com gatilho de evento + bloco "Agente: acionar" (botão
+    // "Criar fluxo de entrada" na aba Gatilhos). O preset não promete isso.
+    events: ["conversation.message_received"],
   },
   atendimento: {
     prompt: "Você é um agente de atendimento da Callface. Responda de forma clara usando somente o contexto disponível, respeite os limites configurados e faça handoff sempre que não puder resolver com segurança.",

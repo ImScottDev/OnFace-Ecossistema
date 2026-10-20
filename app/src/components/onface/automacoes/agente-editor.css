@@ -119,6 +119,11 @@
 .age-evento span span { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.45; color: var(--of-tinta-3); }
 .age-check { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 1px; border-radius: 5px; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--of-linha-controle); color: var(--onface-white); }
 .age-evento[aria-pressed="true"] .age-check { background: var(--of-tinta-forte); box-shadow: none; }
+/* Variação do próprio `age-evento`: gatilho gravado que a lista não oferece
+   mais. Em coral para não se confundir com um evento legítimo ainda ligado. */
+.age-evento[data-tom="alerta"][aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--of-coral-marca); }
+.age-evento[data-tom="alerta"] strong { color: var(--of-coral-texto-forte); }
+.age-evento[data-tom="alerta"][aria-pressed="true"] .age-check { background: var(--of-coral-marca); }
 
 /* ── Conhecimento ── */
 .age-fontes { list-style: none; margin: 0 0 14px; padding: 0; border-radius: 12px; box-shadow: var(--of-anel); overflow: hidden; }

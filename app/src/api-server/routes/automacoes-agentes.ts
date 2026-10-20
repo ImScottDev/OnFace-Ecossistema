@@ -12,7 +12,7 @@ import { eq, and, count, desc, inArray, not } from "drizzle-orm";
 import { getCtx, exigirCtx } from "../compat.js";
 import { z } from "zod";
 import {
-  AGENT_EVENT_CATALOG,
+  AGENT_TRIGGER_EVENTS,
   AGENT_SYSTEM_SLUGS,
   AGENT_PURPOSES,
   AGENT_TOOL_CATALOG,
@@ -79,7 +79,7 @@ app.get("/automacoes/agentes", async (c) => {
 
 app.get("/automacoes/agentes/catalogo", async (c) => {
   await getCtx(c);
-  return c.json({ tools: AGENT_TOOL_CATALOG, events: AGENT_EVENT_CATALOG, purposes: AGENT_PURPOSES });
+  return c.json({ tools: AGENT_TOOL_CATALOG, events: AGENT_TRIGGER_EVENTS, purposes: AGENT_PURPOSES });
 });
 
 const versionSchema = z.object({

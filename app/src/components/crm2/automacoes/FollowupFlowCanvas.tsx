@@ -10,7 +10,7 @@ import "@xyflow/react/dist/style.css";
 import { AlertTriangle, Brain, Clock, Flag, GitBranch, PlayCircle, Send, Trash2 } from "lucide-react";
 import {
   branchesForNode, conditionForBranch, defaultConfigFor, makeNode, nodeSubtitle, priorityForBranch,
-  NODE_TYPE_META, EVENT_CATALOG, uid,
+  NODE_TYPE_META, EVENT_CATALOG, AVISO_GATILHO_INVALIDO, eventoDeCadenciaInvalido, uid,
   type FollowupNode, type FollowupNodeType,
 } from "./followup-types";
 import { toReactFlow, toFollowupNode, fromReactFlow, graphsEqual, type RFNode, type RFEdge, type RFNodeData } from "./followup-mappers";
@@ -260,9 +260,13 @@ function TriggerFields({ node, onConfig }: { node: Extract<FollowupNode, { type:
   return <>
     <Field label="Evento de entrada">
       <select className={input} value={node.config.event} onChange={(e) => onConfig({ ...node.config, event: e.target.value })}>
+        {/* Gatilho salvo que não chega mais fica marcado em vez de o select
+            pular calado para o primeiro item da lista. */}
+        {eventoDeCadenciaInvalido(node.config.event) && <option value={node.config.event}>{node.config.event} · gatilho inválido</option>}
         {EVENT_CATALOG.map((ev) => <option key={ev.id} value={ev.id}>{ev.nome}</option>)}
       </select>
     </Field>
+    {eventoDeCadenciaInvalido(node.config.event) ? <p className="text-[11px] leading-5 text-[#e0a89e]">{AVISO_GATILHO_INVALIDO}</p> : null}
     <p className="text-[11px] leading-5 text-[#98978d]">Ao publicar, eventos reais do CRM que correspondam a este gatilho criam uma execução idempotente. “Inscrição manual/API” continua disponível para operações iniciadas por uma pessoa.</p>
   </>;
 }

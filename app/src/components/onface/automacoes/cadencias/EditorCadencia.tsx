@@ -28,7 +28,7 @@ import {
   Save, Sparkles, Tag, Trash2,
 } from "lucide-react";
 import { ROTULO_ENTIDADE, type OpcoesInspetor, type TipoEntidade } from "@/lib/automacoes/grafo";
-import { EVENT_CATALOG } from "@/components/crm2/automacoes/followup-types";
+import { AVISO_GATILHO_INVALIDO, EVENT_CATALOG, eventoDeCadenciaInvalido } from "@/components/crm2/automacoes/followup-types";
 import { followupGraphSchema } from "@/lib/ai-platform/followup/graph";
 import { validateFollowupForPublish } from "@/lib/ai-platform/followup/validate";
 import type { FollowupGraph, FollowupNode } from "@/lib/ai-platform/followup/graph";
@@ -321,9 +321,14 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
               <div className="ofx-campo">
                 <label className="ofx-campo-rotulo" htmlFor="cad-evento">Entra na cadência</label>
                 <select id="cad-evento" className="oa-input" value={evento} disabled={somenteLeitura} onChange={(e) => { const value = e.target.value; setEvento(value); const trigger = grafo.nodes.find((n) => n.type === "trigger"); if (trigger?.type === "trigger") mudarGrafo({ ...grafo, nodes: grafo.nodes.map((n) => n.id === trigger.id ? { ...trigger, config: { ...trigger.config, event: value } } : n) }); }}>
+                  {/* Gatilho salvo que não chega mais fica visível e marcado, em
+                      vez de o select pular calado para o primeiro item. */}
+                  {eventoDeCadenciaInvalido(evento) && <option value={evento}>{evento} · gatilho inválido</option>}
                   {EVENT_CATALOG.map((ev) => <option key={ev.id} value={ev.id}>{ev.nome}</option>)}
                 </select>
-                <span className="oa-dica">“Inscrição manual/API” só anda quando alguém inscreve. Evento inscreve quando o fato acontece no CRM.</span>
+                {eventoDeCadenciaInvalido(evento)
+                  ? <span className="oa-dica oa-alerta">{AVISO_GATILHO_INVALIDO}</span>
+                  : <span className="oa-dica">“Inscrição manual/API” só anda quando alguém inscreve. Evento inscreve quando o fato acontece no CRM.</span>}
               </div>
               <div className="ofx-campo">
                 <label className="ofx-campo-rotulo" htmlFor="cad-entidade">Tipo de registro</label>
