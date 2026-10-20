@@ -70,9 +70,22 @@ export const ROTULO_PARADA: Record<MotivoDeParada, string> = {
   descadastro: "O cliente pediu para não receber mais mensagens",
 };
 
+/**
+ * Zero = SEM limite, e isso é deliberado.
+ *
+ * A contagem é POR CONVERSA (ver `contagemDeMensagens`), então o teto por hora
+ * nunca foi uma proteção de custo: é uma trava anti-metralhadora para um
+ * contato só. Com 6, uma conversa normal de qualificação morria no meio — o
+ * Scott esbarrou nisso testando em produção em 20/10/2026, e quem conversava
+ * com a agente simplesmente parava de ser respondido, sem saber por quê.
+ *
+ * Antes desta mudança, pôr 0 BLOQUEAVA tudo (`naHora >= 0` é sempre
+ * verdadeiro): quem quisesse soltar o limite fechava a agente por completo.
+ * Dinheiro se protege por gasto, não por contagem de mensagem.
+ */
 export function excedeTaxa(c: { naHora: number; noDia: number; seguidasSemRetorno: number }, l: LimitesDoAgente, ativo: boolean): "hora" | "dia" | "sem_retorno" | null {
-  if (c.naHora >= l.maxMensagensPorHora) return "hora";
-  if (c.noDia >= l.maxMensagensPorDia) return "dia";
+  if (l.maxMensagensPorHora > 0 && c.naHora >= l.maxMensagensPorHora) return "hora";
+  if (l.maxMensagensPorDia > 0 && c.noDia >= l.maxMensagensPorDia) return "dia";
   if (ativo && c.seguidasSemRetorno >= l.maxSemRetorno) return "sem_retorno";
   return null;
 }

@@ -59,3 +59,15 @@ test("parada: pedido de humano, assunto sensível e descadastro; conversa normal
   assert.equal(motivoDeParada("sou vendedor de seguros e tenho interesse"), null);
   assert.equal(motivoDeParada("pode ser só amanhã", ["só amanhã"]), "pedido_humano");
 });
+
+test("zero em mensagens por hora e por dia significa SEM limite, não bloqueio total", () => {
+  // Antes, `naHora >= 0` era sempre verdadeiro: quem punha 0 para soltar a
+  // agente fechava ela por completo. Custo se protege por gasto, não por
+  // contagem de mensagem numa conversa.
+  const solto = { ...LIMITES_PADRAO, maxMensagensPorHora: 0, maxMensagensPorDia: 0 };
+  assert.equal(excedeTaxa({ naHora: 999, noDia: 9999, seguidasSemRetorno: 0 }, solto, false), null);
+  // A trava anti-metralhadora sem retorno continua valendo, que é outra coisa.
+  assert.equal(excedeTaxa({ naHora: 999, noDia: 9999, seguidasSemRetorno: 3 }, solto, true), "sem_retorno");
+  // E limite posto continua limitando.
+  assert.equal(excedeTaxa({ naHora: 6, noDia: 0, seguidasSemRetorno: 0 }, { ...LIMITES_PADRAO, maxMensagensPorHora: 6 }, false), "hora");
+});

@@ -144,8 +144,8 @@ export async function validarConfiguracaoDaVersao(organizacaoId: string, v: z.in
     }
   }
   const l = rec(g.limites);
-  if (l.maxMensagensPorHora !== undefined && !inteiroEntre(l.maxMensagensPorHora, 1, 60)) return "Mensagens por hora deve ser um número inteiro de 1 a 60.";
-  if (l.maxMensagensPorDia !== undefined && !inteiroEntre(l.maxMensagensPorDia, 1, 500)) return "Mensagens por dia deve ser um número inteiro de 1 a 500.";
+  if (l.maxMensagensPorHora !== undefined && !inteiroEntre(l.maxMensagensPorHora, 0, 600)) return "Mensagens por hora deve ser um número inteiro de 0 a 600 (0 = sem limite).";
+  if (l.maxMensagensPorDia !== undefined && !inteiroEntre(l.maxMensagensPorDia, 0, 5000)) return "Mensagens por dia deve ser um número inteiro de 0 a 5000 (0 = sem limite).";
   if (l.maxSemRetorno !== undefined && !inteiroEntre(l.maxSemRetorno, 0, 20)) return "Mensagens sem retorno deve ser um número inteiro de 0 a 20.";
   if (l.responderForaDoHorario !== undefined && typeof l.responderForaDoHorario !== "boolean") return "Responder fora do horário deve ser sim ou não.";
   const h = rec(g.horarioComercial);
