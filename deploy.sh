@@ -188,12 +188,17 @@ fi
 echo "[1/2] Enviando o commit..."
 STAGE="/tmp/onface-release-$ALVO-$REV"
 git archive --format=tar "$REV" | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE && tar -x -C $STAGE"
+# `/backups/` é do SERVIDOR, como .env e uploads. Os dumps lá dentro já eram
+# protegidos um a um, e era justamente isso que travava: o rsync tentava apagar
+# o diretório (ele não existe no repo), não conseguia por estar cheio de arquivo
+# protegido, e derrubava o deploy inteiro (20/10/2026).
 "${SSH[@]}" "sudo rsync -a --delete \
   --exclude=/.env --exclude=/.env.* \
   --exclude=/uploads/ --exclude=/app/public/uploads/ \
   --exclude=/infra/documenso/.env --exclude=/infra/documenso/certs/ \
   --exclude=/.onface-release \
   --exclude='_backup*' --exclude='*.sql.gz' --exclude='*.dump' --exclude='*.bak-*' \
+  --exclude=/backups/ \
   $STAGE/ $DIR/ && rm -rf $STAGE"
 
 # ─── Acesso ao GHCR: só durante o deploy ────────────────────────────────────
