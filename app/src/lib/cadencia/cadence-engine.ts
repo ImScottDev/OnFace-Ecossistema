@@ -25,6 +25,8 @@
  *
  * Ver ADR-EXEC-013.
  */
+import { MOTIVO_NUMERO_PRIVADO, numeroAceitaAutomacao, sessaoEhPrivada } from "@/lib/whatsapp/uso-automatico";
+import { condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { createHash } from "node:crypto";
 import { contataOCliente, dentroDaJanela, proximoHorarioDeContato } from "./janela-de-contato";
 import { db } from "@/lib/db";
@@ -319,8 +321,10 @@ export async function escolherSessao(
     if (s.status !== "connected") throw new Error(`a sessão de WhatsApp escolhida (${s.label ?? s.sessionName}) está desconectada`);
     return { id: s.id };
   }
-  const conectadas = sessoes.filter((x) => x.status === "connected");
-  if (!conectadas.length) throw new Error("nenhuma sessão de WhatsApp conectada nesta organização");
+  // Escolha AUTOMÁTICA nunca cai em número privado (WhatsApp pessoal). Quem quiser falar pelo
+  // próprio número privado escolhe ele no passo (preferidaId, acima). Ver lib/whatsapp/uso-automatico.ts.
+  const conectadas = sessoes.filter((x) => x.status === "connected" && numeroAceitaAutomacao(x));
+  if (!conectadas.length) throw new Error(sessoes.some((x) => x.status === "connected") ? "só há números privados conectados: escolha o número no passo" : "nenhuma sessão de WhatsApp conectada nesta organização");
   let responsavelId: string | null = null;
   if (opts.entidade) {
     const leadId = opts.entidade.tipo === "lead" ? opts.entidade.id
@@ -365,9 +369,12 @@ async function resolverContatoCompleto(
   entityType: string, entityId: string, organizacaoId: string, opts: { sessaoPreferidaId?: string | null } = {},
 ): Promise<typeof contatos.$inferSelect | null> {
   const preferida = opts.sessaoPreferidaId ?? null;
-  const daSessao = preferida ? [eq(contatos.sessaoId, preferida)] : [];
+  // Sem número escolhido, a conversa existente só vale se NÃO for de número privado.
+  const daSessao = preferida ? [eq(contatos.sessaoId, preferida)] : [condicaoConversaNaoPrivada(contatos.sessaoId)];
   if (entityType === "contato") {
     const [row] = await db.select().from(contatos).where(and(eq(contatos.id, entityId), eq(contatos.organizacaoId, organizacaoId))).limit(1);
+    // Conversa de número privado só é usada quando o passo escolheu ESSE número de propósito.
+    if (row && row.sessaoId !== preferida && await sessaoEhPrivada(organizacaoId, row.sessaoId)) throw new Error(MOTIVO_NUMERO_PRIVADO);
     return row ?? null;
   }
   if (entityType === "lead") {

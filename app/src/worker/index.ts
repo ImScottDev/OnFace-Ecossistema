@@ -2439,7 +2439,20 @@ const whatsappIncomingWorker = new Worker(
     // Se houver um grafo publicado para mensagem recebida, ele assume o turno;
     // caso contrário o runtime direto/legado abaixo continua funcionando.
     let roteadoPorAutomacao = false;
-    try {
+    // Número privado (WhatsApp pessoal): a mensagem é registrada e só o que PROTEGE roda
+    // (cadência para porque o lead respondeu). Evento para fluxos, regra "whatsapp_recebido"
+    // e IA ficam de fora — ver lib/whatsapp/uso-automatico.ts.
+    const { sessaoEhPrivada } = await import("../lib/whatsapp/uso-automatico");
+    const numeroPrivado = await sessaoEhPrivada(organizacaoId, sessaoId ?? null);
+    if (numeroPrivado) {
+      try {
+        const { registrarRespostaEmCadencias } = await import("../lib/cadencia/cadence-engine");
+        await registrarRespostaEmCadencias({ organizacaoId, contatoId: contato.id, leadId: contato.leadId, recebidaEm: new Date(timestamp * 1000) });
+      } catch (err) {
+        console.error("[WA-In] número privado: falha ao registrar resposta em cadências:", err);
+      }
+    }
+    if (!numeroPrivado) try {
       const recebidaEm = new Date(timestamp * 1000);
       const [{ registrarRespostaEmCadencias }, { publicarEvento }, { dispatchAutomationEvent }, { eventOutbox }] = await Promise.all([
         import("../lib/cadencia/cadence-engine"), import("../lib/events/outbox"), import("../lib/automations/event-dispatcher"), import("../lib/db/schema"),
@@ -2490,8 +2503,8 @@ const whatsappIncomingWorker = new Worker(
       console.error("[F2/dual-write] falha ao sincronizar communications da mensagem WhatsApp (best-effort):", err);
     }
 
-    // F5/Automation: gatilho "whatsapp_recebido" — best-effort.
-    try {
+    // F5/Automation: gatilho "whatsapp_recebido" — best-effort. Nunca em número privado.
+    if (!numeroPrivado) try {
       const { dispararAutomacoes } = await import("../lib/crm/automacao-engine");
       await dispararAutomacoes("whatsapp_recebido", {
         entityType: "contato",
@@ -2556,7 +2569,7 @@ const whatsappIncomingWorker = new Worker(
     const aiSdrTypes = ["text", "image", "audio", "video", "document", "sticker", "location", "contact"];
     // Homologação recebe a mesma mensagem que produção (espelho do relé): a IA só responde
     // se o número estiver na WHATSAPP_ALLOWLIST. Sem isso ela gastaria crédito para uma resposta que a trava barra.
-    if (!roteadoPorAutomacao && aiSdrTypes.includes(msgType) && destinatarioPermitido(normalized)) {
+    if (!numeroPrivado && !roteadoPorAutomacao && aiSdrTypes.includes(msgType) && destinatarioPermitido(normalized)) {
       const tipoLabel: Record<string, string> = {
         image: "Imagem recebida", audio: "Audio recebido", video: "Video recebido",
         document: "Documento recebido", sticker: "Sticker recebido",

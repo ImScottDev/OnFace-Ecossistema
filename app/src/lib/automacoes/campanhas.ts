@@ -221,9 +221,9 @@ export async function excluirRascunho(organizacaoId: string, id: string): Promis
 
 export type SessaoWhatsapp = { id: string; nome: string; telefone: string | null; conectada: boolean };
 
-/** Sessões da org para assinar o disparo; o id fica em `remetente`. */
+/** Sessões da org para assinar o disparo; o id fica em `remetente`. Número privado não assina disparo em massa. */
 export async function sessoesWhatsapp(organizacaoId: string): Promise<SessaoWhatsapp[]> {
-  const rows = await db.select().from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId));
+  const rows = await db.select().from(whatsappSessao).where(and(eq(whatsappSessao.organizacaoId, organizacaoId), eq(whatsappSessao.privado, false)));
   return rows
     .map((r) => ({
       id: r.id,

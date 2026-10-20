@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import { aiMemoriaFatos, aiSdrContatoState, contatos, whatsappSessao } from "@/lib/db/schema";
 
 export type DecisaoDeCanal = { permitido: true } | { permitido: false; codigo: CodigoBloqueio; motivo: string; tentarDepois: boolean };
-export type CodigoBloqueio = "sem_contato" | "sem_telefone" | "sem_sessao" | "canal_desconectado" | "opt_out" | "bot_silenciado" | "ia_pausada" | "fora_da_janela_template";
+export type CodigoBloqueio = "sem_contato" | "sem_telefone" | "sem_sessao" | "canal_desconectado" | "opt_out" | "bot_silenciado" | "ia_pausada" | "fora_da_janela_template" | "numero_privado";
 
 export const JANELA_RESPOSTA_LIVRE_HORAS = 24;
 
@@ -40,8 +40,10 @@ export async function avaliarEnvio(p: EntradaPolitica): Promise<DecisaoDeCanal> 
   if (await optOutAtivo(p.organizacaoId, p.contatoId)) return { permitido: false, codigo: "opt_out", motivo: "O contato pediu para não receber mensagens.", tentarDepois: false };
   if (c.silenciado && c.silenciado > agora) return { permitido: false, codigo: "bot_silenciado", motivo: "Conversa silenciada por handoff em curso.", tentarDepois: true };
   if (!c.sessaoId) return { permitido: false, codigo: "sem_sessao", motivo: "A conversa não tem número de WhatsApp vinculado.", tentarDepois: false };
-  const [s] = await db.select({ status: whatsappSessao.status, tipo: whatsappSessao.tipo }).from(whatsappSessao).where(and(eq(whatsappSessao.id, c.sessaoId), eq(whatsappSessao.organizacaoId, p.organizacaoId))).limit(1);
+  const [s] = await db.select({ status: whatsappSessao.status, tipo: whatsappSessao.tipo, privado: whatsappSessao.privado }).from(whatsappSessao).where(and(eq(whatsappSessao.id, c.sessaoId), eq(whatsappSessao.organizacaoId, p.organizacaoId))).limit(1);
   if (!s) return { permitido: false, codigo: "sem_sessao", motivo: "Número de WhatsApp não encontrado.", tentarDepois: false };
+  // Número privado (WhatsApp pessoal): agente nunca fala por ele. Ver lib/whatsapp/uso-automatico.ts.
+  if (s.privado) return { permitido: false, codigo: "numero_privado", motivo: "O número desta conversa é privado: o agente não fala por ele.", tentarDepois: false };
   if (s.status !== "connected") return { permitido: false, codigo: "canal_desconectado", motivo: "O número de WhatsApp está desconectado.", tentarDepois: true };
 
   // API oficial: fora de 24h desde a última mensagem do contato só vai template aprovado.

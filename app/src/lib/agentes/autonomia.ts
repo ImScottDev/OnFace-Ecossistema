@@ -10,6 +10,8 @@
  * e depois dele, o que a agente fez já saiu pelas ferramentas (timeline assinada
  * por ela). O envio é só pela sessão de WhatsApp da conversa (`executeAgent`).
  */
+import { numeroAceitaAutomacao } from "@/lib/whatsapp/uso-automatico";
+import { condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { and, asc, desc, eq, gt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -157,18 +159,21 @@ export async function acionarAgenteParaMensagem(p: {
 
 /** Contato de WhatsApp do lead; cria na sessão do agente (ou a padrão) quando não existe. */
 export async function contatoDoLead(organizacaoId: string, leadId: string, sessaoDoAgente: string | null) {
-  const [ja] = await db.select().from(contatos).where(and(eq(contatos.organizacaoId, organizacaoId), eq(contatos.leadId, leadId)))
+  // Conversa em número privado não serve: o agente não fala pelo WhatsApp pessoal de ninguém.
+  const [ja] = await db.select().from(contatos).where(and(eq(contatos.organizacaoId, organizacaoId), eq(contatos.leadId, leadId), condicaoConversaNaoPrivada(contatos.sessaoId)))
     .orderBy(...(sessaoDoAgente ? [sql`(${contatos.sessaoId} = ${sessaoDoAgente}::uuid) DESC`] : []), desc(contatos.ultimaMsgAt)).limit(1);
   if (ja) return ja;
   const [lead] = await db.select({ nome: leads.nome, telefone: leads.telefone, email: leads.email, r: leads.responsavelId }).from(leads).where(eq(leads.id, leadId)).limit(1);
   let tel = lead?.telefone?.replace(/\D/g, "");
   if (!lead || !tel) return null;
   if (tel.length === 10 || tel.length === 11) tel = "55" + tel;
-  const sessoes = await db.select().from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId));
+  const sessoes = (await db.select().from(whatsappSessao).where(eq(whatsappSessao.organizacaoId, organizacaoId))).filter(numeroAceitaAutomacao);
   const sessao = sessoes.find((s) => s.id === sessaoDoAgente) ?? sessoes.find((s) => s.status === "connected" && s.isDefault) ?? sessoes.find((s) => s.status === "connected") ?? sessoes.find((s) => s.isDefault) ?? sessoes[0];
   if (!sessao) return null;
-  const [novo] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone: tel, email: lead.email, sessaoId: sessao.id, responsavelId: lead.r, leadId }).returning();
-  return novo;
+  // Um lead tem uma conversa por responsável: se a dele está num número privado, não há
+  // conversa utilizável para o agente (null) — nunca reaproveita a privada nem derruba o ciclo.
+  const [novo] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone: tel, email: lead.email, sessaoId: sessao.id, responsavelId: lead.r, leadId }).onConflictDoNothing().returning();
+  return novo ?? null;
 }
 
 async function contextoDoToque(leadId: string) {

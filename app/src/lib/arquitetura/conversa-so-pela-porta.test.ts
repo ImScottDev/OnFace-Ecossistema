@@ -51,13 +51,11 @@ const SEM_A_PORTA: Record<string, string> = {
   "src/lib/automacoes/contexto.ts": "motor de automação monta variáveis por regra da organização",
   "src/lib/automacoes/execucoes.ts": "nome do contato na lista de execuções da automação",
   "src/lib/automacoes/fluxos-servico.ts": "busca de alvo e nome de entidade do fluxo (identidade)",
-  "src/lib/cadencia/cadence-engine.ts": "motor de cadência age por regra da organização, sem usuário logado",
   "src/lib/cs/health.ts": "dias sem interação com a EMPRESA (max da data), sem texto",
   "src/app/(produto)/contatos/actions.ts": "mescla de pessoas: apaga as comunicações do duplicado, não as lê",
   "src/lib/relatorios/performance.ts": "contagem agregada de mensagens enviadas por pessoa, sem texto",
   "src/lib/vendas/consultas.ts": "data do último toque no cartão (max da data), sem texto — mesma natureza de cs/health.ts",
   // Agentes de IA: o contato vem do evento que acordou o agente, nunca de parâmetro do usuário.
-  "src/lib/agentes/autonomia.ts": "runtime de agente: a conversa é a que ele conduz",
   "src/lib/agentes/handover.ts": "runtime de agente: handover da conversa que ele conduz",
   "src/lib/ai-platform/contexto/builder.ts": "contexto do agente: a conversa dele, mais o histórico do lead SEM os contatos de número privado (filtro `wp.privado` no próprio SQL)",
   "src/lib/ai-platform/midia/transcrever.ts": "runtime de agente: transcrição da mídia da conversa que ele conduz",

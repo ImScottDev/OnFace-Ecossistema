@@ -1305,6 +1305,8 @@ app.post("/whatsapp/status", async (c) => {
   if (action === "set-default") {
     /* O padrão é da ORGANIZAÇÃO (envios automáticos e notificações): só a gestão troca. */
     if (!gestao) return c.json({ error: "Só a gestão define o número padrão da organização." }, 403);
+    // O padrão é por onde a automação fala quando nada decide: número privado nunca serve.
+    if (sessao.privado) return c.json({ error: "Número privado não pode ser o padrão da organização: automações falariam por ele." }, 409);
     await db.update(whatsappSessao).set({ isDefault: false }).where(eq(whatsappSessao.organizacaoId, ctx.organizacaoId));
     await db.update(whatsappSessao).set({ isDefault: true, updatedAt: new Date() }).where(eq(whatsappSessao.id, sessao.id));
     await auditar("whatsapp.numero_padrao", sessao.id, { isDefault: sessao.isDefault }, { isDefault: true });

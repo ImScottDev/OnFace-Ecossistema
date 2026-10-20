@@ -112,6 +112,7 @@ async function preparar(c: Campanha): Promise<Envio | { erro: string }> {
       .limit(1)
       .catch(() => []);
     if (!sessao) return { erro: "Sessão de WhatsApp da campanha não existe mais." };
+    if (sessao.privado) return { erro: "O número da campanha é privado: disparo em massa não sai por número pessoal." };
     const config = sessionToConfig(sessao);
     const texto = htmlParaTexto(c.corpoHtml ?? "");
     return async (destino, vars) => {

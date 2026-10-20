@@ -1,3 +1,4 @@
+import { MOTIVO_NUMERO_PRIVADO, sessaoEhPrivada } from "@/lib/whatsapp/uso-automatico";
 import { createHash, randomUUID } from "node:crypto";
 import { compilarPrompt } from "@/lib/ai/agente-escopo";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -104,9 +105,11 @@ async function selectAgent(input: ExecuteAgentInput): Promise<SelectedAgent> {
   // Número (sessão) da conversa: versão ligada a um número só atende conversa dele.
   // Sem isto o `channel_session_id` do agente era gravado e nunca lido.
   let sessaoDoContato: string | null = null;
-  if (input.mode === "live" && !input.agentId && input.contatoId) {
-    const [ct] = await db.select({ sessaoId: contatos.sessaoId }).from(contatos).where(eq(contatos.id, input.contatoId)).limit(1);
+  if (input.mode === "live" && input.contatoId) {
+    const [ct] = await db.select({ sessaoId: contatos.sessaoId }).from(contatos).where(and(eq(contatos.id, input.contatoId), eq(contatos.organizacaoId, input.organizacaoId))).limit(1);
     sessaoDoContato = ct?.sessaoId ?? null;
+    // Conversa de número privado nunca vai para o modelo: nem leitura de histórico, nem resposta.
+    if (await sessaoEhPrivada(input.organizacaoId, sessaoDoContato)) throw new NoEligibleAgentError(MOTIVO_NUMERO_PRIVADO);
   }
 
   const selected = rows.find(({ agent, version }) => {
