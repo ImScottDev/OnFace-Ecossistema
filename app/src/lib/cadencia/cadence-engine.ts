@@ -33,8 +33,8 @@ import { db } from "@/lib/db";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { moverEtapa as moverEtapaPreVendas } from "@/lib/vendas/pre-vendas";
 import { ETAPAS_PRE_VENDAS, ETAPAS_FECHADAS, type EtapaPreVendas, type Ator } from "@/lib/vendas/dominio";
-import { aiAgentVersions, cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels, empresas, pessoas, notificacoes, usuarios } from "@/lib/db/schema";
-import { eq, and, lte, inArray, notInArray, desc, or, isNull, lt, sql } from "drizzle-orm";
+import { aiAgentRunSteps, aiAgentVersions, cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, cadenceEnrollments, cadenceEnrollmentEvents, leads, contatos, negocios, oportunidades, clientes, servicosCanonicos, whatsappTemplates, whatsappMensagens, whatsappSessao, atividades, tarefas, entityLabels, labels, leadLabels, contatoLabels, empresas, pessoas, notificacoes, usuarios } from "@/lib/db/schema";
+import { eq, and, lte, inArray, notInArray, asc, desc, or, isNull, lt, sql } from "drizzle-orm";
 import { avaliarCondicao, type Condicao } from "@/lib/crm/condicao";
 import { resultadoCondicaoCadencia } from "./cadence-conditions";
 import { whatsappOutgoingQueue } from "@/lib/queue";
@@ -446,6 +446,24 @@ async function enviarWhatsappTemplate(args: { organizacaoId: string; contato: ty
 }
 
 /**
+ * Mensagens que um run do agente de fato enfileirou (passo `egress` do run).
+ * Fonte do "o que foi enviado" para cadência e fluxo: o resultado do ciclo do
+ * agente traz só a contagem.
+ */
+export async function mensagensEnviadasPeloRun(organizacaoId: string, runId: string): Promise<{ id: string; texto: string }[]> {
+  const passos = await db.select({ output: aiAgentRunSteps.output }).from(aiAgentRunSteps)
+    .where(and(eq(aiAgentRunSteps.organizacaoId, organizacaoId), eq(aiAgentRunSteps.runId, runId), eq(aiAgentRunSteps.kind, "egress")))
+    .orderBy(asc(aiAgentRunSteps.sequence));
+  const ids = passos.flatMap((p) => {
+    const v = (p.output as { messageIds?: unknown } | null)?.messageIds;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  });
+  if (!ids.length) return [];
+  const rows = await db.select({ id: whatsappMensagens.id, texto: whatsappMensagens.conteudo }).from(whatsappMensagens).where(inArray(whatsappMensagens.id, ids));
+  return ids.map((id) => rows.find((r) => r.id === id)).filter((r): r is { id: string; texto: string | null } => Boolean(r)).map((r) => ({ id: r.id, texto: r.texto ?? "" }));
+}
+
+/**
  * IA que só LÊ e devolve texto (classificar, gerar): sem nenhuma ferramenta e
  * sem envio. Antes rodava com o conjunto inteiro de ferramentas da versão e só
  * o envio suprimido — uma classificação podia mover etapa, criar tarefa ou
@@ -471,7 +489,36 @@ export async function executarIaSemFerramentas(p: {
   }
 }
 
-/** Adapter real — chama o agente publicado configurado no nó (mesmo runtime do chat ao vivo). Egress passa pela fila/ledger do próprio `executeAgent`, não duplica envio aqui. Se falhar e houver `fallback_template_id`, tenta o template antes de reportar erro. */
+/** Motivos de "agente indisponível" em que o modelo de reserva do passo vale (antes eram exceção do runtime). */
+const AGENTE_INDISPONIVEL = ["agente_sem_versao_publicada", "agente_nao_encontrado", "agente_pausado_globalmente", "agente_nao_elegivel"];
+
+/** Por que o passo de IA não falou com o contato, em texto para Execuções. */
+function motivoDeNaoEnviar(r: { resultado: string; motivo?: string }): string {
+  const m = r.motivo ?? "";
+  if (m === "humano_responsavel" || m === "humano_respondeu_na_conversa" || m === "humano_em_andamento") return "o atendimento está com uma pessoa: o agente não fala por cima — nada foi enviado";
+  if (m === "agente_pausado" || m === "ia_pausada") return "o agente está pausado neste atendimento — nada foi enviado";
+  if (m === "opt_out") return "opt-out: o contato pediu para não receber mensagens — nada foi enviado";
+  if (m === "aguardando_aprovacao") return "há uma ação do agente aguardando aprovação neste atendimento — nada foi enviado";
+  if (r.resultado === "respondeu" || r.resultado === "sem_resposta") return `o agente terminou sem enviar mensagem — confira a autonomia dele (em "aprovação" ele escreve mas não envia) e o escopo permitido`;
+  if (r.resultado === "handover") return `o agente passou o atendimento para uma pessoa sem enviar mensagem${m ? ` (${m})` : ""}`;
+  return `o agente não enviou mensagem (${r.resultado}${m ? `: ${m}` : ""})`;
+}
+
+/**
+ * Adapter real — o agente publicado escolhido no nó escreve e envia.
+ *
+ * Passa pelo CICLO do agente (`acionarAgente`), o mesmo da conversa ao vivo e
+ * das automações: atribuição (humano assumiu, agente pausado, outro agente),
+ * política de canal (opt-out, IA pausada na conversa, número autorizado para o
+ * agente, número privado), horário e limite de mensagens do agente. Antes
+ * chamava o runtime direto e nada disso era lido: um contato que uma pessoa
+ * tinha assumido recebia a mensagem da IA da cadência mesmo assim.
+ *
+ * A cadência NÃO cria atribuição: o passo pede uma mensagem, não entrega o
+ * atendimento ao agente. Se falhar por indisponibilidade do agente e houver
+ * `fallback_template_id`, tenta o modelo antes de reportar erro; bloqueio por
+ * pessoa/opt-out/pausa nunca cai no modelo.
+ */
 registrarAdapter("ai_agent_message", async (ctx) => {
   const config = ctx.step.config as { agent_id?: string; prompt_hint?: string; fallback_template_id?: string; sessao_id?: string };
   // O agente fala pelo número que foi configurado nele (canal da versão publicada); `sessao_id` do nó vence.
@@ -494,37 +541,47 @@ registrarAdapter("ai_agent_message", async (ctx) => {
      mensagem sairia. */
   if (!config.agent_id) return { sucesso: false, erro: "passo de IA sem agente escolhido — abra a cadência, escolha quem escreve e republique" };
 
-  try {
-    const result = await executeAgent({
-      organizacaoId: ctx.organizacaoId,
-      agentId: config.agent_id ?? undefined,
-      eventType: "cadence.step_due",
-      message: config.prompt_hint ?? "",
-      contatoId: contato.id,
-      leadId: resolveLeadId(ctx.entityType, ctx.entityId, contato),
-      mode: "live",
-      suppressEgress: false,
-    });
-    /* Passo que não falou com ninguém NÃO é passo cumprido.
-       O agente pode terminar sem enviar nada — autonomia em `approval`
-       (escreve e espera aprovação humana), handoff, ou recusa do guardrail. O
-       adapter devolvia `sucesso: true` nos três casos, e a inscrição avançava
-       para o próximo passo como se o cliente tivesse sido abordado: em
-       19/10/2026 uma cadência pulou do Dia 0 para o Dia 3 com
-       `sentMessageIds: []`. Falhar aqui mantém a inscrição parada e aciona o
-       aviso ao responsável, em vez de fingir que a conversa começou. */
-    if (!result.sentMessageIds?.length) {
-      return { sucesso: false, erro: `o agente terminou em "${result.status}" sem enviar mensagem — confira a autonomia dele (em "aprovação" ele escreve mas não envia) e o escopo permitido` };
-    }
-    return { sucesso: true, resultado: { runId: result.runId, status: result.status, sentMessageIds: result.sentMessageIds } };
-  } catch (err) {
-    const erro = err instanceof Error ? err.message : String(err);
+  const reserva = async (erro: string): Promise<CadenceActionResult> => {
     if (config.fallback_template_id) {
-      const fallback = await enviarWhatsappTemplate({ organizacaoId: ctx.organizacaoId, contato, templateId: config.fallback_template_id, vars: ctx.vars });
-      if (fallback.sucesso) return { sucesso: true, resultado: { fallbackTemplate: true, ...fallback.resultado } };
+      const fallback = await enviarWhatsappTemplate({ organizacaoId: ctx.organizacaoId, contato: contato!, templateId: config.fallback_template_id, vars: ctx.vars });
+      if (fallback.sucesso) return { sucesso: true, resultado: { fallbackTemplate: true, motivoDaReserva: erro, ...fallback.resultado } };
     }
     return { sucesso: false, erro };
+  };
+
+  let res: Awaited<ReturnType<typeof import("@/lib/ai-platform/operacao/acionar").acionarAgente>>;
+  try {
+    const { acionarAgente } = await import("@/lib/ai-platform/operacao/acionar");
+    res = await acionarAgente({
+      organizacaoId: ctx.organizacaoId,
+      agentId: config.agent_id,
+      evento: "cadence.step_due",
+      mensagem: config.prompt_hint ?? "",
+      motivoDaExecucao: `Passo "${ctx.step.id}" de uma cadência: escrever a próxima mensagem ao contato.`,
+      contatoId: contato.id,
+      leadId: resolveLeadId(ctx.entityType, ctx.entityId, contato),
+      proativo: true,
+      origem: `cadencia:${ctx.enrollmentId}`,
+      chaveIdempotencia: actionKey(ctx),
+    });
+  } catch (err) {
+    return reserva(err instanceof Error ? err.message : String(err));
   }
+  /* Passo que não falou com ninguém NÃO é passo cumprido.
+     O agente pode terminar sem enviar nada — autonomia em `approval`
+     (escreve e espera aprovação humana), handoff, bloqueio do ciclo (pessoa
+     assumiu, opt-out, fora do horário) ou recusa do guardrail. O adapter
+     devolvia `sucesso: true` nesses casos, e a inscrição avançava para o
+     próximo passo como se o cliente tivesse sido abordado: em 19/10/2026 uma
+     cadência pulou do Dia 0 para o Dia 3 com `sentMessageIds: []`. Falhar
+     aqui mantém a inscrição parada e aciona o aviso ao responsável, em vez
+     de fingir que a conversa começou. */
+  const enviadas = res.runId ? await mensagensEnviadasPeloRun(ctx.organizacaoId, res.runId) : [];
+  if (enviadas.length) {
+    return { sucesso: true, resultado: { runId: res.runId, status: res.resultado, sentMessageIds: enviadas.map((m) => m.id), mensagens: enviadas.map((m) => m.texto) } };
+  }
+  if (res.resultado === "falhou" || AGENTE_INDISPONIVEL.includes(res.motivo ?? "")) return reserva(res.motivo ?? "o agente falhou");
+  return { sucesso: false, erro: motivoDeNaoEnviar(res), resultado: { runId: res.runId ?? null, status: res.resultado, motivo: res.motivo ?? null } };
 });
 
 /** Adapter real — envia template WhatsApp cadastrado (`whatsapp_templates`), com substituição de `{{variavel}}` a partir de `vars` do enrollment. */
