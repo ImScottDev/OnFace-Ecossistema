@@ -245,6 +245,8 @@ function Gaveta({ id, onClose, voltarFoco }: { id: string | null; onClose: () =>
 type Atribuicao = {
   id: string; status: string; agente: string; lead: string | null; contato: string | null; leadId: string | null;
   objetivo: string | null; motivoEstado: string | null; updatedAt: string;
+  /** Nome de quem está com o atendimento (humano_usuario_id), quando há. */
+  humano: string | null;
 };
 const FILAS: Record<string, [string, "atencao" | "neutro"]> = { aguardando_aprovacao: ["Aguardando aprovação", "atencao"], humano: ["Com humano", "neutro"] };
 
@@ -288,7 +290,8 @@ function FilaDaEquipe({ agenteId }: { agenteId: string }) {
         ) : (
           <ul className="exa-lista exa-fila-lista">
             {visiveis.map((l) => {
-              const [rotulo, tom] = FILAS[l.status] ?? [l.status, "neutro" as const];
+              const [rotuloFila, tom] = FILAS[l.status] ?? [l.status, "neutro" as const];
+              const rotulo = l.status === "humano" && l.humano ? `Com humano: ${l.humano}` : rotuloFila;
               const motivo = rotuloMotivo(l.motivoEstado);
               return (
                 <li key={l.id}>

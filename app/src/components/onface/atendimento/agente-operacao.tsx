@@ -73,12 +73,16 @@ export function rotuloMotivo(motivo: string | null | undefined): string | null {
 }
 
 /** Estado na linguagem da conversa (Atendimento): quem está com o contato agora. */
-export function estadoDaConversa(estado: string, p: { humano?: string | null; motivo?: string | null } = {}) {
+export function estadoDaConversa(estado: string, p: { humano?: string | null; pausadaPor?: string | null; motivo?: string | null } = {}) {
   const motivo = rotuloMotivo(p.motivo);
   if (estado === "ativa") return { rotulo: "IA atendendo", variante: "success" as const, detalhe: null };
   if (estado === "pausada") {
-    // O servidor ainda não grava QUEM pausou a atribuição: sem nome, o motivo "Pausada por uma pessoa" é o rótulo.
-    if (p.humano) return { rotulo: `Pausada por ${p.humano}`, variante: "secondary" as const, detalhe: motivo };
+    // `pausadaPor` é o nome que a rota /ia devolve (quem pausou). Sem ele (pausa por automação ou
+    // anterior ao registro), o motivo "Pausada por …" vira o rótulo.
+    if (p.pausadaPor) {
+      const detalhe = motivo && !motivo.startsWith("Pausada por") ? motivo : null;
+      return { rotulo: `Pausada por ${p.pausadaPor}`, variante: "secondary" as const, detalhe };
+    }
     if (motivo?.startsWith("Pausada por")) return { rotulo: motivo, variante: "secondary" as const, detalhe: null };
     return { rotulo: "Pausada por uma pessoa", variante: "secondary" as const, detalhe: motivo };
   }
@@ -92,7 +96,7 @@ export function estadoDaConversa(estado: string, p: { humano?: string | null; mo
  * Selo do estado do agente. Sem `conversa`, o rótulo geral (Pipeline e listas).
  * Com `conversa`, a linha da conversa: "IA atendendo", "Com humano: Ana — Reunião agendada"…
  */
-export function SeloEstadoAgente({ estado, conversa }: { estado: string; conversa?: { humano?: string | null; motivo?: string | null } }) {
+export function SeloEstadoAgente({ estado, conversa }: { estado: string; conversa?: { humano?: string | null; pausadaPor?: string | null; motivo?: string | null } }) {
   if (!conversa) {
     const e = ESTADOS_AGENTE[estado] ?? { rotulo: estado, variante: "secondary" as const };
     return <Badge variant={e.variante}>{e.rotulo}</Badge>;
@@ -112,7 +116,9 @@ export function SeloEstadoAgente({ estado, conversa }: { estado: string; convers
  * editado no lugar do proposto); aprovar ação executa com as permissões delegadas da versão. */
 
 export type CasoAprovacao = {
-  id: string; contatoId: string; status: string; source: string; title: string; summary: string; openedAt: string;
+  id: string; contatoId: string; leadId?: string | null; status: string; source: string; title: string; summary: string; openedAt: string;
+  /** Nome da conversa (a rota não devolve o de número privado). */
+  contato?: string | null;
   contextSnapshot: { kind?: string; mensagens?: unknown; toolName?: unknown; toolInput?: unknown } | null;
 };
 
@@ -144,27 +150,40 @@ export function nomeDaFerramenta(nome: string, catalogo: { id: string; nome: str
   return catalogo.find((t) => t.id === nome || normalizar(t.id) === normalizar(nome))?.nome ?? nome.replace(/[._]/g, " ");
 }
 
-/** Casos de aprovação abertos de UMA conversa. Não carrega sozinho: `recarregar` vem junto com o carregamento do painel. */
-export function useAprovacoesDaConversa(contatoId: string | null, ativo: boolean) {
+/** Casos abertos (aguardando a equipe) recortados NO SERVIDOR por conversa ou por agente, sempre na organização da sessão.
+ * Não carrega sozinho: quem usa chama `recarregar` junto com o próprio carregamento. */
+export function useCasosAbertos(filtro: { contatoId?: string | null; agentId?: string | null; source?: string }, ativo: boolean) {
+  const { contatoId, agentId, source } = filtro;
   const [casos, setCasos] = React.useState<CasoAprovacao[] | null>(null);
   const [erro, setErro] = React.useState<string | null>(null);
   const carregar = React.useCallback(async () => {
-    if (!contatoId) return;
+    if (!contatoId && !agentId) return;
     try {
-      // A rota lista os casos da organização (250 mais recentes); o recorte da conversa é aqui.
-      const r = await api<{ cases: CasoAprovacao[] }>("/api/automacoes/ai/cases");
-      setCasos(r.cases.filter((c) => c.contatoId === contatoId && c.status === "awaiting_human" && c.source === "tool_approval"));
+      const q = new URLSearchParams({ status: "awaiting_human" });
+      if (contatoId) q.set("contatoId", contatoId);
+      if (agentId) q.set("agentId", agentId);
+      if (source) q.set("source", source);
+      const r = await api<{ cases: CasoAprovacao[] }>(`/api/automacoes/ai/cases?${q}`);
+      setCasos(r.cases);
       setErro(null);
     } catch (e) { setErro((e as Error).message); setCasos([]); }
-  }, [contatoId]);
-  // Ao abrir, zera o que era de outra conversa; quem usa chama `recarregar` junto com o resto do painel.
-  React.useEffect(() => { if (ativo) { setCasos(null); setErro(null); } }, [ativo, contatoId]);
+  }, [contatoId, agentId, source]);
+  // Ao abrir, zera o que era de outro alvo; quem usa chama `recarregar` junto com o resto.
+  React.useEffect(() => { if (ativo) { setCasos(null); setErro(null); } }, [ativo, contatoId, agentId]);
   return { casos, erro, recarregar: carregar };
 }
 
-/** Lista das aprovações pendentes, com decisão inline. Desabilita o caso enquanto a rota responde e mostra o erro dela. */
-export function AprovacoesPendentes({ casos, erro, catalogo = CATALOGO_FERRAMENTAS, aoDecidir }: {
+/** Casos de aprovação abertos de UMA conversa. Não carrega sozinho: `recarregar` vem junto com o carregamento do painel. */
+export function useAprovacoesDaConversa(contatoId: string | null, ativo: boolean) {
+  return useCasosAbertos({ contatoId, source: "tool_approval" }, ativo);
+}
+
+/** Lista das aprovações pendentes, com decisão inline. Desabilita o caso enquanto a rota responde e mostra o erro dela.
+ * Mesma peça na conversa (Atendimento) e no editor do agente: lá, `comConversa` diz de qual conversa é cada caso
+ * e `somenteLeitura` esconde a decisão de quem não opera o agente. */
+export function AprovacoesPendentes({ casos, erro, catalogo = CATALOGO_FERRAMENTAS, aoDecidir, comConversa = false, somenteLeitura = false }: {
   casos: CasoAprovacao[] | null; erro: string | null; catalogo?: { id: string; nome: string }[]; aoDecidir: () => void | Promise<void>;
+  comConversa?: boolean; somenteLeitura?: boolean;
 }) {
   const [ocupado, setOcupado] = React.useState<string | null>(null);
   const [falhas, setFalhas] = React.useState<Record<string, string>>({});
@@ -199,6 +218,11 @@ export function AprovacoesPendentes({ casos, erro, catalogo = CATALOGO_FERRAMENT
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="warning">{ehMensagem ? "Resposta para aprovar" : "Ação para aprovar"}</Badge>
               <span className="text-micro text-tinta-suave">{quando(c.openedAt)}</span>
+              {comConversa ? (
+                <span className="text-micro text-tinta-suave">
+                  Conversa: {c.leadId ? <a className="underline" href={`/atendimento?leadId=${c.leadId}`}>{c.contato ?? "abrir"}</a> : c.contato ?? "sem nome"}
+                </span>
+              ) : null}
             </div>
             {ehMensagem ? (
               emEdicao ? (
@@ -222,7 +246,7 @@ export function AprovacoesPendentes({ casos, erro, catalogo = CATALOGO_FERRAMENT
               </div>
             )}
             {falhas[c.id] ? <p className="text-micro text-negativo" role="alert">Não foi feito: {falhas[c.id]}</p> : null}
-            <div className="flex flex-wrap gap-2">
+            {somenteLeitura ? null : <div className="flex flex-wrap gap-2">
               {ehMensagem ? (
                 emEdicao ? (
                   <>
@@ -242,7 +266,7 @@ export function AprovacoesPendentes({ casos, erro, catalogo = CATALOGO_FERRAMENT
                   <Button size="sm" variant="ghost" disabled={preso} onClick={() => decidir(c, "cancel", "Ação recusada.")}>Recusar</Button>
                 </>
               )}
-            </div>
+            </div>}
           </li>
         );
       })}

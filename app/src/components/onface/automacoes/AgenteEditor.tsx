@@ -34,6 +34,7 @@ import { compilarPrompt, lerEscopo, lerIdentidade, type EscopoAgente, type Ident
 import { CLASSES_AUTONOMIA, lerAutonomiaPorAcao, type ClasseAutonomia, type ModoAutonomia } from "@/lib/ai-platform/tools/politica";
 import type { DadosEditorAgente, VersaoDoEditor } from "@/lib/automacoes/agente-detalhe";
 import { AbaExecucoes, AbaFerramentas, AbaGatilhos, AbaTestes } from "./AgenteOperacao";
+import { AprovacoesPendentes, useCasosAbertos } from "@/components/onface/atendimento/agente-operacao";
 import { Aviso, Interruptor, ListaEditavel, Secao, api, num, quando, useApi } from "./agente-pecas";
 import "./agentes.css";
 import "./agente-editor.css";
@@ -827,7 +828,7 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
           {/* ── Execuções ── */}
           {aba === "execucoes" ? (
             <>
-              <Casos casos={dados.casosAbertos} podeUsar={podeUsar} onMudou={() => router.refresh()} />
+              <Casos agenteId={agente.id} casos={dados.casosAbertos} podeUsar={podeUsar} onMudou={() => router.refresh()} />
               <AbaExecucoes agenteId={agente.id} />
             </>
           ) : null}
@@ -1010,9 +1011,19 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
 
 /* ── Casos aguardando a equipe ─────────────────────────────────────── */
 
-function Casos({ casos, podeUsar, onMudou }: { casos: DadosEditorAgente["casosAbertos"]; podeUsar: boolean; onMudou: () => void }) {
+/* Aprovação (source tool_approval) é a MESMA peça da conversa (AprovacoesPendentes): mensagem com prévia,
+ * "Aprovar e enviar", "Editar e enviar" e "Descartar"; ação com a entrada legível. Os demais casos
+ * (dúvida que o agente abriu) seguem com "Marcar resolvido". */
+function Casos({ agenteId, casos, podeUsar, onMudou }: { agenteId: string; casos: DadosEditorAgente["casosAbertos"]; podeUsar: boolean; onMudou: () => void }) {
   const [ocupado, setOcupado] = React.useState<string | null>(null);
-  if (casos.length === 0) return null;
+  const aprov = useCasosAbertos({ agentId: agenteId, source: "tool_approval" }, true);
+  const recarregarAprov = aprov.recarregar;
+  // Recarrega junto com o dado do servidor (router.refresh troca `casos`).
+  React.useEffect(() => { void recarregarAprov(); }, [recarregarAprov, casos]);
+  const outros = casos.filter((c) => c.origem !== "tool_approval");
+  // Enquanto a lista da rota não chega, o dado do servidor diz se há aprovação.
+  const temAprovacao = aprov.erro ? true : aprov.casos ? aprov.casos.length > 0 : casos.some((c) => c.origem === "tool_approval");
+  if (outros.length === 0 && !temAprovacao) return null;
   async function agir(id: string, action: string, ok: string) {
     setOcupado(id);
     try { await api(`/api/automacoes/ai/cases/${id}/action`, { method: "POST", body: JSON.stringify({ action }) }); toast.success(ok); onMudou(); }
@@ -1021,25 +1032,22 @@ function Casos({ casos, podeUsar, onMudou }: { casos: DadosEditorAgente["casosAb
   }
   return (
     <Secao titulo="Aguardando a equipe" ajuda="Ações que o agente preparou no modo Sob aprovação, ou dúvidas que ele abriu como caso.">
-      <ul className="age-casos">
-        {casos.map((c) => (
-          <li key={c.id}>
-            <div><strong>{c.titulo}</strong><span>{c.resumo} · {quando(c.aberto)}</span></div>
-            {podeUsar ? (
-              <div className="age-linha-acoes">
-                {c.origem === "tool_approval" ? (
-                  <>
-                    <button type="button" className="agn-secundario" disabled={ocupado === c.id} onClick={() => agir(c.id, "cancel", "Ação recusada.")}>Recusar</button>
-                    <button type="button" className="agn-primario" disabled={ocupado === c.id} onClick={() => agir(c.id, "approve", "Ação aprovada e executada.")}>Aprovar e executar</button>
-                  </>
-                ) : (
+      <AprovacoesPendentes casos={aprov.casos} erro={aprov.erro} comConversa somenteLeitura={!podeUsar}
+        aoDecidir={async () => { await recarregarAprov(); onMudou(); }} />
+      {outros.length ? (
+        <ul className="age-casos">
+          {outros.map((c) => (
+            <li key={c.id}>
+              <div><strong>{c.titulo}</strong><span>{c.resumo} · {quando(c.aberto)}</span></div>
+              {podeUsar ? (
+                <div className="age-linha-acoes">
                   <button type="button" className="agn-secundario" disabled={ocupado === c.id} onClick={() => agir(c.id, "resolve", "Caso resolvido.")}>Marcar resolvido</button>
-                )}
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </Secao>
   );
 }

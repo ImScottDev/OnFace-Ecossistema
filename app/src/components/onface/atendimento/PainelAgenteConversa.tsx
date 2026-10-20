@@ -22,6 +22,8 @@ type Estado = {
   estado: string; motivo: string; aviso: string | null; semResposta: string | null; agente: { id: string | null; nome: string } | null;
   /** Atribuição como a rota /ia devolve: traz o NOME de quem está com a conversa (`humano`). */
   atribuicao?: { humano: string | null; motivoEstado: string | null } | null;
+  /** Nome de quem pausou, quando o estado é "pausada" e foi uma pessoa. */
+  pausadaPor?: string | null;
 };
 
 const Secao = ({ titulo, children }: { titulo: string; children: React.ReactNode }) => (
@@ -134,7 +136,7 @@ export function PainelAgenteConversa({ contatoId, aberto, aoFechar, estado, aoMu
             <>
               <div className="flex flex-col gap-2" data-testid="agente-estado">
                 <div className="flex flex-wrap items-center gap-2">
-                  <SeloEstadoAgente estado={st} conversa={{ humano: estado?.atribuicao?.humano ?? null, motivo: at?.motivoEstado ?? estado?.atribuicao?.motivoEstado ?? null }} />
+                  <SeloEstadoAgente estado={st} conversa={{ humano: estado?.atribuicao?.humano ?? null, pausadaPor: estado?.pausadaPor ?? null, motivo: at?.motivoEstado ?? estado?.atribuicao?.motivoEstado ?? null }} />
                   {(at?.agente ?? estado?.agente?.nome) && <span className="text-micro text-tinta-suave">Agente: <strong className="text-tinta">{at?.agente ?? estado?.agente?.nome}</strong></span>}
                 </div>
                 {estado?.motivo && <p className="text-corpo text-tinta-suave">{estado.motivo}</p>}

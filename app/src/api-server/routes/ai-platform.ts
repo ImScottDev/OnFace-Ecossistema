@@ -16,6 +16,7 @@ import { ClaudeSubscriptionAdapter } from "@/lib/ai-platform/runtime/claude-subs
 import { executeRegisteredTool } from "@/lib/ai-platform/tools/registry";
 import { contextoDeAprovacao, enviarMensagensAprovadas } from "@/lib/ai-platform/runtime/execute-agent";
 import { liberarAprovacaoNaAtribuicao } from "@/lib/ai-platform/operacao/atribuicoes";
+import { checarAcessoContato, condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { getCtx, exigirCtx } from "../compat.js";
 
 const app = new Hono();
@@ -267,7 +268,35 @@ app.post("/automacoes/ai/skills", async (c) => {
   const result = await db.transaction(async (tx) => { const [last] = await tx.select({ versionNumber: aiSkillVersions.versionNumber }).from(aiSkillVersions).where(and(eq(aiSkillVersions.organizacaoId, ctx.organizacaoId), eq(aiSkillVersions.name, parsed.data.name))).orderBy(desc(aiSkillVersions.versionNumber)).limit(1); const [version] = await tx.insert(aiSkillVersions).values({ organizacaoId: ctx.organizacaoId, name: parsed.data.name, versionNumber: (last?.versionNumber ?? 0) + 1, description: parsed.data.description ?? null, instructions: parsed.data.instructions, manifest: parsed.data.manifest, createdById: ctx.userId }).returning(); await tx.insert(aiSkillPointers).values({ organizacaoId: ctx.organizacaoId, name: version.name, versionId: version.id }).onConflictDoUpdate({ target: [aiSkillPointers.organizacaoId, aiSkillPointers.name], set: { versionId: version.id, ativo: true, updatedAt: new Date() } }); return version; }); return c.json(result, 201);
 });
 
-app.get("/automacoes/ai/cases", async (c) => { const ctx = await getCtx(c); return c.json({ cases: await db.select().from(aiCases).where(eq(aiCases.organizacaoId, ctx.organizacaoId)).orderBy(desc(aiCases.updatedAt)).limit(250) }); });
+/* Filtros opcionais da lista de casos (conversa, agente, status, origem). A organização vem SEMPRE da sessão; os
+ * filtros só recortam dentro dela. Valor fora do vocabulário é 400, não lista vazia. */
+const STATUS_CASO = ["awaiting_human", "awaiting_contact", "resolved", "escalated", "cancelled"] as const;
+const filtroCasos = z.object({
+  contatoId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
+  status: z.enum(STATUS_CASO).optional(),
+  source: z.string().trim().min(1).max(60).regex(/^[a-z0-9_.-]+$/).optional(),
+});
+app.get("/automacoes/ai/cases", async (c) => {
+  const ctx = await getCtx(c);
+  const q = (k: string) => c.req.query(k) || undefined;
+  const f = filtroCasos.safeParse({ contatoId: q("contatoId"), agentId: q("agentId"), status: q("status"), source: q("source") });
+  if (!f.success) return c.json({ error: "Filtro inválido", details: f.error.flatten() }, 400);
+  const cond = [eq(aiCases.organizacaoId, ctx.organizacaoId)];
+  if (f.data.contatoId) {
+    // Recorte por conversa segue a mesma regra de quem abre a conversa (número privado, responsável).
+    if (!(await checarAcessoContato(ctx, f.data.contatoId)).ok) return c.json({ error: "Conversa nao encontrada" }, 404);
+    cond.push(eq(aiCases.contatoId, f.data.contatoId));
+  }
+  if (f.data.agentId) cond.push(eq(aiCases.agentId, f.data.agentId));
+  if (f.data.status) cond.push(eq(aiCases.status, f.data.status));
+  if (f.data.source) cond.push(eq(aiCases.source, f.data.source));
+  // `contato`: nome da conversa, para as superfícies que listam casos de várias conversas (editor do agente).
+  const linhas = await db.select({ caso: aiCases, contato: contatos.nome }).from(aiCases)
+    .leftJoin(contatos, and(eq(contatos.id, aiCases.contatoId), eq(contatos.organizacaoId, aiCases.organizacaoId), condicaoConversaNaoPrivada(contatos.sessaoId)))
+    .where(and(...cond)).orderBy(desc(aiCases.updatedAt)).limit(250);
+  return c.json({ cases: linhas.map((l) => ({ ...l.caso, contato: l.contato })) });
+});
 app.get("/automacoes/ai/cases/:id/events", async (c) => { const ctx = await getCtx(c); const [caseRow] = await db.select().from(aiCases).where(and(eq(aiCases.id, c.req.param("id")), eq(aiCases.organizacaoId, ctx.organizacaoId))).limit(1); if (!caseRow) return c.json({ error: "Caso nao encontrado" }, 404); return c.json({ case: caseRow, events: await db.select().from(aiCaseEvents).where(and(eq(aiCaseEvents.caseId, caseRow.id), eq(aiCaseEvents.organizacaoId, ctx.organizacaoId))).orderBy(aiCaseEvents.createdAt) }); });
 app.post("/automacoes/ai/cases/:id/action", async (c) => {
   const ctx = await exigirCtx(c, "ai.use");

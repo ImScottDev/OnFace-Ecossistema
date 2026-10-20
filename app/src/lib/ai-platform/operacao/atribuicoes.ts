@@ -10,6 +10,7 @@
  * agentes respondendo ao mesmo contato.
  */
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
   aiAgentAtribuicoes, aiAgentCompromissos, aiAgents, aiSdrContatoState, atividades, contatos, leads, usuarios,
@@ -19,7 +20,8 @@ import { agenteDoUsuario } from "@/lib/agentes/usuario-do-agente";
 import { alvoDaEntidade } from "./alvo";
 
 export type Atribuicao = typeof aiAgentAtribuicoes.$inferSelect;
-export type StatusAtribuicao = "ativa" | "pausada" | "aguardando_aprovacao" | "humano" | "falha" | "encerrada";
+export const STATUS_ATRIBUICAO = ["ativa", "pausada", "aguardando_aprovacao", "humano", "falha", "encerrada"] as const;
+export type StatusAtribuicao = (typeof STATUS_ATRIBUICAO)[number];
 export const STATUS_VIVOS: StatusAtribuicao[] = ["ativa", "pausada", "aguardando_aprovacao", "falha"];
 export type OrigemAtribuicao = "manual" | "atendimento" | "automacao" | "regra" | "evento";
 
@@ -206,7 +208,13 @@ async function carregar(organizacaoId: string, atribuicaoId: string): Promise<At
 export async function pausarAtribuicao(p: { organizacaoId: string; atribuicaoId: string; motivo?: string; ator?: AtorAtribuicao }): Promise<Atribuicao> {
   const a = await carregar(p.organizacaoId, p.atribuicaoId);
   if (!["ativa", "falha", "aguardando_aprovacao"].includes(a.status)) throw new AtribuicaoRecusada("estado_invalido", `Não dá para pausar uma atribuição ${a.status}.`);
-  const [n] = await db.update(aiAgentAtribuicoes).set({ status: "pausada", motivoEstado: p.motivo ?? "pausado por uma pessoa", updatedAt: new Date() }).where(eq(aiAgentAtribuicoes.id, a.id)).returning();
+  // Quem pausou fica no `estado` (jsonb que a atribuição já tem): a conversa mostra "Pausada por <nome>".
+  // Pausa sem pessoa (automação) apaga o registro anterior, para não atribuir a pausa a quem não a fez.
+  const porQuem = p.ator?.usuarioId ?? null;
+  const estado = porQuem
+    ? sql`${aiAgentAtribuicoes.estado} || jsonb_build_object('pausada_por', ${porQuem}::text)`
+    : sql`${aiAgentAtribuicoes.estado} - 'pausada_por'`;
+  const [n] = await db.update(aiAgentAtribuicoes).set({ status: "pausada", motivoEstado: p.motivo ?? "pausado por uma pessoa", estado, updatedAt: new Date() }).where(eq(aiAgentAtribuicoes.id, a.id)).returning();
   await sincronizarEstadoDaConversa({ organizacaoId: p.organizacaoId, contatoId: a.contatoId, ativo: false, motivo: "manual_toggle", usuarioId: p.ator?.usuarioId ?? null });
   await notaNaTimeline({ organizacaoId: p.organizacaoId, leadId: a.leadId, usuarioId: p.ator?.usuarioId ?? null, titulo: "Agente pausado neste atendimento", descricao: p.motivo ?? null, dados: { atribuicaoId: a.id } });
   return n;
@@ -215,7 +223,7 @@ export async function pausarAtribuicao(p: { organizacaoId: string; atribuicaoId:
 export async function retomarAtribuicao(p: { organizacaoId: string; atribuicaoId: string; ator?: AtorAtribuicao }): Promise<Atribuicao> {
   const a = await carregar(p.organizacaoId, p.atribuicaoId);
   if (!["pausada", "humano", "falha"].includes(a.status)) throw new AtribuicaoRecusada("estado_invalido", `Não dá para retomar uma atribuição ${a.status}.`);
-  const [n] = await db.update(aiAgentAtribuicoes).set({ status: "ativa", motivoEstado: null, humanoUsuarioId: null, updatedAt: new Date(), estado: sql`${aiAgentAtribuicoes.estado} || jsonb_build_object('ativa_desde', ${new Date().toISOString()}::text)` }).where(eq(aiAgentAtribuicoes.id, a.id)).returning();
+  const [n] = await db.update(aiAgentAtribuicoes).set({ status: "ativa", motivoEstado: null, humanoUsuarioId: null, updatedAt: new Date(), estado: sql`(${aiAgentAtribuicoes.estado} - 'pausada_por') || jsonb_build_object('ativa_desde', ${new Date().toISOString()}::text)` }).where(eq(aiAgentAtribuicoes.id, a.id)).returning();
   await sincronizarEstadoDaConversa({ organizacaoId: p.organizacaoId, contatoId: a.contatoId, ativo: true, usuarioId: p.ator?.usuarioId ?? null, ligar: true });
   // Compromissos que ficaram presos pelo humano voltam à fila: o agente reconstrói o contexto e decide se ainda valem.
   await db.update(aiAgentCompromissos).set({ status: "pendente", bloqueioMotivo: null, updatedAt: new Date() })
@@ -334,9 +342,12 @@ export async function listarAtribuicoes(organizacaoId: string, filtro: { agentId
   const conds = [eq(aiAgentAtribuicoes.organizacaoId, organizacaoId)];
   if (filtro.agentId) conds.push(eq(aiAgentAtribuicoes.agentId, filtro.agentId));
   if (filtro.status?.length) conds.push(inArray(aiAgentAtribuicoes.status, filtro.status));
-  return db.select({ a: aiAgentAtribuicoes, agente: aiAgents.nome, lead: leads.nome, contato: contatos.nome })
+  // `humano`: nome de quem está com o atendimento (humano_usuario_id), da mesma organização.
+  const humano = alias(usuarios, "humano_atribuicao");
+  return db.select({ a: aiAgentAtribuicoes, agente: aiAgents.nome, lead: leads.nome, contato: contatos.nome, humano: humano.nome })
     .from(aiAgentAtribuicoes).innerJoin(aiAgents, eq(aiAgents.id, aiAgentAtribuicoes.agentId))
     .leftJoin(leads, eq(leads.id, aiAgentAtribuicoes.leadId)).leftJoin(contatos, eq(contatos.id, aiAgentAtribuicoes.contatoId))
+    .leftJoin(humano, and(eq(humano.id, aiAgentAtribuicoes.humanoUsuarioId), eq(humano.organizacaoId, aiAgentAtribuicoes.organizacaoId)))
     .where(and(...conds)).orderBy(sql`${aiAgentAtribuicoes.updatedAt} DESC`).limit(filtro.limite ?? 100);
 }
 

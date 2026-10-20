@@ -122,7 +122,7 @@ export function AbaFerramentas({ tools, onToggle, travado, ferramentasLegadas, p
 interface Gatilhos {
   fluxos: { id: string; nome: string; ativo: boolean; evento: string | null; nos: string | null }[];
   eventos: string[];
-  atribuicoes: { id: string; status: string; objetivo: string | null; motivoEstado: string | null; lead: string | null; leadId: string | null; contato: string | null; updatedAt: string }[];
+  atribuicoes: { id: string; status: string; objetivo: string | null; motivoEstado: string | null; lead: string | null; leadId: string | null; contato: string | null; updatedAt: string; humano: string | null }[];
 }
 
 export function AbaGatilhos({ agenteId, events, onToggleEvento, prioridade, onPrioridade, travado }: {
@@ -205,7 +205,7 @@ export function AbaGatilhos({ agenteId, events, onToggleEvento, prioridade, onPr
               <li key={a.id}>
                 <strong>{a.leadId ? <Link href={`/atendimento?leadId=${a.leadId}`}>{a.lead ?? a.contato ?? "Sem nome"}</Link> : a.lead ?? a.contato ?? "Sem nome"}</strong>
                 <span>{(a.status === "humano" || a.status === "pausada" ? rotuloMotivo(a.motivoEstado) : null) ?? a.objetivo ?? rotuloMotivo(a.motivoEstado) ?? "Sem objetivo informado"} · {quando(a.updatedAt)}</span>
-                <span className="agn-selo" data-tom={a.status === "ativa" ? "ok" : a.status === "falha" || a.status === "aguardando_aprovacao" ? "alerta" : undefined}><i />{STATUS_ATRIB[a.status] ?? a.status}</span>
+                <span className="agn-selo" data-tom={a.status === "ativa" ? "ok" : a.status === "falha" || a.status === "aguardando_aprovacao" ? "alerta" : undefined}><i />{a.status === "humano" && a.humano ? `Com humano: ${a.humano}` : STATUS_ATRIB[a.status] ?? a.status}</span>
               </li>
             ))}
           </ul>

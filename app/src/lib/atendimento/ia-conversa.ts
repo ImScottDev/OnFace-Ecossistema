@@ -21,6 +21,8 @@ export type AgenteElegivel = { id: string; nome: string; sessaoId: string | null
 export type AtribuicaoNoEstado = {
   id: string; agentId: string; agente: string; status: string; objetivo: string | null; motivoEstado: string | null; resumoHandoff: string | null;
   copiloto: boolean; humano: string | null; proximaRetomadaEm: string | null; ultimaExecucaoEm: string | null;
+  /** Nome de quem pausou a atribuição (estado.pausada_por). Nulo quando foi automação ou não está pausada. */
+  pausadaPor?: string | null;
 };
 export type EntradaEstadoIa = {
   /** Atribuição persistente de agente (Atendimento/automação). Quando existe, ela manda no estado. */
@@ -46,6 +48,8 @@ export type EstadoIa = {
   ultimaExecucao: EntradaEstadoIa["ultimaExecucao"];
   /** Preenchido quando o cliente escreveu depois da última execução: por que o agente não respondeu. */
   semResposta: string | null;
+  /** Nome de quem pausou, quando o estado é "pausada" e uma pessoa fez a pausa. */
+  pausadaPor: string | null;
 };
 
 /** Versão ligada a um número só atende conversa dele; sem número fixo vale para todos. Usada pelo runtime e pela tela. */
@@ -77,14 +81,14 @@ export function decidirEstadoIa(e: EntradaEstadoIa): EstadoIa {
     const agAt: EstadoIa["agente"] = { id: at.agentId, nome: at.agente, origem: "nativo" };
     const retomada = at.proximaRetomadaEm ? ` Próxima retomada combinada: ${quando(at.proximaRetomadaEm)}.` : "";
     if (at.status === "humano") { estado = "humano"; motivo = `Atendimento sob responsabilidade ${at.humano ? `de ${at.humano}` : "humana"}${at.motivoEstado ? `: ${at.motivoEstado}` : ""}. ${at.agente} não responde${at.copiloto ? " e segue como copiloto interno" : ""}.`; }
-    else if (at.status === "pausada") { estado = "pausada"; motivo = `${at.agente} está pausado neste atendimento${at.motivoEstado ? `: ${at.motivoEstado}` : ""}.${retomada}`; }
+    else if (at.status === "pausada") { estado = "pausada"; motivo = `${at.agente} está pausado neste atendimento${at.pausadaPor ? ` por ${at.pausadaPor}` : ""}${at.motivoEstado ? `: ${at.motivoEstado}` : ""}.${retomada}`; }
     else if (at.status === "aguardando_aprovacao") { estado = "aguardando_aprovacao"; motivo = `${at.agente} preparou uma ação e aguarda a decisão de uma pessoa.`; }
     else if (at.status === "falha") { estado = "falha"; motivo = `A última execução de ${at.agente} falhou${at.motivoEstado ? `: ${at.motivoEstado}` : ""}. Ele tenta de novo na próxima mensagem.`; }
     else { estado = "ativa"; motivo = `${at.agente} conduz este atendimento${at.objetivo ? ` (objetivo: ${at.objetivo})` : ""}.${retomada}`; }
     const aviso = e.sessao && e.sessao.status !== "connected" ? `O número ${e.sessao.label?.trim() || ""} está desconectado: o agente não consegue enviar respostas.`.replace("  ", " ") : null;
     const exec = e.ultimaExecucao;
     const semResposta = exec && ["failed", "aborted"].includes(exec.status) ? `A última execução (${quando(exec.em)}) ${exec.status === "failed" ? "falhou" : "foi interrompida"}${exec.erro ? `: ${exec.erro}` : ""}.` : null;
-    return { estado, atribuicao: at, agente: agAt, motivo, aviso, ultimaExecucao: exec, semResposta };
+    return { estado, atribuicao: at, agente: agAt, motivo, aviso, ultimaExecucao: exec, semResposta, pausadaPor: estado === "pausada" ? at.pausadaPor ?? null : null };
   }
   if (e.pausa && !e.pausa.aiAtivo) {
     estado = "pausada";
@@ -121,7 +125,7 @@ export function decidirEstadoIa(e: EntradaEstadoIa): EstadoIa {
     semResposta = `A última execução (${quando(exec.em)}) ${exec.status === "failed" ? "falhou" : "foi interrompida"}${exec.erro ? `: ${exec.erro}` : ""}.`;
   }
 
-  return { estado, atribuicao: null, agente, motivo, aviso, ultimaExecucao: exec, semResposta };
+  return { estado, atribuicao: null, agente, motivo, aviso, ultimaExecucao: exec, semResposta, pausadaPor: estado === "pausada" ? e.pausa?.por ?? null : null };
 }
 
 function eventosDoGatilho(t: unknown): string[] {
@@ -136,8 +140,10 @@ export async function estadoDaIaNaConversa(organizacaoId: string, contatoId: str
     SELECT sessao_id::text FROM contatos WHERE id = ${contatoId}::uuid AND organizacao_id = ${organizacaoId}::uuid`);
   if (!contato) return null;
 
-  const [atribRows] = await Promise.all([db.execute<{ id: string; agent_id: string; agente: string; status: string; objetivo: string | null; motivo_estado: string | null; resumo_handoff: string | null; copiloto: boolean; humano: string | null; retomada: string | null; ultima: string | null }>(sql`
+  const [atribRows] = await Promise.all([db.execute<{ id: string; agent_id: string; agente: string; status: string; objetivo: string | null; motivo_estado: string | null; resumo_handoff: string | null; copiloto: boolean; humano: string | null; pausada_por: string | null; retomada: string | null; ultima: string | null }>(sql`
     SELECT a.id::text, a.agent_id::text, ag.nome AS agente, a.status, a.objetivo, a.motivo_estado, a.resumo_handoff, a.copiloto, u.nome AS humano,
+           (SELECT p.nome FROM usuarios p WHERE a.status = 'pausada' AND p.organizacao_id = a.organizacao_id
+               AND p.id::text = a.estado->>'pausada_por') AS pausada_por,
            (SELECT min(c.due_at)::text FROM ai_agent_compromissos c WHERE c.atribuicao_id = a.id AND c.status IN ('pendente','bloqueado')) AS retomada, a.ultima_execucao_em::text AS ultima
       FROM ai_agent_atribuicoes a JOIN ai_agents ag ON ag.id = a.agent_id LEFT JOIN usuarios u ON u.id = a.humano_usuario_id
      WHERE a.organizacao_id = ${organizacaoId}::uuid AND a.contato_id = ${contatoId}::uuid AND a.status <> 'encerrada' ORDER BY a.updated_at DESC LIMIT 1`)]);
@@ -166,7 +172,7 @@ export async function estadoDaIaNaConversa(organizacaoId: string, contatoId: str
 
   const ar = atribRows[0];
   return decidirEstadoIa({
-    atribuicao: ar ? { id: ar.id, agentId: ar.agent_id, agente: ar.agente, status: ar.status, objetivo: ar.objetivo, motivoEstado: ar.motivo_estado, resumoHandoff: ar.resumo_handoff, copiloto: ar.copiloto, humano: ar.humano, proximaRetomadaEm: ar.retomada, ultimaExecucaoEm: ar.ultima } : null,
+    atribuicao: ar ? { id: ar.id, agentId: ar.agent_id, agente: ar.agente, status: ar.status, objetivo: ar.objetivo, motivoEstado: ar.motivo_estado, resumoHandoff: ar.resumo_handoff, copiloto: ar.copiloto, humano: ar.humano, pausadaPor: ar.pausada_por, proximaRetomadaEm: ar.retomada, ultimaExecucaoEm: ar.ultima } : null,
     agentes: agentes
       .filter((a) => eventosDoGatilho(a.trigger).includes(EVENTO_RESPOSTA))
       .map((a) => ({ id: a.id, nome: a.nome, sessaoId: a.sessao_id, prioridade: a.prioridade })),

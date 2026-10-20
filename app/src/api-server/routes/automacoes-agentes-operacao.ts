@@ -18,7 +18,7 @@ import { getCtx, exigirCtx } from "../compat.js";
 import { checarAcessoContato, sessaoVisivel } from "@/lib/whatsapp/acesso";
 import { catalogoDeFerramentas, DOMINIOS } from "@/lib/ai-platform/tools/catalogo";
 import { CLASSES_AUTONOMIA } from "@/lib/ai-platform/tools/politica";
-import { atribuirAgente, AtribuicaoRecusada, encerrarAtribuicao, listarAtribuicoes, pausarAtribuicao, retomarAtribuicao, transferirParaHumano, atribuicaoViva } from "@/lib/ai-platform/operacao/atribuicoes";
+import { atribuirAgente, AtribuicaoRecusada, encerrarAtribuicao, listarAtribuicoes, pausarAtribuicao, retomarAtribuicao, transferirParaHumano, atribuicaoViva, STATUS_ATRIBUICAO } from "@/lib/ai-platform/operacao/atribuicoes";
 import { acionarAgente } from "@/lib/ai-platform/operacao/acionar";
 import { cancelarCompromisso, CompromissoRecusado, listarCompromissos, reagendarCompromisso } from "@/lib/ai-platform/operacao/compromissos";
 import { corrigirFato, excluirFato, MemoriaRecusada } from "@/lib/ai-platform/operacao/memoria";
@@ -110,9 +110,13 @@ app.get(`${AO}/agentes`, async (c) => {
 
 app.get(`${AO}/atribuicoes`, async (c) => {
   const ctx = await getCtx(c);
-  const status = c.req.query("status")?.split(",").filter(Boolean) as ("ativa" | "pausada")[] | undefined;
-  const linhas = await listarAtribuicoes(ctx.organizacaoId, { agentId: c.req.query("agentId") || undefined, status, limite: 200 });
-  return c.json({ atribuicoes: linhas.map((l) => ({ ...l.a, agente: l.agente, lead: l.lead, contato: l.contato })) });
+  // Qualquer estado da atribuição filtra (ativa, pausada, humano, aguardando_aprovacao, falha, encerrada); fora disso é 400.
+  const status = z.array(z.enum(STATUS_ATRIBUICAO)).optional().safeParse(c.req.query("status")?.split(",").map((s) => s.trim()).filter(Boolean));
+  if (!status.success) throw new HTTPException(400, { message: `Status inválido. Use: ${STATUS_ATRIBUICAO.join(", ")}.` });
+  const agentId = c.req.query("agentId") || undefined;
+  if (agentId && !uuid.safeParse(agentId).success) throw new HTTPException(400, { message: "Agente inválido" });
+  const linhas = await listarAtribuicoes(ctx.organizacaoId, { agentId, status: status.data, limite: 200 });
+  return c.json({ atribuicoes: linhas.map((l) => ({ ...l.a, agente: l.agente, lead: l.lead, contato: l.contato, humano: l.humano })) });
 });
 
 /** Atribuição viva de uma oportunidade ou lead (Pipeline): resolve o lead da oportunidade, pois a atribuição pode ter nascido na conversa. */
@@ -358,7 +362,7 @@ app.get("/automacoes/agentes/:id/gatilhos", async (c) => {
        AND EXISTS (SELECT 1 FROM jsonb_array_elements(v.nodes) n WHERE n->'config'->>'agenteId' = ${id})`);
   const [versao] = await db.select({ trigger: aiAgentVersions.triggerConfig }).from(aiAgentVersions).where(and(eq(aiAgentVersions.agentId, id), eq(aiAgentVersions.organizacaoId, ctx.organizacaoId))).orderBy(desc(aiAgentVersions.versao)).limit(1);
   const atribuicoes = await listarAtribuicoes(ctx.organizacaoId, { agentId: id, status: ["ativa", "pausada", "aguardando_aprovacao", "humano", "falha"], limite: 50 });
-  return c.json({ fluxos, eventos: (versao?.trigger as { events?: string[] } | undefined)?.events ?? [], atribuicoes: atribuicoes.map((l) => ({ ...l.a, lead: l.lead, contato: l.contato })) });
+  return c.json({ fluxos, eventos: (versao?.trigger as { events?: string[] } | undefined)?.events ?? [], atribuicoes: atribuicoes.map((l) => ({ ...l.a, lead: l.lead, contato: l.contato, humano: l.humano })) });
 });
 
 /* ── Ciclo de vida do agente ──────────────────────────────────────────── */
