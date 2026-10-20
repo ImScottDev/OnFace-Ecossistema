@@ -150,7 +150,7 @@ export const ADAPTER: Partial<Record<NoFluxo["tipo"], string>> = {
 };
 
 /** Config do catálogo (pt-BR) → config que o adapter conhece. */
-function configDoAdapter(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, timeoutMs: number): { adapter: string; config: Record<string, unknown>; vars: Record<string, unknown> } {
+export function configDoAdapter(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, timeoutMs: number): { adapter: string; config: Record<string, unknown>; vars: Record<string, unknown> } {
   const reg = (ctx.registro ?? {}) as Record<string, unknown>;
   const responsavel = (v: unknown) => s(v) || s(reg.responsavel_id);
   switch (no.tipo) {
@@ -172,7 +172,7 @@ function configDoAdapter(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, time
       return { adapter: "crm_add_note", vars: {}, config: { title: s(c.titulo), description: s(c.descricao) || null } };
     case "ia_responder":
       // O bloco "IA: responder" fala pelo ciclo próprio do agente (atribuição, contexto, memória), não pelo passo de cadência.
-      return { adapter: "agente_acionar", vars: {}, config: { agenteId: s(c.agenteId), objetivo: s(c.instrucao) || "Responder ao contato e conduzir a conversa", modo: "conduzir", semTrava: true } };
+      return { adapter: "agente_acionar", vars: {}, config: { agenteId: s(c.agenteId), objetivo: s(c.instrucao) || "Responder ao contato e conduzir a conversa", modo: "conduzir", semTrava: true, sessao_id: s(c.sessaoId) || undefined } };
     case "requisicao_http":
       return { adapter: "fluxo_http", vars: {}, config: { ...c, _timeoutMs: timeoutMs } };
     default:

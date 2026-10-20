@@ -43,6 +43,15 @@ export interface EntradaAcionar {
   /** Cria a atribuição quando ainda não existe (automação/atendimento). */
   atribuir?: { origem: OrigemAtribuicao; origemRef?: string | null; objetivo?: string | null; usuarioId?: string | null; sobrepoeHumano?: boolean; trocar?: boolean };
   compromissoId?: string | null;
+  /**
+   * Número pelo qual o agente deve falar NESTE acionamento.
+   *
+   * Existe porque o passo "IA: responder" oferece "Falar pelo número" e o
+   * motor ignorava o campo: a conversa nascia sempre no número da versão do
+   * agente, ou no pool. Quem escolhia não era atendido e não recebia erro.
+   * Vazio = como antes (número da versão, ou pool operacional).
+   */
+  sessaoId?: string | null;
   /** Mesma chave = mesma execução (retry de automação não roda duas vezes). */
   chaveIdempotencia?: string | null;
   /** Só analisar: lê, raciocina e registra nota; não envia mensagem nem altera o comercial. */
@@ -102,7 +111,12 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
 
   // Atendimento que começou pelo lead: o contato de WhatsApp é resolvido (ou criado no número do agente) aqui, uma vez.
   if (mode === "live" && !e.contatoId && e.leadId) {
-    const ct = await contatoDoLead(e.organizacaoId, e.leadId, versao?.channelSessionId ?? null, { poolOperacional: usaPoolOperacional(versao?.guardrailConfig) }).catch(() => null);
+    // O número escolhido no passo vence o da versão. Se ele não valer para
+    // este agente, a checagem de canal mais abaixo barra o acionamento com
+    // `numero_nao_autorizado_para_o_agente` — escolher número errado falha
+    // dizendo o porquê, em vez de sair calado por outro número.
+    const sessaoEscolhida = e.sessaoId || versao?.channelSessionId || null;
+    const ct = await contatoDoLead(e.organizacaoId, e.leadId, sessaoEscolhida, { poolOperacional: usaPoolOperacional(versao?.guardrailConfig) }).catch(() => null);
     if (ct) e = { ...e, contatoId: ct.id };
     else { const runId = await registrarBloqueio(e, versao?.id ?? null, "lead_sem_whatsapp"); return bloqueado("lead_sem_whatsapp", runId); }
   }

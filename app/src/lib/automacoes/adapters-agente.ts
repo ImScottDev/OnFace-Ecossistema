@@ -73,6 +73,8 @@ registrarAdapter("agente_acionar", async (ctx) => {
     organizacaoId: ctx.organizacaoId, agentId, leadId: r.alvo.leadId, contatoId: r.alvo.contatoId, evento: "lead.atribuido_ao_agente",
     mensagem: `Você foi acionada por uma automação.\n${contexto}\nReconstrua o contexto do atendimento e decida a melhor ação para cumprir o objetivo.`,
     motivoDaExecucao: contexto, proativo: !analise, somenteAnalise: analise, origem: ref(ctx), chaveIdempotencia: c.semTrava === true ? `fluxo:${ctx.enrollmentId}:${ctx.step.id}` : `auto:${chave}`,
+    // "Falar pelo número", do passo. Vazio = número da versão do agente / pool.
+    sessaoId: str(c.sessao_id) || str(c.sessaoId) || undefined,
     atribuir: viva ? undefined : { origem: "automacao", origemRef: ref(ctx), objetivo },
   });
   const ok = res.resultado === "respondeu" || res.resultado === "handover" || res.resultado === "sem_resposta" || res.resultado === "duplicado";
