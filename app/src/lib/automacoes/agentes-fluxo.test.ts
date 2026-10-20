@@ -43,7 +43,7 @@ before(async () => {
   process.env.OPENAI_API_KEY = "chave-de-teste";
   [{ id: org }] = await q<{ id: string }>(sql`SELECT id::text FROM organizacoes ORDER BY created_at LIMIT 1`);
   [{ id: usuario }] = await q<{ id: string }>(sql`SELECT id::text FROM usuarios WHERE organizacao_id = ${org}::uuid AND tipo = 'humano' AND ativo = true AND role IN ('admin','super_admin') LIMIT 1`);
-  [{ id: sessaoId }] = await q<{ id: string }>(sql`INSERT INTO whatsapp_sessao (organizacao_id, session_name, label, status, tipo, api_token) VALUES (${org}::uuid, ${`${T}-s`}, ${`${T} número`}, 'connected', 'compartilhada', 'x') RETURNING id::text`);
+  [{ id: sessaoId }] = await q<{ id: string }>(sql`INSERT INTO whatsapp_sessao (organizacao_id, session_name, label, status, tipo, api_token, operacional) VALUES (${org}::uuid, ${`${T}-s`}, ${`${T} número`}, 'connected', 'compartilhada', 'x', true) RETURNING id::text`);
 });
 
 async function apagarEmCascata(tabela: string, onde: ReturnType<typeof sql>, nivel = 0): Promise<void> {

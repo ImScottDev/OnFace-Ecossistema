@@ -48,6 +48,9 @@ const WEBHOOKS: Webhook[] = [
   { nome: "WhatsApp (wuzapi)", arquivo: "api-server/routes/whatsapp.ts", envVar: "UAZAPI_WEBHOOK_SECRET" },
   { nome: "Apollo", arquivo: "api-server/routes/apollo.ts", envVar: "APOLLO_WEBHOOK_SECRET" },
   { nome: "Microsoft Calendar (Graph)", arquivo: "app/api/webhooks/microsoft-calendar/route.ts", envVar: "MICROSOFT_CALENDAR_CLIENT_STATE" },
+  // Estado de entrega do e-mail empurrado pelo Resend. Assinatura Svix em
+  // `svix-signature`, conferida com o signing secret (whsec_...).
+  { nome: "Resend (entrega de e-mail)", arquivo: "app/api/webhooks/resend/route.ts", envVar: "RESEND_WEBHOOK_SECRET" },
 ];
 
 /**
