@@ -275,10 +275,9 @@ registrarAdapter("whatsapp", async (ctx) => {
   const jobId = `cadence-${ctx.enrollmentId}-${ctx.step.id}-${ctx.attempt}`.replace(/:/g, "-");
   try {
     if (telefoneAvulso) {
-      // Número digitado no nó: não é o contato do registro, então não há conversa para registrar.
-      const { id: sessaoId } = await escolherSessao(ctx.organizacaoId, { preferidaId: preferida, entidade: { tipo: ctx.entityType, id: ctx.entityId } });
-      const job = await whatsappOutgoingQueue.add("send", { phone: telefoneAvulso, conteudo: mensagem, tipo: "text", sessaoId }, { jobId });
-      return { sucesso: true, resultado: { jobId: job.id, sessaoId } };
+      // Envio avulso antigo contornava contato, opt-out, ledger e auditabilidade.
+      // Não enfileirar envio que o worker não consegue vincular a uma conversa.
+      return { sucesso: false, erro: "envio avulso desativado por segurança: vincule o destinatário a um contato/lead para enviar com histórico e opt-out" };
     }
     const contato = await resolverContatoCompleto(ctx.entityType, ctx.entityId, ctx.organizacaoId, { sessaoPreferidaId: preferida });
     if (!contato) return { sucesso: false, erro: "sem telefone resolvido pra esta entidade" };
@@ -319,13 +318,16 @@ export async function escolherSessao(
   if (opts.preferidaId) {
     const s = sessoes.find((x) => x.id === opts.preferidaId);
     if (!s) throw new Error("a sessão de WhatsApp escolhida não existe mais nesta organização");
+    // Escolher um ID no passo ou na API não equivale a autorizar o uso do WhatsApp privado.
+    // Envio manual do dono segue pela porta do Atendimento.
+    if (!numeroAceitaAutomacao(s)) throw new Error(MOTIVO_NUMERO_PRIVADO);
     if (s.status !== "connected") throw new Error(`a sessão de WhatsApp escolhida (${s.label ?? s.sessionName}) está desconectada`);
     return { id: s.id };
   }
-  // Escolha AUTOMÁTICA nunca cai em número privado (WhatsApp pessoal). Quem quiser falar pelo
-  // próprio número privado escolhe ele no passo (preferidaId, acima). Ver lib/whatsapp/uso-automatico.ts.
+  // Escolha AUTOMÁTICA nunca cai em número privado (WhatsApp pessoal).
+  // Só números não privados: escolha explícita no nó não comprova autorização do dono.
   const conectadas = sessoes.filter((x) => x.status === "connected" && numeroAceitaAutomacao(x));
-  if (!conectadas.length) throw new Error(sessoes.some((x) => x.status === "connected") ? "só há números privados conectados: escolha o número no passo" : "nenhuma sessão de WhatsApp conectada nesta organização");
+  if (!conectadas.length) throw new Error(sessoes.some((x) => x.status === "connected") ? "só há números privados conectados: a automação precisa de um número não privado autorizado" : "nenhuma sessão de WhatsApp conectada nesta organização");
   let responsavelId: string | null = null;
   if (opts.entidade) {
     const leadId = opts.entidade.tipo === "lead" ? opts.entidade.id
@@ -416,7 +418,9 @@ async function enfileirarWhatsapp(args: { contato: typeof contatos.$inferSelect;
   if (await optOutAtivo(contato.organizacaoId, contato.id)) return { sucesso: false, erro: "opt-out: o contato pediu para não receber mensagens — nada foi enviado" };
   if (!contato.sessaoId) return { sucesso: false, erro: "contato sem sessão de WhatsApp" };
   // Fila para número desconectado só gera mensagem "pendente" para sempre: melhor falhar já, com o motivo visível em Execuções.
-  const [sessao] = await db.select({ status: whatsappSessao.status, nome: whatsappSessao.label }).from(whatsappSessao).where(eq(whatsappSessao.id, contato.sessaoId)).limit(1);
+  const [sessao] = await db.select({ status: whatsappSessao.status, nome: whatsappSessao.label, privado: whatsappSessao.privado }).from(whatsappSessao)
+    .where(and(eq(whatsappSessao.id, contato.sessaoId), eq(whatsappSessao.organizacaoId, contato.organizacaoId))).limit(1);
+  if (sessao?.privado) return { sucesso: false, erro: MOTIVO_NUMERO_PRIVADO };
   if (!sessao || sessao.status !== "connected") return { sucesso: false, erro: `a sessão de WhatsApp desta conversa${sessao?.nome ? ` (${sessao.nome})` : ""} está desconectada` };
   const [row] = await db.insert(whatsappMensagens).values({
     contatoId: contato.id, leadId: contato.leadId, sessaoId: contato.sessaoId, telefone: contato.telefone,

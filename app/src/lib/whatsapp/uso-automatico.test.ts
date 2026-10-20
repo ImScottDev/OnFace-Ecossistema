@@ -58,8 +58,9 @@ test("nenhum caminho automático escolhe, lê ou fala por número privado", asyn
 
   // Cadência/fluxo: o responsável só tem número privado → cai no operacional, nunca no privado.
   assert.equal((await escolherSessao(u.org, { entidade })).id, operacional, "escolha automática pula o número privado do responsável");
-  // Escolha explícita do próprio número continua possível (o dono falando pelo que é dele).
-  assert.equal((await escolherSessao(u.org, { preferidaId: privada, entidade })).id, privada);
+  // O nó/endpoint da cadência não autentica o dono no worker: preferida
+  // não autoriza um envio privado. Atendimento manual continua independente.
+  await assert.rejects(escolherSessao(u.org, { preferidaId: privada, entidade }), /privado/);
 
   // Só número privado conectado: erro claro, nada de sair por ele.
   await db.update(whatsappSessao).set({ status: "disconnected" }).where(eq(whatsappSessao.id, operacional));
