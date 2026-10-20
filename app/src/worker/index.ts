@@ -2499,11 +2499,15 @@ const whatsappIncomingWorker = new Worker(
         const { sincronizarProspectsComCadencia } = await import("../lib/vendas/prospeccao");
         await sincronizarProspectsComCadencia(organizacaoId).catch((e) => console.error("[prospeccao] sync de resposta falhou:", e));
       }
-      const eventId = await publicarEvento({
+      // Reentrega do relay: o insert acima cai no ON CONFLICT e não devolve
+      // linha. Sem esta guarda, `inboundMsgRow.id` estourava TypeError aqui e
+      // o catch abaixo passava o turno para o runtime direto — numa mensagem
+      // que já tinha sido roteada na primeira entrega.
+      const eventId = inboundMsgRow ? await publicarEvento({
         organizacaoId, eventType: "ConversationMessageReceived", aggregateType: "contato", aggregateId: contato.id,
         payload: { contatoId: contato.id, leadId: contato.leadId ?? null, messageId: inboundMsgRow.id, channel: "whatsapp", messageType: msgType },
         idempotencyKey: `whatsapp:${inboundMsgRow.id}:received`,
-      });
+      }) : null;
       if (eventId) {
         const [event] = await db.select().from(eventOutbox).where(eq(eventOutbox.id, eventId)).limit(1);
         if (event) roteadoPorAutomacao = (await dispatchAutomationEvent(event)).matched > 0;

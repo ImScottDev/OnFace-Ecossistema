@@ -138,7 +138,8 @@ function rodarLogica(no: NoFluxo, config: Record<string, unknown>, ctx: Ctx, op:
 
 // ─── Ações (adapters do cadence-engine) ────────────────────────────────────
 
-const ADAPTER: Partial<Record<NoFluxo["tipo"], string>> = {
+/** Bloco do catálogo → adapter do motor único. Exportado para a trava que confere se todos existem. */
+export const ADAPTER: Partial<Record<NoFluxo["tipo"], string>> = {
   criar_tarefa: "crm_create_task", adicionar_tag: "crm_add_tag", remover_tag: "crm_remove_tag", atribuir_responsavel: "crm_assign_owner",
   enviar_email: "email", inscrever_cadencia: "fluxo_inscrever_cadencia", remover_cadencia: "fluxo_remover_cadencia",
   notificar_usuario: "fluxo_notificar", atualizar_campo: "fluxo_atualizar_campo", adicionar_nota: "crm_add_note",

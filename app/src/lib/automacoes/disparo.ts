@@ -8,7 +8,8 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { automacoes, automacaoVersoes, automacaoExecucoes } from "@/lib/db/schema";
+import { automacoes, automacaoVersoes, automacaoExecucoes, contatos, whatsappMensagens } from "@/lib/db/schema";
+import { condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { EVENTOS_PLATAFORMA, avaliarRegras, type TipoEntidade } from "./grafo";
 import { estadoVazio, hidratarContexto, origemAutomacao, type EntidadeRef } from "./contexto";
 import { configDaVersao, iniciarExecucao, profundidadeParaEvento, retomarDevidas } from "./executor";
@@ -52,6 +53,27 @@ export function payloadDoGatilho(eventType: string, payload: Record<string, unkn
   // O board grava OpportunityStageChanged com `de`/`para`; o catálogo fala status/statusAnterior.
   if (eventType === "OpportunityStageChanged") return { ...payload, status: payload.para ?? null, statusAnterior: payload.de ?? null };
   return payload;
+}
+
+/**
+ * `conteudo` ("Texto da mensagem") é o único campo que o catálogo promete em
+ * `whatsapp.recebido`, e o evento NÃO o carrega: `ConversationMessageReceived`
+ * leva só o id da mensagem, porque o texto da conversa não vai para o
+ * barramento do n8n nem para a Meta (privacidade, regra de 14/10). Sem esta
+ * leitura, toda regra "só quando o texto contém X" comparava com vazio e o
+ * fluxo nunca disparava. O texto fica no estado da execução e em nenhum outro
+ * lugar novo.
+ */
+async function textoDaMensagem(organizacaoId: string, mensagemId: unknown): Promise<string | null> {
+  if (!uuid(mensagemId)) return null;
+  // A porta de conversa decide o que é legível por máquina: número privado
+  // fica de fora aqui também, e não só porque o canal nem publica o evento.
+  const rows = await db.select({ conteudo: whatsappMensagens.conteudo })
+    .from(whatsappMensagens)
+    .innerJoin(contatos, eq(contatos.id, whatsappMensagens.contatoId))
+    .where(and(eq(whatsappMensagens.id, mensagemId), eq(contatos.organizacaoId, organizacaoId), condicaoConversaNaoPrivada(contatos.sessaoId)))
+    .limit(1);
+  return rows[0]?.conteudo ?? null;
 }
 
 interface FluxoAtivo { automacaoId: string; versaoId: string; trigger: Record<string, unknown>; settings: unknown }
@@ -126,7 +148,10 @@ export async function dispararFluxosPorEvento(evento: EventoOutbox): Promise<num
   // é "Negócio criado", não mudança de etapa.
   if (evento.eventType === "OpportunityStageChanged" && !bruto.de) return 0;
   // `_evento` identifica o fato no estado da execução (barra o disparo em dobro e deixa rastro para relatório).
-  const payload = { ...payloadDoGatilho(evento.eventType, (evento.payload ?? {}) as Record<string, unknown>), _evento: { id: evento.id, tipo: evento.eventType } };
+  const payload: Record<string, unknown> = { ...payloadDoGatilho(evento.eventType, bruto), _evento: { id: evento.id, tipo: evento.eventType } };
+  if (evento.eventType === "ConversationMessageReceived" && payload.conteudo === undefined) {
+    payload.conteudo = await textoDaMensagem(evento.organizacaoId, bruto.messageId);
+  }
   return dispararParaEventos({
     organizacaoId: evento.organizacaoId, eventoIds: ids.map((e) => e.id),
     entidade: entidadeDoEvento(evento, ids[0].entidade), payload,
