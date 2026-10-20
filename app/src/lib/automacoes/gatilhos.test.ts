@@ -18,6 +18,8 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, fecharConexao } from "@/lib/db";
 import { automacaoExecucoes, automacoes } from "@/lib/db/schema";
@@ -68,6 +70,22 @@ test("todo gatilho legado do catálogo é um gatilho que o motor antigo sabe dis
   const comoGatilhos: GatilhoAutomacao[] = legados as GatilhoAutomacao[];
   assert.ok(comoGatilhos.length >= 7, "NPS, contrato vencendo, lead inativo, tarefa vencida e os quatro do Stripe");
   assert.equal(new Set(legados).size, legados.length, "um gatilho legado não alimenta dois eventos do catálogo");
+});
+
+test("todo gatilho de evento do catálogo tem quem publique o evento", () => {
+  // Varredura do código, não do banco: um tipo de evento que ninguém publica é
+  // um gatilho que a tela oferece e que nunca dispara — e nada avisa.
+  const raiz = join(import.meta.dirname, "..", "..");
+  const fontes = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) return ["node_modules", "migrations"].includes(e.name) ? [] : fontes(p);
+    return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
+  });
+  const codigo = fontes(raiz).map((p) => readFileSync(p, "utf8")).join("\n");
+  // `eventType: "X"` é o publicador direto; `{ tipo: "X", agregado:` é a ponte canônica.
+  const publicados = new Set([...codigo.matchAll(/eventType: "([A-Za-z]+)"/g), ...codigo.matchAll(/\{ tipo: "([A-Za-z]+)", agregado:/g)].map((m) => m[1]));
+  const orfaos = EVENTOS_PLATAFORMA.flatMap((e) => (e.fontes.outbox ?? []).filter((t) => !publicados.has(t)).map((t) => `${e.id} ← ${t}`));
+  assert.deepEqual(orfaos, [], "gatilho do catálogo cujo evento ninguém publica");
 });
 
 test("mudança de etapa pelo board: `de`/`para` do board viram statusAnterior/status do catálogo", () => {
