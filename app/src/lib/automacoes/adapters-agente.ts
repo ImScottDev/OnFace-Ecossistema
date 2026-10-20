@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgents } from "@/lib/db/schema";
-import { registrarAdapter, type CadenceActionContext } from "@/lib/cadencia/cadence-engine";
+import { mensagensEnviadasPeloRun, registrarAdapter, type CadenceActionContext } from "@/lib/cadencia/cadence-engine";
 import { alvoDaEntidade } from "@/lib/ai-platform/operacao/alvo";
 import { atribuicaoViva, atribuirAgente, AtribuicaoRecusada, encerrarAtribuicao, pausarAtribuicao, transferirParaHumano } from "@/lib/ai-platform/operacao/atribuicoes";
 import { acionarAgente } from "@/lib/ai-platform/operacao/acionar";
@@ -76,10 +76,12 @@ registrarAdapter("agente_acionar", async (ctx) => {
     atribuir: viva ? undefined : { origem: "automacao", origemRef: ref(ctx), objetivo },
   });
   const ok = res.resultado === "respondeu" || res.resultado === "handover" || res.resultado === "sem_resposta" || res.resultado === "duplicado";
+  // O que saiu de fato para o contato (o bloco "IA: responder" publica isto em {{ nos.<id>.resposta }}).
+  const mensagens = res.runId && !analise ? await mensagensEnviadasPeloRun(ctx.organizacaoId, res.runId) : [];
   return {
     sucesso: ok || res.resultado === "bloqueado" || res.resultado === "pausado" || res.resultado === "ocupado",
     erro: res.resultado === "falhou" ? res.motivo : undefined,
-    resultado: { status: res.resultado, motivo: res.motivo ?? null, runId: res.runId ?? null, handoff: res.resultado === "handover" },
+    resultado: { status: res.resultado, motivo: res.motivo ?? null, runId: res.runId ?? null, handoff: res.resultado === "handover", mensagens },
   };
 });
 

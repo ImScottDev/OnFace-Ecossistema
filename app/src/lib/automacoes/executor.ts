@@ -183,7 +183,11 @@ function configDoAdapter(no: NoFluxo, c: Record<string, unknown>, ctx: Ctx, time
 function camposDoResultado(no: NoFluxo, r: CadenceActionResult, config: Record<string, unknown>): Record<string, unknown> {
   const res = r.resultado ?? {};
   if (no.tipo === "mover_etapa") return { etapa: config.etapa ?? null };
-  if (no.tipo === "ia_responder") return { resposta: null, handoff: res.handoff === true };
+  if (no.tipo === "ia_responder") {
+    // O que o agente de fato enfileirou (o adapter lê do run); nada enviado = null, nunca texto inventado.
+    const mensagens = Array.isArray(res.mensagens) ? (res.mensagens as { id: string; texto: string }[]) : [];
+    return { resposta: mensagens.length ? mensagens.map((m) => m.texto).join("\n") : null, mensagemIds: mensagens.map((m) => m.id), handoff: res.handoff === true };
+  }
   return Object.fromEntries(CATALOGO_NOS[no.tipo].saidaCampos.map((c) => [c.chave, res[c.chave] ?? null]));
 }
 
