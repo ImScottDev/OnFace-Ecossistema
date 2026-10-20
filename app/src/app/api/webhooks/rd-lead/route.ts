@@ -12,6 +12,10 @@ import { garantirAtividadePrimeiroContato, resolverResponsavelInbound } from "@/
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "@/lib/vendas/ponte-canonica";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
+import { abrirEntrega, chaveDoRd, fecharEntrega } from "@/lib/captacao/entregas";
+import { colunasDaDistribuicao, distribuirLeadCaptado } from "@/lib/captacao/distribuir";
+import { registrarEvento } from "@/lib/vendas/eventos";
+import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
 import {
   buscarLeadNaGraph, normalizarLeadAds, camposRastreioMeta, credenciaisLeadAds,
 } from "@onface/integrations-meta";
@@ -125,12 +129,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // O dono vem da política da organização; não existe nome de pessoa gravado
-  // no webhook. Sem política válida o lead continua visível na fila sem dono.
-  // Regra de distribuição (Ajustes > Leads) antes do padrão: humano, agente ou rodízio, com dia/horário.
-  const { resolverPorRegra } = await import("@/lib/agentes/distribuicao");
-  const responsavelInboundId = (await resolverPorRegra({ organizacaoId: org.id, etapa: "novo" }))?.responsavelId
-    ?? await resolverResponsavelInbound(org.id);
+  // O dono vem da regra de distribuição (Ajustes > Leads) ou da política da
+  // organização; não existe nome de pessoa gravado no webhook. É decidido POR
+  // LEAD e só para o lead que nasce (lib/captacao/distribuir.ts): antes era
+  // resolvido uma vez aqui e o lote inteiro ia para a mesma pessoa, com o
+  // lead repetido gastando vez de rodízio.
   const ipAddress =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
@@ -141,9 +144,19 @@ export async function POST(req: NextRequest) {
 
   for (const rd of rdLeads) {
     let soltar: () => void = () => {};
+    let entregaId: string | null = null;
     try {
       if (!isCallfaceLead(rd)) {
         results.push({ status: "skipped:not-callface", email: rd.email });
+        continue;
+      }
+
+      // Caixa de entrada (0131), antes de tocar no staging da Meta: reentrega
+      // do mesmo fato não consome o staging, não cria lead e não gasta rodízio.
+      const entrega = await abrirEntrega({ organizacaoId: org.id, canal: "rd", chave: chaveDoRd(rd), payload: rd });
+      entregaId = entrega.id;
+      if (entrega.duplicada) {
+        results.push({ status: "skipped:duplicate", leadId: entrega.leadId ?? undefined, email: rd.email });
         continue;
       }
 
@@ -251,12 +264,14 @@ export async function POST(req: NextRequest) {
           });
         }
         await syncPessoaFromLead(existing.id); // F1/dual-write, best-effort
+        // Lead que já existia não passa pela distribuição (não gasta rodízio).
         await garantirAtividadePrimeiroContato({
           organizacaoId: org.id,
           leadId: existing.id,
           empresaId: existing.empresaId,
-          responsavelId: existing.responsavelId ?? responsavelInboundId,
+          responsavelId: existing.responsavelId ?? await resolverResponsavelInbound(org.id),
         });
+        await fecharEntrega(entregaId, { status: "duplicada", leadId: existing.id });
         results.push({ status: "updated", leadId: existing.id, email: p.email });
         continue;
       }
@@ -266,6 +281,17 @@ export async function POST(req: NextRequest) {
       // board de pré-vendas como lead novo, SEM mexer no registro de cliente.
       // Sinaliza na nota pra SDR saber que é um cliente atual.
       const jaCliente = existing?.tipo === "cliente";
+
+      const conteudoConversao = (rd.last_conversion as { content?: Record<string, unknown> } | undefined)?.content;
+      const dist = await distribuirLeadCaptado({
+        organizacaoId: org.id,
+        atribuicao: {
+          origem: p.origem, utmSource: p.utmSource, utmCampaign: p.utmCampaign,
+          metaCampaignId: metaIds?.campaignId ?? null,
+          formulario: String(conteudoConversao?.conversion_identifier ?? conteudoConversao?.identificador ?? "") || null,
+        },
+      });
+      const responsavelInboundId = dist.responsavelId;
 
       // Cria lead novo direto no board de pré-vendas (sem negócio)
       const [newLead] = await db
@@ -296,9 +322,17 @@ export async function POST(req: NextRequest) {
           status: "novo",
           sdrStatus: "pending",
           estagioPreVendas: "novo",
-          responsavelId: responsavelInboundId,
+          ...colunasDaDistribuicao(dist),
         })
         .returning({ id: leads.id });
+
+      // Mesmo evento que criarLead grava: a atribuição deixa de ser muda.
+      if (responsavelInboundId) {
+        await registrarEvento({
+          organizacaoId: org.id, tipo: "LeadAssigned", ator: ATOR_SISTEMA, leadId: newLead.id,
+          contexto: { responsavelId: responsavelInboundId, origemAtribuicao: dist.via, regraId: dist.regraId, motivo: dist.motivo, sessaoWhatsappId: dist.sessaoWhatsappId, canal: "rd" },
+        }).catch((e) => console.error("[rd-lead] LeadAssigned não gravado:", e));
+      }
 
       // CUTOVER (fase 16): o mesmo fato entra no modelo canônico. A escrita
       // legada acima continua porque as telas ainda leem `leads`; esta chamada
@@ -349,6 +383,7 @@ export async function POST(req: NextRequest) {
       }
 
       await syncPessoaFromLead(newLead.id); // F1/dual-write, best-effort
+      await fecharEntrega(entregaId, { status: "processada", leadId: newLead.id, regraId: dist.regraId });
 
       results.push({
         status: jaCliente ? "created:client-upgrade" : "created",
@@ -357,6 +392,7 @@ export async function POST(req: NextRequest) {
       });
     } catch (err) {
       console.error("rd-lead webhook error for lead:", err);
+      await fecharEntrega(entregaId, { status: "falhou", erro: err });
       results.push({ status: "error:" + String(err), email: rd.email });
     } finally {
       soltar();

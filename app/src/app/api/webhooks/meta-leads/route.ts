@@ -11,6 +11,10 @@ import {
   credenciaisLeadAds, type LeadAdsBruto,
 } from "@onface/integrations-meta";
 import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "@/lib/vendas/ponte-canonica";
+import { abrirEntrega, chaveDaMeta, fecharEntrega } from "@/lib/captacao/entregas";
+import { colunasDaDistribuicao, distribuirLeadCaptado } from "@/lib/captacao/distribuir";
+import { registrarEvento } from "@/lib/vendas/eventos";
+import { ATOR_SISTEMA } from "@/lib/vendas/dominio";
 
 /**
  * Entrada DIRETA de Lead Ads da Meta (SPEC §20).
@@ -88,10 +92,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "organização não encontrada" }, { status: 500 });
   }
 
-  // Mesmo dono que a rota do RD resolve: regra de distribuição, senão a política da org.
-  const { resolverPorRegra } = await import("@/lib/agentes/distribuicao");
-  const responsavelInboundId = (await resolverPorRegra({ organizacaoId: org.id, etapa: "novo" }))?.responsavelId
-    ?? await resolverResponsavelInbound(org.id);
+  /* O dono é decidido POR LEAD e DEPOIS da deduplicação (lib/captacao/distribuir.ts).
+   * Antes era resolvido uma vez aqui, antes do laço: o lote inteiro ia para a
+   * mesma pessoa e cada reentrega gastava uma vez do rodízio. */
 
   const resultados: Array<{ metaLeadId: string | null; ok: boolean; motivo?: string }> = [];
 
@@ -109,6 +112,19 @@ export async function POST(req: NextRequest) {
       // Assumir `field_data` no payload funciona com o integrador que já buscou
       // por nós, e falha em silêncio quando a Meta chama direto.
       const leadgenId = String(change.value.leadgen_id ?? "");
+
+      // Caixa de entrada (0131): a entrega fica guardada como chegou, ANTES de
+      // qualquer busca. Reentrega de um leadgen já processado não busca na
+      // Graph, não toca no lead e não gasta vez de rodízio.
+      const entrega = await abrirEntrega({
+        organizacaoId: org.id, canal: "meta",
+        chave: chaveDaMeta(change.value as unknown as Record<string, unknown>), payload: change.value,
+      });
+      if (entrega.duplicada) {
+        resultados.push({ metaLeadId: leadgenId || null, ok: true, motivo: "reentrega" });
+        continue;
+      }
+
       let bruto = change.value;
       if (leadgenId) {
         const busca = await buscarLeadNaGraph(leadgenId, cred.accessToken);
@@ -134,6 +150,7 @@ export async function POST(req: NextRequest) {
       if (!n.email && !n.telefone) {
         console.warn(`[MetaLeads] lead ${n.metaLeadId} sem e-mail e sem telefone; não entrou`);
         resultados.push({ metaLeadId: n.metaLeadId, ok: false, motivo: "sem identificador" });
+        await fecharEntrega(entrega.id, { status: "falhou", erro: "sem e-mail e sem telefone (retrieval na Graph não trouxe a pessoa?)" });
         continue;
       }
 
@@ -150,6 +167,11 @@ export async function POST(req: NextRequest) {
       const soltar = await travarEntrada(org.id, n.email, n.telefone);
       try {
       let leadId: string | null = null;
+      let jaExistia = false;
+      let erroLegado: unknown = null;
+      // Dono que a aquisição canônica recebe: o do lead existente, ou o decidido para o novo.
+      let dono: string | null = null;
+      let regraId: string | null = null;
       try {
         const [primeiro, ...resto] = (n.nome ?? "").trim().split(/\s+/).filter(Boolean);
         const nome = primeiro || n.email?.split("@")[0] || "Lead Meta";
@@ -184,12 +206,25 @@ export async function POST(req: NextRequest) {
             updatedAt: new Date(),
           }).where(eq(leads.id, existing.id));
           leadId = existing.id;
+          jaExistia = true;
+          // Lead que já existia não passa pela distribuição: ganha dono novo só
+          // quem nasce agora. Sem dono, a tarefa vai para a política de inbound.
+          dono = existing.responsavelId ?? await resolverResponsavelInbound(org.id);
           await garantirAtividadePrimeiroContato({
             organizacaoId: org.id, leadId, empresaId: existing.empresaId,
-            responsavelId: existing.responsavelId ?? responsavelInboundId,
+            responsavelId: dono,
           });
         } else {
           // Não existe (ou é cliente, que não se toca): lead novo no board.
+          const dist = await distribuirLeadCaptado({
+            organizacaoId: org.id,
+            atribuicao: {
+              origem: "Mídia Paga", utmSource: a.utmSource, utmCampaign: a.utmCampaign,
+              metaCampaignId: a.campaignId, formulario: bruto.form_id ?? null,
+            },
+          });
+          dono = dist.responsavelId;
+          regraId = dist.regraId;
           const [novo] = await db.insert(leads).values({
             organizacaoId: org.id, nome, sobrenome,
             email: n.email, telefone: n.telefone,
@@ -200,16 +235,24 @@ export async function POST(req: NextRequest) {
             metaAdId: a.adId, metaAdsetId: a.adsetId, metaCampaignId: a.campaignId,
             camposCustom: respostas,
             tipo: "lead", status: "novo", sdrStatus: "pending", estagioPreVendas: "novo",
-            responsavelId: responsavelInboundId,
+            ...colunasDaDistribuicao(dist),
           }).returning({ id: leads.id });
           leadId = novo.id;
           await db.insert(statusChanges).values({ leadId, negocioId: null, deStatus: null, paraStatus: "novo" });
           await garantirAtividadePrimeiroContato({
-            organizacaoId: org.id, leadId, empresaId: null, responsavelId: responsavelInboundId,
+            organizacaoId: org.id, leadId, empresaId: null, responsavelId: dono,
           });
+          // Mesmo evento que criarLead grava: a atribuição deixa de ser muda.
+          if (dono) {
+            await registrarEvento({
+              organizacaoId: org.id, tipo: "LeadAssigned", ator: ATOR_SISTEMA, leadId,
+              contexto: { responsavelId: dono, origemAtribuicao: dist.via, regraId: dist.regraId, motivo: dist.motivo, sessaoWhatsappId: dist.sessaoWhatsappId, canal: "meta" },
+            }).catch((e) => console.error(`[MetaLeads] LeadAssigned não gravado (${n.metaLeadId}):`, e));
+          }
         }
         await syncPessoaFromLead(leadId); // dual-write, best-effort
       } catch (e) {
+        erroLegado = e;
         console.error(`[MetaLeads] lead legado não gravado (${n.metaLeadId}); canônico segue sem vínculo:`, e);
       }
 
@@ -231,7 +274,7 @@ export async function POST(req: NextRequest) {
           adsetId: n.atribuicao.adsetId,
           campaignId: n.atribuicao.campaignId,
         },
-        responsavelId: responsavelInboundId ?? null,
+        responsavelId: dono,
         idempotencyKey: chaveDeIdempotencia(n),
         ocorridoEm: n.ocorridoEm,
       }, leadId);
@@ -248,6 +291,12 @@ export async function POST(req: NextRequest) {
 
       resultados.push({ metaLeadId: n.metaLeadId, ok: r.ok, motivo: r.erro });
       if (!r.ok) console.error(`[MetaLeads] lead ${n.metaLeadId} não entrou: ${r.erro}`);
+      await fecharEntrega(entrega.id, r.ok
+        ? { status: jaExistia ? "duplicada" : "processada", leadId, regraId, erro: erroLegado ? `lead legado não gravado: ${String(erroLegado)}` : null }
+        : { status: "falhou", leadId, regraId, erro: r.erro ?? "entrada canônica recusou" });
+      } catch (e) {
+        await fecharEntrega(entrega.id, { status: "falhou", erro: e });
+        throw e;
       } finally { soltar(); }
     }
   }

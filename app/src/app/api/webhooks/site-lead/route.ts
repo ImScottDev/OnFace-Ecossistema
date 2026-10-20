@@ -10,6 +10,7 @@ import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "@/lib/vendas/ponte-canonica";
 import { resolverEmpresaId, dominioCorporativo } from "@/lib/crm/resolver-empresa";
 import { respostasDoFormularioDoSite } from "@/lib/vendas/respostas-formulario";
+import { abrirEntrega, chavePorMinuto, fecharEntrega } from "@/lib/captacao/entregas";
 
 /**
  * Webhook do FORMULÁRIO do site institucional (site.callface.io).
@@ -161,6 +162,16 @@ export async function POST(req: NextRequest) {
    * `travarEntrada` fecha a corrida: duas submissões ao mesmo tempo (clique
    * duplo, retry do integrador) esperam uma pela outra em vez de cada uma
    * concluir que o lead não existe. */
+  // Caixa de entrada (0131): a submissão fica guardada como chegou. Clique
+  // duplo no mesmo minuto é a mesma entrega e não processa duas vezes.
+  const entrega = await abrirEntrega({ organizacaoId: org.id, canal: "site", chave: chavePorMinuto(body), payload: body });
+  if (entrega.duplicada) {
+    return NextResponse.json(
+      { ok: true, status: "duplicate", leadId: entrega.leadId },
+      { status: 200, headers: cors }
+    );
+  }
+
   const soltarEntrada = await travarEntrada(org.id, email, telefone);
   try {
   const achado = await acharLeadPorContato(org.id, email, telefone);
@@ -177,6 +188,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (existing) {
+    await fecharEntrega(entrega.id, { status: "duplicada", leadId: existing.id });
     if (existing.tipo === "cliente") {
       return NextResponse.json(
         { ok: true, status: "already-client", leadId: existing.id },
@@ -236,7 +248,18 @@ export async function POST(req: NextRequest) {
     // A política é resolvida dentro do motor, que também cria a atividade de
     // primeiro contato ligada ao responsável escolhido.
     responsavelId: null,
+    // Regra de distribuição por campanha/formulário (0131).
+    atribuicao: {
+      origem: "Site",
+      utmSource: clean(body.utmSource) ?? "site",
+      utmCampaign: clean(body.utmCampaign),
+      formulario: clean(body.formulario) ?? clean(body.formId),
+    },
   }, ATOR_SISTEMA);
+  await fecharEntrega(entrega.id, {
+    status: criado.reaproveitado ? "duplicada" : "processada",
+    leadId: criado.leadId, regraId: criado.distribuicaoRegraId ?? null,
+  });
 
   // As respostas vão para o lead depois de criado: `criarLead` não grava
   // `campos_custom` (e pode devolver um lead já aberto, que também recebe).
@@ -264,6 +287,9 @@ export async function POST(req: NextRequest) {
     { ok: true, status: "created", leadId: criado.leadId, empresaId: criado.empresaId },
     { status: 201, headers: cors }
   );
+  } catch (e) {
+    await fecharEntrega(entrega.id, { status: "falhou", erro: e });
+    throw e;
   } finally {
     soltarEntrada();
   }

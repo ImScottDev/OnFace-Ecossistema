@@ -1,6 +1,7 @@
-import { resolverPorRegra } from "@/lib/agentes/distribuicao";
+import { MOTIVO_MANUAL, resolverPorRegra } from "@/lib/agentes/distribuicao";
+import { abrirEntrega, chavePorMinuto, fecharEntrega } from "@/lib/captacao/entregas";
 import { Hono } from "hono";
-import { garantirEntradaCanonica } from "../../lib/vendas/ponte-canonica.js";
+import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "../../lib/vendas/ponte-canonica.js";
 import { cors } from "hono/cors";
 import { getCtx, parseBody } from "../compat.js";
 import { getTenantFromRequest } from "../auth.js";
@@ -71,7 +72,7 @@ import { downloadAndSaveAvatar, sessionToConfig } from "@/lib/whatsapp/client";
 import { getSdrStatusInfo } from "@/lib/crm/pipeline";
 import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
 import { resolveFollowupOwnerId } from "@/lib/crm/sdr-escalation";
-import { concluirAtividadePrimeiroContato, registrarPrimeiroContato } from "@/lib/vendas/pre-vendas";
+import { concluirAtividadePrimeiroContato, exigirResponsavelDaOrg, registrarPrimeiroContato } from "@/lib/vendas/pre-vendas";
 import { registrarEvento } from "@/lib/vendas/eventos";
 import { atorHumano } from "@/lib/vendas/dominio";
 
@@ -124,6 +125,9 @@ const createLeadSchema = z.object({
   lpUrl: z.string().url().or(z.literal("")).optional().nullable(),
   organizacaoId: z.string().uuid().optional(),
   org: z.string().optional(),
+  // Id/nome do formulário da LP (0131): critério da regra de distribuição.
+  // Não é coluna de `leads`; sai do insertData como observacaoInicial.
+  formulario: z.string().max(200).optional().nullable(),
   // Observação inicial do intake manual (01/09) — não é coluna de `leads`,
   // vira a primeira `notas` do lead, com autoria e data. Fica fora do
   // `insertData` por isso (desestruturado junto de empresaId/semNegocio).
@@ -487,8 +491,11 @@ app.post(
       );
     }
 
-    // Determine organizacaoId: explicit in body, or lookup by slug
-    let orgId = parsed.data.organizacaoId;
+    /* Multi-tenant: com sessão, a organização é a da sessão — nunca a do corpo.
+     * Antes o corpo mandava mesmo com usuário logado. Sem sessão (formulário de
+     * LP, que é o uso público desta rota) segue valendo corpo ou slug. */
+    const sessao = await getTenantFromRequest(c).catch(() => null);
+    let orgId = sessao?.organizacaoId ?? parsed.data.organizacaoId;
     if (!orgId && parsed.data.org) {
       const [org] = await db
         .select({ id: organizacoes.id })
@@ -496,14 +503,6 @@ app.post(
         .where(eq(organizacoes.slug, parsed.data.org))
         .limit(1);
       if (org) orgId = org.id;
-    }
-
-    // If still no org, try authenticated user context
-    if (!orgId) {
-      const ctx = await getTenantFromRequest(c);
-      if (ctx) {
-        orgId = ctx.organizacaoId;
-      }
     }
 
     if (!orgId) {
@@ -520,12 +519,54 @@ app.post(
       null;
     const userAgent = c.req.header("user-agent") || null;
 
-    const { organizacaoId: _orgId, org: _orgSlug, empresaId: bodyEmpresaId, semNegocio, criarNegocio, observacaoInicial, ...insertData } = parsed.data;
+    const { organizacaoId: _orgId, org: _orgSlug, empresaId: bodyEmpresaId, semNegocio, criarNegocio, observacaoInicial, formulario, ...insertData } = parsed.data;
+
+    // O responsável vindo do corpo só vale se for usuário ativo DESTA
+    // organização. Antes ia direto para `responsavel_id`: rota pública, id de
+    // outra empresa aceito, lead sumindo da fila da equipe.
+    try {
+      await exigirResponsavelDaOrg(orgId, insertData.responsavelId);
+    } catch {
+      return c.json({ error: "Responsável inválido: não é um usuário ativo desta organização." }, 400);
+    }
+
+    /* Porta PÚBLICA (formulário de LP, sem sessão): caixa de entrada,
+     * trava e deduplicação, como o webhook do site. Clique duplo ou retry
+     * do integrador não criam um segundo lead nem um segundo negócio, e não
+     * gastam vez de rodízio. Com sessão (equipe criando no CRM), nada muda. */
+    let entregaId: string | null = null;
+    let soltarEntrada: () => void = () => {};
+    if (!sessao) {
+      const entrega = await abrirEntrega({ organizacaoId: orgId, canal: "api", chave: chavePorMinuto(body), payload: body });
+      entregaId = entrega.id;
+      if (entrega.duplicada) {
+        return c.json({ id: entrega.leadId, duplicado: true, negocioId: null }, 200);
+      }
+      soltarEntrada = await travarEntrada(orgId, insertData.email || null, insertData.telefone);
+      try {
+        const existente = await acharLeadPorContato(orgId, insertData.email || null, insertData.telefone);
+        // Cliente que converte de novo é upgrade: entra como lead novo (mesma regra do RD).
+        if (existente && existente.tipo !== "cliente") {
+          soltarEntrada();
+          await fecharEntrega(entregaId, { status: "duplicada", leadId: existente.id });
+          return c.json({ id: existente.id, duplicado: true, negocioId: null }, 200);
+        }
+      } catch (e) {
+        soltarEntrada();
+        await fecharEntrega(entregaId, { status: "falhou", erro: e });
+        throw e;
+      }
+    }
+
+    let resolvedEmpresaId: string | null;
+    let porRegra: Awaited<ReturnType<typeof resolverPorRegra>>;
+    let newLead: typeof leads.$inferSelect;
+    try {
 
     // Resolve a EMPRESA como entidade real (não só texto): vincula a existente
     // (empresaId) OU acha por CNPJ/nome na org OU cria uma nova. Assim o lead
     // fica com empresa_id de verdade (aparece na lista de empresas, dá pra reusar).
-    const resolvedEmpresaId = await resolverEmpresaId({
+    resolvedEmpresaId = await resolverEmpresaId({
       organizacaoId: orgId,
       empresaId: bodyEmpresaId,
       nome: insertData.empresa,
@@ -537,12 +578,25 @@ app.post(
       website: dominioCorporativo(insertData.email),
     });
 
-    const [newLead] = await db
+    // Regra de distribuição (Ajustes > Leads) quando ninguém foi escolhido na
+    // criação, já com o critério de campanha/origem/formulário (0131). Decidida
+    // depois da deduplicação acima: lead repetido não gasta vez de rodízio.
+    porRegra = insertData.responsavelId ? null : await resolverPorRegra({
+      organizacaoId: orgId, etapa: "novo",
+      atribuicao: {
+        origem: insertData.origem, utmSource: insertData.utmSource, utmCampaign: insertData.utmCampaign,
+        formulario: formulario ?? null,
+      },
+    });
+
+    [newLead] = await db
       .insert(leads)
       .values({
         ...insertData,
-        // Regra de distribuição (Ajustes > Leads) quando ninguém foi escolhido na criação.
-        ...(insertData.responsavelId ? {} : { responsavelId: (await resolverPorRegra({ organizacaoId: orgId, etapa: "novo" }))?.responsavelId ?? null }),
+        ...(insertData.responsavelId ? {} : { responsavelId: porRegra?.responsavelId ?? null }),
+        distribuicaoRegraId: porRegra?.regraId ?? null,
+        distribuicaoMotivo: insertData.responsavelId ? MOTIVO_MANUAL : porRegra?.motivo ?? null,
+        sessaoWhatsappPreferidaId: porRegra?.sessaoWhatsappId ?? null,
         empresaId: resolvedEmpresaId,
         organizacaoId: orgId,
         tipo: "lead",
@@ -550,6 +604,13 @@ app.post(
         userAgent,
       })
       .returning();
+    } catch (e) {
+      await fecharEntrega(entregaId, { status: "falhou", erro: e });
+      throw e;
+    } finally {
+      soltarEntrada();
+    }
+    await fecharEntrega(entregaId, { status: "processada", leadId: newLead.id, regraId: porRegra?.regraId ?? null });
 
     // CUTOVER (fase 16): o mesmo fato entra no modelo canônico. Esta rota é a
     // maior porta de escrita de lead do sistema (10 escritas em leads). A

@@ -24,7 +24,9 @@ import {
   type Ator, type EstagioPreVendas, type EtapaPreVendas,
   type MotivoDesqualificacao, type MotivoNutricao, type Qualificacao,
 } from "./dominio";
-import { resolverPorRegra } from "@/lib/agentes/distribuicao";
+import {
+  MOTIVO_MANUAL, MOTIVO_POLITICA_INBOUND, MOTIVO_SEM_DONO, resolverPorRegra, type AtribuicaoCaptacao,
+} from "@/lib/agentes/distribuicao";
 
 /* ── Entrada de Lead (Bloco 01 §3) ─────────────────────────────────────── */
 
@@ -55,6 +57,11 @@ export interface EntradaDeLead {
   /** Vindo de Prospecção com pré-qualificação (Bloco 04 §11). */
   preQualificado?: boolean;
   observacoes?: string | null;
+  /**
+   * De onde o lead veio, para a regra de distribuição por campanha (0131).
+   * Sem isto, usa origem e touchpoint (source, campaign, campaignId).
+   */
+  atribuicao?: AtribuicaoCaptacao | null;
 }
 
 export interface LeadCriado {
@@ -63,6 +70,10 @@ export interface LeadCriado {
   pessoaId: string;
   empresaJaExistia: boolean;
   pessoaJaExistia: boolean;
+  /** A pessoa já tinha aquisição aberta: devolveu o lead existente, sem criar nem distribuir. */
+  reaproveitado?: boolean;
+  /** Regra que escolheu o dono (null quando manual ou política de inbound). */
+  distribuicaoRegraId?: string | null;
 }
 
 type SettingsOrganizacao = { preVendas?: { responsavelInboundId?: unknown } };
@@ -183,16 +194,10 @@ export async function exigirResponsavelDaOrg(
 export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<LeadCriado> {
   const { organizacaoId } = entrada;
 
-  /* Regra de distribuição (Ajustes > Leads) primeiro: "novos leads em Novo -> humano, agente ou
-     rodízio", com dia/horário. Sem regra vigente vale o padrão de antes (responsável de inbound). */
-  const porRegra = entrada.responsavelId ? null : await resolverPorRegra({ organizacaoId, etapa: "novo" });
-  const responsavelId = entrada.responsavelId
-    ?? porRegra?.responsavelId
-    ?? (eEntradaInbound(entrada.touchpoint.tipoOrigem)
-      ? await resolverResponsavelInbound(organizacaoId)
-      : null);
-
-  await exigirResponsavelDaOrg(organizacaoId, responsavelId);
+  // O responsável escolhido por quem chamou é conferido logo: id de outra
+  // organização não passa nem da porta. O decidido por regra/política é
+  // conferido na própria resolução.
+  await exigirResponsavelDaOrg(organizacaoId, entrada.responsavelId);
 
   const empresa = entrada.empresa
     ? await resolverEmpresa(organizacaoId, entrada.empresa, ator)
@@ -215,9 +220,35 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
   if (aberta) {
     return {
       leadId: aberta.lead, empresaId: empresa?.empresaId ?? null, pessoaId: pessoa.pessoaId,
-      empresaJaExistia: empresa ? !empresa.criada : false, pessoaJaExistia: true,
+      empresaJaExistia: empresa ? !empresa.criada : false, pessoaJaExistia: true, reaproveitado: true,
     };
   }
+
+  /* Regra de distribuição (Ajustes > Leads): "novos leads em Novo -> humano, agente ou rodízio",
+     com dia/horário e, desde a 0131, com critério de campanha/origem/formulário. Sem regra
+     vigente vale o padrão de antes (responsável de inbound).
+
+     Decidida DEPOIS do retorno da aquisição aberta acima, de propósito: antes era decidida no
+     topo e a reentrega de quem já tinha lead aberto gastava uma vez do rodízio sem receber
+     ninguém — a pessoa seguinte da fila era pulada. */
+  const atribuicao: AtribuicaoCaptacao = {
+    origem: entrada.origem ?? entrada.touchpoint.source ?? null,
+    utmSource: entrada.touchpoint.source ?? null,
+    utmCampaign: entrada.touchpoint.campaign ?? null,
+    metaCampaignId: entrada.touchpoint.campaignId ?? null,
+    formulario: null,
+    ...(entrada.atribuicao ?? {}),
+  };
+  const porRegra = entrada.responsavelId ? null : await resolverPorRegra({ organizacaoId, etapa: "novo", atribuicao });
+  const responsavelId = entrada.responsavelId
+    ?? porRegra?.responsavelId
+    ?? (eEntradaInbound(entrada.touchpoint.tipoOrigem)
+      ? await resolverResponsavelInbound(organizacaoId)
+      : null);
+  const distribuicaoMotivo = entrada.responsavelId ? MOTIVO_MANUAL
+    : porRegra ? porRegra.motivo
+    : responsavelId ? MOTIVO_POLITICA_INBOUND
+    : eEntradaInbound(entrada.touchpoint.tipoOrigem) ? MOTIVO_SEM_DONO : null;
 
   const nomeCompleto = [entrada.pessoa.nome, entrada.pessoa.sobrenome].filter(Boolean).join(" ").trim();
 
@@ -227,7 +258,8 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
       empresa_id, empresa, origem, servicos_interesse, responsavel_id,
       tipo, status, sdr_status, estagio_pre_vendas,
       pre_qualificado, pre_qualificado_em, pre_qualificado_por,
-      utm_source, utm_medium, utm_campaign, utm_term, utm_content, landing_page
+      utm_source, utm_medium, utm_campaign, utm_term, utm_content, landing_page,
+      distribuicao_regra_id, distribuicao_motivo, sessao_whatsapp_preferida_id
     ) VALUES (
       ${organizacaoId}::uuid,
       ${entrada.pessoa.nome},
@@ -250,7 +282,10 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
       ${entrada.touchpoint.campaign ?? null},
       ${entrada.touchpoint.term ?? null},
       ${entrada.touchpoint.content ?? null},
-      ${entrada.touchpoint.landingPage ?? null}
+      ${entrada.touchpoint.landingPage ?? null},
+      ${porRegra?.regraId ?? null}::uuid,
+      ${distribuicaoMotivo},
+      ${porRegra?.sessaoWhatsappId ?? null}::uuid
     )
     RETURNING id::text
   `);
@@ -330,6 +365,8 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
         responsavelId,
         origemAtribuicao: entrada.responsavelId ? "manual" : porRegra ? "regra_distribuicao" : "politica_inbound",
         regraId: porRegra?.regraId ?? null,
+        motivo: distribuicaoMotivo,
+        sessaoWhatsappId: porRegra?.sessaoWhatsappId ?? null,
       },
     });
   }
@@ -346,6 +383,7 @@ export async function criarLead(entrada: EntradaDeLead, ator: Ator): Promise<Lea
     pessoaId: pessoa.pessoaId,
     empresaJaExistia: empresa ? !empresa.criada : false,
     pessoaJaExistia: !pessoa.criada,
+    distribuicaoRegraId: porRegra?.regraId ?? null,
   };
 }
 

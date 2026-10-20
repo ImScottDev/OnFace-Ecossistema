@@ -249,6 +249,8 @@ export const VARIAVEIS_CONTEXTO: { raiz: string; rotulo: string; campos: { chave
     { chave: "nome", rotulo: "Nome" }, { chave: "primeiro_nome", rotulo: "Primeiro nome" }, { chave: "email", rotulo: "E-mail" },
     { chave: "telefone", rotulo: "Telefone" }, { chave: "origem", rotulo: "Origem" }, { chave: "etapa", rotulo: "Etapa de pré-vendas" },
     { chave: "cargo", rotulo: "Cargo" }, { chave: "tags", rotulo: "Tags" },
+    { chave: "utm_source", rotulo: "UTM source" }, { chave: "utm_campaign", rotulo: "UTM campaign" },
+    { chave: "meta_campaign_id", rotulo: "Campanha Meta (id)" }, { chave: "distribuicao_motivo", rotulo: "Motivo da distribuição" },
   ] },
   { raiz: "negocio", rotulo: "Negócio", campos: [
     { chave: "titulo", rotulo: "Título" }, { chave: "etapa", rotulo: "Etapa" }, { chave: "valor", rotulo: "Valor" },

@@ -120,6 +120,7 @@ export async function hidratarContexto(
     leadId ? uma(sql`
       SELECT l.id, trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)) AS nome, l.nome AS primeiro, l.email, l.telefone, l.origem,
              l.estagio_pre_vendas AS etapa, l.cargo, l.empresa_id, l.responsavel_id,
+             l.utm_source, l.utm_campaign, l.meta_campaign_id, l.distribuicao_motivo, l.sessao_whatsapp_preferida_id,
              COALESCE((SELECT array_agg(DISTINCT lb.nome) FROM labels lb
                         WHERE lb.organizacao_id = l.organizacao_id
                           AND (lb.id IN (SELECT label_id FROM lead_labels WHERE lead_id = l.id)
@@ -151,6 +152,10 @@ export async function hidratarContexto(
     lead: lead ? {
       id: lead.id, nome: lead.nome, primeiro_nome: texto(lead.primeiro)?.split(/\s+/)[0] ?? null, email: lead.email, telefone: lead.telefone,
       origem: lead.origem, etapa: lead.etapa, cargo: lead.cargo, tags: (lead.tags as string[] | null) ?? [],
+      // Atribuição (0131): o fluxo pode desviar por campanha e saber por que o lead caiu com quem caiu.
+      utm_source: lead.utm_source ?? null, utm_campaign: lead.utm_campaign ?? null,
+      meta_campaign_id: lead.meta_campaign_id ?? null, distribuicao_motivo: lead.distribuicao_motivo ?? null,
+      sessao_whatsapp_preferida_id: lead.sessao_whatsapp_preferida_id ?? null,
     } : null,
     negocio: negocio ? {
       id: negocio.id, titulo: negocio.titulo, etapa: negocio.etapa ?? negocio.status, status: negocio.status,
