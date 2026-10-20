@@ -49,6 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Radiogroup } from "./escolha";
 import { DIAS_UTEIS, HORAS, NEGOCIOS } from "./dados";
 import { CURVA, DURACAO } from "./motion";
 import "./agenda.css";
@@ -716,30 +717,7 @@ export function Agendador({
   /** Chave `dia|hora`: o horário some da lista do dia em que foi marcado, não
    *  de todos os dias. */
   const [reservados, setReservados] = React.useState<string[]>([]);
-  const grupoHorarios = React.useRef<HTMLDivElement>(null);
-
   const livres = horariosLivres(dia, duracao, eventos, reservados);
-
-  /** Radiogroup de verdade: quem chegou aqui pelo Tab escolhe com as setas, sem
-   *  precisar sair e voltar. Mover o foco já marca a opção, que é o
-   *  comportamento esperado de rádio. */
-  function navegarHorarios(evento: React.KeyboardEvent<HTMLDivElement>) {
-    const passo =
-      evento.key === "ArrowRight" || evento.key === "ArrowDown"
-        ? 1
-        : evento.key === "ArrowLeft" || evento.key === "ArrowUp"
-          ? -1
-          : 0;
-    if (passo === 0) return;
-
-    evento.preventDefault();
-    const atual = escolhido ? livres.indexOf(escolhido) : -1;
-    const proximo =
-      atual === -1 ? livres[0] : livres[(atual + passo + livres.length) % livres.length];
-    if (!proximo) return;
-    setEscolhido(proximo);
-    grupoHorarios.current?.querySelector<HTMLButtonElement>(`[data-hora="${proximo}"]`)?.focus();
-  }
 
   /* Trocar de dia ou de duração invalida a escolha anterior: o slot das 14:30
      de 30 min pode nem existir em 60 min. Limpar no próprio handler evita o
@@ -788,13 +766,7 @@ export function Agendador({
               outra data no calendário.
             </p>
           ) : (
-            <div
-              className="ag-horarios"
-              role="radiogroup"
-              aria-labelledby="ag-horarios-rotulo"
-              ref={grupoHorarios}
-              onKeyDown={navegarHorarios}
-            >
+            <Radiogroup className="ag-horarios" aria-labelledby="ag-horarios-rotulo">
               {livres.map((hora) => (
                 <button
                   key={hora}
@@ -802,14 +774,13 @@ export function Agendador({
                   role="radio"
                   data-hora={hora}
                   aria-checked={escolhido === hora}
-                  tabIndex={escolhido === hora || (!escolhido && hora === livres[0]) ? 0 : -1}
                   className="ag-horario"
                   onClick={() => setEscolhido(hora)}
                 >
                   {hora}
                 </button>
               ))}
-            </div>
+            </Radiogroup>
           )}
         </div>
 

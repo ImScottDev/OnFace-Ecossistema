@@ -51,8 +51,8 @@
 .agn-segmento button { height: 28px; padding: 0 11px; border: 0; border-radius: var(--of-r-item); background: transparent; font-size: 12.5px; font-weight: 600; color: var(--of-tinta-2); cursor: pointer; }
 .agn-segmento button[aria-pressed="true"] { background: var(--of-papel); color: var(--of-tinta-forte); box-shadow: var(--of-anel-forte); }
 .agn-primario { display: inline-flex; align-items: center; gap: 7px; height: var(--of-h-controle); padding: 0 14px; border: 0; border-radius: var(--of-r-acao); background: var(--of-coral-acao); color: var(--onface-white); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
-.agn-primario:hover:not(:disabled) { background: var(--of-coral-acao-hover); }
-.agn-primario:disabled { opacity: .5; cursor: not-allowed; }
+.agn-primario:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--of-coral-acao-hover); }
+.agn-primario:disabled, .agn-primario[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .agn-secundario { display: inline-flex; align-items: center; height: var(--of-h-controle); padding: 0 14px; border: 0; border-radius: var(--of-r-acao); background: var(--of-papel); box-shadow: var(--of-anel); font-size: 13px; font-weight: 600; color: var(--of-tinta); cursor: pointer; }
 .agn-motivo { font-size: 11.5px; color: var(--of-tinta-3); }
 
@@ -152,9 +152,9 @@
 .agn-card-pe { flex-wrap: wrap; }
 .agn-acoes { display: flex; flex-wrap: wrap; gap: 5px; }
 .agn-acao { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border: 0; border-radius: var(--of-r-item); background: var(--of-papel); box-shadow: var(--of-anel); font-family: inherit; font-size: 12px; font-weight: 600; color: var(--of-tinta-2); text-decoration: none; cursor: pointer; white-space: nowrap; }
-.agn-acao:hover:not(:disabled) { box-shadow: var(--of-anel-forte); color: var(--of-tinta-forte); }
+.agn-acao:hover:not(:disabled):not([aria-disabled="true"]) { box-shadow: var(--of-anel-forte); color: var(--of-tinta-forte); }
 .agn-acao:focus-visible { outline: 0; box-shadow: var(--of-anel-coral); }
-.agn-acao:disabled { opacity: .5; cursor: not-allowed; }
+.agn-acao:disabled, .agn-acao[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 .agn-vazio-acoes { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .agn-secundario { text-decoration: none; cursor: pointer; }
 .agn-secundario:focus-visible, .agn-primario:focus-visible { outline: 0; box-shadow: var(--of-anel-coral); }

@@ -195,7 +195,7 @@
   transition: background-color var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
-.med-aba[aria-selected="true"] { background: var(--surface-card); color: var(--text-strong); box-shadow: var(--ring-inset-hairline); }
+.med-aba[aria-checked="true"] { background: var(--surface-card); color: var(--text-strong); box-shadow: var(--ring-inset-hairline); }
 .med-aba:focus-visible { outline: 2px solid var(--onface-coral); outline-offset: 2px; }
 .med-seletor { font-size: var(--text-sm); }
 

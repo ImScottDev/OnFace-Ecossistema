@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Radiogroup } from "@/components/onface/ds/escolha";
 import { haQuanto, inteiro, pct } from "./formato";
 import type { AcoesDeVinculo, FlagUso, ItemCarteiraDeUso, ResultadoVinculo, Semaforo, SeriesDaCarteira, VinculoPendente } from "./tipos";
 
@@ -95,14 +96,17 @@ export function UsoCarteiraWorkspace({ carteira, pendentes, series, acoes, erro,
   return (
     <>
       <div className="ov-controles">
-        <div className="ov-abas" role="tablist" aria-label="Fila">
-          <button type="button" role="tab" aria-selected={aba === "carteira"} data-ativa={aba === "carteira"} onClick={() => trocarAba("carteira")}>
+        {/* Escolha de fila, não aba: nenhum painel é anunciado, a região
+            abaixo é a mesma e troca de conteúdo. Como radiogroup, a seta anda
+            entre as duas filas e o estado escolhido é anunciado. */}
+        <Radiogroup className="ov-abas" rotulo="Fila" orientacao="horizontal">
+          <button type="button" role="radio" aria-checked={aba === "carteira"} data-ativa={aba === "carteira"} onClick={() => trocarAba("carteira")}>
             Carteira · {carteira.length}
           </button>
-          <button type="button" role="tab" aria-selected={aba === "vinculos"} data-ativa={aba === "vinculos"} onClick={() => trocarAba("vinculos")}>
+          <button type="button" role="radio" aria-checked={aba === "vinculos"} data-ativa={aba === "vinculos"} onClick={() => trocarAba("vinculos")}>
             Vínculos pendentes · {pendentes.length}
           </button>
-        </div>
+        </Radiogroup>
       </div>
       {aba === "carteira"
         ? erro ? <ErroDaCarteira mensagem={erro} /> : <Carteira carteira={carteira} series={series} contagem={contagem} pendentes={pendentes.length} irParaVinculos={() => trocarAba("vinculos")} agora={agora} sincronizacao={sincronizacao} />

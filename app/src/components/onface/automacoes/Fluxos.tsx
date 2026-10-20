@@ -11,6 +11,7 @@ import {
 import type { FluxoResumo, RegraAntiga } from "@/lib/automacoes/grafo";
 import { GRUPOS_ROTINA, type RotinaAgendada, type GrupoRotina } from "@/lib/automacoes/rotinas";
 import { PaginaCabecalho } from "@/components/onface/shell/Pagina";
+import { BotaoMotivo, Radiogroup } from "@/components/onface/ds/escolha";
 import { AbasAutomacoes } from "./Abas";
 import { STATUS_EXECUCAO, plural, quandoRelativo } from "./formato";
 import { apiFluxos } from "./fluxos/api";
@@ -102,9 +103,9 @@ export function AutomacoesFluxos({ podeGerir, abrirNova, rotinas }: {
         acoes={
           <>
             <Link href="/automacoes/execucoes?fonte=automacao" className="oa-btn oa-btn-secundario"><History size={14} /> Execuções</Link>
-            <button type="button" className="oa-btn oa-btn-primario" onClick={() => setNovo({ modelo: null })} disabled={!podeGerir} title={podeGerir ? undefined : SEM_PERMISSAO}>
+            <BotaoMotivo type="button" className="oa-btn oa-btn-primario" onClick={() => setNovo({ modelo: null })} motivo={podeGerir ? null : SEM_PERMISSAO}>
               <Plus size={14} strokeWidth={2.4} /> Criar automação
-            </button>
+            </BotaoMotivo>
           </>
         }
       />
@@ -132,15 +133,19 @@ export function AutomacoesFluxos({ podeGerir, abrirNova, rotinas }: {
               {busca && <button type="button" className="oa-icone" onClick={() => setBusca("")} aria-label="Limpar busca"><X size={13} /></button>}
             </label>
             {pastas.length > 0 && (
-              <div className="ofx-chips" role="tablist" aria-label="Pastas">
-                <button type="button" role="tab" aria-selected={pasta.tipo === "todas"} onClick={() => setPasta({ tipo: "todas" })}>Todas</button>
-                <button type="button" role="tab" aria-selected={pasta.tipo === "sem"} onClick={() => setPasta({ tipo: "sem" })}>Sem pasta</button>
+              /* Filtro, não aba: a lista abaixo é a MESMA região, só com
+                 menos linhas. Anunciado como aba, o leitor de tela prometia
+                 um painel novo que nunca vinha. Escolha única = radiogroup,
+                 e a seta anda entre as pastas. */
+              <Radiogroup className="ofx-chips" rotulo="Pastas" orientacao="horizontal">
+                <button type="button" role="radio" aria-checked={pasta.tipo === "todas"} onClick={() => setPasta({ tipo: "todas" })}>Todas</button>
+                <button type="button" role="radio" aria-checked={pasta.tipo === "sem"} onClick={() => setPasta({ tipo: "sem" })}>Sem pasta</button>
                 {pastas.map((p) => (
-                  <button key={p} type="button" role="tab" aria-selected={pasta.tipo === "pasta" && pasta.nome === p} onClick={() => setPasta({ tipo: "pasta", nome: p })}>
+                  <button key={p} type="button" role="radio" aria-checked={pasta.tipo === "pasta" && pasta.nome === p} onClick={() => setPasta({ tipo: "pasta", nome: p })}>
                     <Folder size={12} aria-hidden /> {p}
                   </button>
                 ))}
-              </div>
+              </Radiogroup>
             )}
             <span className="oa-legenda ofx-lista-total">
               {plural(fluxos.length, "automação", "automações")} · {ativas} ativa{ativas === 1 ? "" : "s"}
@@ -242,9 +247,9 @@ function LinhaFluxo({ f, podeGerir, aoAlternar, alternando, aoDuplicar, aoMover,
         <span aria-hidden />
       </label>
       <div className="ofx-menu" ref={menuRef}>
-        <button type="button" className="oa-icone" aria-label={`Mais ações de ${f.nome}`} aria-expanded={menu} onClick={() => setMenu((m) => !m)} disabled={!podeGerir} title={podeGerir ? "Mais ações" : SEM_PERMISSAO}>
+        <BotaoMotivo type="button" className="oa-icone" aria-label={`Mais ações de ${f.nome}`} aria-expanded={menu} onClick={() => setMenu((m) => !m)} title={podeGerir ? "Mais ações" : undefined} motivo={podeGerir ? null : SEM_PERMISSAO}>
           <MoreHorizontal size={16} />
-        </button>
+        </BotaoMotivo>
         {menu && (
           <div className="ofx-menu-pop" role="menu">
             <button type="button" role="menuitem" onClick={() => { setMenu(false); aoDuplicar(); }}><Copy size={13} /> Duplicar</button>
@@ -269,16 +274,16 @@ function VazioFluxos({ podeGerir, aoCriar }: { podeGerir: boolean; aoCriar: (mod
         {destaque.map((m) => {
           const Icone = iconeDe(m.icone);
           return (
-            <button key={m.id} type="button" className="ofx-modelo" onClick={() => aoCriar(m.id)} disabled={!podeGerir} title={podeGerir ? undefined : SEM_PERMISSAO}>
+            <BotaoMotivo key={m.id} type="button" className="ofx-modelo" onClick={() => aoCriar(m.id)} motivo={podeGerir ? null : SEM_PERMISSAO}>
               <span className="ofx-modelo-icone"><Icone size={16} strokeWidth={2.2} /></span>
               <span><strong>{m.nome}</strong><span>{m.descricao}</span></span>
-            </button>
+            </BotaoMotivo>
           );
         })}
       </div>
-      <button type="button" className="oa-btn oa-btn-primario" onClick={() => aoCriar(null)} disabled={!podeGerir} title={podeGerir ? undefined : SEM_PERMISSAO}>
+      <BotaoMotivo type="button" className="oa-btn oa-btn-primario" onClick={() => aoCriar(null)} motivo={podeGerir ? null : SEM_PERMISSAO}>
         <Plus size={14} strokeWidth={2.4} /> Criar a primeira
-      </button>
+      </BotaoMotivo>
     </section>
   );
 }
@@ -299,9 +304,9 @@ function RegrasAntigas({ regras, podeGerir, migrando, aoMigrar }: { regras: Regr
               <span className="oa-item-meta">quando <span className="oa-mono">{r.gatilho}</span> · então <span className="oa-mono">{r.acao}</span>{!r.migravel && r.motivoNaoMigravel ? ` · ${r.motivoNaoMigravel}` : ""}</span>
             </span>
             {r.migravel ? (
-              <button type="button" className="oa-btn oa-btn-secundario" disabled={!podeGerir || migrando === r.id} onClick={() => aoMigrar(r.id)} title={podeGerir ? undefined : SEM_PERMISSAO}>
+              <BotaoMotivo type="button" className="oa-btn oa-btn-secundario" disabled={migrando === r.id} onClick={() => aoMigrar(r.id)} motivo={podeGerir ? null : SEM_PERMISSAO}>
                 {migrando === r.id ? "Migrando…" : "Migrar para fluxo"}
-              </button>
+              </BotaoMotivo>
             ) : <span className="oa-selo">Não migra</span>}
           </li>
         ))}

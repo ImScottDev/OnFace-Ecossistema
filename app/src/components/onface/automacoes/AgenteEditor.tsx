@@ -35,6 +35,7 @@ import { CLASSES_AUTONOMIA, lerAutonomiaPorAcao, type ClasseAutonomia, type Modo
 import type { DadosEditorAgente, VersaoDoEditor } from "@/lib/automacoes/agente-detalhe";
 import { AbaExecucoes, AbaFerramentas, AbaGatilhos, AbaTestes } from "./AgenteOperacao";
 import { AprovacoesPendentes, useCasosAbertos } from "@/components/onface/atendimento/agente-operacao";
+import { BotaoMotivo, Radiogroup } from "@/components/onface/ds/escolha";
 import { Aviso, Interruptor, ListaEditavel, Secao, api, num, quando, useApi } from "./agente-pecas";
 import "./agentes.css";
 import "./agente-editor.css";
@@ -441,9 +442,9 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
               {salvando && !publicando ? <Loader2 size={14} className="age-gira" /> : null} Salvar rascunho
             </button>
           ) : null}
-          <button type="button" className="agn-primario" disabled={!podePublicar || publicando} title={motivoPublicar} onClick={publicar}>
+          <BotaoMotivo type="button" className="agn-primario" disabled={!podePublicar || publicando} motivo={motivoPublicar} onClick={publicar}>
             {publicando ? <Loader2 size={14} className="age-gira" /> : <Send size={14} />} Publicar
-          </button>
+          </BotaoMotivo>
         </div>
       </header>
 
@@ -634,14 +635,14 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
           {aba === "autonomia" ? (
             <>
               <Secao titulo="Modo geral" ajuda="Até onde o agente vai sozinho, quando a classe de ação não tem regra própria. Vale para a versão publicada; o Playground e a simulação nunca enviam.">
-                <div className="age-modos" role="radiogroup" aria-label="Modo geral de autonomia">
+                <Radiogroup className="age-modos" rotulo="Modo geral de autonomia">
                   {MODOS.map((m) => (
                     <button key={m.id} type="button" role="radio" aria-checked={f.modo === m.id} className="age-modo" disabled={travado} onClick={() => set({ modo: m.id })}>
                       <span className="age-modo-topo"><i />{m.nome}</span>
                       <span>{m.texto}</span>
                     </button>
                   ))}
-                </div>
+                </Radiogroup>
               </Secao>
 
               <Secao titulo="Autonomia por classe de ação" ajuda="Cada classe tem o seu botão, independente das outras. Exemplo: responder sozinho, mas pedir aprovação para mover oportunidade. Autonomia nunca concede permissão: o teto de RBAC continua valendo.">

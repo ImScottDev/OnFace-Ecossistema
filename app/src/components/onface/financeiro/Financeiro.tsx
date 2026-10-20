@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { tabsListVariants } from "@/components/ui/tabs";
+import { Tablist } from "@/components/onface/ds/escolha";
 import { Cf2LeadDrawer } from "@/components/crm2/qualificacao/LeadDrawerCf2";
 import { FinanceiroWorkspace } from "@/components/crm2/clientes/FinanceiroWorkspace";
 import { TabVisaoGeral } from "@/components/crm2/financeiro/TabVisaoGeral";
@@ -61,35 +62,20 @@ export function Financeiro({ aba }: { aba?: string }) {
   // par tab/painel é sempre válido: só a aba ativa aponta `aria-controls`
   // (só um painel existe por vez — cada visão busca a própria API ao montar) e
   // o painel tem `aria-labelledby` na aba ativa. Mesmo padrão do Workspace antigo.
-  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const teclado = (e: KeyboardEvent) => {
-    const i = ABAS_FINANCEIRO.findIndex((a) => a.chave === ativa.chave);
-    const n = ABAS_FINANCEIRO.length;
-    const alvo = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n
-      : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : -1;
-    if (alvo < 0) return;
-    e.preventDefault();
-    const chave = ABAS_FINANCEIRO[alvo].chave;
-    trocar(chave);
-    refs.current[chave]?.focus();
-  };
-
   return (
     <>
       <div className="ov-controles">
-        <div role="tablist" aria-label="Visões do financeiro" className={`${tabsListVariants()} h-9`} onKeyDown={teclado}>
+        <Tablist rotulo="Visões do financeiro" className={`${tabsListVariants()} h-9`}>
           {ABAS_FINANCEIRO.map((a) => {
             const sel = a.chave === ativa.chave;
             return (
               <button
                 key={a.chave}
-                ref={(el) => { refs.current[a.chave] = el; }}
                 type="button"
                 role="tab"
                 id={`fin-aba-${a.chave}`}
                 aria-selected={sel}
                 aria-controls={sel ? `fin-painel-${a.chave}` : undefined}
-                tabIndex={sel ? 0 : -1}
                 data-state={sel ? "active" : "inactive"}
                 onClick={() => trocar(a.chave)}
                 className="inline-flex h-[calc(100%-1px)] items-center justify-center rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
@@ -98,7 +84,7 @@ export function Financeiro({ aba }: { aba?: string }) {
               </button>
             );
           })}
-        </div>
+        </Tablist>
         {/* Busca só nas visões que filtram por cliente; nas outras ela seria um
             campo que não faz nada. */}
         {ativa.busca ? (

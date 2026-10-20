@@ -132,8 +132,8 @@
 .oa-seta { color: var(--of-tinta-4); }
 .oa-acoes { display: flex; align-items: center; gap: 4px; }
 .oa-icone { width: 30px; height: 30px; border-radius: var(--of-r-item); border: 0; background: transparent; color: var(--of-tinta-3); display: grid; place-items: center; cursor: pointer; }
-.oa-icone:not(:disabled):hover { background: var(--of-neutro); color: var(--of-tinta-forte); }
-.oa-icone:disabled { opacity: .4; cursor: not-allowed; }
+.oa-icone:not(:disabled):not([aria-disabled="true"]):hover { background: var(--of-neutro); color: var(--of-tinta-forte); }
+.oa-icone:disabled, .oa-icone[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
 .oa-chave { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: var(--of-r-pilula); border: 0; font: inherit; font-size: 11.5px; font-weight: var(--of-peso-semi); cursor: pointer; background: var(--of-neutro); color: var(--of-tinta-2); }
 .oa-chave[aria-pressed="true"] { background: var(--of-canal-whatsapp-fundo); color: var(--of-canal-whatsapp-tinta); }
 .oa-chave:disabled { cursor: not-allowed; opacity: .6; }
@@ -173,3 +173,10 @@ textarea.oa-input { resize: vertical; }
   .oa-grade3 { grid-template-columns: 1fr; }
   .oa-rotulos span:nth-child(odd) { visibility: hidden; }
 }
+
+/* Invólucro do painel de aba. A aba precisa de um painel para apontar com
+   `aria-controls`, e antes não havia elemento nenhum: o conteúdo trocava solto
+   dentro da página. Esta classe repete o que a página já fazia com os filhos
+   (coluna que estica), então o painel aparece para o leitor de tela sem mexer
+   no empilhamento de ninguém. */
+.oa-painel-aba { display: flex; flex-direction: column; min-width: 0; flex: 1; }

@@ -10,6 +10,7 @@ import { Plus, X } from "lucide-react";
 import { grafoInicial } from "@/lib/automacoes/grafo";
 import { apiFluxos } from "./api";
 import { iconeDe } from "./icones";
+import { Radiogroup } from "@/components/onface/ds/escolha";
 import { MODELOS } from "./modelos";
 
 export function NovoFluxo({ aoFechar, modeloInicial }: { aoFechar: () => void; modeloInicial?: string | null }) {
@@ -36,7 +37,7 @@ export function NovoFluxo({ aoFechar, modeloInicial }: { aoFechar: () => void; m
         </div>
         <p className="oa-dica">Comece em branco ou de um modelo. Campos que dependem da sua conta (tag, etapa) ficam marcados para você preencher antes de publicar.</p>
 
-        <div className="ofx-modelos" role="radiogroup" aria-label="Ponto de partida">
+        <Radiogroup className="ofx-modelos" rotulo="Ponto de partida">
           <button type="button" role="radio" aria-checked={escolha === "branco"} className="ofx-modelo" onClick={() => setEscolha("branco")}>
             <span className="ofx-modelo-icone"><Plus size={16} strokeWidth={2.4} /></span>
             <span><strong>Em branco</strong><span>Só o gatilho. Você monta o resto.</span></span>
@@ -50,7 +51,7 @@ export function NovoFluxo({ aoFechar, modeloInicial }: { aoFechar: () => void; m
               </button>
             );
           })}
-        </div>
+        </Radiogroup>
 
         <label className="oa-campo">
           <span>Nome</span>

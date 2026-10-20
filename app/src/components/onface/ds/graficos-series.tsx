@@ -26,7 +26,7 @@ import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import {
   ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig,
 } from "@/components/ui/chart";
-import { Abas } from "./graficos-medidores";
+import { Recortes } from "./graficos-medidores";
 import {
   CANAIS_SEMANAIS, DESEMPENHO_RADAR, NEGOCIOS, RECEITA_SEMANAL, brl, compacto,
 } from "./dados";
@@ -211,7 +211,7 @@ export function FunilNoTempo() {
     <div className="ser-cartao">
       <header className="ser-cartao-topo">
         <p className="ser-rotulo">Funil ao longo do tempo</p>
-        <Abas rotulo="Período do funil" itens={FUNIL_TEMPO} ativo={recorte} aoTrocar={setRecorte} />
+        <Recortes rotulo="Período do funil" itens={FUNIL_TEMPO} ativo={recorte} aoTrocar={setRecorte} />
       </header>
 
       <ul className="ser-tiles">
@@ -309,7 +309,7 @@ export function PainelOperacaoEscuro() {
           <p className="ser-rotulo">Operação ao vivo · chamadas</p>
           <p className="ser-numero">{total.toLocaleString("pt-BR")}</p>
         </div>
-        <Abas rotulo="Recorte da operação" itens={OPERACAO} ativo={recorte} aoTrocar={setRecorte} />
+        <Recortes rotulo="Recorte da operação" itens={OPERACAO} ativo={recorte} aoTrocar={setRecorte} />
       </header>
 
       <ChartContainer config={CONFIG_OPERACAO} className="ser-chart" style={{ height: "calc(200 * var(--onface-u))" }}>
@@ -376,7 +376,7 @@ export function RankingHorizontal() {
     <div className="ser-cartao">
       <header className="ser-cartao-topo">
         <p className="ser-rotulo">Maiores em pipeline</p>
-        <Abas rotulo="Recorte do ranking" itens={recortes} ativo={recorte} aoTrocar={setRecorte} />
+        <Recortes rotulo="Recorte do ranking" itens={recortes} ativo={recorte} aoTrocar={setRecorte} />
       </header>
 
       <ChartContainer config={CONFIG_RANKING} className="ser-chart" style={{ height: "calc(220 * var(--onface-u))" }}>

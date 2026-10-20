@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { Mail, MessageCircle, Plus, Snowflake, User, Users, X } from "lucide-react";
 import { ROTULO_ENTIDADE } from "@/lib/automacoes/grafo";
+import { Radiogroup } from "@/components/onface/ds/escolha";
 import { novoId, type Passo } from "./passos";
 
 type Modelo = {
@@ -101,7 +102,7 @@ export function NovaCadencia({ aoFechar, aoCriar }: {
         </div>
         <p className="oa-dica">Comece em branco ou de um modelo. O modelo já vem com o texto escrito e as esperas definidas — revise e publique quando estiver do seu jeito.</p>
 
-        <div className="ofx-modelos" role="radiogroup" aria-label="Ponto de partida">
+        <Radiogroup className="ofx-modelos" rotulo="Ponto de partida">
           <button type="button" role="radio" aria-checked={escolha === "branco"} className="ofx-modelo" onClick={() => escolher("branco")}>
             <span className="ofx-modelo-icone"><Plus size={16} strokeWidth={2.4} /></span>
             <span><strong>Em branco</strong><span>Você monta a sequência passo a passo.</span></span>
@@ -112,7 +113,7 @@ export function NovaCadencia({ aoFechar, aoCriar }: {
               <span><strong>{m.nome}</strong><span>{m.descricao}</span></span>
             </button>
           ))}
-        </div>
+        </Radiogroup>
 
         <label className="oa-campo">
           <span>Nome</span>
@@ -130,7 +131,7 @@ export function NovaCadencia({ aoFechar, aoCriar }: {
             a pessoa já conhece a escolha de lá, e a consequência é a mesma. */}
         <div className="oa-campo">
           <span>Quem pode usar</span>
-          <div className="ofx-modelos" role="radiogroup" aria-label="Quem pode usar">
+          <Radiogroup className="ofx-modelos" rotulo="Quem pode usar">
             <button type="button" role="radio" aria-checked={visibility === "personal"} className="ofx-modelo"
               onClick={() => setVisibility("personal")}>
               <span className="ofx-modelo-icone"><User size={16} strokeWidth={2.2} /></span>
@@ -141,7 +142,7 @@ export function NovaCadencia({ aoFechar, aoCriar }: {
               <span className="ofx-modelo-icone"><Users size={16} strokeWidth={2.2} /></span>
               <span><strong>Para todo o time</strong><span>Todo mundo pode inscrever.</span></span>
             </button>
-          </div>
+          </Radiogroup>
         </div>
 
         <div className="oa-modal-rodape">

@@ -93,8 +93,8 @@
 .ins-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ins-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 9999px; background: var(--ins-sunken); font-size: 12px; color: var(--ins-tinta-2); }
 .ins-chip b { color: var(--ins-grafite); font-variant-numeric: tabular-nums; }
-button.ins-chip[aria-pressed="true"] { background: var(--ins-grafite); color: var(--ins-branco); }
-button.ins-chip[aria-pressed="true"] b { color: var(--ins-branco); }
+button.ins-chip[aria-checked="true"] { background: var(--ins-grafite); color: var(--ins-branco); }
+button.ins-chip[aria-checked="true"] b { color: var(--ins-branco); }
 .ins-tabela-wrap { overflow-x: auto; }
 .ins-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .ins-tabela th { padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ins-fraco); white-space: nowrap; box-shadow: inset 0 -1px 0 var(--ins-fio); }

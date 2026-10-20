@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { Search, X } from "lucide-react";
 import { CATALOGO_NOS, CATEGORIAS, TIPOS_NO, type CategoriaNo, type TipoNo } from "@/lib/automacoes/grafo";
 import { iconeDe } from "./icones";
+import { Radiogroup } from "@/components/onface/ds/escolha";
 import { DND_TIPO } from "./Canvas";
 
 const TIPOS = TIPOS_NO.filter((t) => t !== "gatilho");
@@ -34,11 +35,21 @@ export function Paleta({ contexto, aoEscolher, aoFechar }: {
   const visiveis = casam.filter((t) => categoria === "todas" || CATALOGO_NOS[t].categoria === categoria);
   const ativoSeguro = Math.min(ativo, Math.max(0, visiveis.length - 1));
 
+  /** Id do item em destaque: é por ele que o `aria-activedescendant` do campo
+   *  de busca conta ao leitor de tela que a seleção andou. Sem isso a seta
+   *  mexia só no `data-ativo` do CSS — quem não vê a tela não ficava sabendo
+   *  de nada, porque o foco nunca sai do campo. */
+  const idDoItem = (t: TipoNo) => `ofx-paleta-item-${t}`;
+  const emDestaque = visiveis[ativoSeguro];
+
   const teclado = (e: KeyboardEvent) => {
+    // Seta das categorias (←/→) já foi tratada pelo radiogroup; Enter numa
+    // categoria é para a categoria, não para adicionar o primeiro bloco.
+    if (e.defaultPrevented) return;
     if (e.key === "Escape") { e.preventDefault(); aoFechar(); }
     if (e.key === "ArrowDown") { e.preventDefault(); setAtivo((i) => Math.min(i + 1, visiveis.length - 1)); }
     if (e.key === "ArrowUp") { e.preventDefault(); setAtivo((i) => Math.max(i - 1, 0)); }
-    if (e.key === "Enter" && visiveis[ativoSeguro]) { e.preventDefault(); aoEscolher(visiveis[ativoSeguro]); }
+    if (e.key === "Enter" && emDestaque && (e.target as HTMLElement).tagName === "INPUT") { e.preventDefault(); aoEscolher(emDestaque); }
   };
 
   return (
@@ -52,28 +63,46 @@ export function Paleta({ contexto, aoEscolher, aoFechar }: {
       </div>
       <label className="ofx-paleta-busca">
         <Search size={14} aria-hidden />
-        <input ref={buscaRef} value={busca} onChange={(e) => { setBusca(e.target.value); setAtivo(0); }} placeholder="Buscar bloco: tarefa, WhatsApp, esperar…" aria-label="Buscar bloco" />
+        <input
+          ref={buscaRef}
+          value={busca}
+          onChange={(e) => { setBusca(e.target.value); setAtivo(0); }}
+          placeholder="Buscar bloco: tarefa, WhatsApp, esperar…"
+          aria-label="Buscar bloco"
+          role="combobox"
+          aria-expanded
+          aria-controls="ofx-paleta-lista"
+          aria-autocomplete="list"
+          aria-activedescendant={emDestaque ? idDoItem(emDestaque) : undefined}
+        />
       </label>
-      <div className="ofx-paleta-cats" role="tablist" aria-label="Categorias">
-        <button type="button" role="tab" aria-selected={categoria === "todas"} onClick={() => setCategoria("todas")}>Todas <b>{casam.length}</b></button>
+      {/* Filtro da lista de baixo, não aba: nenhum painel troca. Escolha
+          única = radiogroup, com ←/→ andando entre as categorias (↑/↓ ficam
+          para a lista de blocos, logo abaixo). */}
+      <Radiogroup className="ofx-paleta-cats" rotulo="Categorias" orientacao="horizontal">
+        <button type="button" role="radio" aria-checked={categoria === "todas"} onClick={() => setCategoria("todas")}>Todas <b>{casam.length}</b></button>
         {CATEGORIAS.map((c) => {
           const n = casam.filter((t) => CATALOGO_NOS[t].categoria === c.id).length;
           return (
-            <button key={c.id} type="button" role="tab" aria-selected={categoria === c.id} onClick={() => { setCategoria(c.id); setAtivo(0); }} disabled={!n}>
+            <button key={c.id} type="button" role="radio" aria-checked={categoria === c.id} onClick={() => { setCategoria(c.id); setAtivo(0); }} disabled={!n}>
               {c.rotulo} <b>{n}</b>
             </button>
           );
         })}
-      </div>
-      <ul className="ofx-paleta-lista">
-        {visiveis.length === 0 && <li className="ofx-paleta-vazio">Nenhum bloco com “{busca}”. Tente outra palavra.</li>}
+      </Radiogroup>
+      <ul className="ofx-paleta-lista" id="ofx-paleta-lista" role="listbox" aria-label="Blocos">
+        {visiveis.length === 0 && <li className="ofx-paleta-vazio" role="presentation">Nenhum bloco com “{busca}”. Tente outra palavra.</li>}
         {visiveis.map((t, i) => {
           const m = CATALOGO_NOS[t];
           const Icone = iconeDe(m.icone);
           return (
-            <li key={t}>
+            <li key={t} role="presentation">
               <button
                 type="button"
+                id={idDoItem(t)}
+                role="option"
+                aria-selected={i === ativoSeguro}
+                tabIndex={-1}
                 className="ofx-paleta-item"
                 data-categoria={m.categoria}
                 data-ativo={i === ativoSeguro ? "true" : undefined}

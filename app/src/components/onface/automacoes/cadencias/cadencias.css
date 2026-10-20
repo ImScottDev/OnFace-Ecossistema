@@ -71,7 +71,7 @@
 .ofc-tabela .ofx-linha { grid-template-columns: minmax(200px, 2.2fr) minmax(140px, 1.2fr) 96px minmax(80px, .7fr) minmax(90px, .7fr) minmax(90px, .7fr) auto; }
 .ofc-tabela-fila .ofx-linha { grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.2fr) minmax(120px, 1fr) minmax(120px, auto) auto auto; }
 .ofc-tabela .ofx-linha-nome { border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; padding: 0; }
-.ofc-tabela .ofx-linha-nome:disabled { cursor: default; }
+.ofc-tabela .ofx-linha-nome:disabled, .ofc-tabela .ofx-linha-nome[aria-disabled="true"] { cursor: default; }
 .ofc-tabela-fila .ofx-linha-nome { border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; padding: 0; }
 .ofc-acoes { flex-direction: row; align-items: center; gap: 2px; }
 .ofc-acoes .oa-btn { height: 30px; padding: 0 10px; font-size: 12px; }

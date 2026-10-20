@@ -38,6 +38,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
+import { Tablist } from "../escolha";
 import { Bloco, Coluna, Regras, Secao } from "../lab";
 import { FundoGrafico } from "../marca";
 import { CURVA, DURACAO, MOLA, VARIANTES } from "../motion";
@@ -128,36 +129,21 @@ const ABAS = [
 
 function AbasDeslizantes({ transicao }: { transicao: Transition }) {
   const [ativa, setAtiva] = React.useState(0);
-  const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
-
-  // Padrão de aba do WAI-ARIA: Tab entra no grupo, seta anda dentro dele.
-  function navegar(evento: React.KeyboardEvent<HTMLDivElement>) {
-    const passo = evento.key === "ArrowRight" ? 1 : evento.key === "ArrowLeft" ? -1 : 0;
-    if (passo === 0) return;
-    evento.preventDefault();
-    const proxima = (ativa + passo + ABAS.length) % ABAS.length;
-    setAtiva(proxima);
-    refs.current[proxima]?.focus();
-  }
 
   const aba = ABAS[ativa];
 
   return (
     <>
-      <div className="ds-mov-abas" role="tablist" aria-label="Recorte do painel" onKeyDown={navegar}>
+      <Tablist className="ds-mov-abas" rotulo="Recorte do painel">
         {ABAS.map((item, indice) => (
           <button
             key={item.id}
-            ref={(no) => {
-              refs.current[indice] = no;
-            }}
             className="ds-mov-aba"
             role="tab"
             type="button"
             id={`ds-mov-aba-${item.id}`}
             aria-selected={indice === ativa}
             aria-controls={`ds-mov-painel-${item.id}`}
-            tabIndex={indice === ativa ? 0 : -1}
             onClick={() => setAtiva(indice)}
           >
             {item.rotulo}
@@ -166,7 +152,7 @@ function AbasDeslizantes({ transicao }: { transicao: Transition }) {
             ) : null}
           </button>
         ))}
-      </div>
+      </Tablist>
       <div
         className="ds-mov-painel"
         role="tabpanel"

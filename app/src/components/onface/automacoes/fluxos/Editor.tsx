@@ -29,6 +29,7 @@ import { Inspetor, entidadeDoGatilho } from "./Inspetor";
 import type { MarcaTrilha } from "./NoCanvas";
 import { adicionarNo, duplicar, remover } from "./operacoes";
 import { PainelExecucao, type ModoTeste } from "./PainelExecucao";
+import { Tablist } from "@/components/onface/ds/escolha";
 import { Paleta } from "./Paleta";
 import { Pendencias } from "./Pendencias";
 import { useEditorFluxo, type DocFluxo, type OpcoesMudanca } from "./useEditorFluxo";
@@ -423,16 +424,18 @@ function EditorCarregado({ detalhe }: { detalhe: FluxoDetalhe }) {
         </div>
 
         <aside className="ofx-painel" aria-label="Painel da automação">
-          {/* `role="tab"` pede `aria-selected`: só com `aria-current="page"` o
-              leitor de tela anunciava três abas e nenhuma escolhida. */}
-          <div className="oa-abas ofx-abas" role="tablist" aria-label="Painel da automação">
-            <button type="button" role="tab" className="oa-aba" aria-selected={aba === "inspetor"} aria-current={aba === "inspetor" ? "page" : undefined} onClick={() => setAba("inspetor")}>
+          {/* Aba de verdade: troca o painel inteiro. Então cada botão aponta o
+              painel por `aria-controls` (só o escolhido existe de cada vez, por
+              isso só ele aponta), o painel diz de qual aba é, e a seta anda
+              entre as abas — tudo pelo `Tablist` do DS. */}
+          <Tablist className="oa-abas ofx-abas" rotulo="Painel da automação">
+            <button type="button" role="tab" className="oa-aba" id="ofx-aba-inspetor" aria-selected={aba === "inspetor"} aria-controls={aba === "inspetor" ? "ofx-painel-aba" : undefined} aria-current={aba === "inspetor" ? "page" : undefined} onClick={() => setAba("inspetor")}>
               {noSelecionado ? "Bloco" : "Automação"}
             </button>
-            <button type="button" role="tab" className="oa-aba" aria-selected={aba === "testar"} aria-current={aba === "testar" ? "page" : undefined} onClick={() => setAba("testar")}>Testar</button>
-            <button type="button" role="tab" className="oa-aba" aria-selected={aba === "versoes"} aria-current={aba === "versoes" ? "page" : undefined} onClick={() => setAba("versoes")}>Versões</button>
-          </div>
-          <div className="ofx-painel-rolagem">
+            <button type="button" role="tab" className="oa-aba" id="ofx-aba-testar" aria-selected={aba === "testar"} aria-controls={aba === "testar" ? "ofx-painel-aba" : undefined} aria-current={aba === "testar" ? "page" : undefined} onClick={() => setAba("testar")}>Testar</button>
+            <button type="button" role="tab" className="oa-aba" id="ofx-aba-versoes" aria-selected={aba === "versoes"} aria-controls={aba === "versoes" ? "ofx-painel-aba" : undefined} aria-current={aba === "versoes" ? "page" : undefined} onClick={() => setAba("versoes")}>Versões</button>
+          </Tablist>
+          <div className="ofx-painel-rolagem" role="tabpanel" id="ofx-painel-aba" aria-labelledby={`ofx-aba-${aba}`}>
             {aba === "inspetor" && (
               <Inspetor
                 doc={visao.tipo === "rascunho" ? doc : { ...doc, grafo: grafoVisivel, config: visao.tipo === "versao" ? visao.config : doc.config }}

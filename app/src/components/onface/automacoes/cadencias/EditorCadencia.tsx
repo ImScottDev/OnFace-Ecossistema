@@ -43,6 +43,7 @@ import {
 import "../automacoes.css";
 import "../fluxos/fluxos.css";
 import "./cadencias.css";
+import { BotaoMotivo, Radiogroup } from "@/components/onface/ds/escolha";
 import { FollowupCanvas } from "./FollowupCanvas";
 import { FollowupInspector } from "./FollowupInspector";
 
@@ -361,9 +362,9 @@ export function EditorCadencia({ cadencia, podeGerenciar, aoFechar, aoSalvar }: 
               <button type="button" aria-pressed={modoVisual} className={modoVisual ? "ofc-modo-ativo" : undefined} onClick={() => setModoVisual(true)}>
                 <GitBranch size={15} /> Fluxo visual
               </button>
-              <button type="button" aria-pressed={!modoVisual} disabled={leitura.naoLinear} title={leitura.naoLinear ? "Use o fluxo visual para editar todos os ramos" : undefined} className={!modoVisual ? "ofc-modo-ativo" : undefined} onClick={() => setModoVisual(false)}>
+              <BotaoMotivo type="button" aria-pressed={!modoVisual} motivo={leitura.naoLinear ? "Use o fluxo visual para editar todos os ramos" : null} className={!modoVisual ? "ofc-modo-ativo" : undefined} onClick={() => setModoVisual(false)}>
                 <ListTodo size={15} /> Lista detalhada
-              </button>
+              </BotaoMotivo>
             </div>
             <span>{modoVisual ? "Clique num passo para configurar ao lado. Arraste a bolinha de uma saída até outro passo para ramificar." : "Arraste para reordenar; clique para abrir o passo."} O rascunho só substitui a versão publicada ao publicar.</span>
           </div>
@@ -528,14 +529,14 @@ function PassoEditor({ passo, ctx, opcoes, primeiro, falhas, aoTrocar }: {
       {passo.tipo === "mensagem" && (
         <fieldset className="ofx-insp-secao">
           <legend>Por onde</legend>
-          <div className="ofx-segmentos ofx-segmentos-largo" role="radiogroup" aria-label="Canal">
+          <Radiogroup className="ofx-segmentos ofx-segmentos-largo" rotulo="Canal">
             {CANAIS.map((c) => (
               <button key={c.valor} type="button" role="radio" aria-checked={passo.canal === c.valor} disabled={ctx.somenteLeitura}
                 title={c.dica} onClick={() => aoTrocar({ canal: c.valor })}>
                 {c.rotulo}
               </button>
             ))}
-          </div>
+          </Radiogroup>
           <span className="oa-dica">{CANAIS.find((c) => c.valor === passo.canal)?.dica}</span>
         </fieldset>
       )}
@@ -629,11 +630,11 @@ function EditorCondicao({ passo, ctx, aoTrocar }: {
   return (
     <fieldset className="ofx-insp-secao">
       <legend>Segue só se</legend>
-      <div className="ofx-segmentos" role="radiogroup" aria-label="Combinar regras">
+      <Radiogroup className="ofx-segmentos" rotulo="Combinar regras">
         {([["and", "Todas as regras"], ["or", "Qualquer regra"]] as const).map(([v, r]) => (
           <button key={v} type="button" role="radio" aria-checked={(passo.combinador ?? "and") === v} disabled={ctx.somenteLeitura} onClick={() => aoTrocar({ combinador: v })}>{r}</button>
         ))}
-      </div>
+      </Radiogroup>
       <div className="ofx-lista">
         {passo.regras.map((regra, i) => (
           <div key={i} className="ofx-lista-item">

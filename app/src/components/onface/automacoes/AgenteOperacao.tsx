@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Check, ChevronDown, CircleAlert, Loader2, Lock, Play, Plus, RotateCcw, Send, ShieldCheck, Workflow } from "lucide-react";
 import { AGENT_EVENT_CATALOG } from "@/lib/ai/agent-studio";
 import type { VersaoDoEditor } from "@/lib/automacoes/agente-detalhe";
+import { BotaoMotivo, Radiogroup } from "@/components/onface/ds/escolha";
 import { Aviso, Interruptor, Secao, api, num, quando, useApi } from "./agente-pecas";
 import { rotuloMotivo } from "@/components/onface/atendimento/agente-operacao";
 
@@ -295,7 +296,7 @@ export function AbaTestes({ agenteId, versoes, trabalho, rascunho, publicada, po
   return (
     <>
       <Secao titulo="Como rodar" ajuda="Três níveis, separados de propósito. Só os dois primeiros acontecem daqui.">
-        <div className="age-niveis" role="radiogroup" aria-label="Nível de execução">
+        <Radiogroup className="age-niveis" rotulo="Nível de execução">
           <button type="button" role="radio" aria-checked={modo === "simulacao"} className="age-modo" onClick={() => setModo("simulacao")}>
             <span className="age-modo-topo"><i />Simulação</span>
             <span>Modelo real, ferramentas em prévia. Nada é enviado nem alterado. Pode usar conversa real como contexto.</span>
@@ -311,7 +312,7 @@ export function AbaTestes({ agenteId, versoes, trabalho, rascunho, publicada, po
               {requisitos.map(([t, ok]) => <li key={t} data-ok={ok ? "true" : "false"}>{ok ? <Check size={11} strokeWidth={3} /> : <CircleAlert size={11} />}{t}</li>)}
             </ul>
           </div>
-        </div>
+        </Radiogroup>
       </Secao>
 
       <Secao titulo="Parâmetros" ajuda={modo === "integrado" ? "Teste integrado: escolha ou crie um lead de teste." : "Escolha a versão, o contexto e o evento que o agente vai receber."}>
@@ -391,9 +392,9 @@ export function AbaTestes({ agenteId, versoes, trabalho, rascunho, publicada, po
         <div className="age-linha-acoes" style={{ marginBottom: 12 }}>
           <span className="age-texto-fraco">{publicada ? `No ar: v${publicada.versao}.` : "Nada no ar."} {rascunho ? `Rascunho: v${rascunho.versao}.` : "Sem rascunho aberto."}</span>
           {podeConfigurar ? (
-            <button type="button" className="agn-primario" onClick={publicar} disabled={publicando || faltas.length > 0 || (!sujo && !rascunho)} title={faltas.length ? `Falta: ${faltas.join("; ")}` : undefined}>
+            <BotaoMotivo type="button" className="agn-primario" onClick={publicar} disabled={publicando || (!sujo && !rascunho)} motivo={faltas.length ? `Falta: ${faltas.join("; ")}` : null}>
               {publicando ? <Loader2 size={14} className="age-gira" /> : <Send size={14} />} Publicar rascunho
-            </button>
+            </BotaoMotivo>
           ) : null}
         </div>
         <ol className="age-versoes">

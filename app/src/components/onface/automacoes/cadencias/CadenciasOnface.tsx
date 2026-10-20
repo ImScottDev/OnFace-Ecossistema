@@ -27,6 +27,7 @@ import { createEmptyFollowupGraph } from "@/lib/ai-platform/followup/graph";
 import { legacyStepsToFollowupGraph } from "@/lib/ai-platform/followup/legacy";
 import type { CadenceStep } from "@/lib/cadencia/cadence-engine";
 import { PaginaCabecalho, PaginaResumo } from "@/components/onface/shell/Pagina";
+import { BotaoMotivo, Tablist } from "@/components/onface/ds/escolha";
 import { AbasAutomacoes } from "../Abas";
 import { ENTIDADE, STATUS_EXECUCAO } from "../formato";
 import { EditorCadencia, type CadenciaEditavel } from "./EditorCadencia";
@@ -175,9 +176,9 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
         titulo="Cadências"
         descricao="Sequências de follow-up no tempo. Cada inscrição é rastreável até concluir, pausar ou cancelar."
         acoes={
-          <button type="button" className="oa-btn oa-btn-primario" disabled={!podeGerenciar} title={podeGerenciar ? undefined : SEM_PERMISSAO} onClick={() => setNova(true)}>
+          <BotaoMotivo type="button" className="oa-btn oa-btn-primario" motivo={podeGerenciar ? null : SEM_PERMISSAO} onClick={() => setNova(true)}>
             <Plus size={14} /> Nova cadência
-          </button>
+          </BotaoMotivo>
         }
       />
       <PaginaResumo itens={[
@@ -203,16 +204,20 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
       ) : null}
 
       <div className="oa-barra">
-        <div className="oa-abas" role="tablist" aria-label="Visão">
-          <button type="button" role="tab" className="oa-aba" aria-current={aba === "cadencias" ? "page" : undefined} aria-selected={aba === "cadencias"} onClick={() => setAba("cadencias")}>
+        {/* Aba de verdade (troca a lista inteira): cada botão aponta o painel
+            por `aria-controls`, o painel diz de qual aba é, e a seta anda
+            entre as duas. */}
+        <Tablist className="oa-abas" rotulo="Visão">
+          <button type="button" role="tab" className="oa-aba" id="ofc-aba-cadencias" aria-current={aba === "cadencias" ? "page" : undefined} aria-selected={aba === "cadencias"} aria-controls={aba === "cadencias" ? "ofc-painel-aba" : undefined} onClick={() => setAba("cadencias")}>
             Cadências <span className="oa-selo">{cadencias.length}</span>
           </button>
-          <button type="button" role="tab" className="oa-aba" aria-current={aba === "inscricoes" ? "page" : undefined} aria-selected={aba === "inscricoes"} onClick={() => setAba("inscricoes")}>
+          <button type="button" role="tab" className="oa-aba" id="ofc-aba-inscricoes" aria-current={aba === "inscricoes" ? "page" : undefined} aria-selected={aba === "inscricoes"} aria-controls={aba === "inscricoes" ? "ofc-painel-aba" : undefined} onClick={() => setAba("inscricoes")}>
             Inscrições <span className="oa-selo">{flows.isLoading ? "—" : totais.emCurso}</span>
           </button>
-        </div>
+        </Tablist>
       </div>
 
+      <div className="oa-painel-aba" role="tabpanel" id="ofc-painel-aba" aria-labelledby={`ofc-aba-${aba}`}>
       {aba === "cadencias" ? (
         <ListaCadencias
           cadencias={cadencias} loading={flows.isLoading} error={flows.isError} podeGerenciar={podeGerenciar}
@@ -228,6 +233,7 @@ export function CadenciasOnface({ podeGerenciar }: { podeGerenciar: boolean }) {
           onAcao={(id, action) => acaoInscricao.mutate({ id, action })} onEventos={setEventosDe}
         />
       )}
+      </div>
 
       {nova ? (
         <NovaCadencia
@@ -259,9 +265,9 @@ function ListaCadencias({ cadencias, loading, error, podeGerenciar, onNova, onEd
       <span className="ofx-vazio-icone"><Clock size={20} /></span>
       <h2>Nenhuma cadência configurada</h2>
       <p>Uma cadência é uma sequência no tempo: espera tanto, fala isso, por este canal. Monte os passos, publique e inscreva leads, contatos ou negócios.</p>
-      <button type="button" className="oa-btn oa-btn-primario" disabled={!podeGerenciar} title={podeGerenciar ? undefined : SEM_PERMISSAO} onClick={onNova}>
+      <BotaoMotivo type="button" className="oa-btn oa-btn-primario" motivo={podeGerenciar ? null : SEM_PERMISSAO} onClick={onNova}>
         <Plus size={14} /> Criar a primeira
-      </button>
+      </BotaoMotivo>
     </div>
   );
   return (
@@ -279,24 +285,24 @@ function ListaCadencias({ cadencias, loading, error, podeGerenciar, onNova, onEd
         const motivoInscrever = !podeGerenciar ? SEM_PERMISSAO : !cd.ativo ? "Publique a cadência antes de inscrever." : !INSCREVIVEL.has(cd.entityType) ? "Inscrição manual só para lead, contato ou negócio." : null;
         return (
           <li key={cd.id} className="ofx-linha">
-            <button type="button" className="ofx-linha-nome" onClick={() => onEditar(cd)} disabled={!podeGerenciar} title={podeGerenciar ? "Abrir os passos" : SEM_PERMISSAO}>
+            <BotaoMotivo type="button" className="ofx-linha-nome" onClick={() => onEditar(cd)} title={podeGerenciar ? "Abrir os passos" : undefined} motivo={podeGerenciar ? null : SEM_PERMISSAO}>
               <strong>{cd.nome}</strong>
               <span>{ENTIDADE[cd.entityType] ?? cd.entityType} · {cd.visibility === "personal" ? "Pessoal" : "Equipe"}{cd.ownerName ? ` · ${cd.ownerName}` : ""} · versão {cd.versao}{cd.publishedAt ? ` · publicada ${fmtData(cd.publishedAt)}` : ""}</span>
-            </button>
+            </BotaoMotivo>
             <span className="ofx-linha-exec">{EVENTO.get(evento) ?? evento}</span>
             <span className="ofx-linha-estado"><span className={`oa-selo ${tom ? `oa-${tom}` : ""}`}>{rotulo}</span></span>
             <span className="ofx-linha-num">{cd.totalPassos === 1 ? "1 passo" : `${cd.totalPassos} passos`}</span>
             <span className="ofx-linha-num" title="Inscrições ativas ou aguardando">{emCurso} em curso</span>
             <span className="ofx-linha-num" data-sinal={(s.failed ?? 0) > 0 ? "true" : undefined}>{s.failed ?? 0} falha(s)</span>
             <span className="ofx-linha-esq ofc-acoes">
-              <button type="button" className="oa-btn oa-btn-secundario" disabled={!!motivoInscrever} title={motivoInscrever ?? "Inscrever um registro"} onClick={() => onInscrever(cd)}>
+              <BotaoMotivo type="button" className="oa-btn oa-btn-secundario" title={motivoInscrever ? undefined : "Inscrever um registro"} motivo={motivoInscrever} onClick={() => onInscrever(cd)}>
                 <UserPlus size={13} /> Inscrever
-              </button>
-              <button type="button" className="oa-icone" disabled={!podeGerenciar} aria-label="Editar os passos" title={podeGerenciar ? "Editar os passos" : SEM_PERMISSAO} onClick={() => onEditar(cd)}><Pencil size={14} /></button>
+              </BotaoMotivo>
+              <BotaoMotivo type="button" className="oa-icone" aria-label="Editar os passos" title={podeGerenciar ? "Editar os passos" : undefined} motivo={podeGerenciar ? null : SEM_PERMISSAO} onClick={() => onEditar(cd)}><Pencil size={14} /></BotaoMotivo>
               {cd.publishedVersionId ? <button type="button" className="oa-icone" aria-label="Versões publicadas" title="Versões publicadas" onClick={() => onHistorico(cd)}><History size={14} /></button> : null}
               {cd.ativo
-                ? <button type="button" className="oa-icone" disabled={!podeGerenciar} aria-label="Pausar" title={podeGerenciar ? "Pausar: novas inscrições param; as em curso seguem" : SEM_PERMISSAO} onClick={() => onPausar(cd)}><CirclePause size={14} /></button>
-                : <button type="button" className="oa-icone" disabled={!podeGerenciar} aria-label="Abrir para publicar" title={podeGerenciar ? "Abrir para revisar e publicar" : SEM_PERMISSAO} onClick={() => onEditar(cd)}><Send size={14} /></button>}
+                ? <BotaoMotivo type="button" className="oa-icone" aria-label="Pausar" title={podeGerenciar ? "Pausar: novas inscrições param; as em curso seguem" : undefined} motivo={podeGerenciar ? null : SEM_PERMISSAO} onClick={() => onPausar(cd)}><CirclePause size={14} /></BotaoMotivo>
+                : <BotaoMotivo type="button" className="oa-icone" aria-label="Abrir para publicar" title={podeGerenciar ? "Abrir para revisar e publicar" : undefined} motivo={podeGerenciar ? null : SEM_PERMISSAO} onClick={() => onEditar(cd)}><Send size={14} /></BotaoMotivo>}
             </span>
           </li>
         );
@@ -365,13 +371,13 @@ function ListaInscricoes({ data, loading, error, podeGerenciar, busy, status, fl
                   <span className="ofx-linha-estado"><span className={`oa-selo ${tom ? `oa-${tom}` : ""}`}>{rotulo}</span></span>
                   <span className="ofx-linha-esq ofc-acoes">
                     {it.status === "active" || it.status === "waiting" || it.status === "waiting_reply"
-                      ? <button type="button" className="oa-icone" disabled={busy || !podeGerenciar} title={motivo ?? "Pausar"} aria-label="Pausar" onClick={() => onAcao(it.id, "pause")}><CirclePause size={14} /></button>
-                      : it.status === "paused" ? <button type="button" className="oa-icone" disabled={busy || !podeGerenciar} title={motivo ?? "Retomar"} aria-label="Retomar" onClick={() => onAcao(it.id, "resume")}><Play size={14} /></button> : null}
+                      ? <BotaoMotivo type="button" className="oa-icone" disabled={busy} title={motivo ? undefined : "Pausar"} motivo={motivo} aria-label="Pausar" onClick={() => onAcao(it.id, "pause")}><CirclePause size={14} /></BotaoMotivo>
+                      : it.status === "paused" ? <BotaoMotivo type="button" className="oa-icone" disabled={busy} title={motivo ? undefined : "Retomar"} motivo={motivo} aria-label="Retomar" onClick={() => onAcao(it.id, "resume")}><Play size={14} /></BotaoMotivo> : null}
                     {/* Cancelar tira o registro da cadência no servidor e não
                         volta: retomar só existe para quem está pausado. */}
                     {!["completed", "cancelled"].includes(it.status)
-                      ? <button type="button" className="oa-icone ofx-menu-perigo" disabled={busy || !podeGerenciar} title={motivo ?? "Cancelar a inscrição"} aria-label="Cancelar a inscrição"
-                          onClick={() => { if (window.confirm(`Cancelar a inscrição de ${it.entityName} em “${it.definitionName}”? Os passos que faltam não serão enviados, e não há como retomar.`)) onAcao(it.id, "cancel"); }}><XCircle size={14} /></button> : null}
+                      ? <BotaoMotivo type="button" className="oa-icone ofx-menu-perigo" disabled={busy} title={motivo ? undefined : "Cancelar a inscrição"} motivo={motivo} aria-label="Cancelar a inscrição"
+                          onClick={() => { if (window.confirm(`Cancelar a inscrição de ${it.entityName} em “${it.definitionName}”? Os passos que faltam não serão enviados, e não há como retomar.`)) onAcao(it.id, "cancel"); }}><XCircle size={14} /></BotaoMotivo> : null}
                   </span>
                 </li>
               );
@@ -470,7 +476,7 @@ function Historico({ cd, podeGerenciar, onClose, onRollback }: { cd: Cadencia; p
             </span>
             {v.id === cd.publishedVersionId
               ? <span className="oa-selo oa-ok">Atual</span>
-              : <button type="button" className="oa-btn oa-btn-secundario" disabled={!podeGerenciar} title={podeGerenciar ? undefined : SEM_PERMISSAO} onClick={() => onRollback(v.id)}>Reverter</button>}
+              : <BotaoMotivo type="button" className="oa-btn oa-btn-secundario" motivo={podeGerenciar ? null : SEM_PERMISSAO} onClick={() => onRollback(v.id)}>Reverter</BotaoMotivo>}
           </li>
         ))}
       </ul>

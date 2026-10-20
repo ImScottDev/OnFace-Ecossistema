@@ -11,6 +11,7 @@ import {
   CAMPOS_ATUALIZAVEIS, EVENTOS_PLATAFORMA, OPERADORES_REGRA,
   type CampoConfig, type OpcoesInspetor, type OperadorRegra, type TipoEntidade,
 } from "@/lib/automacoes/grafo";
+import { Radiogroup } from "@/components/onface/ds/escolha";
 import { SeletorVariaveis, type GrupoVariaveis } from "./SeletorVariaveis";
 
 export interface ContextoCampo {
@@ -83,13 +84,13 @@ function Selecao({ id, valor, aoMudar, ctx, opcoes, vazio, grupos }: {
 /** Pílulas quando são poucas opções curtas: uma olhada mostra a escolha. */
 function Segmentos({ valor, aoMudar, ctx, opcoes, rotulo }: { valor: unknown; aoMudar: Mudar; ctx: ContextoCampo; opcoes: { valor: string; rotulo: string }[]; rotulo: string }) {
   return (
-    <div className="ofx-segmentos" role="radiogroup" aria-label={rotulo}>
+    <Radiogroup className="ofx-segmentos" rotulo={rotulo}>
       {opcoes.map((o) => (
         <button key={o.valor} type="button" role="radio" aria-checked={valor === o.valor} disabled={ctx.somenteLeitura} onClick={() => aoMudar(o.valor)}>
           {o.rotulo}
         </button>
       ))}
-    </div>
+    </Radiogroup>
   );
 }
 

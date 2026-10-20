@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { brl, compacto, RESPONSAVEIS } from "./dados";
 import "./graficos-medidores.css";
+import { Radiogroup } from "./escolha";
 
 /* ═══ Base: faixas e segmentos ════════════════════════════════════════════ */
 
@@ -155,8 +156,12 @@ export function Segmentos({
 
 /** Controle segmentado de recorte. Mora aqui porque os cartões de medidor e os
  *  de série usam o mesmo gesto; dois controles iguais em dois arquivos é onde a
- *  altura e o raio começam a divergir. */
-export function Abas({
+ *  altura e o raio começam a divergir.
+ *
+ *  Recorte é ESCOLHA, não aba: o cartão é o mesmo, o número é que troca. Era
+ *  anunciado como `tablist` sem painel nenhum para apontar, então virou
+ *  radiogroup — e com isso ganhou seta, que um segmentado precisa ter. */
+export function Recortes({
   rotulo,
   itens,
   ativo,
@@ -168,20 +173,20 @@ export function Abas({
   aoTrocar: (chave: string) => void;
 }) {
   return (
-    <div className="med-abas" role="tablist" aria-label={rotulo}>
+    <Radiogroup className="med-abas" rotulo={rotulo} orientacao="horizontal">
       {itens.map((item) => (
         <button
           key={item.chave}
           type="button"
-          role="tab"
-          aria-selected={item.chave === ativo}
+          role="radio"
+          aria-checked={item.chave === ativo}
           className="med-aba"
           onClick={() => aoTrocar(item.chave)}
         >
           {item.rotulo}
         </button>
       ))}
-    </div>
+    </Radiogroup>
   );
 }
 
@@ -409,7 +414,7 @@ export function CartaoDistribuicao({
         </div>
 
         {controle === "abas" ? (
-          <Abas rotulo={`Recorte de ${titulo}`} itens={recortes} ativo={recorte.chave} aoTrocar={trocarRecorte} />
+          <Recortes rotulo={`Recorte de ${titulo}`} itens={recortes} ativo={recorte.chave} aoTrocar={trocarRecorte} />
         ) : (
           <Select value={recorte.chave} onValueChange={trocarRecorte}>
             <SelectTrigger size="sm" className="med-seletor" aria-label={`Período de ${titulo}`}>

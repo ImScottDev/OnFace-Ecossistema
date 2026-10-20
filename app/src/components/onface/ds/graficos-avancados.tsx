@@ -29,6 +29,7 @@ import {
   HORAS, MOVIMENTO_FUNIL, RECEITA_SEMANAL, brl, compacto,
 } from "./dados";
 import "./graficos-avancados.css";
+import { Radiogroup } from "./escolha";
 
 /* ═══ Área simples ════════════════════════════════════════════════════════ */
 
@@ -92,13 +93,15 @@ export function BarrasInterativas() {
 
   return (
     <div className="gav-interativo">
-      <div className="gav-metricas" role="tablist" aria-label="Métrica do gráfico">
+      {/* Escolha de métrica, não aba: o gráfico abaixo é o mesmo e troca de
+          série. Sem painel para apontar, `tab` só enganava o leitor de tela. */}
+      <Radiogroup className="gav-metricas" rotulo="Métrica do gráfico" orientacao="horizontal">
         {METRICAS_CANAL.map((m) => (
           <button
             key={m.chave}
             type="button"
-            role="tab"
-            aria-selected={ativa === m.chave}
+            role="radio"
+            aria-checked={ativa === m.chave}
             className="gav-metrica"
             onClick={() => setAtiva(m.chave)}
           >
@@ -106,7 +109,7 @@ export function BarrasInterativas() {
             <strong className="gav-metrica-valor">{totais[m.chave].toLocaleString("pt-BR")}</strong>
           </button>
         ))}
-      </div>
+      </Radiogroup>
 
       <ChartContainer config={CONFIG_CANAL} className="gav-chart" style={{ height: "calc(190 * var(--onface-u))" }}>
         <BarChart data={CANAIS_SEMANAIS} margin={{ left: 4, right: 4, top: 8, bottom: 0 }}>

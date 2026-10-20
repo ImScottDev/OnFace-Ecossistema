@@ -13,6 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import type { DadosRoteamento, RegraDaTela } from "@/lib/automacoes/roteamento-tela";
 import "./agentes.css";
 import "./roteamento.css";
+import { BotaoMotivo } from "@/components/onface/ds/escolha";
 
 const BASE = "/api/automacoes/agentes-op/roteamento";
 const FAMILIA: Record<string, string> = { CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label", PABX: "PABX" };
@@ -224,7 +225,7 @@ export function RoteamentoComercial({ dados, podeConfigurar }: { dados: DadosRot
       <div className="rot-barra">
         <p>Maior prioridade vence; no empate, a regra mais específica (campanha e família) vence. Se a closer estiver inativa ou com a agenda pausada, o lead não é trocado em silêncio: vai para a fila humana ou para o rodízio, conforme a regra.</p>
         {!podeConfigurar ? <span className="agn-motivo">{motivo}</span> : null}
-        <button type="button" className="agn-primario" disabled={!podeConfigurar} title={motivo} onClick={() => setEditando("nova")}><Plus size={14} strokeWidth={2.3} /> Nova regra</button>
+        <BotaoMotivo type="button" className="agn-primario" disabled={!podeConfigurar} motivo={motivo} onClick={() => setEditando("nova")}><Plus size={14} strokeWidth={2.3} /> Nova regra</BotaoMotivo>
       </div>
 
       <section className="agn-cartao rot-bloco" aria-labelledby="rot-regras">
@@ -255,9 +256,9 @@ export function RoteamentoComercial({ dados, podeConfigurar }: { dados: DadosRot
                       <td>{FALLBACK[r.fallback] ?? r.fallback}</td>
                       <td>
                         <span className="agn-acoes">
-                          <button type="button" className="agn-acao" disabled={!podeConfigurar || ocupado === r.id} title={motivo} onClick={() => setEditando(r)} aria-label={`Editar ${r.nome}`}>Editar</button>
-                          <button type="button" className="agn-acao" disabled={!podeConfigurar || ocupado === r.id} title={motivo} onClick={() => alternar(r)} aria-label={`${r.ativa ? "Desativar" : "Ativar"} ${r.nome}`}>{r.ativa ? "Desativar" : "Ativar"}</button>
-                          <button type="button" className="agn-acao" disabled={!podeConfigurar || ocupado === r.id} title={motivo} onClick={() => setRemovendo(r)} aria-label={`Remover ${r.nome}`}>Remover</button>
+                          <BotaoMotivo type="button" className="agn-acao" disabled={!podeConfigurar || ocupado === r.id} motivo={motivo} onClick={() => setEditando(r)} aria-label={`Editar ${r.nome}`}>Editar</BotaoMotivo>
+                          <BotaoMotivo type="button" className="agn-acao" disabled={!podeConfigurar || ocupado === r.id} motivo={motivo} onClick={() => alternar(r)} aria-label={`${r.ativa ? "Desativar" : "Ativar"} ${r.nome}`}>{r.ativa ? "Desativar" : "Ativar"}</BotaoMotivo>
+                          <BotaoMotivo type="button" className="agn-acao" disabled={!podeConfigurar || ocupado === r.id} motivo={motivo} onClick={() => setRemovendo(r)} aria-label={`Remover ${r.nome}`}>Remover</BotaoMotivo>
                         </span>
                       </td>
                     </tr>

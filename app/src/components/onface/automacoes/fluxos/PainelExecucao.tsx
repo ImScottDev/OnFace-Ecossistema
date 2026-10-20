@@ -13,6 +13,7 @@ import {
 } from "@/lib/automacoes/grafo";
 import { MODO_EXECUCAO, STATUS_EXECUCAO, quandoRelativo } from "../formato";
 import { apiFluxos } from "./api";
+import { BotaoMotivo, Radiogroup } from "@/components/onface/ds/escolha";
 import { EscolherRegistro, type RegistroEscolhido } from "./EscolherRegistro";
 import type { DocFluxo } from "./useEditorFluxo";
 
@@ -134,10 +135,10 @@ export function PainelExecucao({
       {/* `aria-checked` não vale em `role="tab"`: o segmento escolhido não era
           anunciado. É o mesmo par de opções exclusivas dos outros segmentos da
           casa, então é um radiogroup, como eles. */}
-      <div className="ofx-segmentos ofx-segmentos-largo" role="radiogroup" aria-label="Tipo de teste">
+      <Radiogroup className="ofx-segmentos ofx-segmentos-largo" rotulo="Tipo de teste">
         <button type="button" role="radio" aria-checked={modo === "ensaiar"} onClick={() => setModo("ensaiar")}><FlaskConical size={13} /> Ensaiar</button>
         <button type="button" role="radio" aria-checked={modo === "rodar"} onClick={() => setModo("rodar")}><Play size={13} /> Rodar de verdade</button>
-      </div>
+      </Radiogroup>
 
       {modo === "ensaiar" ? (
         <p className="ofx-teste-explica">Percorre o <b>rascunho</b> com dados reais do registro, avalia condições de verdade e mostra o que cada ação faria. <b>Nada é enviado nem gravado.</b></p>
@@ -192,11 +193,11 @@ export function PainelExecucao({
           <FlaskConical size={14} /> {ensaiar.isPending ? "Ensaiando…" : faltaRegistro ? "Escolha o registro para ensaiar" : "Ensaiar agora"}
         </button>
       ) : publicada && (
-        <button type="button" className="oa-btn oa-btn-primario ofx-teste-acao" disabled={ocupado || faltaRegistro || !podeGerir}
-          title={!podeGerir ? "Sua função não tem a permissão automation.manage" : undefined}
+        <BotaoMotivo type="button" className="oa-btn oa-btn-primario ofx-teste-acao" disabled={ocupado || faltaRegistro}
+          motivo={podeGerir ? null : "Sua função não tem a permissão automation.manage"}
           onClick={() => { if (window.confirm("Rodar de verdade? As ações deste fluxo vão acontecer.")) rodar.mutate(); }}>
           <Play size={14} /> {rodar.isPending ? "Rodando…" : faltaRegistro ? "Escolha o registro para rodar" : "Rodar agora"}
-        </button>
+        </BotaoMotivo>
       )}
 
       {modo === "ensaiar" && ensaio && (

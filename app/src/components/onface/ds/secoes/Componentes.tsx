@@ -23,6 +23,7 @@ import {
   Send, Settings2, Sparkles, Trash2, TriangleAlert, Undo2, UserPlus, Users, X,
 } from "lucide-react";
 
+import { BotaoMotivo, Radiogroup } from "../escolha";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarBadge, AvatarFallback, AvatarGroup, AvatarGroupCount } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +31,7 @@ import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -180,7 +181,7 @@ function BlocoBotoes() {
   return (
     <Bloco
       arquivo="components/ui/button.tsx"
-      importar={'import { Button } from "@/components/ui/button";'}
+      importar={'import { Button, buttonVariants } from "@/components/ui/button";'}
       titulo="Botão"
       descricao="Cinco degraus de hierarquia e três semânticos. O degrau escolhe a atenção que a ação merece na tela; a cor semântica só entra quando a ação tem consequência."
     >
@@ -1565,6 +1566,59 @@ function BlocoSinalizacao() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+ * 3b. Escolha e bloqueio pelo teclado
+ * ════════════════════════════════════════════════════════════════════════ */
+
+function BlocoEscolhaTeclado() {
+  const [recorte, setRecorte] = React.useState("semana");
+  const RECORTES = [
+    { id: "semana", rotulo: "Semana" },
+    { id: "mes", rotulo: "Mês" },
+    { id: "trimestre", rotulo: "Trimestre" },
+  ];
+
+  return (
+    <Bloco
+      arquivo="components/onface/ds/escolha.tsx"
+      importar={'import { BotaoMotivo, Radiogroup, Tablist } from "@/components/onface/ds/escolha";'}
+      titulo="Escolha única e ação bloqueada"
+      descricao="Dois erros que estavam repetidos em dezenas de telas, consertados numa peça só. Filtro de escolha única é radiogroup — e radiogroup sem seta é radiogroup só no nome: entre com Tab (o grupo todo é uma parada, não uma por pílula), ande com ←/→ ou ↑/↓, pule às pontas com Home/End. Quando a ação está bloqueada por permissão, o motivo não pode morar no title: botão desabilitado não recebe foco, então quem não usa mouse nunca fica sabendo por quê. BotaoMotivo mantém o botão focável com aria-disabled e prende o motivo por aria-describedby. Aba de verdade (a que troca o painel) usa Tablist, e cada aba aponta o painel com aria-controls."
+      fundo="sunken"
+    >
+      <Coluna>
+        <div className="cmp-caixa">
+          <div className="cmp-caixa-topo">Radiogroup · Tab entra, a seta anda, a escolha é anunciada</div>
+          <Radiogroup rotulo="Recorte do período" orientacao="horizontal" className="cmp-pilha-curta" style={{ flexDirection: "row" }}>
+            {RECORTES.map((r) => (
+              <Button
+                key={r.id}
+                type="button"
+                role="radio"
+                aria-checked={recorte === r.id}
+                size="sm"
+                variant={recorte === r.id ? "default" : "outline"}
+                onClick={() => setRecorte(r.id)}
+              >
+                {r.rotulo}
+              </Button>
+            ))}
+          </Radiogroup>
+        </div>
+        <div className="cmp-caixa">
+          <div className="cmp-caixa-topo">BotaoMotivo · bloqueado, focável, com o motivo em texto</div>
+          <BotaoMotivo
+            className={buttonVariants({ variant: "default", size: "sm" })}
+            motivo="Sua função não tem a permissão automation.manage"
+          >
+            <Plus /> Nova regra
+          </BotaoMotivo>
+        </div>
+      </Coluna>
+    </Bloco>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
  * 8. Estados vazios
  * ════════════════════════════════════════════════════════════════════════ */
 
@@ -1699,6 +1753,7 @@ export function SecaoComponentes() {
         <BlocoBotoes />
         <BlocoEstados />
         <BlocoFormulario />
+        <BlocoEscolhaTeclado />
       </Familia>
 
       <Familia indice="02" nome="O que a orienta">

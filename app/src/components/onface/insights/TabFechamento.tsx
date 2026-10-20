@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Download, ExternalLink } from "lucide-react";
 import { moedaExata } from "@/components/onface/vendas/formato";
+import { Radiogroup } from "@/components/onface/ds/escolha";
 
 /**
  * Fechamento Comercial — aba restaurada.
@@ -128,15 +129,18 @@ export function TabFechamento({ periodo }: { periodo: string }) {
 
       <section className="ins-painel">
         <div className="ins-painel-cab">
-          <div className="ins-chips" role="tablist" aria-label="Blocos do fechamento">
+          {/* Chip de filtro: mesma tabela, outro recorte. Era role="tab" com
+              aria-pressed ao mesmo tempo — dois papéis contraditórios e
+              nenhum painel de aba. */}
+          <Radiogroup className="ins-chips" rotulo="Blocos do fechamento" orientacao="horizontal">
             {([
               ["vendas", `Vendas fechadas (${d.vendas.length})`],
               ["agendas", `Agendas realizadas (${d.agendas.length})`],
               ["atribuidas", `Atribuídas a SDR (${d.atribuidas.length})`],
             ] as const).map(([k, l]) => (
-              <button key={k} type="button" role="tab" aria-selected={sub === k} aria-pressed={sub === k} className="ins-chip" onClick={() => setSub(k)}>{l}</button>
+              <button key={k} type="button" role="radio" aria-checked={sub === k} className="ins-chip" onClick={() => setSub(k)}>{l}</button>
             ))}
-          </div>
+          </Radiogroup>
           {/* Link real para o .xlsx (3 abas, mesmo filtro da tela). Download
               direto, sem window.open: funciona com bloqueador de pop-up. */}
           <a className="ins-acao" href={`/api/relatorios/fechamento-comercial/export?${qs}`} title="Exporta Vendas, Agendas e Atribuídas num único .xlsx, com o filtro aplicado">

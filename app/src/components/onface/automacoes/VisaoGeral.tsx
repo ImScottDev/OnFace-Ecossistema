@@ -5,6 +5,7 @@ import type { VisaoGeralAutomacoes } from "@/lib/automacoes/visao-geral";
 import { AbasAutomacoes } from "./Abas";
 import { STATUS_EXECUCAO, ENTIDADE, quandoRelativo, plural } from "./formato";
 import "./automacoes.css";
+import { BotaoMotivo } from "@/components/onface/ds/escolha";
 
 /**
  * Automações → visão geral (arquétipo A, vocabulário do desenho de CS).
@@ -37,9 +38,9 @@ export function AutomacoesVisaoGeral({ dados, podeGerir, totalRotinas }: {
                   <Plus size={14} strokeWidth={2.4} /> Nova regra
                 </Link>
               ) : (
-                <button type="button" className="oa-btn oa-btn-primario" disabled title="Sua função não tem a permissão automation.manage">
+                <BotaoMotivo type="button" className="oa-btn oa-btn-primario" motivo="Sua função não tem a permissão automation.manage">
                   <Plus size={14} strokeWidth={2.4} /> Nova regra
-                </button>
+                </BotaoMotivo>
               )}
             </div>
 

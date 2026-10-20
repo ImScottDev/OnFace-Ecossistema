@@ -388,7 +388,7 @@
   cursor: pointer;
 }
 .aj-aba:hover { color: var(--text-strong); }
-.aj-aba[aria-selected="true"] {
+.aj-aba[aria-checked="true"] {
   background: var(--surface-card);
   color: var(--onface-coral-texto, var(--text-strong));
   font-weight: var(--weight-semibold);

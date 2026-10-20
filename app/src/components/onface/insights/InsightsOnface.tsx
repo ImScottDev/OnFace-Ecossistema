@@ -18,6 +18,7 @@ import { moeda } from "@/components/onface/vendas/formato";
 import { TabFechamento } from "./TabFechamento";
 import { TabExecutivo } from "./TabExecutivo";
 import { BlocoGestao } from "./BlocoGestao";
+import { Tablist } from "@/components/onface/ds/escolha";
 import { preencherSemanas, type Semana } from "./semanas";
 import "./insights.css";
 
@@ -143,21 +144,27 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
 
       {!meLoading && (
         <>
-          <div className="ins-abas" role="tablist" aria-label="Relatórios">
+          {/* Aqui é aba de verdade: cada relatório é um painel. O par
+              tab/painel estava solto — `role="tabpanel"` sem `id` e abas sem
+              `aria-controls`. Ids fixos, e a seta anda entre os relatórios. */}
+          <Tablist className="ins-abas" rotulo="Relatórios">
             {abas.map((t) => (
               <button
                 key={t.key}
+                type="button"
                 role="tab"
+                id={`ins-aba-${t.key}`}
                 aria-selected={abaAtiva === t.key}
+                aria-controls={abaAtiva === t.key ? "ins-painel-aba" : undefined}
                 className="ins-aba"
                 onClick={() => setAba(t.key)}
               >
                 {t.label}
               </button>
             ))}
-          </div>
+          </Tablist>
 
-          <div className="ins-corpo" role="tabpanel">
+          <div className="ins-corpo" role="tabpanel" id="ins-painel-aba" aria-labelledby={`ins-aba-${abaAtiva}`}>
             {gestao ? (
               <>
                 {abaAtiva === "executivo" && (

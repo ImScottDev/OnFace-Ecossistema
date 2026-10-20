@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { AGENT_PRESETS, AGENT_PURPOSES, DEFAULT_HANDOFF_CONFIG, type AgentToolCategory } from "@/lib/ai/agent-studio";
 import { CLASSES_AUTONOMIA } from "@/lib/ai-platform/tools/politica";
 import type { DadosTelaAgentes, AgenteDaTela } from "@/lib/automacoes/agentes-tela";
+import { BotaoMotivo, Radiogroup } from "@/components/onface/ds/escolha";
 import "./agentes.css";
 
 const num = (n: number) => n.toLocaleString("pt-BR");
@@ -114,7 +115,7 @@ function NovoAgente({ onClose }: { onClose: () => void }) {
         </header>
         <div className="agn-form">
           <label>Nome<input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Agente Outbound" maxLength={120} autoFocus required /></label>
-          <div className="agn-modelos" role="radiogroup" aria-label="Começar a partir de um modelo">
+          <Radiogroup className="agn-modelos" rotulo="Começar a partir de um modelo">
             <span className="agn-modelos-titulo">Começar a partir de um modelo</span>
             {AGENT_PURPOSES.map((p) => {
               const base = AGENT_PRESETS[p.id] ?? AGENT_PRESETS.atendimento;
@@ -126,7 +127,7 @@ function NovoAgente({ onClose }: { onClose: () => void }) {
                 </button>
               );
             })}
-          </div>
+          </Radiogroup>
           <label>Descrição<textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="O que ele resolve e onde deve parar." maxLength={500} rows={2} /></label>
           <div className="agn-preset">
             <strong>Instruções iniciais de {AGENT_PURPOSES.find((p) => p.id === finalidade)?.nome}</strong>
@@ -239,27 +240,27 @@ function CardAgente({ a, podeConfigurar }: { a: AgenteDaTela; podeConfigurar: bo
           <Link href={`/automacoes/agentes/${a.id}?aba=testes`} className="agn-acao">Testar</Link>
           <Link href={execucoesHref} className="agn-acao">Ver execuções</Link>
           {a.versaoEmTrabalhoStatus === "draft" && a.versionId ? (
-            <button type="button" className="agn-acao" disabled={desligado} title={motivo}
+            <BotaoMotivo type="button" className="agn-acao" disabled={desligado} motivo={motivo}
               onClick={() => acao("publicar", `/api/automacoes/agentes/${a.id}/versions/${a.versionId}/publish`, "Agente publicado.")}>
               {ocupado === "publicar" ? "Publicando…" : "Publicar"}
-            </button>
+            </BotaoMotivo>
           ) : null}
           {noAr ? (
-            <button type="button" className="agn-acao" disabled={desligado} title={motivo}
+            <BotaoMotivo type="button" className="agn-acao" disabled={desligado} motivo={motivo}
               onClick={() => acao("pausar", `/api/automacoes/agentes/${a.id}/pausar`, "Agente pausado. Não responde mais ninguém.")}>
               {ocupado === "pausar" ? "Pausando…" : "Pausar"}
-            </button>
+            </BotaoMotivo>
           ) : null}
           {a.status === "paused" ? (
-            <button type="button" className="agn-acao" disabled={desligado} title={motivo}
+            <BotaoMotivo type="button" className="agn-acao" disabled={desligado} motivo={motivo}
               onClick={() => acao("retomar", `/api/automacoes/agentes/${a.id}/retomar`, "Agente retomado.")}>
               {ocupado === "retomar" ? "Retomando…" : "Retomar"}
-            </button>
+            </BotaoMotivo>
           ) : null}
-          <button type="button" className="agn-acao" disabled={desligado} title={motivo}
+          <BotaoMotivo type="button" className="agn-acao" disabled={desligado} motivo={motivo}
             onClick={() => acao("duplicar", `/api/automacoes/agentes/${a.id}/duplicar`, "Cópia criada como rascunho.", (j) => router.push(`/automacoes/agentes/${(j.agente as { id: string }).id}`))}>
             {ocupado === "duplicar" ? "Duplicando…" : "Duplicar"}
-          </button>
+          </BotaoMotivo>
         </span>
       </div>
     </article>
