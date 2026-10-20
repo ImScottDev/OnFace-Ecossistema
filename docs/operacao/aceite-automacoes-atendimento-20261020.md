@@ -293,8 +293,10 @@ cópia é recarregada). Não criar essa regra em produção.
 
 ## 4. Caixa de entrada da captação e reprocessamento
 
-Commits `d84cb38a`, `53794a1e`. **Sem tela ainda**: é API para gestão
-(admin, gerente, super admin). Use o navegador logado em
+Commits `d84cb38a`, `53794a1e` (API) e `d4f1af56` (tela). Tela: **Ajustes ›
+Leads › Caixa de entrada da captação**, só para gestão (admin, gerente, super
+admin): filtros de status/canal, link para o lead e botão "Reprocessar". A API
+abaixo continua valendo para conferir pelo navegador logado em
 `dev.crm.callface.io` (a sessão vai no cookie).
 
 **Pré-condição:** seção 3 feita (há entregas `site` e `rd`).
