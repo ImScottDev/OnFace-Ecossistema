@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { sql } from "drizzle-orm";
 import { db, fecharConexao } from "@/lib/db";
 import { fecharFilas } from "@/lib/queue";
-import { sincronizarUsuariosDosAgentes } from "@/lib/agentes/usuario-do-agente";
+import { sincronizarUsuariosDosAgentes, usuarioDoAgente } from "@/lib/agentes/usuario-do-agente";
 import { LIA_FERRAMENTAS, LIA_VERSAO } from "../lia/definicao";
 import { atribuicaoViva, transferirParaHumano } from "./atribuicoes";
 import { agenteDoNumero, atenderPeloNumeroDoAgente, motivoParaCalar } from "./numero-do-agente";
@@ -25,6 +25,8 @@ let org = "";
 let numeroDaLia = "";
 let numeroDePessoa = "";
 let numeroPrivado = "";
+let numeroDonoLia = "";
+let numeroFn: (nome: string, extra?: { operacional?: boolean; privado?: boolean; usuarioId?: string | null }) => Promise<string>;
 let agentId = "";
 let sdr = "";
 
@@ -48,6 +50,9 @@ before(async () => {
             ${JSON.stringify(LIA_VERSAO.handoffConfig)}::jsonb, '{}'::jsonb, ${JSON.stringify(guard)}::jsonb, 4, 2000, 10, now()) RETURNING id::text AS vid`);
   await db.execute(sql`UPDATE ai_agents SET status = 'published', published_version_id = ${vid}::uuid WHERE id = ${agentId}::uuid`);
   await sincronizarUsuariosDosAgentes(org);
+  // Número cujo dono é o usuário da Lia, FORA do pool operacional (o caso de produção em 20/10).
+  numeroDonoLia = await numero("dono-lia", { usuarioId: await usuarioDoAgente(agentId) });
+  numeroFn = numero;
 });
 
 const tenta = async (f: () => Promise<unknown>) => { try { await f(); } catch (e) { console.error("[limpeza]", e instanceof Error ? e.message : e); } };
@@ -149,4 +154,15 @@ test("cala quando há motivo: pessoa do time atendendo, pausa por pessoa, opt-ou
   const sair = await conversaNova(numeroDaLia, "Duda Sair");
   await db.execute(sql`INSERT INTO ai_sdr_contato_state (contato_id, organizacao_id, ai_ativo, handoff_status, handoff_motivo) VALUES (${sair.contatoId}::uuid, ${org}::uuid, false, 'human_required', 'descadastro')`);
   assert.deepEqual(await atender(sair.contatoId, numeroDaLia), { tratado: true, resultado: "calado", motivo: "opt_out" });
+});
+
+test("número que é da Lia (dono = usuário dela) fora do pool: ela atende e o canal não recusa", opts, async () => {
+  assert.equal((await agenteDoNumero(org, numeroDonoLia))?.agentId, agentId);
+  const { contatoId } = await conversaNova(numeroDonoLia, "Felipe Teste");
+  const r = await atender(contatoId, numeroDonoLia);
+  assert.ok(r.tratado && r.resultado !== "calado");
+  assert.notEqual(r.tratado && r.motivo, "numero_nao_autorizado_para_o_agente");
+  const [run] = await q<{ n: number }>(sql`SELECT count(*)::int AS n FROM ai_agent_runs WHERE contato_id = ${contatoId}::uuid AND coalesce(abort_reason, '') = 'numero_nao_autorizado_para_o_agente'`);
+  assert.equal(run.n, 0);
+  void numeroFn;
 });

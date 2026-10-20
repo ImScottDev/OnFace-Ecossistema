@@ -174,9 +174,14 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
     // Pool operacional: além dos números escolhidos, vale qualquer número operacional (Ajustes › WhatsApp).
     const pool = usaPoolOperacional(versao?.guardrailConfig);
     if (autorizadas.length || pool) {
-      const [ct] = await db.execute<{ sessao_id: string | null }>(sql`SELECT sessao_id::text FROM contatos WHERE id = ${e.contatoId}::uuid AND organizacao_id = ${e.organizacaoId}::uuid`);
+      // O número que é DO PRÓPRIO agente (dono = usuário dele) também vale: com a Lia no pool e nenhum número
+      // marcado como operacional, o número dela era recusado e ela não respondia ninguém novo (20/10).
+      const [ct] = await db.execute<{ sessao_id: string | null; do_agente: boolean }>(sql`
+        SELECT c.sessao_id::text, EXISTS (SELECT 1 FROM whatsapp_sessao s JOIN usuarios u ON u.id = s.usuario_id
+                                           WHERE s.id = c.sessao_id AND NOT s.privado AND u.agente_id = ${e.agentId}::uuid) AS do_agente
+          FROM contatos c WHERE c.id = ${e.contatoId}::uuid AND c.organizacao_id = ${e.organizacaoId}::uuid`);
       const noPool = pool && await sessaoEhOperacional(e.organizacaoId, ct?.sessao_id);
-      if (!ct?.sessao_id || (!autorizadas.includes(ct.sessao_id) && !noPool)) { const runId = await registrarBloqueio(e, versao?.id ?? null, "numero_nao_autorizado_para_o_agente"); return bloqueado("numero_nao_autorizado_para_o_agente", runId); }
+      if (!ct?.sessao_id || (!autorizadas.includes(ct.sessao_id) && !noPool && !ct.do_agente)) { const runId = await registrarBloqueio(e, versao?.id ?? null, "numero_nao_autorizado_para_o_agente"); return bloqueado("numero_nao_autorizado_para_o_agente", runId); }
     }
     const canal = await avaliarEnvio({ organizacaoId: e.organizacaoId, contatoId: e.contatoId, proativo: Boolean(e.proativo), agora });
     if (!canal.permitido) { const runId = await registrarBloqueio(e, versao?.id ?? null, canal.codigo); return bloqueado(canal.codigo, runId); }
