@@ -45,7 +45,10 @@ test("/relatorios/tracking exige visão de gestão", () => {
 });
 
 test("matrícula em cadência só aceita lead e definição da org do contexto", () => {
-  const enroll = handler(ler("api-server/routes/prospeccao.ts"), 'app.post("/prospeccao/cadencia/enroll"', 900);
+  // A janela cobre o handler inteiro: com 900 o filtro por organização (que
+  // está lá, a 1106 caracteres da declaração) ficava de fora e a trava acusava
+  // código que ninguém encostou.
+  const enroll = handler(ler("api-server/routes/prospeccao.ts"), 'app.post("/prospeccao/cadencia/enroll"', 1400);
   assert.match(enroll, /eq\(leads\.organizacaoId, ctx\.organizacaoId\)/);
   const engine = ler("lib/cadencia/cadence-engine.ts");
   assert.match(engine, /eq\(cadenceDefinitions\.organizacaoId, opts\.organizacaoId\)/);

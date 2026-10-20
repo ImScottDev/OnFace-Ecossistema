@@ -132,7 +132,11 @@ test("reprocessar entrega do RD que falhou cria o lead pelo mesmo caminho do web
 
 test("reprocessar entrega do site e da Meta (sem chamar a Graph); validação falha volta a 'falhou'", async () => {
   const ck = await cookie(u.admin, "admin");
-  const site = await entrega("site", { nome: `QA Reproc Site ${T}`, email: `${T}-site@gmail.com`, telefone: "11 95555-0101" });
+  // Telefone único por rodada, como o do RD acima: a captação deduplica por
+  // telefone, então número fixo fazia a segunda rodada devolver "updated"
+  // (lead já existia) em vez de "created".
+  const fone = String(Date.now()).slice(-7);
+  const site = await entrega("site", { nome: `QA Reproc Site ${T}`, email: `${T}-site@gmail.com`, telefone: `11 96${fone}` });
   const rs = await post(`/captacao/entregas/${site}/reprocessar`, ck);
   const cs = await rs.json() as { entrega: { status: string; leadId: string | null }; resultado: { status: string } };
   assert.equal(rs.status, 200, JSON.stringify(cs));
@@ -144,7 +148,7 @@ test("reprocessar entrega do site e da Meta (sem chamar a Graph); validação fa
     field_data: [
       { name: "full_name", values: [`QA Reproc Meta ${T}`] },
       { name: "email", values: [`${T}-meta@gmail.com`] },
-      { name: "phone_number", values: ["+5511955550202"] },
+      { name: "phone_number", values: [`+551197${fone}`] },
     ],
   });
   const rm = await post(`/captacao/entregas/${meta}/reprocessar`, ck);
