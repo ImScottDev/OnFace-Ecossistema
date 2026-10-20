@@ -40,7 +40,8 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write # para pedir a montagem da imagem quando o sha ainda não tem uma
+  actions: write   # para pedir a montagem da imagem quando o sha ainda não tem uma
+  packages: read   # o servidor faz login no GHCR com este token para baixar a imagem
 
 jobs:
   publicar:

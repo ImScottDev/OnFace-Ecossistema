@@ -202,12 +202,19 @@ git archive --format=tar "$REV" | "${SSH[@]}" "rm -rf $STAGE && mkdir -p $STAGE 
   $STAGE/ $DIR/ && rm -rf $STAGE"
 
 # ─── Acesso ao GHCR: só durante o deploy ────────────────────────────────────
-# O token vem do keychain deste Mac (o mesmo do git push) e o servidor faz
-# logout no fim do deploy: nenhum token fica gravado na EC2, que é dividida
-# com produção, homolog e merencia.
+# O token vem do ambiente (GitHub Actions) ou do keychain de quem publica, e o
+# servidor faz logout no fim do deploy: nenhum token fica gravado na EC2, que é
+# dividida com produção, homolog e merencia.
+#
+# Reaproveita o token já resolvido lá em cima: o `git credential fill` solto
+# aqui saía com 128 dentro de um runner, e derrubava o deploy DEPOIS de já ter
+# enviado o código para o servidor (20/10/2026).
 if [ "$MODO" != "--construir-aqui" ]; then
-  TOKEN_GHCR="$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null | sed -n 's/^password=//p')"
-  [ -n "$TOKEN_GHCR" ] || { echo "✘ sem credencial do GitHub no keychain (ver RUNBOOK-DEPLOY no vault)" >&2; exit 1; }
+  TOKEN_GHCR="${GH_TOKEN_DEPLOY:-}"
+  if [ -z "$TOKEN_GHCR" ]; then
+    TOKEN_GHCR="$( (printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null || true) | sed -n 's/^password=//p' || true)"
+  fi
+  [ -n "$TOKEN_GHCR" ] || { echo "✘ sem token do GitHub: no runner, passe GITHUB_TOKEN; na máquina, confira o keychain (RUNBOOK-DEPLOY no vault)" >&2; exit 1; }
   printf '%s' "$TOKEN_GHCR" | "${SSH[@]}" "sudo docker login ghcr.io -u imscottdev --password-stdin >/dev/null" \
     || { echo "✘ login no GHCR recusado" >&2; exit 1; }
 fi
