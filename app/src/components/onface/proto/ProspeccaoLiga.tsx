@@ -64,6 +64,7 @@ export interface PropsDaLiga {
     aoCadencia: (id: string) => void;
     aoTexto: (op: "lista" | "tag") => void;
     aoPausar: () => void;
+    aoDiscador: () => void;
     aoEnriquecer: () => void;
     aviso: (m: string) => void;
   };
@@ -420,6 +421,8 @@ export function ProspeccaoLiga(p: PropsDaLiga) {
     { k: "tag", label: "Tag", d: ICONES.tag },
     { k: "pausar", label: "Pausar cadência", d: ICONES.pausa },
     { k: "enriquecer", label: "Enriquecer", d: ICONES.enriquecer },
+    // Dispara ligação de verdade: o rótulo diz "Ligar" para quem clica saber disso.
+    { k: "discador", label: "Ligar com agente de voz", d: ICONES.ligar ?? ICONES.cadencia },
   ].map((a) => ({
     label: a.label, d: a.d,
     style: "display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;font-size:12.5px;font-weight:500;flex:0 0 auto;color:"
@@ -429,6 +432,7 @@ export function ProspeccaoLiga(p: PropsDaLiga) {
       setAcaoMassa(null);
       if (a.k === "lista" || a.k === "tag") m.aoTexto(a.k);
       else if (a.k === "pausar") { if (m.emCadenciaSelecionadas === 0) m.aviso("Nenhuma empresa selecionada está em cadência."); else m.aoPausar(); }
+      else if (a.k === "discador") m.aoDiscador();
       else if (m.motivoSemEnriquecer) m.aviso(m.motivoSemEnriquecer);
       else m.aoEnriquecer();
     },

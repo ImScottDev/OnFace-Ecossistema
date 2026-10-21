@@ -238,6 +238,11 @@ export function ProspeccaoProto({
         const s = resumirExecucaoEmMassa(rs); return s.ok ? { ok: true } : { ok: false, erro: s.mensagem };
       }; break;
       case "enriquecer": fn = () => resultadoApi("/api/leads/enrich-bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filter: "selected", ids: selecionados }) }); break;
+      /* O telefone de alguém vai tocar: o contato entra na campanha funil da
+         organização e o agente de prospecção da Callface disca na sequência.
+         A rota já existia e já devolve aplicados, ignorados (telefone ruim) e
+         falhas um a um — o que faltava era a tela chamar. */
+      case "discador": fn = () => resultadoApi("/api/leads/acoes-em-massa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "enviar_para_discador", leadIds: selecionados }) }); break;
       default: fn = () => aplicarLabel(payload.nome);
     }
     let r: Resultado<unknown>;
@@ -298,6 +303,7 @@ export function ProspeccaoProto({
           aoCadencia: (id) => { void massa("cadencia", id, "Empresas inscritas na cadência."); },
           aoTexto: (op) => { setErro(null); setOpMassa(op); setFluxo("massa-texto"); },
           aoPausar: () => { void massa("pausar", null, "Cadências pausadas."); },
+          aoDiscador: () => { void massa("discador", null, "Contatos enviados: o agente de voz liga em seguida."); },
           aoEnriquecer: () => { void massa("enriquecer", null, "Enriquecimento enfileirado."); },
           aviso: (m) => toast.warning(m),
         }}

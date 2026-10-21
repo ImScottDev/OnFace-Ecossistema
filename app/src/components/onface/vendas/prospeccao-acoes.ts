@@ -6,7 +6,7 @@
  * casando o texto do botão, trocar uma palavra do rótulo silenciosamente
  * mandava a ação para o caminho errado.
  */
-export type OperacaoMassa = "responsavel" | "lista" | "cadencia" | "tag" | "enriquecer" | "pausar";
+export type OperacaoMassa = "responsavel" | "lista" | "cadencia" | "tag" | "enriquecer" | "pausar" | "discador";
 
 /** Mantém os filtros na URL para que a próxima renderização consulte o servidor. */
 export function montarUrlProspeccao(href: string, mudancas: Record<string, string | null>): string {
@@ -26,6 +26,13 @@ export function acoesEmMassaDisponiveis(): Array<{ chave: OperacaoMassa; rotulo:
     { chave: "tag", rotulo: "Adicionar tag" },
     { chave: "enriquecer", rotulo: "Enriquecer" },
     { chave: "pausar", rotulo: "Pausar cadência" },
+    /* O comando existe no servidor desde sempre (`enviar_para_discador` em
+       lib/vendas/acoes-em-massa.ts) e nunca apareceu aqui: porta fechada por
+       fora, zero usos. Enviar o contato cria a ligação de verdade — o agente de
+       prospecção da Callface disca assim que o contato entra na campanha funil
+       da organização. Por isso o rótulo fala em LIGAR, não em "enviar": quem
+       clica precisa saber que o telefone de alguém vai tocar. */
+    { chave: "discador", rotulo: "Ligar com agente de voz" },
   ];
 }
 
@@ -44,6 +51,7 @@ export type PayloadMassa =
   | { tipo: "tag"; nome: string }
   | { tipo: "enriquecer" }
   | { tipo: "pausar" }
+  | { tipo: "discador" }
   | { tipo: "invalido"; erro: string };
 
 export function montarPayloadMassa(operacao: OperacaoMassa, valor: string | null): PayloadMassa {
@@ -62,6 +70,8 @@ export function montarPayloadMassa(operacao: OperacaoMassa, valor: string | null
       return { tipo: "enriquecer" };
     case "pausar":
       return { tipo: "pausar" };
+    case "discador":
+      return { tipo: "discador" };
   }
 }
 
