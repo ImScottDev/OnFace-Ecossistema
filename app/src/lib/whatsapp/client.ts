@@ -103,8 +103,19 @@ export function checarAllowlist(path: string, options: RequestInit, allowlist: s
   }
 }
 
+/* Envio de mensagem (`/chat/send/...`) passa pelo marcapasso do número; status,
+   QR, perfil e companhia não — ler não cansa ninguém. É aqui porque este é o
+   ÚNICO ponto por onde todo envio passa, incluindo o das campanhas, que não
+   passa nem pela fila nem pela política de canal. Ver lib/whatsapp/marcapasso.ts. */
+const EHENVIO = /^\/chat\/send\//;
+
 async function wuzapiFetch(path: string, options: RequestInit = {}, config = DEFAULT_CONFIG): Promise<Response> {
   checarAllowlist(path, options);
+  if (EHENVIO.test(path)) {
+    const { aguardarVezDoNumero } = await import("./marcapasso");
+    // A chave é o token da sessão: é o que identifica o CHIP no wuzapi.
+    await aguardarVezDoNumero(config.apiToken || "padrao");
+  }
   const url = `${config.baseUrl}${path}`;
   const res = await fetch(url, {
     ...options,
