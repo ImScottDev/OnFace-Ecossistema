@@ -769,7 +769,10 @@ test("áudio: transcrição entra no contexto e o agente responde ao conteúdo",
     const ag = await novoAgente({ nome: "Lia Aud" });
     const { leadId, contatoId } = await novoLead({ nome: "Audio" });
     const m = await entrada(contatoId, leadId, "", { tipo: "audio" });
-    await db.execute(sql`UPDATE whatsapp_mensagens SET media_url = ${`/uploads/${nome}`} WHERE id = ${m}::uuid`);
+    // `/api/uploads/` é o que `saveBase64ToDisk` grava de verdade. O teste usava o
+    // prefixo curto, que nenhum código de produção produz: ficava verde enquanto
+    // nenhum áudio real era transcrito.
+    await db.execute(sql`UPDATE whatsapp_mensagens SET media_url = ${`/api/uploads/${nome}`} WHERE id = ${m}::uuid`);
     roteiro = [() => ({ texto: "Entendi: quarenta vendedores." })];
     const r = await acionarAgente({ organizacaoId: org, agentId: ag.id, contatoId, leadId, evento: EVENTO_MENSAGEM, mensagem: "[Audio recebido]", sourceMessageId: m, atribuir: { origem: "atendimento" } });
     assert.ok(r.runId);

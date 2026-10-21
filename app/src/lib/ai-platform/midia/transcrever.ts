@@ -26,10 +26,24 @@ function provedor(): Provedor | null {
 
 export const transcricaoDisponivel = () => provedor() !== null;
 
-/** `/uploads/x.ogg` -> arquivo local. Só o nome do arquivo conta: nada de sair da pasta. */
+/**
+ * `/api/uploads/x.ogg` -> arquivo local. Só o nome do arquivo conta: nada de sair da pasta.
+ *
+ * Aceita os dois prefixos de propósito. Quem salva a mídia recebida devolve
+ * `/api/uploads/...` (`lib/whatsapp/client.ts`, `saveBase64ToDisk`), e aqui só
+ * `/uploads/...` era aceito: em produção NENHUM áudio jamais casou — 0 de 1.849
+ * recebidos foram transcritos, e os dois registros com erro dizem exatamente
+ * "arquivo de áudio não está disponível localmente", com o arquivo ali no disco
+ * e a chave do provedor paga e preenchida. O teste não pegou porque gravava a
+ * mão o prefixo curto, que nenhum código de produção produz.
+ */
+export function ehMidiaSalvaPorNos(mediaUrl: string | null | undefined): boolean {
+  return Boolean(mediaUrl) && /^\/(api\/)?uploads\//.test(mediaUrl!);
+}
+
 function arquivoLocal(mediaUrl: string | null): string | null {
-  if (!mediaUrl || !mediaUrl.startsWith("/uploads/")) return null;
-  const nome = path.basename(mediaUrl);
+  if (!ehMidiaSalvaPorNos(mediaUrl)) return null;
+  const nome = path.basename(mediaUrl!);
   const caminho = path.join(UPLOADS_DIR, nome);
   return fs.existsSync(caminho) ? caminho : null;
 }
