@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { sql } from "drizzle-orm";
 import { db, fecharConexao } from "@/lib/db";
-import { consultarQualidadeDados } from "./route";
+import { consultarQualidadeDados } from "@/lib/relatorios/qualidade-dados";
 
 after(() => fecharConexao());
 

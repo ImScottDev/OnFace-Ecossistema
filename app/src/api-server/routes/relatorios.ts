@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { negocios, leads, contratos, npsRespostas, atividades, statusChanges, usuarios, notas, ligacoes, tarefas, whatsappMensagens } from "@/lib/db/schema";
 import { eq, count, sum, avg, and, inArray, sql, gte, isNotNull, lte, desc, lt, or } from "drizzle-orm";
-import { getCtx } from "../compat.js";
+import { getCtx, exigirCtx } from "../compat.js";
 import { sessaoVisivel } from "@/lib/whatsapp/acesso";
 import { parsePeriodo, clampDesdeGoLive, GO_LIVE_ISO } from "@/lib/relatorios/periodo";
 import { fetchMetaCampaignInsights, fetchMetaAdInsights, metaConfigured, normCampanha } from "@/lib/integrations/meta-insights";
@@ -18,6 +18,7 @@ import { contarReunioes, getPerdidosPorResponsavel, getFunilVendasEventos } from
 import { getEsteiraSdr } from "@/lib/relatorios/esteira-sdr";
 import { medir } from "@/lib/metricas/catalogo";
 import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
+import { consultarQualidadeDados } from "@/lib/relatorios/qualidade-dados";
 import { getVisoesSdr, ESTAGNADO_DIAS } from "@/lib/relatorios/sdr-visoes";
 import { getLeadsPorCanal } from "@/lib/relatorios/canais";
 import { getMetaComercialAgregada } from "@/lib/metas";
@@ -30,6 +31,14 @@ import { listarVendasFechadas, listarAgendasRealizadas, listarVendasAtribuidasSd
 import ExcelJS from "exceljs";
 
 const app = new Hono();
+
+// Traefik encaminha /api/relatorios/* para esta API Hono, não para Next.js.
+// A mesma função de métricas é usada pela suíte de integração, sem SQL paralela.
+app.get("/qualidade", async (c) => {
+  const ctx = await exigirCtx(c, "finance.read");
+  const dados = await consultarQualidadeDados(ctx.organizacaoId);
+  return c.json(dados, 200, { "Cache-Control": "no-store" });
+});
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
