@@ -626,7 +626,15 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
   // viraria spam de notificação pros admins.
   const duracaoSeg = typeof payload.call_duration === "number" ? payload.call_duration : 0;
   const statusUp = String(payload.call_status || "").toUpperCase();
-  const semSubstancia = !ligacaoTeveConversa(statusUp, duracaoSeg);
+  /* Agente discando lista fria não é novidade para ninguém: é o trabalho dele.
+     Medido em produção (21/10/2026): das 861 ligações órfãs, 271 notificavam, e
+     121 delas eram o agente de prospecção ligando para número que nunca esteve
+     no CRM. Isso é metade do ruído dos 1.478 avisos em três meses, e o ruído faz
+     o aviso que importa passar batido.
+     Vendedor que ligou para alguém de fora do CRM continua avisando: ali existe
+     um prospect que ninguém cadastrou. */
+  const deAgente = typeof payload.agent_name === "string" && payload.agent_name.trim() !== "";
+  const semSubstancia = !ligacaoTeveConversa(statusUp, duracaoSeg) || deAgente;
   if (semSubstancia) {
     return `ligação ${idempotencyKey} sem lead correspondente (órfã registrada, sem notificação — ${statusUp || "sem status"}/${duracaoSeg}s)`;
   }
