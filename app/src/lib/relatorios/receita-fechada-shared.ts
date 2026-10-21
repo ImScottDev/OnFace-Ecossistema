@@ -22,6 +22,11 @@ export type VendaBruta = {
   mrrFechado: number | null;
   valorSetup: number | null;
   valorTotal: number | null;
+  /**
+   * Família do serviço. Só WHITE_LABEL muda a conta (ver `WL_NAO_TEM_RECORRENCIA`).
+   * Omitir é tratado como família desconhecida, sem exceção aplicada.
+   */
+  serviceFamily?: string | null;
 };
 
 export type VendaDecomposta = {
@@ -44,17 +49,40 @@ export function tipoRecorre(tipoReceita: string | null): boolean {
   return !NAO_RECORRE.has(tipoReceita ?? "");
 }
 
+/**
+ * White Label não tem recorrência na venda, por definição do produto.
+ *
+ * A proposta de WL traz duas linhas: "Recorrente" (licenças × preço) e "Setup".
+ * O parceiro paga só o setup no fechamento; as licenças são cobradas depois,
+ * conforme ele ativa, por fatura avulsa. `aceitar-proposta.ts` grava a linha
+ * Recorrente inteira em `mrr_fechado`, tratando um máximo teórico como
+ * mensalidade garantida — achado do Kauã em 31/08/2026, reconfirmado pelo Scott
+ * em 21/10 ("a recorrência nunca existiu; o que existiu foi só o setup").
+ *
+ * O valor gravado não é apagado: é a leitura que deixa de chamá-lo de MRR.
+ * A classificação da família é curada, com trilha em `billing_correction_ledger`
+ * (`src/scripts/conciliar-familia-white-label.ts`), nunca casada por nome aqui.
+ */
+export const WL_NAO_TEM_RECORRENCIA = "WHITE_LABEL";
+
 export function decomporVenda(venda: VendaBruta): VendaDecomposta {
-  const recorre = tipoRecorre(venda.tipoReceita);
-  const recorrente = recorre ? Number(venda.mrrFechado ?? 0) : 0;
-  const setup = recorre ? Number(venda.valorSetup ?? 0) : 0;
-  // Projeto sem valor total cai no setup: é onde a migração gravou o valor do projeto.
-  const avulso = recorre
-    ? 0
-    : Number(venda.valorTotal ?? 0) > 0
-      ? Number(venda.valorTotal)
-      : Number(venda.valorSetup ?? 0);
-  return { recorrente, setup, avulso, booking: recorrente + setup, total: recorrente + setup + avulso };
+  const fecha = (recorrente: number, setup: number, avulso: number): VendaDecomposta => ({
+    recorrente, setup, avulso, booking: recorrente + setup, total: recorrente + setup + avulso,
+  });
+  const n = (v: number | null | undefined) => Number(v ?? 0);
+
+  // White Label: só o setup foi vendido. A linha Recorrente da proposta não vira MRR.
+  if (venda.serviceFamily === WL_NAO_TEM_RECORRENCIA) return fecha(0, n(venda.valorSetup), 0);
+
+  // Projeto/avulso: o valor do projeto, uma vez só. Sem valor total, cai no setup,
+  // que é onde a migração gravou o valor do projeto.
+  if (!tipoRecorre(venda.tipoReceita)) {
+    const valor = n(venda.valorTotal) > 0 ? n(venda.valorTotal) : n(venda.valorSetup);
+    return fecha(0, 0, valor);
+  }
+
+  // Venda recorrente: mensalidade mais a implantação.
+  return fecha(n(venda.mrrFechado), n(venda.valorSetup), 0);
 }
 
 /** O número que o Fechamento e as metas chamam de "vendido": o booking. */

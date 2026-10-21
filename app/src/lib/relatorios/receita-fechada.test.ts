@@ -51,6 +51,28 @@ test("ausência de campos não transforma mensalidade em receita duplicada", () 
   );
 });
 
+test("White Label: a linha Recorrente da proposta não vira MRR; só o setup foi vendido", () => {
+  // Elev Ads, caso real: mrr_fechado 11.990 e setup 11.900, híbrido.
+  assert.deepEqual(
+    decomporVenda({ tipoReceita: "hibrido", mrrFechado: 11990, valorSetup: 11900, valorTotal: 23890, serviceFamily: "WHITE_LABEL" }),
+    { recorrente: 0, setup: 11900, avulso: 0, booking: 11900, total: 11900 },
+  );
+  // E não cai no bucket de avulso por engano: WL não é projeto.
+  assert.equal(
+    decomporVenda({ tipoReceita: "hibrido", mrrFechado: 38970, valorSetup: 29990, valorTotal: 68960, serviceFamily: "WHITE_LABEL" }).avulso,
+    0,
+  );
+});
+
+test("sem família, a venda recorrente segue contando a mensalidade", () => {
+  // A exceção é SÓ do White Label: família ausente ou outra não muda nada.
+  const base = { tipoReceita: "hibrido", mrrFechado: 1000, valorSetup: 2500, valorTotal: 3500 };
+  assert.equal(decomporVenda(base).recorrente, 1000);
+  assert.equal(decomporVenda({ ...base, serviceFamily: null }).recorrente, 1000);
+  assert.equal(decomporVenda({ ...base, serviceFamily: "PABX" }).recorrente, 1000);
+  assert.equal(decomporVenda({ ...base, serviceFamily: "CALLFACE_AI" }).recorrente, 1000);
+});
+
 test("valorVendido é o booking, nunca o total com avulso", () => {
   assert.equal(valorVendido({ tipoReceita: "recorrente", mrrFechado: 900, valorSetup: 400, valorTotal: 1300 }), 1300);
   assert.equal(valorVendido({ tipoReceita: "projeto", mrrFechado: 0, valorSetup: 0, valorTotal: 1800 }), 0);
@@ -60,9 +82,10 @@ test("o SQL concorda com o TS em toda venda ganha do banco", async (t) => {
   if (!process.env.DATABASE_URL) return t.skip("sem DATABASE_URL");
   const linhas = await db.execute<{
     tipo_receita: string | null; mrr_fechado: string | null; valor_setup: string | null; valor_total: string | null;
+    service_family: string | null;
     s_mrr: string; s_setup: string; s_avulso: string; s_booking: string; s_total: string;
   }>(sql`
-    SELECT tipo_receita, mrr_fechado, valor_setup, valor_total,
+    SELECT tipo_receita, mrr_fechado, valor_setup, valor_total, service_family,
            ${VALOR_MRR_VENDIDO}::text     AS s_mrr,
            ${VALOR_SETUP_VENDIDO}::text   AS s_setup,
            ${VALOR_AVULSO_VENDIDO}::text  AS s_avulso,
@@ -78,8 +101,9 @@ test("o SQL concorda com o TS em toda venda ganha do banco", async (t) => {
       mrrFechado: l.mrr_fechado === null ? null : Number(l.mrr_fechado),
       valorSetup: l.valor_setup === null ? null : Number(l.valor_setup),
       valorTotal: l.valor_total === null ? null : Number(l.valor_total),
+      serviceFamily: l.service_family,
     });
-    const onde = `tipo=${l.tipo_receita} mrr=${l.mrr_fechado} setup=${l.valor_setup} total=${l.valor_total}`;
+    const onde = `tipo=${l.tipo_receita} familia=${l.service_family} mrr=${l.mrr_fechado} setup=${l.valor_setup} total=${l.valor_total}`;
     assert.equal(cent(ts.recorrente), cent(l.s_mrr), `recorrente divergiu (${onde})`);
     assert.equal(cent(ts.setup), cent(l.s_setup), `setup divergiu (${onde})`);
     assert.equal(cent(ts.avulso), cent(l.s_avulso), `avulso divergiu (${onde})`);

@@ -251,6 +251,7 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
       mrrFechado: num(n.mrrFechado),
       valorSetup: num(n.valorSetup),
       valorTotal: num(n.valorTotal),
+      serviceFamily: familiaPorNegocio.get(n.id) ?? null,
     });
 
     return {

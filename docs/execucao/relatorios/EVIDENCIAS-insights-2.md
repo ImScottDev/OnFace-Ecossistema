@@ -179,3 +179,70 @@ Outras leituras possíveis de WL, para comparação:
 **Pendente de decisão do Scott** (pergunta feita em 21/10): se o faturamento manual de WL conta
 como MRR atual. Se não contar, o MRR atual cai de R$ 478.013,79 para ~R$ 448.092,24 e o WL passa a
 aparecer só em faturamento por competência. Nada foi alterado até a resposta.
+
+## 2026-10-21 — White Label sai do MRR vendido: R$ 73.043,00 que nunca recorreram
+
+### A decisão
+
+Scott, 21/10: na venda de White Label o parceiro paga **só o setup**; a recorrência nunca
+existiu, mesmo quando a proposta trouxe setup + MRR. Confirma o achado do Kauã de 31/08/2026
+(`09_SISTEMA/contexto-legado/memory/feedback_white_label_nao_e_mrr.md` no vault):
+`aceitar-proposta.ts` grava a linha "Recorrente" inteira em `negocios.mrr_fechado` no aceite,
+tratando um máximo teórico como mensalidade garantida.
+
+Escolha dele: **tirar do booking, sem apagar o valor original.**
+
+### Os 4 negócios
+
+| negócio | mrr_fechado | setup | ganho |
+|---|---|---|---|
+| Helbor - White Label | R$ 38.970,00 | R$ 29.990,00 | 23/09/2026 |
+| Casdev - Novo negócio | R$ 12.990,00 | R$ 12.990,00 | 28/08/2026 |
+| Elev Ads ... White Label | R$ 11.990,00 | R$ 11.900,00 | 29/08/2026 |
+| VENDA NA VEIA \| WHITE LABEL | R$ 9.093,00 | R$ 9.093,00 | 14/07/2026 |
+| **total** | **R$ 73.043,00** | **R$ 63.973,00** | |
+
+Nos três antigos `mrr_fechado ≈ valor_setup`: a linha Recorrente duplicou o setup. O Helbor
+(set/26) é o caso novo, que não estava na nota de agosto.
+
+### Por que classificar a família, e não mexer no valor
+
+Não existe discriminador estrutural de White Label: `proposta_itens.service_family` está 100%
+vazio e nenhum dos 4 tem serviço canônico. Casar por **nome** em tempo de consulta foi proibido
+pelo Kauã — e com razão, o nome é inconsistente ("Casdev - Novo negócio" não diz White Label).
+
+A saída foi gravar o **fato** de que o negócio é White Label em `negocios.service_family`, por
+decisão curada com evidência, e deixar a regra de receita ler a família. Nenhum valor foi
+alterado: `mrr_fechado`, `valor_setup` e `valor_total` seguem como estavam.
+
+`src/scripts/conciliar-familia-white-label.ts` — idempotente, simula por padrão, aplica com
+`--aplicar`, reverte com `--reverter <run-id>`. Aplicado no banco local: run
+`0096fe55-95d4-4396-be6f-0ecd5679de75`, 3 negócios classificados (o quarto já estava), 3 linhas
+em `billing_correction_ledger` com before/after, evidência e `reversible = true`. **São as 3
+primeiras linhas que essas tabelas de auditoria recebem desde que foram criadas.**
+
+### A regra no código
+
+`WL_NAO_TEM_RECORRENCIA` em `lib/relatorios/receita-fechada-shared.ts`: família WHITE_LABEL →
+mensalidade 0, setup conta, avulso 0. Espelhada no SQL em `receita-fechada.ts`. A exceção é só do
+White Label — família ausente, PABX ou CALLFACE_AI seguem contando a mensalidade (há teste).
+
+### Efeito medido
+
+| grandeza | antes | depois |
+|---|---|---|
+| MRR vendido | R$ 542.241,63 | **R$ 469.198,63** |
+| Setup vendido | R$ 100.123,87 | R$ 100.123,87 |
+| **Booking (MRR + setup)** | R$ 642.365,50 | **R$ 569.322,50** |
+| Avulso | R$ 26.465,00 | R$ 26.465,00 |
+
+### O que NÃO foi feito, de propósito
+
+- **A porta de escrita não foi consertada.** `aceitar-proposta.ts` continua gravando a linha
+  Recorrente em `mrr_fechado` no aceite de proposta WL. É a causa raiz, mora em Vendas (fora do
+  módulo Insights) e o Scott não autorizou mexer. Cada nova venda de WL volta a entrar inflada e
+  precisará de classificação. **Pendência aberta.**
+- **Nada aplicado em produção.** Só no banco local. A run é reversível.
+- **MRR atual (carteira) segue em R$ 478.013,79**, por decisão do Scott: os R$ 29.921,55 de
+  faturamento manual de WL em set/26 continuam no número, e a tela mostra ao lado "sem recorrência
+  confirmada". A Visão Geral precisa implementar esse aviso.

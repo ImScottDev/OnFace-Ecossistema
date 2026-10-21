@@ -10,29 +10,42 @@ import { negocios } from "@/lib/db/schema";
  * Três grandezas separadas, decisão do Scott em 21/10/2026:
  *   MRR vendido + SETUP vendido = BOOKING.  AVULSO fica fora, em métrica própria.
  */
+import { WL_NAO_TEM_RECORRENCIA } from "./receita-fechada-shared";
+
 export {
   decomporVenda,
   valorVendido,
   tipoRecorre,
+  WL_NAO_TEM_RECORRENCIA,
   type VendaBruta,
   type VendaDecomposta,
 } from "./receita-fechada-shared";
 
+/** White Label não tem recorrência na venda — ver `WL_NAO_TEM_RECORRENCIA`. */
+const wl = sql`COALESCE(${negocios.serviceFamily}, '') = ${WL_NAO_TEM_RECORRENCIA}`;
 const naoRecorre = sql`COALESCE(${negocios.tipoReceita}, '') IN ('avulso', 'projeto')`;
 
-/** Mensalidade vendida. Zero em projeto/avulso. */
-export const VALOR_MRR_VENDIDO = sql<number>`CASE WHEN ${naoRecorre} THEN 0 ELSE COALESCE(${negocios.mrrFechado}, 0)::numeric END`;
+/** Mensalidade vendida. Zero em projeto/avulso e em White Label. */
+export const VALOR_MRR_VENDIDO = sql<number>`CASE
+  WHEN ${wl} THEN 0::numeric
+  WHEN ${naoRecorre} THEN 0::numeric
+  ELSE COALESCE(${negocios.mrrFechado}, 0)::numeric END`;
 
-/** Implantação de venda recorrente. Zero em projeto/avulso. */
-export const VALOR_SETUP_VENDIDO = sql<number>`CASE WHEN ${naoRecorre} THEN 0 ELSE COALESCE(${negocios.valorSetup}, 0)::numeric END`;
+/** Implantação. É o que o White Label de fato vendeu. Zero em projeto/avulso. */
+export const VALOR_SETUP_VENDIDO = sql<number>`CASE
+  WHEN ${wl} THEN COALESCE(${negocios.valorSetup}, 0)::numeric
+  WHEN ${naoRecorre} THEN 0::numeric
+  ELSE COALESCE(${negocios.valorSetup}, 0)::numeric END`;
 
 /**
- * Projeto/avulso. Zero em venda recorrente. Sem valor total, cai no setup:
- * é onde a migração gravou o valor do projeto.
+ * Projeto/avulso. Zero em venda recorrente e em White Label. Sem valor total,
+ * cai no setup: é onde a migração gravou o valor do projeto.
  */
-export const VALOR_AVULSO_VENDIDO = sql<number>`CASE WHEN ${naoRecorre}
-  THEN CASE WHEN COALESCE(${negocios.valorTotal}, 0)::numeric > 0
-    THEN ${negocios.valorTotal}::numeric ELSE COALESCE(${negocios.valorSetup}, 0)::numeric END
+export const VALOR_AVULSO_VENDIDO = sql<number>`CASE
+  WHEN ${wl} THEN 0::numeric
+  WHEN ${naoRecorre}
+    THEN CASE WHEN COALESCE(${negocios.valorTotal}, 0)::numeric > 0
+      THEN ${negocios.valorTotal}::numeric ELSE COALESCE(${negocios.valorSetup}, 0)::numeric END
   ELSE 0::numeric END`;
 
 /** O booking: recorrente + implantação. É o "vendido" do Fechamento e das metas. */
