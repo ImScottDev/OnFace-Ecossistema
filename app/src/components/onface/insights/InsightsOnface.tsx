@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, ArrowUpRight, BarChart3, BookOpenText, CalendarDays, ChartNoAxesCombined, CircleGauge, Command, ContactRound, CreditCard, Filter, Fingerprint, Layers3, LayoutDashboard, Megaphone, Radio, ShieldCheck, UsersRound } from "lucide-react";
-import Link from "next/link";
+import { CalendarDays, ChartNoAxesCombined, CircleGauge, ContactRound, CreditCard, Filter, Fingerprint, LayoutDashboard, Megaphone, Radio, ShieldCheck, UsersRound } from "lucide-react";
 import TabMarketing from "@/components/crm2/relatorios/TabMarketing";
 import TabMidiaPaga from "@/components/crm2/relatorios/TabMidiaPaga";
 import TabComercial from "@/components/crm2/relatorios/TabComercial";
@@ -24,8 +23,8 @@ import { BlocoGestao } from "./BlocoGestao";
 import { Tablist } from "@/components/onface/ds/escolha";
 import { preencherSemanas, type Semana } from "./semanas";
 import "./insights.css";
-import "./insights-premium.css";
 import "./insights-functional.css";
+import "./visao-geral.css";
 
 /**
  * Insights (/relatorios) na linguagem ONFACE — arquétipo A (hero grafite com
@@ -146,34 +145,19 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
 
   return (
     <div className="ins">
-      <header className="ins-studio-masthead" aria-label="Central de inteligência Callface">
-        <div className="ins-studio-masthead-grid" aria-hidden="true" />
-        <div className="ins-studio-topline">
-          <span className="ins-studio-brand"><span className="ins-studio-brand-icon"><Command size={17} strokeWidth={2.5} /></span> CALLFACE <b>/ INTELLIGENCE</b></span>
-          <span className="ins-studio-edition"><span aria-hidden="true" className="ins-studio-pulse" /> OPERATIONS STUDIO <span className="ins-studio-edition-number">02 / 26</span></span>
-        </div>
-        <div className="ins-studio-masthead-main">
-          <div className="ins-studio-statement">
-            <span className="ins-studio-overline"><Activity size={14} /> INTELIGÊNCIA PARA DECISÕES</span>
-            <h1>Entenda os números.<br/><em>Enxergue o próximo passo.</em></h1>
-            <p>Receita, aquisição e operação conectadas em análises que explicam o negócio — não apenas exibem indicadores.</p>
-          </div>
-          <div className="ins-studio-shortcuts">
-            <span className="ins-studio-shortcuts-label">SEU ESPAÇO DE ANÁLISE</span>
-            <Link href="/relatorios/biblioteca" className="ins-studio-shortcut"><BookOpenText size={18} /><span>Biblioteca de métricas<small>Definições, fontes e exploração</small></span><ArrowUpRight size={17}/></Link>
-            <Link href="/relatorios/performance" className="ins-studio-shortcut"><BarChart3 size={18}/><span>Performance<small>Equipe, metas e resultados</small></span><ArrowUpRight size={17}/></Link>
-          </div>
-        </div>
-        <div className="ins-studio-masthead-foot">
-          <span><span className="ins-studio-foot-dot" /> DADOS DO CRM · CONSULTAS POR ORGANIZAÇÃO</span>
-          <span>Estratégico <span aria-hidden="true">/</span> Tático <span aria-hidden="true">/</span> Operacional</span>
-        </div>
-      </header>
+      {/* Sem masthead: o título da área vem da casca, e a dobra é do dado.
+          O que havia aqui era um slogan de 48px e um selo de revista ocupando
+          300px antes do primeiro número, numa tela de trabalho. */}
 
       {meLoading && (
-        <section className="ins-studio-loading" role="status" aria-busy="true">
-          <span className="ins-studio-loading-ring" aria-hidden="true" />
-          Preparando seu espaço de inteligência…
+        <section className="vg-fita" role="status" aria-busy="true" aria-label="Carregando">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="vg-cartao">
+              <span className="vg-esqueleto" style={{ height: 13, width: 90 }} />
+              <span className="vg-esqueleto" style={{ height: 26, width: 130 }} />
+              <span className="vg-esqueleto" style={{ height: 13, width: "80%" }} />
+            </div>
+          ))}
         </section>
       )}
 
@@ -182,53 +166,48 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
           {/* Aqui é aba de verdade: cada relatório é um painel. O par
               tab/painel estava solto — `role="tabpanel"` sem `id` e abas sem
               `aria-controls`. Ids fixos, e a seta anda entre os relatórios. */}
-          <nav className="ins-studio-nav" aria-label="Áreas de inteligência">
-            <div className="ins-studio-nav-top">
-              <span><Layers3 size={14} /> ÁREAS DE INTELIGÊNCIA</span>
-              <span>{String(abas.length).padStart(2, "0")} DOMÍNIOS · SELECIONE UM PAINEL</span>
+          <Tablist className="ins-abas" rotulo="Relatórios">
+            {abas.map((t) => {
+              const Icone = ICONES_ABAS[t.key];
+              return (
+                <button key={t.key} type="button" role="tab"
+                  id={`ins-aba-${t.key}`}
+                  aria-selected={abaAtiva === t.key}
+                  aria-controls={abaAtiva === t.key ? "ins-painel-aba" : undefined}
+                  className="ins-aba" onClick={() => setAba(t.key)}>
+                  <Icone size={15} strokeWidth={1.85} aria-hidden="true" />
+                  <span className="ins-aba-label">{t.label}</span>
+                </button>
+              );
+            })}
+          </Tablist>
+          {/* O Executivo traz a própria faixa de recorte; as demais abas usam esta.
+              Sem título repetindo a aba selecionada: a aba já diz onde você está. */}
+          {abaAtiva !== "executivo" && (
+            <div className="vg-contexto">
+              <div className="vg-contexto-grupo">
+                <span className="vg-contexto-rotulo">{abas.find((t) => t.key === abaAtiva)?.label ?? "Insights"}</span>
+                <span className="vg-frescor">{DESCRICOES_ABAS[abaAtiva] ?? "Indicadores explicados por fontes e recortes confiáveis."}</span>
+              </div>
+              <div className="vg-contexto-grupo">
+                {abaAtiva === "pos-venda" || abaAtiva === "atividade-time" ? (
+                  <span className="vg-frescor"><CalendarDays size={14} />{abaAtiva === "pos-venda" ? "Carteira atual" : "Últimos 14 dias"}</span>
+                ) : abaAtiva !== "qualidade" ? (
+                  <>
+                    <SeletorPeriodo value={periodo} onChange={setPeriodo} />
+                    {abaAtiva === "comercial" && gestao && (
+                      <div className="ins-seg" role="group" aria-label="Origem dos negócios">
+                        {([{ key: "nativo", label: "CRM nativo" }, { key: "todos", label: "Todos" }, { key: "legado", label: "Zoho migrado" }] as const).map((s) => (
+                          <button key={s.key} type="button" aria-pressed={safraCom === s.key}
+                            onClick={() => setSafraCom(s.key)}>{s.label}</button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : <span className="vg-frescor"><Filter size={14} />Consulta de integridade</span>}
+              </div>
             </div>
-            <Tablist className="ins-abas" rotulo="Relatórios">
-              {abas.map((t, i) => {
-                const Icone = ICONES_ABAS[t.key];
-                return (
-                  <button key={t.key} type="button" role="tab"
-                    id={`ins-aba-${t.key}`}
-                    aria-selected={abaAtiva === t.key}
-                    aria-controls={abaAtiva === t.key ? "ins-painel-aba" : undefined}
-                    className="ins-aba" onClick={() => setAba(t.key)}>
-                    <span className="ins-aba-indice">{String(i + 1).padStart(2, "0")}</span>
-                    <Icone size={17} strokeWidth={1.85} aria-hidden="true" />
-                    <span className="ins-aba-label">{t.label}</span>
-                    <span className="ins-aba-ativo" aria-hidden="true" />
-                  </button>
-                );
-              })}
-            </Tablist>
-          </nav>
-          <div className="ins-studio-context">
-            <div className="ins-studio-context-title">
-              <span className="ins-studio-context-overline"><span className="ins-studio-context-line" /> WORKSPACE / {abaAtiva.toUpperCase().replaceAll("-", " ")}</span>
-              <h2>{abas.find((t) => t.key === abaAtiva)?.label ?? "Insights"}<span className="ins-studio-context-suffix"> / Análise</span></h2>
-              <p>{DESCRICOES_ABAS[abaAtiva] ?? "Indicadores explicados por fontes e recortes confiáveis."}</p>
-            </div>
-            <div className="ins-studio-context-controls">
-              {abaAtiva === "pos-venda" || abaAtiva === "atividade-time" ? (
-                <span className="ins-studio-fixed-period"><CalendarDays size={15} />{abaAtiva === "pos-venda" ? "Carteira atual" : "Últimos 14 dias"}</span>
-              ) : abaAtiva !== "executivo" && abaAtiva !== "qualidade" ? (
-                <>
-                  <SeletorPeriodo value={periodo} onChange={setPeriodo} />
-                  {abaAtiva === "comercial" && gestao && (
-                    <div className="ins-seg" role="group" aria-label="Origem dos negócios">
-                      {([{ key: "nativo", label: "CRM nativo" }, { key: "todos", label: "Todos" }, { key: "legado", label: "Zoho migrado" }] as const).map((s) => (
-                        <button key={s.key} type="button" aria-pressed={safraCom === s.key}
-                          onClick={() => setSafraCom(s.key)}>{s.label}</button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : <span className="ins-studio-fixed-period"><Filter size={15} />{abaAtiva === "executivo" ? "Filtros por produto e competência abaixo" : "Consulta de integridade"}</span>}
-            </div>
-          </div>
+          )}
           {abaAtiva !== "executivo" && abaAtiva !== "qualidade" && (
             <div className="ins-studio-operational-hero">
               {isSdr && !gestao ? <HeroSdr periodo={periodo} /> : <HeroComercial periodo={periodo} gestao={gestao} safra={abaAtiva === "comercial" && gestao ? safraCom : "nativo"} />}
