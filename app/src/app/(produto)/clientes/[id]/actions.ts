@@ -53,6 +53,22 @@ export type ResultadoNovaOportunidade =
   | { ok: true; negocioId: string; titulo: string }
   | { ok: false; erro: string };
 
+/** O id que serve para `vendas_eventos.pessoa_id`: pessoa de verdade, ou nada. */
+async function pessoaRealDoContato(organizacaoId: string, empresaId: string, id: string | null): Promise<string | null> {
+  if (!id) return null;
+  const [eh] = (await db.execute(sql`
+    SELECT 1 FROM pessoas WHERE id = ${id}::uuid AND organizacao_id = ${organizacaoId}::uuid LIMIT 1`)) as unknown as unknown[];
+  if (eh) return id;
+  // Não é pessoa: pode ser lead. Vale a pessoa da mesma empresa com o mesmo e-mail.
+  const [equivalente] = (await db.execute(sql`
+    SELECT p.id::text FROM pessoas p
+     WHERE p.empresa_id = ${empresaId}::uuid AND p.organizacao_id = ${organizacaoId}::uuid
+       AND lower(btrim(p.email)) = (SELECT lower(btrim(l.email)) FROM leads l WHERE l.id = ${id}::uuid)
+       AND coalesce(btrim(p.email), '') <> ''
+     LIMIT 1`)) as unknown as Array<{ id: string }>;
+  return equivalente?.id ?? null;
+}
+
 export async function acaoNovaOportunidadeDoCliente(
   entrada: NovaOportunidadeDoCliente,
 ): Promise<ResultadoNovaOportunidade> {
@@ -61,6 +77,20 @@ export async function acaoNovaOportunidadeDoCliente(
 
   const motion = MOTION_POR_TIPO[entrada.tipo];
   if (!motion) return { ok: false, erro: `Tipo de venda desconhecido: ${entrada.tipo}` };
+
+  /* O "contato que recebe" da modal pode ser uma PESSOA ou um LEAD: a ficha
+     lista os dois juntos, de propósito. Mas `vendas_eventos.pessoa_id` tem chave
+     estrangeira para `pessoas` — mandar o id de um lead ali derruba o INSERT do
+     evento e, com ele, a criação inteira da oportunidade.
+     
+     Era o que travava a venda (21/10/2026): a Mayra tentou um upgrade cinco
+     vezes e recebeu "tente de novo" todas, porque o cliente não tinha linha em
+     `pessoas` — e 32 clientes estão nessa mesma situação hoje.
+     
+     Quando o id não é de uma pessoa, vale a pessoa equivalente da empresa (mesmo
+     e-mail), e só então o nulo. Perder o contato no evento é melhor que perder a
+     venda. */
+  const pessoaId = await pessoaRealDoContato(ctx.organizacaoId, entrada.empresaId, entrada.pessoaId ?? null);
 
   try {
     const r = await criarOportunidade(
@@ -73,7 +103,7 @@ export async function acaoNovaOportunidadeDoCliente(
            nascer marcada como vinda da carteira, e não da aquisição. */
         sourceProcess: "EXPANSION" as ProcessoOrigem,
         motion,
-        pessoaId: entrada.pessoaId ?? null,
+        pessoaId,
         valorEstimado: entrada.valorEstimado ?? null,
         proximaAcao: entrada.observacao?.trim() || null,
         /* O tipo escolhido na modal não pode se perder no `EXPANSION` do mapa: é ele que diz, no Ganho,
