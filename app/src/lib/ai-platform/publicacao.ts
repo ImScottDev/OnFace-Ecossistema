@@ -1,5 +1,5 @@
 /** Publicar, pausar, retomar, duplicar, comparar e reverter versões: lógica única das rotas do Agent Studio. */
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiAgentCompromissos, aiAgents, aiAgentVersions } from "@/lib/db/schema";
 import { verificarProntidao, resumoDasFaltas } from "./prontidao";
@@ -38,6 +38,20 @@ export async function retomarAgente(organizacaoId: string, agentId: string): Pro
     await db.update(aiAgentCompromissos).set({ status: "pendente", bloqueioMotivo: null, updatedAt: new Date() }).where(and(eq(aiAgentCompromissos.agentId, agentId), eq(aiAgentCompromissos.status, "bloqueado"), eq(aiAgentCompromissos.bloqueioMotivo, "agente_nao_publicado")));
     const { sincronizarUsuariosDosAgentes } = await import("@/lib/agentes/usuario-do-agente"); await sincronizarUsuariosDosAgentes(organizacaoId).catch(() => undefined);
   }
+  return a ?? null;
+}
+
+/**
+ * "Excluir" o agente é ARQUIVAR. Execuções, casos, atribuições e versões
+ * apontam para ele: apagar a linha apagaria o histórico junto. Arquivado sai do
+ * ar (o dispatcher só olha `published`), sai do roteamento por número
+ * (`numero-do-agente`), deixa de aceitar atribuição (`atribuicoes`) e o usuário
+ * do agente é desativado nos seletores (`archivedAt` em `usuario-do-agente`).
+ */
+export async function arquivarAgente(organizacaoId: string, agentId: string): Promise<Agente | null> {
+  const [a] = await db.update(aiAgents).set({ status: "archived", archivedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(aiAgents.id, agentId), eq(aiAgents.organizacaoId, organizacaoId), ne(aiAgents.status, "archived"))).returning();
+  if (a) { const { sincronizarUsuariosDosAgentes } = await import("@/lib/agentes/usuario-do-agente"); await sincronizarUsuariosDosAgentes(organizacaoId).catch(() => undefined); }
   return a ?? null;
 }
 

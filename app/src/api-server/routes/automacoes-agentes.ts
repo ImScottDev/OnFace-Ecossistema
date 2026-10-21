@@ -24,6 +24,7 @@ import {
 import { CLASSES_AUTONOMIA, ehModo } from "@/lib/ai-platform/tools/politica";
 import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 import { verificarProntidao, resumoDasFaltas } from "@/lib/ai-platform/prontidao";
+import { arquivarAgente } from "@/lib/ai-platform/publicacao";
 
 const app = new Hono();
 const agenteConfiguravel = (id: string, organizacaoId: string) => and(
@@ -322,6 +323,17 @@ app.patch("/automacoes/agentes/:id", async (c) => {
   }).where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).returning();
   if (!updated) return c.json({ error: "Agente nao encontrado" }, 404);
   return c.json(updated);
+});
+
+// Excluir agente = arquivar (ver `arquivarAgente`): ele para de responder e sai
+// dos seletores, e o histórico de execuções continua consultável.
+app.delete("/automacoes/agentes/:id", async (c) => {
+  const ctx = await exigirCtx(c, "ai.configure");
+  const [agent] = await db.select({ id: aiAgents.id }).from(aiAgents).where(agenteConfiguravel(c.req.param("id"), ctx.organizacaoId)).limit(1);
+  if (!agent) return c.json({ error: "Agente nao encontrado" }, 404);
+  const arquivado = await arquivarAgente(ctx.organizacaoId, agent.id);
+  if (!arquivado) return c.json({ error: "Este agente já está arquivado" }, 409);
+  return c.json({ agente: arquivado });
 });
 
 app.post("/automacoes/agentes/:id/versions", async (c) => {

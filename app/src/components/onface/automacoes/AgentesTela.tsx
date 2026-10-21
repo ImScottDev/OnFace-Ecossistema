@@ -20,6 +20,7 @@ import { AGENT_PRESETS, AGENT_PURPOSES, DEFAULT_HANDOFF_CONFIG, type AgentToolCa
 import { CLASSES_AUTONOMIA } from "@/lib/ai-platform/tools/politica";
 import type { DadosTelaAgentes, AgenteDaTela } from "@/lib/automacoes/agentes-tela";
 import { BotaoMotivo, Radiogroup } from "@/components/onface/ds/escolha";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import "./agentes.css";
 
 const num = (n: number) => n.toLocaleString("pt-BR");
@@ -150,9 +151,9 @@ const CATEGORIA: { id: AgentToolCategory; nome: string }[] = [
 ];
 
 /** Chama uma rota de ciclo de vida do agente e devolve o JSON. Erro vira mensagem legível. */
-async function chamar(url: string, okMsg: string): Promise<{ ok: boolean; json: Record<string, unknown> }> {
+async function chamar(url: string, okMsg: string, method: "POST" | "DELETE" = "POST"): Promise<{ ok: boolean; json: Record<string, unknown> }> {
   try {
-    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: method === "DELETE" ? undefined : "{}" });
     const json = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     if (!r.ok) { toast.error(String(json.error ?? json.message ?? "Não foi possível concluir a ação")); return { ok: false, json }; }
     toast.success(okMsg);
@@ -168,14 +169,16 @@ async function chamar(url: string, okMsg: string): Promise<{ ok: boolean; json: 
 function CardAgente({ a, podeConfigurar }: { a: AgenteDaTela; podeConfigurar: boolean }) {
   const router = useRouter();
   const [ocupado, setOcupado] = React.useState<string | null>(null);
+  const [confirmandoExclusao, setConfirmandoExclusao] = React.useState(false);
   const noAr = a.status === "published";
+  const arquivado = a.status === "archived";
   const porClasse = CLASSES_AUTONOMIA.filter((c) => a.autonomiaPorAcao[c.id]);
   const execucoesHref = `/automacoes/execucoes?visao=agentes&agente=${a.id}`;
 
-  async function acao(id: string, url: string, okMsg: string, depois?: (j: Record<string, unknown>) => void) {
+  async function acao(id: string, url: string, okMsg: string, depois?: (j: Record<string, unknown>) => void, method: "POST" | "DELETE" = "POST") {
     if (ocupado) return;
     setOcupado(id);
-    const r = await chamar(url, okMsg);
+    const r = await chamar(url, okMsg, method);
     setOcupado(null);
     if (r.ok) { if (depois) depois(r.json); else router.refresh(); }
   }
@@ -239,7 +242,7 @@ function CardAgente({ a, podeConfigurar }: { a: AgenteDaTela; podeConfigurar: bo
           <Link href={`/automacoes/agentes/${a.id}`} className="agn-acao">Editar</Link>
           <Link href={`/automacoes/agentes/${a.id}?aba=testes`} className="agn-acao">Testar</Link>
           <Link href={execucoesHref} className="agn-acao">Ver execuções</Link>
-          {a.versaoEmTrabalhoStatus === "draft" && a.versionId ? (
+          {a.versaoEmTrabalhoStatus === "draft" && a.versionId && !arquivado ? (
             <BotaoMotivo type="button" className="agn-acao" disabled={desligado} motivo={motivo}
               onClick={() => acao("publicar", `/api/automacoes/agentes/${a.id}/versions/${a.versionId}/publish`, "Agente publicado.")}>
               {ocupado === "publicar" ? "Publicando…" : "Publicar"}
@@ -261,8 +264,38 @@ function CardAgente({ a, podeConfigurar }: { a: AgenteDaTela; podeConfigurar: bo
             onClick={() => acao("duplicar", `/api/automacoes/agentes/${a.id}/duplicar`, "Cópia criada como rascunho.", (j) => router.push(`/automacoes/agentes/${(j.agente as { id: string }).id}`))}>
             {ocupado === "duplicar" ? "Duplicando…" : "Duplicar"}
           </BotaoMotivo>
+          {!arquivado ? (
+            <BotaoMotivo type="button" className="agn-acao" data-perigo="true" disabled={desligado} motivo={motivo}
+              onClick={() => setConfirmandoExclusao(true)}>
+              {ocupado === "excluir" ? "Excluindo…" : "Excluir"}
+            </BotaoMotivo>
+          ) : null}
         </span>
       </div>
+
+      {/* Exclusão é arquivamento: a confirmação diz o nome, que ele para de
+          responder (se estiver no ar) e o que fica preservado. */}
+      <AlertDialog open={confirmandoExclusao} onOpenChange={(o) => !o && setConfirmandoExclusao(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir o agente “{a.nome}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {noAr
+                ? `${a.nome} está publicado e atendendo: ele para de responder imediatamente, sai do roteamento por número e deixa de aparecer como responsável nos seletores.`
+                : `${a.nome} sai da lista de agentes e deixa de aparecer como responsável nos seletores.`}
+              {a.atribuicoes > 0 ? ` Há ${num(a.atribuicoes)} ${a.atribuicoes === 1 ? "conversa atribuída" : "conversas atribuídas"} a ele: ninguém será atendido por ele depois disso.` : ""}
+              {" "}O agente é arquivado, não apagado: o histórico de execuções, os casos e as versões são preservados e continuam consultáveis.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { setConfirmandoExclusao(false); void acao("excluir", `/api/automacoes/agentes/${a.id}`, `${a.nome} foi arquivado. O histórico de execuções continua lá.`, undefined, "DELETE"); }}>
+              Excluir agente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </article>
   );
 }
@@ -286,17 +319,21 @@ function CriarLia({ onCriada, compacto }: { onCriada: (id: string) => void; comp
 export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes; podeConfigurar: boolean }) {
   const [busca, setBusca] = React.useState("");
   const router = useRouter();
-  const [recorte, setRecorte] = React.useState<"todos" | "published" | "draft" | "paused">("todos");
+  const [recorte, setRecorte] = React.useState<"todos" | "published" | "draft" | "paused" | "archived">("todos");
   const [criando, setCriando] = React.useState(false);
 
-  const { agentes, execucoes, serie, totais30d, provedores } = dados;
+  const { agentes: todosOsAgentes, execucoes, serie, totais30d, provedores } = dados;
+  // Agente excluído (arquivado) só aparece no recorte "Arquivados": fora dele
+  // não conta como agente configurado nem pesa nos vazios.
+  const agentes = todosOsAgentes.filter((a) => a.status !== "archived");
+  const arquivados = todosOsAgentes.length - agentes.length;
   const publicados = agentes.filter((a) => a.status === "published").length;
   const conectados = provedores.filter((p) => p.ambiente || p.organizacao.length > 0);
   const maxDia = Math.max(1, ...serie.map((s) => s.total));
 
-  const temLia = agentes.some((a) => a.slug === "lia-sdr");
+  const temLia = todosOsAgentes.some((a) => a.slug === "lia-sdr");
   const q = busca.trim().toLowerCase();
-  const lista = agentes.filter((a) =>
+  const lista = (recorte === "archived" ? todosOsAgentes : agentes).filter((a) =>
     (recorte === "todos" || a.status === recorte) &&
     (!q || `${a.nome} ${a.descricao ?? ""} ${a.papel} ${a.modelo ?? ""}`.toLowerCase().includes(q)));
 
@@ -370,7 +407,7 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Agente, papel ou modelo" aria-label="Buscar agente especializado" />
         </div>
         <div className="agn-segmento" role="group" aria-label="Filtrar por status">
-          {([["todos", "Todos"], ["published", "Publicados"], ["paused", "Pausados"], ["draft", "Rascunhos"]] as const).map(([id, rotulo]) => (
+          {([["todos", "Todos"], ["published", "Publicados"], ["paused", "Pausados"], ["draft", "Rascunhos"], ...(arquivados > 0 ? [["archived", `Arquivados (${arquivados})`] as const] : [])] as const).map(([id, rotulo]) => (
             <button key={id} type="button" aria-pressed={recorte === id} onClick={() => setRecorte(id)}>{rotulo}</button>
           ))}
         </div>
@@ -389,7 +426,7 @@ export function AgentesTela({ dados, podeConfigurar }: { dados: DadosTelaAgentes
         <section className="agn-cartao" aria-labelledby="agn-lista-titulo">
           <div className="agn-cartao-topo">
             <h2 id="agn-lista-titulo">Agentes especializados</h2>
-            <span>{lista.length === agentes.length ? `${agentes.length} configurados` : `${lista.length} de ${agentes.length}`}</span>
+            <span>{recorte === "archived" ? `${lista.length} ${lista.length === 1 ? "arquivado" : "arquivados"}` : lista.length === agentes.length ? `${agentes.length} configurados` : `${lista.length} de ${agentes.length}`}</span>
           </div>
           {lista.length === 0 ? (
             <div className="agn-vazio">

@@ -155,6 +155,9 @@
 .agn-acao:hover:not(:disabled):not([aria-disabled="true"]) { box-shadow: var(--of-anel-forte); color: var(--of-tinta-forte); }
 .agn-acao:focus-visible { outline: 0; box-shadow: var(--of-anel-coral); }
 .agn-acao:disabled, .agn-acao[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+/* Ação destrutiva (excluir): mesmo tom de alerta já usado nos números da tela. */
+.agn-acao[data-perigo="true"] { color: var(--of-coral-texto); }
+.agn-acao[data-perigo="true"]:hover:not(:disabled):not([aria-disabled="true"]) { color: var(--of-coral-texto-forte); }
 .agn-vazio-acoes { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .agn-secundario { text-decoration: none; cursor: pointer; }
 .agn-secundario:focus-visible, .agn-primario:focus-visible { outline: 0; box-shadow: var(--of-anel-coral); }
