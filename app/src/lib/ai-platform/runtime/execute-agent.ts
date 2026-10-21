@@ -430,6 +430,11 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         userPrompt: messages[1]!.content,
         tools,
         maxTurns: maxSteps,
+        // "Tokens por execução" da tela não valia nada neste provider: o campo era
+        // aplicado só no caminho de API key. O SDK não aceita teto de saída nas
+        // options, mas o CLI que ele sobe respeita CLAUDE_CODE_MAX_OUTPUT_TOKENS,
+        // e o adapter passa por ali.
+        maxOutputTokens: selected.version.tokenBudget,
         invokeTool: (name, toolInput) => executeRegisteredTool(name, {
           ...toolCtx,
         }, toolInput),
