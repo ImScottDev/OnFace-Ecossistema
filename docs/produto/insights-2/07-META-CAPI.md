@@ -41,7 +41,42 @@ serviço canônico e o handoff de CS.
 No banco local isso é esperado: não se roda worker aqui. **Em produção seria
 incidente**, e é a primeira coisa a confirmar.
 
-## 3. Destravar a fila não resolve, porque falta o sinal
+## 3. O sinal: eu li a tabela errada
+
+**Correção, 21/10 à noite.** Escrevi abaixo que `fbclid`/`fbc`/`fbp` em zero era
+o gargalo. **Não é, e nunca ia ser.** As campanhas de hoje são **formulário
+nativo do Meta (Lead Ads)**: a pessoa preenche dentro do app e nunca chega a um
+site. Não existe clique para um domínio nosso, logo não existe `fbclid`, nem
+cookie `_fbc`, nem `_fbp`. Zero ali é o esperado, não um defeito.
+
+O sinal de Lead Ads é outro, e **ele existe**:
+
+| Em `pontos_contato` | Preenchido |
+|---|---|
+| `ad_id` | **959** |
+| `adset_id` | **959** |
+| `campaign_id` | **967** |
+| `meta_lead_id` (leadgen) | 2 |
+
+`veioDaMeta()` aceita `adId`, então esses ~952 pontos de Mídia Paga **passam** na
+regra de atribuição. O casamento na Meta se dá por e-mail/telefone hasheado mais
+o anúncio — não é o ideal, mas funciona.
+
+**O que falta é o `leadgen_id`**, que é a prova direta e o melhor casamento
+possível. Ele some num ponto específico: `leads` tem coluna para
+`meta_ad_id`, `meta_adset_id` e `meta_campaign_id`, e **não tem coluna para o
+leadgen** — ele vive em `campos_custom.meta_leadgen_id`, preenchido em **6 de
+4.262**. O backfill `06-aquisicao.ts` copia as três colunas para
+`pontos_contato` e não tem de onde copiar o leadgen. Os 2 que têm vieram do
+caminho novo (`processar-meta.ts`, provider `meta`, 08/10), que passa
+`metaLeadId` corretamente.
+
+Então a ordem certa é: os leads novos já nascem com o leadgen pelo webhook; o
+passivo precisa de backfill a partir de `campos_custom`, onde houver.
+
+## 3a. (análise anterior, mantida para o caso de voltar a existir LP)
+
+Destravar a fila não resolve, porque falta o sinal
 
 `veioDaMeta()` só devolve o fato que veio da Meta. Em 4.270 pontos de contato:
 
@@ -152,9 +187,14 @@ o real.
 
 ---
 
-## 6. O clique passou a ser capturado (`1f8b2e11`, `5c213756`)
+## 6. O clique na landing (feito, mas não é o caminho de hoje)
 
-Era o gargalo real: evento mapeado e entregue não vale nada se a Meta não tem
+**Ressalva primeiro:** o Scott confirmou que **todas** as campanhas de hoje são
+formulário nativo. As 5 LPs existem e têm Pixel, mas não recebem tráfego pago
+agora. O que está abaixo vale para quando voltar a existir campanha com LP, e
+não muda nada no fluxo atual.
+
+Era o gargalo que eu supus: evento mapeado e entregue não vale nada se a Meta não tem
 com quem casar. Estava quebrado em **três** pontos do caminho, e cada um
 sozinho zerava o resultado.
 
