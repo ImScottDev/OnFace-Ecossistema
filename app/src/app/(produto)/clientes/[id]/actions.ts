@@ -93,8 +93,19 @@ export async function acaoNovaOportunidadeDoCliente(
   } catch (e) {
     // Regra de negócio tem mensagem escrita para humano; o resto não vaza.
     if (e instanceof RegraDeNegocio) return { ok: false, erro: e.message };
-    console.error("[Cliente360] falha ao criar oportunidade:", e);
-    return { ok: false, erro: "Não foi possível criar a oportunidade. Tente de novo." };
+    /* O log precisa dizer DE QUEM era a tentativa. Sem isto, "falha ao criar
+       oportunidade" sozinho não permite reproduzir: foi o que aconteceu em
+       21/10/2026, quando a venda travou para um cliente e o log do container
+       já tinha sido reciclado por um deploy antes de alguém olhar. */
+    console.error("[Cliente360] falha ao criar oportunidade:", {
+      empresaId: entrada.empresaId, tipo: entrada.tipo, familia: entrada.familia,
+      servicoOrigemId: entrada.servicoOrigemId ?? null, pessoaId: entrada.pessoaId ?? null,
+      erro: e instanceof Error ? e.message : String(e),
+    }, e);
+    /* A pessoa que está vendendo precisa saber o que fazer agora. "Tente de
+       novo" não diz nada quando o erro é do dado, e ela tenta cinco vezes. */
+    const detalhe = e instanceof Error ? e.message : String(e);
+    return { ok: false, erro: `Não foi possível criar a oportunidade: ${detalhe.slice(0, 180)}` };
   }
 }
 
