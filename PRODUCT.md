@@ -32,7 +32,7 @@ ONFACE replaces the legacy CRM. Every screen lives in the `(produto)` route grou
 
 The agreed work order is module by module in the customer journey: Acquisition, Sales, Post-sale/Implementation, CS/Retention, and Platform. The working ritual is to present the module, identify how it is drawn and where data is wrong, wait for Kaua's validation when business decisions are required, refactor front and back, then flip the menu flag.
 
-The local project is `/Users/Scott/Documents/Scott Studio/onface-ux-rebuild`. The validation environment is dev.crm.callface.io, published with `./deploy.sh dev`. Production changes require explicit approval from Kaua.
+The local project is `/Users/Scott/Documents/Scott Studio/onface-ux-rebuild`. The validation environment is dev.crm.callface.io, published with `./deploy.sh homolog`. Production is crm.callface.io, published with `./deploy.sh producao`, and production changes require explicit approval from Kaua. Note that `./deploy.sh dev` is a legacy alias for `producao`, not for the validation environment: the production stack is still named `crm2-dev` on the server for historical reasons.
 
 ## Capabilities and Constraints
 

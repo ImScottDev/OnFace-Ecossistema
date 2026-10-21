@@ -102,7 +102,7 @@ novo por cima em `~/actions-runner-onface` e rodar `./config.sh ... --replace`.
 **Aumentar o limite de gasto** (*Billing → Budgets and alerts*): destrava na
 hora e passa a cobrar por minuto depois da cota. Serve como emergência.
 
-**`./deploy.sh dev --construir-aqui`**: constrói a imagem na própria EC2, sem
+**`./deploy.sh producao --construir-aqui`**: constrói a imagem na própria EC2, sem
 GitHub nenhum. Funciona, mas leva ~48 min e disputa as 2 vCPU com a produção
 que está no ar — por isso é fallback, não rotina.
 

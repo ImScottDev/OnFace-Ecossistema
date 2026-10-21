@@ -129,13 +129,13 @@ jobs:
   # Até 12/10/2026 a imagem era construída NA EC2: ~48 min por deploy. Agora o
   # build roda aqui, EM PARALELO ao portão acima, e publica uma imagem
   # CANDIDATA. Só quando o portão passa ela ganha a tag do commit, que é a
-  # única que o `./deploy.sh dev` aceita:
+  # única que o `./deploy.sh producao` aceita:
   #
   #   ghcr.io/imscottdev/onface-app:<sha>       e  :main
   #   ghcr.io/imscottdev/onface-backend:<sha>   e  :main   (API + worker)
   #
   # Portão vermelho = nenhuma tag <sha> = o deploy espera e não publica nada.
-  # Tag por commit é imutável: dá o rollback (`./deploy.sh dev --versao <sha>`)
+  # Tag por commit é imutável: dá o rollback (`./deploy.sh producao --versao <sha>`)
   # e permite promover a mesma imagem para produção na virada.
   # A imagem NÃO é montada a cada push, de propósito.
   #

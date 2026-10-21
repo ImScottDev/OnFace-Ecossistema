@@ -13,13 +13,13 @@ gate é o navegador), a ordem de trabalho e a definição de pronto.
 - `github.com/ImScottDev/callface-crm` é o CRM anterior. Não é fonte do ONFACE:
   não compare com ele, não traga código dele, não faça push nele.
 - **Desde a virada de 13/10/2026 o ONFACE É a produção:** `https://crm.callface.io`,
-  pilha `crm2-dev` em `/opt/callface/crm2-dev`, publicado com `./deploy.sh dev`
+  pilha `crm2-dev` em `/opt/callface/crm2-dev`, publicado com `./deploy.sh producao`
   a partir de um commit. Todo deploy vai para o time que está operando:
   typecheck e testes antes, e cuidado com envios reais (WhatsApp, e-mail,
   Stripe live, Documenso).
 - **Fluxo normal: homologação antes de produção.** `./deploy.sh homolog` publica em
   `https://dev.crm.callface.io` (.env de produção, banco cópia, WhatsApp e e-mail travados); validado, promove-se o
-  mesmo sha com `./deploy.sh dev --versao <sha>`. Guia: `docs/operacao/homologacao.md`.
+  mesmo sha com `./deploy.sh producao --versao <sha>`. Guia: `docs/operacao/homologacao.md`.
   Não confundir com o `homolog.crm.callface.io` abaixo, que é o legado.
 - **Deploy parado em "esperando ... no GHCR"?** O portão roda num runner
   self-hosted no Mac do Scott (`RUNNER_PORTAO=onface-mac`), porque a cota de

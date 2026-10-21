@@ -38,7 +38,7 @@ Aqui pode apagar, errar e mexer à vontade: é cópia.
 
 ```bash
 git rev-parse --short HEAD          # ou o sha que você validou
-./deploy.sh dev --versao <sha-completo>
+./deploy.sh producao --versao <sha-completo>
 ```
 
 O script avisa se esse sha não é o que está validado em homologação. Para
@@ -52,7 +52,7 @@ ssh -i ~/.ssh/infra_callface.pem ubuntu@34.204.200.52 \
 **4. Voltar atrás.** Rode o sha anterior no ambiente que deu problema:
 
 ```bash
-./deploy.sh dev --versao <sha-anterior>        # produção
+./deploy.sh producao --versao <sha-anterior>        # produção
 ./deploy.sh homolog <sha-anterior>             # homologação
 ```
 
@@ -81,7 +81,7 @@ sobrou e **aborta** se sobrou.
 - **Schema** (tabela nova, coluna nova, índice, constraint) é sempre uma *migration* no
   repositório (`app/src/lib/db/migrations`). O `deploy.sh` aplica as migrations do sha em
   cada ambiente antes de trocar o container. Então: você cria a migration, publica em
-  homologação (`./deploy.sh homolog`), valida, promove o **mesmo sha** (`./deploy.sh dev --versao <sha>`) e a
+  homologação (`./deploy.sh homolog`), valida, promove o **mesmo sha** (`./deploy.sh producao --versao <sha>`) e a
   produção aplica a mesma migration. Nada a fazer à mão.
 - **Dados** não sobem. O que você digita, cria ou apaga em homologação fica em homologação.
   Exemplo: você cria em homologação o plano "Enterprise 2027" e uma etapa nova de funil.
@@ -107,7 +107,7 @@ scripts/homolog-servidor.sh env AREAS_EM_BREVE=               # abrir
 ```
 
 Sem commit nem deploy. **Antes do próximo deploy de produção**, a linha `AREAS_EM_BREVE=automacoes`
-tem que estar no `.env` de produção: o `deploy.sh dev` se recusa a publicar sem ela
+tem que estar no `.env` de produção: o `deploy.sh producao` se recusa a publicar sem ela
 (sem a variável o código abre a área, e Automações apareceria para o time pela metade).
 
 ## O que está ligado e o que pode acontecer

@@ -150,7 +150,7 @@ Scott e ainda não foi tomada. **Não decida isso sozinho.**
    entrega).
 
 Quem publica é o Scott, ou a sessão dele na máquina local, que roda
-`./deploy.sh homolog <sha>` e depois `./deploy.sh dev --versao <sha>`.
+`./deploy.sh homolog <sha>` e depois `./deploy.sh producao --versao <sha>`.
 
 **Não anuncie como pronto o que você não conseguiu verificar.** Dizer "typecheck
 e build passaram, a tela não foi aberta" é o relato certo.

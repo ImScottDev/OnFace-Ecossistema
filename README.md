@@ -169,8 +169,14 @@ pnpm db:migrar         # aplica
 | Ambiente | Onde | Banco | Como chega código |
 |---|---|---|---|
 | **Local** | sua máquina, `scripts/dev.sh` | Postgres do Homebrew; dado fresco com `scripts/refresh-dev-db.sh` | `pnpm dev` |
-| **Dev publicado** | https://dev.crm.callface.io · EC2 `/opt/callface/crm2-dev` · compose `crm2-dev` | Postgres próprio do compose, carregado com dado de produção | `./deploy.sh dev` |
-| **Produção** | https://crm.callface.io · EC2 `/opt/callface/crm` | Postgres de produção | só pela virada, com OK do Kauã (`docs/operacao/virada/`) |
+| **Homologação** | https://dev.crm.callface.io · EC2 `/opt/callface/crm2-homolog` · compose `crm2-homolog` | Postgres próprio do compose (`callface_crm_mz`), cópia de produção | `./deploy.sh homolog` |
+| **Produção** | https://crm.callface.io · EC2 `/opt/callface/crm2-dev` · compose `crm2-dev` | Postgres de produção | `./deploy.sh producao` (promover sha validado: `--versao <sha>`) |
+| **CRM legado** | https://homolog.crm.callface.io · EC2 `/opt/callface/crm` | congelado, sem deploy novo | não recebe publicação |
+
+> A pilha de **produção** se chama `crm2-dev` por herança: nasceu como ambiente de
+> desenvolvimento e virou produção em 13/10/2026, sem renomear diretório, container
+> nem volume. O alvo que se digita (`producao`) diz a verdade; o nome da pilha, não.
+> Ver [AMBIENTE.md](AMBIENTE.md).
 
 O dev é isolado de produção: containers `callface-crm2-dev-*`, rede e volumes
 próprios, e WhatsApp com allowlist de saída. Stripe fica em `STRIPE_CHECKOUT_MODE=mock`.
@@ -229,18 +235,27 @@ em todo push na `main` e em pull request.
 ## Deploy
 
 ```bash
-./deploy.sh dev
+./deploy.sh homolog [<sha>]           # dev.crm.callface.io
+./deploy.sh producao --versao <sha>   # crm.callface.io (promove o sha validado)
+./deploy.sh producao                  # crm.callface.io, direto do HEAD da main
 ```
 
-Publica **o commit atual** (recusa árvore suja) em `dev.crm.callface.io`:
-envia via `git archive`, espelha a pasta do servidor com `--delete` protegendo
-`.env`, uploads, segredos do Documenso e backups; constrói as três imagens uma
-por vez com `--cpuset-cpus=1` (a EC2 é compartilhada com produção); confere o
-ambiente e aplica migrations **com a imagem nova**; troca worker, api e app;
-espera o healthcheck e grava o commit em `.onface-release`.
+Publica **o commit** (recusa árvore suja): a imagem vem pronta do GHCR
+(`ghcr.io/imscottdev/onface-{app,backend}:<sha>`, construída pelo
+`.github/workflows/portao.yml`, nunca na EC2); o código e a infra vão por
+`git archive` do mesmo sha; a pasta do servidor é espelhada com `--delete`
+protegendo `.env`, uploads, segredos do Documenso e backups; o ambiente é
+conferido e as migrations aplicadas **com a imagem nova**; troca worker, api e
+app; espera o healthcheck, grava o commit em `.onface-release` e poda as tags
+antigas da imagem, mantendo as 5 últimas.
 
-Produção não tem alvo no script: a virada é um procedimento próprio
-(`docs/operacao/virada/`) e exige aprovação explícita do Kauã.
+O caminho recomendado é sempre homologar primeiro e **promover o mesmo sha**
+(`--versao`), não republicar o HEAD. Rollback é o mesmo comando com o sha anterior,
+e só é seguro sobre migrations aditivas: migration não volta.
+
+`./deploy.sh dev` continua funcionando como apelido de `producao`, para não quebrar
+automação antiga. Não use em texto novo: foi justamente esse nome que fez
+documentação antiga mandar publicar em produção achando que era homologação.
 
 ---
 

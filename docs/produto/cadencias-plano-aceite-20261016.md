@@ -1,6 +1,6 @@
 # Cadências OnFace — decisões de implementação e aceite (16/10/2026)
 
-Esta revisão preserva o motor único existente (cadence_definitions / cadence_versions / cadence_enrollments), conforme docs/produto/cadencias.md. A produção não é alvo desta entrega: homologação é https://dev.crm.callface.io. O comando deploy.sh dev PUBLICA EM PRODUÇÃO.
+Esta revisão preserva o motor único existente (cadence_definitions / cadence_versions / cadence_enrollments), conforme docs/produto/cadencias.md. A produção não é alvo desta entrega: homologação é https://dev.crm.callface.io. O comando deploy.sh producao (apelido antigo: deploy.sh dev) PUBLICA EM PRODUÇÃO.
 
 ## Referências de mercado
 ManyChat: construtor de conversas com condições, ações e esperas. Apollo/Salesloft: sequência comercial, tarefas humanas e responsabilidade. HubSpot: interrupção após resposta, reunião ou descadastro. Mautic/Activepieces: fluxos com ramificações e publicação versionada. A decisão é evoluir a arquitetura OnFace, sem instalar um segundo motor.

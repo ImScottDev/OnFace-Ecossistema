@@ -112,8 +112,11 @@ Revisão em árvore mutante não existe. A regra:
 - Repositório: `github.com/ImScottDev/OnFace-Ecossistema`, uma branch só (`main`).
   Checkout local: `~/Documents/Scott Studio/onface-ux-rebuild`. Execução
   serializada. Nunca criar branch ou worktree novo para tarefa pontual.
-- Publicação: `./deploy.sh dev` publica o commit em `dev.crm.callface.io`, onde a
-  validação acontece com dado real. Produção só pela virada, com OK do Kauã.
+- Publicação: `./deploy.sh homolog` publica o commit em `dev.crm.callface.io`, onde a
+  validação acontece com dado real. Produção é `./deploy.sh producao` (crm.callface.io),
+  só com OK do Kauã, promovendo o mesmo sha já validado (`--versao <sha>`).
+  Cuidado com texto antigo: `./deploy.sh dev` NÃO publica em dev.crm.callface.io,
+  é apelido de `producao`. A pilha de produção se chama `crm2-dev` por herança.
 - Smoke local entra pela sessão gerada com a chave do `app/.env`
   (`src/scripts/checar-rotas-onface.ts`), não por senha: o banco local é cópia
   de produção e traz as senhas de lá. Nunca executar Enriquecer nem Apollo.

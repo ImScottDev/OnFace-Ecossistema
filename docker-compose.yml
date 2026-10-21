@@ -112,7 +112,7 @@ services:
   app:
     # Imagem pronta do GHCR, construída pelo GitHub Actions na tag do commit.
     # IMAGE_TAG vem do .env do servidor, gravado pelo ./deploy.sh. O `build:`
-    # fica só para o fallback `./deploy.sh dev --construir-aqui`.
+    # fica só para o fallback `./deploy.sh producao --construir-aqui`.
     build:
       context: .
       target: app

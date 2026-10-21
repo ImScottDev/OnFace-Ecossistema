@@ -19,7 +19,7 @@ homologação  https://dev.crm.callface.io  pilha crm2-homolog → 6a57c117
 main         6a57c117
 ```
 
-Publicar é `./deploy.sh homolog <sha>` e depois `./deploy.sh dev --versao <sha>`
+Publicar é `./deploy.sh homolog <sha>` e depois `./deploy.sh producao --versao <sha>`
 (`dev` é PRODUÇÃO, não se engane com o nome). Também dá para publicar pelo botão
 do GitHub: Actions → **publicar** → Run workflow, ou
 `gh workflow run publicar.yml -f ambiente=homolog -f versao=<sha>`. A chave do

@@ -629,10 +629,10 @@ Só **depois** de todas as seções acima marcadas como OK (tabela abaixo) e do
 script sem `FAIL`:
 
 ```bash
-./deploy.sh dev --versao <sha completo validado no P1>
+./deploy.sh producao --versao <sha completo validado no P1>
 ```
 
-O `deploy.sh dev` exige `AREAS_EM_BREVE=automacoes` no `.env` de produção
+O `deploy.sh producao` exige `AREAS_EM_BREVE=automacoes` no `.env` de produção
 (ver `homologacao.md`). Depois da promoção:
 
 1. Rodar o script contra produção (mesma receita do P4, trocando para o
