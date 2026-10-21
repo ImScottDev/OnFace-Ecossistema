@@ -29,6 +29,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { stripe } from "@/lib/integrations/stripe-assinatura";
 import { reconhecerClienteDoSaas } from "@/lib/integrations/cliente-do-saas";
+import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
 
 const MARCAS_DA_PLATAFORMA = ["organization_id", "plan_id", "user_id"];
 
@@ -89,7 +90,9 @@ async function main() {
   const alvo = assinaturas.filter(daPlataforma);
   console.log(`${assinaturas.length} assinaturas ativas · ${alvo.length} nasceram na plataforma\n`);
 
-  let empresasNovas = 0, contatosNovos = 0, reaproveitados = 0, servicos = 0;
+  let empresasNovas = 0, contatosNovos = 0, reaproveitados = 0, servicos = 0
+  // Falha da ponte não derruba a carga, mas não pode sumir do relatório.
+  let semCanonico = 0;
 
   for (const s of alvo) {
     const c = typeof s.customer === "string" ? null : s.customer;
@@ -124,11 +127,30 @@ async function main() {
       empresasNovas++;
     }
     if (!leadExistente) {
-      await db.execute(sql`
+      const [novoLead] = (await db.execute(sql`
         INSERT INTO leads (organizacao_id, nome, email, telefone, empresa_id, tipo, status, origem, stripe_customer_id)
         VALUES (${org.id}::uuid, ${nomePessoa || nomeEmpresa}, ${email || null}, ${c.phone ?? null},
-                ${empresaId}::uuid, 'cliente', 'novo', 'plataforma', ${c.id})`);
+                ${empresaId}::uuid, 'cliente', 'novo', 'plataforma', ${c.id})
+        RETURNING id::text`)) as unknown as Array<{ id: string }>;
       contatosNovos++;
+
+      /* O lead sozinho NÃO existe para o modelo canônico. Sem pessoa e sem
+         aquisição, quem vende (que lê `pessoas`) não acha ninguém: foi assim
+         que o upgrade do Danilo/SMOV travou. Medido em 21/10: 16 dos clientes
+         que este script trouxe nasceram sem o par. A ponte cria pessoa +
+         aquisição e liga pelo `leadLegadoId`, que é o que casa os dois modelos. */
+      const canonico = await garantirEntradaCanonica({
+        organizacaoId: org.id,
+        // Quem assinou sozinho na plataforma chegou por conta própria: é entrada
+        // inbound (self-checkout), não importação de base nem outbound.
+        tipo: "INBOUND",
+        origem: "plataforma",
+        provider: "callface_ai",
+        pessoa: { nome: nomePessoa || nomeEmpresa, email: email || null, telefone: c.phone ?? null },
+        empresa: { nome: nomeEmpresa },
+        idempotencyKey: `plataforma:${c.id}`,
+      }, novoLead!.id);
+      if (!canonico.ok) { semCanonico++; console.log(`  ! sem par canônico: ${canonico.codigo ?? canonico.erro}`); }
     }
 
     const primeiro = s.items?.data?.[0]?.price?.product;
@@ -140,7 +162,8 @@ async function main() {
 
   console.log(
     `\n${aplicar ? "criados" : "seriam criados"}: ${empresasNovas} empresas · ${contatosNovos} contatos · ` +
-    `${servicos} serviços (fora do MRR comercial) · ${reaproveitados} reaproveitaram cadastro existente`,
+    `${servicos} serviços (fora do MRR comercial) · ${reaproveitados} reaproveitaram cadastro existente` +
+    (semCanonico ? ` · ATENÇÃO: ${semCanonico} sem par canônico (pessoa+aquisição)` : ""),
   );
   process.exit(0);
 }

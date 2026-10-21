@@ -60,6 +60,70 @@ const FORA_DA_REGRA = [
   "lib/vendas/identidade.ts",
 ];
 
+/**
+ * Scripts de prova (smoke, aceite, verificação) que MONTAM o cenário.
+ *
+ * Por que esta lista existe: a varredura olhava só `app`, `api-server`, `lib` e
+ * `worker`. `scripts/` ficava de fora, e isso não é detalhe — é um corredor por
+ * onde passa carga REAL de produção. Em 21/10/2026 o
+ * `trazer-clientes-da-plataforma.ts` criou 16 clientes com `INSERT INTO leads`
+ * direto, sem pessoa e sem aquisição, e nenhuma trava acusou. A venda lê
+ * `pessoas`: o upgrade do Danilo/SMOV travou por causa disso.
+ *
+ * A lista é NOMEADA, e não um padrão por prefixo de arquivo. Casar `smoke-*`
+ * seria o "padrão frouxo" que o comentário de `FORA_DA_REGRA` acima já registra
+ * como a causa de sete criadores de lead terem passado escondidos. Assim ela
+ * congela a dívida conhecida e acusa todo script NOVO.
+ *
+ * Para sair daqui, o script passa a montar o cenário pela porta canônica — que
+ * é o que ele deveria provar, já que é o caminho que o produto usa.
+ */
+const FIXTURES_DE_TESTE = [
+  "scripts/aceite-contrato-assinado.ts",
+  "scripts/aceite-won-cs.ts",
+  "scripts/criar-teste-implantacao-white-label.ts",
+  "scripts/novo-card-teste.ts",
+  "scripts/preparar-teste-jornadas.ts",
+  "scripts/provar-contrato-documenso.ts",
+  "scripts/provar-lia-conversas.ts",
+  "scripts/seed-onboarding-teste.ts",
+  "scripts/simular-fechamento-2c1.ts",
+  "scripts/smoke-aceite-fica-registrado.ts",
+  "scripts/smoke-acoes-em-massa.ts",
+  "scripts/smoke-agente-runtime-live.ts",
+  "scripts/smoke-agente-tag-pela-porta.ts",
+  "scripts/smoke-atividade-chega-na-empresa.ts",
+  "scripts/smoke-ator-atravessa.ts",
+  "scripts/smoke-automacao-etapa.ts",
+  "scripts/smoke-isolamento-sequencia.ts",
+  "scripts/smoke-relogio-de-trabalho.ts",
+  "scripts/smoke-stripe-crm-checkout.ts",
+  "scripts/testar-documenso-local.ts",
+  "scripts/teste-automacao-runtime.ts",
+  "scripts/teste-posvenda.ts",
+  "scripts/validar-catalogo-oficial.ts",
+  "scripts/verificar-fluxo-contrato-dev.ts",
+  "scripts/verificar-meta-leads-legado.ts",
+  "scripts/verificar-signatarios-e-dados-contrato.ts",
+];
+
+/** Idem, para quem monta negócio de cenário. */
+const FIXTURES_DE_NEGOCIO = [
+  "scripts/aceite-contrato-assinado.ts",
+  "scripts/aceite-won-cs.ts",
+  "scripts/criar-teste-implantacao-white-label.ts",
+  "scripts/novo-card-teste.ts",
+  "scripts/preparar-teste-jornadas.ts",
+  "scripts/smoke-automacao-etapa.ts",
+  "scripts/smoke-espelho-nao-apaga.ts",
+  "scripts/smoke-motor-unico.ts",
+  "scripts/smoke-ponte-ganho.ts",
+  "scripts/smoke-relogio-de-trabalho.ts",
+  "scripts/teste-posvenda.ts",
+];
+
+/** Carga de produção que JÁ passa pela porta. Sai da varredura só pela porta, nunca por lista. */
+
 test("todo criador de identidade migrado chama a porta canônica", () => {
   const faltando = MIGRADOS.filter((p) => !ler(p).includes("garantirEntradaCanonica"));
   assert.deepEqual(faltando, [], `estes deveriam chamar a porta canônica e não chamam:\n${faltando.join("\n")}`);
@@ -88,7 +152,8 @@ test("todo arquivo que CRIA lead passa pela porta canônica", () => {
       else if (/\.tsx?$/.test(e.name)) arquivos.push(rel);
     }
   };
-  for (const raiz of ["app", "api-server", "lib", "worker"]) varrer(raiz);
+  // `scripts` entra aqui: é por onde passa carga real de produção (ver FIXTURES_DE_TESTE).
+  for (const raiz of ["app", "api-server", "lib", "worker", "scripts"]) varrer(raiz);
 
   // `\.insert\(leads\)`, e não `db\.insert\(leads\)`.
   //
@@ -108,11 +173,15 @@ test("todo arquivo que CRIA lead passa pela porta canônica", () => {
   // Quantos o filtro ALCANÇOU. Sem esta conta o teste passa verde varrendo
   // zero, e o verde não significa nada: provado no CP56 renomeando o helper
   // que a trava de tenant procurava, com os dois testes ficando verdes.
-  assert.ok(criadores.length >= 8,
+  // 41 medidos em 21/10/2026 com `scripts` incluído. O piso é folgado de
+  // propósito: ele existe para pegar varredura que parou de alcançar, não para
+  // travar a contagem exata.
+  assert.ok(criadores.length >= 30,
     `só ${criadores.length} arquivos criam lead — o padrão de escrita mudou e a varredura não alcança mais`);
   const semPorta = arquivos.filter((rel) => {
     if (/\.test\.tsx?$/.test(rel) || rel.includes("migrations")) return false;
-    if (FORA_DA_REGRA.includes(rel.split(path.sep).join("/"))) return false;
+    const posix = rel.split(path.sep).join("/");
+    if (FORA_DA_REGRA.includes(posix) || FIXTURES_DE_TESTE.includes(posix)) return false;
     const src = corpo(rel);
     if (!criaLead.test(src)) return false;
     return !src.includes("garantirEntradaCanonica");
@@ -141,7 +210,8 @@ test("todo arquivo que CRIA negócio o sincroniza ao canônico", () => {
       else if (/\.tsx?$/.test(e.name)) arquivos.push(rel);
     }
   };
-  for (const raiz of ["app", "api-server", "lib", "worker"]) varrer(raiz);
+  // `scripts` entra aqui: é por onde passa carga real de produção (ver FIXTURES_DE_TESTE).
+  for (const raiz of ["app", "api-server", "lib", "worker", "scripts"]) varrer(raiz);
 
   // Mesma correção do teste de lead, e pelo mesmo motivo: exigir o `db.` colado
   // alcançava 3 dos 9 arquivos que criam negócio, porque o estilo do repo é
@@ -152,13 +222,15 @@ test("todo arquivo que CRIA negócio o sincroniza ao canônico", () => {
   const chegaAoCanonico = /syncOportunidadeFromNegocio|criarOportunidade|sincronizarOportunidade/;
   const criadoresDeNegocio = arquivos.filter((rel) =>
     !/\.test\.tsx?$/.test(rel) && !rel.includes("migrations") && criaNegocio.test(corpo(rel)));
-  assert.ok(criadoresDeNegocio.length >= 8,
+  // 30 medidos em 21/10/2026 com `scripts` incluído.
+  assert.ok(criadoresDeNegocio.length >= 22,
     `só ${criadoresDeNegocio.length} arquivos criam negócio — o padrão de escrita mudou ` +
     `e a varredura não alcança mais`);
 
   const semSync = arquivos.filter((rel) => {
     if (/\.test\.tsx?$/.test(rel) || rel.includes("migrations")) return false;
-    if (FORA_DA_REGRA.includes(rel.split(path.sep).join("/"))) return false;
+    const posix = rel.split(path.sep).join("/");
+    if (FORA_DA_REGRA.includes(posix) || FIXTURES_DE_NEGOCIO.includes(posix)) return false;
     const src = corpo(rel);
     return criaNegocio.test(src) && !chegaAoCanonico.test(src);
   });
