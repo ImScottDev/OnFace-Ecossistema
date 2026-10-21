@@ -29,6 +29,7 @@ import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
 
 import { EmpresaDesenho } from "./EmpresaDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
+import { registroPedido } from "./registro-pedido";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -266,7 +267,8 @@ posFlutuante(r, alto) {
     const D = this.dadosDoProto || {};
     const leads = E && E.leadsCom ? E.leadsCom(d.leads || D.LEADS || []) : (d.leads || D.LEADS || []);
     const leadId = (E && (E.parametro("registro") || E.parametro("lead"))) || this.props.leadId || (leads[0] || {}).id;
-    const alvo = leads.find(x => x.id === leadId) || leads[0] || {};
+    // A empresa/lead pedido, nunca outro: ver registro-pedido.ts.
+    const alvo = registroPedido(leads, leadId);
     const cadencias = d.cadencias || {};
     const qual = d.qual || {};
     return {
@@ -296,7 +298,7 @@ posFlutuante(r, alto) {
     const P = this.fonte();
     const D = (typeof window !== "undefined" && this.dadosDoProto) || {};
     const leads = P.leads || D.LEADS || [];
-    const E = leads.find(x => x.id === P.leadId) || leads[0] || {};
+    const E = registroPedido(leads, P.leadId);
     const diz = P.onAviso || function () {};
     const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").slice(0, 2).toUpperCase()))(n));
     const slug = D.slug || ((s) => (s || "").toLowerCase().replace(/[^a-z]/g, ""));

@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { urlLigarCallface } from "@/lib/callface-ligar";
 import { PecasDesenho } from "./PecasDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
+import { registroPedido } from "./registro-pedido";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -312,7 +313,10 @@ class Logica extends React.Component<any, any> {
   renderVals() {
     const S = this.state;
     const iniciaisDe = (n) => n ? n.split(" ").map(p => p.replace(/^[^\p{L}\p{N}]+/u, "")).filter(Boolean).slice(0, 2).map(p => [...p][0]).join("").toUpperCase() : "—";
-    const L0 = S.leads.find(x => x.id === S.detalheId) || S.leads[0];
+    /* O lead que ABRIRAM, nunca outro. O `|| S.leads[0]` que estava aqui fazia
+       a gaveta desenhar o primeiro da lista quando o id pedido ainda não tinha
+       chegado nela — nome, empresa, telefone e botões de outra pessoa. */
+    const L0 = registroPedido(S.leads, S.detalheId);
     const rotuloEtapa = { novo: "Novo", em_contato: "Em contato", qualificacao: "Qualificação", qualificado: "Qualificado", oportunidade: "Oportunidade", nutricao: "Nutrição", desqualificado: "Desqualificado" };
     const corEtapa = { novo: "#4a5560", em_contato: "#4c8fe0", qualificacao: "#9b8bd8", qualificado: "#2f9e7a", oportunidade: "#fe4f2b", nutricao: "#c8a86a", desqualificado: "#4a5560" };
     const slug = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "");

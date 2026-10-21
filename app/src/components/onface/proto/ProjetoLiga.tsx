@@ -132,7 +132,9 @@ class Logica extends React.Component<any, any> {
     const FAM = PR.FAM, A = PR.atv(), seed = this.dadosDoProto.ClientesSeed || [];
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
     const pad = (n) => String(n).padStart(2, "0"), dm = (d) => pad(d.getDate()) + "/" + pad(d.getMonth() + 1), dmy = (d) => dm(d) + "/" + d.getFullYear();
-    const id = E && E.parametro("id"), lista = PR.lista(), p = lista.find(x => x.id === id) || lista[0];
+    const id = E && E.parametro("id"), lista = PR.lista();
+    // Pediram um projeto que não está na lista? Cai no vazio abaixo — nunca abre outro.
+    const p = id ? lista.find(x => x.id === id) : lista[0];
     if (!p) return { topo: { titulo: "Projeto", sub: "", trilha: [] }, tema, h: { acoes: [] }, abas: [], v: {}, tiles: [], ctx: [], pessoas: [], hof: {}, prox: { itens: [] }, grupos: [], mats: [], play: [], tl: [], arq: { lista: [] }, kick: {}, sl: { itens: [] }, rs: {}, nota: {}, ac: {}, ir: {}, card: "", tit: "", btn: "", btnP: "", btnG: "" };
     const c = PR.calc(p, A), cl = seed.find(x => x.nome === p.empresa), opps = (E && E.ler("opps", null)) || D.OPORTUNIDADES || [];
     const quandoT = (d, h) => { if (!d) return ""; const x = PR.deIso(d), n = Math.round((x - hoje) / 864e5); return (n < 0 ? "Atrasada · " + dm(x) : n === 0 ? "Hoje" : n === 1 ? "Amanhã" : dm(x)) + (h ? ", " + h : ""); };

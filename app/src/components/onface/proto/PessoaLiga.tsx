@@ -29,6 +29,7 @@ import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
 
 import { PessoaDesenho } from "./PessoaDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
+import { registroPedido } from "./registro-pedido";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -172,7 +173,8 @@ class Logica extends React.Component<any, any> {
     const leads0 = (this.E && Es.ler("leads", null)) || D.LEADS || [];
     const leads = this.E && Es.leadsCom ? Es.leadsCom(leads0) : leads0;
     const leadId = (this.E && (Es.parametro("registro") || Es.parametro("lead"))) || (leads[0] || {}).id;
-    const L = leads.find(x => x.id === leadId) || leads[0] || {};
+    // O lead pedido, nunca outro: ver registro-pedido.ts.
+    const L = registroPedido(leads, leadId);
     const nomeEmp = L.empresa || "Sem empresa";
     const empresas = (this.E && Es.ler("empresas", {})) || {};
     const X = empresas[nomeEmp] || {};
