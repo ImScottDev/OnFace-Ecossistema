@@ -2,10 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Bar, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, CartesianGrid, Cell, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
 import { useReducedMotion } from "motion/react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
+import { ExecutiveRevenueStory } from "./ExecutiveRevenueStory";
+import { ExecutiveMonthDrawer } from "./ExecutiveMonthDrawer";
 import { useMetrica, type ErroMetrica } from "@/components/onface/relatorios/useMetrica";
 import { VALOR_FAMILIA, dinheiro, dinheiroCurto, fimDoPonto, rotuloPonto } from "@/components/onface/relatorios/explorador-formato";
 import { FAMILIAS } from "@/lib/metricas/recorte";
@@ -70,6 +72,10 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
   });
   const temAnterior = dados.some((d) => d.anterior !== null);
   const [oculta, setOculta] = React.useState(false);
+  const [mesFocado, setMesFocado] = React.useState<string | null>(null);
+  const [mesAberto, setMesAberto] = React.useState<string | null>(null);
+  const focoValido = visiveis.some((p) => p.inicio === mesFocado) ? mesFocado : null;
+  const abrirMes = (inicio: string) => { setMesFocado(inicio); setMesAberto(inicio); };
 
   const familiaDim = recorte.data?.exploracao.dimensoes.find((d) => d.chave === "familia");
   const semFamilia = familiaDim?.itens.find((i) => i.chave === "UNKNOWN");
@@ -115,6 +121,18 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
           <div className="rel-vazio" style={{ padding: "32px 12px", boxShadow: "none" }}><strong>Sem faturamento para esta família</strong><span>Nenhuma competência tem valor neste filtro.</span></div>
         ) : (
           <>
+            <ExecutiveRevenueStory pontos={visiveis} mes={focoValido} aoExplorar={abrirMes} />
+            <div className="rx-barra" style={{ justifyContent: "space-between" }}>
+              <label className="rx-dica" htmlFor="ex-mes-detalhe">Explorar uma competência pelo teclado ou toque</label>
+              <div className="rx-barra" style={{ marginLeft: "auto" }}>
+                {focoValido && <button type="button" className="rx-btn" onClick={() => setMesFocado(null)}>Limpar seleção</button>}
+                <select id="ex-mes-detalhe" className="rx-select" aria-label="Selecione uma competência para detalhar"
+                  value={focoValido ?? ""} onChange={(e) => { if (e.target.value) abrirMes(e.target.value); }}>
+                  <option value="">Selecionar mês</option>
+                  {dados.map((p) => <option key={p.inicio} value={p.inicio}>{p.rotulo}</option>)}
+                </select>
+              </div>
+            </div>
             {temAnterior ? (
               <div className="rx-legenda" role="group" aria-label="Séries">
                 <button type="button" aria-pressed={true} disabled style={{ cursor: "default" }}><i style={{ background: "var(--cf2-serie-1)" }} />Faturado no mês</button>
@@ -128,14 +146,18 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
                 <YAxis width="auto" tickLine={false} axisLine={false} tickFormatter={(v: number) => dinheiroCurto(v, "BRL")} />
                 <Tooltip cursor={{ fill: "var(--of-calha)", opacity: 0.6 }} content={<Tip />} />
                 <Bar dataKey="valor" fill="var(--cf2-serie-1)" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={!reduzido} animationDuration={380} cursor="pointer"
-                  onClick={(d) => { const i = (d as unknown as { inicio?: string }).inicio; if (i) window.location.assign(link("faturamento_competencia", { periodo: "tudo", familia: f, de: i, ate: fimDoPonto(i, "mes") })); }} />
+                  onClick={(d) => { const i = (d as unknown as { inicio?: string }).inicio; if (i) abrirMes(i); }}>
+                  {dados.map((p) => <Cell key={p.inicio} fill={focoValido === p.inicio ? "var(--of-coral-marca)" : "var(--cf2-serie-1)"} />)}
+                </Bar>
                 {temAnterior && !oculta ? <Line dataKey="anterior" type="monotone" stroke="var(--cf2-serie-3)" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} isAnimationActive={!reduzido} /> : null}
               </ComposedChart>
             </ChartContainer>
-            <p className="rx-dica">Clique numa barra para ver as linhas daquela competência. Mês ainda não fechado não aparece (não é zero).</p>
+            <p className="rx-dica">Clique numa barra para investigar a competência sem sair do painel. Use o drawer para pesquisar, paginar ou exportar. Mês não fechado não aparece (não é zero).</p>
           </>
         )}
       </section>
+
+      {mesAberto ? <ExecutiveMonthDrawer key={mesAberto + (f ?? "todos")} mes={mesAberto} familia={f} aoFechar={() => setMesAberto(null)} /> : null}
 
       <div className="ex-duas">
         {/* ── Composição por família ───────────────────────── */}

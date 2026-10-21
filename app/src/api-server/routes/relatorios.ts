@@ -19,6 +19,7 @@ import { getEsteiraSdr } from "@/lib/relatorios/esteira-sdr";
 import { medir } from "@/lib/metricas/catalogo";
 import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 import { consultarQualidadeDados } from "@/lib/relatorios/qualidade-dados";
+import { consultarSaudeCapi } from "@/lib/relatorios/meta-capi-saude";
 import { getVisoesSdr, ESTAGNADO_DIAS } from "@/lib/relatorios/sdr-visoes";
 import { getLeadsPorCanal } from "@/lib/relatorios/canais";
 import { getMetaComercialAgregada } from "@/lib/metas";
@@ -77,6 +78,15 @@ function periodWindow(periodo: string) {
   const span = Math.max(0, until.getTime() - since.getTime());
   return { since, until, prevSince: new Date(since.getTime() - span), prevUntil: since };
 }
+
+// Observabilidade Meta CAPI: somente leitura, tenant e período; sem evento fictício.
+app.get("/meta-capi-saude", async (c) => {
+  const ctx = await exigirCtx(c, "finance.read");
+  const periodo = c.req.query("periodo") ?? "30d";
+  const { since, until } = periodWindow(periodo);
+  const saude = await consultarSaudeCapi(ctx.organizacaoId, since, until);
+  return c.json({ periodo, ...saude, aviso: "Entregue significa resposta aceita pela API. A otimização/atribuição precisa ser validada no Gerenciador de Eventos da Meta." }, 200, { "Cache-Control": "no-store" });
+});
 
 function getBuckets(since: Date, until: Date, count = 7) {
   const step = (until.getTime() - since.getTime()) / count;

@@ -129,7 +129,9 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
               : <>{gestao || meLoading ? "Desempenho da operação" : "Seus números"} · histórico confiável desde{" "}{GO_LIVE.toLocaleDateString("pt-BR")}, quando a base saiu do Zoho.</>}
           </p>
         </div>
-        {abaAtiva === "executivo" || abaAtiva === "qualidade" ? null : <SeletorPeriodo value={periodo} onChange={setPeriodo} />}
+        {abaAtiva === "pos-venda" || abaAtiva === "atividade-time" ? (
+          <span className="ins-sub" aria-label="Janela fixa deste relatório">{abaAtiva === "pos-venda" ? "Retrato da carteira agora" : "Atividade dos últimos 14 dias"} · sem filtro de período</span>
+        ) : abaAtiva === "executivo" || abaAtiva === "qualidade" ? null : <SeletorPeriodo value={periodo} onChange={setPeriodo} />}
       </header>
 
       {meLoading ? (

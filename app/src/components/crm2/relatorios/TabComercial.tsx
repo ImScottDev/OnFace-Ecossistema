@@ -18,7 +18,9 @@ import { MetaProgress } from "./MetaProgress";
 import { AlertasCard, metaEmRisco, type AlertaUi } from "./AlertasCard";
 import { HeroBand, Stat, Secao, BarraLinha } from "./kit";
 import { FaturamentoCategoria } from "./FaturamentoCategoria";
+import { ComercialPipelineExplorer } from "./ComercialPipelineExplorer";
 import { Wallet, Receipt, Percent, Clock, Filter, Briefcase, Layers } from "lucide-react";
+import { taxaQualificacaoDaSafra } from "@/lib/relatorios/comercial-qualificacao";
 
 // As MESMAS quatro etapas de `STAGE_PROB` em lib/relatorios/comercial.ts.
 // Não dá para importar de lá (aquele módulo puxa `db` e isto é Client
@@ -45,7 +47,6 @@ const COLORS = ["var(--cf2-accent)", "var(--cf2-text-primary)", "var(--cf2-text-
 // Mix recorrente × avulso: categórico neutro (2 tons)
 const COR_RECORRENTE = "var(--cf2-text-secondary)";
 const COR_AVULSO = "var(--cf2-text-tertiary)";
-const COR_GANHO = "var(--cf2-success-text)"; // status sucesso
 const COR_ALERTA = "var(--cf2-warning-text)"; // status atenção
 
 const darkTooltip = {
@@ -112,6 +113,7 @@ interface EquipeMembro {
   receitaTotal: number;
   cicloMedio: number | null;
   leadsAtribuidos: number;
+  qualificados: number;
   atividadesTotal: number;
 }
 
@@ -122,9 +124,13 @@ function formatCurrency(value: number): string {
 export default function TabComercial({ periodo, ocultarHero = false }: TabComercialProps) {
   // Filtro de safra (COM-02): legado (zoho_id preenchido) vs nativo — reaproveita zoho_id, sem campo novo.
   const [safra, setSafra] = useState<"todos" | "legado" | "nativo">("todos");
-  const { data: comercial, isLoading: loadingComercial } = useQuery<ComercialData>({
+  const { data: comercial, isLoading: loadingComercial, isError: erroComercial, refetch: recarregarComercial } = useQuery<ComercialData>({
     queryKey: ["relatorios", "comercial", periodo, safra],
-    queryFn: () => fetch(`/api/relatorios/comercial?periodo=${periodo}${safra !== "todos" ? `&safra=${safra}` : ""}`).then((r) => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/relatorios/comercial?periodo=${periodo}${safra !== "todos" ? `&safra=${safra}` : ""}`);
+      if (!r.ok) throw new Error(`Não foi possível carregar comercial (${r.status})`);
+      return r.json();
+    },
   });
 
   interface FechadoMes {
@@ -133,15 +139,23 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
     mrrPabx: number; mrrAi: number; mrrOutros: number;
     perdidos: number; fatStripe: number; fatPabx: number;
   }
-  const { data: fechadoMensal, isLoading: loadingFechado } = useQuery<{ series: FechadoMes[] }>({
+  const { data: fechadoMensal, isLoading: loadingFechado, isError: erroFechado } = useQuery<{ series: FechadoMes[] }>({
     queryKey: ["relatorios", "fechado-semanal"],
-    queryFn: () => fetch(`/api/relatorios/fechado-mensal?semanas=12`).then((r) => r.json()),
+    queryFn: async () => {
+      const r = await fetch("/api/relatorios/fechado-mensal?semanas=12");
+      if (!r.ok) throw new Error(`Não foi possível carregar série mensal (${r.status})`);
+      return r.json();
+    },
   });
   const fechadoSeries = fechadoMensal?.series ?? [];
 
-  const { data: equipe, isLoading: loadingEquipe } = useQuery<{ membros: EquipeMembro[] }>({
+  const { data: equipe, isLoading: loadingEquipe, isError: erroEquipe } = useQuery<{ membros: EquipeMembro[] }>({
     queryKey: ["relatorios", "equipe", periodo],
-    queryFn: () => fetch(`/api/relatorios/equipe?periodo=${periodo}`).then((r) => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/relatorios/equipe?periodo=${periodo}`);
+      if (!r.ok) throw new Error(`Não foi possível carregar equipe (${r.status})`);
+      return r.json();
+    },
   });
 
   // ─── Derived ───
@@ -183,6 +197,13 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
     }
     if (winAmostraPequena) alertas.push({ nivel: "amarelo", texto: `Win rate com base pequena (n=${winN}) — não usar pra decisão ainda.` });
   }
+
+  if (erroComercial) return (
+    <div role="alert" className="rounded-xl p-5 text-sm bg-[var(--cf2-bg-surface)] text-[var(--cf2-danger-text)]">
+      Não foi possível consultar os indicadores comerciais. Os dados não estão zerados: estão indisponíveis.
+      <button className="ml-3 font-semibold underline" type="button" onClick={() => void recarregarComercial()}>Tentar novamente</button>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -287,30 +308,7 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
 
       {/* Row 2: Pipeline por etapa (snapshot) + Negócios esfriando */}
       <div className="grid lg:grid-cols-2 gap-4">
-        <ChartCard
-          title="Pipeline por etapa"
-          subtitle="Valor aberto em cada estágio (snapshot de agora)"
-          loading={loadingComercial}
-          empty={(comercial?.pipeline?.etapas?.length ?? 0) === 0}
-          emptyText="Nenhum negócio aberto"
-          delay={0.18}
-        >
-          <div className="space-y-2 py-1">
-            {(comercial?.pipeline?.etapas ?? []).map((e) => {
-              const max = Math.max(...(comercial?.pipeline?.etapas ?? []).map((x) => x.valor), 1);
-              return (
-                <div key={e.status} className="flex items-center gap-3">
-                  <span className="text-[12px] text-[var(--cf2-text-secondary)] w-36 truncate">{STAGE_LABELS[e.status] ?? e.status}</span>
-                  <div className="flex-1 h-5 rounded-md bg-[var(--cf2-bg-surface-muted)] overflow-hidden">
-                    <div className="h-5 rounded-md" style={{ width: `${(e.valor / max) * 100}%`, background: "#3B82F6" }} />
-                  </div>
-                  <span className="text-[12px] text-[var(--cf2-text-secondary)] w-24 text-right tabular-nums">{formatCurrency(e.valor)}</span>
-                  <span className="text-[11px] text-[var(--cf2-text-tertiary)] w-8 text-right tabular-nums">{e.count}</span>
-                </div>
-              );
-            })}
-          </div>
-        </ChartCard>
+        <ComercialPipelineExplorer etapas={comercial?.pipeline?.etapas ?? []} loading={loadingComercial} />
 
         <ChartCard
           title="Negócios esfriando"
@@ -413,6 +411,7 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
         </ChartCard>
       </div>
 
+      {erroFechado && <div role="alert" className="rounded-xl p-3 text-xs bg-[var(--cf2-bg-surface)] text-[var(--cf2-danger-text)]">Série de fechamento indisponível. Não representa período zerado.</div>}
       {/* Row 4: Fechado por semana */}
       <div className="grid lg:grid-cols-2 gap-4">
         <ChartCard
@@ -476,9 +475,11 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
       >
         <div className="px-4 pt-4 pb-2">
           <h3 className="text-sm font-semibold text-[var(--cf2-text-primary)]" style={{ fontFamily: "var(--cf2-font-heading)" }}>Desempenho por Vendedor</h3>
-          <p className="text-[11px] text-[var(--cf2-text-tertiary)]">Leads recebidos, conversão e fechamento no período</p>
+          <p className="text-[11px] text-[var(--cf2-text-tertiary)]">Qualificação da safra de leads vs. ganhos por data de decisão. Bases diferentes, deliberadamente separadas.</p>
         </div>
-        {loadingEquipe ? (
+        {erroEquipe ? (
+          <div role="alert" className="px-4 py-8 text-center text-[var(--cf2-danger-text)] text-sm">Equipe indisponível. Não significa ausência de vendas.</div>
+        ) : loadingEquipe ? (
           <div className="px-4 py-8 text-center text-[var(--cf2-text-tertiary)] text-sm">Carregando...</div>
         ) : membrosOrdenados.length === 0 ? (
           <div className="px-4 py-8 text-center text-[var(--cf2-text-tertiary)] text-sm">Nenhum membro da equipe encontrado</div>
@@ -489,8 +490,9 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
                 <tr className="border-y border-[var(--cf2-border-default)] text-[10px] uppercase tracking-wider text-[var(--cf2-text-tertiary)]">
                   <th className="text-left font-medium px-4 py-2.5">Vendedor</th>
                   <th className="text-right font-medium px-3 py-2.5" title="Leads atribuídos ao vendedor no período">Leads recebidos</th>
-                  <th className="text-right font-medium px-3 py-2.5" title="Negócios ganhos">Convertidos</th>
-                  <th className="text-right font-medium px-3 py-2.5" title="Convertidos ÷ leads recebidos">Conversão</th>
+                  <th className="text-right font-medium px-3 py-2.5" title="Leads criados no período e atualmente qualificados">Qualificados</th>
+                  <th className="text-right font-medium px-3 py-2.5" title="Leads qualificados ÷ leads recebidos na mesma safra de criação">Taxa qualif.</th>
+                  <th className="text-right font-medium px-3 py-2.5" title="Oportunidades ganhas pela data de decisão (não necessariamente da mesma safra de leads)">Ganhos</th>
                   <th className="text-right font-medium px-3 py-2.5">Perdidos</th>
                   <th className="text-right font-medium px-3 py-2.5" title="Ganhos ÷ (ganhos + perdidos)">Win Rate</th>
                   <th className="text-right font-medium px-3 py-2.5">Receita</th>
@@ -500,13 +502,16 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
                 {membrosOrdenados.map((m) => {
-                  const conversao = m.leadsAtribuidos > 0 ? Math.round((m.ganhos / m.leadsAtribuidos) * 1000) / 10 : null;
+                  // Mesma coorte de criação: qualificados são subconjunto dos leads recebidos.
+                  // Ganhos são por DATA DA DECISÃO, logo não são o numerador dessa taxa.
+                  const taxaQualificacao = taxaQualificacaoDaSafra(m.qualificados, m.leadsAtribuidos);
                   return (
                     <tr key={m.usuarioId} className="hover:bg-[var(--cf2-bg-surface)] transition-colors">
                       <td className="px-4 py-2.5 text-[var(--cf2-text-primary)] font-medium truncate max-w-[160px]">{m.nome}</td>
                       <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)]">{m.leadsAtribuidos}</td>
+                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-primary)] font-semibold">{m.qualificados}</td>
+                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)]">{taxaQualificacao != null ? `${taxaQualificacao}%` : "—"}</td>
                       <td className="px-3 py-2.5 text-right text-[var(--cf2-success-text)] font-semibold">{m.ganhos}</td>
-                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)]">{conversao != null ? `${conversao}%` : "—"}</td>
                       <td className="px-3 py-2.5 text-right text-[var(--cf2-text-tertiary)]">{m.perdidos}</td>
                       <td className="px-3 py-2.5 text-right">
                         <span style={{ color: m.winRate >= 30 ? "var(--cf2-success-text)" : m.winRate > 0 ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)" }} className="font-semibold">

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChartCard } from "./charts/ChartCard";
+import { MetaCapiObservabilidade } from "./MetaCapiObservabilidade";
 import { FunnelChart } from "@/components/crm/FunnelChart";
 import { Megaphone, Users, Trophy, TrendingUp, ChevronDown, ChevronRight } from "lucide-react";
 import { ESCALA_FUNIL, FAIXA_NEUTRA, TIQUE_NEUTRO } from "./paleta";
@@ -226,8 +227,8 @@ function DimensaoTable({ rows, colLabel, drilldown }: { rows: MetricaDimensao[];
                   <span className="min-w-0 text-[12px] text-[var(--cf2-text-secondary)] truncate" title={r.chave}>
                     {r.chave}
                     {!r.pago && (
-                      <span className="ml-2 align-middle text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[var(--cf2-bg-surface-muted)] text-[var(--cf2-text-tertiary)]" title="Sem match com campanha da Meta — não entra em ROAS, funil pago nem alertas">
-                        orgânico
+                      <span className="ml-2 align-middle text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[var(--cf2-bg-surface-muted)] text-[var(--cf2-text-tertiary)]" title="Origem ou UTM sem confirmação de campanha Meta; não entra em ROAS, funil pago nem alertas">
+                        não conciliado
                       </span>
                     )}
                     {r.campanha && <span className="block text-[10px] text-[var(--cf2-text-tertiary)] truncate">{r.campanha}</span>}
@@ -260,7 +261,7 @@ function DimensaoTable({ rows, colLabel, drilldown }: { rows: MetricaDimensao[];
 }
 
 export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
-  const { data, isLoading } = useQuery<MidiaPagaData>({
+  const { data, isLoading, isError, refetch } = useQuery<MidiaPagaData>({
     queryKey: ["relatorios-midia-paga-v2", periodo],
     queryFn: async () => {
       const res = await fetch(`/api/relatorios/midia-paga?periodo=${periodo}`);
@@ -287,6 +288,11 @@ export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
         { name: "Vendas", value: funil.vendas, color: "var(--cf2-success-text)" },
       ]
     : [];
+
+  if (isError) return <div role="alert" className="rounded-xl p-5 bg-[var(--cf2-bg-surface)] text-sm text-[var(--cf2-danger-text)]">
+    Não foi possível carregar a mídia paga. A ausência de dados não é zero de investimento ou vendas.
+    <button type="button" className="ml-3 underline font-semibold" onClick={() => void refetch()}>Tentar novamente</button>
+  </div>;
 
   return (
     <div className="space-y-6">
@@ -319,6 +325,9 @@ export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
       <ChartCard title="Jornada do cohort" subtitle="Leads que ENTRARAM no período e até onde já chegaram · leads de ciclo longo amadurecem nos meses seguintes — a receita do mês em si está na seção abaixo" loading={isLoading} empty={!funil || funil.leads === 0} emptyText="Sem leads com UTM de campanha no período.">
         <FunnelChart data={funilData} />
       </ChartCard>
+
+      <SectionTitle hint="entrega de eventos CRM para a Meta: aceitos, excluídos, bloqueados e motivos">Saúde da Conversions API</SectionTitle>
+      <MetaCapiObservabilidade periodo={periodo} />
 
       {/* ENG-667a — onde os leads pagos do período estão AGORA */}
       <SectionTitle hint="estágio atual real de cada lead pago do período — gargalo em tempo real, não histórico">Onde estão agora</SectionTitle>
@@ -400,33 +409,42 @@ export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
         </ChartCard>
       </div>
 
-      <SectionTitle hint="todas as campanhas com atividade no período — inclusive as sem lead casado no CRM · clique na seta pra ver os conjuntos">Campanhas</SectionTitle>
-      <ChartCard title="Performance por campanha" loading={isLoading} empty={(data?.porCampanha?.length ?? 0) === 0} emptyText="Sem campanhas com dado no período.">
+      <SectionTitle hint="somente campanhas confirmadas na Meta; origens sem correspondência ficam em diagnóstico separado">Campanhas Meta confirmadas</SectionTitle>
+      <ChartCard title="Performance por campanha" loading={isLoading} empty={(data?.porCampanha?.filter((r) => r.pago).length ?? 0) === 0} emptyText="Sem campanhas Meta confirmadas neste período.">
         <DimensaoTable
-          rows={data?.porCampanha ?? []}
+          rows={(data?.porCampanha ?? []).filter((r) => r.pago)}
           colLabel="Campanha"
           drilldown={{
             colLabel: "Conjunto",
-            rowsFor: (campanhaChave) => (data?.porConjunto ?? []).filter((cj) => cj.campanha === campanhaChave),
+            rowsFor: (campanhaChave) => (data?.porConjunto ?? []).filter((cj) => cj.pago && cj.campanha === campanhaChave),
             child: {
               colLabel: "Criativo",
-              rowsFor: (conjuntoChave) => (data?.porCriativo ?? []).filter((cr) => cr.conjunto === conjuntoChave),
+              rowsFor: (conjuntoChave) => (data?.porCriativo ?? []).filter((cr) => cr.pago && cr.conjunto === conjuntoChave),
             },
           }}
         />
       </ChartCard>
 
       <SectionTitle hint="segmentação de público e orçamento dentro de cada campanha — clique na seta pra ver os criativos">Conjuntos de Anúncios</SectionTitle>
-      <ChartCard title="Performance por conjunto de anúncios" loading={isLoading} empty={(data?.porConjunto?.length ?? 0) === 0} emptyText="Sem conjuntos com dado no período.">
+      <ChartCard title="Performance por conjunto de anúncios" loading={isLoading} empty={(data?.porConjunto?.filter((r) => r.pago).length ?? 0) === 0} emptyText="Sem conjuntos Meta confirmados no período.">
         <DimensaoTable
-          rows={data?.porConjunto ?? []}
+          rows={(data?.porConjunto ?? []).filter((r) => r.pago)}
           colLabel="Conjunto"
           drilldown={{
             colLabel: "Criativo",
-            rowsFor: (conjuntoChave) => (data?.porCriativo ?? []).filter((cr) => cr.conjunto === conjuntoChave),
+            rowsFor: (conjuntoChave) => (data?.porCriativo ?? []).filter((cr) => cr.pago && cr.conjunto === conjuntoChave),
           }}
         />
       </ChartCard>
+
+      {data && data.porCampanha.some((r) => !r.pago) && (
+        <>
+          <SectionTitle hint="UTMs/origens sem correspondência confirmada; não fazem parte de CPL, ROAS ou ranking Meta">Diagnóstico de atribuição</SectionTitle>
+          <ChartCard title="Origens sem campanha Meta confirmada" subtitle="Conciliação pendente — não presumir que são orgânicas" loading={false} empty={false}>
+            <DimensaoTable rows={data.porCampanha.filter((r) => !r.pago)} colLabel="Origem sem correspondência" />
+          </ChartCard>
+        </>
+      )}
 
     </div>
   );
