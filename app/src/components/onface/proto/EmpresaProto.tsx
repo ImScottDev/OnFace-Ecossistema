@@ -24,7 +24,7 @@ import { EmpresaLiga } from "./EmpresaLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { rotaDaPessoa, rotaDaPessoaCanonica } from "@/lib/vendas/rota-da-ficha";
 import { aquisicaoDaFicha, corrigirVazio, montarRelacoes, paraALiga } from "./relacoes-da-ficha";
-import { registroDoDesenho, linkDoAnuncio } from "./registro-do-desenho";
+import { registroDoDesenho } from "./registro-do-desenho";
 import { qualDoDesenho } from "./qual-do-desenho";
 import { usePecas } from "./pecas-host";
 import { acaoAtribuir, acaoRemoverDaCadencia, acaoResponsaveis, acaoSalvarQualificacao, acaoTagDoLead } from "@/app/(produto)/pre-vendas/actions";
@@ -190,7 +190,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
       /* Respostas do formulário de cada lead da empresa, com o anúncio de origem. */
       formularios: empresa.formularios.map((f) => ({
         id: f.leadId, titulo: [f.nome, f.criadoEm.slice(0, 10).split("-").reverse().join("/")].filter(Boolean).join(" · "),
-        adHref: linkDoAnuncio(f.metaAdId, lead?.atribuicao.metaAdAccountId ?? null), linhas: f.respostas,
+        adId: f.metaAdId, contaId: lead?.atribuicao.metaAdAccountId ?? null, linhas: f.respostas,
       })),
     };
   }, [empresa, lead]);

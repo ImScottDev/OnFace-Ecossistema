@@ -23,6 +23,7 @@
 
 import * as React from "react";
 import { avatarDe } from "./avatar-do-proto";
+import { AnuncioDeOrigem } from "@/components/onface/meta/AnuncioDeOrigem";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
@@ -792,7 +793,11 @@ class Logica extends React.Component<any, any> {
       empMeta: [X.segmento || L.segmento || (D.SEGMENTOS || {})[nomeEmp] || (L.registro ? "Sem segmento" : "Serviços"), X.funcionarios ? X.funcionarios + " funcionários" : null].filter(Boolean).join(" · "),
       empFatos: [["Cidade / UF", X.cidade || L.cidade || (L.registro ? "—" : "São Paulo / SP")], ["Site", (X.site || L.site || (L.registro ? "—" : dominio)).replace(/^https?:\/\//, "")], ["Pessoas", String(base.length)]].concat(L.registro ? [L.empresaTel ? ["Telefone", L.empresaTel] : null, L.leadScore > 0 ? ["Lead score", String(L.leadScore)] : null].filter(Boolean) : []).map(([label, valor]) => ({ label, valor })),
       empObs: (L.registro && L.empresaObs) || "",
-      anuncioHref: (L.registro && L.anuncioHref) || "",
+      /* A peça do anúncio é montada AQUI, não no arquivo gerado: o markup do
+         desenho é regerado e levaria a lógica junto. Lá fica só o token. */
+      anuncioDeOrigem: L.registro?.anuncioAdId
+        ? <AnuncioDeOrigem adId={L.registro.anuncioAdId} adAccountId={L.registro.anuncioContaId} />
+        : null,
       resp: L.resp || "Sem responsável", respIniciais: ini(L.resp),
       respAberto: !!S.respMenu,
       respBtnStyle: "display:flex;align-items:center;gap:10px;width:100%;height:42px;padding:0 11px 0 7px;border-radius:9px;border:0;background:#fff;cursor:pointer;box-shadow:inset 0 0 0 " + (S.respMenu ? "1.5px #12171d" : "1px #dbdede"),

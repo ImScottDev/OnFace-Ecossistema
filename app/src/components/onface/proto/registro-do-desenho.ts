@@ -50,8 +50,16 @@ export interface RegistroDoDesenho {
   leadScore: number;
   empresaTel: string | null;
   empresaObs: string | null;
-  /** Anúncio de origem na Biblioteca de Anúncios; só com id real. */
-  anuncioHref: string | null;
+  /**
+   * Anúncio de origem: o ID e a CONTA, não uma URL pronta.
+   *
+   * Era `anuncioHref`, montado aqui. Quem recebe uma URL não tem como mostrar
+   * o criativo — só mandar para fora, que é justamente o que não funciona
+   * (o Gerenciador exige acesso à conta de anúncios). Com o id, a peça
+   * `AnuncioDeOrigem` busca a prévia e mostra o anúncio dentro do ONFACE.
+   */
+  anuncioAdId: string | null;
+  anuncioContaId: string | null;
 }
 
 /**
@@ -218,6 +226,7 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     leadScore: l.leadScore,
     empresaTel: formatarTelefone(l.empresa.telefone) || null,
     empresaObs: l.empresa.observacoes,
-    anuncioHref: linkDoAnuncio(l.atribuicao.metaAdId, l.atribuicao.metaAdAccountId),
+    anuncioAdId: l.atribuicao.metaAdId,
+    anuncioContaId: l.atribuicao.metaAdAccountId,
   };
 }

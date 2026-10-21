@@ -364,7 +364,7 @@ Respostas do formulário
 <div key={f.id} style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
 <div style={{ display: "flex", gap: "10px", fontSize: "12px", color: "#67787c" }}>
 <span style={{ flex: "1", minWidth: "0" }}>{f.titulo}</span>
-{f.adHref ? (<a href={f.adHref} target="_blank" rel="noreferrer" style={{ color: "#c2330f", textDecoration: "underline" }}>Ver anúncio</a>) : null}
+{f.anuncioDeOrigem}
 </div>
 {(f.linhas ?? []).length === 0 ? (<span style={{ fontSize: "12.5px", color: "#67787c" }}>Sem respostas gravadas para este formulário.</span>) : null}
 {(f.linhas ?? []).map((r: any, i: number) => (

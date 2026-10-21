@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { AnuncioDeOrigem } from "@/components/onface/meta/AnuncioDeOrigem";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -596,7 +597,19 @@ export function Cf2LeadDrawer({
             <div className="flex flex-col gap-2 text-[12px]">
               <KV label="Fonte" value={origemLabel}  T={T} />
               <KV label="Campanha" value={lead.utmCampaign || "—"}  T={T} />
-              <KV label="Criativo" value={criativo || "—"}  T={T} />
+              {/* O criativo é a MESMA peça da ficha de pessoa e da de empresa
+                  (`AnuncioDeOrigem`): aqui havia um "Criativo" próprio, que
+                  mostrava `utm_content` ou o ad_id de 17 dígitos e não abria
+                  nada. A peça busca a prévia e mostra o anúncio. */}
+              <div className="flex items-center justify-between gap-3">
+                <span style={{ color: T.textSecondary }}>Criativo</span>
+                {lead.metaAdId ? (
+                  <AnuncioDeOrigem adId={lead.metaAdId} nome={lead.utmContent}
+                    rotulo={criativo || "Ver anúncio"} />
+                ) : (
+                  <span className="font-semibold" style={{ color: T.textPrimary }}>{criativo || "—"}</span>
+                )}
+              </div>
               <div className="flex items-center justify-between gap-3">
                 <span style={{ color: T.textSecondary }}>UTM</span>
                 <span className="font-semibold truncate max-w-[220px]" title={utmQuery || undefined} style={{ color: T.textPrimary }}>{utmQuery || "—"}</span>

@@ -54,7 +54,7 @@ export interface ValoresDePessoaDesenho {
   editarResumo: any;
   empFatos: any;
   empObs: any;
-  anuncioHref: any;
+  anuncioDeOrigem: any;
   empIniciais: any;
   empMeta: any;
   empTitulo: any;
@@ -144,7 +144,7 @@ export interface ValoresDePessoaDesenho {
 }
 
 export function PessoaDesenho(vals: ValoresDePessoaDesenho) {
-  const { abaAtv, abaOpp, abaVisao, abas, abrirEmpresa, abrirResp, abrirTag, abrirVinc2, acaoNota, acaoTitulo, anexarNota, atvEsc, atvFiltros, atvLista, atvVazia, atvVaziaTitulo, blurNota, cad, canais, cancelarNota, cargo, chamada, chamadaTempo, colegas, criarOpp, criarTag, ed, editarResumo, empFatos, empObs, anuncioHref, empIniciais, empMeta, empTitulo, empresa, empresaTopo, empresaTopoClick, empresaTopoStyle, encerrar, etapa, etapaSelo, exc, extras, focoNota, gridStyle, iniciais, interEsc, interTitulo, interacoes, ligar, mais, maisAberto, maisItens, maisStyle, mencaoAberta, mencaoOpcoes, mencaoStyle, mencaoVazia, meta, mostraInteracoes, nome, notaAnexos, notaAtiva, notaBtnStyle, notaCaixaStyle, notaLinhas, notaRef, notaTexto, notas, notasConta, novaAtv, obs, obsAutor, obsStyle, opps, origemC, origemSelo, parar, respostasForm, temRespostasForm, primeiroNome, principal, qualif, registrar, relAtivas, resp, respAberto, respBtnStyle, respChevron, respIniciais, respMenuStyle, respOpcoes, resumo, salvarNota, semAcao, semEmpresa, semInteracoes, semOpps, setNota, setTagNova, tagAberto, tagMenuStyle, tagNova, tagOpcoes, tags, teclaNota, teclaTag, temAcao, temEmpresa, temEtapa, temExtras, temNotaAnexos, toques, v2, verAcao, vincularEmpresa, visor } = vals;
+  const { abaAtv, abaOpp, abaVisao, abas, abrirEmpresa, abrirResp, abrirTag, abrirVinc2, acaoNota, acaoTitulo, anexarNota, atvEsc, atvFiltros, atvLista, atvVazia, atvVaziaTitulo, blurNota, cad, canais, cancelarNota, cargo, chamada, chamadaTempo, colegas, criarOpp, criarTag, ed, editarResumo, empFatos, empObs, anuncioDeOrigem, empIniciais, empMeta, empTitulo, empresa, empresaTopo, empresaTopoClick, empresaTopoStyle, encerrar, etapa, etapaSelo, exc, extras, focoNota, gridStyle, iniciais, interEsc, interTitulo, interacoes, ligar, mais, maisAberto, maisItens, maisStyle, mencaoAberta, mencaoOpcoes, mencaoStyle, mencaoVazia, meta, mostraInteracoes, nome, notaAnexos, notaAtiva, notaBtnStyle, notaCaixaStyle, notaLinhas, notaRef, notaTexto, notas, notasConta, novaAtv, obs, obsAutor, obsStyle, opps, origemC, origemSelo, parar, respostasForm, temRespostasForm, primeiroNome, principal, qualif, registrar, relAtivas, resp, respAberto, respBtnStyle, respChevron, respIniciais, respMenuStyle, respOpcoes, resumo, salvarNota, semAcao, semEmpresa, semInteracoes, semOpps, setNota, setTagNova, tagAberto, tagMenuStyle, tagNova, tagOpcoes, tags, teclaNota, teclaTag, temAcao, temEmpresa, temEtapa, temExtras, temNotaAnexos, toques, v2, verAcao, vincularEmpresa, visor } = vals;
   return (
     <>
 <div style={{ flex: "1", minHeight: "0", background: "#f6f6f3", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1152,7 +1152,7 @@ Origem do contato
 <span style={{ flex: "1", minWidth: "0", fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: "13.5px", fontWeight: "700", letterSpacing: "-.01em", color: "#12171d" }}>
 Respostas do formulário
 </span>
-{anuncioHref ? (<a href={anuncioHref} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ fontSize: "12px", color: "#c2330f", textDecoration: "underline" }}>Ver anúncio</a>) : null}
+{anuncioDeOrigem}
 </summary>
 <div style={{ display: "flex", flexDirection: "column", gap: "11px", marginTop: "12px" }}>
 {(respostasForm ?? []).map((r: any, i1: number) => (

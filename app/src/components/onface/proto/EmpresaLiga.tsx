@@ -23,6 +23,7 @@
 
 import * as React from "react";
 import { avatarDe } from "./avatar-do-proto";
+import { AnuncioDeOrigem } from "@/components/onface/meta/AnuncioDeOrigem";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { toast } from "sonner";
 import { mascararTelefone, normalizarE164 } from "@/lib/telefone";
@@ -534,7 +535,8 @@ posFlutuante(r, alto) {
         chips: (r.chips || []).map(c => ({ label: c, style: chip }))
       })),
 
-      formularios: (E.formularios || []).map(f => ({ id: f.id, titulo: f.titulo, adHref: f.adHref || "", linhas: f.linhas })),
+      formularios: (E.formularios || []).map(f => ({ id: f.id, titulo: f.titulo, linhas: f.linhas,
+        anuncioDeOrigem: f.adId ? <AnuncioDeOrigem adId={f.adId} adAccountId={f.contaId} /> : null })),
       temFormularios: (E.formularios || []).length > 0,
       /* Mesmos 4 campos e mesma fonte da ficha de Contato (PessoaLiga) e do
          drawer de Pré-vendas. Sem valor de exemplo: real ou "Não preenchido". */
