@@ -33,7 +33,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { aiSdrContatoState, contatos } from "@/lib/db/schema";
-import { ligarConversaAoLead } from "@/lib/atendimento/lead-da-conversa";
+import { leadPorTelefone, ligarConversaAoLead } from "@/lib/atendimento/lead-da-conversa";
 import { optOutAtivo } from "./politica-canal";
 import { atribuicaoViva, humanoAtendendoRecentemente, retomarAtribuicao } from "./atribuicoes";
 import { acionarAgente, EVENTO_MENSAGEM, type ResultadoAcionar } from "./acionar";
@@ -93,6 +93,20 @@ async function garantirLead(p: { organizacaoId: string; contatoId: string; agent
   // Já existe lead com este telefone: só liga a conversa a ele (porta única do casamento).
   const casado = await ligarConversaAoLead({ organizacaoId: p.organizacaoId, contatoId: p.contatoId, telefone: digitos });
   if (casado) return { leadId: casado, criado: false };
+
+  /* O vínculo pode ser RECUSADO sem que falte lead: `idx_contatos_lead_responsavel`
+     é único por (lead, responsável), então quando o mesmo número já tem outra
+     conversa ligada àquele lead com o mesmo atendente, `ligarConversaAoLead`
+     devolve null de propósito — protegendo a tabela `contatos`.
+     Medido em produção (21/10/2026): 1.377 conversas sem lead, 77 com lead
+     casável por telefone, e 75 dessas travadas exatamente aqui. O preço era o
+     agente rodar CEGO: sem `leadId`, `lead.qualify`, `task.create`, `lead.tag`,
+     `agenda.slots` e as de reunião recusam na entrada — a Lia extraiu uma
+     qualificação completa em 20/10 e o backend respondeu "lead ausente".
+     O índice protege a GRAVAÇÃO do vínculo, não a execução: para ESTA execução
+     o lead do número vale, mesmo sem gravar a ligação. */
+  const soParaEstaExecucao = await leadPorTelefone(p.organizacaoId, digitos);
+  if (soParaEstaExecucao) return { leadId: soParaEstaExecucao, criado: false };
 
   const { criarLead } = await import("@/lib/vendas/pre-vendas");
   const [primeiro, ...resto] = (c.nome?.trim() || "Contato do WhatsApp").split(/\s+/);

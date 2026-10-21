@@ -18,6 +18,7 @@ import { versaoAtendeSessao } from "@/lib/atendimento/ia-conversa";
 import { construirContexto, type ContextoMontado } from "../contexto/builder";
 import { autonomiaDaFerramenta, lerAutonomiaPorAcao, type ModoAutonomia } from "../tools/politica";
 import { avaliarEnvio } from "../operacao/politica-canal";
+import { FALHAS_PARA_HANDOFF, motivoDeHandoffAutomatico, type ConfigDeHandoff, type SinaisDaExecucao } from "./politica-handoff";
 
 export type ExecuteAgentInput = {
   organizacaoId: string;
@@ -387,6 +388,29 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
     let transicao: string | null = null;
     const maxSteps = Math.min(25, Math.max(1, selected.version.maxSteps));
 
+    /* Sinais que alimentam a política de handoff da versão (`onToolFailure`,
+       `onLowConfidence`). Contados aqui, no ponto por onde o resultado de TODA
+       ferramenta passa, para valer igual nos dois providers. */
+    /* Teto de gasto POR EXECUÇÃO ("Orçamento por execução (US$) — Aborta a execução
+       ao passar"). A tela oferecia o campo, a API validava, a publicação mostrava no
+       diff de versões — e NADA lia o valor: só o teto da organização, por dia e por
+       mês, existia de verdade. Quem preenchesse para conter uma execução cara não
+       mudava uma linha do comportamento. O texto "Orçamento" no erro é o que o catch
+       abaixo usa para gravar o run como `aborted`, e não como falha. */
+    const tetoDaExecucao = Number(selected.version.costBudget ?? "");
+    const conferirTetoDaExecucao = () => {
+      if (!Number.isFinite(tetoDaExecucao) || tetoDaExecucao <= 0) return;
+      if (cost > tetoDaExecucao) throw new Error(`Orçamento da execução estourado: US$ ${cost.toFixed(4)} passou do teto de US$ ${tetoDaExecucao.toFixed(4)} desta versão`);
+    };
+
+    const sinais: SinaisDaExecucao = { falhasDeFerramenta: 0, confianca: null };
+    const registrarSinal = (nome: string, resultado: AgentToolResult) => {
+      if (!resultado.ok) { sinais.falhasDeFerramenta++; return; }
+      if (nome !== "response_classify") return;
+      const c = (resultado.data as { confidence?: unknown } | undefined)?.confidence;
+      if (typeof c === "number" && Number.isFinite(c)) sinais.confianca = sinais.confianca === null ? c : Math.min(sinais.confianca, c);
+    };
+
     if (provider === "claude_subscription") {
       const started = Date.now();
       const subscription = await new ClaudeSubscriptionAdapter().runAgent({
@@ -409,6 +433,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       const stepCost = custoEstimadoDoSdk(subscription.estimatedCostUsd)
         ?? await calculateCost("anthropic", selected.version.modelo, subscription.tokensInput, subscription.tokensOutput);
       cost += stepCost;
+      conferirTetoDaExecucao();
       await persistStep({
         organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "model_call", name: selected.version.modelo,
         status: "completed", input: { provider: "claude_subscription", messageCount: messages.length },
@@ -434,6 +459,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
           if (Array.isArray(list)) prepared.push(...list.filter((value): value is string => typeof value === "string"));
         }
         handoff ||= Boolean(call.result.handoff);
+        registrarSinal(call.name, call.result as AgentToolResult);
         if (call.name === "handoff_request" && call.result.ok) { const t = (call.result.data as { mensagemTransicao?: unknown } | undefined)?.mensagemTransicao; if (typeof t === "string") transicao = t; }
         if (call.result.ok && (call.name === "handoff_request" || (call.result as AgentToolResult).encerraAtuacao)) { pausouNesteRun = true; handoffMotivo ??= motivoDoHandoff(call.name, call.input, call.result); }
         trace.push({ type: "tool_call", name: call.name, ok: call.result.ok, handoff: Boolean(call.result.handoff) });
@@ -443,7 +469,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       const started = Date.now();
       const model = await runModelCall({ provider, model: selected.version.modelo, apiKey, baseUrl, messages, tools, maxTokens: Math.min(selected.version.tokenBudget, 8192), temperature: 0.3 });
       tokensInput += model.tokensInput; tokensOutput += model.tokensOutput;
-      const stepCost = await calculateCost(provider, selected.version.modelo, model.tokensInput, model.tokensOutput); cost += stepCost;
+      const stepCost = await calculateCost(provider, selected.version.modelo, model.tokensInput, model.tokensOutput); cost += stepCost; conferirTetoDaExecucao();
       await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "model_call", name: selected.version.modelo, status: "completed", input: { iteration, messageCount: messages.length }, output: { text: model.text, toolCalls: model.toolCalls }, tokensInput: model.tokensInput, tokensOutput: model.tokensOutput, cost: stepCost, latencyMs: Date.now() - started });
       trace.push({ type: "model_call", iteration, toolCalls: model.toolCalls.map((call) => call.name), hasText: Boolean(model.text) });
 
@@ -469,12 +495,41 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
           if (Array.isArray(list)) prepared.push(...list.filter((value): value is string => typeof value === "string"));
         }
         handoff ||= Boolean(result.handoff);
+        registrarSinal(call.name, result);
         if (call.name === "handoff_request" && result.ok) { const t = (result.data as { mensagemTransicao?: unknown } | undefined)?.mensagemTransicao; if (typeof t === "string") transicao = t; }
         if (result.ok && (call.name === "handoff_request" || result.encerraAtuacao)) { pausouNesteRun = true; handoffMotivo ??= motivoDoHandoff(call.name, call.input, result); }
         messages.push({ role: "tool", toolCallId: call.id, toolName: call.name, content: JSON.stringify(result) });
         trace.push({ type: "tool_call", name: call.name, ok: result.ok, handoff: Boolean(result.handoff) });
       }
       if (prepared.length || handoff) break;
+    }
+
+    /* Política de handoff da versão: ferramenta que falhou de forma repetida ou
+       resposta de baixa confiança passam o atendimento para uma pessoa mesmo que
+       o modelo não tenha pedido. Quem executa é a MESMA ferramenta que o modelo
+       usaria — uma porta só para handoff. Ver politica-handoff.ts. */
+    if (!handoff && input.mode === "live" && input.contatoId) {
+      const motivoAutomatico = motivoDeHandoffAutomatico(selected.version.handoffConfig as ConfigDeHandoff | null, sinais);
+      if (motivoAutomatico) {
+        const r = await executeRegisteredTool("handoff_request", toolCtx, {
+          motivo: motivoAutomatico,
+          resumo: `Transferência automática pela política da versão. Sinais desta execução: ${sinais.falhasDeFerramenta} falha(s) de ferramenta, confiança ${sinais.confianca === null ? "não declarada" : sinais.confianca.toFixed(2)}.`,
+          proximo_passo: "Retomar a conversa e concluir o que o agente não conseguiu.",
+        });
+        await persistStep({
+          organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: "handoff_request",
+          status: r.ok ? "completed" : "failed", input: { motivo: motivoAutomatico, origem: "politica_da_versao" }, output: r,
+          errorCode: r.ok ? undefined : "tool_failed", errorMessage: r.error,
+        });
+        trace.push({ type: "tool_call", name: "handoff_request", ok: r.ok, handoff: true, origem: "politica_da_versao" });
+        if (r.ok) {
+          handoff = true;
+          pausouNesteRun = true;
+          handoffMotivo ??= sinais.falhasDeFerramenta >= FALHAS_PARA_HANDOFF ? "ferramenta_falhou" : "baixa_confianca";
+          const t = (r.data as { mensagemTransicao?: unknown } | undefined)?.mensagemTransicao;
+          if (typeof t === "string") transicao ??= t;
+        }
+      }
     }
 
     let outgoing = responseMessages(finalText, prepared);

@@ -301,12 +301,18 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     parameters: objectSchema({ empresa: stringProp("Empresa"), cnpj: stringProp("CNPJ"), cargo: stringProp("Cargo"), setor: stringProp("Setor"), porte: stringProp("Porte"), dor: stringProp("Dor principal"), tomador: stringProp("Tomador de decisão"), fit: { type: "string", enum: ["alto", "medio", "baixo", "sem_fit"] }, proxima_acao: stringProp("Próxima ação combinada") }),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "lead.qualify", input); if (simulated) return simulated;
-      if (!ctx.leadId) return { ok: false, error: "lead ausente" };
-      const [current] = await db.select({ camposCustom: leads.camposCustom }).from(leads).where(and(eq(leads.id, ctx.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
+      /* Mesmo fallback de `task.create`: o lead da conversa vale quando o run não
+         trouxe um. A regra era a mesma e estava escrita de dois modos — e quem
+         ficou com a versão pobre foi justamente a ferramenta que vale dinheiro.
+         Em 20/10/2026 a Lia extraiu dor, porte, setor, tomador, fit e próxima
+         ação de uma conversa inteira, e o backend devolveu "lead ausente". */
+      const leadDaQualificacao = ctx.leadId ?? (await contactContext(ctx))?.leadId ?? null;
+      if (!leadDaQualificacao) return { ok: false, error: "lead ausente" };
+      const [current] = await db.select({ camposCustom: leads.camposCustom }).from(leads).where(and(eq(leads.id, leadDaQualificacao), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
       if (!current) return { ok: false, error: "lead não encontrado" };
       const qual = Object.fromEntries(Object.entries({ dor: input.dor, tomador_decisao: input.tomador, fit: input.fit, proxima_acao: input.proxima_acao }).filter(([, value]) => value != null && String(value).trim()));
-      const [lead] = await db.update(leads).set({ ...(input.empresa ? { empresa: String(input.empresa) } : {}), ...(input.cnpj ? { empresaCnpj: String(input.cnpj) } : {}), ...(input.cargo ? { cargo: String(input.cargo) } : {}), ...(input.setor ? { empresaSetor: String(input.setor) } : {}), ...(input.porte ? { empresaPorte: String(input.porte) } : {}), camposCustom: { ...((current.camposCustom as Record<string, unknown>) ?? {}), qualificacao: { ...((((current.camposCustom as Record<string, unknown>)?.qualificacao as Record<string, unknown>) ?? {})), ...qual } }, updatedAt: new Date() }).where(and(eq(leads.id, ctx.leadId), eq(leads.organizacaoId, ctx.organizacaoId))).returning({ id: leads.id });
-      if (lead) await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: ctx.leadId, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: "Qualificação registrada pela agente", descricao: Object.entries({ ...qual, empresa: input.empresa, cargo: input.cargo }).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("\n") || null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId, ferramenta: "lead.qualify" } });
+      const [lead] = await db.update(leads).set({ ...(input.empresa ? { empresa: String(input.empresa) } : {}), ...(input.cnpj ? { empresaCnpj: String(input.cnpj) } : {}), ...(input.cargo ? { cargo: String(input.cargo) } : {}), ...(input.setor ? { empresaSetor: String(input.setor) } : {}), ...(input.porte ? { empresaPorte: String(input.porte) } : {}), camposCustom: { ...((current.camposCustom as Record<string, unknown>) ?? {}), qualificacao: { ...((((current.camposCustom as Record<string, unknown>)?.qualificacao as Record<string, unknown>) ?? {})), ...qual } }, updatedAt: new Date() }).where(and(eq(leads.id, leadDaQualificacao), eq(leads.organizacaoId, ctx.organizacaoId))).returning({ id: leads.id });
+      if (lead) await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: leadDaQualificacao, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: "Qualificação registrada pela agente", descricao: Object.entries({ ...qual, empresa: input.empresa, cargo: input.cargo }).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("\n") || null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId, ferramenta: "lead.qualify" } });
       return lead ? { ok: true, data: lead } : { ok: false, error: "lead não encontrado" };
     },
   },
