@@ -5,6 +5,7 @@ import { eq, and, lte, lt, sql as rawSql, like, gte, isNull, isNotNull, count as
 
 import http from "node:http";
 import { telefoneDoJid } from "./telefone-do-jid";
+import type { WuzapiSessionConfig } from "../lib/whatsapp/client";
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const url = new URL(redisUrl);
@@ -2710,7 +2711,7 @@ async function registrarEnvioDoAgente(messageId: string, r: { ok: true } | { ok:
  * restringida em 21/10/2026 não tinha volume, tinha assinatura de robô — responder
  * sem nunca ter aberto a conversa é parte dessa assinatura.
  */
-async function parecerGente(phone: string, messageId: string, config: { baseUrl: string; apiToken: string } | undefined) {
+async function parecerGente(phone: string, messageId: string, config: WuzapiSessionConfig | undefined) {
   try {
     const { markRead, setPresence } = await import("../lib/whatsapp/client");
     const { whatsappMensagens: waT } = await import("../lib/db/schema");
