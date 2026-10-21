@@ -3066,6 +3066,17 @@ const slaWorker = new Worker(
       // contexto é reconstruído e o agente decide; humano que assumiu bloqueia e o motivo fica registrado.
       try {
         const { processarCompromissosVencidos, retomarAtribuicoesParadas } = await import("../lib/ai-platform/operacao/compromissos");
+        /* Execução que ficou pendurada em "running" (deploy no meio da conversa,
+           worker derrubado) era silêncio permanente: a deduplicação trata
+           `running` como "já tratada" por 12 horas, então a mensagem do cliente
+           nunca mais era processada. Encerra e retoma quem ficou sem resposta. */
+        try {
+          const { recuperarRunsPresas } = await import("../lib/ai-platform/operacao/runs-presas");
+          const p = await recuperarRunsPresas();
+          if (p.encerradas) console.log(`[RunsPresas] ${p.encerradas} execução(ões) interrompida(s) encerrada(s), ${p.retomadas} conversa(s) retomada(s)`);
+        } catch (e) {
+          console.error("[RunsPresas] erro:", e instanceof Error ? e.message : e);
+        }
         const devolvidas = await retomarAtribuicoesParadas();
         if (devolvidas) console.log(`[Retomadas] ${devolvidas} atendimento(s) parado(s) devolvido(s) ao agente (regra de retomada do handoff)`);
         const r = await processarCompromissosVencidos();
