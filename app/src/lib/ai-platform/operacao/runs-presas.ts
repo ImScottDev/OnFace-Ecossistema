@@ -124,9 +124,15 @@ async function retomarDepoisDaQueda(): Promise<number> {
   for (const p of paradas as unknown as Array<Record<string, string | null>>) {
     try {
       const { atenderPeloNumeroDoAgente } = await import("./numero-do-agente");
+      /* SEM `sourceMessageId` de propósito. A última fala do cliente JÁ tem
+         execução concluída, e a deduplicação de `acionarAgente` recusa a mesma
+         mensagem ("duplicado") — foi o que fez esta retomada não acontecer na
+         primeira tentativa. Aqui não se reprocessa uma mensagem: continua-se a
+         conversa, e o histórico inteiro vai no contexto do agente de qualquer
+         forma. */
       const r = await atenderPeloNumeroDoAgente({
         organizacaoId: p.organizacao_id!, contatoId: p.contato_id!, leadId: p.lead_id,
-        sessaoId: p.sessao_id, mensagem: p.conteudo!, sourceMessageId: p.mensagem_id,
+        sessaoId: p.sessao_id, mensagem: p.conteudo!,
       });
       if (r.tratado && r.resultado === "respondeu") {
         retomadas++;
