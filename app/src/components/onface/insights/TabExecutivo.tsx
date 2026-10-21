@@ -96,6 +96,11 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
         </div>
       </div>
 
+      <div className="ins-studio-chapter">
+        <span className="ins-studio-chapter-number">01 <b>/</b> POSIÇÃO DO NEGÓCIO</span>
+        <div><h2>Os números que realmente importam</h2>
+          <p>Uma leitura sem atalhos: recorrência, faturamento, novas vendas, caixa e carteira são medidas distintas.</p></div>
+      </div>
       {/* ── Números do negócio ───────────────────────────────── */}
       <section className="ex-kpis" aria-label="Indicadores executivos">
         <Tile titulo="MRR atual" rotulo="retrato de agora · recorrente faturado" r={mrr} href={link("mrr_atual", { familia: f })}
@@ -111,6 +116,11 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
       </section>
       <p className="rx-dica">Faturado, recebido, booking e MRR são números diferentes: faturado é o que foi cobrado na competência, recebido é caixa, booking é venda decidida e MRR é recorrência faturada. Nenhum substitui o outro.</p>
 
+      <div className="ins-studio-chapter">
+        <span className="ins-studio-chapter-number">02 <b>/</b> DINÂMICA DE RECEITA</span>
+        <div><h2>Entenda o movimento, não apenas o total</h2>
+          <p>Passe sobre as séries para comparar, selecione uma competência e abra os registros que compõem o valor.</p></div>
+      </div>
       {/* ── Evolução ─────────────────────────────────────────── */}
       <section className="rx-painel" aria-label="Faturamento por competência">
         <div className="rx-painel-cab">
@@ -159,6 +169,11 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
 
       {mesAberto ? <ExecutiveMonthDrawer key={mesAberto + (f ?? "todos")} mes={mesAberto} familia={f} aoFechar={() => setMesAberto(null)} /> : null}
 
+      <div className="ins-studio-chapter">
+        <span className="ins-studio-chapter-number">03 <b>/</b> COMPOSIÇÃO E RISCO</span>
+        <div><h2>De onde a receita vem</h2>
+          <p>Segmentos de produto e concentração da carteira, com acesso direto às fontes.</p></div>
+      </div>
       <div className="ex-duas">
         {/* ── Composição por família ───────────────────────── */}
         <section className="rx-painel" aria-label="Faturamento por família">

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays } from "lucide-react";
+import { Activity, ArrowUpRight, BarChart3, BookOpenText, CalendarDays, ChartNoAxesCombined, CircleGauge, Command, ContactRound, CreditCard, Filter, Fingerprint, Layers3, LayoutDashboard, Megaphone, Radio, ShieldCheck, UsersRound } from "lucide-react";
+import Link from "next/link";
 import TabMarketing from "@/components/crm2/relatorios/TabMarketing";
 import TabMidiaPaga from "@/components/crm2/relatorios/TabMidiaPaga";
 import TabComercial from "@/components/crm2/relatorios/TabComercial";
@@ -22,6 +23,7 @@ import { BlocoGestao } from "./BlocoGestao";
 import { Tablist } from "@/components/onface/ds/escolha";
 import { preencherSemanas, type Semana } from "./semanas";
 import "./insights.css";
+import "./insights-premium.css";
 
 /**
  * Insights (/relatorios) na linguagem ONFACE — arquétipo A (hero grafite com
@@ -56,6 +58,23 @@ const ABAS_PESSOAIS = [
   { key: "sdr", label: "Minha pré-venda" },
 ] as const;
 
+const ICONES_ABAS = {
+  executivo: LayoutDashboard, comercial: ChartNoAxesCombined, sdr: ContactRound, "pos-venda": ShieldCheck,
+  "atividade-time": UsersRound, growth: CircleGauge, marketing: Megaphone, "midia-paga": Radio,
+  fechamento: CreditCard, qualidade: Fingerprint,
+} as const;
+const DESCRICOES_ABAS: Record<string, string> = {
+  executivo: "Receita, recorrência, carteira e evolução em uma leitura estratégica.",
+  comercial: "Pipeline, conversões, resultados e produtividade de vendas.",
+  sdr: "Contato, qualificação, tempo de resposta e passagem de bastão.",
+  "pos-venda": "Carteira ativa, retenção, relacionamento e continuidade.",
+  "atividade-time": "Capacidade, cadência, execução e distribuição do trabalho.",
+  growth: "Aquisição, retenção, expansão e crescimento sustentável.",
+  marketing: "Jornada, origens, qualidade e contribuição de canais.",
+  "midia-paga": "Investimento, campanhas, retorno e conversões rastreáveis.",
+  fechamento: "Receita decidida, documentos e evidências do fechamento.",
+  qualidade: "Integridade das fontes antes da tomada de decisão.",
+};
 const PRESETS = [
   { key: "mes_atual", label: "Mês atual" },
   { key: "mes_passado", label: "Mês passado" },
@@ -120,30 +139,35 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
 
   return (
     <div className="ins">
-      <header className="ins-cab">
-        <div>
-          <h1 className="ins-titulo">Insights</h1>
-          <p className="ins-sub">
-            {abaAtiva === "executivo"
-              ? "Consolidado Callface · faturamento desde março/2021, conciliado com as planilhas originais"
-              : <>{gestao || meLoading ? "Desempenho da operação" : "Seus números"} · histórico confiável desde{" "}{GO_LIVE.toLocaleDateString("pt-BR")}, quando a base saiu do Zoho.</>}
-          </p>
+      <header className="ins-studio-masthead" aria-label="Central de inteligência Callface">
+        <div className="ins-studio-masthead-grid" aria-hidden="true" />
+        <div className="ins-studio-topline">
+          <span className="ins-studio-brand"><span className="ins-studio-brand-icon"><Command size={17} strokeWidth={2.5} /></span> CALLFACE <b>/ INTELLIGENCE</b></span>
+          <span className="ins-studio-edition"><span aria-hidden="true" className="ins-studio-pulse" /> OPERATIONS STUDIO <span className="ins-studio-edition-number">02 / 26</span></span>
         </div>
-        {abaAtiva === "pos-venda" || abaAtiva === "atividade-time" ? (
-          <span className="ins-sub" aria-label="Janela fixa deste relatório">{abaAtiva === "pos-venda" ? "Retrato da carteira agora" : "Atividade dos últimos 14 dias"} · sem filtro de período</span>
-        ) : abaAtiva === "executivo" || abaAtiva === "qualidade" ? null : <SeletorPeriodo value={periodo} onChange={setPeriodo} />}
+        <div className="ins-studio-masthead-main">
+          <div className="ins-studio-statement">
+            <span className="ins-studio-overline"><Activity size={14} /> INTELIGÊNCIA PARA DECISÕES</span>
+            <h1>Entenda os números.<br/><em>Enxergue o próximo passo.</em></h1>
+            <p>Receita, aquisição e operação conectadas em análises que explicam o negócio — não apenas exibem indicadores.</p>
+          </div>
+          <div className="ins-studio-shortcuts">
+            <span className="ins-studio-shortcuts-label">SEU ESPAÇO DE ANÁLISE</span>
+            <Link href="/relatorios/biblioteca" className="ins-studio-shortcut"><BookOpenText size={18} /><span>Biblioteca de métricas<small>Definições, fontes e exploração</small></span><ArrowUpRight size={17}/></Link>
+            <Link href="/relatorios/performance" className="ins-studio-shortcut"><BarChart3 size={18}/><span>Performance<small>Equipe, metas e resultados</small></span><ArrowUpRight size={17}/></Link>
+          </div>
+        </div>
+        <div className="ins-studio-masthead-foot">
+          <span><span className="ins-studio-foot-dot" /> DADOS DO CRM · CONSULTAS POR ORGANIZAÇÃO</span>
+          <span>Estratégico <span aria-hidden="true">/</span> Tático <span aria-hidden="true">/</span> Operacional</span>
+        </div>
       </header>
 
-      {meLoading ? (
-        <section className="ins-hero" aria-busy="true" aria-label="Carregando indicadores">
-          <span className="ins-hero-brilho" aria-hidden />
-          <span className="ins-rotulo-escuro">Carregando…</span>
-          <div className="ins-hero-valor"><strong>—</strong></div>
+      {meLoading && (
+        <section className="ins-studio-loading" role="status" aria-busy="true">
+          <span className="ins-studio-loading-ring" aria-hidden="true" />
+          Preparando seu espaço de inteligência…
         </section>
-      ) : abaAtiva === "executivo" || abaAtiva === "qualidade" ? null : isSdr && !gestao ? (
-        <HeroSdr periodo={periodo} />
-      ) : (
-        <HeroComercial periodo={periodo} gestao={gestao} />
       )}
 
       {!meLoading && (
@@ -151,22 +175,48 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
           {/* Aqui é aba de verdade: cada relatório é um painel. O par
               tab/painel estava solto — `role="tabpanel"` sem `id` e abas sem
               `aria-controls`. Ids fixos, e a seta anda entre os relatórios. */}
-          <Tablist className="ins-abas" rotulo="Relatórios">
-            {abas.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                id={`ins-aba-${t.key}`}
-                aria-selected={abaAtiva === t.key}
-                aria-controls={abaAtiva === t.key ? "ins-painel-aba" : undefined}
-                className="ins-aba"
-                onClick={() => setAba(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </Tablist>
+          <nav className="ins-studio-nav" aria-label="Áreas de inteligência">
+            <div className="ins-studio-nav-top">
+              <span><Layers3 size={14} /> ÁREAS DE INTELIGÊNCIA</span>
+              <span>{String(abas.length).padStart(2, "0")} DOMÍNIOS · SELECIONE UM PAINEL</span>
+            </div>
+            <Tablist className="ins-abas" rotulo="Relatórios">
+              {abas.map((t, i) => {
+                const Icone = ICONES_ABAS[t.key];
+                return (
+                  <button key={t.key} type="button" role="tab"
+                    id={`ins-aba-${t.key}`}
+                    aria-selected={abaAtiva === t.key}
+                    aria-controls={abaAtiva === t.key ? "ins-painel-aba" : undefined}
+                    className="ins-aba" onClick={() => setAba(t.key)}>
+                    <span className="ins-aba-indice">{String(i + 1).padStart(2, "0")}</span>
+                    <Icone size={17} strokeWidth={1.85} aria-hidden="true" />
+                    <span className="ins-aba-label">{t.label}</span>
+                    <span className="ins-aba-ativo" aria-hidden="true" />
+                  </button>
+                );
+              })}
+            </Tablist>
+          </nav>
+          <div className="ins-studio-context">
+            <div className="ins-studio-context-title">
+              <span className="ins-studio-context-overline"><span className="ins-studio-context-line" /> WORKSPACE / {abaAtiva.toUpperCase().replaceAll("-", " ")}</span>
+              <h2>{abas.find((t) => t.key === abaAtiva)?.label ?? "Insights"}<span className="ins-studio-context-suffix"> / Análise</span></h2>
+              <p>{DESCRICOES_ABAS[abaAtiva] ?? "Indicadores explicados por fontes e recortes confiáveis."}</p>
+            </div>
+            <div className="ins-studio-context-controls">
+              {abaAtiva === "pos-venda" || abaAtiva === "atividade-time" ? (
+                <span className="ins-studio-fixed-period"><CalendarDays size={15} />{abaAtiva === "pos-venda" ? "Carteira atual" : "Últimos 14 dias"}</span>
+              ) : abaAtiva !== "executivo" && abaAtiva !== "qualidade" ? (
+                <SeletorPeriodo value={periodo} onChange={setPeriodo} />
+              ) : <span className="ins-studio-fixed-period"><Filter size={15} />{abaAtiva === "executivo" ? "Filtros por produto e competência abaixo" : "Consulta de integridade"}</span>}
+            </div>
+          </div>
+          {abaAtiva !== "executivo" && abaAtiva !== "qualidade" && (
+            <div className="ins-studio-operational-hero">
+              {isSdr && !gestao ? <HeroSdr periodo={periodo} /> : <HeroComercial periodo={periodo} gestao={gestao} />}
+            </div>
+          )}
 
           <div className="ins-corpo" role="tabpanel" id="ins-painel-aba" aria-labelledby={`ins-aba-${abaAtiva}`}>
             {gestao ? (
