@@ -795,8 +795,8 @@ class Logica extends React.Component<any, any> {
       empObs: (L.registro && L.empresaObs) || "",
       /* A peça do anúncio é montada AQUI, não no arquivo gerado: o markup do
          desenho é regerado e levaria a lógica junto. Lá fica só o token. */
-      anuncioDeOrigem: L.registro?.anuncioAdId
-        ? <AnuncioDeOrigem adId={L.registro.anuncioAdId} adAccountId={L.registro.anuncioContaId} />
+      anuncioDeOrigem: L.registro && L.anuncioAdId
+        ? <AnuncioDeOrigem adId={L.anuncioAdId} adAccountId={L.anuncioContaId} />
         : null,
       resp: L.resp || "Sem responsável", respIniciais: ini(L.resp),
       respAberto: !!S.respMenu,
