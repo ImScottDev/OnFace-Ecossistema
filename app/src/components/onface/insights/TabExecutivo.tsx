@@ -2,35 +2,39 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Bar, CartesianGrid, Cell, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Area, AreaChart, Bar, CartesianGrid, Cell, ComposedChart, Line, Tooltip, XAxis, YAxis,
+} from "recharts";
 import { useReducedMotion } from "motion/react";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, CircleAlert, Minus } from "lucide-react";
+import {
+  ArrowDownRight, ArrowRight, ArrowUpRight, Banknote, CalendarRange, ChartNoAxesCombined,
+  CircleAlert, Download, Filter, Info, Minus, Target, TrendingUp, Users, Wallet,
+} from "lucide-react";
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
 import { ExecutiveRevenueStory } from "./ExecutiveRevenueStory";
 import { ExecutiveMonthDrawer } from "./ExecutiveMonthDrawer";
 import { useMetrica, type ErroMetrica } from "@/components/onface/relatorios/useMetrica";
+import { usePainel, cartao, valorDe } from "./usePainel";
 import { VALOR_FAMILIA, dinheiro, dinheiroCurto, fimDoPonto, rotuloPonto } from "@/components/onface/relatorios/explorador-formato";
 import { FAMILIAS } from "@/lib/metricas/recorte";
+import type { Cartao, Alerta } from "@/lib/metricas/painel-geral-tipos";
 import "@/components/onface/relatorios/relatorios.css";
 import "./visao-geral.css";
 
 /**
- * Visão Geral executiva: consolidado Callface com filtro de família.
+ * Visão Geral executiva.
  *
  * Cada número vem da mesma rota (e do mesmo recorte) que abre ao clicar nele:
- * card e lista nunca divergem. O que a fonte não sustenta aparece como lacuna,
- * nunca como zero.
+ * cartão e lista nunca divergem. O que a fonte não sustenta aparece com o
+ * motivo, nunca como zero — é por isso que há cartão dizendo "indisponível"
+ * no lugar de um R$ 0,00 que pareceria um fato.
  *
  * A ordem da tela é a ordem das perguntas de quem chega aqui para decidir:
- * a receita recorrente está de pé? o que mudou? de onde vem? o que exige
- * decisão? — e só um bloco ganha grafite e número grande, que é a regra do DS
- * de dar peso ao que muda o próximo passo.
+ * a receita recorrente está de pé? de onde ela vem e bate a meta? o que mudou
+ * nos indicadores? como foi a evolução? o que exige decisão hoje?
  */
 
-const CONFIG: ChartConfig = {
-  valor: { label: "Faturado", color: "var(--chart-1)" },
-  anterior: { label: "Mesmo mês do ano anterior", color: "var(--chart-3)" },
-};
+const BIB = "/relatorios/biblioteca/metrica-";
 const JANELAS = [
   { chave: "12m", rotulo: "12 meses" },
   { chave: "ano_atual", rotulo: "Ano atual" },
@@ -38,15 +42,19 @@ const JANELAS = [
 ] as const;
 type Janela = (typeof JANELAS)[number]["chave"];
 
-/** Cor por família na composição. Categórica de gráfico, igual ao resto do DS. */
+/** Cor por família. Categórica de gráfico, igual ao resto do DS. */
 const COR_FAMILIA: Record<string, string> = {
   PABX: "var(--chart-1)",
   CALLFACE_AI: "var(--chart-2)",
   WHITE_LABEL: "var(--chart-5)",
-  UNKNOWN: "var(--of-shell-tinta-4)",
+  UNKNOWN: "var(--chart-3)",
 };
 
-const BIB = "/relatorios/biblioteca/metrica-";
+const CONFIG: ChartConfig = {
+  valor: { label: "Faturado", color: "var(--chart-1)" },
+  anterior: { label: "Mesmo mês do ano anterior", color: "var(--chart-3)" },
+};
+
 const pct = (v: number | null | undefined, casas = 1) =>
   v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: casas })}%`;
 
@@ -54,6 +62,8 @@ function link(codigo: string, p: Record<string, string | undefined>) {
   const qs = new URLSearchParams(Object.entries(p).filter(([, v]) => v) as [string, string][]).toString();
   return `${BIB}${codigo}${qs ? `?${qs}` : ""}`;
 }
+/** O servidor já manda `codigo?querystring`; a tela só prefixa a rota. */
+const href = (drill: string | null) => (drill ? `${BIB}${drill}` : undefined);
 
 export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
   familiaInicial: string; janelaInicial: string; aoMudar: (m: { familia?: string; janela?: string }) => void;
@@ -63,351 +73,453 @@ export function TabExecutivo({ familiaInicial, janelaInicial, aoMudar }: {
   const janela: Janela = JANELAS.some((j) => j.chave === janelaInicial) ? (janelaInicial as Janela) : "12m";
   const f = familia || undefined;
 
-  const hist = useMetrica("faturamento_competencia", { periodo: "tudo", familia: f, tamanho: "5" });
-  const recorte = useMetrica("faturamento_competencia", { periodo: janela, familia: f, tamanho: "5" });
-  const clientes = useMetrica("clientes_faturados", { periodo: janela, familia: f, ordem: "valor", sentido: "desc", tamanho: "10" });
-  const mrr = useMetrica("mrr_atual", { familia: f, tamanho: "5" });
-  const ativos = useMetrica("clientes_ativos", { familia: f, tamanho: "5" });
-  const booking = useMetrica("booking_ganho", { periodo: "mes_atual", familia: f, tamanho: "5" });
-  const recebido = useMetrica("recebido", { periodo: "mes_atual", tamanho: "5" });
-  const foraPlanilha = useMetrica("faturas_stripe_fora_da_planilha", { periodo: "12m", tamanho: "5" });
+  // O painel inteiro numa requisição: cartões, composição, alertas e lacunas.
+  const painel = usePainel({ periodo: janela, familia: f, serie: janela });
 
-  // ── Derivados da série mensal completa (mesma resposta do gráfico) ──
+  // A série completa alimenta o gráfico grande, a área do destaque e as faíscas.
+  const hist = useMetrica("faturamento_competencia", { periodo: "tudo", familia: f, tamanho: "5" });
+  const clientes = useMetrica("clientes_faturados", { periodo: janela, familia: f, ordem: "valor", sentido: "desc", tamanho: "10" });
+
+  const p = painel.data;
+  const mrr = cartao(p, "mrr_atual");
+  const faturado = cartao(p, "faturamento_competencia");
+  const booking = cartao(p, "booking_ganho");
+  const recebido = cartao(p, "recebido");
+  const ativos = cartao(p, "clientes_ativos");
+  const winRate = cartao(p, "win_rate");
+  const ticket = cartao(p, "ticket_medio_booking");
+  const meta = cartao(p, "meta_booking");
+  const pipeline = cartao(p, "pipeline_aberto");
+  const leads = cartao(p, "leads_novos");
+  const oportunidades = cartao(p, "oportunidades_criadas");
+
+  // ── Derivados da série mensal (mesma resposta do gráfico) ──
   const pontos = hist.data?.exploracao.serie?.pontos ?? [];
   const ultimo = pontos[pontos.length - 1];
-  const mesmoMesAnterior = ultimo ? pontos.find((p) => p.inicio === `${Number(ultimo.inicio.slice(0, 4)) - 1}${ultimo.inicio.slice(4)}`) : undefined;
+  const mesmoMesAnterior = ultimo ? pontos.find((x) => x.inicio === `${Number(ultimo.inicio.slice(0, 4)) - 1}${ultimo.inicio.slice(4)}`) : undefined;
   const ult12 = pontos.slice(-12), ant12 = pontos.slice(-24, -12);
-  const soma = (a: typeof pontos) => a.reduce((x, p) => x + p.valor, 0);
+  const soma = (a: typeof pontos) => a.reduce((x, y) => x + y.valor, 0);
   const yoy = ultimo && mesmoMesAnterior && mesmoMesAnterior.valor > 0 ? ultimo.valor / mesmoMesAnterior.valor - 1 : null;
   const yoy12 = ant12.length === 12 && soma(ant12) > 0 ? soma(ult12) / soma(ant12) - 1 : null;
+  const media3 = pontos.length >= 4 ? soma(pontos.slice(-4, -1)) / 3 : null;
+  const vsMedia3 = media3 && media3 > 0 && ultimo ? ultimo.valor / media3 - 1 : null;
 
-  const visiveis = janela === "tudo" ? pontos : janela === "ano_atual" ? pontos.filter((p) => ultimo && p.inicio.slice(0, 4) === ultimo.inicio.slice(0, 4)) : pontos.slice(-12);
-  const dados = visiveis.map((p) => {
-    const a = pontos.find((x) => x.inicio === `${Number(p.inicio.slice(0, 4)) - 1}${p.inicio.slice(4)}`);
-    return { ...p, rotulo: rotuloPonto(p.inicio, "mes"), anterior: a?.valor ?? null, rotuloAnterior: a ? rotuloPonto(a.inicio, "mes") : null };
+  const visiveis = janela === "tudo" ? pontos
+    : janela === "ano_atual" ? pontos.filter((x) => ultimo && x.inicio.slice(0, 4) === ultimo.inicio.slice(0, 4))
+      : pontos.slice(-12);
+  const dados = visiveis.map((x) => {
+    const a = pontos.find((y) => y.inicio === `${Number(x.inicio.slice(0, 4)) - 1}${x.inicio.slice(4)}`);
+    return { ...x, rotulo: rotuloPonto(x.inicio, "mes"), anterior: a?.valor ?? null, rotuloAnterior: a ? rotuloPonto(a.inicio, "mes") : null };
   });
   const temAnterior = dados.some((d) => d.anterior !== null);
   const [oculta, setOculta] = React.useState(false);
   const [mesFocado, setMesFocado] = React.useState<string | null>(null);
   const [mesAberto, setMesAberto] = React.useState<string | null>(null);
-  const focoValido = visiveis.some((p) => p.inicio === mesFocado) ? mesFocado : null;
+  const focoValido = visiveis.some((x) => x.inicio === mesFocado) ? mesFocado : null;
   const abrirMes = (inicio: string) => { setMesFocado(inicio); setMesAberto(inicio); };
 
-  const familiaDim = recorte.data?.exploracao.dimensoes.find((d) => d.chave === "familia");
-  const semFamilia = familiaDim?.itens.find((i) => i.chave === "UNKNOWN");
-  const totalRecorte = recorte.data?.exploracao.total ?? 0;
+  // ── Composição do MRR por família (o "de onde vem") ──
+  const composicao = p?.blocos.composicao;
+  const dimFamilia = composicao?.dimensoes.find((d) => d.chave === "familia");
+  const fatias = (dimFamilia?.itens ?? []).filter((i) => i.valor > 0).sort((a, b) => b.valor - a.valor);
+  const totalComposicao = composicao?.total ?? fatias.reduce((a, i) => a + i.valor, 0);
+  const avisoWl = p?.blocos.receita.avisos.find((a) => a.codigo === "white_label_sem_recorrencia");
+
+  // ── Concentração ──
   const top = clientes.data?.exploracao.linhas ?? [];
   const somaTodos = clientes.data?.exploracao.somaValor ?? 0;
   const somaTop = (n: number) => top.slice(0, n).reduce((a, l) => a + Number(l.valor), 0);
 
-  // Composição do MRR por família, para a barra do bloco de destaque.
-  const mrrTotal = mrr.data?.exploracao.total ?? 0;
-  const mrrPorFamilia = (mrr.data?.exploracao.dimensoes.find((d) => d.chave === "familia")?.itens ?? [])
-    .filter((i) => i.valor > 0)
-    .sort((a, b) => b.valor - a.valor);
-  /**
-   * White Label não recorre: só tem MRR em 2 das 67 competências, e o valor vem
-   * de fatura emitida à mão. O número fica (decisão do Scott, 21/10), mas a tela
-   * diz o que ele é — senão o MRR promete uma recorrência que não existe.
-   */
-  const mrrWhiteLabel = mrrPorFamilia.find((i) => i.chave === "WHITE_LABEL");
+  // ── Meta do mês ──
+  const metaValor = valorDe(meta);
+  const bookingValor = valorDe(booking);
+  const atingido = metaValor && metaValor > 0 && bookingValor !== null ? bookingValor / metaValor : null;
+
+  const erroPainel = painel.error;
 
   return (
     <div className="ex">
-      {/* ── Recorte vigente: uma linha, sem masthead ───────────── */}
-      <div className="vg-contexto">
-        <div className="vg-contexto-grupo">
-          <span className="vg-contexto-rotulo">Produto</span>
+      {/* ── Topo ──────────────────────────────────────────────── */}
+      <div className="vg-topo">
+        <div>
+          <h1>Visão Geral Executiva</h1>
+          <p>Receita, carteira e conversão da Callface, com a origem de cada número a um clique.</p>
+        </div>
+        <Link className="rx-btn" href={`/api/relatorios/metricas/faturamento_competencia/exportar?periodo=${janela}${f ? `&familia=${f}` : ""}`}>
+          <Download size={15} aria-hidden /> Exportar faturamento
+        </Link>
+      </div>
+
+      {/* ── Filtros ───────────────────────────────────────────── */}
+      <div className="vg-filtros">
+        <div className="vg-filtro">
+          <span>Período</span>
+          <div className="rx-seg" role="group" aria-label="Período dos indicadores">
+            {JANELAS.map((j) => (
+              <button key={j.chave} type="button" aria-pressed={janela === j.chave}
+                onClick={() => aoMudar({ janela: j.chave })}>{j.rotulo}</button>
+            ))}
+          </div>
+        </div>
+        <div className="vg-filtro">
+          <span>Produto</span>
           <div className="rx-seg" role="group" aria-label="Família de serviço">
             <button type="button" aria-pressed={!familia} onClick={() => aoMudar({ familia: "" })}>Consolidado</button>
-            {FAMILIAS.map((x) => <button key={x} type="button" aria-pressed={familia === x} onClick={() => aoMudar({ familia: x })}>{VALOR_FAMILIA[x]}</button>)}
+            {FAMILIAS.map((x) => (
+              <button key={x} type="button" aria-pressed={familia === x} onClick={() => aoMudar({ familia: x })}>{VALOR_FAMILIA[x]}</button>
+            ))}
           </div>
         </div>
-        <div className="vg-contexto-grupo">
-          <span className="vg-contexto-rotulo">Período</span>
-          <div className="rx-seg" role="group" aria-label="Janela dos gráficos de faturamento">
-            {JANELAS.map((j) => <button key={j.chave} type="button" aria-pressed={janela === j.chave} onClick={() => aoMudar({ janela: j.chave })}>{j.rotulo}</button>)}
-          </div>
+        <div className="vg-filtro">
+          <span>Comparação</span>
+          <span className="vg-frescor" style={{ height: "calc(30 * var(--onface-u))", alignItems: "center" }}>
+            <CalendarRange size={14} aria-hidden /> Período anterior equivalente
+          </span>
         </div>
-        {ultimo ? (
-          <div className="vg-contexto-grupo">
-            <span className="vg-frescor" title="Última competência fechada na planilha de faturamento">
-              Fechado até {rotuloPonto(ultimo.inicio, "mes")}
-            </span>
-          </div>
+        {familia ? (
+          <button type="button" className="rx-btn vg-filtro-limpar" onClick={() => aoMudar({ familia: "" })}>
+            <Filter size={14} aria-hidden /> Limpar filtros
+          </button>
         ) : null}
       </div>
 
-      {/* ── O bloco que decide: receita recorrente ─────────────── */}
-      <section className="vg-destaque" aria-label="Receita recorrente">
-        <div className="vg-destaque-principal">
-          <span className="vg-destaque-rotulo">Receita recorrente</span>
-          {mrr.isPending ? (
-            <span className="vg-esqueleto" style={{ height: 44, width: "min(100%, 260px)", marginTop: 8 }} />
-          ) : mrr.error ? (
-            <>
-              <span className="vg-valor">—</span>
-              <span className="vg-valor-sub">{mrr.error.codigo === "filtro_nao_suportado" ? mrr.error.message : "Indisponível agora. Recarregue a página."}</span>
-            </>
-          ) : (
-            <>
-              <span className="vg-valor">{dinheiro(mrrTotal, "BRL")}</span>
-              <span className="vg-valor-sub">
-                Retrato de agora: o que foi faturado como recorrência na última competência fechada, mais
-                assinaturas ativas ainda sem fechamento.{" "}
-                {mrr.data ? `${mrr.data.exploracao.registrosTotal.toLocaleString("pt-BR")} linhas explicam este número.` : ""}
-              </span>
-              <Link className="vg-alerta" href={link("mrr_atual", { familia: f })} style={{ marginTop: "auto", background: "transparent", boxShadow: "none", padding: 0, color: "var(--of-shell-tinta-3)" }}>
-                Ver os registros <ArrowRight size={14} aria-hidden />
-              </Link>
-            </>
-          )}
-        </div>
+      {erroPainel ? (
+        <p className="rx-aviso" data-tom="erro" role="alert">
+          {erroPainel.status === 400 ? erroPainel.mensagem : "Não foi possível carregar o painel. Recarregue a página."}
+        </p>
+      ) : null}
 
-        <div className="vg-destaque-principal">
-          {mrr.isPending ? (
-            <span className="vg-esqueleto" style={{ height: 90, width: "100%" }} />
-          ) : mrrPorFamilia.length > 0 ? (
+      {/* ── Receita recorrente + saúde da operação ────────────── */}
+      <div className="vg-primeira">
+        <section className="vg-destaque" aria-label="Receita recorrente">
+          <div className="vg-destaque-cab">
+            <span className="vg-destaque-rotulo">
+              <span className="vg-icone"><Wallet size={15} aria-hidden /></span> Receita recorrente
+            </span>
+            {ultimo ? <span className="vg-pill" data-tom="neutro">Fechado até {rotuloPonto(ultimo.inicio, "mes")}</span> : null}
+          </div>
+
+          {painel.isPending ? (
             <>
-              <span className="vg-destaque-rotulo">De onde vem</span>
-              <div className="vg-faixa" role="img"
-                aria-label={`Composição do MRR: ${mrrPorFamilia.map((i) => `${VALOR_FAMILIA[i.chave as keyof typeof VALOR_FAMILIA] ?? i.chave} ${dinheiro(i.valor, "BRL")}`).join(", ")}`}>
-                {mrrPorFamilia.map((i) => (
-                  <span key={i.chave}
-                    style={{ width: `${(i.valor / Math.max(mrrTotal, 1)) * 100}%`, background: COR_FAMILIA[i.chave] ?? "var(--of-shell-tinta-4)" }} />
-                ))}
+              <span className="vg-esqueleto" style={{ height: 44, width: "min(100%, 280px)" }} />
+              <span className="vg-esqueleto" style={{ height: 36, width: "min(100%, 440px)" }} />
+            </>
+          ) : mrr && valorDe(mrr) !== null ? (
+            <>
+              <div className="vg-destaque-valor">
+                <span className="vg-valor">{dinheiro(valorDe(mrr), "BRL")}</span>
               </div>
-              <div className="vg-faixa-legenda">
-                {mrrPorFamilia.map((i) => (
-                  <span key={i.chave}>
-                    <span className="vg-faixa-ponto" style={{ background: COR_FAMILIA[i.chave] ?? "var(--of-shell-tinta-4)" }} aria-hidden />
-                    {VALOR_FAMILIA[i.chave as keyof typeof VALOR_FAMILIA] ?? "Sem família"}
-                    <b>{dinheiro(i.valor, "BRL")}</b>
-                  </span>
-                ))}
-              </div>
-              {mrrWhiteLabel ? (
-                <p className="vg-valor-sub" style={{ marginTop: "auto" }}>
+              {/* Frase curta na tela; a definição técnica inteira fica no
+                  tooltip e no explorador, que é onde ela é útil. */}
+              <p className="vg-valor-sub" title={mrr.fonte}>
+                Retrato de agora: a recorrência faturada na última competência fechada, mais as
+                assinaturas ativas que ainda não entraram nela.
+                {mrr.registros ? ` ${mrr.registros.toLocaleString("pt-BR")} linhas explicam este número.` : ""}
+              </p>
+              {avisoWl ? (
+                <p className="vg-valor-sub">
                   <CircleAlert size={13} aria-hidden style={{ display: "inline", verticalAlign: "-2px", marginRight: 4 }} />
-                  Dos {dinheiro(mrrTotal, "BRL")}, <b style={{ color: "var(--of-shell-tinta)" }}>{dinheiro(mrrWhiteLabel.valor, "BRL")}</b> são White Label
-                  faturado à mão e <b style={{ color: "var(--of-shell-tinta)" }}>sem recorrência confirmada</b>: a família só teve faturamento em 2 das
-                  67 competências. Não conte com esse valor no próximo mês.
+                  {avisoWl.mensagem}{" "}
+                  <Link href={href(avisoWl.drill) ?? "#"} style={{ color: "var(--of-coral-no-escuro)" }}>Ver as linhas</Link>
                 </p>
               ) : null}
             </>
+          ) : (
+            <Indisponivel c={mrr} escuro />
+          )}
+
+          {/* A área é o faturamento mensal — a série que existe e explica a
+              receita no tempo. O número acima é um retrato de agora: rótulos
+              separados de propósito, para não dar a entender que o MRR tem
+              histórico que ele não tem. */}
+          {dados.length > 1 ? (
+            <figure className="vg-destaque-grafico" style={{ margin: 0 }}>
+              <ChartContainer config={CONFIG} className="vg-destaque-grafico" style={{ height: "100%" }}>
+                <AreaChart data={dados} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="vg-area" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--of-coral-marca)" stopOpacity={0.35} />
+                      <stop offset="100%" stopColor="var(--of-coral-marca)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="rotulo" tickLine={false} axisLine={false} tickMargin={6}
+                    interval="preserveStartEnd" minTickGap={28}
+                    tick={{ fill: "var(--of-shell-tinta-4)", fontSize: 11 }} />
+                  <Tooltip cursor={{ stroke: "var(--of-shell-linha)" }} content={<Tip titulo="Faturado" />} />
+                  <Area dataKey="valor" type="monotone" stroke="var(--of-coral-marca)" strokeWidth={2}
+                    fill="url(#vg-area)" isAnimationActive={!reduzido} />
+                </AreaChart>
+              </ChartContainer>
+              <figcaption className="vg-valor-sub" style={{ fontSize: "var(--of-t-meta)" }}>
+                Faturamento mensal fechado — a recorrência acima é um retrato de hoje, não a série.
+              </figcaption>
+            </figure>
           ) : null}
-        </div>
-      </section>
+        </section>
 
-      {/* ── Apoio: denso, neutro, cada um com drill ────────────── */}
-      <section className="vg-fita" aria-label="Indicadores de apoio">
-        <CartaoSerie titulo={ultimo ? `Faturado em ${rotuloPonto(ultimo.inicio, "mes")}` : "Faturado"}
-          carregando={hist.isPending} erro={hist.error} valor={ultimo?.valor} unidade="BRL"
-          delta={yoy} deltaRotulo="vs mesmo mês do ano anterior"
-          nota={ult12.length === 12 ? `12 meses: ${dinheiroCurto(soma(ult12), "BRL")}${yoy12 !== null ? ` (${pct(yoy12)} vs 12 anteriores)` : ""}` : "competência fechada mais recente"}
-          href={ultimo ? link("faturamento_competencia", { periodo: "tudo", familia: f, de: ultimo.inicio, ate: fimDoPonto(ultimo.inicio, "mes") }) : undefined} />
-        <Cartao titulo="Booking do mês" nota="venda ganha, mês atual até hoje" r={booking} href={link("booking_ganho", { periodo: "mes_atual", familia: f })} comparar />
-        <Cartao titulo="Recebido no mês" nota="só pagamentos Stripe; boleto e NF não têm baixa no ONFACE" r={recebido} href={link("recebido", { periodo: "mes_atual" })} comparar
-          naoAplicaFamilia={!!familia} />
-        <Cartao titulo="Clientes ativos" nota="com serviço ativo agora" r={ativos} href={link("clientes_ativos", { familia: f })} />
-      </section>
-
-      {/* ── Evolução ──────────────────────────────────────────── */}
-      <section className="vg-painel" aria-label="Faturamento por competência">
-        <div className="vg-painel-cab">
-          <div>
-            <h2>Faturamento por competência{familia ? ` · ${VALOR_FAMILIA[familia as keyof typeof VALOR_FAMILIA]}` : ""}</h2>
-            <p>Clique numa barra para abrir os registros daquele mês. Competência não fechada não aparece — e não vira zero.</p>
-          </div>
-          <Link className="rx-kpi-ver" href={link("faturamento_competencia", { periodo: janela, familia: f })}>Ver os registros</Link>
-        </div>
-        {hist.isPending ? <div className="vg-esqueleto" style={{ height: 240 }} /> : hist.error ? <Aviso erro={hist.error} /> : dados.length === 0 ? (
-          <div className="rel-vazio" style={{ padding: "32px 12px", boxShadow: "none" }}><strong>Sem faturamento para esta família</strong><span>Nenhuma competência tem valor neste filtro.</span></div>
-        ) : (
-          <>
-            <ExecutiveRevenueStory pontos={visiveis} mes={focoValido} aoExplorar={abrirMes} />
-            <div className="rx-barra" style={{ justifyContent: "space-between" }}>
-              {temAnterior ? (
-                <div className="rx-legenda" role="group" aria-label="Séries">
-                  <button type="button" aria-pressed={true} disabled style={{ cursor: "default" }}><i style={{ background: "var(--chart-1)" }} />Faturado no mês</button>
-                  <button type="button" aria-pressed={!oculta} onClick={() => setOculta((v) => !v)}><i style={{ background: "var(--chart-3)" }} />Mesmo mês do ano anterior</button>
-                </div>
-              ) : <span />}
-              <div className="rx-barra" style={{ marginLeft: "auto" }}>
-                {focoValido && <button type="button" className="rx-btn" onClick={() => setMesFocado(null)}>Limpar seleção</button>}
-                <label className="sr-only" htmlFor="ex-mes-detalhe">Selecione uma competência para detalhar</label>
-                <select id="ex-mes-detalhe" className="rx-select" aria-label="Selecione uma competência para detalhar"
-                  value={focoValido ?? ""} onChange={(e) => { if (e.target.value) abrirMes(e.target.value); }}>
-                  <option value="">Selecionar mês</option>
-                  {dados.map((p) => <option key={p.inicio} value={p.inicio}>{p.rotulo}</option>)}
-                </select>
-              </div>
-            </div>
-            <ChartContainer config={CONFIG} className="vg-grafico">
-              <ComposedChart data={dados} accessibilityLayer margin={{ left: 4, right: 8, top: 8 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="rotulo" tickLine={false} axisLine={false} tickMargin={8} interval="preserveStartEnd" minTickGap={18} />
-                <YAxis width="auto" tickLine={false} axisLine={false} tickFormatter={(v: number) => dinheiroCurto(v, "BRL")} />
-                <Tooltip cursor={{ fill: "var(--of-calha)", opacity: 0.6 }} content={<Tip />} />
-                <Bar dataKey="valor" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={!reduzido} animationDuration={380} cursor="pointer"
-                  onClick={(d) => { const i = (d as unknown as { inicio?: string }).inicio; if (i) abrirMes(i); }}>
-                  {dados.map((p) => <Cell key={p.inicio} fill={focoValido === p.inicio ? "var(--of-coral-marca)" : "var(--chart-1)"} />)}
-                </Bar>
-                {temAnterior && !oculta ? <Line dataKey="anterior" type="monotone" stroke="var(--chart-3)" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} isAnimationActive={!reduzido} /> : null}
-              </ComposedChart>
-            </ChartContainer>
-          </>
-        )}
-      </section>
-
-      {mesAberto ? <ExecutiveMonthDrawer key={mesAberto + (f ?? "todos")} mes={mesAberto} familia={f} aoFechar={() => setMesAberto(null)} /> : null}
-
-      {/* ── Composição e concentração ─────────────────────────── */}
-      <div className="vg-duas">
-        <section className="vg-painel" aria-label="Faturamento por família">
+        <section className="vg-painel" aria-label="Saúde da operação">
           <div className="vg-painel-cab">
-            <div><h2>Por família</h2><p>{janela === "tudo" ? "todo o histórico" : janela === "12m" ? "últimos 12 meses" : "ano atual"}</p></div>
+            <div>
+              <h2><span className="vg-icone" data-tom="sucesso"><ChartNoAxesCombined size={15} aria-hidden /></span> De onde vem a receita</h2>
+              <p>{composicao?.titulo ?? "Composição do faturamento"} por produto, no período selecionado.</p>
+            </div>
           </div>
-          {recorte.isPending ? <div className="vg-esqueleto" style={{ height: 150 }} /> : recorte.error ? <Aviso erro={recorte.error} /> : (
-            <div className="rx-comp">
-              {[...(familiaDim?.itens ?? []), ...(familiaDim?.outros ? [familiaDim.outros] : [])].map((i) => {
-                const max = Math.max(...(familiaDim?.itens ?? []).map((x) => x.valor), 1);
-                const vira = i.chave !== "__outros";
-                const corpo = (
-                  <>
-                    <span className="rx-barra-nome">{vira ? VALOR_FAMILIA[i.chave as keyof typeof VALOR_FAMILIA] ?? i.chave : i.rotulo}</span>
-                    <span className="rx-barra-valor">{dinheiro(i.valor, "BRL")}</span>
-                    <span className="rx-barra-meta">{totalRecorte ? ((i.valor / totalRecorte) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : "0"}% · {i.registros.toLocaleString("pt-BR")} linhas</span>
-                  </>
-                );
-                const estilo = { "--p": `${Math.max(2, (Math.abs(i.valor) / max) * 100)}%` } as React.CSSProperties;
-                return vira
-                  ? <Link key={i.chave} className="rx-barra-item" style={estilo} href={link("faturamento_competencia", { periodo: janela, dim: "familia", valorDim: i.chave })}>{corpo}</Link>
-                  : <div key={i.chave} className="rx-barra-item" data-estatico="true" style={estilo}>{corpo}</div>;
-              })}
-              {semFamilia && totalRecorte > 0 ? (
-                <p className="rx-aviso"><strong>{((semFamilia.valor / totalRecorte) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% sem família.</strong> A família vem da Business Line da planilha (CALL FACE - LEASE conta como PABX). Setup e linhas mistas ficam sem família até serem classificados.</p>
+
+          {painel.isPending ? <span className="vg-esqueleto" style={{ height: 120 }} /> : fatias.length > 0 ? (
+            <>
+              <div className="vg-faixa" role="img"
+                aria-label={`Composição: ${fatias.map((i) => `${VALOR_FAMILIA[i.chave as keyof typeof VALOR_FAMILIA] ?? "Sem família"} ${dinheiro(i.valor, "BRL")}`).join(", ")}`}>
+                {fatias.map((i) => {
+                  const parte = (i.valor / Math.max(totalComposicao, 1)) * 100;
+                  const destino = href(i.drill);
+                  const conteudo = parte >= 9 ? `${parte.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%` : "";
+                  return destino ? (
+                    <Link key={i.chave} href={destino} style={{ flex: `${i.valor} 0 0`, minWidth: "calc(18 * var(--onface-u))", background: COR_FAMILIA[i.chave] ?? "var(--chart-3)" }}
+                      aria-label={`${VALOR_FAMILIA[i.chave as keyof typeof VALOR_FAMILIA] ?? "Sem família"}: abrir os registros`}>{conteudo}</Link>
+                  ) : (
+                    <span key={i.chave} style={{ flex: `${i.valor} 0 0`, minWidth: "calc(18 * var(--onface-u))", background: COR_FAMILIA[i.chave] ?? "var(--chart-3)", cursor: "default" }}>{conteudo}</span>
+                  );
+                })}
+              </div>
+              <div className="vg-faixa-legenda">
+                {fatias.map((i) => {
+                  const destino = href(i.drill);
+                  const corpo = (
+                    <>
+                      <span>
+                        <span className="vg-faixa-ponto" style={{ background: COR_FAMILIA[i.chave] ?? "var(--chart-3)" }} aria-hidden />
+                        {VALOR_FAMILIA[i.chave as keyof typeof VALOR_FAMILIA] ?? "Sem família"}
+                      </span>
+                      <b>{dinheiro(i.valor, "BRL")}</b>
+                    </>
+                  );
+                  return destino
+                    ? <Link key={i.chave} href={destino}>{corpo}</Link>
+                    : <div key={i.chave}>{corpo}</div>;
+                })}
+              </div>
+            </>
+          ) : <Indisponivel c={mrr} />}
+
+          {/* Meta do mês: existe de verdade em `metas`, não é número de enfeite. */}
+          {metaValor !== null && metaValor > 0 ? (
+            <div className="vg-meta">
+              <div className="vg-meta-linha">
+                <span>Meta do mês</span>
+                <b>{dinheiro(metaValor, "BRL")}</b>
+              </div>
+              <div className="vg-barra" data-tom={atingido !== null && atingido >= 0.9 ? undefined : atingido !== null && atingido >= 0.6 ? "atencao" : "baixo"}>
+                <span style={{ width: `${Math.min(100, Math.max(0, (atingido ?? 0) * 100))}%` }} />
+              </div>
+              <div className="vg-meta-linha">
+                <span>{atingido !== null ? `${(atingido * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% atingido` : "sem base"}</span>
+                <span>
+                  {atingido !== null && atingido < 1 && bookingValor !== null
+                    ? `Faltam ${dinheiro(metaValor - bookingValor, "BRL")}`
+                    : atingido !== null ? "Meta batida" : ""}
+                </span>
+              </div>
+              {meta?.naoInclui ? (
+                <p className="vg-estado" data-estado="parcial" title={meta.naoInclui}>
+                  <Info size={12} aria-hidden style={{ display: "inline", verticalAlign: "-2px", marginRight: 4 }} />
+                  A meta cadastrada não é comparável ao booking — passe o cursor
+                </p>
               ) : null}
+            </div>
+          ) : meta ? <Indisponivel c={meta} rotulo="Meta do mês" /> : null}
+        </section>
+      </div>
+
+      {/* ── Indicadores ───────────────────────────────────────── */}
+      <section className="vg-kpis" aria-label="Indicadores do período">
+        {painel.isPending
+          ? [0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="vg-cartao">
+              <span className="vg-esqueleto" style={{ height: 14, width: 100 }} />
+              <span className="vg-esqueleto" style={{ height: 26, width: 130 }} />
+              <span className="vg-esqueleto" style={{ height: 14, width: "80%" }} />
+            </div>
+          ))
+          : (
+            <>
+              <CartaoKpi c={faturado} icone={<Banknote size={15} />} tom="neutro"
+                titulo={ultimo ? `Faturado em ${rotuloPonto(ultimo.inicio, "mes")}` : "Faturado"}
+                valorForcado={ultimo?.valor} deltaForcado={yoy} notaForcada={ult12.length === 12 ? `12 meses: ${dinheiroCurto(soma(ult12), "BRL")}${yoy12 !== null ? ` · ${pct(yoy12)} vs 12 anteriores` : ""}` : undefined}
+                faisca={ult12.map((x) => x.valor)}
+                destino={ultimo ? link("faturamento_competencia", { periodo: "tudo", familia: f, de: ultimo.inicio, ate: fimDoPonto(ultimo.inicio, "mes") }) : undefined} />
+              <CartaoKpi c={booking} icone={<TrendingUp size={15} />} tom="sucesso" />
+              <CartaoKpi c={recebido} icone={<Wallet size={15} />} tom="neutro" />
+              <CartaoKpi c={ativos} icone={<Users size={15} />} tom="neutro" />
+              <CartaoKpi c={winRate} icone={<Target size={15} />} tom="sucesso" />
+              <CartaoKpi c={ticket} icone={<Banknote size={15} />} tom="neutro" />
+            </>
+          )}
+      </section>
+
+      {/* ── Evolução + alertas ────────────────────────────────── */}
+      <div className="vg-segunda">
+        <section className="vg-painel" aria-label="Faturamento por competência">
+          <div className="vg-painel-cab">
+            <div>
+              <h2><span className="vg-icone"><ChartNoAxesCombined size={15} aria-hidden /></span> Faturamento por competência</h2>
+              <p>Clique numa barra para abrir os registros daquele mês. Competência não fechada não aparece — e não vira zero.</p>
+            </div>
+            <Link className="rx-kpi-ver" href={link("faturamento_competencia", { periodo: janela, familia: f })}>Ver os registros</Link>
+          </div>
+
+          {hist.isPending ? <div className="vg-esqueleto" style={{ height: 260 }} />
+            : hist.error ? <Aviso erro={hist.error} />
+              : dados.length === 0 ? (
+                <div className="rel-vazio" style={{ padding: "32px 12px", boxShadow: "none" }}>
+                  <strong>Sem faturamento para esta família</strong><span>Nenhuma competência tem valor neste filtro.</span>
+                </div>
+              ) : (
+                <>
+                  <ExecutiveRevenueStory pontos={visiveis} mes={focoValido} aoExplorar={abrirMes} />
+                  <div className="vg-grafico-lado">
+                    <div style={{ minWidth: 0 }}>
+                      <div className="rx-barra" style={{ justifyContent: "space-between", marginBottom: "var(--space-8)" }}>
+                        {temAnterior ? (
+                          <div className="rx-legenda" role="group" aria-label="Séries">
+                            <button type="button" aria-pressed disabled style={{ cursor: "default" }}><i style={{ background: "var(--chart-1)" }} />Faturado no mês</button>
+                            <button type="button" aria-pressed={!oculta} onClick={() => setOculta((v) => !v)}><i style={{ background: "var(--chart-3)" }} />Mesmo mês do ano anterior</button>
+                          </div>
+                        ) : <span />}
+                        <div className="rx-barra" style={{ marginLeft: "auto" }}>
+                          {focoValido && <button type="button" className="rx-btn" onClick={() => setMesFocado(null)}>Limpar seleção</button>}
+                          <select id="ex-mes-detalhe" className="rx-select" aria-label="Selecione uma competência para detalhar"
+                            value={focoValido ?? ""} onChange={(e) => { if (e.target.value) abrirMes(e.target.value); }}>
+                            <option value="">Selecionar mês</option>
+                            {dados.map((x) => <option key={x.inicio} value={x.inicio}>{x.rotulo}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <ChartContainer config={CONFIG} className="vg-grafico">
+                        <ComposedChart data={dados} accessibilityLayer margin={{ left: 4, right: 8, top: 8 }}>
+                          <CartesianGrid vertical={false} />
+                          <XAxis dataKey="rotulo" tickLine={false} axisLine={false} tickMargin={8} interval="preserveStartEnd" minTickGap={18} />
+                          <YAxis width="auto" tickLine={false} axisLine={false} tickFormatter={(v: number) => dinheiroCurto(v, "BRL")} />
+                          <Tooltip cursor={{ fill: "var(--of-calha)", opacity: 0.6 }} content={<Tip titulo="Faturado" comparar />} />
+                          <Bar dataKey="valor" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={38}
+                            isAnimationActive={!reduzido} animationDuration={380} cursor="pointer"
+                            onClick={(d) => { const i = (d as unknown as { inicio?: string }).inicio; if (i) abrirMes(i); }}>
+                            {dados.map((x) => <Cell key={x.inicio} fill={focoValido === x.inicio ? "var(--of-coral-acao)" : "var(--chart-1)"} />)}
+                          </Bar>
+                          {temAnterior && !oculta
+                            ? <Line dataKey="anterior" type="monotone" stroke="var(--chart-3)" strokeWidth={2} strokeDasharray="5 4" dot={false} connectNulls={false} isAnimationActive={!reduzido} />
+                            : null}
+                        </ComposedChart>
+                      </ChartContainer>
+                    </div>
+
+                    <div className="vg-derivados">
+                      <Derivado rotulo="Evolução mensal" v={yoy} nota={mesmoMesAnterior ? `vs ${rotuloPonto(mesmoMesAnterior.inicio, "mes")}` : "sem mês comparável"} />
+                      <Derivado rotulo="Vs. média de 3 meses" v={vsMedia3} nota={media3 ? `Média: ${dinheiro(media3, "BRL")}` : "sem três competências"} />
+                      <Derivado rotulo="12 meses vs 12 anteriores" v={yoy12} nota={ult12.length === 12 ? dinheiroCurto(soma(ult12), "BRL") : "sem 24 competências"} />
+                    </div>
+                  </div>
+                </>
+              )}
+        </section>
+
+        <section className="vg-painel" aria-label="O que exige decisão">
+          <div className="vg-painel-cab">
+            <div>
+              <h2><span className="vg-icone" data-tom="aviso"><CircleAlert size={15} aria-hidden /></span> O que exige decisão</h2>
+              <p>Cada alerta aponta a métrica que o prova. O clique abre os registros.</p>
+            </div>
+          </div>
+          {painel.isPending ? <span className="vg-esqueleto" style={{ height: 160 }} />
+            : <Alertas alertas={p?.blocos.alertas.alertas ?? []} />}
+        </section>
+      </div>
+
+      {/* ── Aquisição e concentração ──────────────────────────── */}
+      <div className="vg-duas">
+        <section className="vg-painel" aria-label="Da entrada à venda">
+          <div className="vg-painel-cab">
+            <div>
+              <h2><span className="vg-icone" data-tom="neutro"><Filter size={15} aria-hidden /></span> Da entrada à venda</h2>
+              <p>Volumes do período. São etapas distintas, não uma coorte: um lead de março pode virar oportunidade em agosto.</p>
+            </div>
+          </div>
+          {painel.isPending ? <span className="vg-esqueleto" style={{ height: 90 }} /> : (
+            <div className="vg-funil">
+              <EtapaFunil c={leads} rotulo="Leads novos" />
+              <EtapaFunil c={oportunidades} rotulo="Oportunidades criadas" base={valorDe(leads)} />
+              <EtapaFunil c={pipeline} rotulo="Pipeline aberto" />
+              <EtapaFunil c={booking} rotulo="Venda ganha" />
             </div>
           )}
         </section>
 
         <section className="vg-painel" aria-label="Concentração de clientes">
           <div className="vg-painel-cab">
-            <div><h2>Concentração</h2><p>Quanto do faturado depende dos maiores clientes.</p></div>
+            <div>
+              <h2><span className="vg-icone" data-tom="neutro"><Users size={15} aria-hidden /></span> Concentração</h2>
+              <p>Quanto do faturado depende dos maiores clientes.</p>
+            </div>
             <Link className="rx-kpi-ver" href={link("clientes_faturados", { periodo: janela, familia: f })}>Ver todos</Link>
           </div>
-          {clientes.isPending ? <div className="vg-esqueleto" style={{ height: 150 }} /> : clientes.error ? <Aviso erro={clientes.error} /> : top.length === 0 ? (
-            <p className="vg-estado">Nenhum cliente faturado neste filtro.</p>
-          ) : (
-            <>
-              <p className="ex-conc">
-                <b>{pct(somaTodos ? somaTop(5) / somaTodos : 0).replace("+", "")}</b> do faturado vem dos 5 maiores e <b>{pct(somaTodos ? somaTop(10) / somaTodos : 0).replace("+", "")}</b> dos 10 maiores,
-                entre {(clientes.data?.exploracao.registrosTotal ?? 0).toLocaleString("pt-BR")} clientes faturados.
-              </p>
-              <ol className="ex-top">
-                {top.map((l, i) => (
-                  <li key={String(l.documento ?? i)} style={{ "--p": `${somaTodos ? (Number(l.valor) / Number(top[0].valor)) * 100 : 0}%` } as React.CSSProperties}>
-                    <span className="ex-top-nome">{l.empresa_id ? <Link href={`/empresas/${l.empresa_id}`}>{String(l.empresa)}</Link> : String(l.empresa)}</span>
-                    <span className="ex-top-valor">{dinheiro(Number(l.valor), "BRL")}</span>
-                    <span className="ex-top-meta">{somaTodos ? ((Number(l.valor) / somaTodos) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : "0"}% · {String(l.competencias)} {Number(l.competencias) === 1 ? "competência" : "competências"}</span>
-                  </li>
-                ))}
-              </ol>
-            </>
-          )}
+          {clientes.isPending ? <span className="vg-esqueleto" style={{ height: 150 }} />
+            : clientes.error ? <Aviso erro={clientes.error} />
+              : top.length === 0 ? <p className="vg-estado">Nenhum cliente faturado neste filtro.</p>
+                : (
+                  <>
+                    <p className="vg-leitura" data-tom="neutro">
+                      <TrendingUp size={15} aria-hidden />
+                      <span>
+                        <b>{pct(somaTodos ? somaTop(5) / somaTodos : 0).replace("+", "")} vem dos 5 maiores</b>
+                        {pct(somaTodos ? somaTop(10) / somaTodos : 0).replace("+", "")} dos 10 maiores, entre{" "}
+                        {(clientes.data?.exploracao.registrosTotal ?? 0).toLocaleString("pt-BR")} clientes faturados.
+                      </span>
+                    </p>
+                    <ol className="ex-top">
+                      {top.slice(0, 6).map((l, i) => (
+                        <li key={String(l.documento ?? i)} style={{ "--p": `${somaTodos ? (Number(l.valor) / Number(top[0].valor)) * 100 : 0}%` } as React.CSSProperties}>
+                          <span className="ex-top-nome">{l.empresa_id ? <Link href={`/empresas/${l.empresa_id}`}>{String(l.empresa)}</Link> : String(l.empresa)}</span>
+                          <span className="ex-top-valor">{dinheiro(Number(l.valor), "BRL")}</span>
+                          <span className="ex-top-meta">{somaTodos ? ((Number(l.valor) / somaTodos) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : "0"}%</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </>
+                )}
         </section>
       </div>
 
-      {/* ── O que exige decisão ───────────────────────────────── */}
-      {foraPlanilha.data && foraPlanilha.data.exploracao.total > 0 ? (
-        <div className="vg-alertas" aria-label="O que exige decisão">
-          <Link className="vg-alerta" data-severidade="critico" href={link("faturas_stripe_fora_da_planilha", { periodo: "12m" })}>
-            <CircleAlert size={17} className="vg-alerta-icone" aria-hidden />
-            <span>
-              <b>{dinheiro(foraPlanilha.data.exploracao.total, "BRL")}</b> em {foraPlanilha.data.exploracao.registrosTotal.toLocaleString("pt-BR")} cobranças
-              Stripe dos últimos 12 meses não têm linha na planilha de faturamento do mesmo mês — e não estão somadas ao faturado acima.
-            </span>
-            <ArrowRight size={16} className="vg-alerta-ir" aria-hidden />
-          </Link>
-        </div>
-      ) : null}
+      {mesAberto ? <ExecutiveMonthDrawer key={mesAberto + (f ?? "todos")} mes={mesAberto} familia={f} aoFechar={() => setMesAberto(null)} /> : null}
 
-      {/* ── Lacunas declaradas ────────────────────────────────── */}
-      <section className="vg-lacunas" aria-label="O que este painel ainda não responde">
-        <h3>O que este painel não responde, e por quê</h3>
-        <p className="vg-lacuna"><b>Lucro, margem, CAC completo, payback, burn e runway</b>Só existem custos de mídia organizados; sem custo de equipe, telefonia, IA e fornecedores o cálculo seria inventado.</p>
-        <p className="vg-lacuna"><b>Bridge de MRR e retenção (NRR/GRR)</b>Exigem movimentos de receita reconciliados com o fechamento mensal; entram quando a conciliação por cliente fechar.</p>
-        <p className="vg-lacuna"><b>Faturamento por família antes da classificação</b>A planilha base não tem produto, só Business Line; ver o percentual sem família acima.</p>
-        <p className="vg-lacuna"><b>Recebido comparável ao faturado</b>Só existe a baixa dos pagamentos Stripe; boleto e nota fiscal do PABX não têm baixa no ONFACE.</p>
-      </section>
+      {/* ── Lacunas ───────────────────────────────────────────── */}
+      {p && p.lacunas.length > 0 ? (
+        <section className="vg-lacunas" aria-label="O que este painel ainda não responde">
+          <h3>O que este painel não responde, e por quê</h3>
+          {p.lacunas.map((l) => (
+            <p key={l.titulo} className="vg-lacuna"><b>{l.titulo}</b>{l.motivo}</p>
+          ))}
+        </section>
+      ) : null}
     </div>
   );
 }
+
+/* ───────── peças ───────── */
 
 function Aviso({ erro }: { erro: ErroMetrica }) {
   return <p className="rx-aviso" data-tom="erro" role="alert">{erro.codigo === "filtro_nao_suportado" ? erro.message : "Não foi possível carregar este bloco. Recarregue a página."}</p>;
 }
 
-type R = ReturnType<typeof useMetrica>;
-
-function Cartao({ titulo, nota, r, href, comparar, naoAplicaFamilia }: {
-  titulo: string; nota: string; r: R; href: string; comparar?: boolean; naoAplicaFamilia?: boolean;
-}) {
-  const d = r.data;
-  const unidade = d?.metrica.unidade ?? "BRL";
-
-  // Filtro que a métrica não sabe aplicar: dizer o que é, em vez de mostrar zero.
-  if (naoAplicaFamilia) {
-    return (
-      <div className="vg-cartao">
-        <span className="vg-cartao-titulo">{titulo}</span>
-        <span className="vg-vazio">—</span>
-        <span className="vg-estado" data-estado="nao_aplicavel">Pagamentos não carregam a família do serviço: este número só existe no consolidado.</span>
-      </div>
-    );
-  }
-
-  const variacao = comparar ? d?.comparacao?.variacao ?? null : null;
+/** Ausência com motivo. Nunca um zero que pareceria um fato. */
+function Indisponivel({ c, rotulo, escuro }: { c: Cartao | null; rotulo?: string; escuro?: boolean }) {
   return (
-    <Link className="vg-cartao" href={href} aria-label={`${titulo}: abrir os registros`}>
-      <span className="vg-cartao-titulo">{titulo}</span>
-      {r.isPending ? <span className="vg-esqueleto" style={{ height: 26, width: 130 }} />
-        : r.error ? <span className="vg-vazio">—</span>
-          : <span className="vg-cartao-valor">{dinheiro(d?.exploracao.total, unidade)}</span>}
-      {r.error ? (
-        <span className="vg-estado" data-estado={r.error.codigo === "filtro_nao_suportado" ? "nao_aplicavel" : "indisponivel"}>
-          {r.error.codigo === "filtro_nao_suportado" ? r.error.message : "Indisponível agora."}
-        </span>
-      ) : (
-        <span className="vg-cartao-nota">
-          {comparar && variacao !== null ? <><Delta v={variacao} /> </> : null}
-          {nota}
-          {comparar && d?.exploracao.ultimoEm ? ` · último em ${new Date(d.exploracao.ultimoEm).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : ""}
-          {comparar && d && !d.exploracao.ultimoEm ? " · nenhum registro no período" : ""}
-          {comparar && d?.comparacao && variacao === null ? " · sem base de comparação" : ""}
-        </span>
-      )}
-    </Link>
-  );
-}
-
-function CartaoSerie({ titulo, carregando, erro, valor, unidade, delta, deltaRotulo, nota, href }: {
-  titulo: string; carregando: boolean; erro: ErroMetrica | null; valor?: number; unidade: string;
-  delta: number | null; deltaRotulo: string; nota: string; href?: string;
-}) {
-  const corpo = (
-    <>
-      <span className="vg-cartao-titulo">{titulo}</span>
-      {carregando ? <span className="vg-esqueleto" style={{ height: 26, width: 130 }} />
-        : <span className={erro || valor === undefined ? "vg-vazio" : "vg-cartao-valor"}>{erro || valor === undefined ? "—" : dinheiro(valor, unidade)}</span>}
-      <span className="vg-cartao-nota">
-        {delta !== null ? <><Delta v={delta} />{deltaRotulo} · </> : null}
-        {erro ? "Indisponível agora." : nota}
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+      {rotulo ? <span className="vg-cartao-titulo">{rotulo}</span> : null}
+      <span className="vg-vazio" style={escuro ? { color: "var(--of-shell-tinta-4)" } : undefined}>—</span>
+      <span className={escuro ? "vg-valor-sub" : "vg-estado"} data-estado={c?.estado ?? "indisponivel"}>
+        {c?.motivo?.mensagem ?? "Indisponível agora."}
       </span>
-    </>
+    </div>
   );
-  return href ? <Link className="vg-cartao" href={href}>{corpo}</Link> : <div className="vg-cartao">{corpo}</div>;
 }
 
 function Delta({ v }: { v: number }) {
@@ -416,16 +528,162 @@ function Delta({ v }: { v: number }) {
   return <span className="vg-delta" data-tom={tom}><Seta size={13} aria-hidden />{pct(v)}</span>;
 }
 
+function Derivado({ rotulo, v, nota }: { rotulo: string; v: number | null; nota: string }) {
+  const tom = v === null ? "neutro" : v > 0.0005 ? undefined : v < -0.0005 ? "baixa" : "neutro";
+  return (
+    <div className="vg-derivado">
+      <span>{rotulo}</span>
+      <strong data-tom={tom}>{v === null ? "—" : pct(v)}</strong>
+      <small>{nota}</small>
+    </div>
+  );
+}
+
+/** Mini-série do cartão. Só desenha quando há histórico de verdade. */
+function Faisca({ dados }: { dados: number[] }) {
+  const reduzido = useReducedMotion();
+  if (dados.length < 3) return null;
+  const pontos = dados.map((v, i) => ({ i, v }));
+  const subindo = dados[dados.length - 1] >= dados[0];
+  const cor = subindo ? "var(--of-sucesso-tinta)" : "var(--of-coral-acao)";
+  return (
+    <div className="vg-faisca" aria-hidden>
+      <ChartContainer config={{ v: { label: "série", color: cor } }} className="vg-faisca" style={{ height: "100%", aspectRatio: "auto" }}>
+        <AreaChart data={pontos} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
+          <Area dataKey="v" type="monotone" stroke={cor} strokeWidth={1.5} fill={cor} fillOpacity={0.12}
+            dot={false} isAnimationActive={!reduzido} />
+        </AreaChart>
+      </ChartContainer>
+    </div>
+  );
+}
+
+function CartaoKpi({ c, icone, tom, titulo, valorForcado, deltaForcado, notaForcada, faisca, destino }: {
+  c: Cartao | null;
+  icone: React.ReactNode;
+  tom?: "sucesso" | "aviso" | "neutro";
+  titulo?: string;
+  valorForcado?: number;
+  deltaForcado?: number | null;
+  notaForcada?: string;
+  faisca?: number[];
+  destino?: string;
+}) {
+  if (!c && valorForcado === undefined) return null;
+  const nome = titulo ?? c?.nome ?? "";
+  const valor = valorForcado ?? valorDe(c);
+  const unidade = c?.unidade ?? "BRL";
+  const variacao = deltaForcado !== undefined ? deltaForcado : c?.comparacao?.variacao ?? null;
+  const url = destino ?? href(c?.drill ?? null);
+  const ressalva = [c?.estado === "parcial" ? c?.motivo?.mensagem : null, c?.naoInclui].filter(Boolean).join(" ") || null;
+
+  const corpo = (
+    <>
+      <div className="vg-cartao-topo">
+        <span className="vg-icone" data-tom={tom}>{icone}</span>
+        <span className="vg-cartao-titulo" title={nome}>{nome}</span>
+      </div>
+      {valor === null ? (
+        <>
+          <span className="vg-vazio">—</span>
+          <span className="vg-estado" data-estado={c?.estado ?? "indisponivel"}>{c?.motivo?.mensagem ?? "Indisponível agora."}</span>
+        </>
+      ) : (
+        <>
+          <span className="vg-cartao-valor">
+            {unidade === "percentual"
+              ? `${valor.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`
+              : unidade === "contagem"
+                ? valor.toLocaleString("pt-BR")
+                : dinheiro(valor, unidade)}
+          </span>
+          <div className="vg-cartao-pe">
+            <span className="vg-cartao-nota">
+              {variacao !== null ? <Delta v={variacao} /> : null}
+              {notaForcada ?? c?.comparacao?.rotulo ?? ""}
+            </span>
+            {faisca ? <Faisca dados={faisca} /> : null}
+          </div>
+          {/* A ressalva da métrica é longa e é documentação: fica no tooltip, com
+              um sinal visível de que existe. Despejá-la no cartão empurra o
+              número para cima e faz o cartão parar de ser escaneável. */}
+          {/* Linha visível só quando a cobertura é parcial — isso muda a
+              confiança no número. A ressalva de definição fica no `title` do
+              cartão inteiro: repetir "tem ressalva" em todo cartão vira ruído. */}
+          {c?.estado === "parcial" ? (
+            <span className="vg-estado" data-estado="parcial" title={ressalva ?? undefined}>
+              <Info size={12} aria-hidden style={{ display: "inline", verticalAlign: "-2px", marginRight: 4 }} />
+              Cobertura parcial
+            </span>
+          ) : null}
+        </>
+      )}
+    </>
+  );
+
+  return url && valor !== null
+    ? <Link className="vg-cartao" href={url} title={ressalva ?? undefined} aria-label={`${nome}: abrir os registros`}>{corpo}</Link>
+    : <div className="vg-cartao" title={ressalva ?? undefined}>{corpo}</div>;
+}
+
+function EtapaFunil({ c, rotulo, base }: { c: Cartao | null; rotulo: string; base?: number | null }) {
+  const v = valorDe(c);
+  const url = href(c?.drill ?? null);
+  const taxa = base && base > 0 && v !== null ? v / base : null;
+  const corpo = (
+    <>
+      <span>{rotulo}</span>
+      <b>{v === null ? "—" : c?.unidade === "BRL" ? dinheiro(v, "BRL") : v.toLocaleString("pt-BR")}</b>
+      <small>{v === null ? (c?.motivo?.mensagem ?? "indisponível") : taxa !== null ? `${(taxa * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do anterior` : (c?.registros ?? 0).toLocaleString("pt-BR") + " registros"}</small>
+    </>
+  );
+  return url && v !== null ? <Link href={url}>{corpo}</Link> : <div>{corpo}</div>;
+}
+
+function Alertas({ alertas }: { alertas: Alerta[] }) {
+  const ativos = alertas.filter((a) => a.situacao === "disparado");
+  if (ativos.length === 0) {
+    return (
+      <p className="vg-leitura">
+        <TrendingUp size={15} aria-hidden />
+        <span><b>Nada exige decisão agora</b>Nenhum dos limiares monitorados foi cruzado neste recorte.</span>
+      </p>
+    );
+  }
+  return (
+    <div className="vg-alertas">
+      {ativos.map((a) => {
+        const url = href(a.drill);
+        const corpo = (
+          <>
+            <CircleAlert size={16} aria-hidden style={{ flex: "0 0 auto", marginTop: 2, color: a.severidade === "critica" ? "var(--of-coral-texto)" : "var(--of-aviso-tinta)" }} />
+            <span className="vg-alerta-corpo">
+              <b>{a.titulo}</b>
+              <span>{a.frase ?? a.limiar.descricao}</span>
+            </span>
+            {url ? <ArrowRight size={15} aria-hidden className="vg-alerta-meta" /> : null}
+          </>
+        );
+        return url
+          ? <Link key={a.id} className="vg-alerta" href={url}>{corpo}</Link>
+          : <div key={a.id} className="vg-alerta">{corpo}</div>;
+      })}
+    </div>
+  );
+}
+
 type PontoTip = { rotulo: string; valor: number; registros: number; anterior: number | null; rotuloAnterior: string | null };
-function Tip({ active, payload }: { active?: boolean; payload?: Array<{ payload: PontoTip }> }) {
+function Tip({ active, payload, titulo, comparar }: {
+  active?: boolean; payload?: Array<{ payload: PontoTip }>; titulo: string; comparar?: boolean;
+}) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
     <div className="rx-tip" role="status">
       <strong>Competência {p.rotulo}</strong>
-      <div><span>Faturado</span><b>{dinheiro(p.valor, "BRL")}</b></div>
-      {p.anterior !== null ? <div><span>{p.rotuloAnterior}</span><b>{dinheiro(p.anterior, "BRL")}</b></div> : null}
-      {p.anterior !== null && p.anterior > 0 ? <div><span>Variação</span><b>{pct(p.valor / p.anterior - 1)}</b></div> : null}
+      <div><span>{titulo}</span><b>{dinheiro(p.valor, "BRL")}</b></div>
+      {comparar && p.anterior !== null ? <div><span>{p.rotuloAnterior}</span><b>{dinheiro(p.anterior, "BRL")}</b></div> : null}
+      {comparar && p.anterior !== null && p.anterior > 0 ? <div><span>Variação</span><b>{pct(p.valor / p.anterior - 1)}</b></div> : null}
       <small>{p.registros.toLocaleString("pt-BR")} linhas · clique para abrir</small>
     </div>
   );

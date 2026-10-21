@@ -1,76 +1,538 @@
 /* VISÃO GERAL — Insights
  *
- * Substitui `insights-premium.css`, que contrariava o DESIGN.md regra por regra:
- * masthead de 300px antes do primeiro número, glow coral com blur, malha
- * decorativa, sombra em todo card (onde `--shadow-card: none`), raios e pesos
- * fora dos tokens, rótulos abaixo do piso de 11px, e cor de card escolhida por
- * `nth-child` — cor por posição, não por significado.
+ * Modo Operate: quem chega decide. A ordem da tela é a ordem das perguntas,
+ * a densidade é alta, e um único bloco ganha grafite e número grande — a regra
+ * do DS de dar peso só ao que muda o próximo passo.
  *
- * Esta tela é modo Operate: quem chega decide, não se impressiona. A ordem da
- * tela é a ordem das perguntas, a densidade é alta e a expressão mora no
- * detalhe preciso. Um único bloco ganha grafite e número grande (a regra do DS
- * de dar peso só ao que muda o próximo passo); o resto é apoio.
- *
- * Toda medida sai de token ou de `calc(N * var(--onface-u))`. Nenhum hex solto.
+ * Toda medida sai de token ou de `calc(N * var(--onface-u))`. Nenhum hex solto,
+ * nenhuma sombra em cartão (o sistema define `--shadow-card: none`), nenhum
+ * raio fora dos cinco tokens, coral só em ação, estado ativo e alerta.
  */
-
-/* ───────── casca ───────── */
 
 .ins {
   display: flex;
   flex-direction: column;
-  gap: var(--space-20);
+  gap: var(--space-16);
   padding-bottom: var(--space-40);
   max-width: 100%;
 }
 
-/* Faixa de contexto: uma linha com o recorte vigente. Substitui o masthead.
-   Gruda no topo porque o recorte precisa estar visível enquanto se rola. */
-.vg-contexto {
-  position: sticky;
-  top: 0;
-  z-index: 3;
+/* ───────── topo da página ───────── */
+
+.vg-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+.vg-topo h1 {
+  margin: 0;
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: clamp(25px, 2.2vw, 32px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -.02em;
+  color: var(--of-tinta-forte);
+}
+.vg-topo p {
+  margin: var(--space-4) 0 0;
+  font-size: var(--of-t-corpo);
+  line-height: 1.5;
+  color: var(--of-tinta-3);
+}
+
+/* ───────── barra de filtros ───────── */
+
+.vg-filtros {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-12);
-  padding: var(--space-10) var(--space-12);
+  gap: var(--space-8);
+  padding: var(--space-10);
   border-radius: var(--radius-card);
   background: var(--of-papel);
   box-shadow: var(--ring-inset-hairline);
 }
-.vg-contexto-grupo {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-  min-width: 0;
-}
-.vg-contexto-grupo:last-child { margin-left: auto; }
-.vg-contexto-rotulo {
+/* Rótulo acima do valor, como em filtro de ferramenta analítica. */
+.vg-filtro { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.vg-filtro > span {
   font-size: var(--of-t-rotulo);
   font-weight: 600;
-  letter-spacing: .08em;
-  text-transform: uppercase;
   color: var(--of-tinta-3);
   white-space: nowrap;
 }
+.vg-filtro-limpar { margin-left: auto; }
 
-/* Frescor e cobertura do dado: informação de serviço, discreta mas legível. */
-.vg-frescor {
+/* ───────── grades ───────── */
+
+.vg-primeira,
+.vg-segunda {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: var(--space-16);
+  align-items: stretch;
+}
+.vg-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(190 * var(--onface-u)), 1fr));
+  gap: var(--space-12);
+}
+.vg-duas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(320 * var(--onface-u)), 1fr));
+  gap: var(--space-16);
+}
+
+/* ───────── painel branco ───────── */
+
+.vg-painel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-20);
+  border-radius: var(--radius-card);
+  background: var(--of-papel);
+  box-shadow: var(--ring-inset-hairline);
+  min-width: 0;
+}
+.vg-painel-cab {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.vg-painel-cab h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: var(--of-t-titulo);
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: var(--of-tinta-forte);
+}
+.vg-painel-cab p {
+  margin: var(--space-4) 0 0;
+  font-size: var(--of-t-meta);
+  line-height: 1.5;
+  color: var(--of-tinta-3);
+}
+
+/* Ícone do título: caixa com a cor do assunto, não decoração aleatória. */
+.vg-icone {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: calc(28 * var(--onface-u));
+  height: calc(28 * var(--onface-u));
+  border-radius: calc(8 * var(--onface-u));
+  background: var(--of-coral-fundo);
+  color: var(--of-coral-texto);
+}
+.vg-icone[data-tom="sucesso"] { background: var(--of-sucesso-fundo); color: var(--of-sucesso-tinta); }
+.vg-icone[data-tom="aviso"] { background: var(--of-aviso-fundo); color: var(--of-aviso-tinta); }
+.vg-icone[data-tom="neutro"] { background: var(--of-calha); color: var(--of-tinta-2); }
+
+/* ───────── o bloco que decide ───────── */
+
+.vg-destaque {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border-radius: var(--radius-card-lg);
+  background: var(--of-moldura);
+  color: var(--of-shell-tinta);
+  min-width: 0;
+}
+.vg-destaque-cab {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.vg-destaque-rotulo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: var(--of-t-secao);
+  font-weight: 700;
+  color: var(--of-shell-tinta);
+}
+.vg-destaque .vg-icone {
+  background: color-mix(in srgb, var(--of-coral-marca) 18%, transparent);
+  color: var(--of-coral-no-escuro);
+}
+.vg-destaque-valor { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-12); }
+
+/* O valor NUNCA quebra: tabular, numa linha, encolhendo por clamp.
+ * O teto de 44px passa de propósito do `display` (32px) da escala: este é o
+ * único número-momento da tela, e é o que a pessoa lê de longe. Qualquer outro
+ * número grande fica em `headline` (25px). */
+.vg-valor {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: clamp(25px, 3.2vw, 44px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--of-shell-tinta);
+}
+.vg-valor-sub {
+  margin: 0;
+  max-width: 62ch;
+  font-size: var(--of-t-corpo);
+  line-height: 1.55;
+  color: var(--of-shell-tinta-3);
+}
+.vg-destaque-grafico { margin-top: auto; width: 100%; height: clamp(120px, 14vw, 170px); }
+
+/* Pílula de variação. Verde: aconteceu e deu certo. Coral: pede atenção. */
+.vg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-full);
+  font-size: var(--of-t-meta);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: var(--of-sucesso-fundo);
+  color: var(--of-sucesso-tinta);
+}
+.vg-pill[data-tom="baixa"] { background: var(--of-coral-fundo); color: var(--of-coral-texto); }
+.vg-pill[data-tom="neutro"] { background: var(--of-calha); color: var(--of-tinta-2); }
+.vg-destaque .vg-pill {
+  background: color-mix(in srgb, var(--of-sucesso-no-escuro) 16%, transparent);
+  color: var(--of-sucesso-no-escuro);
+}
+.vg-destaque .vg-pill[data-tom="baixa"] {
+  background: color-mix(in srgb, var(--of-coral-no-escuro) 16%, transparent);
+  color: var(--of-coral-no-escuro);
+}
+.vg-destaque .vg-pill[data-tom="neutro"] {
+  background: color-mix(in srgb, var(--of-shell-tinta) 10%, transparent);
+  color: var(--of-shell-tinta-3);
+}
+
+/* ───────── composição empilhada ───────── */
+
+.vg-faixa {
+  display: flex;
+  gap: var(--space-2);
+  height: calc(26 * var(--onface-u));
+  border-radius: calc(8 * var(--onface-u));
+  overflow: hidden;
+  background: var(--of-calha);
+}
+.vg-faixa > * {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  font-size: var(--of-t-meta);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--of-papel);
+  cursor: pointer;
+  transition: filter var(--motion-fast, 120ms) var(--ease-standard, ease);
+}
+.vg-faixa > *:hover { filter: brightness(1.08); }
+.vg-faixa > *:focus-visible { outline: 2px solid var(--of-tinta-forte); outline-offset: -2px; }
+.vg-faixa-legenda {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(130 * var(--onface-u)), 1fr));
+  gap: var(--space-12);
+}
+.vg-faixa-legenda > * {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+}
+.vg-faixa-legenda span {
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
   font-size: var(--of-t-meta);
   color: var(--of-tinta-3);
+  min-width: 0;
+}
+.vg-faixa-legenda b {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: var(--of-t-forte);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--of-tinta-forte);
+}
+.vg-faixa-ponto {
+  flex: 0 0 auto;
+  width: calc(8 * var(--onface-u));
+  height: calc(8 * var(--onface-u));
+  border-radius: calc(2 * var(--onface-u));
+}
+
+/* ───────── meta ───────── */
+
+.vg-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  border-radius: var(--radius-control);
+  background: var(--of-papel-tela);
+}
+.vg-meta-linha { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); }
+.vg-meta-linha > span { font-size: var(--of-t-meta); color: var(--of-tinta-3); }
+.vg-meta-linha > b {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: var(--of-t-forte);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--of-tinta-forte);
+}
+.vg-barra {
+  height: calc(8 * var(--onface-u));
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--of-calha);
+}
+.vg-barra > span { display: block; height: 100%; border-radius: var(--radius-full); background: var(--of-sucesso-tinta); }
+.vg-barra[data-tom="atencao"] > span { background: var(--of-aviso-tinta); }
+.vg-barra[data-tom="baixo"] > span { background: var(--of-coral-acao); }
+
+/* ───────── leitura derivada ───────── */
+
+/* Caixa de insight: a frase que explica o número, com o número dentro. */
+.vg-leitura {
+  display: flex;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-control);
+  background: var(--of-sucesso-fundo);
+  font-size: var(--of-t-meta);
+  line-height: 1.55;
+  color: var(--of-tinta-2);
+}
+.vg-leitura[data-tom="atencao"] { background: var(--of-aviso-fundo); }
+.vg-leitura[data-tom="neutro"] { background: var(--of-papel-tela); }
+.vg-leitura b { display: block; color: var(--of-tinta-forte); }
+.vg-leitura > svg { flex: 0 0 auto; margin-top: calc(2 * var(--onface-u)); color: var(--of-sucesso-tinta); }
+.vg-leitura[data-tom="atencao"] > svg { color: var(--of-aviso-tinta); }
+.vg-leitura[data-tom="neutro"] > svg { color: var(--of-tinta-3); }
+
+/* ───────── cartões de indicador ───────── */
+
+.vg-cartao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--of-papel);
+  box-shadow: var(--ring-inset-hairline);
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+  transition: background var(--motion-fast, 120ms) var(--ease-standard, ease);
+}
+a.vg-cartao:hover { background: var(--of-papel-hover); }
+a.vg-cartao:focus-visible { outline: 2px solid var(--of-coral-marca); outline-offset: 2px; }
+.vg-cartao-topo { display: flex; align-items: center; gap: var(--space-8); min-width: 0; }
+.vg-cartao-titulo {
+  font-size: var(--of-t-corpo);
+  font-weight: 600;
+  color: var(--of-tinta-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.vg-frescor[data-estado="atrasado"] { color: var(--of-aviso-tinta); }
+.vg-cartao-valor {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: clamp(18px, 1.9vw, 25px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--of-tinta-forte);
+}
+.vg-cartao-pe { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); min-width: 0; }
+.vg-cartao-nota { font-size: var(--of-t-meta); line-height: 1.45; color: var(--of-tinta-3); min-width: 0; }
+.vg-faisca { flex: 0 0 auto; width: calc(72 * var(--onface-u)); height: calc(28 * var(--onface-u)); }
+
+.vg-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-right: var(--space-6);
+  font-size: var(--of-t-meta);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.vg-delta[data-tom="alta"] { color: var(--of-sucesso-tinta); }
+.vg-delta[data-tom="baixa"] { color: var(--of-coral-texto); }
+.vg-delta[data-tom="neutro"] { color: var(--of-tinta-3); }
+
+/* Estado honesto: indisponível, parcial ou não aplicável — com o motivo. */
+.vg-estado { font-size: var(--of-t-meta); line-height: 1.45; color: var(--of-tinta-3); }
+.vg-estado[data-estado="parcial"],
+.vg-estado[data-estado="indisponivel"] { color: var(--of-aviso-tinta); }
+.vg-vazio {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: clamp(18px, 1.9vw, 25px);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--of-tinta-4);
+}
+
+/* ───────── gráficos ───────── */
+
+.vg-grafico { width: 100%; height: clamp(230px, 24vw, 300px); }
+.vg-grafico-lado {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(calc(170 * var(--onface-u)), auto);
+  gap: var(--space-16);
+  align-items: stretch;
+}
+.vg-derivados { display: flex; flex-direction: column; gap: var(--space-8); }
+.vg-derivado {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-12);
+  border-radius: var(--radius-control);
+  background: var(--of-papel-tela);
+}
+.vg-derivado > span {
+  display: flex; align-items: center; gap: var(--space-6);
+  font-size: var(--of-t-meta); color: var(--of-tinta-3);
+}
+.vg-derivado > strong {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: clamp(14px, 1.7vw, 18px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--of-sucesso-tinta);
+}
+.vg-derivado > strong[data-tom="baixa"] { color: var(--of-coral-texto); }
+.vg-derivado > strong[data-tom="neutro"] { color: var(--of-tinta-forte); }
+.vg-derivado > small { font-size: var(--of-t-meta); color: var(--of-tinta-3); }
+
+/* ───────── alertas ───────── */
+
+.vg-alertas { display: flex; flex-direction: column; gap: var(--space-4); }
+.vg-alerta {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-12);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  text-decoration: none;
+  font-size: var(--of-t-meta);
+  line-height: 1.5;
+  transition: background var(--motion-fast, 120ms) var(--ease-standard, ease);
+}
+.vg-alerta + .vg-alerta { box-shadow: inset 0 1px 0 var(--of-fio); }
+.vg-alerta:hover { background: var(--of-papel-hover); }
+.vg-alerta:focus-visible { outline: 2px solid var(--of-coral-marca); outline-offset: -2px; }
+.vg-alerta-corpo { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.vg-alerta-corpo > b { font-weight: 600; color: var(--of-tinta-forte); }
+.vg-alerta-corpo > span { color: var(--of-tinta-3); }
+.vg-alerta-meta {
+  margin-left: auto; flex: 0 0 auto;
+  font-size: var(--of-t-meta); color: var(--of-tinta-4); white-space: nowrap;
+}
+
+/* ───────── funil ───────── */
+
+.vg-funil { display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.vg-funil > * {
+  flex: 1 1 calc(132 * var(--onface-u));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-12);
+  border-radius: var(--radius-control);
+  background: var(--of-coral-fundo);
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+}
+.vg-funil > *:hover { background: var(--of-coral-fundo-forte); }
+.vg-funil > *:focus-visible { outline: 2px solid var(--of-coral-marca); outline-offset: 2px; }
+.vg-funil b {
+  font-family: var(--font-onface-titulo), sans-serif;
+  font-size: clamp(14px, 1.6vw, 18px);
+  white-space: nowrap;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--of-tinta-forte);
+}
+.vg-funil span { font-size: var(--of-t-meta); color: var(--of-tinta-2); }
+.vg-funil small { font-size: var(--of-t-meta); font-variant-numeric: tabular-nums; color: var(--of-tinta-3); }
+
+/* ───────── esqueleto ───────── */
+
+.vg-esqueleto {
+  border-radius: var(--radius-control);
+  background: linear-gradient(90deg, var(--of-neutro) 25%, var(--of-calha) 37%, var(--of-neutro) 63%);
+  background-size: 400% 100%;
+  animation: vg-brilho 1.4s ease-in-out infinite;
+}
+.vg-destaque .vg-esqueleto {
+  background: linear-gradient(90deg, var(--of-shell-hover) 25%, var(--of-shell-ativo) 37%, var(--of-shell-hover) 63%);
+  background-size: 400% 100%;
+}
+@keyframes vg-brilho { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .vg-esqueleto { animation: none; background: var(--of-neutro); }
+  .ins .vg-destaque .vg-esqueleto { background: var(--of-shell-hover); }
+}
+
+/* ───────── lacunas ───────── */
+
+.vg-lacunas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(260 * var(--onface-u)), 1fr));
+  gap: var(--space-12);
+  padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--of-papel-tela);
+  box-shadow: var(--ring-inset-hairline);
+}
+.vg-lacunas h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--of-t-meta);
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--of-tinta-3);
+}
+.vg-lacuna { margin: 0; font-size: var(--of-t-meta); line-height: 1.55; color: var(--of-tinta-3); }
+.vg-lacuna b { display: block; font-weight: 600; color: var(--of-tinta-2); }
 
 /* ───────── abas ───────── */
 
-/* Altura de controle, não 58px. Sem índice decorativo, sem cartão por aba:
-   a navegação não disputa espaço com o dado. */
 .ins .ins-abas {
   display: flex;
   align-items: center;
@@ -90,7 +552,7 @@
   gap: var(--space-6);
   height: calc(32 * var(--onface-u));
   padding: 0 var(--space-12);
-  border-radius: var(--radius-sm, calc(8 * var(--onface-u)));
+  border-radius: calc(8 * var(--onface-u));
   font-family: var(--font-onface-titulo), sans-serif;
   font-size: var(--of-t-corpo);
   font-weight: 600;
@@ -110,280 +572,41 @@
 .ins .ins-aba[aria-selected="true"] svg { opacity: 1; color: var(--of-coral-marca); }
 .ins .ins-aba:focus-visible { outline: 2px solid var(--of-coral-marca); outline-offset: -2px; }
 
-/* ───────── estados ───────── */
+/* ───────── faixa de contexto das abas legadas ───────── */
 
-/* Skeleton, não spinner no meio do conteúdo: a página carrega para dentro de
-   uma tarefa e a forma do que vem precisa aparecer antes do valor. */
-.vg-esqueleto {
-  border-radius: var(--radius-card);
-  background: linear-gradient(90deg, var(--of-neutro) 25%, var(--of-calha) 37%, var(--of-neutro) 63%);
-  background-size: 400% 100%;
-  animation: vg-brilho 1.4s ease-in-out infinite;
-}
-@keyframes vg-brilho { from { background-position: 100% 0; } to { background-position: -100% 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .vg-esqueleto { animation: none; background: var(--of-neutro); }
-}
-
-/* ───────── o bloco que decide ───────── */
-
-/* Um único momento na tela, em grafite — a regra do DS de dar peso só ao que
-   muda o próximo passo. Aqui é a receita recorrente. */
-.vg-destaque {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: var(--space-24);
-  padding: var(--space-24);
-  border-radius: var(--radius-card-lg);
-  background: var(--of-moldura);
-  color: var(--of-shell-tinta);
-}
-.vg-destaque-principal { display: flex; flex-direction: column; min-width: 0; }
-.vg-destaque-rotulo {
-  display: inline-flex;
+.vg-contexto {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-12);
+  padding: var(--space-10) var(--space-12);
+  border-radius: var(--radius-card);
+  background: var(--of-papel);
+  box-shadow: var(--ring-inset-hairline);
+}
+.vg-contexto-grupo { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); min-width: 0; }
+.vg-contexto-grupo:last-child { margin-left: auto; }
+.vg-contexto-rotulo {
   font-size: var(--of-t-rotulo);
   font-weight: 600;
   letter-spacing: .08em;
   text-transform: uppercase;
-  color: var(--of-shell-tinta-3);
-}
-
-/* O valor NUNCA quebra: tabular, numa linha só, e encolhe por clamp se preciso.
-   O defeito anterior era `overflow-wrap: anywhere`, que partia "R$ 478.822,89"
-   em "R$ 478.822" e ",89". */
-.vg-valor {
-  display: block;
-  margin-top: var(--space-8);
-  font-family: var(--font-onface-titulo), sans-serif;
-  font-size: clamp(25px, 3.4vw, 44px);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -.03em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  color: var(--of-shell-tinta);
-}
-.vg-valor-sub {
-  margin-top: var(--space-8);
-  font-size: var(--of-t-corpo);
-  line-height: 1.5;
-  color: var(--of-shell-tinta-3);
-}
-
-/* Composição por família numa barra de uma linha: a leitura "de onde vem"
-   sem gastar um gráfico inteiro. */
-.vg-faixa {
-  display: flex;
-  margin-top: var(--space-16);
-  height: calc(8 * var(--onface-u));
-  border-radius: var(--radius-full);
-  overflow: hidden;
-  background: var(--of-shell-linha);
-}
-.vg-faixa > span { display: block; height: 100%; }
-.vg-faixa-legenda {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-12);
-  margin-top: var(--space-10);
-  font-size: var(--of-t-meta);
-  color: var(--of-shell-tinta-3);
-}
-.vg-faixa-legenda > span { display: inline-flex; align-items: center; gap: var(--space-6); white-space: nowrap; }
-.vg-faixa-ponto { width: calc(8 * var(--onface-u)); height: calc(8 * var(--onface-u)); border-radius: var(--radius-full); }
-.vg-faixa-legenda b { color: var(--of-shell-tinta); font-variant-numeric: tabular-nums; font-weight: 600; }
-
-/* ───────── fita de apoio ───────── */
-
-/* Densa, neutra, fio de 1px, sem sombra: card fica colado na página, só o que
-   some ao clicar fora pode flutuar. */
-.vg-fita {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(calc(200 * var(--onface-u)), 1fr));
-  gap: var(--space-12);
-}
-.vg-cartao {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-16);
-  border-radius: var(--radius-card);
-  background: var(--of-papel);
-  box-shadow: var(--ring-inset-hairline);
-  color: inherit;
-  text-decoration: none;
-  min-width: 0;
-  transition: background var(--motion-fast, 120ms) var(--ease-standard, ease);
-}
-/* Hover por troca de superfície, nunca por cor nova nem por levantar o card. */
-a.vg-cartao:hover { background: var(--of-papel-hover); }
-a.vg-cartao:focus-visible { outline: 2px solid var(--of-coral-marca); outline-offset: 2px; }
-.vg-cartao-titulo {
-  font-size: var(--of-t-meta);
-  font-weight: 600;
   color: var(--of-tinta-3);
-  min-width: 0;
-}
-.vg-cartao-valor {
-  font-family: var(--font-onface-titulo), sans-serif;
-  font-size: clamp(18px, 1.9vw, 25px);
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -.02em;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  color: var(--of-tinta-forte);
 }
-.vg-cartao-nota {
-  margin-top: auto;
-  padding-top: var(--space-6);
-  font-size: var(--of-t-meta);
-  line-height: 1.45;
-  color: var(--of-tinta-3);
-}
-
-/* Delta: verde é o que já aconteceu e deu certo, coral o que pede atenção,
-   cinza o que não tem consequência. Mesma forma, cor com semântica. */
-.vg-delta {
+.vg-frescor {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-4);
-  margin-right: var(--space-6);
+  gap: var(--space-6);
   font-size: var(--of-t-meta);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.vg-delta[data-tom="alta"] { color: var(--of-sucesso-tinta); }
-.vg-delta[data-tom="baixa"] { color: var(--of-coral-texto); }
-.vg-delta[data-tom="neutro"] { color: var(--of-tinta-3); }
-.vg-destaque .vg-delta[data-tom="alta"] { color: var(--of-sucesso-no-escuro); }
-.vg-destaque .vg-delta[data-tom="baixa"] { color: var(--of-coral-no-escuro); }
-.vg-destaque .vg-delta[data-tom="neutro"] { color: var(--of-shell-tinta-3); }
-
-/* Estado honesto do número: indisponível, parcial ou não aplicável — com o
-   motivo. Nunca zero no lugar de ausência. */
-.vg-estado {
-  font-size: var(--of-t-meta);
-  line-height: 1.45;
   color: var(--of-tinta-3);
 }
-.vg-estado[data-estado="parcial"],
-.vg-estado[data-estado="indisponivel"] { color: var(--of-aviso-tinta); }
-.vg-vazio {
-  font-family: var(--font-onface-titulo), sans-serif;
-  font-size: clamp(18px, 1.9vw, 25px);
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--of-tinta-4);
-}
-
-/* ───────── painéis ───────── */
-
-.vg-painel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-  padding: var(--space-20);
-  border-radius: var(--radius-card);
-  background: var(--of-papel);
-  box-shadow: var(--ring-inset-hairline);
-  min-width: 0;
-}
-.vg-painel-cab {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-12);
-}
-.vg-painel-cab h2 {
-  margin: 0;
-  font-family: var(--font-onface-titulo), sans-serif;
-  font-size: var(--of-t-titulo);
-  font-weight: 700;
-  letter-spacing: -.01em;
-  color: var(--of-tinta-forte);
-}
-.vg-painel-cab p {
-  margin: var(--space-4) 0 0;
-  font-size: var(--of-t-meta);
-  line-height: 1.5;
-  color: var(--of-tinta-3);
-}
-.vg-duas {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(calc(320 * var(--onface-u)), 1fr));
-  gap: var(--space-16);
-}
-.vg-grafico { width: 100%; height: clamp(240px, 26vw, 320px); }
-
-/* ───────── alertas ───────── */
-
-/* Alerta é métrica com limiar, e o clique abre os registros que o provam.
-   Coral aqui é legítimo: pede decisão agora. */
-.vg-alertas { display: flex; flex-direction: column; gap: var(--space-8); }
-.vg-alerta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-12);
-  padding: var(--space-12) var(--space-16);
-  border-radius: var(--radius-control);
-  background: var(--of-papel);
-  box-shadow: var(--ring-inset-hairline);
-  color: inherit;
-  text-decoration: none;
-  font-size: var(--of-t-corpo);
-  line-height: 1.5;
-}
-.vg-alerta:hover { background: var(--of-papel-hover); }
-.vg-alerta:focus-visible { outline: 2px solid var(--of-coral-marca); outline-offset: 2px; }
-.vg-alerta[data-severidade="critico"] {
-  background: var(--of-coral-fundo);
-  box-shadow: inset 0 0 0 1px var(--of-coral-contorno);
-}
-.vg-alerta[data-severidade="critico"]:hover { background: var(--of-coral-fundo-forte); }
-.vg-alerta-icone { flex: 0 0 auto; color: var(--of-tinta-3); }
-.vg-alerta[data-severidade="critico"] .vg-alerta-icone { color: var(--of-coral-texto); }
-.vg-alerta b { font-variant-numeric: tabular-nums; color: var(--of-tinta-forte); }
-.vg-alerta-ir { margin-left: auto; flex: 0 0 auto; color: var(--of-tinta-4); }
-
-/* ───────── lacunas ───────── */
-
-/* O que o painel não responde, e por quê. Fica no fim, discreto, e é honesto
-   em vez de ausente. */
-.vg-lacunas {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(calc(260 * var(--onface-u)), 1fr));
-  gap: var(--space-12);
-  padding: var(--space-16);
-  border-radius: var(--radius-card);
-  background: var(--of-papel-tela);
-  box-shadow: var(--ring-inset-hairline);
-}
-.vg-lacunas h3 {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-size: var(--of-t-meta);
-  font-weight: 600;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--of-tinta-3);
-}
-.vg-lacuna { font-size: var(--of-t-meta); line-height: 1.55; color: var(--of-tinta-3); }
-.vg-lacuna b { display: block; font-weight: 600; color: var(--of-tinta-2); }
-
 
 /* ───────── narrativa da competência ─────────
  *
- * `ExecutiveRevenueStory` nasceu como um segundo bloco grafite com número de
- * 42px, competindo com o destaque de receita — e o DS é explícito: um momento
- * por tela. Aqui ele é rebaixado ao que de fato é: a leitura de apoio do
- * gráfico que vem logo abaixo. Também corrige, nele, os mesmos defeitos do
- * `insights-premium.css`: `overflow-wrap: anywhere` partindo o valor, peso
- * 750 inexistente, hover que levanta o botão e raios fora dos tokens. */
+ * `ExecutiveRevenueStory` nasceu como segundo bloco grafite com número de 42px,
+ * competindo com o destaque — e o DS é explícito: um momento por tela. Aqui ele
+ * é o que de fato é: leitura de apoio do gráfico, em superfície clara. */
 .ins .ins-bi-story {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-16);
@@ -391,15 +614,9 @@ a.vg-cartao:focus-visible { outline: 2px solid var(--of-coral-marca); outline-of
   border-radius: var(--radius-control);
   background: var(--of-papel-tela);
   color: var(--of-tinta-forte);
-  box-shadow: var(--ring-inset-hairline);
 }
 .ins .ins-bi-story-principal { gap: var(--space-6); padding: 0; }
-.ins .ins-bi-kicker {
-  font-size: var(--of-t-rotulo);
-  font-weight: 600;
-  letter-spacing: .08em;
-  color: var(--of-tinta-3);
-}
+.ins .ins-bi-kicker { font-size: var(--of-t-rotulo); font-weight: 600; letter-spacing: .08em; color: var(--of-tinta-3); }
 .ins .ins-bi-valor {
   font-family: var(--font-onface-titulo), sans-serif;
   font-size: clamp(18px, 2.2vw, 25px);
@@ -407,7 +624,7 @@ a.vg-cartao:focus-visible { outline: 2px solid var(--of-coral-marca); outline-of
   line-height: 1.1;
   letter-spacing: -.02em;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;       /* nunca partir o valor */
+  white-space: nowrap;
   overflow-wrap: normal;
   color: var(--of-tinta-forte);
 }
@@ -435,38 +652,31 @@ a.vg-cartao:focus-visible { outline: 2px solid var(--of-coral-marca); outline-of
 }
 .ins .ins-bi-story-metrica { padding: 0; gap: var(--space-2); box-shadow: none; justify-content: start; }
 .ins .ins-bi-story-metrica > span {
-  font-size: var(--of-t-meta);
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--of-tinta-3);
+  font-size: var(--of-t-meta); font-weight: 600; letter-spacing: 0;
+  text-transform: none; color: var(--of-tinta-3);
 }
 .ins .ins-bi-story-metrica strong {
-  font-size: clamp(16px, 1.7vw, 18px);
-  font-weight: 700;
-  color: var(--of-sucesso-tinta);
-  white-space: nowrap;
+  font-size: clamp(14px, 1.7vw, 18px); font-weight: 700;
+  color: var(--of-sucesso-tinta); white-space: nowrap;
 }
 .ins .ins-bi-story-metrica strong[data-queda="true"] { color: var(--of-coral-texto); }
 .ins .ins-bi-story-metrica small,
-.ins .ins-bi-story-metricas > .ins-bi-fonte {
-  font-size: var(--of-t-meta);
-  color: var(--of-tinta-3);
-  padding: 0;
-}
+.ins .ins-bi-story-metricas > .ins-bi-fonte { font-size: var(--of-t-meta); color: var(--of-tinta-3); padding: 0; }
 .ins .ins-bi-story-metricas > .ins-bi-fonte { grid-column: 1 / -1; }
 
 /* ───────── responsivo ─────────
  *
  * No FIM do arquivo de propósito: media query declarada antes da regra base de
- * mesma especificidade perde a cascata, e foi assim que a narrativa continuou
- * em duas colunas a 375px, com o valor sobrepondo o texto ao lado. */
+ * mesma especificidade perde a cascata. */
 
-@media (max-width: 1024px) {
-  .vg-destaque { grid-template-columns: minmax(0, 1fr); gap: var(--space-16); }
+@media (max-width: 1180px) {
+  .vg-primeira, .vg-segunda { grid-template-columns: minmax(0, 1fr); }
+  .vg-grafico-lado { grid-template-columns: minmax(0, 1fr); }
+  .vg-derivados { flex-direction: row; flex-wrap: wrap; }
+  .vg-derivado { flex: 1 1 calc(160 * var(--onface-u)); }
 }
 @media (max-width: 768px) {
-  .vg-contexto { position: static; }
+  .vg-filtro-limpar { margin-left: 0; }
   .vg-contexto-grupo:last-child { margin-left: 0; }
   .vg-destaque { padding: var(--space-16); }
   .vg-painel { padding: var(--space-16); }
