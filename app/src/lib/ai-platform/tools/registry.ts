@@ -328,6 +328,29 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
       if (Object.keys(dadosDaEmpresa).length) {
         await db.update(leads).set({ ...dadosDaEmpresa, updatedAt: new Date() }).where(and(eq(leads.id, leadDaQualificacao), eq(leads.organizacaoId, ctx.organizacaoId)));
       }
+      /* A etapa tem de andar junto com o que foi descoberto, senão o quadro de
+         Pré-vendas conta outra história: a agente qualificava a conversa inteira
+         e o lead ficava parado em "Novo". Cada passo pela porta de vendas, que é
+         quem conhece a regra:
+           fit alto  -> `qualificar()`, que é a ação "Qualificar" (qualificado é
+                        um FATO, não uma posição arrastada no board);
+           os demais -> move para "Qualificação", dizendo que a conversa está em
+                        andamento, sem afirmar que passou nos critérios.
+         "Oportunidade" NÃO é movida aqui: ela exige oportunidade real, criada
+         quando a reunião é marcada. */
+      const etapaAtual = await db.execute<{ etapa: string | null }>(sql`SELECT estagio_pre_vendas AS etapa FROM leads WHERE id = ${leadDaQualificacao}::uuid`);
+      const etapa = etapaAtual[0]?.etapa ?? null;
+      const atorDaAgente = atorDoAgente(ctx);
+      const vendas = await import("@/lib/vendas/pre-vendas");
+      if (input.fit === "alto" && etapa !== "qualificado" && etapa !== "oportunidade") {
+        await vendas.qualificar({ organizacaoId: ctx.organizacaoId, leadId: leadDaQualificacao, qualificacao: Object.keys(qual).length ? qual : undefined, ator: atorDaAgente });
+        await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: leadDaQualificacao, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: "Qualificação registrada pela agente", descricao: Object.entries({ ...qual, ...dadosDaEmpresa }).filter(([, v]) => v).map(([k, v]) => `${k}: ${String(v)}`).join("\n") || null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId, ferramenta: "lead.qualify", etapa: "qualificado" } });
+        return { ok: true, data: { id: leadDaQualificacao, etapa: "qualificado" } };
+      }
+      if (etapa === "novo" || etapa === "em_contato") {
+        await vendas.moverEtapa({ organizacaoId: ctx.organizacaoId, leadId: leadDaQualificacao, para: "qualificacao", ator: atorDaAgente }).catch(() => undefined);
+      }
+
       if (Object.keys(qual).length) {
         const { salvarQualificacao } = await import("@/lib/vendas/pre-vendas");
         await salvarQualificacao({ organizacaoId: ctx.organizacaoId, leadId: leadDaQualificacao, qualificacao: qual, ator: { tipo: "AI_AGENT", usuarioId: ctx.agenteUsuarioId ?? null, ref: ctx.agentId } });

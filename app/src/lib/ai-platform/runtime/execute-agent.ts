@@ -243,6 +243,25 @@ async function sendMessages(input: Pick<ExecuteAgentInput, "organizacaoId" | "co
   }
   const last = messages.at(-1);
   if (last) await db.update(contatos).set({ ultimaMsg: last.slice(0, 100), ultimaMsgAt: new Date(), updatedAt: new Date() }).where(eq(contatos.id, contact.id));
+
+  /* Falou com o lead, então ele não está mais em "Novo". O quadro de Pré-vendas
+     contava outra história: a agente trocava dezenas de mensagens e o cartão
+     ficava parado em Novo, como se ninguém tivesse encostado nele. Só o primeiro
+     passo da esteira mora aqui — "Qualificação" e "Qualificado" dependem do que
+     foi descoberto e saem de `lead_qualify`; "Oportunidade" exige oportunidade
+     real e sai da reunião marcada. Best-effort: etapa não derruba envio. */
+  const leadDaConversa = input.leadId ?? contact.leadId ?? null;
+  if (sentIds.length && leadDaConversa) {
+    try {
+      const [l] = await db.execute<{ etapa: string | null }>(sql`SELECT estagio_pre_vendas AS etapa FROM leads WHERE id = ${leadDaConversa}::uuid AND organizacao_id = ${input.organizacaoId}::uuid`);
+      if (l?.etapa === "novo") {
+        const { moverEtapa } = await import("@/lib/vendas/pre-vendas");
+        await moverEtapa({ organizacaoId: input.organizacaoId, leadId: leadDaConversa, para: "em_contato", ator: { tipo: "AI_AGENT", usuarioId: null, ref: runId } });
+      }
+    } catch (e) {
+      console.error(`[agentes] não moveu o lead ${leadDaConversa} para "em contato":`, e instanceof Error ? e.message : e);
+    }
+  }
   return sentIds;
 }
 
