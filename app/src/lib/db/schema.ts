@@ -4935,7 +4935,10 @@ export const pagamentos = pgTable("pagamentos", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
   faturaId: uuid("fatura_id").references(() => faturas.id, { onDelete: "cascade" }).notNull(),
-  empresaId: uuid("empresa_id").references(() => empresas.id).notNull(),
+  /* Pode não ter dono, como a fatura dele (migration 0133): "ainda não sei de
+     quem é" é estado legítimo de cobrança. Era o NOT NULL aqui que obrigava a
+     existir uma empresa falsa para segurar pagamento sem dono. */
+  empresaId: uuid("empresa_id").references(() => empresas.id),
   servicoCanonicoId: uuid("servico_canonico_id").references(() => servicosCanonicos.id, { onDelete: "set null" }),
   provider: text("provider").notNull(),
   externalPaymentId: text("external_payment_id"),

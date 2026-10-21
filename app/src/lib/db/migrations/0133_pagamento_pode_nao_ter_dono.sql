@@ -1,0 +1,17 @@
+-- Pagamento pode não ter dono, como a fatura dele já podia.
+--
+-- `faturas.empresa_id`, `assinaturas.empresa_id` e `servicos_canonicos.empresa_id`
+-- aceitam NULL — "ainda não sei de quem é" é um estado legítimo de cobrança, e o
+-- sistema já vive com ele (95 faturas, 24 assinaturas e 4 serviços assim hoje).
+-- Só `pagamentos.empresa_id` era NOT NULL.
+--
+-- Essa assimetria é a razão de existir a empresa "Unresolved billing identity":
+-- uma empresa FALSA, criada pela carga de billing para segurar o que não tinha
+-- dono. Ela não é uma empresa, e o código precisava fingir que ela não existe em
+-- vários lugares (`ehEmpresaBalde`, `semEmpresasBalde`, um CASE dentro do sync do
+-- Stripe) — cada leitura nova de empresa tinha de lembrar de excluí-la, e quando
+-- alguém esquecia, cobrança de verdade era atribuída a um cliente que não existe.
+--
+-- Com o NOT NULL fora, "sem dono" se escreve como ausência, que é o que é. O
+-- balde deixa de ser necessário e sai da base.
+ALTER TABLE pagamentos ALTER COLUMN empresa_id DROP NOT NULL;
