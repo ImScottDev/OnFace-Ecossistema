@@ -396,3 +396,104 @@ hoje a menor das três pernas, que é também a de maior margem e crescimento.
 - **Suposição:** as 3.308 ligações de "Agente Mayra" devem ser o agente de
   prospecção automático da organização, disparado pelo mesmo webhook de entrada
   que o ONFACE usa. Não foi confirmado no painel deles.
+
+---
+
+## 9. O que construir, em ordem de resultado
+
+Levantado navegando a plataforma tela a tela em 21/10. Cada item diz o que
+existe lá, o que falta aqui, e de quem depende.
+
+### Faixa 1 — só depende de nós, e o dado já chega
+
+**1.1 Objeção vira motivo de perda, sem ninguém digitar.**
+A Callface já classifica a objeção em código normalizado: falta de tempo, sem
+interesse declarado, bloqueio técnico, preferência por concorrente, falta de
+necessidade. Hoje o CRM pede isso ao vendedor, que esquece ou inventa. A ligação
+já respondeu. Mapear direto para o motivo de perda do negócio.
+
+**1.2 Chance de fechar move o pipeline.**
+`deal_closure_percentage` já chega no webhook (704 de 7.215 ligações têm). É o
+mesmo número que a Callface usa no corte de 50% para "lead qualificado". Serve
+de gatilho de etapa, de alerta e de prioridade de fila sem nenhuma extração.
+
+**1.3 Reunião do `scheduling` pela peça única.**
+Já funciona para o caso "Combinado" e gerou 40 reuniões. Vale cobrir os outros
+status e categorias, sempre pela peça de reunião existente.
+
+### Faixa 2 — só depende de nós, mas precisa buscar o que o webhook não manda
+
+**2.1 Puxar o resto da ligação por API, logo após o webhook.**
+O webhook traz 17 campos e deixa de fora justamente os mais valiosos: scorecard
+com evidências, dados coletados, qualificação e minuto tarifado. O `call_link`
+carrega o id da chamada, e a ficha da ligação no painel prova que o backend tem
+tudo estruturado. Um passo a mais no processamento do evento fecha a lacuna sem
+depender de mudança do lado deles.
+
+Com isso em mãos abrem-se, de graça:
+- **Scorecard no CRM**: ranking de qualidade por vendedor, coaching com a
+  evidência e o minuto, e correlação entre nota e negócio ganho.
+- **Dados coletados viram campos do lead**: o agente de voz pergunta e o CRM
+  preenche. É o formulário por voz.
+- **Qualificação como régua de roteamento**: qualificado vira negócio, parcial
+  volta para nutrição, inelegível não ocupa ninguém.
+- **Minuto tarifado por ligação**, que abre cobrança por consumo.
+
+**2.2 Explicar as 4.432 ligações que faltam.**
+O painel conta 11.647 e o CRM tem 7.215. Enquanto isso não for explicado,
+qualquer relatório de voz no ONFACE está incompleto sem saber o quanto.
+
+**2.3 Fila de retorno do receptivo.**
+A plataforma lista as chamadas abandonadas com número e tempo de espera. Cada
+uma é alguém que tentou falar e não conseguiu. Volume hoje é irrisório, mas a
+régua existe (abandono abaixo de 5%, atender em menos de 30s).
+
+### Faixa 3 — o agente de voz sabendo com quem fala
+
+**3.1 Personalizar a abertura por lead.**
+A primeira mensagem do agente aceita `{{variavel}}`, e a lista da campanha é
+quem alimenta: cada variável do agente vira uma coluna da planilha. Hoje o nosso
+agente tem uma variável só, `nome`. Com empresa, produto de interesse, dor
+registrada na qualificação e origem, a ligação abre com contexto em vez de
+script. É o maior ganho de conversão disponível, e custa um mapeamento de
+colunas mais `POST /agents/upsert`.
+
+**3.2 Campos de coleta do agente espelhando campos do CRM.**
+Cada campo tem nome, tipo e descrição do que capturar. Se espelharem os campos
+do negócio, a ligação preenche o cadastro sozinha.
+
+**3.3 Campanha por segmento, não uma fila só.**
+Hoje todo contato cai na campanha "Funil" da organização e é atendido pelo único
+agente de prospecção. Com `/campaigns/{id}/upload` dá para ter campanha por
+produto, por origem ou por safra, cada uma com o seu agente.
+
+**3.4 Rediscagem decidida por regra de negócio.**
+`redial-preview` e `redial` são API. A política de tentativas já é configurável
+por campanha (quantas, intervalo, e em quais desfechos insistir). Quem decide
+quem merece segunda tentativa deveria ser o CRM, que conhece o valor do lead.
+
+### Faixa 4 — depende do time da Callface
+
+- **Webhook de fim de campanha, de tarefa e de qualificação.** Hoje só existe o
+  de ligação finalizada; o resto exige varredura.
+- **Mais casos de uso no webhook de entrada.** Só existe "criar contato". Faltam
+  atualizar, remover da campanha e agendar ligação.
+- **Mais de um agente de prospecção por organização**, para rotear lead
+  diferente para agente diferente pelo caminho simples.
+- **Os campos ricos no payload do webhook**, evitando a busca extra do item 2.1.
+- **Edição dos critérios do scorecard**, hoje só leitura na tela.
+
+### Decisões de produto que ficam para o Scott
+
+1. **Tarefas: quem é o dono?** A Callface já gera tarefa com categoria, canal,
+   prazo e a citação que a originou. Ou o ONFACE consome (e precisa deduplicar,
+   porque vi a mesma repetida quatro vezes), ou desliga lá e gera do próprio
+   resumo.
+2. **Base de conhecimento: qual é a fonte única?** As nove seções da Base da
+   empresa da Callface são, na prática, o discurso comercial da casa. O ONFACE
+   tem a sua. Manter as duas diverge.
+3. **WhatsApp transcrito pela Callface.** A plataforma captura e analisa conversa
+   de WhatsApp com a mesma máquina das ligações. Está desconectado. Ligar
+   significaria duas fontes de verdade sobre a mesma conversa.
+4. **Cota de minutos de agente.** Hoje em 1.297 de 2.000. Campanha para quando
+   acaba, e o aviso só existe lá dentro.
