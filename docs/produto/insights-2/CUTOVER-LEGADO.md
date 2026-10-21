@@ -66,10 +66,15 @@ Cada um é uma coluna que parou de andar, com alguém ainda lendo.
 "quem respondeu" dá 4 em vez de 678. O casamento por telefone existe desde 14/10 para conversa
 nova; o passivo é o histórico não religado.
 
-### B2 — Cadência quebra ou duplica conversa
-`cadence-engine.ts:389` insere em `contatos` **sem `ON CONFLICT`**, contra o índice único
-`idx_contatos_sessao_phone`. Falha quando o lead já tem conversa sem vínculo — **~635 leads** casam
-por telefone. `garantir-conversa.ts` já usa upsert; este ponto ficou de fora.
+### B2 — Cadência quebra ou duplica conversa — **corrigido** (`aa28576a`)
+`cadence-engine.ts` inseria em `contatos` **sem `ON CONFLICT`**, contra o índice único
+`idx_contatos_sessao_phone`, e sem o prefixo 55 no telefone. Falhava quando o lead já tinha
+conversa sem vínculo — **~635 leads** casam por telefone.
+A varredura achou um segundo caso, pior: `agentes/autonomia.ts` usava
+`onConflictDoNothing().returning()`, que devolve vazio no conflito — a agente **abandonava o lead
+em silêncio**, sem erro e sem log. Os dois passam a adotar a conversa existente, como
+`garantir-conversa.ts` e o worker já faziam. Trava em `atendimento/conversa-unica.test.ts`,
+estrutural: varre o runtime e pega arquivo novo que insira conversa sem adoção.
 
 ### B3 — "Sem próxima ação" nunca filtra
 `negocios.proxima_acao`: **0 de 1.645**. Lido por `lib/inicio/consultas.ts:777` (card do closer no
@@ -120,10 +125,10 @@ Do que mata a origem e custa pouco, para o que exige backfill.
 | # | O quê | Por que agora | Risco |
 |---|---|---|---|
 | **1** | **PATCH de lead espelha no canônico** | mata a origem de B7, B8 e das 124 divergências; sem isso todo backfill volta a divergir | escrita — exige aprovação |
-| **2** | **`?status=` e `?setor=` filtram pela etapa canônica** | bug provado, conserto local, nenhuma escrita | baixo |
-| **3** | **"Sem próxima ação" lê `tarefas`** | B3: hoje 100% de falso positivo em duas telas | baixo |
+| ~~2~~ | ~~`?status=` e `?setor=` pela etapa canônica~~ | **feito** (`171839a4`) | — |
+| ~~3~~ | ~~"Sem próxima ação" lê `tarefas`~~ | **feito** (`171839a4`), 270 reais em vez de 278 | — |
 | **4** | **Religar o histórico de WhatsApp ao lead por telefone** | B1: devolve a resposta do cliente ao funil | leitura; backfill de vínculo exige aprovação |
-| **5** | **`ON CONFLICT` na cadência** | B2: evita falha e conversa duplicada | baixo |
+| ~~5~~ | ~~`ON CONFLICT` na cadência~~ | **feito** (`aa28576a`), mais o caso silencioso da agente | — |
 | **6** | **`leads.tipo` e `negocio_ativo_id` derivados** | B4 e B6: parar de ler coluna e derivar do canônico | médio |
 | **7** | **Backfill dos 70 + 54 já divergentes**, com trilha reversível | só depois de 1, senão volta a divergir | escrita — exige aprovação |
 | **8** | **Esconder o que é sempre vazio** | campo que mostra "SP" para todos mente | baixo |
