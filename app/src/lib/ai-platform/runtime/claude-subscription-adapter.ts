@@ -29,6 +29,8 @@ type RunAgentInput = {
   userPrompt: string;
   tools: ModelTool[];
   maxTurns: number;
+  /** Teto de tokens da resposta ("Tokens por execução" da versão). */
+  maxOutputTokens?: number | null;
   invokeTool: (name: string, input: Record<string, unknown>) => Promise<ClaudeSubscriptionToolCall["result"]>;
 };
 
@@ -138,6 +140,12 @@ export class ClaudeSubscriptionAdapter {
       permissionMode: "dontAsk",
       permissionPrompts: "none",
       maxTurns: Math.max(1, request.maxTurns),
+      // O Agent SDK não tem `maxTokens` nas options: o teto de saída é do CLI
+      // que ele sobe, pela env CLAUDE_CODE_MAX_OUTPUT_TOKENS (o binário erra
+      // com `max_output_tokens` quando a resposta passa dela).
+      ...(request.maxOutputTokens && request.maxOutputTokens > 0
+        ? { env: { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(Math.floor(request.maxOutputTokens)) } }
+        : {}),
       settingSources: [],
       strictMcpConfig: true,
       ...(bridge ? {
@@ -167,7 +175,7 @@ export class ClaudeSubscriptionAdapter {
       options: {
         ...options,
         persistSession: false,
-        env: this.childEnvironment(token),
+        env: { ...this.childEnvironment(token), ...(options?.env ?? {}) },
       },
     });
 

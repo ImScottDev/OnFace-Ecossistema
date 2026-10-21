@@ -649,11 +649,16 @@ export function AgenteEditor({ dados, podeConfigurar, podeUsar }: { dados: Dados
                 <div className="age-classes">
                   {CLASSES_AUTONOMIA.map((c) => (
                     <div key={c.id} className="age-classe">
-                      <div><strong>{c.rotulo}</strong><span>{c.ajuda}{c.id === "leitura" ? " Leitura nunca é bloqueada." : ""}</span></div>
-                      <select value={f.porAcao[c.id]} disabled={travado} aria-label={`Autonomia: ${c.rotulo}`} onChange={(e) => set({ porAcao: { ...f.porAcao, [c.id]: e.target.value as Modo | "" } })}>
-                        <option value="">Segue o modo geral ({NOME_MODO[f.modo]})</option>
-                        {MODOS.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
-                      </select>
+                      <div><strong>{c.rotulo}</strong><span>{c.ajuda}</span></div>
+                      {/* Leitura não tem seletor: a política sempre libera (lib/ai-platform/tools/politica.ts). */}
+                      {c.id === "leitura" ? (
+                        <span className="age-texto-fraco">Sempre liberada</span>
+                      ) : (
+                        <select value={f.porAcao[c.id]} disabled={travado} aria-label={`Autonomia: ${c.rotulo}`} onChange={(e) => set({ porAcao: { ...f.porAcao, [c.id]: e.target.value as Modo | "" } })}>
+                          <option value="">Segue o modo geral ({NOME_MODO[f.modo]})</option>
+                          {MODOS.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                        </select>
+                      )}
                     </div>
                   ))}
                 </div>
