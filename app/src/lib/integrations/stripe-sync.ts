@@ -587,6 +587,45 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             }
           }
         } else if (reconciliacao === "reativar") {
+          /* ASSINATURA VIVA QUE O CRM NÃO CONHECE COMO SERVIÇO.
+
+             Serviço canônico só nascia no Won do negócio (lib/crm/servico-canonico.ts). Quem
+             assinou por fora desse caminho — assinatura recriada depois de uma falha de
+             cobrança, venda que não passou pelo CRM, cliente que voltou — ficava com a
+             assinatura espelhada e NENHUM serviço. E "quem é cliente" se lê do serviço: a
+             ficha mostrava "Ex-cliente" para quem estava pagando em dia.
+
+             Medido em produção 21/10/2026: **50 assinaturas ACTIVE sem serviço nenhum,
+             R$ 18.766,16/mês**.
+
+             Nasce igual ao que o Won criaria: ACTIVE, no portfólio, MRR pelo valor da
+             assinatura e família pelo nome do produto (senão a ficha diz "Não classificado"
+             com "Callface AI - Starter" escrito ao lado). Só com empresa: serviço sem empresa
+             não vira ficha de cliente, e a identidade duvidosa é decisão humana. */
+          if (lead?.empresaId && mrr !== null && Number(mrr) > 0) {
+            const { classificarProdutoPorNome } = await import("@/lib/crm/classificar-produto");
+            // O nome do produto que este mesmo ciclo acabou de gravar nos itens da assinatura.
+            const [itemDaAssinatura] = await tx.select({ produto: assinaturaItens.produto })
+              .from(assinaturaItens).where(eq(assinaturaItens.assinaturaId, existing.id)).limit(1);
+            const nomeDoProduto = itemDaAssinatura?.produto ?? null;
+            await tx.insert(servicosCanonicos).values({
+              organizacaoId: org.id,
+              empresaId: lead.empresaId,
+              leadId: lead.id,
+              canonicalKey: `STRIPE:${s.id}`,
+              serviceFamily: classificarProdutoPorNome(nomeDoProduto),
+              canonicalProduct: nomeDoProduto,
+              revenueNature: "MRR",
+              billingSource: "STRIPE",
+              commercialLifecycle: "ACTIVE",
+              billingStatus: "ACTIVE",
+              currentRecurringValue: String(mrr),
+              currentSubscriptionId: s.id,
+              portfolioIncluded: true,
+              confidence: "CONFIRMED",
+              evidence: { origem: "stripe_sync_assinatura_viva", status_stripe: s.status, em: new Date().toISOString() },
+            }).onConflictDoNothing();
+          }
           /* O inverso do bloco acima: a assinatura está viva no Stripe e o serviço está CHURNED.
              Acontece quando o churn veio de fora do Stripe (carga do marco zero, cancelamento
              manual desfeito). Volta ACTIVE e ao portfólio, senão o MRR fica faltando dinheiro

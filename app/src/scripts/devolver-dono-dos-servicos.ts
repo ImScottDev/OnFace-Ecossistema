@@ -106,6 +106,38 @@ async function main() {
   }
 
   console.log(`\n${movidos} serviços ${aplicar ? "devolvidos" : "seriam devolvidos"} ao dono · MRR ativo: R$ ${mrrDevolvido.toFixed(2)}`);
+
+  /* A FATURA VAI JUNTO COM O SERVIÇO.
+     Mover só o serviço deixou as faturas apontando para o balde, e a ficha do cliente
+     filtra por empresa: o cliente aparecia com "nada pendente" tendo fatura em aberto.
+     A empresa certa é a do serviço daquela mesma assinatura — prova direta, sem palpite. */
+  const alvo = aplicar ? "UPDATE" : "SELECT";
+  const faturas = (await db.execute(sql`
+    ${sql.raw(alvo === "UPDATE" ? `
+      UPDATE faturas f
+         SET empresa_id = s.empresa_id,
+             lead_id = coalesce(s.lead_id, f.lead_id),
+             updated_at = now()
+        FROM assinaturas a
+        JOIN servicos_canonicos s ON s.current_subscription_id = a.stripe_subscription_id
+       WHERE f.assinatura_id = a.id
+         AND f.empresa_id = (SELECT id FROM empresas WHERE nome = '${EMPRESA_BALDE}')
+         AND s.empresa_id IS DISTINCT FROM (SELECT id FROM empresas WHERE nome = '${EMPRESA_BALDE}')
+      RETURNING f.status, f.valor
+    ` : `
+      SELECT f.status, f.valor
+        FROM faturas f
+        JOIN assinaturas a ON a.id = f.assinatura_id
+        JOIN servicos_canonicos s ON s.current_subscription_id = a.stripe_subscription_id
+       WHERE f.empresa_id = (SELECT id FROM empresas WHERE nome = '${EMPRESA_BALDE}')
+         AND s.empresa_id IS DISTINCT FROM (SELECT id FROM empresas WHERE nome = '${EMPRESA_BALDE}')
+    `)}
+  `)) as unknown as Array<{ status: string; valor: string }>;
+
+  const abertas = faturas.filter((f) => f.status === "aberta");
+  const soma = (xs: typeof faturas) => xs.reduce((a, x) => a + Number(x.valor || 0), 0);
+  console.log(`${faturas.length} faturas ${aplicar ? "foram" : "seriam"} para o dono (R$ ${soma(faturas).toFixed(2)}), ` +
+    `dessas ${abertas.length} EM ABERTO (R$ ${soma(abertas).toFixed(2)}) que o cliente não via na ficha`);
   if (parados.length) {
     console.log(`\n${parados.length} ficam no balde (decisão humana, por desenho):`);
     for (const p of parados) console.log(`  ${p}`);
