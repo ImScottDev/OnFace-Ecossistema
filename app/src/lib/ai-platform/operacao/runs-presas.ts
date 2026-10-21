@@ -91,11 +91,12 @@ export async function recuperarRunsPresas(minutos = MINUTOS_ATE_DAR_POR_PERDIDA)
 async function responderQuemFicouNoVacuo(minutos: number): Promise<number> {
   const paradas = await db.execute<{
     contato_id: string; organizacao_id: string; lead_id: string | null;
-    sessao_id: string | null; mensagem_id: string; conteudo: string;
+    sessao_id: string | null; mensagem_id: string; conteudo: string; direcao: string;
   }>(sql`
     SELECT DISTINCT ON (m.contato_id)
-           m.contato_id::text, m.organizacao_id::text, c.lead_id::text,
-           c.sessao_id::text, m.id::text AS mensagem_id, m.conteudo
+           m.contato_id::text, c.organizacao_id::text, c.lead_id::text,
+           c.sessao_id::text, m.id::text AS mensagem_id, m.conteudo,
+           m.direcao
       FROM whatsapp_mensagens m
       JOIN contatos c ON c.id = m.contato_id
       JOIN whatsapp_sessao s ON s.id = c.sessao_id AND NOT s.privado
@@ -106,12 +107,9 @@ async function responderQuemFicouNoVacuo(minutos: number): Promise<number> {
 
   let retomadas = 0;
   for (const p of paradas as unknown as Array<Record<string, string | null>>) {
+    // `DISTINCT ON` já deu a ÚLTIMA mensagem da conversa: só interessa quem parou numa mensagem DO CONTATO.
+    if (p.direcao !== "in") continue;
     try {
-      // `DISTINCT ON` já deu a última mensagem da conversa; só interessa quem parou numa mensagem DO CONTATO.
-      const [ultima] = await db.execute<{ direcao: string }>(sql`
-        SELECT direcao FROM whatsapp_mensagens WHERE id = ${p.mensagem_id}::uuid`);
-      if (ultima?.direcao !== "in") continue;
-
       const { atenderPeloNumeroDoAgente } = await import("./numero-do-agente");
       const r = await atenderPeloNumeroDoAgente({
         organizacaoId: p.organizacao_id!, contatoId: p.contato_id!, leadId: p.lead_id,
