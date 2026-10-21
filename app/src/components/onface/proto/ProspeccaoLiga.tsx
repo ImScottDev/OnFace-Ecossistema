@@ -101,6 +101,7 @@ const ICONES = {
   busca: "M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM21 21l-4.3-4.3",
   pausa: "M10 4H6v16h4zM18 4h-4v16h4z",
   enriquecer: "M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z",
+  ligar: "M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 3.09 5.18 2 2 0 0 1 5.08 3h3a2 2 0 0 1 2 1.72c.12.96.33 1.9.62 2.8a2 2 0 0 1-.45 2.11L9.09 10.91a16 16 0 0 0 4 4l1.28-1.16a2 2 0 0 1 2.11-.45c.9.29 1.84.5 2.8.62A2 2 0 0 1 22 16.92z",
 };
 const FILAS = [
   { v: "sem_responsavel", label: "Sem responsável" }, { v: "sem_contato", label: "Sem e-mail nem telefone" },
