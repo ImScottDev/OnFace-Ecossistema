@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, MousePointerClick, Plus, Trash2 } from "lucide-react";
-import { AVISO_GATILHO_INVALIDO, EVENT_CATALOG, eventoDeCadenciaInvalido } from "@/components/crm2/automacoes/followup-types";
+import { AVISO_GATILHO_INVALIDO, EVENT_CATALOG, eventoDeCadenciaInvalido, opcaoDeGatilhoSalvo } from "@/components/crm2/automacoes/followup-types";
 import type { FollowupNode } from "@/lib/ai-platform/followup/graph";
 import {
   GRUPOS_VARIAVEIS_CADENCIA, SUGESTOES_CAMPO_CADENCIA, previaTexto, ROTULO_TIPO_NO,
@@ -29,7 +29,7 @@ export function FollowupInspector({ node, somenteLeitura, opcoes, onChange, onDe
     {/* O gatilho salvo que não chega mais continua no select, marcado: sem essa
         opção o `value` não casaria nenhuma e o campo mostraria o primeiro item
         da lista, mentindo sobre o que está gravado. */}
-    {node.type === "trigger" && <label className="ofx-campo"><span className="ofx-campo-rotulo">Quando entra</span><select className={input} value={node.config.event} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, event: e.target.value })}>{eventoDeCadenciaInvalido(node.config.event) && <option value={node.config.event}>{node.config.event} · gatilho inválido</option>}{EVENT_CATALOG.map((event) => <option key={event.id} value={event.id}>{event.nome}</option>)}</select>{eventoDeCadenciaInvalido(node.config.event) && <span className="oa-dica oa-alerta">{AVISO_GATILHO_INVALIDO}</span>}</label>}
+    {node.type === "trigger" && <label className="ofx-campo"><span className="ofx-campo-rotulo">Quando entra</span><select className={input} value={node.config.event} disabled={somenteLeitura} onChange={(e) => set({ ...node.config, event: e.target.value })}>{(() => { const salvo = opcaoDeGatilhoSalvo(node.config.event); return salvo ? <option value={salvo.value}>{salvo.label}</option> : null; })()}{EVENT_CATALOG.map((event) => <option key={event.id} value={event.id}>{event.nome}</option>)}</select>{eventoDeCadenciaInvalido(node.config.event) && <span className="oa-dica oa-alerta">{AVISO_GATILHO_INVALIDO}</span>}</label>}
     {node.type === "wait" && <WaitFields node={node} somenteLeitura={somenteLeitura} set={set} />}
     {node.type === "condition" && <ConditionFields node={node} somenteLeitura={somenteLeitura} set={set} opcoes={opcoes} />}
     {node.type === "ai_classify" && <ClassifyFields node={node} somenteLeitura={somenteLeitura} set={set} opcoes={opcoes} />}

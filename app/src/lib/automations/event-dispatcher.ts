@@ -3,45 +3,14 @@ import { db } from "@/lib/db";
 import { cadenceDefinitions, cadenceDefinitionPointers, cadenceVersions, eventOutbox } from "@/lib/db/schema";
 import { iniciarCadencia } from "@/lib/cadencia/cadence-engine";
 import { followupGraphSchema } from "@/lib/ai-platform/followup/graph";
+// A tabela de apelidos mora em módulo sem `db` porque as telas de cadência
+// também julgam gatilho salvo por ela. Reexportada aqui: quem já importava
+// `eventMatches` do dispatcher continua importando do dispatcher.
+import { eventMatches } from "./event-aliases";
+
+export { eventMatches };
 
 type EventRow = typeof eventOutbox.$inferSelect;
-
-const EVENT_ALIASES: Record<string, string[]> = {
-  LeadCreated: ["lead.created", "novo_lead"],
-  /* O MESMO fato com o nome canônico — e o que a captação paga de fato publica.
-   *
-   * `LeadCreated` só sai na rota legada `POST /api/leads`. Meta, RD, site,
-   * Pré-vendas e prospecção publicam `AcquisitionCreated` (a ponte canônica, em
-   * `lib/vendas/ponte-canonica.ts`, na mesma transação em que a aquisição
-   * nasce). Os fluxos já ouviam os dois nomes (`fontes.outbox` em
-   * automacoes/grafo.ts); a cadência não, então cadência com gatilho "Lead
-   * criado" casava só o lead criado na mão pela API e ignorava as duas maiores
-   * fontes da empresa — sem erro e sem aviso.
-   *
-   * Inscrever duas vezes quando a rota legada publica os dois nomes não
-   * acontece: `iniciarCadencia` já devolve a inscrição ativa do mesmo registro
-   * na mesma cadência em vez de abrir uma segunda. */
-  AcquisitionCreated: ["lead.created", "novo_lead", "LeadCreated"],
-  DealCreated: ["deal.created", "novo_negocio"],
-  StageChanged: ["stage.changed", "mudanca_status"],
-  ProposalSent: ["proposal.sent", "proposta_enviada"],
-  ProposalAccepted: ["proposal.accepted", "proposta_aceita"],
-  ProposalRejected: ["proposal.rejected", "proposta_recusada"],
-  DealWon: ["deal.won", "won"],
-  PaymentFailed: ["payment.failed", "pagamento_falhou"],
-  PaymentCompleted: ["payment.completed", "pagamento_confirmado"],
-  CanonicalServiceActivated: ["service.activated", "servico_ativado"],
-  ContractSigned: ["contract.signed", "contrato_assinado"],
-  CustomerCreated: ["customer.created", "cliente_criado"],
-  ConversationMessageReceived: ["conversation.message_received", "whatsapp_recebido"],
-  TagAdded: ["tag.added", "tag_adicionada"],
-  TagRemoved: ["tag.removed", "tag_removida"],
-};
-
-export function eventMatches(configured: string, actual: string): boolean {
-  if (configured === actual || configured === "*") return true;
-  return (EVENT_ALIASES[actual] ?? []).includes(configured);
-}
 
 function readPath(source: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce<unknown>((value, key) => value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined, source);

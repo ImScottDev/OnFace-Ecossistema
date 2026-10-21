@@ -30,7 +30,8 @@ import {
 // configurado. `@/lib/db` conecta preguiçosamente, então importar o dispatcher
 // aqui não abre banco nenhum.
 import { eventMatches } from "@/lib/automations/event-dispatcher";
-import { EVENT_CATALOG } from "@/components/crm2/automacoes/followup-types";
+import { EVENT_CATALOG, eventoDeCadenciaInvalido, nomeDoGatilhoDeCadencia } from "@/components/crm2/automacoes/followup-types";
+import { apelidosDeGatilho } from "@/lib/automations/event-aliases";
 
 const SRC = path.join(process.cwd(), "src");
 
@@ -74,6 +75,35 @@ test("a lista da cadência é manual + os eventos de outbox, e nada mais", () =>
   // Evento interno do runtime de agente nunca pode entrar na lista da cadência.
   const internos = EVENT_CATALOG.filter((e) => AGENT_EVENT_CATALOG.some((c) => c.id === e.id && !c.chega.includes("cadencia")));
   assert.deepEqual(internos.map((e) => e.id), [], "evento que só o agente recebe sendo oferecido como entrada de cadência");
+});
+
+/**
+ * O outro lado da mesma moeda: oferecer é uma pergunta, JULGAR o que já está
+ * salvo é outra. A lista oferecida tem um id canônico por fato; o dispatcher
+ * aceita também os apelidos. Julgando o salvo pela lista oferecida, a tela
+ * acusava "gatilho inválido" em cadência publicada e funcionando (caso real:
+ * "Follow-up pós-proposta", salva com `proposal.sent`) e mandava trocar o
+ * gatilho e republicar. Estas duas travas prendem a UI à decisão do dispatcher,
+ * nos dois sentidos — nem acusar o que dispara, nem absolver o que não dispara.
+ */
+test("gatilho salvo com apelido que o dispatcher resolve não é acusado de inválido", () => {
+  const acusadosÀTôa = CADENCE_TRIGGER_EVENTS.flatMap((ev) =>
+    apelidosDeGatilho(ev.id)
+      .filter((nome) => eventoDeCadenciaInvalido(nome) || nomeDoGatilhoDeCadencia(nome) !== ev.nome)
+      .map((nome) => `${nome} (apelido de ${ev.id})`),
+  );
+  assert.deepEqual(acusadosÀTôa, [], "nome que o dispatcher resolve sendo tratado como gatilho morto na tela");
+  // O caso real e o contraexemplo, por nome.
+  for (const vivo of ["manual", "lead.created", "novo_lead", "AcquisitionCreated", "LeadCreated", "proposal.sent", "proposta_enviada"]) {
+    assert.equal(eventoDeCadenciaInvalido(vivo), false, `${vivo} dispara de verdade e a tela chamou de inválido`);
+  }
+  assert.equal(eventoDeCadenciaInvalido("meeting.no_show"), true, "gatilho que nenhum evento publica deveria continuar marcado");
+});
+
+test("a tela não absolve gatilho salvo que nenhum evento publicado casa", () => {
+  const absolvidosÀTôa = [...new Set(CADENCE_TRIGGER_EVENTS.flatMap((ev) => apelidosDeGatilho(ev.id)))]
+    .filter((nome) => ![...PUBLICADOS_NO_OUTBOX].some((publicado) => eventMatches(nome, publicado)));
+  assert.deepEqual(absolvidosÀTôa, [], "nome aceito pela tela que nenhum fato do outbox casa em dispatchAutomationEvent");
 });
 
 test("todo gatilho que a tela do agente oferece é entregue por algum chamador a executeAgent", () => {

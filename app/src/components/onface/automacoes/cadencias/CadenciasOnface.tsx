@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle, CirclePause, Clock, History, Info, Pencil, Play, Plus, Search, Send, UserPlus, X, XCircle,
 } from "lucide-react";
-import { AVISO_GATILHO_INVALIDO, EVENT_CATALOG, type FollowupGraph } from "@/components/crm2/automacoes/followup-types";
+import { AVISO_GATILHO_INVALIDO, nomeDoGatilhoDeCadencia, type FollowupGraph } from "@/components/crm2/automacoes/followup-types";
 import { createEmptyFollowupGraph } from "@/lib/ai-platform/followup/graph";
 import { legacyStepsToFollowupGraph } from "@/lib/ai-platform/followup/legacy";
 import type { CadenceStep } from "@/lib/cadencia/cadence-engine";
@@ -56,7 +56,6 @@ const STATUS_INSCRICAO: Record<string, [string, "ok" | "aviso" | "erro" | ""]> =
 // Espelha ENTIDADES_INSCREVIVEIS da rota Hono: só estes tipos têm tabela
 // resolvível no tenant para a inscrição manual.
 const INSCREVIVEL = new Set(["lead", "contato", "negocio"]);
-const EVENTO = new Map(EVENT_CATALOG.map((e) => [e.id, e.nome]));
 const SEM_PERMISSAO = "Sua função não tem a permissão automation.manage";
 const fmtData = (iso: string, hora = false) => new Intl.DateTimeFormat("pt-BR", hora ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" }).format(new Date(iso));
 
@@ -291,7 +290,7 @@ function ListaCadencias({ cadencias, loading, error, podeGerenciar, onNova, onEd
             </BotaoMotivo>
             {/* Gatilho morto é dito na lista, não só no editor: quem olha a
                 lista precisa saber que aquela cadência nunca entrou. */}
-            <span className="ofx-linha-exec">{EVENTO.get(evento) ?? <span className="oa-dica oa-alerta" title={AVISO_GATILHO_INVALIDO}>{evento} · gatilho inválido</span>}</span>
+            <span className="ofx-linha-exec">{nomeDoGatilhoDeCadencia(evento) ?? <span className="oa-dica oa-alerta" title={AVISO_GATILHO_INVALIDO}>{evento} · gatilho inválido</span>}</span>
             <span className="ofx-linha-estado"><span className={`oa-selo ${tom ? `oa-${tom}` : ""}`}>{rotulo}</span></span>
             <span className="ofx-linha-num">{cd.totalPassos === 1 ? "1 passo" : `${cd.totalPassos} passos`}</span>
             <span className="ofx-linha-num" title="Inscrições ativas ou aguardando">{emCurso} em curso</span>

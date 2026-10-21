@@ -9,6 +9,7 @@ import {
   type FollowupBranch, type FollowupEdge, type FollowupEdgeCondition, type FollowupGraph, type FollowupNode, type FollowupNodeType,
 } from "@/lib/ai-platform/followup/graph";
 import { CADENCE_TRIGGER_EVENTS } from "@/lib/ai/agent-studio";
+import { apelidosDeGatilho } from "@/lib/automations/event-aliases";
 
 export { branchesForNode, edgeBranchId, followupGraphSchema };
 export type { FollowupBranch, FollowupEdge, FollowupEdgeCondition, FollowupGraph, FollowupNode, FollowupNodeType };
@@ -51,9 +52,40 @@ export const NODE_TYPE_META: Record<FollowupNodeType, { label: string; color: st
 const EVENT_CATALOG = [{ id: "manual", nome: "Inscrição manual/API" }, ...CADENCE_TRIGGER_EVENTS.map((e) => ({ id: e.id, nome: e.nome }))];
 export { EVENT_CATALOG };
 
-/** Gatilho salvo que esta tela não oferece mais: nenhum evento chega até ele, então a cadência nunca entrou por aí. */
+/**
+ * Nome do gatilho JÁ SALVO, como a pessoa o reconhece — `null` só quando
+ * nenhum evento do sistema chega até ele.
+ *
+ * `EVENT_CATALOG` acima responde outra pergunta: o que OFERECER a quem está
+ * escolhendo agora (um id canônico por fato, sem apelido). Para julgar o que
+ * está salvo ele é curto demais: o dispatcher resolve o gatilho com
+ * `eventMatches`, que também aceita os apelidos (`lead.created`,
+ * `proposta_enviada`, `AcquisitionCreated`...). Julgando só pelo catálogo, a
+ * tela acusava de inválida cadência publicada e funcionando, e mandava trocar
+ * o gatilho — foi o caso da "Follow-up pós-proposta".
+ */
+const NOME_DO_GATILHO = new Map<string, string>(
+  EVENT_CATALOG.flatMap((e) => (e.id === "manual" ? [[e.id, e.nome] as const] : apelidosDeGatilho(e.id).map((apelido) => [apelido, e.nome] as const))),
+);
+
+export function nomeDoGatilhoDeCadencia(id: string | null | undefined): string | null {
+  return (id && NOME_DO_GATILHO.get(id)) || null;
+}
+
+/** Gatilho salvo que nenhum evento do sistema alcança: a cadência nunca entrou por aí. */
 export function eventoDeCadenciaInvalido(id: string | null | undefined): boolean {
-  return !!id && !EVENT_CATALOG.some((e) => e.id === id);
+  return !!id && !nomeDoGatilhoDeCadencia(id);
+}
+
+/**
+ * A opção extra que o `<select>` precisa quando o valor salvo não está entre os
+ * oferecidos — apelido vivo (mostra o nome do fato) ou gatilho morto (marcado).
+ * Sem ela o campo perderia o valor salvo ao renderizar.
+ */
+export function opcaoDeGatilhoSalvo(id: string | null | undefined): { value: string; label: string; invalido: boolean } | null {
+  if (!id || EVENT_CATALOG.some((e) => e.id === id)) return null;
+  const nome = nomeDoGatilhoDeCadencia(id);
+  return { value: id, label: nome ? `${nome} (${id})` : `${id} · gatilho inválido`, invalido: !nome };
 }
 
 export const AVISO_GATILHO_INVALIDO = "Gatilho inválido: nenhum evento do sistema chega até ele, então esta cadência nunca entrou por aqui. Escolha outro e publique.";
@@ -81,7 +113,7 @@ export function nodeSubtitle(node: FollowupNode): string {
   if (node.type === "end") return node.config.outcome === "converted" ? "Convertido" : node.config.outcome === "custom" ? (node.config.note || "Personalizado") : "Esgotado";
   // Gatilho salvo que não chega mais aparece marcado no próprio desenho, em vez
   // de passar por um id cru qualquer que parece um gatilho legítimo.
-  return EVENT_CATALOG.find((e) => e.id === node.config.event)?.nome ?? `${node.config.event} · gatilho inválido`;
+  return nomeDoGatilhoDeCadencia(node.config.event) ?? `${node.config.event} · gatilho inválido`;
 }
 
 export function newEmptyGraphNodePosition(existing: FollowupNode[]): { x: number; y: number } {
