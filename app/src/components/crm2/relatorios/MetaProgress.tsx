@@ -5,6 +5,7 @@ interface MetaProgressProps {
   valorAlvo: number;
   realizado: number;
   label?: string;
+  mesReferencia?: "mes_atual" | "mes_passado";
 }
 
 function fmt(tipo: string, v: number): string {
@@ -15,10 +16,11 @@ function fmt(tipo: string, v: number): string {
 }
 
 // Dias úteis (seg–sex) decorridos e totais do mês corrente — base do "ritmo".
-function diasUteisMes() {
+function diasUteisMes(mesReferencia: "mes_atual" | "mes_passado") {
   const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth();
+  const referencia = new Date(now.getFullYear(), now.getMonth() - (mesReferencia === "mes_passado" ? 1 : 0), 1);
+  const y = referencia.getFullYear();
+  const m = referencia.getMonth();
   const last = new Date(y, m + 1, 0).getDate();
   let total = 0;
   let decorridos = 0;
@@ -26,7 +28,7 @@ function diasUteisMes() {
     const wd = new Date(y, m, d).getDay();
     if (wd >= 1 && wd <= 5) {
       total++;
-      if (d <= now.getDate()) decorridos++;
+      if (mesReferencia === "mes_passado" || d <= now.getDate()) decorridos++;
     }
   }
   return { total, decorridos };
@@ -37,10 +39,11 @@ function diasUteisMes() {
  * arco em tons de cinza, % no centro, números e ritmo ao lado. Monocromático:
  * a cor aparece só no badge de ritmo (status) e num marcador fino do "esperado".
  */
-export function MetaProgress({ tipo, valorAlvo, realizado, label = "Meta do mês" }: MetaProgressProps) {
+export function MetaProgress({ tipo, valorAlvo, realizado, label = "Meta do mês", mesReferencia = "mes_atual" }: MetaProgressProps) {
   const pctReal = valorAlvo > 0 ? (realizado / valorAlvo) * 100 : 0;
   const pct = Math.min(pctReal, 100);
-  const { total, decorridos } = diasUteisMes();
+  const { total, decorridos } = diasUteisMes(mesReferencia);
+  const encerrado = mesReferencia === "mes_passado";
   const pctEsperado = valorAlvo > 0 && total > 0 ? Math.min((decorridos / total) * 100, 100) : 0;
   const esperado = valorAlvo * (total > 0 ? decorridos / total : 0);
   const noRitmo = realizado >= esperado;
@@ -75,7 +78,7 @@ export function MetaProgress({ tipo, valorAlvo, realizado, label = "Meta do mês
             color: noRitmo ? "var(--cf2-success-text)" : "var(--cf2-warning-text)",
           }}
         >
-          {noRitmo ? "no ritmo" : "abaixo do ritmo"}
+          {encerrado ? (realizado >= valorAlvo ? "meta alcançada" : "mês encerrado") : noRitmo ? "no ritmo" : "abaixo do ritmo"}
         </span>
       </div>
 
@@ -116,8 +119,13 @@ export function MetaProgress({ tipo, valorAlvo, realizado, label = "Meta do mês
             <span className="text-sm text-[var(--cf2-text-tertiary)] font-normal"> / {fmt(tipo, valorAlvo)}</span>
           </p>
           <p className="text-[12px] text-[var(--cf2-text-tertiary)] mt-2 leading-relaxed">
-            Faltam <span className="text-[var(--cf2-text-primary)] font-medium">{fmt(tipo, falta)}</span> em {diasRest} dia{diasRest === 1 ? "" : "s"} út{diasRest === 1 ? "il" : "eis"}
-            <span className="block text-[var(--cf2-text-tertiary)]">~{fmt(tipo, porDia)}/dia · traço pontilhado = onde o ritmo do mês esperava você agora</span>
+            {encerrado ? (
+              <>Competência encerrada. Saldo não realizado: <span className="text-[var(--cf2-text-primary)] font-medium">{fmt(tipo, falta)}</span>. O ritmo não é projetado para um mês passado.</>
+            ) : (
+              <>Faltam <span className="text-[var(--cf2-text-primary)] font-medium">{fmt(tipo, falta)}</span> em {diasRest} dia{diasRest === 1 ? "" : "s"} út{diasRest === 1 ? "il" : "eis"}
+                <span className="block text-[var(--cf2-text-tertiary)]">~{fmt(tipo, porDia)}/dia · traço pontilhado = ritmo esperado até hoje</span>
+              </>
+            )}
           </p>
         </div>
       </div>

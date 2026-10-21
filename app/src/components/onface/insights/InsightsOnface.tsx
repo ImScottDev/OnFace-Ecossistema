@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, ArrowUpRight, BarChart3, BookOpenText, CalendarDays, ChartNoAxesCombined, CircleGauge, Command, ContactRound, CreditCard, Filter, Fingerprint, Layers3, LayoutDashboard, Megaphone, Radio, ShieldCheck, UsersRound } from "lucide-react";
 import Link from "next/link";
@@ -15,6 +15,7 @@ import TabPosVenda from "@/components/crm2/relatorios/TabPosVenda";
 import { useMe } from "@/lib/useMe";
 import { isAdminView } from "@/lib/auth/roles";
 import { GO_LIVE, GO_LIVE_ISO, parsePeriodo } from "@/lib/relatorios/periodo";
+import { dataSP } from "@/lib/relatorios/calendario-sp";
 import { moeda } from "@/components/onface/vendas/formato";
 import { TabFechamento } from "./TabFechamento";
 import { TabExecutivo } from "./TabExecutivo";
@@ -24,6 +25,7 @@ import { Tablist } from "@/components/onface/ds/escolha";
 import { preencherSemanas, type Semana } from "./semanas";
 import "./insights.css";
 import "./insights-premium.css";
+import "./insights-functional.css";
 
 /**
  * Insights (/relatorios) na linguagem ONFACE — arquétipo A (hero grafite com
@@ -77,8 +79,10 @@ const DESCRICOES_ABAS: Record<string, string> = {
 };
 const PRESETS = [
   { key: "mes_atual", label: "Mês atual" },
-  { key: "mes_passado", label: "Mês passado" },
+  { key: "mes_passado", label: "Mês anterior" },
   { key: "7d", label: "7 dias" },
+  { key: "30d", label: "30 dias" },
+  { key: "90d", label: "90 dias" },
 ] as const;
 
 type Comercial = {
@@ -100,7 +104,7 @@ type Esteira = {
   porResponsavel?: { usuarioId: string; total: number; novo: number; qualificado: number; taxaQualificacao: number }[];
 };
 
-export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = "", janelaInicial = "12m" }: { abaInicial: string; periodoInicial: string; familiaInicial?: string; janelaInicial?: string }) {
+export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = "", janelaInicial = "12m", safraInicial = "nativo" }: { abaInicial: string; periodoInicial: string; familiaInicial?: string; janelaInicial?: string; safraInicial?: "todos" | "nativo" | "legado" }) {
   // Papel EFETIVO (respeita view-as) decide o menu. Segurança real é no backend
   // (o Hono filtra por responsavelId/403 conforme o papel).
   const { data: me, isLoading: meLoading } = useMe();
@@ -110,6 +114,7 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
 
   const [periodo, setPeriodo] = useState(periodoInicial);
   const [aba, setAba] = useState(abaInicial);
+  const [safraCom, setSafraCom] = useState<"todos" | "nativo" | "legado">(safraInicial);
   // Filtros do painel executivo: moram na URL como os demais, para o link colado abrir o mesmo recorte.
   const [familiaExec, setFamiliaExec] = useState(familiaInicial);
   const [janelaExec, setJanelaExec] = useState(janelaInicial);
@@ -129,13 +134,15 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
     const qs = new URLSearchParams(window.location.search);
     qs.set("aba", abaAtiva);
     qs.set("periodo", periodo);
+    if (abaAtiva === "comercial") qs.set("safra", safraCom);
+    else qs.delete("safra");
     if (abaAtiva === "executivo") {
       if (familiaExec) qs.set("familia", familiaExec); else qs.delete("familia");
       qs.set("janela", janelaExec);
     } else { qs.delete("familia"); qs.delete("janela"); }
     const novo = `${window.location.pathname}?${qs.toString()}`;
     if (novo !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", novo);
-  }, [abaAtiva, periodo, meLoading, familiaExec, janelaExec]);
+  }, [abaAtiva, periodo, meLoading, familiaExec, janelaExec, safraCom]);
 
   return (
     <div className="ins">
@@ -208,13 +215,23 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
               {abaAtiva === "pos-venda" || abaAtiva === "atividade-time" ? (
                 <span className="ins-studio-fixed-period"><CalendarDays size={15} />{abaAtiva === "pos-venda" ? "Carteira atual" : "Últimos 14 dias"}</span>
               ) : abaAtiva !== "executivo" && abaAtiva !== "qualidade" ? (
-                <SeletorPeriodo value={periodo} onChange={setPeriodo} />
+                <>
+                  <SeletorPeriodo value={periodo} onChange={setPeriodo} />
+                  {abaAtiva === "comercial" && gestao && (
+                    <div className="ins-seg" role="group" aria-label="Origem dos negócios">
+                      {([{ key: "nativo", label: "CRM nativo" }, { key: "todos", label: "Todos" }, { key: "legado", label: "Zoho migrado" }] as const).map((s) => (
+                        <button key={s.key} type="button" aria-pressed={safraCom === s.key}
+                          onClick={() => setSafraCom(s.key)}>{s.label}</button>
+                      ))}
+                    </div>
+                  )}
+                </>
               ) : <span className="ins-studio-fixed-period"><Filter size={15} />{abaAtiva === "executivo" ? "Filtros por produto e competência abaixo" : "Consulta de integridade"}</span>}
             </div>
           </div>
           {abaAtiva !== "executivo" && abaAtiva !== "qualidade" && (
             <div className="ins-studio-operational-hero">
-              {isSdr && !gestao ? <HeroSdr periodo={periodo} /> : <HeroComercial periodo={periodo} gestao={gestao} />}
+              {isSdr && !gestao ? <HeroSdr periodo={periodo} /> : <HeroComercial periodo={periodo} gestao={gestao} safra={abaAtiva === "comercial" && gestao ? safraCom : "nativo"} />}
             </div>
           )}
 
@@ -227,7 +244,7 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
                 )}
                 {abaAtiva === "comercial" && (
                   <>
-                    <TabComercial periodo={periodo} ocultarHero />
+                    <TabComercial periodo={periodo} ocultarHero safraSelecionada={safraCom} aoMudarSafra={setSafraCom} aoMudarPeriodo={setPeriodo} />
                     <div className="mt-6"><BlocoGestao periodo={periodo} /></div>
                   </>
                 )}
@@ -257,14 +274,14 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
 
 /* ─── Hero comercial ─────────────────────────────────────────────────────── */
 
-function HeroComercial({ periodo, gestao }: { periodo: string; gestao: boolean }) {
+function HeroComercial({ periodo, gestao, safra }: { periodo: string; gestao: boolean; safra: "todos" | "nativo" | "legado" }) {
   // MESMA queryKey da TabComercial com safra "todos": o react-query deduplica.
   // Para closer, a queryKey é a da TabComercialCloser (mesma URL, escopo do
   // backend por responsavelId).
   const { data, isLoading, isError } = useQuery<Comercial>({
-    queryKey: gestao ? ["relatorios", "comercial", periodo, "todos"] : ["relatorios", "comercial-closer", periodo],
+    queryKey: gestao ? ["relatorios", "comercial", periodo, safra] : ["relatorios", "comercial-closer", periodo, safra],
     queryFn: async () => {
-      const r = await fetch(`/api/relatorios/comercial?periodo=${periodo}`);
+      const r = await fetch(`/api/relatorios/comercial?periodo=${encodeURIComponent(periodo)}&safra=${safra}`);
       if (!r.ok) throw new Error(String(r.status));
       return r.json();
     },
@@ -272,14 +289,16 @@ function HeroComercial({ periodo, gestao }: { periodo: string; gestao: boolean }
   // A série semanal é da organização inteira (a rota não escopa por papel):
   // só a gestão vê o gráfico. Closer veria o número da empresa como se fosse dele.
   const { data: semanal } = useQuery<{ series: Semana[] }>({
-    queryKey: ["relatorios", "fechado-semanal"],
+    queryKey: ["relatorios", "fechado-semanal", periodo, safra],
     enabled: gestao,
-    queryFn: () => fetch(`/api/relatorios/fechado-mensal?semanas=12`).then((r) => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/relatorios/fechado-mensal?periodo=${encodeURIComponent(periodo)}&safra=${safra}`);
+      if (!r.ok) throw new Error("Série semanal indisponível");
+      return r.json();
+    },
   });
 
   const f = data?.fechado;
-  const meta = data?.metaComercial;
-  const pct = meta && meta.valorAlvo > 0 ? Math.round((meta.realizado / meta.valorAlvo) * 100) : null;
   const win = data?.winRateInfo;
   const v = (x: string) => (isLoading ? "…" : x);
 
@@ -288,7 +307,7 @@ function HeroComercial({ periodo, gestao }: { periodo: string; gestao: boolean }
       <span className="ins-hero-brilho" aria-hidden />
       <div className="ins-hero-topo">
         <div>
-          <span className="ins-rotulo-escuro">{gestao ? "Receita fechada" : "Sua receita fechada"} · {rotuloPeriodo(periodo)}</span>
+          <span className="ins-rotulo-escuro">{gestao ? (safra === "nativo" ? "Vendas ganhas · CRM nativo" : safra === "legado" ? "Vendas ganhas · Zoho migrado" : "Vendas ganhas · todos os responsáveis") : "Suas vendas ganhas"} · {rotuloPeriodo(periodo)}</span>
           <div className="ins-hero-valor">
             <strong>{isError ? "—" : v(moeda(f?.receita ?? 0))}</strong>
             {f ? (
@@ -297,20 +316,10 @@ function HeroComercial({ periodo, gestao }: { periodo: string; gestao: boolean }
               </span>
             ) : null}
           </div>
-          {meta && meta.valorAlvo > 0 ? (
-            <>
-              <div className="ins-barra" role="progressbar" aria-label="Meta comercial" aria-valuenow={pct ?? 0} aria-valuemin={0} aria-valuemax={100}>
-                <span style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
-              </div>
-              {/* Meta é MENSAL (mês de início do período) e soma só as closers;
-                  por isso o realizado dela pode diferir da receita do topo. */}
-              <p className="ins-nota-escura">
-                Meta das closers no mês: {moeda(meta.realizado)} de {moeda(meta.valorAlvo)} · <b style={{ color: "var(--ins-branco)" }}>{pct}%</b>
-              </p>
-            </>
-          ) : meta ? (
-            <p className="ins-nota-escura">Nenhuma meta de faturamento cadastrada para as closers neste mês.</p>
-          ) : null}
+          <p className="ins-nota-escura" data-escopo="todos">
+            <strong>Escopo: {gestao ? "todos os responsáveis no recorte de safra" : "seus negócios"}.</strong> Esta é a receita de vendas ganhas,
+            não o valor da meta individual. As metas de closers têm população e competência próprias.
+          </p>
           {isError ? <p className="ins-nota-escura">Não foi possível carregar os indicadores. Recarregue a página.</p> : null}
         </div>
         {gestao && semanal?.series?.length ? <GraficoSemanal series={semanal.series} /> : null}
@@ -430,42 +439,56 @@ function SeletorPeriodo({ value, onChange }: { value: string; onChange: (v: stri
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", fora); document.removeEventListener("keydown", esc); };
   }, [aberto]);
-
-  const aplicar = (d: string, a: string) => { if (d && a && d <= a) onChange(`custom:${d}:${a}`); };
   const { since, until } = parsePeriodo(value);
   const limitado = since.getTime() <= GO_LIVE.getTime();
-
+  const valido = de >= GO_LIVE_ISO && ate >= GO_LIVE_ISO && de <= ate && ate <= dataSP(new Date());
+  const aplicar = (evento: FormEvent<HTMLFormElement>) => {
+    evento.preventDefault();
+    if (!valido) return;
+    onChange("custom:" + de + ":" + ate);
+    setAberto(false);
+  };
   return (
     <div className="ins-periodo" ref={ref}>
-      <div className="ins-seg" role="group" aria-label="Período">
+      <div className="ins-seg" role="group" aria-label="Período dos relatórios">
         {PRESETS.map((p) => (
-          <button key={p.key} type="button" aria-pressed={value === p.key} onClick={() => { setAberto(false); onChange(p.key); }}>
-            {p.label}
-          </button>
+          <button key={p.key} type="button" aria-pressed={value === p.key}
+            onClick={() => { setAberto(false); onChange(p.key); }}>{p.label}</button>
         ))}
-        <button
-          type="button"
-          aria-pressed={custom}
-          aria-expanded={aberto}
-          onClick={() => setAberto((x) => !x)}
-          title={limitado ? `Limitado ao go-live (${GO_LIVE.toLocaleDateString("pt-BR")}): dado anterior vem do Zoho e não entra` : undefined}
-        >
-          <CalendarDays size={14} aria-hidden />
-          {custom ? `${fmtCurto(since)} – ${fmtCurto(until)}` : "Intervalo"}
-          {limitado ? <span className="ins-pino" aria-hidden /> : null}
+        <button type="button" aria-pressed={custom} aria-expanded={aberto}
+          aria-controls="ins-calendario-personalizado" onClick={() => {
+            if (!aberto && value.startsWith("custom:")) {
+              const [, inicio, fim] = value.split(":");
+              setDe(inicio);
+              setAte(fim);
+            }
+            setAberto((x) => !x);
+          }}
+          title={limitado ? "Histórico operacional limitado ao go-live do CRM" : "Selecionar datas"}>
+          <CalendarDays size={15} aria-hidden />
+          {custom ? fmtCurto(since) + " – " + fmtCurto(new Date(until.getTime() - 1)) : "Personalizado"}
+          {limitado && <span className="ins-pino" aria-hidden />}
         </button>
       </div>
-      {aberto ? (
-        <div className="ins-pop" role="dialog" aria-label="Intervalo personalizado">
-          <p className="ins-pop-rotulo">Intervalo personalizado</p>
+      {aberto && (
+        <form className="ins-pop ins-pop-calendario" id="ins-calendario-personalizado"
+          role="dialog" aria-label="Definir período personalizado" onSubmit={aplicar}>
+          <p className="ins-pop-rotulo">ESCOLHER INTERVALO</p>
+          <p>Selecione as datas de início e fim. O relatório só atualiza ao clicar em Aplicar.</p>
           <div className="ins-pop-campos">
-            <input type="date" aria-label="De" value={de} min={GO_LIVE_ISO} onChange={(e) => { setDe(e.target.value); aplicar(e.target.value, ate); }} />
-            <span aria-hidden>–</span>
-            <input type="date" aria-label="Até" value={ate} min={GO_LIVE_ISO} onChange={(e) => { setAte(e.target.value); aplicar(de, e.target.value); }} />
+            <label>Início<input type="date" value={de} min={GO_LIVE_ISO} max={dataSP(new Date())}
+              onChange={(e) => setDe(e.target.value)} required/></label>
+            <label>Fim<input type="date" value={ate} min={de || GO_LIVE_ISO} max={dataSP(new Date())}
+              onChange={(e) => setAte(e.target.value)} required/></label>
           </div>
-          <p>Aplicado: {fmtCurto(since)} – {fmtCurto(until)}</p>
-        </div>
-      ) : null}
+          {de && ate && de > ate && <p role="alert" className="ins-data-erro">A data inicial não pode ser maior que a final.</p>}
+          <div className="ins-pop-acoes">
+            <button type="button" onClick={() => setAberto(false)}>Cancelar</button>
+            <button type="submit" disabled={!valido}>Aplicar período</button>
+          </div>
+          <p className="ins-pop-rodape">Fuso: São Paulo · dados operacionais a partir de 01/07/2026</p>
+        </form>
+      )}
     </div>
   );
 }

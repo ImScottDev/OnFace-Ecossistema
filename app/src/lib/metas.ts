@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
-import { metas, negocios, leads, reunioes, contratos, usuarios, statusChanges } from "@/lib/db/schema";
+import { metas, negocios, leads, contratos, usuarios, statusChanges } from "@/lib/db/schema";
 import { and, eq, gte, lt, count, sql, isNotNull, inArray } from "drizzle-orm";
 import { monthRange, metaTipoPorPapel, type MetaTipo, PAPEIS_QUE_SOMAM_NA_META } from "@/lib/metas-shared";
+import { VALOR_TOTAL_VENDIDO } from "@/lib/relatorios/receita-fechada";
 
 // Reexporta a parte pura pra quem importa de "@/lib/metas" no servidor.
 export { META_TIPOS, metaTipoPorPapel, monthRange } from "@/lib/metas-shared";
@@ -24,7 +25,7 @@ export type { MetaTipo } from "@/lib/metas-shared";
  * o placar deixaria de bater com o que o time vendeu. Mesmo caso:
  * `relatorios/performance.ts` (CTE `gn`).
  */
-const VALOR_FECHADO = sql<string>`COALESCE(SUM(COALESCE(mrr_fechado,0)::numeric + COALESCE(valor_setup,0)::numeric), 0)`;
+const VALOR_FECHADO = sql<string>`COALESCE(SUM(${VALOR_TOTAL_VENDIDO}), 0)`;
 
 // Papéis considerados "closer" (fechamento) pra meta comercial agregada.
 // Fonte única com a UI de metas — ver `metas-shared.ts`.

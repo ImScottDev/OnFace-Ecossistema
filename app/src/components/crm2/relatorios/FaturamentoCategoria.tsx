@@ -43,11 +43,16 @@ const brlCheio = (v: number) =>
  * proporção dentro do mês, não comparar mensalidade e setup como se fossem
  * grandezas independentes.
  */
-export function FaturamentoCategoria({ meses = 12 }: { meses?: number }) {
+export function FaturamentoCategoria({ periodo, safra, aoSelecionarPeriodo }: {
+  meses?: number;
+  periodo: string;
+  safra: "todos" | "nativo" | "legado";
+  aoSelecionarPeriodo?: (periodo: string) => void;
+}) {
   const { data, isLoading, isError } = useQuery<Payload>({
-    queryKey: ["relatorios", "faturamento-categoria", meses],
+    queryKey: ["relatorios", "faturamento-categoria", periodo, safra],
     queryFn: async () => {
-      const r = await fetch(`/api/relatorios/faturamento-categoria?meses=${meses}`);
+      const r = await fetch(`/api/relatorios/faturamento-categoria?periodo=${encodeURIComponent(periodo)}&safra=${safra}`);
       if (!r.ok) throw new Error("Falha ao carregar o faturamento por categoria");
       return r.json();
     },
@@ -69,7 +74,7 @@ export function FaturamentoCategoria({ meses = 12 }: { meses?: number }) {
   const total = totalMrr + totalSetup;
   const maxMes = Math.max(...series.map((l) => l.total), 1);
   const pctSetup = total > 0 ? Math.round((totalSetup / total) * 100) : 0;
-  const ALTURA = 132;
+  const ALTURA = 190;
 
   if (series.length === 0) {
     return <Cf2EmptyState title="Nenhum negócio ganho no período" />;
@@ -81,7 +86,7 @@ export function FaturamentoCategoria({ meses = 12 }: { meses?: number }) {
         {/* Rotula os meses que EXISTEM, não os pedidos: o piso do go-live corta
             a janela, e "12 meses" sobre 3 meses de dado seria mentira. */}
         <Stat destaque
-              label={series.length === 1 ? "Faturamento fechado · 1 mês" : `Faturamento fechado · ${series.length} meses`}
+              label={series.length === 1 ? "Vendas ganhas · 1 competência" : `Vendas ganhas · ${series.length} competências`}
               value={brlCheio(total)} cor="ganho"
               sub={`${series.reduce((s, l) => s + l.negocios, 0)} negócios ganhos`} />
         <Stat label="Mensalidade (MRR)" value={brlCheio(totalMrr)}
@@ -101,7 +106,7 @@ export function FaturamentoCategoria({ meses = 12 }: { meses?: number }) {
         </p>
       )}
 
-      <Secao hint="por mês de ganho — a altura é o faturamento, a divisão mostra de que ele foi feito">
+      <Secao hint="por mês de ganho · selecione uma barra para filtrar todos os indicadores do período">
         Composição mês a mês
       </Secao>
       {/* A série começa em 01/07/2026 (go-live). Antes disso os negócios vieram
@@ -109,8 +114,7 @@ export function FaturamentoCategoria({ meses = 12 }: { meses?: number }) {
           plotá-los daria uma curva plausível e errada. Melhor dizer o recorte
           do que fingir 12 meses. */}
       <p className="text-[11px] -mt-2" style={{ color: "var(--cf2-text-tertiary)" }}>
-        A série começa no go-live do CRM (julho de 2026). Negócios anteriores vieram da migração do
-        Zoho, com data de reconciliação em vez de data real de fechamento.
+        Mesmo recorte das métricas acima: {safra === "nativo" ? "negócios do CRM nativo" : safra === "legado" ? "negócios migrados do Zoho" : "todas as safras"}, de {periodo.startsWith("custom:") ? "intervalo personalizado" : periodo.replaceAll("_", " ")}. Série e tabela vêm do mesmo agrupamento; anteriores ao go-live não entram.
       </p>
       <div
         className="rounded-2xl border p-4 overflow-x-auto"
@@ -120,7 +124,15 @@ export function FaturamentoCategoria({ meses = 12 }: { meses?: number }) {
             `flex-1` puro espalhava 3 barras finas por 1300px de largura. */}
         <div className="flex items-end justify-start gap-4" style={{ height: ALTURA + 46 }}>
           {series.map((l) => (
-            <div key={l.mes} className="flex-1 max-w-[120px] min-w-[52px] flex flex-col items-center gap-1">
+            <button type="button" key={l.mes} disabled={!aoSelecionarPeriodo}
+              className="flex-1 max-w-[120px] min-w-[52px] flex flex-col items-center gap-1 rounded-lg p-1 hover:bg-[var(--cf2-bg-surface-muted)] focus-visible:outline-2 focus-visible:outline-[var(--cf2-accent)] disabled:cursor-default"
+              aria-label={`Ver o relatório filtrado por ${rotuloMes(l.mes!)}`}
+              onClick={() => {
+                if (!aoSelecionarPeriodo || !l.mes) return;
+                const [ano, mes] = l.mes.split("-").map(Number);
+                const ultimo = new Date(ano, mes, 0).getDate();
+                aoSelecionarPeriodo(`custom:${l.mes}-01:${l.mes}-${String(ultimo).padStart(2, "0")}`);
+              }}>
               <span className="text-[10.5px] tabular-nums whitespace-nowrap" style={{ color: "var(--cf2-text-tertiary)" }}>
                 {brl(l.total)}
               </span>
@@ -133,7 +145,7 @@ export function FaturamentoCategoria({ meses = 12 }: { meses?: number }) {
                 <div className="w-full rounded-b-sm" style={{ height: (l.mrr / maxMes) * ALTURA, background: COR_MRR }} />
               </div>
               <span className="text-[10.5px] whitespace-nowrap" style={{ color: "var(--cf2-text-secondary)" }}>{rotuloMes(l.mes!)}</span>
-            </div>
+            </button>
           ))}
         </div>
         <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 pt-3" style={{ borderTop: "1px solid var(--cf2-border-default)" }}>

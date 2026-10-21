@@ -1,4 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
+import { dataSP, dataISOValida, diaSeguinteSP, inicioDiaSP, moverMesSP } from "./calendario-sp";
 
 // Go-live do CRM como sistema de registro: 01/07/2026 (decisão Scott — histórico
 // migrado do Zoho antes disso fica no banco pra contexto do lead, mas não entra
@@ -19,42 +20,35 @@ export function clampDesdeGoLive(d: Date): Date {
  * `since` nunca fica antes do go-live, mesmo se o preset/range pedido alcançaria
  * uma data anterior — nesse caso a janela real fica mais curta que o rótulo sugere.
  */
-export function parsePeriodo(periodo: string): { since: Date; until: Date } {
-  const now = new Date();
-
+/**
+ * Janelas dos relatórios. `until` é EXCLUSIVO: a competência de um dia vai
+ * até o início do dia seguinte em São Paulo, não até 23:59:59 de UTC.
+ * @param now injetável para testes de fuso e virada do mês
+ */
+export function parsePeriodo(periodo: string, now = new Date()): { since: Date; until: Date } {
+  const local = dataSP(now);
+  const comecoMes = local.slice(0, 7) + "-01";
   if (periodo.startsWith("custom:")) {
     const [, from, to] = periodo.split(":");
-    const since = new Date(`${from}T00:00:00`);
-    const until = new Date(`${to}T23:59:59.999`);
-    if (!isNaN(since.getTime()) && !isNaN(until.getTime()) && since <= until) {
-      return { since: clampDesdeGoLive(since), until };
+    if (dataISOValida(from) && dataISOValida(to) && from <= to) {
+      return {
+        since: clampDesdeGoLive(inicioDiaSP(from)),
+        until: inicioDiaSP(diaSeguinteSP(to)),
+      };
     }
   }
-  // Mês atual (padrão dos relatórios): do dia 1 do mês corrente até agora
   if (periodo === "mes_atual") {
-    return { since: clampDesdeGoLive(new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)), until: now };
+    return { since: clampDesdeGoLive(inicioDiaSP(comecoMes)), until: now };
   }
-  // Mês passado (20/08, Fechamento Comercial — Financeiro fechando julho/2026):
-  // dia 1 do mês anterior 00:00 até dia 1 do mês atual 00:00 (mês anterior
-  // completo). Mesmo clamp do go-live dos outros presets.
   if (periodo === "mes_passado") {
-    const inicioMesAtual = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const inicioMesPassado = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-    return { since: clampDesdeGoLive(inicioMesPassado), until: inicioMesAtual };
+    return {
+      since: clampDesdeGoLive(inicioDiaSP(moverMesSP(comecoMes, -1))),
+      until: inicioDiaSP(comecoMes),
+    };
   }
-  const days = periodo === "12m" ? 365 : parseInt(periodo.replace(/\D/g, "")) || 30;
-  return { since: clampDesdeGoLive(new Date(now.getTime() - days * 86400000)), until: now };
-}
-
-/**
- * Filtro por produto (Todos | PABX | Callface AI).
- * Em negócios o produto vive em campos_custom->>'produto' (pabx | ai | ai_pabx).
- * Retorna undefined quando produto = todos (sem filtro).
- */
-export function produtoCondNegocios(produto: string | null): SQL | undefined {
-  if (produto === "pabx") return sql`campos_custom->>'produto' = 'pabx'`;
-  if (produto === "ai") return sql`campos_custom->>'produto' IN ('ai', 'ai_pabx')`;
-  return undefined;
+  const dias = periodo === "12m" ? 365 : /^\d+d$/.test(periodo) ? Number.parseInt(periodo, 10) : 30;
+  const diasValidos = Number.isFinite(dias) && dias > 0 && dias <= 365 ? dias : 30;
+  return { since: clampDesdeGoLive(new Date(now.getTime() - diasValidos * 86_400_000)), until: now };
 }
 
 /** Filtro por produto na tabela contratos (coluna produto). */

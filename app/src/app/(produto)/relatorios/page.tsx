@@ -18,7 +18,7 @@ const PERIODO_OK = /^(mes_atual|mes_passado|7d|30d|60d|90d|365d|12m|custom:\d{4}
  */
 // O fechamento por ambiente mora em ./layout.tsx (AREAS_EM_BREVE=insights).
 
-export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ aba?: string; periodo?: string; familia?: string; janela?: string }> }) {
+export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ aba?: string; periodo?: string; familia?: string; janela?: string; safra?: string }> }) {
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
@@ -30,7 +30,8 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
     <Pagina>
       <InsightsOnface abaInicial={aba} periodoInicial={periodo}
         familiaInicial={["CALLFACE_AI", "PABX", "WHITE_LABEL"].includes(sp.familia ?? "") ? sp.familia! : ""}
-        janelaInicial={["12m", "ano_atual", "tudo"].includes(sp.janela ?? "") ? sp.janela! : "12m"} />
+        janelaInicial={["12m", "ano_atual", "tudo"].includes(sp.janela ?? "") ? sp.janela! : "12m"}
+        safraInicial={sp.safra === "todos" || sp.safra === "legado" ? sp.safra : "nativo"} />
     </Pagina>
   );
 }

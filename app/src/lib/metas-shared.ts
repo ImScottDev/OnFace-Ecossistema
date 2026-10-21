@@ -3,6 +3,8 @@
  * Pode ser usada em Client Components. As funções que tocam o banco ficam em `@/lib/metas`.
  */
 
+import { dataSP, inicioDiaSP, moverMesSP } from "@/lib/relatorios/calendario-sp";
+
 export type MetaTipo =
   | "reunioes_agendadas"
   | "reunioes_outbound"
@@ -66,9 +68,7 @@ export const META_TIPOS_LEGADOS: MetaTipo[] = ["mrr_fechado"];
 
 /** Normaliza "periodo" (string YYYY-MM-DD ou Date) pro 1º dia do mês e o mês seguinte. */
 export function monthRange(periodo: string | Date): { inicio: Date; fim: Date; primeiroDia: string } {
-  const base = typeof periodo === "string" ? new Date(`${periodo.slice(0, 10)}T00:00:00`) : periodo;
-  const inicio = new Date(base.getFullYear(), base.getMonth(), 1);
-  const fim = new Date(base.getFullYear(), base.getMonth() + 1, 1);
-  const primeiroDia = `${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, "0")}-01`;
-  return { inicio, fim, primeiroDia };
+  const local = typeof periodo === "string" ? periodo.slice(0, 10) : dataSP(periodo);
+  const primeiroDia = local.slice(0, 7) + "-01";
+  return { inicio: inicioDiaSP(primeiroDia), fim: inicioDiaSP(moverMesSP(primeiroDia, 1)), primeiroDia };
 }

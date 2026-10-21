@@ -39,6 +39,9 @@ interface TabComercialProps {
    * e qualificados no hero grafite, da MESMA requisição. Lá a faixa daqui é
    * repetição; na biblioteca (/relatorios/biblioteca/[id]) ela é o único topo. */
   ocultarHero?: boolean;
+  safraSelecionada?: "todos" | "nativo" | "legado";
+  aoMudarSafra?: (safra: "todos" | "nativo" | "legado") => void;
+  aoMudarPeriodo?: (periodo: string) => void;
 }
 
 // Paleta contida (disciplina de cor 21/07): neutros + 1 acento de marca no topo.
@@ -121,9 +124,14 @@ function formatCurrency(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export default function TabComercial({ periodo, ocultarHero = false }: TabComercialProps) {
-  // Filtro de safra (COM-02): legado (zoho_id preenchido) vs nativo — reaproveita zoho_id, sem campo novo.
-  const [safra, setSafra] = useState<"todos" | "legado" | "nativo">("todos");
+export default function TabComercial({ periodo, ocultarHero = false, safraSelecionada, aoMudarSafra, aoMudarPeriodo }: TabComercialProps) {
+  // Safra compartilhada com o hero global; aplicá-la somente ao visual mentiria sobre os totais.
+  const [safraLocal, setSafraLocal] = useState<"todos" | "legado" | "nativo">("nativo");
+  const safra = safraSelecionada ?? safraLocal;
+  const setSafra = (v: "todos" | "legado" | "nativo") => {
+    if (aoMudarSafra) aoMudarSafra(v);
+    else setSafraLocal(v);
+  };
   const { data: comercial, isLoading: loadingComercial, isError: erroComercial, refetch: recarregarComercial } = useQuery<ComercialData>({
     queryKey: ["relatorios", "comercial", periodo, safra],
     queryFn: async () => {
@@ -140,9 +148,9 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
     perdidos: number; fatStripe: number; fatPabx: number;
   }
   const { data: fechadoMensal, isLoading: loadingFechado, isError: erroFechado } = useQuery<{ series: FechadoMes[] }>({
-    queryKey: ["relatorios", "fechado-semanal"],
+    queryKey: ["relatorios", "fechado-semanal", periodo, safra],
     queryFn: async () => {
-      const r = await fetch("/api/relatorios/fechado-mensal?semanas=12");
+      const r = await fetch(`/api/relatorios/fechado-mensal?periodo=${encodeURIComponent(periodo)}&safra=${safra}`);
       if (!r.ok) throw new Error(`Não foi possível carregar série mensal (${r.status})`);
       return r.json();
     },
@@ -232,22 +240,29 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
 
       {/* Row 0: Meta comercial do mês = soma das metas das closers (visão de gestão) */}
       {metaCom && metaCom.valorAlvo > 0 ? (
-        <MetaProgress
-          tipo="mrr_fechado"
-          valorAlvo={metaCom.valorAlvo}
-          realizado={metaCom.realizado}
-          label={`Meta comercial do mês · soma de ${metaCom.closers} closer${metaCom.closers === 1 ? "" : "s"}`}
-        />
+        <section aria-label="Meta exclusiva das closers" className="ins-goal-scope">
+          <div className="ins-goal-explanation">
+            <strong>Meta das closers · escopo restrito</strong>
+            <p>Este realizado soma somente vendas das {metaCom.closers} closers com meta no mês. Não equivale às vendas de todos os responsáveis no topo. A meta mede uma população diferente.</p>
+          </div>
+          <MetaProgress
+            tipo="faturamento_fechado"
+            valorAlvo={metaCom.valorAlvo}
+            realizado={metaCom.realizado}
+            label={`Meta mensal · ${metaCom.closers} closer${metaCom.closers === 1 ? "" : "s"} · ${periodo === "mes_passado" ? "mês anterior" : "mês atual"}`}
+            mesReferencia={periodo === "mes_passado" ? "mes_passado" : "mes_atual"}
+          />
+        </section>
       ) : metaCom ? (
-        <div className="rounded-xl bg-[var(--cf2-bg-surface)] border border-[var(--cf2-border-default)] p-4 text-[12px] text-[var(--cf2-text-tertiary)]">
-          Nenhuma meta de MRR definida pras closers neste mês. Configure por pessoa em <span className="text-[var(--cf2-text-secondary)]">Ajustes · Membros</span> (o total aparece aqui).
-        </div>
-      ) : null}
+        <div className="ins-goal-explanation" role="note">Nenhuma meta comercial cadastrada para as closers desta competência.</div>
+      ) : <div className="ins-goal-explanation" role="note">
+        A meta mensal das closers não se aplica ao recorte <strong>{safra === "nativo" ? "CRM nativo" : safra === "legado" ? "Zoho migrado" : "de datas personalizado"}</strong>.
+        Selecione <strong>Consolidado</strong> e <strong>Mês atual</strong> ou <strong>Mês passado</strong> para comparar exatamente a população e a competência da meta.
+      </div>}
 
-      {/* Faixa-herói: receita fechada no período. O hero da página Insights
-          mostra sempre a safra "todos"; com outra safra filtrada a faixa volta,
-          senão o número filtrado sumiria da tela. */}
-      {ocultarHero && safra === "todos" ? null : (
+      {/* O hero da página Insights usa a MESMA safra e período da API.
+          Fora dela, o HeroBand abaixo continua sendo a única faixa. */}
+      {ocultarHero ? null : (
       <HeroBand
         label="Receita fechada no período"
         value={loadingComercial ? "…" : formatCurrency(fechado?.receita ?? 0)}
@@ -273,17 +288,17 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
       <Secao cor="ganho" hint="mensalidade × setup/avulso, por mês de ganho">
         Faturamento fechado por categoria
       </Secao>
-      <FaturamentoCategoria meses={12} />
+      <FaturamentoCategoria meses={12} periodo={periodo} safra={safra} aoSelecionarPeriodo={aoMudarPeriodo} />
 
       {/* Pipeline */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Secao cor="pipeline" hint="snapshot de agora — não reage ao período">Pipeline</Secao>
         {/* Filtro de safra (COM-02): legado = migrado do Zoho, nativo = criado direto no CRM */}
-        <div className="flex gap-0.5 p-0.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface-muted)" }}>
+        <div role="group" aria-label="Origem dos negócios exibidos" className="flex gap-0.5 p-0.5 rounded-lg shrink-0" style={{ background: "var(--cf2-bg-surface-muted)" }}>
           {([
-            { key: "todos" as const, label: "Todos" },
-            { key: "nativo" as const, label: "Nativo" },
-            { key: "legado" as const, label: "Legado" },
+            { key: "nativo" as const, label: "CRM nativo" },
+            { key: "todos" as const, label: "Consolidado" },
+            { key: "legado" as const, label: "Migrado Zoho" },
           ]).map((t) => (
             <button
               key={t.key}
@@ -416,7 +431,7 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
       <div className="grid lg:grid-cols-2 gap-4">
         <ChartCard
           title="MRR Fechado por Semana"
-          subtitle="Receita recorrente nova ganha por semana"
+          subtitle="Mensalidade dos negócios ganhos nas semanas do período filtrado"
           loading={loadingFechado}
           empty={fechadoSeries.length === 0}
           delay={0.24}
@@ -441,7 +456,7 @@ export default function TabComercial({ periodo, ocultarHero = false }: TabComerc
 
         <ChartCard
           title="Ganhos × Perdidos por Semana"
-          subtitle="Volume de fechamento — inclui faturamento real (faturas)"
+          subtitle="Ganhos por data de decisão e perdas pela data de encerramento; mesmo período e safra"
           loading={loadingFechado}
           empty={fechadoSeries.length === 0}
           delay={0.24}

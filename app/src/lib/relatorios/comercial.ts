@@ -19,9 +19,10 @@
  */
 import { db } from "@/lib/db";
 import { negocios, leads } from "@/lib/db/schema";
-import { and, eq, not, inArray, gte, lt, count, sum, sql, isNotNull, isNull, asc, type SQL } from "drizzle-orm";
+import { and, eq, inArray, gte, lt, count, sum, sql, isNotNull, isNull, asc, type SQL } from "drizzle-orm";
 import { DEFAULT_STAGES } from "@/lib/crm/pipeline";
 import { MOTIVOS_PERDA } from "@/lib/vendas/dominio";
+import { VALOR_MRR_VENDIDO, VALOR_NAO_RECORRENTE_VENDIDO } from "./receita-fechada";
 
 /**
  * Status de negócio ABERTO, por EXCLUSÃO dos fechados.
@@ -199,6 +200,7 @@ export async function getMotivosPerda(
   since: Date,
   until: Date,
   responsavelId?: string | null,
+  safra?: Safra,
 ): Promise<MotivosPerda> {
   // Perda DECIDIDA na janela (`oportunidades.perdido_at`), a mesma data do win rate.
   const rows = (await db.execute<{ motivo: string | null; total: string }>(sql`
@@ -208,6 +210,7 @@ export async function getMotivosPerda(
      WHERE o.organizacao_id = ${orgId}::uuid
        AND o.perdido_at >= ${since.toISOString()}::timestamptz AND o.perdido_at < ${until.toISOString()}::timestamptz
        ${responsavelId ? sql`AND o.responsavel_id = ${responsavelId}::uuid` : sql``}
+       ${safra === "legado" ? sql`AND n.zoho_id IS NOT NULL` : safra === "nativo" ? sql`AND n.zoho_id IS NULL` : sql``}
      GROUP BY 1`)) as unknown as { motivo: string | null; total: string }[];
 
   const total = rows.reduce((s, r) => s + num(r.total), 0);
@@ -253,6 +256,7 @@ export async function getCicloMedio(
   since: Date,
   until: Date,
   responsavelId?: string | null,
+  safra?: Safra,
 ): Promise<number | null> {
   const [r] = await db
     .select({
@@ -267,6 +271,7 @@ export async function getCicloMedio(
       gte(negocios.ganhoAt, since),
       lt(negocios.ganhoAt, until),
       scopeResp(responsavelId),
+      scopeSafra(safra),
     ));
   return r?.ciclo != null ? Math.round(Number(r.ciclo) * 10) / 10 : null;
 }
@@ -284,13 +289,14 @@ export async function getFechadoPeriodo(
   since: Date,
   until: Date,
   responsavelId?: string | null,
+  safra?: Safra,
 ): Promise<FechadoPeriodo> {
   const rows = await db
     .select({
       tipoReceita: negocios.tipoReceita,
       total: count(),
-      mrr: sum(negocios.mrrFechado),
-      valor: sum(negocios.valorTotal),
+      mrr: sum(VALOR_MRR_VENDIDO),
+      setup: sum(VALOR_NAO_RECORRENTE_VENDIDO),
     })
     .from(negocios)
     .where(and(
@@ -299,14 +305,15 @@ export async function getFechadoPeriodo(
       gte(negocios.ganhoAt, since),
       lt(negocios.ganhoAt, until),
       scopeResp(responsavelId),
+      scopeSafra(safra),
     ))
     .groupBy(negocios.tipoReceita);
 
   // recorrente = MRR (mensalidade) dos ganhos, NÃO valor_total (que é o total do
   // contrato e inflava). avulso/projeto (sem MRR) usa o valor cheio do projeto/one-time
   // — senão negócio 100% avulso ("projeto") nunca contava em lugar nenhum.
-  const recorrente = rows.filter((r) => r.tipoReceita !== "avulso" && r.tipoReceita !== "projeto").reduce((s, r) => s + num(r.mrr), 0);
-  const avulso = rows.filter((r) => r.tipoReceita === "avulso" || r.tipoReceita === "projeto").reduce((s, r) => s + num(r.valor), 0);
+  const recorrente = rows.reduce((s, r) => s + num(r.mrr), 0);
+  const avulso = rows.reduce((s, r) => s + num(r.setup), 0);
   const ganhos = rows.reduce((s, r) => s + num(r.total), 0);
   return { ganhos, receita: recorrente + avulso, recorrente, avulso };
 }
@@ -336,8 +343,8 @@ export async function getFechadoPorResponsavel(
       responsavelId: negocios.responsavelId,
       tipoReceita: negocios.tipoReceita,
       total: count(),
-      mrr: sum(negocios.mrrFechado),
-      valor: sum(negocios.valorTotal),
+      mrr: sum(VALOR_MRR_VENDIDO),
+      setup: sum(VALOR_NAO_RECORRENTE_VENDIDO),
       ciclo: CICLO_LEAD_ATE_GANHO, // lead caiu no CRM → ganho (mesma régua do getCicloMedio)
     })
     .from(negocios)
@@ -357,8 +364,8 @@ export async function getFechadoPorResponsavel(
     const cur = map.get(id) ?? { responsavelId: id, ganhos: 0, receita: 0, recorrente: 0, avulso: 0, cicloMedio: null };
     const n = num(r.total);
     cur.ganhos += n;
-    if (r.tipoReceita === "avulso" || r.tipoReceita === "projeto") cur.avulso += num(r.valor);
-    else cur.recorrente += num(r.mrr);
+    cur.recorrente += num(r.mrr);
+    cur.avulso += num(r.setup);
     cur.receita = cur.recorrente + cur.avulso;
     // média ponderada do ciclo entre os grupos (recorrente/avulso) do mesmo responsável
     if (r.ciclo != null) {
@@ -389,6 +396,7 @@ export async function getFunilConversao(
   since: Date,
   until: Date,
   responsavelId?: string | null,
+  safra?: Safra,
 ): Promise<{ etapas: FunilEtapa[] }> {
   // Por EVENTO, nas 4 etapas canônicas: quantos negócios distintos ATINGIRAM cada
   // etapa (ou uma posterior) na janela, mais os ganhos da janela. Antes misturava
@@ -408,11 +416,12 @@ export async function getFunilConversao(
            AND sc.created_at >= ${since.toISOString()}::timestamptz AND sc.created_at < ${until.toISOString()}::timestamptz
            AND sc.para_status IN (${sql.raw(Object.keys(idx).map((k) => `'${k}'`).join(","))})
            ${responsavelId ? sql`AND n.responsavel_id = ${responsavelId}::uuid` : sql``}
+           ${safra === "legado" ? sql`AND n.zoho_id IS NOT NULL` : safra === "nativo" ? sql`AND n.zoho_id IS NULL` : sql``}
          GROUP BY sc.negocio_id) t
        GROUP BY nivel`),
     db.select({ total: count() }).from(negocios).where(and(
       eq(negocios.organizacaoId, orgId), eq(negocios.status, "ganho"),
-      gte(negocios.ganhoAt, since), lt(negocios.ganhoAt, until), scopeResp(responsavelId),
+      gte(negocios.ganhoAt, since), lt(negocios.ganhoAt, until), scopeResp(responsavelId), scopeSafra(safra),
     )),
   ]);
   const porNivel = [0, 0, 0, 0];
@@ -443,6 +452,7 @@ export async function getLeadsQualificados(
   since: Date,
   until: Date,
   responsavelId?: string | null,
+  safra?: Safra,
 ): Promise<number> {
   const rows = await db
     .selectDistinct({ leadId: negocios.leadId })
@@ -453,6 +463,7 @@ export async function getLeadsQualificados(
       gte(negocios.createdAt, since),
       lt(negocios.createdAt, until),
       scopeResp(responsavelId),
+      scopeSafra(safra),
     ));
   return rows.length;
 }
@@ -463,8 +474,9 @@ export async function getTicketMedio(
   since: Date,
   until: Date,
   responsavelId?: string | null,
+  safra?: Safra,
 ): Promise<number | null> {
-  const f = await getFechadoPeriodo(orgId, since, until, responsavelId);
+  const f = await getFechadoPeriodo(orgId, since, until, responsavelId, safra);
   return f.ganhos > 0 ? Math.round((f.receita / f.ganhos) * 100) / 100 : null;
 }
 
@@ -485,6 +497,7 @@ export async function getPipelineEsfriando(
   responsavelId: string | null | undefined,
   diasMin = 5,
   limite = 15,
+  safra?: Safra,
 ): Promise<NegocioEsfriando[]> {
   const corte = new Date(Date.now() - diasMin * 86400000);
   const rows = await db
@@ -495,6 +508,7 @@ export async function getPipelineEsfriando(
       inArray(negocios.status, PIPELINE_ATIVO_STATUSES),
       lt(negocios.updatedAt, corte),
       scopeResp(responsavelId),
+      scopeSafra(safra),
     ))
     .orderBy(asc(negocios.updatedAt))
     .limit(limite);

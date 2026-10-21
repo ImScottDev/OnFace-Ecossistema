@@ -2,16 +2,16 @@ import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { negocios, leads, contratos, npsRespostas, atividades, statusChanges, usuarios, notas, ligacoes, tarefas, whatsappMensagens } from "@/lib/db/schema";
-import { eq, count, sum, avg, and, inArray, sql, gte, isNotNull, lte, desc, lt, or } from "drizzle-orm";
+import { eq, count, sum, avg, and, inArray, sql, gte, isNotNull, isNull, lte, desc, lt, or } from "drizzle-orm";
 import { getCtx, exigirCtx } from "../compat.js";
 import { sessaoVisivel } from "@/lib/whatsapp/acesso";
-import { parsePeriodo, clampDesdeGoLive, GO_LIVE_ISO } from "@/lib/relatorios/periodo";
+import { parsePeriodo, clampDesdeGoLive } from "@/lib/relatorios/periodo";
 import { fetchMetaCampaignInsights, fetchMetaAdInsights, metaConfigured, normCampanha } from "@/lib/integrations/meta-insights";
 import { isPersonalView, isAdminView } from "@/lib/auth/roles";
 import {
   getPipelineAtual, getCoberturaValorPorEtapa, getWinRate, getMotivosPerda, getCicloMedio,
   getFechadoPeriodo, getTicketMedio, getFunilConversao, getPipelineEsfriando,
-  getLeadsQualificados, getFechadoPorResponsavel, crescimento,
+  getLeadsQualificados, getFechadoPorResponsavel, crescimento, type Safra,
 } from "@/lib/relatorios/comercial";
 import { getTempoPorEtapa, getConversaoPorOrigem, getTarefasVencidasPorPessoa } from "@/lib/relatorios/gestao-operacional";
 import { contarReunioes, getPerdidosPorResponsavel, getFunilVendasEventos } from "@/lib/relatorios/funil-eventos";
@@ -23,6 +23,7 @@ import { consultarSaudeCapi } from "@/lib/relatorios/meta-capi-saude";
 import { getVisoesSdr, ESTAGNADO_DIAS } from "@/lib/relatorios/sdr-visoes";
 import { getLeadsPorCanal } from "@/lib/relatorios/canais";
 import { getMetaComercialAgregada } from "@/lib/metas";
+import { VALOR_MRR_VENDIDO, VALOR_NAO_RECORRENTE_VENDIDO, VALOR_TOTAL_VENDIDO } from "@/lib/relatorios/receita-fechada";
 import { CLOSER_EXTRA_IDS } from "@/lib/metas-shared";
 import {
   getMetricasPorCampanha, getMetricasPorCriativo, getMetricasPorConjunto, agregarFunil, gerarAlertas, rankingPorRoas,
@@ -613,29 +614,33 @@ app.get("/comercial", async (c) => {
   const ctx = await getCtx(c);
   const orgId = ctx.organizacaoId;
   const periodo = c.req.query("periodo") ?? "mes_atual";
+  const valorSafra = c.req.query("safra") ?? "nativo";
+  if (!["nativo", "legado", "todos"].includes(valorSafra)) return c.json({ error: "Safra inválida" }, 400);
+  const safra: Safra | undefined = valorSafra === "todos" ? undefined : valorSafra as Safra;
   const { since, until } = periodWindow(periodo);
   // Papel: closer vê só os negócios DELE; admin/gerente/leitor veem a org inteira.
   const responsavelId = isPersonalView(ctx.userRole) ? ctx.userId : undefined;
 
   const [pipeline, winRate, motivos, ciclo, fechado, ticket, funilConversao, esfriando, leadsQualificados] = await Promise.all([
-    getPipelineAtual(orgId, responsavelId),              // snapshot — NÃO filtra período (decisão Scott)
-    getWinRate(orgId, since, until, responsavelId),
-    getMotivosPerda(orgId, since, until, responsavelId),
-    getCicloMedio(orgId, since, until, responsavelId),
-    getFechadoPeriodo(orgId, since, until, responsavelId),
-    getTicketMedio(orgId, since, until, responsavelId),
-    getFunilConversao(orgId, since, until, responsavelId),
-    getPipelineEsfriando(orgId, responsavelId),
-    getLeadsQualificados(orgId, since, until, responsavelId), // passou pré-vendas + call agendada
+    getPipelineAtual(orgId, responsavelId, safra),              // snapshot — NÃO filtra período (decisão Scott)
+    getWinRate(orgId, since, until, responsavelId, safra),
+    getMotivosPerda(orgId, since, until, responsavelId, safra),
+    getCicloMedio(orgId, since, until, responsavelId, safra),
+    getFechadoPeriodo(orgId, since, until, responsavelId, safra),
+    getTicketMedio(orgId, since, until, responsavelId, safra),
+    getFunilConversao(orgId, since, until, responsavelId, safra),
+    getPipelineEsfriando(orgId, responsavelId, 5, 15, safra),
+    getLeadsQualificados(orgId, since, until, responsavelId, safra), // passou pré-vendas + call agendada
   ]);
 
   // Meta comercial = soma das metas das closers (visão de gestão). Meta é MENSAL:
   // usa o mês do início do período selecionado (antes havia um ternário no-op que
   // sempre caía no mês corrente, ignorando o seletor — auditoria item 12).
-  const metaComercial = isAdminView(ctx.userRole)
+  const metaComparavel = !safra && (periodo === "mes_atual" || periodo === "mes_passado");
+  const metaComercial = isAdminView(ctx.userRole) && metaComparavel
     ? await getMetaComercialAgregada(orgId, since)
     : null;
-  const coberturaValor = await getCoberturaValorPorEtapa(orgId, responsavelId);
+  const coberturaValor = await getCoberturaValorPorEtapa(orgId, responsavelId, safra);
 
   // INSIGHTS DE META. `getMetasPorVendedor` devolve exatamente o
   // `VendedorMetaInput` que `gerarInsights` pede — as duas metades foram
@@ -680,11 +685,15 @@ app.get("/comercial", async (c) => {
       gte(negocios.ganhoAt, since),
       lt(negocios.ganhoAt, until),
       responsavelId ? eq(negocios.responsavelId, responsavelId) : undefined,
+      safra === "nativo" ? isNull(negocios.zohoId) : safra === "legado" ? isNotNull(negocios.zohoId) : undefined,
     ))
     .orderBy(desc(negocios.ganhoAt))
     .limit(200);
 
   return c.json({
+    safra: valorSafra,
+    metaEscopo: metaComparavel ? "somente_closers_com_meta" : "incomparavel_com_recorte",
+    periodoEfetivo: { de: since.toISOString(), ateExclusivo: until.toISOString() },
     ganhosList,            // [{id,titulo,leadNome,leadEmpresa,mrrFechado,valorTotal,tipoReceita,ganhoAt}]
     // ─── Fonte única (o /resumo usa as MESMAS funções → topo e aba não divergem) ───
     coberturaValor,        // [{status,total,comValor,pct}] — oportunidades abertas por etapa
@@ -1447,118 +1456,149 @@ app.get("/midia-paga", async (c) => {
 // Mesma expressão da meta (`lib/metas.ts`): mensalidade + setup, nunca
 // `valor_total` (diverge da composição em 174 dos 309 ganhos) e nunca somando
 // `valor_projeto`, que é cópia literal de `valor_setup`.
-// GET /relatorios/faturamento-categoria?meses=12
+// GET /relatorios/faturamento-categoria?periodo=mes_atual&safra=nativo
+// UMA consulta por (competência, responsável): série e tabela conciliam linha a linha.
 app.get("/faturamento-categoria", async (c) => {
   const ctx = await getCtx(c);
   const orgId = ctx.organizacaoId;
-  const meses = Math.min(parseInt(c.req.query("meses") || "12") || 12, 24);
+  const periodo = c.req.query("periodo") ?? "mes_atual";
+  const entradaSafra = c.req.query("safra") ?? "nativo";
+  if (!["nativo", "legado", "todos"].includes(entradaSafra)) {
+    return c.json({ error: "Safra inválida" }, 400);
+  }
+  const { since, until } = periodWindow(periodo);
+  const filtroSafra = entradaSafra === "nativo" ? sql`AND negocios.zoho_id IS NULL`
+    : entradaSafra === "legado" ? sql`AND negocios.zoho_id IS NOT NULL` : sql``;
 
-  const series = await db.execute(sql`
-    SELECT to_char(date_trunc('month', ganho_at), 'YYYY-MM')            AS mes,
-           COALESCE(SUM(COALESCE(mrr_fechado, 0)), 0)::float            AS mrr,
-           COALESCE(SUM(COALESCE(valor_setup, 0)), 0)::float            AS setup,
-           COUNT(*)::int                                                AS negocios
+  // O mesmo somatório alimenta série, tabela e linha de qualidade.
+  // Nunca somar mrr + valor_total: valor_total pode ser projeção do contrato.
+  const rows = await db.execute<{
+    mes: string; nome: string; responsavel_id: string | null;
+    mrr: number | string; setup: number | string; negocios: number | string;
+    sem_valor: number | string;
+  }>(sql`
+    SELECT to_char(date_trunc('month', negocios.ganho_at), 'YYYY-MM') AS mes,
+           COALESCE(u.nome, 'Sem responsável') AS nome,
+           negocios.responsavel_id::text AS responsavel_id,
+           COALESCE(SUM(${VALOR_MRR_VENDIDO}), 0)::float AS mrr,
+           COALESCE(SUM(${VALOR_NAO_RECORRENTE_VENDIDO}), 0)::float AS setup,
+           COUNT(*)::int AS negocios,
+           COUNT(*) FILTER (WHERE ${VALOR_TOTAL_VENDIDO} <= 0)::int AS sem_valor
       FROM negocios
-     WHERE organizacao_id = ${orgId} AND status = 'ganho' AND ganho_at IS NOT NULL
-       AND ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
-     -- GROUP BY 1 e não 1, 2: a posição 2 é o SUM(mrr), e agregado não entra
-     -- em GROUP BY. O Postgres recusava a query inteira, a rota devolvia 500 e
-     -- o gráfico "Faturamento fechado por categoria" aparecia como caixa
-     -- cinza vazia na tela de Insights. As outras duas consultas deste mesmo
-     -- handler sempre agruparam por 1; esta ficou para trás.
-     GROUP BY 1 ORDER BY 1`);
+      LEFT JOIN usuarios u ON u.id = negocios.responsavel_id
+     WHERE negocios.organizacao_id = ${orgId}::uuid
+       AND negocios.status = 'ganho'
+       AND negocios.ganho_at >= ${since.toISOString()}::timestamptz
+       AND negocios.ganho_at < ${until.toISOString()}::timestamptz
+       ${filtroSafra}
+     GROUP BY 1, 2, 3 ORDER BY 1
+  `);
 
-  const porPessoa = await db.execute(sql`
-    -- CUTOVER DE LEITURA (fase 17): a fonte passou a ser oportunidades.
-    --
-    -- So foi possivel depois da migration 0073 criar a coluna de setup: o
-    -- canonico tinha valor e mrr juntos, e migrar sem o campo perderia a
-    -- distincao entre receita recorrente e de implantacao, que sao coisas
-    -- diferentes para quem decide onde investir.
-    SELECT COALESCE(u.nome, 'Sem responsável')                     AS nome,
-           COALESCE(SUM(COALESCE(o.mrr, 0)), 0)::float             AS mrr,
-           COALESCE(SUM(COALESCE(o.setup_estimado, 0)), 0)::float  AS setup,
-           COUNT(*)::int                                           AS negocios
-      FROM oportunidades o
-      LEFT JOIN usuarios u ON u.id = o.responsavel_id
-     WHERE o.organizacao_id = ${orgId} AND o.ganho_at IS NOT NULL
-       AND o.ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
-     GROUP BY 1
-     HAVING COALESCE(SUM(COALESCE(o.mrr, 0) + COALESCE(o.setup_estimado, 0)), 0) > 0
-     ORDER BY 2 + 3 DESC`);
-
-  // Ganho sem valor nenhum não é erro de query: é cadastro incompleto, e o
-  // relatório diz quantos são em vez de deixar o total silenciosamente menor.
-  const [semValor] = await db.execute<{ qtd: string }>(sql`
-    SELECT COUNT(*)::text AS qtd FROM negocios
-     WHERE organizacao_id = ${orgId} AND status = 'ganho' AND ganho_at IS NOT NULL
-       AND ganho_at >= GREATEST(date_trunc('month', now()) - make_interval(months => ${meses - 1}), ${GO_LIVE_ISO}::timestamptz)
-       AND COALESCE(mrr_fechado, 0) + COALESCE(valor_setup, 0) <= 0`);
-
-  const comTotal = <T extends { mrr: number; setup: number }>(r: T) => ({ ...r, total: r.mrr + r.setup });
+  type Linha = { mrr: number; setup: number; total: number; negocios: number };
+  const mensal = new Map<string, Linha>();
+  const pessoas = new Map<string, Linha & { nome: string }>();
+  let negociosSemValor = 0;
+  for (const r of rows) {
+    const mrr = Number(r.mrr) || 0;
+    const setup = Number(r.setup) || 0;
+    const n = Number(r.negocios) || 0;
+    negociosSemValor += Number(r.sem_valor) || 0;
+    const acumular = (current: Linha | undefined): Linha => ({
+      mrr: (current?.mrr ?? 0) + mrr,
+      setup: (current?.setup ?? 0) + setup,
+      total: (current?.total ?? 0) + mrr + setup,
+      negocios: (current?.negocios ?? 0) + n,
+    });
+    mensal.set(r.mes, acumular(mensal.get(r.mes)));
+    const chave = r.responsavel_id ?? "__sem_responsavel";
+    pessoas.set(chave, { nome: r.nome, ...acumular(pessoas.get(chave)) });
+  }
   return c.json({
-    series: (series as unknown as { mrr: number; setup: number }[]).map(comTotal),
-    porPessoa: (porPessoa as unknown as { mrr: number; setup: number }[]).map(comTotal),
-    negociosSemValor: Number(semValor?.qtd ?? 0),
-  });
+    periodo, safra: entradaSafra,
+    periodoEfetivo: { de: since.toISOString(), ateExclusivo: until.toISOString() },
+    series: [...mensal].map(([mes, valores]) => ({ mes, ...valores })).sort((a,b)=>a.mes.localeCompare(b.mes)),
+    porPessoa: [...pessoas.values()].sort((a,b)=>b.total-a.total),
+    negociosSemValor,
+    fonte: "negocios.ganho_at + tipo_receita + mrr_fechado + valor_setup/valor_total",
+  }, 200, { "Cache-Control": "no-store" });
 });
 
 // ─── Fechado mês a mês (MRR fechado + ganhos × perdidos) ─────────
 // Usa datas REAIS: ganhos por ganho_at, MRR por contratos.inicio. Perdidos não têm
 // data de perda preservada da migração → usa created_at do negócio como proxy.
 // Produto: tudo em "AI" (PABX foi excluído na importação).
-// GET /relatorios/fechado-mensal?meses=12
+// GET /relatorios/fechado-mensal?periodo=mes_atual&safra=nativo
+// Série semanal do recorte real — ganhos/receita são da mesma fonte do hero.
 app.get("/fechado-mensal", async (c) => {
   const ctx = await getCtx(c);
   const orgId = ctx.organizacaoId;
-  // R7/R8 (Scott 30/jun): granularidade SEMANAL. `semanas` é o nº de semanas exibidas
-  // (fallback `meses` por compat com chamadas antigas). Label = 'DD/MM' do início da semana.
-  const semanas = Math.min(parseInt(c.req.query("semanas") || c.req.query("meses") || "12") || 12, 52);
-
-  // Piso go-live (lib/relatorios/periodo GO_LIVE): não conta nada anterior ao go-live (histórico Zoho).
-  const ganhos = await db.execute(sql`
-    SELECT to_char(date_trunc('week', ganho_at), 'YYYY-MM-DD') AS wk, to_char(date_trunc('week', ganho_at), 'DD/MM') AS mes, count(*)::int AS qtd
-    FROM negocios
-    WHERE organizacao_id = ${orgId} AND status = 'ganho' AND ganho_at IS NOT NULL
-      AND ganho_at >= GREATEST(date_trunc('week', now()) - make_interval(weeks => ${semanas - 1}), ${GO_LIVE_ISO}::timestamptz)
-    GROUP BY 1, 2 ORDER BY 1
-  `);
-
-  const mrr = await db.execute(sql`
-    SELECT to_char(date_trunc('week', c.inicio), 'YYYY-MM-DD') AS wk, to_char(date_trunc('week', c.inicio), 'DD/MM') AS mes, COALESCE(sum(c.mrr), 0)::float AS mrr
-    FROM contratos c JOIN leads l ON l.id = c.lead_id
-    WHERE l.organizacao_id = ${orgId} AND c.status = 'ativo' AND c.inicio IS NOT NULL
-      AND c.inicio >= GREATEST((date_trunc('week', now()) - make_interval(weeks => ${semanas - 1}))::date, ${GO_LIVE_ISO}::date)
-    GROUP BY 1, 2 ORDER BY 1
-  `);
-
-  const perdidos = await db.execute(sql`
-    SELECT to_char(date_trunc('week', created_at), 'YYYY-MM-DD') AS wk, to_char(date_trunc('week', created_at), 'DD/MM') AS mes, count(*)::int AS qtd
-    FROM negocios
-    WHERE organizacao_id = ${orgId} AND status = 'perdido'
-      AND created_at >= GREATEST(date_trunc('week', now()) - make_interval(weeks => ${semanas - 1}), ${GO_LIVE_ISO}::timestamptz)
-    GROUP BY 1, 2 ORDER BY 1
-  `);
-
-  type Mes = {
-    wk: string; mes: string;
-    ganhosPabx: number; ganhosAi: number; ganhosOutros: number;
-    mrrPabx: number; mrrAi: number; mrrOutros: number;
-    perdidos: number; fatStripe: number; fatPabx: number;
+  const periodo = c.req.query("periodo");
+  const entradaSafra = c.req.query("safra") ?? "nativo";
+  if (!["nativo", "legado", "todos"].includes(entradaSafra)) return c.json({ error: "Safra inválida" }, 400);
+  const semanas = Math.min(Math.max(1, Number.parseInt(c.req.query("semanas") || c.req.query("meses") || "12", 10) || 12), 52);
+  const janela = periodo ? periodWindow(periodo) : {
+    since: clampDesdeGoLive(new Date(Date.now() - semanas * 7 * 86_400_000)),
+    until: new Date(),
   };
-  const byMes: Record<string, Mes> = {};
-  const ensure = (wk: string, mes: string) => (byMes[wk] ||= {
-    wk, mes, ganhosPabx: 0, ganhosAi: 0, ganhosOutros: 0,
-    mrrPabx: 0, mrrAi: 0, mrrOutros: 0, perdidos: 0, fatStripe: 0, fatPabx: 0,
-  });
-  const rowsOf = (r: unknown) => r as unknown as Record<string, unknown>[];
-  for (const r of rowsOf(ganhos)) ensure(String(r.wk), String(r.mes)).ganhosAi += Number(r.qtd);
-  for (const r of rowsOf(mrr)) ensure(String(r.wk), String(r.mes)).mrrAi += Number(r.mrr);
-  for (const r of rowsOf(perdidos)) ensure(String(r.wk), String(r.mes)).perdidos += Number(r.qtd);
+  const { since, until } = janela;
+  const filtro = entradaSafra === "nativo" ? sql`AND negocios.zoho_id IS NULL`
+    : entradaSafra === "legado" ? sql`AND negocios.zoho_id IS NOT NULL` : sql``;
+  const filtroOportunidade = entradaSafra === "nativo" ? sql`AND n.zoho_id IS NULL`
+    : entradaSafra === "legado" ? sql`AND n.zoho_id IS NOT NULL` : sql``;
 
-  // Ordena cronologicamente pela semana (wk = 'YYYY-MM-DD', ordenável lexicograficamente).
-  const series = Object.values(byMes).sort((a, b) => a.wk.localeCompare(b.wk));
-  return c.json({ semanas, series });
+  const [ganhos, perdidos] = await Promise.all([
+    db.execute(sql`
+      SELECT to_char(date_trunc('week', negocios.ganho_at AT TIME ZONE 'America/Sao_Paulo'), 'YYYY-MM-DD') AS wk,
+             to_char(date_trunc('week', negocios.ganho_at AT TIME ZONE 'America/Sao_Paulo'), 'DD/MM') AS mes,
+             count(*)::int AS qtd,
+             COALESCE(sum(${VALOR_MRR_VENDIDO}),0)::float AS mrr
+        FROM negocios
+       WHERE negocios.organizacao_id = ${orgId}::uuid AND negocios.status = 'ganho'
+         AND negocios.ganho_at >= ${since.toISOString()}::timestamptz
+         AND negocios.ganho_at < ${until.toISOString()}::timestamptz
+         ${filtro}
+       GROUP BY 1, 2 ORDER BY 1
+    `),
+    db.execute(sql`
+      SELECT to_char(date_trunc('week', o.perdido_at AT TIME ZONE 'America/Sao_Paulo'), 'YYYY-MM-DD') AS wk,
+             to_char(date_trunc('week', o.perdido_at AT TIME ZONE 'America/Sao_Paulo'), 'DD/MM') AS mes,
+             count(*)::int AS qtd
+        FROM oportunidades o
+        LEFT JOIN negocios n ON n.id = o.negocio_id_legado
+       WHERE o.organizacao_id = ${orgId}::uuid
+         AND o.perdido_at >= ${since.toISOString()}::timestamptz
+         AND o.perdido_at < ${until.toISOString()}::timestamptz
+         ${filtroOportunidade}
+       GROUP BY 1, 2 ORDER BY 1
+    `),
+  ]);
+  type Semana = {
+    wk: string; mes: string; ganhosPabx: number; ganhosAi: number; ganhosOutros: number;
+    mrrPabx: number; mrrAi: number; mrrOutros: number; perdidos: number; fatStripe: number; fatPabx: number;
+  };
+  const mapa = new Map<string, Semana>();
+  const bucket = (wk: string, mes: string): Semana => {
+    const anterior = mapa.get(wk);
+    if (anterior) return anterior;
+    const novo: Semana = { wk, mes, ganhosPabx: 0, ganhosAi: 0, ganhosOutros: 0,
+      mrrPabx: 0, mrrAi: 0, mrrOutros: 0, perdidos: 0, fatStripe: 0, fatPabx: 0 };
+    mapa.set(wk, novo);
+    return novo;
+  };
+  for (const r of ganhos as unknown as Record<string, unknown>[]) {
+    const b = bucket(String(r.wk), String(r.mes));
+    b.ganhosAi += Number(r.qtd) || 0;
+    b.mrrAi += Number(r.mrr) || 0;
+  }
+  for (const r of perdidos as unknown as Record<string, unknown>[]) {
+    bucket(String(r.wk), String(r.mes)).perdidos += Number(r.qtd) || 0;
+  }
+  return c.json({
+    periodo: periodo ?? "ultimas_semanas", safra: entradaSafra,
+    periodoEfetivo: { de: since.toISOString(), ateExclusivo: until.toISOString() },
+    semanas, series: [...mapa.values()].sort((a,b)=>a.wk.localeCompare(b.wk)),
+    fontes: { ganhos: "negocios.ganho_at", mrr: "negocios.mrr_fechado", perdas: "oportunidades.perdido_at" },
+  }, 200, { "Cache-Control": "no-store" });
 });
 
 // ─── Esteira SDR (pré-qualificação) ──────────────────────────────
