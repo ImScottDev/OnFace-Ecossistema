@@ -216,7 +216,17 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
      abaixo (lead, MRR, faturas, heal) trabalha sobre `subs` e `invoiceMap` já filtrados. Sem marca ou com marca
      dos dois lados FICA (e é contado no log), nunca é descartado em silêncio. */
   const subsDoStripe = await paginate<StripeSubscription>("subscriptions", { status: "all", "expand[]": "data.customer" });
-  const subs = subsDoStripe.filter((s) => !ignorarNoSync(origemDaAssinatura(s)));
+  /* A assinatura da plataforma entra no espelho como qualquer outra (decisão do
+     Scott, 21/10/2026). Antes era descartada aqui, e o efeito aparecia na ficha:
+     o cliente pagava R$ 89,90 por mês, a ficha achava o Customer e dizia
+     "Assinaturas · 0, sem assinatura no Stripe" — porque a assinatura não
+     existia no banco do CRM.
+
+     Entra inteira: assinatura, faturas e MRR. Quem não tem lead resolvido
+     continua de fora (o `continue` lá embaixo), então só entra cobrança com
+     dono conhecido. `ignorarNoSync` fica no código e segue valendo para o que
+     o CRM não deve tocar; o que mudou é que cobrança de cliente não é isso. */
+  const subs = subsDoStripe;
   const subsDoSaas = subsDoStripe.length - subs.length;
 
   const subsSemMarca = subs.filter((s) => origemDaAssinatura(s).origem !== "crm").length;
@@ -247,7 +257,8 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
   // Faturas: janela de 60d (novas + retries) + TODAS open/uncollectible (sem janela)
   const since = Math.floor(Date.now() / 1000) - 60 * 24 * 3600;
   const invoiceMap = new Map<string, StripeInvoice>();
-  const fatura = (inv: StripeInvoice) => { if (!ehDoSaas(origemDaFatura(inv))) invoiceMap.set(inv.id, { ...inv, customer: typeof inv.customer === "string" ? inv.customer : inv.customer.id }); };
+  // A fatura acompanha a assinatura: se a cobrança entra, o comprovante dela também.
+  const fatura = (inv: StripeInvoice) => { invoiceMap.set(inv.id, { ...inv, customer: typeof inv.customer === "string" ? inv.customer : inv.customer.id }); };
   for (const inv of await paginate<StripeInvoice>("invoices", { "created[gte]": String(since), "expand[]": "data.customer" })) fatura(inv);
   for (const st of ["open", "uncollectible"]) {
     for (const inv of await paginate<StripeInvoice>("invoices", { status: st, "expand[]": "data.customer" })) fatura(inv);
