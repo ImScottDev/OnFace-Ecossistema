@@ -177,10 +177,30 @@ function sanitizeResponse(raw: string): string {
     .slice(0, 12_000);
 }
 
+/**
+ * Quantas mensagens o agente pode disparar de uma vez.
+ *
+ * Eram oito. Em 21/10/2026 o WhatsApp RESTRINGIU o número da agente por
+ * "spam, automated or bulk messaging" — e não foi volume: foram 47 mensagens
+ * em dois dias, para 4 contatos, sem UMA conversa iniciada por ela. Foi o
+ * padrão: ela quebrava cada resposta em duas ou três mensagens, e 22 disparos
+ * numa hora para a MESMA pessoa é exatamente o que o detector lê como robô.
+ *
+ * Duas por turno dá espaço para o caso legítimo (a resposta e o link, ou a
+ * resposta e o horário confirmado) e fecha a porta da metralhadora. Juntar em
+ * vez de cortar: ninguém perde conteúdo, o texto vira uma mensagem só.
+ */
+export const MAX_MENSAGENS_POR_TURNO = 2;
+
 function responseMessages(text: string | null, prepared: string[]): string[] {
-  if (prepared.length) return prepared.map(sanitizeResponse).filter(Boolean).slice(0, 8);
-  if (!text) return [];
-  return text.split("\n---SPLIT---\n").map(sanitizeResponse).filter(Boolean).slice(0, 8);
+  const partes = prepared.length
+    ? prepared.map(sanitizeResponse).filter(Boolean)
+    : (text ? text.split("\n---SPLIT---\n").map(sanitizeResponse).filter(Boolean) : []);
+  if (partes.length <= MAX_MENSAGENS_POR_TURNO) return partes;
+  // O excedente é juntado na última, com linha em branco entre as ideias.
+  const inicio = partes.slice(0, MAX_MENSAGENS_POR_TURNO - 1);
+  const resto = partes.slice(MAX_MENSAGENS_POR_TURNO - 1).join("\n\n");
+  return [...inicio, resto];
 }
 
 async function calculateCost(provider: string, model: string, tokensInput: number, tokensOutput: number): Promise<number> {
