@@ -28,6 +28,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { janelaDoPeriodo } from "@/lib/metricas/janela";
 import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 import { daFamilia, nomeDeTeste, origemDeTeste, semTestes, type Familia } from "@/lib/metricas/recorte";
+import { VALOR_BOOKING_VENDIDO, VALOR_AVULSO_VENDIDO } from "@/lib/relatorios/receita-fechada";
 
 export type TipoMetrica = "EVENT" | "SNAPSHOT" | "COHORT";
 
@@ -658,16 +659,93 @@ export const CATALOGO: DefinicaoMetrica[] = [
     descricao:
       "Valor das oportunidades GANHAS dentro do período. É o fato comercial da venda, " +
       "com data própria — não é faturamento nem caixa.",
-    fonte: "oportunidades com ganho_at dentro da janela, somando valor.",
+    fonte:
+      "negócios ganhos com ganho_at dentro da janela, somando mensalidade vendida mais setup pela " +
+      "política única de `receita-fechada.ts` (White Label entra só com o setup).",
     naoInclui:
-      "oportunidades abertas, ganhos de períodos anteriores e qualquer previsão. " +
-      "Booking não vira MRR automaticamente: parte da venda é setup e avulso.",
+      "oportunidades abertas, ganhos de períodos anteriores e qualquer previsão. Projeto/avulso " +
+      "fica fora: é `receita_avulsa_vendida`. Booking não vira MRR automaticamente.",
     agregacao: "soma",
-    // oportunidades.service_family está preenchida em poucas linhas: o filtro é real,
-    // mas quem não tem família fica de fora dele (declarado na tela como cobertura).
     filtros: { familia: true },
     ordem: "t.ganho_at DESC",
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], campoData: "ganho_at", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "ganho_at", "familia"], piso: new Date("2026-07-01T00:00:00-03:00") },
+    /**
+     * Lê de `negocios`, não de `oportunidades`, porque só ali existe a
+     * decomposição que a política de receita exige (mensalidade, setup e
+     * avulso separados) — e é ela que tira o White Label do recorrente, decisão
+     * do Scott em 21/10.
+     *
+     * `oportunidades.valor` é o valor cheio da oportunidade e NÃO aplica regra
+     * nenhuma: em setembro/2026 os mesmos 49 ganhos somam R$ 91.357,21 por ele
+     * e R$ 42.922,21 pela política. Ele sobrevive como total de controle em
+     * `booking_cabecalho`, com teste cruzando os dois.
+     *
+     * Quando `oportunidade_itens` deixar de ser tabela morta (3 linhas no banco
+     * inteiro, 0 das 626 oportunidades ganhas tem item), a fonte migra para o
+     * item, que é mais fino e tem `service_family` NOT NULL.
+     */
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT negocios.id::text, negocios.titulo, e.nome AS empresa,
+               COALESCE(negocios.service_family, 'UNKNOWN') AS familia,
+               ${VALOR_BOOKING_VENDIDO} AS valor, negocios.ganho_at,
+               negocios.id::text AS negocio_id, negocios.empresa_id::text AS empresa_id
+          FROM negocios
+          LEFT JOIN empresas e ON e.id = negocios.empresa_id
+         WHERE negocios.organizacao_id = ${org}::uuid AND negocios.status = 'ganho'
+           AND negocios.ganho_at >= ${de}::timestamptz AND negocios.ganho_at < ${ate}::timestamptz
+           AND ${daFamilia("negocios.service_family", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(negocios.titulo, '')"))}`;
+    },
+  }),
+
+  definir({
+    codigo: "receita_avulsa_vendida",
+    nome: "Projeto e avulso vendidos",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao:
+      "Valor de projeto/avulso nos negócios ganhos do período. Fica FORA do booking de propósito: " +
+      "não recorre e não é implantação.",
+    fonte: "negócios ganhos com tipo de receita avulso ou projeto, pela política de `receita-fechada.ts`.",
+    naoInclui: "mensalidade e setup — esses são o booking.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.ganho_at DESC",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], campoData: "ganho_at", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "ganho_at"], piso: new Date("2026-07-01T00:00:00-03:00") },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT negocios.id::text, negocios.titulo, e.nome AS empresa,
+               COALESCE(negocios.service_family, 'UNKNOWN') AS familia,
+               ${VALOR_AVULSO_VENDIDO} AS valor, negocios.ganho_at,
+               negocios.id::text AS negocio_id, negocios.empresa_id::text AS empresa_id
+          FROM negocios
+          LEFT JOIN empresas e ON e.id = negocios.empresa_id
+         WHERE negocios.organizacao_id = ${org}::uuid AND negocios.status = 'ganho'
+           AND negocios.ganho_at >= ${de}::timestamptz AND negocios.ganho_at < ${ate}::timestamptz
+           AND ${daFamilia("negocios.service_family", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(negocios.titulo, '')"))}`;
+    },
+  }),
+
+  definir({
+    codigo: "booking_cabecalho",
+    nome: "Booking pelo cabeçalho da oportunidade",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao:
+      "Soma de `oportunidades.valor` nos ganhos do período. NÃO é a venda ganha oficial: existe " +
+      "como total de controle, para medir a distância até a política de receita.",
+    fonte: "oportunidades com ganho_at na janela, somando valor sem aplicar regra nenhuma.",
+    naoInclui:
+      "a separação entre mensalidade, setup e avulso, e a regra do White Label. Para decidir, use " +
+      "`booking_ganho`. Divergir daqui é esperado e está medido em `cruzadas.test.ts`.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.ganho_at DESC",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], campoData: "ganho_at", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "ganho_at"], piso: new Date("2026-07-01T00:00:00-03:00") },
     recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`

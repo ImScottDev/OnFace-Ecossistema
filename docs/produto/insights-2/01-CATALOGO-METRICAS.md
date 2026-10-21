@@ -4,7 +4,7 @@ Cada métrica aqui é **uma definição oficial**: mesma métrica, mesmos parâm
 qualquer superfície. A definição mora em código versionado (`app/src/lib/metricas/catalogo.ts`),
 não numa tabela que alguém edita sem revisão; `metric_catalog` no banco é espelho para descoberta.
 
-Gerado a partir do código em 2026-10-21. **Não edite esta tabela à mão** — ela sai de `CATALOGO`.
+Gerado a partir do código em 2026-10-21 (atualizado após a correção do booking). **Não edite esta tabela à mão** — ela sai de `CATALOGO`.
 
 ## Como ler
 
@@ -16,10 +16,11 @@ Gerado a partir do código em 2026-10-21. **Não edite esta tabela à mão** —
   motivo, nunca um número filtrado por engano.
 - **Dimensões** — por onde a métrica pode ser quebrada, e por onde o drill-down funciona.
 
-## As 26 métricas
+## As 28 métricas
 
 | Código | Tipo | Unidade | Piso | Família | Dimensões |
 |---|---|---|---|---|---|
+| `booking_cabecalho` | evento | R$ | 2026-07-01 | sim | familia |
 | `booking_ganho` | evento | R$ | 2026-07-01 | sim | familia |
 | `clientes_faturados` | evento | nº | 2021-03-01 | sim | familia |
 | `faturado` | evento | R$ | — | não | status |
@@ -35,6 +36,7 @@ Gerado a partir do código em 2026-10-21. **Não edite esta tabela à mão** —
 | `pipeline_previsto` | evento | R$ | — | sim | familia, etapa |
 | `recebido` | evento | R$ | — | não | metodo |
 | `receita_avulsa` | evento | R$ | 2021-03-01 | sim | familia, confianca, fonte |
+| `receita_avulsa_vendida` | evento | R$ | 2026-07-01 | sim | familia |
 | `receita_setup` | evento | R$ | 2021-03-01 | sim | familia, confianca, fonte |
 | `receita_uso` | evento | R$ | 2021-03-01 | sim | familia, confianca, fonte |
 | `clientes_ativos` | retrato | nº | — | sim | — |
@@ -82,10 +84,15 @@ número.
 
 ## Fonte de verdade, métrica a métrica
 
+**`booking_cabecalho`** — Booking pelo cabeçalho da oportunidade
+
+- Fonte: oportunidades com ganho_at na janela, somando valor sem aplicar regra nenhuma.
+- Não inclui: a separação entre mensalidade, setup e avulso, e a regra do White Label. Para decidir, use `booking_ganho`. Divergir daqui é esperado e está medido em `cruzadas.test.ts`.
+
 **`booking_ganho`** — Booking (venda ganha)
 
-- Fonte: oportunidades com ganho_at dentro da janela, somando valor.
-- Não inclui: oportunidades abertas, ganhos de períodos anteriores e qualquer previsão. Booking não vira MRR automaticamente: parte da venda é setup e avulso.
+- Fonte: negócios ganhos com ganho_at dentro da janela, somando mensalidade vendida mais setup pela política única de `receita-fechada.ts` (White Label entra só com o setup).
+- Não inclui: oportunidades abertas, ganhos de períodos anteriores e qualquer previsão. Projeto/avulso fica fora: é `receita_avulsa_vendida`. Booking não vira MRR automaticamente.
 
 **`clientes_ativos`** — Clientes ativos
 
@@ -95,7 +102,7 @@ número.
 **`clientes_faturados`** — Clientes faturados
 
 - Fonte: cliente_receita_mensal, um registro por documento somando as competências da janela.
-- Não inclui: serviço ativo sem faturamento no período e cliente que paga por outro documento. Primeiro faturamento observado não prova primeira venda, e ausência d
+- Não inclui: serviço ativo sem faturamento no período e cliente que paga por outro documento. Primeiro faturamento observado não prova primeira venda, e ausência de faturamento não prova cancelamento.
 
 **`faturado`** — Faturado
 
@@ -104,13 +111,13 @@ número.
 
 **`faturamento_competencia`** — Faturamento por competência
 
-- Fonte: cliente_receita_mensal: 11.111 linhas da base histórica (03/2021 a 06/2026) e os fechamentos de julho a setembro de 2026, conciliados ao centavo com o
-- Não inclui: recebimento (faturamento não prova pagamento), venda decidida e MRR contratado. Mês ainda não fechado aparece como ausente, nunca como zero. A família
+- Fonte: cliente_receita_mensal: 11.111 linhas da base histórica (03/2021 a 06/2026) e os fechamentos de julho a setembro de 2026, conciliados ao centavo com os arquivos originais (ver conciliação).
+- Não inclui: recebimento (faturamento não prova pagamento), venda decidida e MRR contratado. Mês ainda não fechado aparece como ausente, nunca como zero. A família é a da Business Line da planilha (CALL 
 
 **`faturas_stripe_fora_da_planilha`** — Cobrado no Stripe sem linha na planilha
 
 - Fonte: faturas (origem Stripe, status paga ou aberta) sem linha em cliente_receita_mensal para a mesma empresa e competência.
-- Não inclui: rascunho e fatura anulada. Não é receita adicional confirmada: pode ser cobrança de empresa que a planilha lança sob outro documento. É fila de concil
+- Não inclui: rascunho e fatura anulada. Não é receita adicional confirmada: pode ser cobrança de empresa que a planilha lança sob outro documento. É fila de conciliação, não ajuste de faturamento.
 
 **`leads_novos`** — Leads novos
 
@@ -120,47 +127,47 @@ número.
 **`logos_cancelados`** — Clientes que cancelaram (Stripe)
 
 - Fonte: assinaturas do CRM canceladas na janela, agrupadas por empresa, descontando quem ainda tem assinatura viva.
-- Não inclui: Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: o número NÃO é o churn ou o risco da carteira 
+- Não inclui: Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: o número NÃO é o churn ou o risco da carteira inteira. Cliente que só trocou de plano 
 
 **`meta_booking`** — Meta comercial (closers)
 
-- Fonte: metas das closers ativas (papéis closer/vendedor) por mês: tipo faturamento_fechado; no mês em que só existe o tipo aposentado mrr_fechado, vale ele (
-- Não inclui: meta de SDR e meta de reuniões. Meses anteriores a 09/09/2026 só têm meta do tipo aposentado mrr_fechado (MRR, sem setup): comparar com booking_ganho,
+- Fonte: metas das closers ativas (papéis closer/vendedor) por mês: tipo faturamento_fechado; no mês em que só existe o tipo aposentado mrr_fechado, vale ele (mesma regra de getMetaComercialAgregada)
+- Não inclui: meta de SDR e meta de reuniões. Meses anteriores a 09/09/2026 só têm meta do tipo aposentado mrr_fechado (MRR, sem setup): comparar com booking_ganho, que inclui setup, superestima o atingim
 
 **`mrr_atual`** — MRR atual
 
-- Fonte: cliente_receita_mensal na maior competência, revenue_nature = MRR (regra do Scott, 06/10: MRR oficial = faturado no último fechamento) + assinaturas a
+- Fonte: cliente_receita_mensal na maior competência, revenue_nature = MRR (regra do Scott, 06/10: MRR oficial = faturado no último fechamento) + assinaturas ativas de clientes ainda sem a competênci
 - Não inclui: setup, venda avulsa, débito recuperado e projeto (naturezas SETUP/AVULSO/DEBITO_RECUPERADO da mesma tabela), que aparecem separados como faturamento.
 
 **`mrr_cancelado`** — MRR cancelado (Stripe)
 
 - Fonte: assinaturas do CRM com status canceled e cancelada_em dentro da janela, somando mrr.
-- Não inclui: Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: o número NÃO é o churn ou o risco da carteira 
+- Não inclui: Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: o número NÃO é o churn ou o risco da carteira inteira. Não inclui assinatura que nunca
 
 **`mrr_contratado`** — MRR contratado
 
 - Fonte: servicos_canonicos.current_recurring_value com portfolio_included, natureza MRR e ciclo comercial ACTIVE.
-- Não inclui: o que de fato foi faturado (consumo variável do PABX, serviço sem cadastro canônico e White Label ainda sem serviço canônico ficam de fora: medido em 
+- Não inclui: o que de fato foi faturado (consumo variável do PABX, serviço sem cadastro canônico e White Label ainda sem serviço canônico ficam de fora: medido em set/2026, R$ 388 mil contratado contra R
 
 **`mrr_em_risco`** — MRR em risco (cobrança falhando)
 
 - Fonte: assinaturas do CRM com status past_due, somando mrr.
-- Não inclui: Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: o número NÃO é o churn ou o risco da carteira 
+- Não inclui: Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: o número NÃO é o churn ou o risco da carteira inteira. Não inclui assinatura 'unpaid' 
 
 **`mrr_faturavel`** — MRR faturável
 
 - Fonte: cliente_receita_mensal na maior competência, revenue_nature = MRR (mrr-oficial.ts, origem fechamento).
-- Não inclui: assinatura vendida depois do fechamento e ainda sem linha na planilha (essa entra só no mrr_atual), o valor contratado em si (mrr_contratado), setup, 
+- Não inclui: assinatura vendida depois do fechamento e ainda sem linha na planilha (essa entra só no mrr_atual), o valor contratado em si (mrr_contratado), setup, avulso, uso e débito recuperado.
 
 **`mrr_movimento_liquido`** — Movimento líquido de MRR (Stripe)
 
 - Fonte: mrr_movimentos (delta) pela data de ocorrência.
-- Não inclui: Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: o número NÃO é o churn ou o risco da carteira 
+- Não inclui: Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: o número NÃO é o churn ou o risco da carteira inteira. Os movimentos vêm do sync Strip
 
 **`oportunidades_abertas`** — Oportunidades abertas
 
 - Fonte: oportunidades com ganho_at e perdido_at nulos e etapa canônica preenchida (a mesma contagem do Pipeline).
-- Não inclui: ganhas e perdidas, inclusive as fechadas hoje, e o legado com status ativo sem etapa (decisão de 05/10: ativo não é etapa comercial, fica fora do funi
+- Não inclui: ganhas e perdidas, inclusive as fechadas hoje, e o legado com status ativo sem etapa (decisão de 05/10: ativo não é etapa comercial, fica fora do funil).
 
 **`oportunidades_criadas`** — Oportunidades criadas
 
@@ -175,7 +182,7 @@ número.
 **`oportunidades_perdidas`** — Oportunidades perdidas
 
 - Fonte: oportunidades com perdido_at dentro da janela.
-- Não inclui: o motivo de negócio por trás da perda. Perda em lote (limpeza de funil) conta no dia em que foi marcada: fev/2026 tem 151 perdas e ago/2026 tem 192, p
+- Não inclui: o motivo de negócio por trás da perda. Perda em lote (limpeza de funil) conta no dia em que foi marcada: fev/2026 tem 151 perdas e ago/2026 tem 192, picos que não são 151 ou 192 negócios mor
 
 **`pipeline_aberto`** — Pipeline aberto
 
@@ -195,20 +202,24 @@ número.
 **`recebido`** — Recebido (caixa)
 
 - Fonte: pagamentos canônicos com status pago e paid_at na janela (origem Stripe).
-- Não inclui: boleto e nota fiscal do PABX: a baixa deles não está no ONFACE, então este número é parcial e NÃO pode ser lido contra o faturado total (em set/2026: 
+- Não inclui: boleto e nota fiscal do PABX: a baixa deles não está no ONFACE, então este número é parcial e NÃO pode ser lido contra o faturado total (em set/2026: R$ 56 mil recebidos contra R$ 512 mil fa
 
 **`receita_avulsa`** — Receita avulsa
 
 - Fonte: cliente_receita_mensal, revenue_nature = ONE_TIME, pela competência.
-- Não inclui: setup de implantação (receita_setup), consumo variável (receita_uso), mensalidade (MRR) e débito recuperado. O balde 'Avulso' dos gráficos de faturame
+- Não inclui: setup de implantação (receita_setup), consumo variável (receita_uso), mensalidade (MRR) e débito recuperado. O balde 'Avulso' dos gráficos de faturamento soma setup + pontual + uso; esta mét
+
+**`receita_avulsa_vendida`** — Projeto e avulso vendidos
+
+- Fonte: negócios ganhos com tipo de receita avulso ou projeto, pela política de `receita-fechada.ts`.
+- Não inclui: mensalidade e setup — esses são o booking.
 
 **`receita_setup`** — Receita de setup
 
 - Fonte: cliente_receita_mensal, revenue_nature = SETUP, pela competência.
-- Não inclui: mensalidade (MRR), venda avulsa e pontual (receita_avulsa), consumo variável (receita_uso) e débito recuperado. O setup do negócio ganho que ainda não
+- Não inclui: mensalidade (MRR), venda avulsa e pontual (receita_avulsa), consumo variável (receita_uso) e débito recuperado. O setup do negócio ganho que ainda não foi faturado também fica de fora: aqui 
 
 **`receita_uso`** — Receita de uso
 
 - Fonte: cliente_receita_mensal, revenue_nature = USAGE, pela competência.
-- Não inclui: mensalidade fixa (MRR), setup, venda avulsa e débito recuperado. Uso NÃO é MRR: varia de um mês para o outro. O PABX com consumo que a planilha lança 
-
+- Não inclui: mensalidade fixa (MRR), setup, venda avulsa e débito recuperado. Uso NÃO é MRR: varia de um mês para o outro. O PABX com consumo que a planilha lança como MRR continua dentro do MRR oficial,
