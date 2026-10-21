@@ -1,8 +1,8 @@
 import { doCrm } from "@/lib/financeiro/espelho-crm";
 import { Hono } from "hono";
 import { db } from "@/lib/db";
-import { negocios, leads, campanhas, contratos, npsRespostas, atividades, statusChanges, usuarios, reunioes, notas, ligacoes, tarefas, whatsappMensagens } from "@/lib/db/schema";
-import { eq, count, sum, avg, and, inArray, sql, gte, isNotNull, lte, desc, not, between, lt, or } from "drizzle-orm";
+import { negocios, leads, contratos, npsRespostas, atividades, statusChanges, usuarios, notas, ligacoes, tarefas, whatsappMensagens } from "@/lib/db/schema";
+import { eq, count, sum, avg, and, inArray, sql, gte, isNotNull, lte, desc, lt, or } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { sessaoVisivel } from "@/lib/whatsapp/acesso";
 import { parsePeriodo, clampDesdeGoLive, GO_LIVE_ISO } from "@/lib/relatorios/periodo";
@@ -17,6 +17,7 @@ import { getTempoPorEtapa, getConversaoPorOrigem, getTarefasVencidasPorPessoa } 
 import { contarReunioes, getPerdidosPorResponsavel, getFunilVendasEventos } from "@/lib/relatorios/funil-eventos";
 import { getEsteiraSdr } from "@/lib/relatorios/esteira-sdr";
 import { medir } from "@/lib/metricas/catalogo";
+import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
 import { getVisoesSdr, ESTAGNADO_DIAS } from "@/lib/relatorios/sdr-visoes";
 import { getLeadsPorCanal } from "@/lib/relatorios/canais";
 import { getMetaComercialAgregada } from "@/lib/metas";
@@ -42,7 +43,7 @@ app.get("/snapshot-diario", async (c) => {
   const { metricasDiarias } = await import("@/lib/db/schema");
   const hoje = new Date().toISOString().split("T")[0];
 
-  let [snapshot] = await db
+  const [snapshot] = await db
     .select()
     .from(metricasDiarias)
     .where(and(eq(metricasDiarias.organizacaoId, ctx.organizacaoId), eq(metricasDiarias.data, hoje)))
@@ -720,7 +721,7 @@ app.get("/growth", async (c) => {
   const [
     leadsCur, leadsPrev, leadsCanal,
     pipeline, winRate, fechado, ticket, ciclo, funilConversao, esfriando, leadsQualificados,
-    mrrAtivoRow, contratosAtivosRow, npsRow, npsDistRow, vencendoRow,
+    contratosAtivosRow, npsRow, npsDistRow, vencendoRow,
     reunioesPeriodo,
     metaComercial,
   ] = await Promise.all([
@@ -739,7 +740,6 @@ app.get("/growth", async (c) => {
     getPipelineEsfriando(orgId, undefined),
     getLeadsQualificados(orgId, since, until),
     // Retenção (snapshot)
-    db.select({ total: sum(contratos.mrr) }).from(contratos).innerJoin(leads, eq(contratos.leadId, leads.id)).where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId))),
     db.select({ c: count() }).from(contratos).innerJoin(leads, eq(contratos.leadId, leads.id)).where(and(eq(contratos.status, "ativo"), eq(leads.organizacaoId, orgId))),
     db.select({ media: avg(npsRespostas.score), total: count() }).from(npsRespostas).innerJoin(contratos, eq(npsRespostas.contratoId, contratos.id)).innerJoin(leads, eq(contratos.leadId, leads.id)).where(and(isNotNull(npsRespostas.respondidoEm), eq(leads.organizacaoId, orgId))),
     db.select({
@@ -1077,7 +1077,6 @@ app.get("/pos-venda", async (c) => {
 
   // Contratos vencendo nos próximos 90 dias
   const now = new Date();
-  const in90Days = new Date(Date.now() + 90 * 86400000);
   const contratosVencendoRows = await db
     .select({
       leadNome: leads.nome,
@@ -1114,22 +1113,13 @@ app.get("/pos-venda", async (c) => {
   const [mrrOficial, clientesAtivosM, porFamilia] = await Promise.all([
     medir(orgPv, "mrr_atual"),
     medir(orgPv, "clientes_ativos"),
+    // Decomposição oficial, sem uma segunda SQL divergente para o mesmo MRR.
     db.execute<{ familia: string; mrr: string; n: string }>(sql`
-      WITH uc AS (SELECT max(competencia) AS c FROM cliente_receita_mensal WHERE organizacao_id = ${orgPv}::uuid)
-      SELECT COALESCE(NULLIF(r.service_family, 'UNKNOWN'), 'Sem família') AS familia,
-             sum(r.valor)::text AS mrr, count(DISTINCT r.empresa_id)::text AS n
-        FROM cliente_receita_mensal r, uc
-       WHERE r.organizacao_id = ${orgPv}::uuid AND r.revenue_nature = 'MRR' AND r.competencia = uc.c
-       GROUP BY 1
-      UNION ALL
-      SELECT 'Assinatura ativa, ainda sem fechamento', COALESCE(sum(a.mrr), 0)::text, count(*)::text
-        FROM assinaturas a, uc
-       WHERE a.organizacao_id = ${orgPv}::uuid AND a.status = 'active' AND a.empresa_id IS NOT NULL AND ${doCrm("a")}
-         AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${orgPv}::uuid)
-         AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2
-                          WHERE r2.organizacao_id = ${orgPv}::uuid AND r2.empresa_id = a.empresa_id
-                            AND r2.competencia = uc.c AND r2.revenue_nature = 'MRR')
-       HAVING count(*) > 0`),
+      SELECT COALESCE(NULLIF(m.familia, 'UNKNOWN'), 'Sem família') AS familia,
+             COALESCE(sum(m.valor), 0)::text AS mrr,
+             count(DISTINCT m.empresa_id)::text AS n
+      FROM (${mrrOficialLinhas(orgPv)}) m
+      GROUP BY 1`),
   ]);
   const ROT_FAMILIA: Record<string, string> = { PABX: "PABX", CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label" };
   const mrrPorTipo = porFamilia

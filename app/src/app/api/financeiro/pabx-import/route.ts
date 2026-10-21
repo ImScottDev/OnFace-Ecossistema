@@ -80,11 +80,11 @@ function parseMoney(value: string): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : null;
 }
 
-function parseSpreadsheet(buffer: ArrayBuffer, fileName: string): { rows: LedgerRow[]; errors: string[]; encoding: string } {
+export function parseSpreadsheet(buffer: ArrayBuffer, fileName: string): { rows: LedgerRow[]; errors: string[]; encoding: string; footerTotal: number | null } {
   // windows-1252 is the compatible Node decoder for ISO-8859-1 Portuguese exports.
   const text = new TextDecoder("windows-1252").decode(buffer).replace(/^\uFEFF/, "");
   const lines = text.split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) return { rows: [], errors: ["Arquivo vazio ou sem linhas de dados"], encoding: "windows-1252" };
+  if (lines.length < 2) return { rows: [], errors: ["Arquivo vazio ou sem linhas de dados"], encoding: "windows-1252", footerTotal: null };
 
   const separator = lines[0].includes(";") ? ";" : ",";
   const headers = splitDelimitedLine(lines[0], separator).map(normalizeHeader);
@@ -99,10 +99,11 @@ function parseSpreadsheet(buffer: ArrayBuffer, fileName: string): { rows: Ledger
     documentIndex < 0 ? "CPFCNPJ" : null,
     valueIndex < 0 ? "ValorBruto" : null,
   ].filter((value): value is string => !!value);
-  if (missing.length) return { rows: [], errors: [`Colunas obrigatórias ausentes: ${missing.join(", ")}`], encoding: "windows-1252" };
+  if (missing.length) return { rows: [], errors: [`Colunas obrigatórias ausentes: ${missing.join(", ")}`], encoding: "windows-1252", footerTotal: null };
 
   const errors: string[] = [];
   const rows: LedgerRow[] = [];
+  let footerTotal: number | null = null;
   for (let index = 1; index < lines.length; index += 1) {
     const values = splitDelimitedLine(lines[index], separator);
     const rowNumber = index + 1;
@@ -112,6 +113,16 @@ function parseSpreadsheet(buffer: ArrayBuffer, fileName: string): { rows: Ledger
     const document = normalizeDocument(rawDocument);
     const billedValue = parseMoney(values[valueIndex] || "");
     if (!cardCode && !companyName && !rawDocument && !values[valueIndex]) continue;
+    // O export histórico fecha com uma linha de TOTAL; não é cliente nem serviço.
+    // Só pode ser reconhecido como rodapé quando é a ÚLTIMA linha com conteúdo.
+    const rotulo = `${cardCode} ${companyName}`.trim();
+    const rodape = index === lines.length - 1 && !document &&
+      (/^total(?:\s+geral|is)?\s*[:=]?$/i.test(rotulo) || (!cardCode && !companyName));
+    if (rodape) {
+      if (billedValue === null) errors.push(`Linha ${rowNumber}: total do rodapé inválido`);
+      else footerTotal = billedValue;
+      continue;
+    }
     if (billedValue === null) {
       errors.push(`Linha ${rowNumber}: ValorBruto inválido (${values[valueIndex] || "vazio"})`);
       continue;
@@ -127,8 +138,14 @@ function parseSpreadsheet(buffer: ArrayBuffer, fileName: string): { rows: Ledger
     }
     rows.push({ rowNumber, cardCode, companyName, document, billedValue, sourceRowHash });
   }
+  if (footerTotal !== null) {
+    const soma = rows.reduce((total, row) => total + Math.round(row.billedValue * 100), 0);
+    if (soma !== Math.round(footerTotal * 100)) {
+      errors.push(`Total do rodapé (${footerTotal.toFixed(2)}) difere da soma das linhas (${(soma / 100).toFixed(2)})`);
+    }
+  }
   if (!rows.length && !errors.length) errors.push(`Nenhuma linha válida em ${fileName}`);
-  return { rows, errors, encoding: "windows-1252" };
+  return { rows, errors, encoding: "windows-1252", footerTotal };
 }
 
 async function matchRows(organizacaoId: string, rows: LedgerRow[]): Promise<(LedgerRow & { match: Match })[]> {
@@ -175,6 +192,9 @@ async function matchRows(organizacaoId: string, rows: LedgerRow[]): Promise<(Led
     const serviceCandidates = servicesByCompany.get(company.id) || [];
     if (serviceCandidates.length === 1) {
       const service = serviceCandidates[0];
+      if (service.revenueNature === "UNKNOWN") {
+        return { ...row, match: { companyId: company.id, companyName: company.nome, serviceId: service.id, serviceFamily: "PABX", revenueNature: "UNKNOWN", confidence: "UNRESOLVED", reason: "Serviço PABX identificado, mas a natureza da receita ainda não foi confirmada" } };
+      }
       if (service.serviceFamily !== "PABX") {
         return { ...row, match: { companyId: company.id, companyName: company.nome, serviceId: null, serviceFamily: "UNKNOWN", revenueNature: "UNKNOWN", confidence: "UNRESOLVED", reason: "Empresa encontrada, mas o Service não declara família PABX" } };
       }
@@ -229,12 +249,14 @@ export async function POST(request: NextRequest) {
   if (acao !== "preview" && acao !== "commit") return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
 
   const uploaded = file as File;
+  if (uploaded.size > 20 * 1024 * 1024) return NextResponse.json({ error: "Arquivo acima do limite de 20 MB" }, { status: 413 });
   const buffer = await uploaded.arrayBuffer();
   const parsed = parseSpreadsheet(buffer, uploaded.name || "faturamento.csv");
   if (!parsed.rows.length) return NextResponse.json({ error: "Nenhuma linha importável", erros: parsed.errors }, { status: 400 });
   const matched = await matchRows(ctx.organizacaoId, parsed.rows);
   const summary = {
     rows: matched.length,
+    footerTotal: parsed.footerTotal,
     total: matched.reduce((sum, row) => sum + row.billedValue, 0),
     confirmed: matched.filter((row) => row.match.confidence === "CONFIRMED").length,
     ambiguous: matched.filter((row) => row.match.confidence === "AMBIGUOUS").length,
@@ -243,6 +265,16 @@ export async function POST(request: NextRequest) {
   };
   const responseRows = matched.map((row) => ({ rowNumber: row.rowNumber, cardCode: row.cardCode, sourceCompanyName: row.companyName, document: row.document, billedValue: row.billedValue, ...row.match }));
   if (acao === "preview") return NextResponse.json({ ok: true, mode: "preview", competencia, encoding: parsed.encoding, summary, erros: parsed.errors, rows: responseRows });
+
+  // A interface já bloqueia o fechamento com pendências, mas a regra precisa
+  // valer também no servidor (POST direto, outra UI ou automação).
+  if (fechar && (summary.ambiguous > 0 || summary.unresolved > 0 || parsed.errors.length > 0)) {
+    return NextResponse.json({
+      error: "Não é possível fechar uma competência com linhas ambíguas, não resolvidas ou inválidas. Importe como lote aberto e resolva as exceções.",
+      summary,
+      erros: parsed.errors,
+    }, { status: 422 });
+  }
 
   const sourceSha256 = createHash("sha256").update(Buffer.from(buffer)).digest("hex");
   const version = "pabx_monthly_v1";
@@ -260,6 +292,15 @@ export async function POST(request: NextRequest) {
     if (existing && existing.source_sha256 !== sourceSha256) return { id: existing.id, alreadyPresent: true, closed: false, conflict: "OPEN_DIFFERENT" as const };
     if (existing) {
       if (fechar) {
+        // A prévia atual não autoriza fechar entradas ANTIGAS ainda pendentes:
+        // antes de fechar, revalidar o lote persistido, dentro do mesmo lock.
+        const [qualidade] = await tx.execute<{ pendentes: number }>(sql`
+          SELECT count(*)::int AS pendentes FROM service_ledger_entries
+          WHERE batch_id = ${existing.id} AND (confidence != 'CONFIRMED' OR revenue_nature = 'UNKNOWN')
+        `);
+        if (Number(qualidade?.pendentes ?? 0) > 0) {
+          return { id: existing.id, alreadyPresent: true, closed: false, conflict: "OPEN_UNRESOLVED" as const };
+        }
         const [closed] = await tx.execute<{ id: string }>(sql`
           UPDATE service_ledger_batches
           SET status = 'CLOSED', closed_at = now()
@@ -296,6 +337,9 @@ export async function POST(request: NextRequest) {
   }
   if (batch.conflict === "OPEN_DIFFERENT") {
     return NextResponse.json({ error: `Já existe um lote aberto diferente para ${competencia}`, batchId: batch.id }, { status: 409 });
+  }
+  if (batch.conflict === "OPEN_UNRESOLVED") {
+    return NextResponse.json({ error: "O lote persistido ainda possui linhas pendentes de reconciliação. Resolva-as antes de fechar.", batchId: batch.id }, { status: 409 });
   }
   return NextResponse.json({ ok: true, mode: "commit", idempotente: batch.alreadyPresent, batchId: batch.id, competencia, fechado: batch.closed, summary, erros: parsed.errors }, { status: batch.alreadyPresent ? 200 : 201 });
 }
