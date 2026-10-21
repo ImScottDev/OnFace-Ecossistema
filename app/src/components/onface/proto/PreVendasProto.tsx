@@ -375,8 +375,16 @@ export class PecasLigadas extends PecasLiga {
     if (pai) pai.call(this, prevProps, prevState);
     const id = (this as any).state?.detalheId;
     if (prevProps && prevProps.leads !== (this as any).props?.leads) {
-      // O board atualizou: a cadência da gaveta acompanha a inscrição real.
+      /* A LISTA DA GAVETA ACOMPANHA O RECORTE. Sem esta linha ela ficava com a
+         lista do construtor: trocar o filtro de responsável ("só as minhas" →
+         "de todo mundo") trocava o board e não a gaveta, e clicar num lead que
+         só existe no recorte novo abria o primeiro lead do recorte VELHO — com
+         nome, empresa, telefone e botões de outra pessoa.
+
+         A cadência e o detalhe já eram relidos aqui; a lista, que é de onde a
+         gaveta tira QUEM está mostrando, tinha ficado de fora. */
       (this as any).setState({
+        leads: (this as any).props?.leads ?? (this as any).props?.dados?.leads ?? [],
         cadencias: (this as any).props?.dados?.cadencias ?? {},
         cadPausadas: (this as any).props?.dados?.cadenciasPausadas ?? {},
       });
