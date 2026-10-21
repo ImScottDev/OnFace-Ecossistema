@@ -86,3 +86,31 @@ export async function garantirTranscricoes(contatoId: string, max = 3): Promise<
   }
   return feitas;
 }
+
+/**
+ * O que o agente lê quando a mensagem que o acordou é um áudio.
+ *
+ * Porta ÚNICA: transcreve o que falta e devolve o texto final. Antes isto vivia
+ * só dentro de `acionarAgente`, e os outros caminhos que chegam ao runtime
+ * (agente responsável sem atribuição viva, Callpilot nativo, SDR legado)
+ * entregavam ao modelo a string crua "[Audio recebido]" — o agente respondia no
+ * escuro, sem saber sequer que havia um áudio para ouvir.
+ *
+ * Idempotente: `garantirTranscricoes` só transcreve o que ainda não tem texto
+ * nem erro gravado, então chamar de novo no mesmo áudio não custa nada.
+ */
+export async function textoDoQueChegou(p: {
+  contatoId?: string | null;
+  sourceMessageId?: string | null;
+  mensagem: string;
+  mode?: "test" | "live";
+}): Promise<string> {
+  if (!p.sourceMessageId) return p.mensagem;
+  if (p.mode !== "test" && p.contatoId) await garantirTranscricoes(p.contatoId).catch(() => 0);
+  const [m] = await db.execute<{ tipo: string | null; transcricao: string | null }>(sql`
+    SELECT tipo, dados->>'transcricao' AS transcricao FROM whatsapp_mensagens WHERE id = ${p.sourceMessageId}::uuid`);
+  if (m?.tipo !== "audio") return p.mensagem;
+  return m.transcricao?.trim()
+    ? `[áudio transcrito] ${m.transcricao}`
+    : "[O contato enviou um áudio que não pôde ser transcrito. Diga com naturalidade que não conseguiu ouvir e peça para escrever ou resumir.]";
+}

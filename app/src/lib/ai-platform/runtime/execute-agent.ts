@@ -19,6 +19,7 @@ import { construirContexto, type ContextoMontado } from "../contexto/builder";
 import { autonomiaDaFerramenta, lerAutonomiaPorAcao, type ModoAutonomia } from "../tools/politica";
 import { avaliarEnvio } from "../operacao/politica-canal";
 import { FALHAS_PARA_HANDOFF, motivoDeHandoffAutomatico, type ConfigDeHandoff, type SinaisDaExecucao } from "./politica-handoff";
+import { textoDoQueChegou } from "../midia/transcrever";
 
 export type ExecuteAgentInput = {
   organizacaoId: string;
@@ -357,18 +358,26 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       autonomiaPorClasse: porClasse, sourceMessageId: input.sourceMessageId ?? null, atribuicaoId: input.atribuicaoId ?? null, guardrails, analise: Boolean(input.somenteAnalise),
       handoffConfig: (selected.version.handoffConfig && typeof selected.version.handoffConfig === "object" ? selected.version.handoffConfig : {}) as Record<string, unknown>,
     };
+    /* Áudio vira texto aqui, no caminho por onde TODA execução passa. Antes isso
+       vivia só dentro de `acionarAgente`: quem chegava pelos outros caminhos
+       (agente responsável sem atribuição viva, Callpilot nativo, SDR legado)
+       recebia a string crua "[Audio recebido]" e respondia no escuro. */
+    const mensagemDoContato = await textoDoQueChegou({
+      contatoId: input.contatoId, sourceMessageId: input.sourceMessageId, mensagem: input.message, mode: input.mode,
+    }).catch(() => input.message);
+
     const messages: AgentMessage[] = [
       // Instruções + escopo + expressões de handoff + regras fixas: a mesma
       // função que a tela usa em "Ver prompt compilado" (lib/ai/agente-escopo).
       { role: "system", content: compilarPrompt(selected.version) },
-      { role: "user", content: input.message || `Evento ${input.eventType}: ${JSON.stringify(input.payload ?? {})}` },
+      { role: "user", content: mensagemDoContato || `Evento ${input.eventType}: ${JSON.stringify(input.payload ?? {})}` },
     ];
     // Context Builder: o agente recebe o relacionamento inteiro, selecionado e rastreável, antes de pensar.
     let contexto: ContextoMontado | null = null;
     if (!input.delegarComoUsuario && !input.somenteFerramentasExtras && (input.contatoId || input.leadId)) {
       const t0 = Date.now();
       contexto = await construirContexto({
-        organizacaoId: input.organizacaoId, agentId: selected.agent.id, contatoId: input.contatoId, leadId: input.leadId, mensagemAtual: input.message,
+        organizacaoId: input.organizacaoId, agentId: selected.agent.id, contatoId: input.contatoId, leadId: input.leadId, mensagemAtual: mensagemDoContato,
         evento: input.eventType, janelaMensagens: selected.version.historyMessageWindow,
         politica: {
           memoria: (guardrails.memoria as { ativa?: boolean } | undefined)?.ativa !== false,
