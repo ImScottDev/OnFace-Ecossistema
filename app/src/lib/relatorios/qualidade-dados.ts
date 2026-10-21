@@ -1,9 +1,10 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { doCrm } from "@/lib/financeiro/espelho-crm";
+import { semTestes, nomeDeTeste, origemDeTeste } from "@/lib/metricas/recorte";
 
 export async function consultarQualidadeDados(org: string) {
-  const [faturamento, financeiro, legado] = await Promise.all([
+  const [faturamento, financeiro, legado, sla] = await Promise.all([
     db.execute<{
       competencia: string | null;
       atualizado_em: string | null;
@@ -91,6 +92,41 @@ export async function consultarQualidadeDados(org: string) {
             OR e.revenue_nature='UNKNOWN' OR e.service_family='UNKNOWN'
             OR e.service_id IS NULL)) AS lotes_fechados_pendentes
     `),
+    // Observabilidade, não SLA contratual: sem limiar arbitrário de horas úteis.
+    // A mesma exclusão explícita de QA usada pelo catálogo oficial.
+    db.execute<{
+      leads_7d: number;
+      sem_contato_7d: number;
+      outbound_7d: number;
+      outbound_sem_contato_7d: number;
+      pago_7d: number;
+      pago_com_contato_7d: number;
+      cronologia_invalida_7d: number;
+      mediana_pago_min: number | null;
+      p90_pago_min: number | null;
+    }>(sql`
+      WITH coorte AS (
+        SELECT l.origem, l.created_at, l.primeiro_contato_at,
+          EXTRACT(EPOCH FROM l.primeiro_contato_at - l.created_at) / 60.0 AS minutos
+        FROM leads l
+        WHERE l.organizacao_id=${org}::uuid
+          AND l.created_at >= now() - interval '7 days'
+          AND ${semTestes(false, nomeDeTeste("l.nome"), origemDeTeste("l.origem"))}
+      )
+      SELECT count(*)::int AS leads_7d,
+        count(*) FILTER (WHERE primeiro_contato_at IS NULL)::int AS sem_contato_7d,
+        count(*) FILTER (WHERE lower(coalesce(origem,''))='outbound')::int AS outbound_7d,
+        count(*) FILTER (WHERE lower(coalesce(origem,''))='outbound'
+          AND primeiro_contato_at IS NULL)::int AS outbound_sem_contato_7d,
+        count(*) FILTER (WHERE origem='Mídia Paga')::int AS pago_7d,
+        count(*) FILTER (WHERE origem='Mídia Paga' AND minutos >= 0)::int AS pago_com_contato_7d,
+        count(*) FILTER (WHERE minutos < 0)::int AS cronologia_invalida_7d,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY minutos)
+          FILTER (WHERE origem='Mídia Paga' AND minutos >= 0) AS mediana_pago_min,
+        percentile_cont(0.9) WITHIN GROUP (ORDER BY minutos)
+          FILTER (WHERE origem='Mídia Paga' AND minutos >= 0) AS p90_pago_min
+      FROM coorte
+    `),
   ]);
 
   return {
@@ -101,6 +137,7 @@ export async function consultarQualidadeDados(org: string) {
     historico: faturamento[0] ?? null,
     financeiro: financeiro[0] ?? null,
     legado: legado[0] ?? null,
+    slaQualidade: sla[0] ?? null,
     aviso: "Valores do faturamento são por competência. Caixa só é comprovado por pagamentos; PDFs legados exigem confirmação física em cada ambiente.",
   };
 }

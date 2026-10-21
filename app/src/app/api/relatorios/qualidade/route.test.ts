@@ -21,4 +21,9 @@ test("indicadores por organização têm denominadores coerentes", async (t) => 
   assert.ok(f.assinaturas_sem_servico <= f.assinaturas_ativas);
   assert.ok(f.faturas_sem_pagamento <= f.faturas_pagas);
   assert.ok(l.contratos_sem_empresa <= l.contratos_total);
+  const s = q.slaQualidade!;
+  assert.ok(s.sem_contato_7d <= s.leads_7d);
+  assert.ok(s.outbound_sem_contato_7d <= s.outbound_7d);
+  assert.ok(s.cronologia_invalida_7d <= s.leads_7d);
+  assert.ok(s.pago_com_contato_7d <= s.pago_7d);
 });

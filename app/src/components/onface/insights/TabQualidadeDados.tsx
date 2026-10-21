@@ -11,6 +11,7 @@ type Dados = {
   historico: Record<string, number | string> | null;
   financeiro: Record<string, number | string> | null;
   legado: Record<string, number | string> | null;
+  slaQualidade: Record<string, number | string | null> | null;
 };
 type Indicador = {
   chave: string; titulo: string; valor: number; base?: number;
@@ -48,6 +49,17 @@ function indicadores(d: Dados): Indicador[] {
     { chave: "fechamento", titulo: "Lotes fechados com pendências", valor: num(l.lotes_fechados_pendentes),
       definicao: "Lote CLOSED tem registros com confiança, família, natureza ou serviço pendente.",
       fonte: "service_ledger_batches × service_ledger_entries", acao: "Retificação auditada, preservando o fechamento original." },
+    ...(d.slaQualidade ? [
+      { chave: "sdr-marco", titulo: "Leads sem 1º contato registrado (7d)", valor: num(d.slaQualidade.sem_contato_7d), base: num(d.slaQualidade.leads_7d),
+        definicao: "Leads criados nos últimos 7 dias sem primeiro_contato_at. É lacuna de marco, não prova de falta de atendimento.",
+        fonte: "leads.primeiro_contato_at · coorte de 7 dias · QA explícito excluído", acao: "Comparar com ligações, WhatsApp e atividades; instrumentar cada canal." },
+      { chave: "outbound-marco", titulo: "Outbound sem 1º contato (7d)", valor: num(d.slaQualidade.outbound_sem_contato_7d), base: num(d.slaQualidade.outbound_7d),
+        definicao: "Leads de outbound sem evento de primeiro contato no CRM. Não confundir ausência de timestamp com tentativa não realizada.",
+        fonte: "leads.origem=outbound e primeiro_contato_at", acao: "Vincular eventos de cadência/telefone ao lead antes de definir SLA outbound." },
+      { chave: "cronologia", titulo: "Datas de contato invertidas (7d)", valor: num(d.slaQualidade.cronologia_invalida_7d), base: num(d.slaQualidade.leads_7d),
+        definicao: "Primeiro contato anterior à criação do lead: duração negativa, excluída das estatísticas de velocidade.",
+        fonte: "leads.primeiro_contato_at < leads.created_at", acao: "Revisar importações históricas, fuso e timestamp de eventos antes de retificar." },
+    ] : []),
   ];
 }
 
