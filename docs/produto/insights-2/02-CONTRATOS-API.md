@@ -27,7 +27,24 @@ barra do gráfico e o CSV mostrem exatamente o mesmo conjunto.
 nao_aplicavel`, com `motivo: {codigo, mensagem}`. Quando o estado não é `disponivel` ou `parcial`,
 `valor` e `registros` vêm `null`. **Nunca zero.** A tela deve renderizar o motivo, não um traço mudo.
 
-**3. Filtro não suportado é erro, não silêncio.** Pedir um filtro que a métrica não declara devolve
+**3. Filtro não suportado é erro, não silêncio.** Exemplo real:
+
+```
+GET /api/relatorios/metricas/oportunidades_criadas?periodo=tudo                       → 1.645
+GET /api/relatorios/metricas/oportunidades_criadas?periodo=tudo&responsavel=ffc3583c… →   538
+GET /api/relatorios/metricas/faturamento_competencia?periodo=tudo&responsavel=ffc3583c…
+  → 422 "A métrica faturamento_competencia não tem responsável: o filtro não se aplica
+         e não foi ignorado em silêncio."
+```
+
+O filtro atravessa card, detalhe, composição, série e exportação pelo **mesmo** recorte — é aplicado
+dentro de `definir()`, não em cada consumidor, justamente para que não exista caminho em que um
+deles enxergue um conjunto diferente.
+
+A tela sabe quais filtros oferecer lendo `metrica.filtros` da própria resposta: oferecer um filtro
+que a métrica não aceita é desenhar um controle que vai dar 422.
+
+ Pedir um filtro que a métrica não declara devolve
 **422** `filtro_nao_suportado` com a frase do porquê. Parâmetro malformado devolve **400** com os
 campos. Nenhum dos dois cai no padrão calado.
 
@@ -123,6 +140,7 @@ derivado do **mesmo recorte**, que é o que impede card e lista de divergirem.
 | `de`, `ate` | recorte dentro da janela (ex.: um mês clicado no gráfico) |
 | `familia`, `testes` | filtros declarados pela métrica |
 | `dim`, `valorDim` | seleção numa dimensão (o cross-filter) |
+| `responsavel`, `etapa`, `pipeline`, `origem`, `campanha` | filtros de dimensão; **cada métrica declara quais aceita** |
 | `q` | busca livre no recorte |
 | `ordem`, `sentido` | ordenação (coluna precisa estar na allowlist) |
 | `pagina`, `tamanho` | paginação (5..200) |
@@ -187,7 +205,7 @@ Pendências que o frontend do Figma vai precisar e que ainda não existem:
 
 | Falta | Impacto |
 |---|---|
-| Filtro por responsável, equipe, origem, canal, campanha, etapa | existe nos legados, não no catálogo |
+| Filtro por **equipe** e **canal** | equipe não existe como coluna em nenhuma tabela de fato (vem de `usuarios.team_id`); canal depende da normalização de `lib/relatorios/canais.ts` |
 | Intervalo personalizado com comparação explícita de período | hoje a comparação é sempre "anterior equivalente" |
 | Série por cartão (faísca) no painel | hoje a tela busca a série por fora para o sparkline |
 | Endpoints de Performance | Performance ainda é server component com SQL próprio |

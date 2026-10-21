@@ -27,7 +27,10 @@ import { db } from "@/lib/db";
 import { sql, type SQL } from "drizzle-orm";
 import { janelaDoPeriodo } from "@/lib/metricas/janela";
 import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
-import { daFamilia, nomeDeTeste, origemDeTeste, semTestes, type Familia } from "@/lib/metricas/recorte";
+import {
+  daFamilia, dasDimensoes, filtrosNaoSuportados, nomeDeTeste, origemDeTeste, semTestes,
+  ROTULO_FILTRO, type ColunasFiltro, type Familia, type ValoresFiltro,
+} from "@/lib/metricas/recorte";
 import { VALOR_BOOKING_VENDIDO, VALOR_AVULSO_VENDIDO } from "@/lib/relatorios/receita-fechada";
 
 export type TipoMetrica = "EVENT" | "SNAPSHOT" | "COHORT";
@@ -42,6 +45,12 @@ export interface Periodo {
   familia?: Familia;
   /** Testes explicitamente marcados ficam de fora, a não ser que isto seja true. */
   incluirTestes?: boolean;
+  /**
+   * Filtros por dimensão (responsável, equipe, origem, campanha, etapa, pipeline).
+   * Só valem em métrica que declara a coluna correspondente em `filtros`; pedir
+   * um que ela não declara devolve 422, nunca um número não filtrado.
+   */
+  dimensoes?: ValoresFiltro;
 }
 
 /** Pedido de filtro que a métrica não sabe aplicar: dizer "não se aplica" em vez de ignorar em silêncio. */
@@ -64,7 +73,12 @@ export interface DefinicaoMetrica {
   /** Como o recorte vira número: soma da coluna `valor` ou contagem de linhas. */
   agregacao: "soma" | "contagem";
   /** Filtros que a métrica sabe aplicar de verdade. */
-  filtros: { familia: boolean };
+  /**
+   * O que esta métrica sabe filtrar. `familia` é booleano porque a coluna já é
+   * tratada no recorte; os demais apontam a COLUNA QUE O RECORTE EXPÕE, e o
+   * filtro é aplicado por fora, sobre ela.
+   */
+  filtros: { familia: boolean } & ColunasFiltro;
   /** UMA consulta: as linhas que compõem a métrica. O valor e o detalhe saem DELA. */
   recorte: (organizacaoId: string, p: Periodo) => SQL;
   /** ORDER BY do detalhe (colunas do recorte). */
@@ -117,18 +131,41 @@ type DefinicaoSemDerivados = Omit<DefinicaoMetrica, "valor" | "drill">;
 function definir(d: DefinicaoSemDerivados): DefinicaoMetrica {
   const checar = (p: Periodo) => {
     if (p.familia && !d.filtros.familia) throw new FiltroNaoSuportado(d.codigo, "família");
+    const faltando = filtrosNaoSuportados(p.dimensoes ?? {}, d.filtros);
+    if (faltando.length > 0) throw new FiltroNaoSuportado(d.codigo, ROTULO_FILTRO[faltando[0]]);
   };
+
+  /**
+   * O recorte com os filtros de dimensão já aplicados.
+   *
+   * Envolver AQUI, e não em cada consumidor, é o que mantém a trava do catálogo:
+   * card, detalhe, série, composição, paginação e exportação chamam todos
+   * `recorte`, então um filtro novo chega aos seis de uma vez. Aplicar por fora
+   * em cada um seria convidar o card e a lista a divergirem no primeiro filtro.
+   */
+  const recorteFiltrado = (org: string, p: Periodo): SQL => {
+    const interno = d.recorte(org, p);
+    const pedidos = p.dimensoes ?? {};
+    const algum = Object.values(pedidos).some(Boolean);
+    if (!algum) return interno;
+    return sql`SELECT * FROM (${interno}) t WHERE ${dasDimensoes(pedidos, d.filtros)}`;
+  };
+
   return {
     ...d,
+    recorte: (org, p) => {
+      checar(p);
+      return recorteFiltrado(org, p);
+    },
     valor: (org, p) => {
       checar(p);
       return d.agregacao === "soma"
-        ? sql`SELECT COALESCE(sum(t.valor), 0)::numeric AS valor FROM (${d.recorte(org, p)}) t`
-        : sql`SELECT count(*)::numeric AS valor FROM (${d.recorte(org, p)}) t`;
+        ? sql`SELECT COALESCE(sum(t.valor), 0)::numeric AS valor FROM (${recorteFiltrado(org, p)}) t`
+        : sql`SELECT count(*)::numeric AS valor FROM (${recorteFiltrado(org, p)}) t`;
     },
     drill: (org, p) => {
       checar(p);
-      return sql`SELECT * FROM (${d.recorte(org, p)}) t ORDER BY ${sql.raw(d.ordem)}`;
+      return sql`SELECT * FROM (${recorteFiltrado(org, p)}) t ORDER BY ${sql.raw(d.ordem)}`;
     },
   };
 }
@@ -303,6 +340,7 @@ function recorteAbertas(org: string, p: Periodo): SQL {
   return sql`
       SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
              o.etapa, o.valor::numeric AS valor, o.probabilidade, o.previsao_fechamento, o.estagnado_em,
+             o.responsavel_id::text AS responsavel_id, o.pipeline_id::text AS pipeline_id,
              o.negocio_id_legado::text AS negocio_id, o.empresa_id::text AS empresa_id
         FROM oportunidades o
         LEFT JOIN empresas e ON e.id = o.empresa_id
@@ -333,12 +371,13 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
     fonte: "oportunidades abertas (mesmo recorte de oportunidades_abertas), somando valor.",
     naoInclui: "oportunidade aberta SEM valor preenchido (entra na contagem, não na soma: veja o preenchimento), ganhas, perdidas e legado sem etapa.",
     agregacao: "soma",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa", pipeline: "pipeline_id" },
     ordem: "t.valor DESC NULLS LAST",
     explorar: EXPLORAR_ABERTAS,
     preenchimento: { rotulo: "oportunidades abertas com valor", sonda: sondaAbertas("a.valor") },
     recorte: (org, p) => sql`
-      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento, a.negocio_id, a.empresa_id
+      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento,
+             a.responsavel_id, a.pipeline_id, a.negocio_id, a.empresa_id
         FROM (${recorteAbertas(org, p)}) a`,
   }),
   definir({
@@ -350,13 +389,13 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
     fonte: "oportunidades abertas, valor x probabilidade / 100.",
     naoInclui: "oportunidade sem probabilidade ou sem valor: ela não vira zero, fica FORA da soma e o preenchimento mostra quantas faltam.",
     agregacao: "soma",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa", pipeline: "pipeline_id" },
     ordem: "t.valor DESC NULLS LAST",
     explorar: EXPLORAR_ABERTAS,
     preenchimento: { rotulo: "oportunidades abertas com valor e probabilidade", sonda: sondaAbertas("a.valor * a.probabilidade") },
     recorte: (org, p) => sql`
       SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.probabilidade,
-             (a.valor * a.probabilidade / 100.0)::numeric AS valor, a.previsao_fechamento, a.negocio_id, a.empresa_id
+             (a.valor * a.probabilidade / 100.0)::numeric AS valor, a.previsao_fechamento, a.responsavel_id, a.pipeline_id, a.negocio_id, a.empresa_id
         FROM (${recorteAbertas(org, p)}) a`,
   }),
   definir({
@@ -368,14 +407,14 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
     fonte: "oportunidades abertas com previsao_fechamento dentro da janela, somando valor.",
     naoInclui: "oportunidade aberta sem data de previsão (não dá para saber em que período ela cairia: veja o preenchimento), ganhas e perdidas.",
     agregacao: "soma",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa", pipeline: "pipeline_id" },
     ordem: "t.previsao_fechamento, t.valor DESC NULLS LAST",
     explorar: { ...EXPLORAR_ABERTAS, campoData: "previsao_fechamento", campoDataTipo: "data" },
     preenchimento: { rotulo: "oportunidades abertas com previsão de fechamento", sonda: sondaAbertas("a.previsao_fechamento") },
     recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
-        SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento, a.negocio_id, a.empresa_id
+        SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento, a.responsavel_id, a.pipeline_id, a.negocio_id, a.empresa_id
           FROM (${recorteAbertas(org, p)}) a
          WHERE a.previsao_fechamento >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
            AND a.previsao_fechamento <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date`;
@@ -390,7 +429,7 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
     fonte: "oportunidades com created_at dentro da janela.",
     naoInclui: "o que já era oportunidade antes da janela. Inclui as que já foram ganhas ou perdidas: é entrada no funil, não estoque.",
     agregacao: "contagem",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa", pipeline: "pipeline_id" },
     ordem: "t.criada_em DESC",
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "situacao", rotulo: "Situação hoje" }], campoData: "criada_em", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "criada_em", "familia", "situacao"], somaValor: true },
     recorte: (org, p) => {
@@ -398,7 +437,8 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
       return sql`
         SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
                CASE WHEN o.ganho_at IS NOT NULL THEN 'ganha' WHEN o.perdido_at IS NOT NULL THEN 'perdida' ELSE 'aberta' END AS situacao,
-               COALESCE(o.valor, 0)::numeric AS valor, o.created_at AS criada_em, o.empresa_id::text AS empresa_id
+               COALESCE(o.valor, 0)::numeric AS valor, o.created_at AS criada_em, o.empresa_id::text AS empresa_id,
+               o.responsavel_id::text AS responsavel_id, o.etapa, o.pipeline_id::text AS pipeline_id
           FROM oportunidades o
           LEFT JOIN empresas e ON e.id = o.empresa_id
          WHERE o.organizacao_id = ${org}::uuid
@@ -418,14 +458,16 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
       "o motivo de negócio por trás da perda. Perda em lote (limpeza de funil) conta no dia em que foi marcada: " +
       "fev/2026 tem 151 perdas e ago/2026 tem 192, picos que não são 151 ou 192 negócios morrendo naquele mês.",
     agregacao: "contagem",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa", pipeline: "pipeline_id" },
     ordem: "t.perdida_em DESC",
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "motivo", rotulo: "Motivo da perda" }], campoData: "perdida_em", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "perdida_em", "familia", "motivo"], somaValor: true },
     recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
         SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
-               o.motivo_perda AS motivo, COALESCE(o.valor, 0)::numeric AS valor, o.perdido_at AS perdida_em, o.empresa_id::text AS empresa_id
+               o.motivo_perda AS motivo, COALESCE(o.valor, 0)::numeric AS valor, o.perdido_at AS perdida_em,
+               o.empresa_id::text AS empresa_id, o.responsavel_id::text AS responsavel_id, o.etapa,
+               o.pipeline_id::text AS pipeline_id
           FROM oportunidades o
           LEFT JOIN empresas e ON e.id = o.empresa_id
          WHERE o.organizacao_id = ${org}::uuid
@@ -443,11 +485,11 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
     fonte: "oportunidades abertas com estagnado_em preenchido (gravado por lib/vendas/pipeline.ts quando o usuário informa o motivo).",
     naoInclui: "oportunidade parada há muito tempo que ninguém marcou. Zero aqui significa 'ninguém marcou', não 'nada está parado'.",
     agregacao: "contagem",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa", pipeline: "pipeline_id" },
     ordem: "t.estagnado_em ASC",
     explorar: EXPLORAR_ABERTAS,
     recorte: (org, p) => sql`
-      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.estagnado_em, a.previsao_fechamento, a.negocio_id, a.empresa_id
+      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.estagnado_em, a.previsao_fechamento, a.responsavel_id, a.pipeline_id, a.negocio_id, a.empresa_id
         FROM (${recorteAbertas(org, p)}) a
        WHERE a.estagnado_em IS NOT NULL`,
   }),
@@ -460,14 +502,15 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
     fonte: "leads com created_at dentro da janela.",
     naoInclui: "lead com origem de teste (qa, teste_local). O filtro de família não se aplica: lead não tem família de serviço.",
     agregacao: "contagem",
-    filtros: { familia: false },
+    filtros: { familia: false, responsavel: "responsavel_id", origem: "origem", campanha: "campanha" },
     ordem: "t.criado_em DESC",
     explorar: { dimensoes: [{ chave: "origem", rotulo: "Origem" }, { chave: "status", rotulo: "Status" }], campoData: "criado_em", busca: ["nome", "empresa"], ordenaveis: ["criado_em", "nome", "origem", "status"] },
     recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
         SELECT l.id::text AS id, trim(COALESCE(l.nome, '') || ' ' || COALESCE(l.sobrenome, '')) AS nome, l.empresa,
-               COALESCE(NULLIF(l.origem, ''), 'sem origem') AS origem, l.status, l.created_at AS criado_em
+               COALESCE(NULLIF(l.origem, ''), 'sem origem') AS origem, l.status, l.created_at AS criado_em,
+               l.responsavel_id::text AS responsavel_id, NULLIF(l.utm_campaign, '') AS campanha
           FROM leads l
          WHERE l.organizacao_id = ${org}::uuid
            AND l.created_at >= ${de}::timestamptz AND l.created_at < ${ate}::timestamptz
@@ -666,7 +709,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
       "oportunidades abertas, ganhos de períodos anteriores e qualquer previsão. Projeto/avulso " +
       "fica fora: é `receita_avulsa_vendida`. Booking não vira MRR automaticamente.",
     agregacao: "soma",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa" },
     ordem: "t.ganho_at DESC",
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], campoData: "ganho_at", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "ganho_at", "familia"], piso: new Date("2026-07-01T00:00:00-03:00") },
     /**
@@ -690,7 +733,8 @@ export const CATALOGO: DefinicaoMetrica[] = [
         SELECT negocios.id::text, negocios.titulo, e.nome AS empresa,
                COALESCE(negocios.service_family, 'UNKNOWN') AS familia,
                ${VALOR_BOOKING_VENDIDO} AS valor, negocios.ganho_at,
-               negocios.id::text AS negocio_id, negocios.empresa_id::text AS empresa_id
+               negocios.id::text AS negocio_id, negocios.empresa_id::text AS empresa_id,
+               negocios.responsavel_id::text AS responsavel_id, negocios.etapa
           FROM negocios
           LEFT JOIN empresas e ON e.id = negocios.empresa_id
          WHERE negocios.organizacao_id = ${org}::uuid AND negocios.status = 'ganho'
@@ -711,7 +755,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     fonte: "negócios ganhos com tipo de receita avulso ou projeto, pela política de `receita-fechada.ts`.",
     naoInclui: "mensalidade e setup — esses são o booking.",
     agregacao: "soma",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa" },
     ordem: "t.ganho_at DESC",
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], campoData: "ganho_at", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "ganho_at"], piso: new Date("2026-07-01T00:00:00-03:00") },
     recorte: (org, p) => {
@@ -720,7 +764,8 @@ export const CATALOGO: DefinicaoMetrica[] = [
         SELECT negocios.id::text, negocios.titulo, e.nome AS empresa,
                COALESCE(negocios.service_family, 'UNKNOWN') AS familia,
                ${VALOR_AVULSO_VENDIDO} AS valor, negocios.ganho_at,
-               negocios.id::text AS negocio_id, negocios.empresa_id::text AS empresa_id
+               negocios.id::text AS negocio_id, negocios.empresa_id::text AS empresa_id,
+               negocios.responsavel_id::text AS responsavel_id, negocios.etapa
           FROM negocios
           LEFT JOIN empresas e ON e.id = negocios.empresa_id
          WHERE negocios.organizacao_id = ${org}::uuid AND negocios.status = 'ganho'
@@ -743,7 +788,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
       "a separação entre mensalidade, setup e avulso, e a regra do White Label. Para decidir, use " +
       "`booking_ganho`. Divergir daqui é esperado e está medido em `cruzadas.test.ts`.",
     agregacao: "soma",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa" },
     ordem: "t.ganho_at DESC",
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], campoData: "ganho_at", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "ganho_at"], piso: new Date("2026-07-01T00:00:00-03:00") },
     recorte: (org, p) => {
@@ -751,7 +796,8 @@ export const CATALOGO: DefinicaoMetrica[] = [
       return sql`
         SELECT o.id::text, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
                COALESCE(o.valor, 0)::numeric AS valor, o.ganho_at,
-               o.negocio_id_legado::text AS negocio_id, o.empresa_id::text AS empresa_id
+               o.negocio_id_legado::text AS negocio_id, o.empresa_id::text AS empresa_id,
+               o.responsavel_id::text AS responsavel_id, o.etapa
           FROM oportunidades o
           LEFT JOIN empresas e ON e.id = o.empresa_id
          WHERE o.organizacao_id = ${org}::uuid
@@ -855,11 +901,12 @@ export const CATALOGO: DefinicaoMetrica[] = [
     fonte: "oportunidades com ganho_at e perdido_at nulos e etapa canônica preenchida (a mesma contagem do Pipeline).",
     naoInclui: "ganhas e perdidas, inclusive as fechadas hoje, e o legado com status ativo sem etapa (decisão de 05/10: ativo não é etapa comercial, fica fora do funil).",
     agregacao: "contagem",
-    filtros: { familia: true },
+    filtros: { familia: true, responsavel: "responsavel_id", etapa: "etapa", pipeline: "pipeline_id" },
     ordem: "t.valor DESC NULLS LAST",
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "etapa", rotulo: "Etapa" }], busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "etapa", "previsao_fechamento", "familia"] },
     recorte: (org, p) => sql`
-      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento, a.negocio_id, a.empresa_id
+      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento,
+             a.responsavel_id, a.pipeline_id, a.negocio_id, a.empresa_id
         FROM (${recorteAbertas(org, p)}) a`,
   }),
   definir({

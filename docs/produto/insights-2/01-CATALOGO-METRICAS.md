@@ -12,42 +12,42 @@ Gerado a partir do código em 2026-10-21 (atualizado após a correção do booki
   janela. *coorte*: população que entrou numa janela, acompanhada ao longo do tempo.
 - **Piso** — antes desta data a fonte não existe. A resposta carrega `pisoAplicado`, e a tela diz
   "sem dado antes de X" em vez de desenhar zero.
-- **Família** — se aceita o filtro de família de serviço. Quem não aceita devolve **422** com o
-  motivo, nunca um número filtrado por engano.
+- **Filtros que aceita** — cada métrica declara o que sabe filtrar. Pedir um filtro que ela não
+  declara devolve **422** nomeando o filtro, nunca um número silenciosamente não filtrado.
 - **Dimensões** — por onde a métrica pode ser quebrada, e por onde o drill-down funciona.
 
 ## As 28 métricas
 
-| Código | Tipo | Unidade | Piso | Família | Dimensões |
+| Código | Tipo | Unidade | Piso | Filtros que aceita | Dimensões |
 |---|---|---|---|---|---|
-| `booking_cabecalho` | evento | R$ | 2026-07-01 | sim | familia |
-| `booking_ganho` | evento | R$ | 2026-07-01 | sim | familia |
-| `clientes_faturados` | evento | nº | 2021-03-01 | sim | familia |
-| `faturado` | evento | R$ | — | não | status |
-| `faturamento_competencia` | evento | R$ | 2021-03-01 | sim | familia, natureza, confianca, fonte |
-| `faturas_stripe_fora_da_planilha` | evento | R$ | 2025-11-01 | não | situacao |
-| `leads_novos` | evento | nº | — | não | origem, status |
-| `logos_cancelados` | evento | nº | — | sim | familia |
-| `meta_booking` | evento | R$ | 2026-06-01 | não | tipo, usuario |
-| `mrr_cancelado` | evento | R$ | — | sim | familia, motivo |
-| `mrr_movimento_liquido` | evento | R$ | — | não | tipo, origem |
-| `oportunidades_criadas` | evento | nº | — | sim | familia, situacao |
-| `oportunidades_perdidas` | evento | nº | — | sim | familia, motivo |
-| `pipeline_previsto` | evento | R$ | — | sim | familia, etapa |
-| `recebido` | evento | R$ | — | não | metodo |
-| `receita_avulsa` | evento | R$ | 2021-03-01 | sim | familia, confianca, fonte |
-| `receita_avulsa_vendida` | evento | R$ | 2026-07-01 | sim | familia |
-| `receita_setup` | evento | R$ | 2021-03-01 | sim | familia, confianca, fonte |
-| `receita_uso` | evento | R$ | 2021-03-01 | sim | familia, confianca, fonte |
-| `clientes_ativos` | retrato | nº | — | sim | — |
-| `mrr_atual` | retrato | R$ | — | sim | familia, origem |
-| `mrr_contratado` | retrato | R$ | — | sim | familia |
-| `mrr_em_risco` | retrato | R$ | — | sim | familia |
-| `mrr_faturavel` | retrato | R$ | — | sim | familia |
-| `oportunidades_abertas` | retrato | nº | — | sim | familia, etapa |
-| `oportunidades_estagnadas` | retrato | nº | — | sim | familia, etapa |
-| `pipeline_aberto` | retrato | R$ | — | sim | familia, etapa |
-| `pipeline_ponderado` | retrato | R$ | — | sim | familia, etapa |
+| `booking_cabecalho` | evento | R$ | 2026-07-01 | família, responsavel, etapa | familia |
+| `booking_ganho` | evento | R$ | 2026-07-01 | família, responsavel, etapa | familia |
+| `clientes_faturados` | evento | nº | 2021-03-01 | família | familia |
+| `faturado` | evento | R$ | — | — | status |
+| `faturamento_competencia` | evento | R$ | 2021-03-01 | família | familia, natureza, confianca, fonte |
+| `faturas_stripe_fora_da_planilha` | evento | R$ | 2025-11-01 | — | situacao |
+| `leads_novos` | evento | nº | — | responsavel, origem, campanha | origem, status |
+| `logos_cancelados` | evento | nº | — | família | familia |
+| `meta_booking` | evento | R$ | 2026-06-01 | — | tipo, usuario |
+| `mrr_cancelado` | evento | R$ | — | família | familia, motivo |
+| `mrr_movimento_liquido` | evento | R$ | — | — | tipo, origem |
+| `oportunidades_criadas` | evento | nº | — | família, responsavel, etapa, pipeline | familia, situacao |
+| `oportunidades_perdidas` | evento | nº | — | família, responsavel, etapa, pipeline | familia, motivo |
+| `pipeline_previsto` | evento | R$ | — | família, responsavel, etapa, pipeline | familia, etapa |
+| `recebido` | evento | R$ | — | — | metodo |
+| `receita_avulsa` | evento | R$ | 2021-03-01 | família | familia, confianca, fonte |
+| `receita_avulsa_vendida` | evento | R$ | 2026-07-01 | família, responsavel, etapa | familia |
+| `receita_setup` | evento | R$ | 2021-03-01 | família | familia, confianca, fonte |
+| `receita_uso` | evento | R$ | 2021-03-01 | família | familia, confianca, fonte |
+| `clientes_ativos` | retrato | nº | — | família | — |
+| `mrr_atual` | retrato | R$ | — | família | familia, origem |
+| `mrr_contratado` | retrato | R$ | — | família | familia |
+| `mrr_em_risco` | retrato | R$ | — | família | familia |
+| `mrr_faturavel` | retrato | R$ | — | família | familia |
+| `oportunidades_abertas` | retrato | nº | — | família, responsavel, etapa, pipeline | familia, etapa |
+| `oportunidades_estagnadas` | retrato | nº | — | família, responsavel, etapa, pipeline | familia, etapa |
+| `pipeline_aberto` | retrato | R$ | — | família, responsavel, etapa, pipeline | familia, etapa |
+| `pipeline_ponderado` | retrato | R$ | — | família, responsavel, etapa, pipeline | familia, etapa |
 
 ## Razões (não são métricas do catálogo)
 

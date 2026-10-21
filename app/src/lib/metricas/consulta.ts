@@ -6,7 +6,7 @@
 import { definicao, medir, type Periodo, type DefinicaoMetrica } from "./catalogo";
 import { explorar, type Selecao, type Exploracao } from "./explorar";
 import { PERIODO_RE, janelaDoPeriodo, janelaAnterior, diaSP, type Janela } from "./janela";
-import { familiaValida } from "./recorte";
+import { familiaValida, FILTROS_DIMENSAO, type ValoresFiltro } from "./recorte";
 
 export interface PedidoMetrica {
   codigo: string;
@@ -21,6 +21,20 @@ export interface PedidoMetrica {
 }
 
 const dia = (v: string | null | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? diaSP(+v.slice(0, 4), +v.slice(5, 7), +v.slice(8, 10)) : undefined);
+
+/**
+ * Filtros de dimensão vindos da querystring. O valor é só texto — a coluna que
+ * ele vai comparar sai da definição da métrica, nunca da URL. Vazio é ausência
+ * de filtro, não filtro por string vazia.
+ */
+function lerDimensoes(q: URLSearchParams): ValoresFiltro {
+  const v: ValoresFiltro = {};
+  for (const f of FILTROS_DIMENSAO) {
+    const bruto = q.get(f)?.trim();
+    if (bruto) v[f] = bruto.slice(0, 120);
+  }
+  return v;
+}
 
 export function lerPedido(codigo: string, q: URLSearchParams, agora = new Date()): PedidoMetrica | null {
   const d = definicao(codigo);
@@ -39,6 +53,7 @@ export function lerPedido(codigo: string, q: URLSearchParams, agora = new Date()
     ate: d.tipo === "SNAPSHOT" ? undefined : janela.ate,
     familia: familiaValida(q.get("familia")),
     incluirTestes: q.get("testes") === "1",
+    dimensoes: lerDimensoes(q),
   };
   const selecao: Selecao = {
     q: q.get("q")?.slice(0, 80) || undefined,
