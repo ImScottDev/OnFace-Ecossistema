@@ -25,7 +25,10 @@ const REGRAS: { familia: Exclude<FamiliaServico, "UNKNOWN">; termos: string[] }[
   { familia: "WHITE_LABEL", termos: ["white label", "whitelabel"] },
   {
     familia: "CALLFACE_AI",
-    termos: ["callface ai", "callpilot", "agente ia", "agente de ia", "agente bdr", "cold calling"],
+    // "copilot" junto de "callpilot": o catálogo do Stripe vende "Callface Copilot",
+    // que caía em UNKNOWN e a ficha mostrava "Não classificado" com o nome do
+    // produto escrito ao lado (14 assinaturas ativas em 21/10/2026).
+    termos: ["callface ai", "callpilot", "copilot", "agente ia", "agente de ia", "agente bdr", "cold calling"],
   },
   {
     familia: "PABX",

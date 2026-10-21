@@ -79,12 +79,18 @@ export async function reconhecerClienteDoSaas(organizacaoId: string, a: Assinatu
       set: {
         commercialLifecycle: ciclo,
         billingStatus: VIVA.has(a.status) ? "ACTIVE" : "CANCELED",
+        /* Preenche o produto/família quando o gravado está vazio e agora se
+           sabe o nome — nunca por cima de um valor que já diz algo. */
+        serviceFamily: sql`CASE WHEN ${servicosCanonicos.serviceFamily} IN ('UNKNOWN','') OR ${servicosCanonicos.serviceFamily} IS NULL
+                                THEN ${classificarProdutoPorNome(a.produto)} ELSE ${servicosCanonicos.serviceFamily} END`,
+        canonicalProduct: sql`COALESCE(${servicosCanonicos.canonicalProduct}, ${a.produto})`,
         updatedAt: new Date(),
       },
-      /* Só quando o estado MUDA. Sem isto o sync reescreveria a mesma linha de
+      /* Só quando o estado MUDA ou o produto ainda não é conhecido. Sem isto o sync reescreveria a mesma linha de
          30 em 30 minutos e `updated_at` diria "mexido agora" para sempre — o
          mesmo defeito que a guarda do encerramento já evita do outro lado. */
-      setWhere: sql`${servicosCanonicos.commercialLifecycle} IS DISTINCT FROM ${ciclo}`,
+      setWhere: sql`${servicosCanonicos.commercialLifecycle} IS DISTINCT FROM ${ciclo}
+                    OR (${a.produto}::text IS NOT NULL AND ${servicosCanonicos.canonicalProduct} IS NULL)`,
     });
 }
 
