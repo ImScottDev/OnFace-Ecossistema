@@ -97,10 +97,28 @@ de um olhar.
 **Efeito esperado:** as 54 do grupo CRM passam a casar sozinhas no próximo sync.
 Mede-se pela queda das 20 órfãs.
 
-### Fase 2 — Devolver dono às órfãs (precisa de decisão humana)
-As 20 ativas sem empresa, R$ 8.355,91/mês. Depois da Fase 1, parte some sozinha.
-O resto é na mão, do mais caro para o mais barato, com a regra: **CNPJ ou
-negócio provam; e-mail e nome sugerem**. Nome nunca decide sozinho.
+### Fase 2 — Devolver dono às órfãs — FEITA EM 21/10/2026
+
+**34 serviços devolvidos, R$ 6.586,00 de MRR ativo de volta às fichas.** O balde
+"Unresolved billing identity" caiu de 45 linhas (17 ativas, R$ 7.535,40) para 11
+(3 ativas, R$ 949,40).
+
+O que faltava não era a Fase 1 — ela já estava publicada e funcionando (o sync
+fecha 326 assinaturas com 3 sem lead). Era que **o sync só atualiza valor e
+status de uma chave canônica que já existe; ele não reavalia de quem ela é.**
+As linhas criadas antes da correção ficavam apontando para o balde para sempre,
+mesmo quando o CRM já sabia o dono.
+
+Script: `src/scripts/devolver-dono-dos-servicos.ts` (simula por padrão,
+`--aplicar` grava; `diagnosticar-servicos-sem-dono.ts` só lê). Regras: só
+CONFIRMED, só com empresa, e `evidence.devolucao_de_dono` guarda a empresa
+anterior para desfazer.
+
+**Os 10 que ficaram, por desenho** (identidade de cobrança duvidosa é decisão
+humana): 1 UNRESOLVED (R$ 1.799, encerrada), 1 REVIEW (R$ 179,90, ativa) e 8
+CONFIRMED cujo lead **não tem empresa** — entre eles R$ 1.169,30 e R$ 679,50.
+Para estes, vincular a empresa ao lead resolve e o script os pega na próxima
+passada.
 
 ### Fase 3 — Consolidar os 8 clientes duplicados
 Para cada um, **um** Customer fica e os outros saem **no fim do ciclo pago**
