@@ -110,6 +110,65 @@ Habilitar é uma linha — mas sem §5 ela só joga o lead na mesma fila cega.
 
 ---
 
+## 4-A. O que as versões 2.17 a 2.21 da Callface mudaram (e nós não sabíamos)
+
+As notas de versão que o Scott repassou em 21/10 respondem perguntas que estavam
+abertas há meses. Resumo do que importa para a integração:
+
+**A v2.17 corrigiu o nosso maior buraco.** Nas palavras deles: *"Ligação do
+Agente grava `agent_id` e deixa `user_id` nulo, e todo o envio ao CRM era
+ancorado em `user_id` — a transcrição salvava e o envio sumia sem erro visível."*
+Era isso que fazia **2 de 3 ligações de teste não gerarem evento** em julho. A
+nota diz que agora as ligações do agente de prospecção **são enviadas ao CRM**
+quando há webhook de entrada configurado.
+
+Medido no nosso banco, ligações sem dono resolvido por mês:
+
+| Mês | Total | Sem dono | % |
+|---|---|---|---|
+| Agosto | 2.488 | 1.787 | **72%** |
+| Setembro | 2.547 | 985 | 39% |
+| Outubro | 1.623 | 465 | **28%** |
+
+Melhorou de verdade. Parte do crédito é da correção deles, parte do nosso fix de
+`agent_name` de 15/10.
+
+**A v2.18 criou uma configuração que pode estar nos cortando.** Integrações
+ganhou a opção *"enviar a sumarização da ligação somente quando o lead for
+qualificado"* — interesse em demonstração, reunião agendada ou 50%+ de chance de
+fechar. **Precisa conferir se está ligada na nossa organização**: se estiver,
+deixamos de receber a maior parte das ligações, e isso parece defeito nosso.
+
+**A v2.18 também resolveu a caixa postal** com status próprio. Nossas 766
+ligações `VOICEMAIL` vêm daí — e o nosso código ainda as trata como ligação
+comum (§4).
+
+**Resumo e scorecard agora só saem em conversa real** (30s, 20 palavras, ao menos
+uma fala do cliente). É a explicação provável de ligações sem resumo aqui.
+
+**O que a plataforma passou a ter e nós não consumimos:**
+- **Dados coletados** existe e é campo real — a v2.20 inclusive corrigiu um bug
+  de exibição dele. Continua **não chegando** no nosso webhook.
+- **Scorecard com evidências** por critério, com trecho e minuto da conversa.
+- **Qualificação** com status próprios: Qualificado, Parcial, Não qualificado,
+  Inelegível, Sem Informação (v2.21).
+- **Origem da ligação** (Webphone ou Agente) como filtro.
+- **CallPilot nesta ligação**: dicas recebidas, usadas, aproveitamento e
+  tendência — e a **Base da Empresa** (v2.19), onde a organização cadastra
+  produtos, preços, provas, objeções e o que nunca prometer.
+- **Notificação de lead qualificado por WhatsApp** direto do agente (v2.19).
+- **Webhook de criação de organização** (v2.17) e **quatro eventos de cobrança**
+  para parceiros (v2.20).
+- **Cancelamento de campanha do agente por organização**, atrás da flag
+  `controlled_agents_batch_call_enabled` (v2.18) — primeira evidência de controle
+  de campanha de agente por organização.
+
+**Confirmado no nosso banco:** o payload das ligações dos últimos 21 dias
+continua com **as mesmas 17 chaves** de sempre. Nenhum dos campos acima chega.
+Não é bug — é contrato: precisa ser pedido.
+
+---
+
 ## 5. O que depende da Callface, não de nós
 
 Estas são perguntas para o time de produto da Callface. Nenhuma se resolve
