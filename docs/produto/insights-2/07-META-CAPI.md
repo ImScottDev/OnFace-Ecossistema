@@ -22,24 +22,38 @@ Peça por peça: política de 8 eventos (`packages/integrations/meta/src/politic
 adapter, caller real no consumidor, log de entrega com `ON CONFLICT`, tela de
 observabilidade. Nada disso falta.
 
-## 2. E está parada
+## 2. Em produção, ela NÃO está parada (medido 21/10, 18h)
 
-| | |
-|---|---|
-| Eventos entregues em toda a história | **6** |
-| Última entrega | **08/10/2026** |
-| Linhas pendentes na outbox | **269** (toda a fila, não só CAPI) |
-| Tentativas na mais tentada delas | **0** |
-| Último `processed_at` da outbox | **09/10 12:38** |
+**Correção do veredito.** Tudo o que eu tinha escrito aqui vinha do banco local,
+onde não se roda worker. Os números de produção (`callface_crm_mz`) são outros:
 
-**`attempts = 0` em 269 linhas é o diagnóstico.** Não é a Meta recusando, não é
-credencial, não é a regra de atribuição barrando: **ninguém tentou**. O que
-parou não é o CAPI — é o consumidor da outbox inteiro, e com ele a projeção de
-timeline, as automações do construtor, o barramento n8n, a materialização de
-serviço canônico e o handoff de CS.
+| | Produção | O que eu havia dito (local) |
+|---|---|---|
+| `event_outbox` processados | **2.233** | 260 |
+| `event_outbox` pendentes | **0** | 269 |
+| `event_outbox` falhados | **0** | 0 |
+| Último processamento | **21/10 18:34** | 09/10 12:38 |
+| Entregas na CAPI | **270** | 6 |
+| Entregas NÃO entregues | **0** | — |
+| Última entrega | **21/10 18:20** | 08/10 |
+| `pontos_contato.meta_lead_id` | **791** de 5.341 | 2 de 4.270 |
 
-No banco local isso é esperado: não se roda worker aqui. **Em produção seria
-incidente**, e é a primeira coisa a confirmar.
+A fila anda, nada está preso, e a API de Conversões **entrega**: 270 eventos,
+o último há minutos. Não havia incidente nenhum.
+
+**O que isso muda nas correções de hoje:** elas deixam de ser preparação e
+passam a ter efeito imediato no próximo deploy.
+
+- O `event_id` que saía do id da LINHA DA FILA estava **ativo nessas 270
+  entregas**. Republicação do mesmo fato gerava outro id, e a Meta contava a
+  conversão de novo. Corrigido em `e42a1af9`.
+- A jornada recém-mapeada (`MeetingHeld`, `NegotiationStarted`,
+  `LeadDisqualified`, `OpportunityLost`) vai **aumentar o volume entregue**.
+  É o resultado pretendido, mas é efeito real em produção: a partir do deploy,
+  eventos que antes morriam em "sem_mapeamento" passam a sair.
+
+**O que continua valendo:** `meta_lead_id` em 791 de 5.341 (15%) e
+`fbclid`/`fbc`/`fbp` em zero — este último por desenho, ver §3.
 
 ## 3. O sinal: eu li a tabela errada
 
