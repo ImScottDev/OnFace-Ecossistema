@@ -182,7 +182,20 @@ export async function contatoDoLead(organizacaoId: string, leadId: string, sessa
   if (!sessao) return null;
   // Um lead tem uma conversa por responsável: se a dele está num número privado, não há
   // conversa utilizável para o agente (null) — nunca reaproveita a privada nem derruba o ciclo.
-  const [novo] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone: tel, email: lead.email, sessaoId: sessao.id, responsavelId: lead.r, leadId }).onConflictDoNothing().returning();
+  /* `onConflictDoNothing().returning()` devolvia VAZIO quando o número já tinha
+     conversa (a mensagem chegou antes de o lead existir): a agente desistia do
+     lead em silêncio, sem erro e sem log. Adota a conversa existente, como a
+     porta única de Atendimento, e não rouba conversa de outro lead (COALESCE).
+     A sessão já passou por `numeroAceitaAutomacao`, então adotar aqui não
+     reaproveita número privado. */
+  const [novo] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone: tel, email: lead.email, sessaoId: sessao.id, responsavelId: lead.r, leadId })
+    .onConflictDoUpdate({
+      target: [contatos.sessaoId, contatos.telefone],
+      set: {
+        leadId: sql`COALESCE(${contatos.leadId}, EXCLUDED.lead_id)`,
+        responsavelId: sql`COALESCE(${contatos.responsavelId}, EXCLUDED.responsavel_id)`,
+      },
+    }).returning();
   return novo ?? null;
 }
 

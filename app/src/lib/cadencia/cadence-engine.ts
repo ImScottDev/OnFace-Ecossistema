@@ -28,6 +28,7 @@
 import { MOTIVO_NUMERO_PRIVADO, numeroAceitaAutomacao, sessaoEhPrivada } from "@/lib/whatsapp/uso-automatico";
 import { condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { createHash } from "node:crypto";
+import { chaveTelefone } from "@/lib/telefone";
 import { contataOCliente, dentroDaJanela, proximoHorarioDeContato } from "./janela-de-contato";
 import { db } from "@/lib/db";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
@@ -386,7 +387,25 @@ async function resolverContatoCompleto(
     const [lead] = await db.select({ nome: leads.nome, telefone: leads.telefone, email: leads.email, responsavelId: leads.responsavelId }).from(leads).where(and(eq(leads.id, entityId), eq(leads.organizacaoId, organizacaoId))).limit(1);
     if (!lead?.telefone) return null;
     const sessao = await escolherSessao(organizacaoId, { preferidaId: preferida, entidade: { tipo: "lead", id: entityId } });
-    const [created] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone: lead.telefone.replace(/\D/g, ""), email: lead.email, sessaoId: sessao.id, responsavelId: lead.responsavelId, leadId: entityId }).returning();
+    /* A conversa é ÚNICA por (sessão, telefone) — `idx_contatos_sessao_phone`.
+       Este insert era cru: quando o número já tinha conversa sem lead (a
+       mensagem chegou antes de o lead existir), ele estourava o índice e
+       derrubava o passo da cadência. ~635 leads casam por telefone com uma
+       conversa assim. Adota a existente, como a porta única de Atendimento já
+       faz (`lib/atendimento/garantir-conversa.ts`), e nunca rouba conversa de
+       OUTRO lead (COALESCE).
+       O telefone passa pela régua de `lib/telefone`: os contatos do WhatsApp
+       guardam DDI+DDD+número, e o lead de Pré-vendas costuma vir sem o 55 —
+       sem isso a linha nasce com outro telefone e o índice nem é consultado. */
+    const telefone = chaveTelefone(lead.telefone) ?? lead.telefone.replace(/\D/g, "");
+    const [created] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone, email: lead.email, sessaoId: sessao.id, responsavelId: lead.responsavelId, leadId: entityId })
+      .onConflictDoUpdate({
+        target: [contatos.sessaoId, contatos.telefone],
+        set: {
+          leadId: sql`COALESCE(${contatos.leadId}, EXCLUDED.lead_id)`,
+          responsavelId: sql`COALESCE(${contatos.responsavelId}, EXCLUDED.responsavel_id)`,
+        },
+      }).returning();
     return created;
   }
   if (entityType === "negocio") {
