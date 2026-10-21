@@ -995,6 +995,15 @@ app.post("/whatsapp/mark-all-read", async (c) => {
 
 // ─── Status ─────────────────────────────────────────────────────────────────
 
+/** O número tem dono HUMANO? Dono nulo (compartilhado) ou dono agente de IA ⇒ não:
+    ninguém abre tela por ele, então quem administra responde pelo pareamento. */
+async function donoHumanoDoNumero(usuarioId: string | null): Promise<boolean> {
+  if (!usuarioId) return false;
+  const [dono] = await db.execute<{ tipo: string; agente_id: string | null }>(sql`
+    SELECT tipo, agente_id::text FROM usuarios WHERE id = ${usuarioId}::uuid`);
+  return !!dono && !ehAgenteUsuario({ tipo: dono.tipo, agenteId: dono.agente_id });
+}
+
 app.get("/whatsapp/status", async (c) => {
   const ctx = await getCtx(c);
 
@@ -1009,22 +1018,31 @@ app.get("/whatsapp/status", async (c) => {
 
     if (!sessao) return c.json({ error: "Sessão não encontrada" }, 404);
 
-    // O estado traz o QR de pareamento: é de quem USA o número. Supervisão e cargo veem o número em
-    // /whatsapp/numeros (status), nunca o QR.
-    //
-    // EXCEÇÃO: número cujo dono é um AGENTE de IA. Agente não abre tela e não
-    // escaneia nada, então, com só a regra acima, ninguém no mundo consegue
-    // consultar o estado nem parear o número dele — e ele fica preso em
-    // "Pareamento incompleto" para sempre. Foi o que aconteceu em produção em
-    // 20/10/2026: o Scott pareou pela conta dele, transferiu o número para a
-    // Lia e, a partir daí, o próprio botão Atualizar devolvia 404. Quem
-    // administra o número responde por ele.
-    const [uso] = await db.execute<{ ok: boolean }>(sql`SELECT ${sessaoMinha(ctx.userId, sql`${sessao.id}::uuid`, sql`${sessao.usuarioId}::uuid`)} AS ok`);
-    const [dono] = sessao.usuarioId ? await db.execute<{ tipo: string; agente_id: string | null }>(sql`
-      SELECT tipo, agente_id::text FROM usuarios WHERE id = ${sessao.usuarioId}::uuid`) : [];
-    const deAgente = !!dono && ehAgenteUsuario({ tipo: dono.tipo, agenteId: dono.agente_id });
-    const podeAdministrar = deAgente && escopoDeGestao(ctx) !== null;
-    if (uso?.ok !== true && !podeAdministrar) return c.json({ error: "Sessão não encontrada" }, 404);
+    /* Quem CONSULTA o estado é quem já enxerga o número em /whatsapp/numeros
+       (dono, autorizado, supervisão concedida, super admin). Quem recebe o QR
+       de PAREAMENTO é só quem usa o número — ou, quando ele não tem dono
+       humano, quem o administra.
+
+       Número SEM DONO HUMANO é o caso que furava: agente de IA e, pior,
+       compartilhado com `usuario_id IS NULL` (o pool operacional da Lia).
+       Ninguém abre tela por ele, então a regra "só quem usa" deixava o número
+       sem ninguém no mundo capaz de consultar ou parear, preso em "Pareamento
+       incompleto". Aconteceu em produção em 20/10/2026 com o número de dono
+       agente, e de novo em 21/10 com o do pool, que a exceção de então não
+       cobria. É a mesma regra do POST /whatsapp/status, agora pelas mesmas
+       peças: `sessaoVisivel` + `podeAdministrarNumero`. */
+    const [acesso] = await db.execute<{ usa: boolean; visivel: boolean }>(sql`
+      SELECT ${sessaoMinha(ctx.userId, sql`${sessao.id}::uuid`, sql`${sessao.usuarioId}::uuid`)} AS usa,
+             ${sessaoVisivel(ctx, sql`${sessao.id}::uuid`, sql`${sessao.usuarioId}::uuid`)} AS visivel`);
+    const usa = acesso?.usa === true;
+    const donoHumano = await donoHumanoDoNumero(sessao.usuarioId);
+    const administra = !donoHumano
+      && podeAdministrarNumero(ctx, { usuarioId: sessao.usuarioId, donoEhHumano: donoHumano });
+    const podeParear = usa || administra;
+    if (!usa && !administra && acesso?.visivel !== true) return c.json({ error: "Sessão não encontrada" }, 404);
+    if (superAdminAgindo(ctx) && !usa) {
+      await registrarAcessoExcepcional(ctx, "super_admin", { tipo: "whatsapp_sessao", id: sessao.id, detalhe: { acao: "status" } });
+    }
 
     const config = sessionToConfig(sessao);
     let live = { connected: false, phone: "", status: "disconnected", qrCode: "" };
@@ -1062,7 +1080,10 @@ app.get("/whatsapp/status", async (c) => {
       usuarioId: sessao.usuarioId,
       status: live.connected ? "connected" : live.status,
       phoneNumber: live.connected ? live.phone : sessao.phoneNumber,
-      qrCode: live.connected ? null : live.qrCode || sessao.qrCode,
+      // Supervisão e super admin veem o estado; o QR, não: ele conecta o aparelho.
+      qrCode: live.connected || !podeParear ? null : live.qrCode || sessao.qrCode,
+      // A tela oferece o pareamento por este campo, não por adivinhar a regra.
+      podeParear,
     });
   }
 
@@ -1240,11 +1261,9 @@ app.post("/whatsapp/status", async (c) => {
   /* Cargo não mexe no número PESSOAL de outra pessoa: só o dono, o super admin (auditado) ou, quando o
      número não tem dono humano, a gestão. Quem está só AUTORIZADO usa o número (conecta, envia); não o
      reconfigura nem o apaga. */
-  const [donoDoNumero] = sessao.usuarioId ? await db.execute<{ tipo: string; agente_id: string | null }>(sql`
-    SELECT tipo, agente_id::text FROM usuarios WHERE id = ${sessao.usuarioId}::uuid`) : [];
   const administra = podeAdministrarNumero(ctx, {
     usuarioId: sessao.usuarioId,
-    donoEhHumano: !!donoDoNumero && !ehAgenteUsuario({ tipo: donoDoNumero.tipo, agenteId: donoDoNumero.agente_id }),
+    donoEhHumano: await donoHumanoDoNumero(sessao.usuarioId),
   });
   const [uso] = await db.execute<{ ok: boolean }>(sql`SELECT ${sessaoMinha(ctx.userId, sql`${sessao.id}::uuid`, sql`${sessao.usuarioId}::uuid`)} AS ok`);
   const usa = uso?.ok === true;

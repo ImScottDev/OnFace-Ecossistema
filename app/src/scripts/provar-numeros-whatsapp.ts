@@ -104,6 +104,18 @@ async function main() {
     ok(r.status === 403, `Ana trocando o dono do próprio número recebe 403, só gestão (recebeu ${r.status})`);
     r = await api(ckAna, `/whatsapp/status?sessionId=${sLia}`);
     ok(r.status === 404, `Ana lendo o estado do número da Lia recebe 404 (recebeu ${r.status})`);
+    r = await api(ckCaio, `/whatsapp/status?sessionId=${comp}`);
+    ok(r.status === 404, `Caio lendo o estado do compartilhado em que não está recebe 404 (recebeu ${r.status})`);
+    // Número SEM DONO HUMANO (compartilhado sem dono, dono agente): quem o
+    // administra consulta e pareia. Sem isto ele fica preso em "Pareamento
+    // incompleto" sem ninguém no mundo capaz de mexer, e a tela entra em laço
+    // de 404.
+    r = await api(ckAdmin, `/whatsapp/status?sessionId=${comp}`);
+    ok(r.status === 200 && r.body.podeParear === true, `admin consulta e pareia o compartilhado sem dono (${r.status}, podeParear=${r.body.podeParear})`);
+    r = await api(ckAdmin, `/whatsapp/status?sessionId=${sLia}`);
+    ok(r.status === 200 && r.body.podeParear === true, `admin consulta e pareia o número da agente Lia (${r.status}, podeParear=${r.body.podeParear})`);
+    r = await api(ckBia, `/whatsapp/status?sessionId=${comp}`);
+    ok(r.status === 200 && r.body.podeParear === true, `Bia, autorizada no compartilhado, consulta e pareia (${r.status}, podeParear=${r.body.podeParear})`);
 
     // 4. Vínculo persiste e muda o que cada um vê.
     r = await api(ckAdmin, "/whatsapp/status", { method: "POST", body: JSON.stringify({ action: "vincular", sessionId: ana2, usuarioId: caio, finalidade: "suporte" }) });

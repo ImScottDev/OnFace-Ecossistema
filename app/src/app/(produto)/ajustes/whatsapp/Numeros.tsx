@@ -43,7 +43,7 @@ type Resposta = {
   gestao: "organizacao" | "time" | null; eu: string; numeros: Numero[];
   filtros: { usuarios: Array<Pessoa & { team_id: string | null }>; equipes: Array<{ id: string; nome: string }>; agentes: Array<{ id: string; nome: string }> };
 };
-type Vivo = { status: string; phoneNumber: string | null; qrCode: string | null };
+type Vivo = { status: string; phoneNumber: string | null; qrCode: string | null; podeParear: boolean };
 
 const FINALIDADES: Array<[string, string]> = [["comercial", "Comercial"], ["atendimento", "Atendimento"], ["suporte", "Suporte"], ["sdr", "SDR"], ["cs", "CS"], ["outro", "Outro"]];
 const rotuloFinalidade = (f: string | null) => FINALIDADES.find(([k]) => k === f)?.[1] ?? "—";
@@ -425,7 +425,12 @@ function DetalheNumero({ n, gestao, pessoas, eu, mudou, fechar }: {
       if (!res.ok) throw new Error("Falha ao ler o estado do número");
       return res.json();
     },
-    refetchInterval: 3000,
+    /* Erro PARA o laço. A tela repetia a consulta a cada 3 s mesmo recebendo
+       404, e um número que o servidor recusa não passa a existir por insistir:
+       em 21/10/2026 foram 20+ requisições em poucos segundos, crescendo
+       enquanto o painel ficava aberto. O botão Atualizar ainda refaz à mão. */
+    retry: false,
+    refetchInterval: (q) => (q.state.error ? false : 3000),
   });
   const status = vivo?.status ?? n.status;
   useEffect(() => { if (vivo && vivo.status !== n.status) mudou(); }, [vivo, n.status, mudou]);
@@ -469,7 +474,7 @@ function DetalheNumero({ n, gestao, pessoas, eu, mudou, fechar }: {
         </Cf2SheetDescription>
       </Cf2SheetHeader>
 
-      {status !== "connected" && n.minha && (
+      {status !== "connected" && (vivo?.podeParear ?? n.minha) && (
         <div className="flex flex-col gap-3 rounded-[var(--radius-card)] bg-[var(--surface-sunken)] p-4">
           {vivo?.qrCode ? (
             <div className="flex flex-col items-center gap-2">
