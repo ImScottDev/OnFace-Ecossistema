@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext, unauthorizedResponse, forbiddenResponse } from "@/lib/auth/tenant";
 import { temPermissao } from "@/lib/auth/permissoes";
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,20 +67,20 @@ export async function consultarQualidadeDados(org: string) {
     }>(sql`
       SELECT
         (SELECT count(*)::int FROM assinaturas a WHERE a.organizacao_id=${org}::uuid
-          AND a.status='active' AND a.fora_do_espelho_em IS NULL) AS assinaturas_ativas,
+          AND a.status='active' AND ${doCrm("a")}) AS assinaturas_ativas,
         (SELECT count(*)::int FROM assinaturas a WHERE a.organizacao_id=${org}::uuid
-          AND a.status='active' AND a.fora_do_espelho_em IS NULL AND a.empresa_id IS NULL) AS assinaturas_sem_empresa,
+          AND a.status='active' AND ${doCrm("a")} AND a.empresa_id IS NULL) AS assinaturas_sem_empresa,
         (SELECT count(*)::int FROM assinaturas a WHERE a.organizacao_id=${org}::uuid
-          AND a.status='active' AND a.fora_do_espelho_em IS NULL AND a.servico_id IS NULL) AS assinaturas_sem_servico,
+          AND a.status='active' AND ${doCrm("a")} AND a.servico_id IS NULL) AS assinaturas_sem_servico,
         (SELECT count(*)::int FROM faturas f WHERE f.organizacao_id=${org}::uuid
-          AND f.status='paga' AND f.fora_do_espelho_em IS NULL) AS faturas_pagas,
+          AND f.status='paga' AND ${doCrm("f")}) AS faturas_pagas,
         (SELECT count(*)::int FROM faturas f WHERE f.organizacao_id=${org}::uuid
-          AND f.status='paga' AND f.fora_do_espelho_em IS NULL
+          AND f.status='paga' AND ${doCrm("f")}
           AND NOT EXISTS (SELECT 1 FROM pagamentos p
               WHERE p.organizacao_id=${org}::uuid AND p.fatura_id=f.id)) AS faturas_sem_pagamento,
         (SELECT COALESCE(sum(f.valor),0)::text FROM faturas f
           WHERE f.organizacao_id=${org}::uuid AND f.status='paga'
-          AND f.fora_do_espelho_em IS NULL AND NOT EXISTS
+          AND ${doCrm("f")} AND NOT EXISTS
           (SELECT 1 FROM pagamentos p
             WHERE p.organizacao_id=${org}::uuid AND p.fatura_id=f.id)) AS valor_faturas_sem_pagamento
     `),
