@@ -248,6 +248,78 @@ ligação em paralelo ao nosso webhook. Decidir se desconecta.
 
 ---
 
+## 4-C. A API real, lida do próprio painel (21/10)
+
+Capturado instrumentando o app logado e lendo o pacote JavaScript dele. É o
+contrato de verdade, não documentação.
+
+**Base:** `https://api.callface.io`
+
+### Agentes
+
+`GET /agents` devolve, por agente:
+
+| Campo | Para que serve aqui |
+|---|---|
+| `name`, `description`, `status` | identificação |
+| **`is_prospection_agent`** | marca quem atende o `create-contact` que já usamos |
+| **`system_prompt`** | o roteiro do agente |
+| **`first_message_variables`** | **as variáveis do roteiro**. Hoje: `["nome"]` |
+| `voice_id`, `provider_id`, `organization_id` | voz e tenant |
+
+`POST /agents/upsert` cria e atualiza agente — ou seja, **dá para criar agente e
+mexer no roteiro e nas variáveis por API**.
+
+Também existe `agents/generate-prompt` e `/agents/create`.
+
+### Campanhas
+
+`GET /agents/campaigns` devolve `campaignId`, **`agentId`**, `name`, `status` —
+**a campanha carrega o agente**. Escolher o agente por campanha é possível.
+
+Rotas encontradas:
+
+| Rota | O que faz |
+|---|---|
+| `POST /campaigns/{id}/upload` | sobe a lista de contatos (FormData, campo `file`) |
+| `PATCH /campaigns/{id}` | altera a campanha |
+| `GET /campaigns/{id}` | detalhe |
+| `GET /campaigns/{id}/contact-report` | resultado contato a contato |
+| `POST /campaigns/{id}/end` | encerra |
+| `GET/POST /campaigns/{id}/redial-preview` e `/redial` | rediscagem |
+| `POST /campaigns/{id}/contacts/claim` e `/release` | reserva de contato (webphone) |
+| `GET /campaigns/team` | campanhas do time |
+| `GET /agents/usage`, `/agents/metrics`, `/calls` | consumo e histórico |
+
+**Não achei a criação da campanha no pacote.** Para descobrir seria preciso
+subir uma planilha de verdade pelo assistente — o que **cria campanha e dispara
+ligações reais**, e por isso não foi feito. É a única peça que falta mapear.
+
+### O fluxo da lista, confirmado na tela
+
+O assistente pede nome da campanha e um arquivo `.xlsx/.xls/.csv`, até **10.000
+contatos**. Colunas: `Telefone` (obrigatória, com esse título), `Nome`,
+`E-mail`, `Empresa` — **mais uma coluna para cada variável dinâmica do agente**.
+
+É exatamente o encaixe que faltava: **as variáveis do agente viram colunas da
+lista**, e é por aí que a informação de cada lead entra no roteiro da ligação.
+
+### O desenho que isso viabiliza
+
+1. No ONFACE, selecionar os leads e escolher campanha e agente.
+2. O ONFACE monta a lista com uma coluna por variável do agente — nome, empresa,
+   produto de interesse, dor registrada na qualificação, origem, último contato.
+3. Sobe por `POST /campaigns/{id}/upload`.
+4. O agente liga já sabendo com quem fala.
+5. O resultado volta pelo webhook de saída, vira ligação, atividade e, quando há
+   horário combinado, reunião marcada com closer — o que **já funciona hoje**.
+
+O passo 1 já existe em versão simples (enviar para a campanha funil com o agente
+de prospecção). O que falta para a versão completa é escolher campanha/agente e
+mandar as variáveis.
+
+---
+
 ## 5. O que depende da Callface, não de nós
 
 Estas são perguntas para o time de produto da Callface. Nenhuma se resolve
