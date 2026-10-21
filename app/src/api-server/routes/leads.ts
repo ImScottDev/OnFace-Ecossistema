@@ -2166,11 +2166,15 @@ app.post("/leads/:id/enviar-discagem", async (c) => {
     usuarioId: ctx.userId ?? null,
     tipo: "nota",
     titulo: "Enviado pra fila de discagem (Callface)",
-    descricao: `Contato "${lead.nome}" adicionado à campanha de discagem automática da Callface.`,
-    dados: { origem: "callface", acao: "enviar_discagem" },
+    descricao: `Contato "${lead.nome}" entrou na campanha de discagem da Callface. O agente de prospecção liga em seguida.`,
+    /* `campanhaId` e `contatoCallfaceId` vêm da resposta da Callface e ficam
+       aqui para o caminho de volta: é por eles que se busca o resultado contato
+       a contato da campanha e se liga a ligação recebida ao pedido que a
+       originou. Antes a nota dizia só que "foi enviado". */
+    dados: { origem: "callface", acao: "enviar_discagem", campanhaId: r.campanhaId ?? null, contatoCallfaceId: r.contatoCallfaceId ?? null },
   });
 
-  return c.json({ ok: true });
+  return c.json({ ok: true, campanhaId: r.campanhaId ?? null, contatoCallfaceId: r.contatoCallfaceId ?? null });
 });
 
 export const leadsRoutes = app;

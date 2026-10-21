@@ -650,6 +650,16 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
 
 // ─── ENTRADA: CRM → fila de discagem da Callface ─────────────────────────────
 
+/** O que a Callface devolve ao aceitar o contato, além do "deu certo". */
+export interface ResultadoDiscagem {
+  ok: boolean;
+  detalhe: string;
+  /** Campanha em que o contato caiu (a "Funil <org>", criada na primeira vez). */
+  campanhaId?: string | null;
+  /** Id do contato DENTRO da Callface, que o relatório da campanha usa. */
+  contatoCallfaceId?: string | null;
+}
+
 const CALLFACE_CREATE_CONTACT_URL =
   process.env.CALLFACE_CREATE_CONTACT_URL || "https://api.callface.io/webhooks/events/create-contact";
 
@@ -657,7 +667,7 @@ const CALLFACE_CREATE_CONTACT_URL =
  * Empurra um contato pra fila de discagem da Callface (campanha "Funil <org>").
  * Payload aceito pela Callface: apenas {name, phone}. Fail-closed sem token.
  */
-export async function enviarParaDiscagem(input: { nome: string; telefone: string }): Promise<{ ok: boolean; detalhe: string }> {
+export async function enviarParaDiscagem(input: { nome: string; telefone: string }): Promise<ResultadoDiscagem> {
   const token = process.env.CALLFACE_INBOUND_TOKEN;
   if (!token) return { ok: false, detalhe: "CALLFACE_INBOUND_TOKEN não configurado" };
   const phone = normalizePhone(input.telefone);
@@ -676,5 +686,18 @@ export async function enviarParaDiscagem(input: { nome: string; telefone: string
     // Nunca logar o token; o corpo de erro da Callface é seguro.
     return { ok: false, detalhe: `Callface respondeu ${res.status}: ${body.slice(0, 300)}` };
   }
-  return { ok: true, detalhe: "contato enviado pra fila de discagem" };
+  /* A Callface devolve `campaign_id` e `contact_id` e nós jogávamos os dois
+     fora, ficando só com "deu certo". Sem eles não dá para dizer em que campanha
+     o lead entrou, nem buscar o resultado contato a contato
+     (`GET /campaigns/{id}/contact-report`), nem ligar a ligação que volta pelo
+     webhook ao pedido que a originou. Guardar é o que fecha o laço. */
+  const corpo = await res.json().catch(() => null) as { campaign_id?: unknown; contact_id?: unknown } | null;
+  const campanhaId = typeof corpo?.campaign_id === "string" ? corpo.campaign_id : null;
+  const contatoId = typeof corpo?.contact_id === "string" ? corpo.contact_id : null;
+  return {
+    ok: true,
+    detalhe: "contato enviado pra fila de discagem",
+    campanhaId,
+    contatoCallfaceId: contatoId,
+  };
 }
