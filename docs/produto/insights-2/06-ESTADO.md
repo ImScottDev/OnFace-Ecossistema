@@ -30,6 +30,8 @@ Insights segue fechado em produção por `AREAS_EM_BREVE=automacoes,insights`.
 | `19a41039` | 12 métricas novas, razões, alertas, endpoint do painel, estado honesto |
 | `9084c371` | documento de estado (anterior a este) |
 | `34f7b06c` | Visão Geral com filtros, composição, meta, alertas e faíscas |
+| `d8a042d8` | esta documentação |
+| `a6efd5e6` | **booking da tela estava R$ 106 mil acima da regra** — a correção da política de receita nunca tinha chegado ao catálogo |
 
 Os dois últimos são **frontend não validado**: funcionam e estão provados no navegador, mas o
 desenho não foi aprovado e vai ser substituído pelo que sair do Figma. Ficam como estão — são
@@ -68,7 +70,8 @@ preservado no scratchpad da sessão. Não foi apagado.
 | — PABX / Callface AI / White Label / sem família | 376.431,90 / 64.799,25 / 29.921,55 / 7.670,19 |
 | MRR vendido (booking recorrente) | R$ 469.198,63 |
 | Setup vendido | R$ 100.123,87 |
-| **Booking (recorrente + setup)** | **R$ 569.322,50** |
+| **Booking (recorrente + setup), todo o histórico** | **R$ 569.322,50** |
+| Booking desde o go-live (o que a tela mostra) | R$ 152.168,25 — era R$ 258.274,55 antes de `a6efd5e6` |
 | Avulso/projeto (fora do booking) | R$ 26.465,00 |
 | Faturado set/26 | R$ 512.404,49 em 303 linhas |
 | Clientes ativos | 298 |
@@ -88,6 +91,28 @@ preservado no scratchpad da sessão. Não foi apagado.
 | `leads.primeiro_contato_at` | 221 de 1.207 leads nos últimos 90 dias (18%) |
 | `oportunidades_estagnadas` | 0 real: o campo só é preenchido quando alguém marca à mão |
 | White Label no MRR | só 2 de 67 competências têm MRR de WL (PABX tem 67, Callface AI 39) |
+
+## Achados do inventário da camada legada
+
+Medidos em `docs/produto/insights-2/inventario-camada-legada.md`. **No banco local; reexecutar em
+produção antes de cortar qualquer coisa.**
+
+- Dos 20 endpoints legados: **1** tem equivalente total no catálogo (e nem tem consumidor), **6**
+  parcial, **13** nenhum.
+- **Bugs**: o churn do `/pos-venda` ignora o status `churned` (0,45% exibido contra 4,9% real);
+  seis endpoints não têm gate de papel embora a Biblioteca anuncie acesso de gestão; o
+  `/atividade-time` mistura dia UTC com dia do banco.
+- **"Qualificado" tem cinco definições** em setembro: 112, 80, 45, 88 e 166.
+- **Receita atribuída à mídia paga** ainda usa a fórmula anterior à correção do White Label: inclui
+  ~R$ 73 mil de MRR de WL e omite R$ 67,7 mil de setup, então o ROAS sai inflado.
+- **Janela de período diverge em quase todos os endpoints**, não só no `/comercial`: `12m` vira
+  01/07 no legado e 01/11/2025 no canônico; `tudo` e `ano_atual` caem em 30 dias sem erro.
+- **Taxonomias de origem divergem** entre `getLeadsPorCanal` e `origemCanonica` (Site: 18 contra 81).
+- **Dado que não sustenta a capacidade**: NPS tem 0 linhas; 96% dos contratos ativos sem
+  `vencimento`; só 5% das mensagens de WhatsApp de saída e 50% das ligações têm usuário — o
+  relatório de atividade do time parece mais preciso do que é.
+- Há consumidores de `lib/relatorios/` **fora** dos endpoints (Carol, `pipeline-crm2`,
+  `command-center`, snapshot, `financeiro/metricas`, Biblioteca): desligar não é só apagar rota.
 
 ## Divergência aberta
 
