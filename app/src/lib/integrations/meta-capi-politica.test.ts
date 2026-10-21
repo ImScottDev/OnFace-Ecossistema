@@ -215,7 +215,9 @@ test("o fechamento que o ONFACE publica (DealWon, PaymentCompleted) chega à pol
   // e o ONFACE publica DealWon e PaymentCompleted. Purchase nunca voltava.
   assert.match(entrega, /DealWon:\s*"OpportunityWon"/);
   assert.match(entrega, /PaymentCompleted:\s*"PaymentConfirmed"/);
-  assert.match(entrega, /regraDoEvento\(tipoNaPolitica\(evento\.eventType\)\)/);
+  // O payload vai junto porque a mudança de etapa só tem nome depois de olhar
+  // para qual etapa foi (ETAPA_COMO_EVENTO).
+  assert.match(entrega, /regraDoEvento\(tipoNaPolitica\(evento\.eventType, evento\.payload\)\)/);
 
   // E os dois eventos precisam levar o valor que a Meta usa em Purchase/Won.
   const ganho = fs.readFileSync(path.join(raiz, "lib/crm/won-evidence.ts"), "utf8");
