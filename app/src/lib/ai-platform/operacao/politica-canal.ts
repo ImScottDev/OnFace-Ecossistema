@@ -55,6 +55,34 @@ export async function optOutAtivo(organizacaoId: string, contatoId: string): Pro
   return Boolean(s && !s.ativo && s.motivo === "descadastro");
 }
 
+/**
+ * Quais destes destinos (telefone ou e-mail) pediram para não receber.
+ *
+ * A mesma verdade de `optOutAtivo`, consultada por DESTINO em vez de por
+ * contato, porque disparo em massa só conhece o telefone. Existe porque a
+ * campanha de outreach mandava para quem já tinha pedido para parar: ali não é
+ * risco de ban, é a LGPD. Uma consulta por lote, não uma por pessoa.
+ */
+export async function destinosEmOptOut(organizacaoId: string, canal: string, destinos: string[]): Promise<Set<string>> {
+  if (destinos.length === 0) return new Set();
+  const coluna = canal === "whatsapp"
+    ? sql`regexp_replace(coalesce(ct.telefone, ''), '[^0-9]', '', 'g')`
+    : sql`lower(trim(coalesce(ct.email, '')))`;
+  const linhas = (await db.execute(sql`
+    SELECT DISTINCT ${coluna} AS destino
+      FROM contatos ct
+      LEFT JOIN ai_memoria_fatos f
+        ON f.contato_id = ct.id AND f.organizacao_id = ct.organizacao_id
+       AND f.chave = 'opt_out' AND f.status = 'ativo'
+      LEFT JOIN ai_sdr_contato_state s
+        ON s.contato_id = ct.id AND s.ai_ativo = false AND s.handoff_motivo = 'descadastro'
+     WHERE ct.organizacao_id = ${organizacaoId}::uuid
+       AND (f.id IS NOT NULL OR s.contato_id IS NOT NULL)
+       AND ${coluna} IN (${sql.join(destinos.map((d) => sql`${d}`), sql`, `)})
+  `)) as unknown as Array<{ destino: string }>;
+  return new Set(linhas.map((l) => l.destino));
+}
+
 export async function avaliarEnvio(p: EntradaPolitica): Promise<DecisaoDeCanal> {
   const agora = p.agora ?? new Date();
   const [c] = await db.select({ telefone: contatos.telefone, sessaoId: contatos.sessaoId, silenciado: contatos.botSilencedUntil })

@@ -14,6 +14,12 @@ const execFileAsync = promisify(execFile);
 export interface WuzapiSessionConfig {
   baseUrl: string;
   apiToken: string;
+  /**
+   * Quem está mandando. Só o envio automático (agente, campanha, cadência)
+   * passa pelo freio do marcapasso; quem clicou "enviar" sai na hora.
+   * Ausente = automático, porque o padrão seguro é o freio ligado.
+   */
+  origem?: "automatico" | "humano";
 }
 
 const DEFAULT_CONFIG: WuzapiSessionConfig = {
@@ -114,7 +120,7 @@ async function wuzapiFetch(path: string, options: RequestInit = {}, config = DEF
   if (EHENVIO.test(path)) {
     const { aguardarVezDoNumero } = await import("./marcapasso");
     // A chave é o token da sessão: é o que identifica o CHIP no wuzapi.
-    await aguardarVezDoNumero(config.apiToken || "padrao");
+    await aguardarVezDoNumero(config.apiToken || "padrao", { origem: config.origem ?? "automatico" });
   }
   const url = `${config.baseUrl}${path}`;
   const res = await fetch(url, {

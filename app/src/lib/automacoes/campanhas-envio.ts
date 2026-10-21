@@ -1,9 +1,11 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { outreachCampanhas, outreachCampanhaDestinatarios, whatsappSessao } from "@/lib/db/schema";
 import { sendText, sessionToConfig } from "@/lib/whatsapp/client";
+import { NumeroNoLimite } from "@/lib/whatsapp/marcapasso";
 import { sendResendEmail } from "@/lib/email/resend";
 import { htmlParaTexto, personalizar, classificarErroEnvio } from "./campanhas-texto";
+import { destinosEmOptOut } from "@/lib/ai-platform/operacao/politica-canal";
 
 /**
  * Disparo de campanhas de outreach — consumido pelo worker no job
@@ -26,10 +28,9 @@ import { htmlParaTexto, personalizar, classificarErroEnvio } from "./campanhas-t
  * (remetente da campanha vai como reply-to).
  */
 
-// ponytail: lote fixo por campanha e por ciclo (~20 msgs/min com a pausa).
+// ponytail: lote fixo por campanha e por ciclo; a vazão real é a do marcapasso.
 // Se precisar de mais vazão, ler isso da sessão/organização.
 const LOTE = 20;
-const PAUSA_WHATSAPP_MS = 1500;
 const PRESO_APOS_MIN = 10;
 
 type Campanha = typeof outreachCampanhas.$inferSelect;
@@ -115,9 +116,12 @@ async function preparar(c: Campanha): Promise<Envio | { erro: string }> {
     if (sessao.privado) return { erro: "O número da campanha é privado: disparo em massa não sai por número pessoal." };
     const config = sessionToConfig(sessao);
     const texto = htmlParaTexto(c.corpoHtml ?? "");
+    /* Sem pausa própria aqui: o espaço entre envios é do marcapasso do número
+       (lib/whatsapp/marcapasso.ts), que sorteia 8–25s e vale para o chip todo,
+       não só para esta campanha. Pausa fixa de 1,5s era pior que nenhuma —
+       cadência de metrônomo é assinatura de robô. */
     return async (destino, vars) => {
       const r = await sendText(destino, personalizar(texto, vars), config);
-      await new Promise((ok) => setTimeout(ok, PAUSA_WHATSAPP_MS));
       return { mensagemId: r.messageId };
     };
   }
@@ -178,14 +182,32 @@ export async function sweepCampanhas(): Promise<ResumoSweep> {
     if (lote.length > 0) {
       const envio = await preparar(c);
       const empresas = await empresasDe(lote.map((d) => d.id), `${c.corpoHtml ?? ""}${c.assunto ?? ""}`);
+      /* Quem pediu para parar não recebe, mesmo que estivesse na lista no
+         disparo: a lista congela, o pedido de descadastro não. Consultado no
+         envio, uma vez por lote. */
+      const optOut = await destinosEmOptOut(c.organizacaoId, c.canal, lote.map((d) => d.destino));
       let enviadosAqui = 0;
       for (const d of lote) {
         if ("erro" in envio) { await marcar(d.id, "falhou", { erro: envio.erro }); resumo.falhas++; continue; }
+        if (optOut.has(d.destino)) {
+          await marcar(d.id, "bloqueado", { erro: "O contato pediu para não receber mensagens." });
+          resumo.bloqueados++; continue;
+        }
         try {
           const r = await envio(d.destino, { nome: d.nome, empresa: empresas.get(d.id) });
           await marcar(d.id, "enviado", { mensagemId: r.mensagemId || null });
           enviadosAqui++; resumo.enviados++;
         } catch (e) {
+          /* Teto do chip estourado interrompe o LOTE, não a campanha: devolve
+             este e os que faltam para `pendente` e o próximo sweep continua.
+             Insistir aqui seria bater na parede 20 vezes seguidas. */
+          if (e instanceof NumeroNoLimite) {
+            const restantes = lote.slice(lote.indexOf(d)).map((x) => x.id);
+            await db.update(outreachCampanhaDestinatarios).set({ status: "pendente", updatedAt: new Date() })
+              .where(inArray(outreachCampanhaDestinatarios.id, restantes));
+            console.warn(`[Campanha ${c.id}] ${e.message} — ${restantes.length} destinatários adiados`);
+            break;
+          }
           const { status, erro } = classificarErroEnvio(e);
           await marcar(d.id, status, { erro });
           if (status === "bloqueado") resumo.bloqueados++; else resumo.falhas++;

@@ -51,12 +51,33 @@ test("o intervalo é sorteado, nunca fixo", () => {
   assert.ok(amostras.size > 5, "intervalo fixo é tão suspeito quanto nenhum intervalo");
 });
 
+test("o envio humano não espera nem é barrado: o freio é do robô", async () => {
+  zerarMarcapasso();
+  const esperas: number[] = [];
+  const espera = async (ms: number) => { esperas.push(ms); };
+  // Gasta a cota inteira do chip e continua: quem clicou "enviar" tem de sair.
+  for (let i = 0; i < MAX_POR_HORA_POR_NUMERO + 5; i++) {
+    await aguardarVezDoNumero("sessao-humana", { origem: "humano", espera });
+  }
+  assert.deepEqual(esperas, [], "atendimento humano não pode ficar 25s travado");
+});
+
+test("o envio humano conta no teto: o chip é o mesmo", async () => {
+  zerarMarcapasso();
+  const semEspera = async () => {};
+  for (let i = 0; i < MAX_POR_HORA_POR_NUMERO; i++) {
+    await aguardarVezDoNumero("sessao-mista", { origem: "humano", espera: semEspera });
+  }
+  await assert.rejects(() => aguardarVezDoNumero("sessao-mista", { espera: semEspera }), NumeroNoLimite,
+    "se o time gastou a cota do chip conversando, o robô cala");
+});
+
 test("o marcapasso espera de verdade entre dois envios do mesmo número", async () => {
   zerarMarcapasso();
   const esperas: number[] = [];
   const fingirEspera = async (ms: number) => { esperas.push(ms); };
-  await aguardarVezDoNumero("sessao-a", fingirEspera);
-  await aguardarVezDoNumero("sessao-a", fingirEspera);
+  await aguardarVezDoNumero("sessao-a", { espera: fingirEspera });
+  await aguardarVezDoNumero("sessao-a", { espera: fingirEspera });
   // O primeiro sai na hora e por isso nem chama a espera; só o segundo espera.
   assert.equal(esperas.length, 1, "só o segundo envio deveria esperar");
   assert.ok(esperas[0]! >= INTERVALO_MIN_MS, `o segundo esperou ${esperas[0]}ms, menos que o mínimo`);
@@ -67,18 +88,19 @@ test("números diferentes não disputam a mesma vez", async () => {
   zerarMarcapasso();
   const esperas: number[] = [];
   const fingirEspera = async (ms: number) => { esperas.push(ms); };
-  await aguardarVezDoNumero("sessao-a", fingirEspera);
-  await aguardarVezDoNumero("sessao-b", fingirEspera);
+  await aguardarVezDoNumero("sessao-a", { espera: fingirEspera });
+  await aguardarVezDoNumero("sessao-b", { espera: fingirEspera });
   assert.deepEqual(esperas, [], "nenhum dos dois esperou: o chip de um não atrasa o do outro");
 });
 
 test("estourar o teto do chip avisa com motivo legível", async () => {
   zerarMarcapasso();
   const semEspera = async () => {};
-  for (let i = 0; i < MAX_POR_HORA_POR_NUMERO; i++) await aguardarVezDoNumero("sessao-c", semEspera);
-  await assert.rejects(() => aguardarVezDoNumero("sessao-c", semEspera), (e: Error) => {
+  for (let i = 0; i < MAX_POR_HORA_POR_NUMERO; i++) await aguardarVezDoNumero("sessao-c", { espera: semEspera });
+  await assert.rejects(() => aguardarVezDoNumero("sessao-c", { espera: semEspera }), (e: Error) => {
     assert.ok(e instanceof NumeroNoLimite);
     assert.match(e.message, /rajada|teto/i);
+    assert.ok(e.tentarEmMs > 0 && e.tentarEmMs <= 3_600_000, "precisa dizer quando tentar de novo, senão a mensagem morre");
     return true;
   });
 });

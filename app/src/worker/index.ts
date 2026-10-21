@@ -2704,6 +2704,30 @@ async function registrarEnvioDoAgente(messageId: string, r: { ok: true } | { ok:
   }
 }
 
+/**
+ * Marca como lido o que o contato mandou e mostra "digitando" antes de o
+ * agente responder. É cosmético para o CRM e decisivo para o WhatsApp: a conta
+ * restringida em 21/10/2026 não tinha volume, tinha assinatura de robô — responder
+ * sem nunca ter aberto a conversa é parte dessa assinatura.
+ */
+async function parecerGente(phone: string, messageId: string, config: { baseUrl: string; apiToken: string } | undefined) {
+  try {
+    const { markRead, setPresence } = await import("../lib/whatsapp/client");
+    const { whatsappMensagens: waT } = await import("../lib/db/schema");
+    const [m] = await db.select({ contatoId: waT.contatoId }).from(waT).where(eq(waT.id, messageId)).limit(1);
+    if (m?.contatoId) {
+      const naoLidas = await db.select({ id: waT.uazapiMessageId }).from(waT)
+        .where(and(eq(waT.contatoId, m.contatoId), eq(waT.direcao, "in"), isNotNull(waT.uazapiMessageId)))
+        .orderBy(desc(waT.createdAt)).limit(10);
+      const ids = naoLidas.map((x) => x.id!).filter(Boolean);
+      if (ids.length) await markRead(ids, phone, config);
+    }
+    await setPresence(phone, "composing", undefined, config);
+  } catch (err) {
+    console.log(`[WA-Out] lido/digitando não saiu (não bloqueia):`, err instanceof Error ? err.message : err);
+  }
+}
+
 // ─── WhatsApp Outgoing Worker ────────────────────────────────
 const whatsappOutgoingWorker = new Worker(
   "whatsapp-outgoing",
@@ -2725,6 +2749,16 @@ const whatsappOutgoingWorker = new Worker(
     const { sendText, sendImage, sendAudio, sendVideo, sendDocument, sendLocation, sendContact, sendSticker, sessionToConfig, saveBase64ToDisk } = await import("../lib/whatsapp/client");
     const { whatsappMensagens, whatsappSessao, contatos, leads } = await import("../lib/db/schema");
 
+    /* Quem está mandando decide se o freio do marcapasso pega. A origem sai da
+       PRÓPRIA mensagem, não do produtor do job: `enviado_por_id` preenchido é
+       gente que clicou "enviar"; agente, cadência e lembrete não têm autor e
+       entram como automático. Derivar aqui, no único ponto por onde todo envio
+       passa, faz produtor novo nascer classificado certo sem ninguém lembrar. */
+    const [autoria] = await db.select({ enviadoPorId: whatsappMensagens.enviadoPorId, dados: whatsappMensagens.dados })
+      .from(whatsappMensagens).where(eq(whatsappMensagens.id, messageId)).limit(1);
+    const ehDoAgente = Boolean((autoria?.dados as Record<string, unknown> | null)?.aiGenerated);
+    const origem: "humano" | "automatico" = autoria?.enviadoPorId && !ehDoAgente ? "humano" : "automatico";
+
     // Resolve per-session config
     let config = undefined;
     if (sessaoId) {
@@ -2732,7 +2766,7 @@ const whatsappOutgoingWorker = new Worker(
         .from(whatsappSessao)
         .where(eq(whatsappSessao.id, sessaoId))
         .limit(1);
-      if (sessao) config = sessionToConfig(sessao);
+      if (sessao) config = { ...sessionToConfig(sessao), origem };
     }
 
     // Build reply context if replying to a message
@@ -2775,6 +2809,13 @@ const whatsappOutgoingWorker = new Worker(
       const media = mediaData || mediaUrl || "";
 
       const sendPhone = correctedPhone;
+
+      /* Antes de o robô falar: lê o que chegou e mostra "digitando". Humano faz
+         isso sem pensar, robô nunca fazia — e a conta da Lia foi restringida por
+         padrão de robô, não por volume. O "digitando" fica de pé durante a
+         espera do marcapasso, que é justamente o tempo de alguém escrever.
+         Best-effort: cosmético, nunca derruba o envio. */
+      if (origem === "automatico") await parecerGente(sendPhone, messageId, config);
 
       switch (tipo) {
         case "image":
@@ -2866,6 +2907,18 @@ const whatsappOutgoingWorker = new Worker(
       console.log(`[WA-Out] Sent successfully: ${result.messageId}`);
       await registrarEnvioDoAgente(messageId, { ok: true });
     } catch (error) {
+      /* Teto do chip estourado não é falha da mensagem: é "não agora". Marcar
+         `failed` aqui mataria a resposta em silêncio, que é o jeito mais caro de
+         proteger um número. Volta para a fila na virada da janela, ainda
+         `pending`, e a conversa continua de onde parou. */
+      const { NumeroNoLimite } = await import("../lib/whatsapp/marcapasso");
+      if (error instanceof NumeroNoLimite) {
+        const atraso = Math.min(error.tentarEmMs + 5_000, 3_600_000);
+        const { whatsappOutgoingQueue } = await import("../lib/queue/index");
+        console.warn(`[WA-Out] ${error.message} — msg ${messageId} adiada por ${Math.round(atraso / 1000)}s`);
+        await whatsappOutgoingQueue.add("send", job.data, { delay: atraso, jobId: `adiado:${messageId}:${Date.now()}` });
+        return;
+      }
       console.error(`[WA-Out] Failed to send:`, error);
       await db.update(whatsappMensagens).set({
         status: "failed",
