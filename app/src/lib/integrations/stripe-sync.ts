@@ -29,6 +29,7 @@ import { negocioDaMetadataStripe } from "../crm/metadata-comercial";
 import { resumoDeCancelamento } from "./stripe-portal-retorno";
 import { periodoCorrente } from "./stripe-financeiro";
 import { ehDoSaas, ignorarNoSync, origemDaAssinatura, origemDaFatura } from "./stripe-origem";
+import { empresaCarimbadaNoCustomer, reconhecerClienteDoSaas } from "./cliente-do-saas";
 import { MARCA_AUTOMATICA, produtoDaSubscriptionDoSync } from "./stripe-produto-do-servico";
 import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 
@@ -217,11 +218,31 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
   const subsDoStripe = await paginate<StripeSubscription>("subscriptions", { status: "all", "expand[]": "data.customer" });
   const subs = subsDoStripe.filter((s) => !ignorarNoSync(origemDaAssinatura(s)));
   const subsDoSaas = subsDoStripe.length - subs.length;
+
   const subsSemMarca = subs.filter((s) => origemDaAssinatura(s).origem !== "crm").length;
 
   // Catálogo price.product -> nome do plano (1 fetch, habilita LTV por plano)
   const products = await paginate<{ id: string; name?: string }>("products", {});
   const productName = new Map(products.map((p) => [p.id, p.name || p.id]));
+
+  /* A assinatura do SaaS continua FORA de tudo que é receita (não entra em
+     `subs`, não vira fatura, contrato nem MRR). Mas quando o Customer dela foi
+     carimbado pelo próprio CRM com uma empresa, o cliente é o mesmo — e o 360
+     mostrava "Contato · Desqualificado" para quem paga a plataforma em dia,
+     porque "quem é cliente" se lê do serviço canônico. Isto materializa só o
+     serviço, fora do portfólio. Ver lib/integrations/cliente-do-saas.ts. */
+  for (const s of subsDoStripe) {
+    if (!ignorarNoSync(origemDaAssinatura(s))) continue;
+    const c = s.customer;
+    const empresaId = typeof c === "string" ? null : empresaCarimbadaNoCustomer(c?.metadata);
+    if (!empresaId) continue;
+    const primeiro = s.items?.data?.[0]?.price?.product;
+    const produtoId = typeof primeiro === "string" ? primeiro : primeiro?.id ?? null;
+    await reconhecerClienteDoSaas(org.id, {
+      id: s.id, status: s.status, empresaId,
+      produto: produtoId ? productName.get(produtoId) ?? null : null,
+    }).catch((e) => console.error(`[StripeSync] cliente do SaaS ${s.id}:`, e instanceof Error ? e.message : e));
+  }
 
   // Faturas: janela de 60d (novas + retries) + TODAS open/uncollectible (sem janela)
   const since = Math.floor(Date.now() / 1000) - 60 * 24 * 3600;

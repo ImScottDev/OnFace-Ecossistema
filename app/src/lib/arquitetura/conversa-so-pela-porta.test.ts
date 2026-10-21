@@ -71,6 +71,7 @@ const SEM_A_PORTA: Record<string, string> = {
   "src/lib/ai-platform/tools/operacao.ts": "ferramenta de agente: a conversa é a do contexto da execução (ctx.contatoId), não um argumento do modelo",
   "src/lib/ai-platform/tools/registry.ts": "ferramenta de agente: lê só a conversa do contexto da execução (ctx.contatoId)",
   "src/lib/atendimento/ia-conversa.ts": "estado da IA; as duas rotas que o chamam checam a porta antes",
+  "src/lib/relatorios/funil-leads.ts": "métrica agregada do funil: só pergunta SE houve mensagem enviada e recebida por lead (bool_or sobre direcao), nunca lê o texto nem abre uma conversa",
   "src/lib/atendimento/lead-da-conversa.ts": "casamento por telefone e checagem da conversa irmã do lead (identidade, nunca o texto da conversa)",
   // Ingestão: `src/worker/index.ts` saiu desta lista em 20/10/2026 — o rodízio de
   // número compartilhado passou a chamar `atendentesDoNumero` da porta.

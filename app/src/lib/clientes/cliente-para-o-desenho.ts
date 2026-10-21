@@ -200,7 +200,11 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
        -- + o serviço que o Ganho acabou de criar (CRM_POSVENDA): nasce fora do portfólio de receita
        -- de propósito (valor 0, não entra no MRR), mas o cliente comprou e o 360 não pode mostrar
        -- "0 produtos" com o onboarding em curso.
-       AND (portfolio_included = true OR billing_source = 'CRM_POSVENDA')
+       -- + o que o cliente assina na plataforma (CALLFACE_AI): também nasce fora do
+       -- portfólio de propósito (não é venda comercial, não entra no MRR), mas é o
+       -- produto que ele usa e paga — esconder deixava a ficha dizendo "Não
+       -- classificado" com "Callface AI - Starter" cobrado todo mês.
+       AND (portfolio_included = true OR billing_source IN ('CRM_POSVENDA', 'CALLFACE_AI'))
      ORDER BY current_recurring_value DESC NULLS LAST`);
 
   /* Cliente que FATURA MRR numa família sem serviço de portfólio ficava com a

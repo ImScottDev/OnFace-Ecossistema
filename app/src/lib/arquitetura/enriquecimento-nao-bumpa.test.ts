@@ -29,6 +29,7 @@ const SRC = path.join(process.cwd(), "src");
  *  decisão consciente, e é isso que o teste força. */
 const BUMP_JUSTIFICADO: Record<string, string> = {
   "lib/integrations/callface.ts": "ligação atendida é atividade real no lead",
+  "lib/integrations/cliente-do-saas.ts": "o serviço entra ou sai do ar junto com a assinatura do SaaS; o bump só acontece quando o ciclo muda (setWhere)",
   "lib/integrations/stripe-sync.ts": "muda o status do contrato/assinatura junto",
   "lib/integrations/stripe-webhook-handlers.ts": "o evento do Stripe muda o estado de verdade: fatura paga, pagamento falhado, assinatura cancelada",
   "lib/integrations/stripe-webhook-inbox-db.ts": "o inbox registra a tentativa de processamento do evento: status e erro mudam a cada tentativa",
