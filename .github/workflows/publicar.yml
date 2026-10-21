@@ -82,7 +82,7 @@ jobs:
           [ -n "$SHA" ] || SHA="$(git rev-parse HEAD)"
           echo "Publicando $SHA em ${{ inputs.ambiente }}"
           if [ "${{ inputs.ambiente }}" = "producao" ]; then
-            ./deploy.sh dev --versao "$SHA"
+            ./deploy.sh producao --versao "$SHA"
           else
             ./deploy.sh homolog "$SHA"
           fi

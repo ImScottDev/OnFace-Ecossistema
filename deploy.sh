@@ -1,14 +1,19 @@
 #!/bin/bash
 # Deploy do ONFACE: imagem pronta do GHCR → servidor → ambiente → migrations → troca.
 #
-#   ./deploy.sh homolog [<sha>]        # publica em HOMOLOGAÇÃO (sem sha: o HEAD, que tem que ser o origin/main)
-#   ./deploy.sh dev --versao <sha>     # PROMOVE para produção o sha já validado em homologação (ou faz rollback)
-#   ./deploy.sh dev                    # publica o HEAD direto em produção (tem que ser o origin/main)
-#   ./deploy.sh <alvo> --seguir        # reata o acompanhamento de um deploy em curso
-#   ./deploy.sh dev --construir-aqui   # fallback: constrói na EC2 (lento; só se o GHCR cair)
+#   ./deploy.sh homolog [<sha>]          # publica em HOMOLOGAÇÃO (sem sha: o HEAD, que tem que ser o origin/main)
+#   ./deploy.sh producao --versao <sha>  # PROMOVE para produção o sha já validado em homologação (ou faz rollback)
+#   ./deploy.sh producao                 # publica o HEAD direto em produção (tem que ser o origin/main)
+#   ./deploy.sh <alvo> --seguir          # reata o acompanhamento de um deploy em curso
+#   ./deploy.sh producao --construir-aqui # fallback: constrói na EC2 (lento; só se o GHCR cair)
 #
 # Alvos (mesma imagem, mesmo código; muda só onde roda):
-#   dev     → /opt/callface/crm2-dev, compose `crm2-dev`. Desde a virada (13/10/2026) é a PRODUÇÃO: https://crm.callface.io (CRM_DOMAIN no .env do servidor)
+#   producao → /opt/callface/crm2-dev, compose `crm2-dev`. O nome da PILHA no servidor ainda é
+#             `crm2-dev` por herança: ela nasceu como ambiente de dev e virou produção em
+#             13/10/2026, sem renomear container nem volume. Renomear a pilha exige dump/restore
+#             do Postgres e janela combinada; até lá o ALVO que se digita diz a verdade e a pilha
+#             guarda o nome velho. `dev` segue aceito como apelido do mesmo alvo.
+#             https://crm.callface.io (CRM_DOMAIN no .env do servidor)
 #   homolog → /opt/callface/crm2-homolog, compose `crm2-homolog`. .env idêntico ao de produção, banco próprio
 #             (cópia). Travas: WhatsApp só para a allowlist, e-mail só @callface.ai: https://dev.crm.callface.io
 #             Fluxo e preparo: docs/operacao/homologacao.md
@@ -39,7 +44,12 @@ set -euo pipefail
 ALVO="${1:-}"
 MODO="${2:-}"
 case "$ALVO" in
-  dev)
+  # `producao` é o nome correto; `dev` é o apelido herdado, mantido para não quebrar
+  # automação antiga (workflow `publicar`, cron, alias de shell) de um dia para o outro.
+  producao|dev)
+    # Canoniza o apelido: o log e o marcador de fim no servidor são nomeados por
+    # $ALVO, então `--seguir` precisa cair no mesmo arquivo seja qual for o nome digitado.
+    ALVO=producao
     DIR=/opt/callface/crm2-dev
     PROJETO=crm2-dev
     CONTAINER_APP=callface-crm2-dev-app
@@ -52,7 +62,8 @@ case "$ALVO" in
     CONTAINER_WORKER=callface-crm2-homolog-worker
     ;;
   *)
-    echo "uso: ./deploy.sh homolog [<sha>] | ./deploy.sh dev [--seguir | --versao <sha> | --construir-aqui]" >&2
+    echo "uso: ./deploy.sh homolog [<sha>] | ./deploy.sh producao [--seguir | --versao <sha> | --construir-aqui]" >&2
+    echo "     (o alvo 'dev' é apelido de 'producao': a pilha crm2-dev é a PRODUÇÃO desde 13/10/2026)" >&2
     exit 1
     ;;
 esac
