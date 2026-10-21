@@ -7,6 +7,7 @@ import { Cf2Button } from "@/components/crm2/ui/Button";
 import { FinPulso, FinStat } from "./pecas";
 import { fmt } from "./fmt";
 import { TabAssinaturas } from "./TabAssinaturas";
+import { FilaExcecoesPabx } from "./FilaExcecoesPabx";
 
 /**
  * Importação mensal PABX: alinhada à API do Service Ledger.
@@ -39,6 +40,15 @@ type Preview = {
   summary: Resumo;
   erros: string[];
   rows: LinhaPreview[];
+};
+type FilaExcecoes = {
+  lote: { competencia: string; status: string } | null;
+  resumo: { quantidade: number; valor: number };
+  pendencias: {
+    id: string; linha: number; empresa: string; valor: number;
+    familia: string; natureza: string; confianca: string; motivo: string | null;
+  }[];
+  parcial: boolean;
 };
 type UltimaCarga = {
   competence: string;
@@ -73,6 +83,16 @@ export function TabPabx({ busca, onAbrirLead }: { busca: string; onAbrirLead: (l
     queryFn: async () => {
       const r = await fetch("/api/financeiro/pabx-import");
       if (!r.ok) throw new Error(r.status === 403 ? "Você não tem permissão para gerenciar o faturamento." : `Falha ao consultar a carga (HTTP ${r.status}).`);
+      return r.json();
+    },
+  });
+  const { data: fila, error: erroFila } = useQuery<FilaExcecoes>({
+    queryKey: ["fin-pabx-excecoes"],
+    queryFn: async () => {
+      const r = await fetch("/api/financeiro/pabx-excecoes");
+      if (!r.ok) throw new Error(
+        r.status === 403 ? "Acesso às pendências não autorizado" : "Falha ao carregar pendências do lote",
+      );
       return r.json();
     },
   });
@@ -120,6 +140,7 @@ export function TabPabx({ busca, onAbrirLead }: { busca: string; onAbrirLead: (l
             : `Lote importado em ${fechar ? "competência fechada" : "estado aberto"}: ${j.summary?.rows ?? 0} linhas, ${j.summary?.unresolved ?? 0} não resolvidas e ${j.summary?.ambiguous ?? 0} ambíguas.`,
         });
         queryClient.invalidateQueries({ queryKey: ["fin-pabx-carga"] });
+        queryClient.invalidateQueries({ queryKey: ["fin-pabx-excecoes"] });
       }
     } catch (e) {
       setResultado({ erro: true, texto: e instanceof Error ? e.message : "Erro ao processar a planilha." });
@@ -220,13 +241,15 @@ export function TabPabx({ busca, onAbrirLead }: { busca: string; onAbrirLead: (l
               {preview.summary.ambiguous + preview.summary.unresolved > 20 && <p className="text-xs mt-2">Mostrando as primeiras 20 exceções. Nenhuma foi conciliada automaticamente.</p>}
             </div>
             <div className="flex gap-2 flex-wrap">
-              <Cf2Button disabled={enviando} loading={enviando} onClick={() => processar("commit", false)}>Importar como lote aberto</Cf2Button>
+              <Cf2Button disabled={enviando || preview.erros.length > 0} loading={enviando} onClick={() => processar("commit", false)}>Importar como lote aberto</Cf2Button>
               {!temPendencias && <Cf2Button disabled={enviando} loading={enviando} onClick={() => processar("commit", true)}>Importar e fechar competência</Cf2Button>}
+              {preview.erros.length > 0 && <p className="text-xs text-[var(--cf2-text-secondary)]">A importação está bloqueada até o CSV ser corrigido, inclusive para lotes abertos.</p>}
             </div>
           </div>
         )}
       </section>
 
+      <FilaExcecoesPabx fila={fila} erro={erroFila} />
       <TabAssinaturas busca={busca} onAbrirLead={onAbrirLead} produto="pabx" pulso={false} />
     </div>
   );

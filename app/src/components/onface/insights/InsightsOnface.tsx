@@ -17,6 +17,7 @@ import { GO_LIVE, GO_LIVE_ISO, parsePeriodo } from "@/lib/relatorios/periodo";
 import { moeda } from "@/components/onface/vendas/formato";
 import { TabFechamento } from "./TabFechamento";
 import { TabExecutivo } from "./TabExecutivo";
+import { TabQualidadeDados } from "./TabQualidadeDados";
 import { BlocoGestao } from "./BlocoGestao";
 import { Tablist } from "@/components/onface/ds/escolha";
 import { preencherSemanas, type Semana } from "./semanas";
@@ -48,6 +49,7 @@ const ABAS_GESTAO = [
   { key: "marketing", label: "Marketing" },
   { key: "midia-paga", label: "Mídia paga" },
   { key: "fechamento", label: "Fechamento" },
+  { key: "qualidade", label: "Qualidade dos dados" },
 ] as const;
 const ABAS_PESSOAIS = [
   { key: "comercial", label: "Meu desempenho" },
@@ -127,7 +129,7 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
               : <>{gestao || meLoading ? "Desempenho da operação" : "Seus números"} · histórico confiável desde{" "}{GO_LIVE.toLocaleDateString("pt-BR")}, quando a base saiu do Zoho.</>}
           </p>
         </div>
-        {abaAtiva === "executivo" ? null : <SeletorPeriodo value={periodo} onChange={setPeriodo} />}
+        {abaAtiva === "executivo" || abaAtiva === "qualidade" ? null : <SeletorPeriodo value={periodo} onChange={setPeriodo} />}
       </header>
 
       {meLoading ? (
@@ -136,7 +138,7 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
           <span className="ins-rotulo-escuro">Carregando…</span>
           <div className="ins-hero-valor"><strong>—</strong></div>
         </section>
-      ) : abaAtiva === "executivo" ? null : isSdr && !gestao ? (
+      ) : abaAtiva === "executivo" || abaAtiva === "qualidade" ? null : isSdr && !gestao ? (
         <HeroSdr periodo={periodo} />
       ) : (
         <HeroComercial periodo={periodo} gestao={gestao} />
@@ -187,6 +189,7 @@ export function InsightsOnface({ abaInicial, periodoInicial, familiaInicial = ""
                 {abaAtiva === "marketing" && <TabMarketing periodo={periodo} />}
                 {abaAtiva === "midia-paga" && <TabMidiaPaga periodo={periodo} />}
                 {abaAtiva === "fechamento" && <TabFechamento periodo={periodo} />}
+                {abaAtiva === "qualidade" && <TabQualidadeDados />}
               </>
             ) : abaAtiva === "sdr" ? (
               <TabSdr periodo={periodo} />

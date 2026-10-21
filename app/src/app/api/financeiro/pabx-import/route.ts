@@ -220,8 +220,8 @@ export async function GET() {
   const [latest] = await db.execute(sql`
     SELECT b.id, b.competence::text, b.version, b.source_file, b.source_sha256,
       b.expected_total, b.imported_total, b.row_count, b.status, b.imported_at, b.closed_at,
-      COALESCE(SUM(e.billed_value) FILTER (WHERE e.confidence != 'CONFIRMED'), 0)::numeric AS unresolved_total,
-      COUNT(e.id) FILTER (WHERE e.confidence != 'CONFIRMED')::int AS unresolved_rows
+      COALESCE(SUM(e.billed_value) FILTER (WHERE e.confidence != 'CONFIRMED' OR e.revenue_nature='UNKNOWN' OR e.service_family='UNKNOWN' OR e.service_id IS NULL), 0)::numeric AS unresolved_total,
+      COUNT(e.id) FILTER (WHERE e.confidence != 'CONFIRMED' OR e.revenue_nature='UNKNOWN' OR e.service_family='UNKNOWN' OR e.service_id IS NULL)::int AS unresolved_rows
     FROM service_ledger_batches b
     LEFT JOIN service_ledger_entries e ON e.batch_id = b.id
     WHERE b.organizacao_id = ${ctx.organizacaoId}
@@ -253,6 +253,11 @@ export async function POST(request: NextRequest) {
   const buffer = await uploaded.arrayBuffer();
   const parsed = parseSpreadsheet(buffer, uploaded.name || "faturamento.csv");
   if (!parsed.rows.length) return NextResponse.json({ error: "Nenhuma linha importável", erros: parsed.errors }, { status: 400 });
+  // Uma importação parcial perderia lançamentos inválidos/duplicados. Preview
+  // pode diagnosticar os erros, mas COMMIT só aceita o arquivo íntegro.
+  if (acao === "commit" && parsed.errors.length > 0) {
+    return NextResponse.json({ error: "Corrija as linhas inválidas, duplicadas ou o total do CSV antes de importar.", erros: parsed.errors }, { status: 422 });
+  }
   const matched = await matchRows(ctx.organizacaoId, parsed.rows);
   const summary = {
     rows: matched.length,
@@ -296,7 +301,7 @@ export async function POST(request: NextRequest) {
         // antes de fechar, revalidar o lote persistido, dentro do mesmo lock.
         const [qualidade] = await tx.execute<{ pendentes: number }>(sql`
           SELECT count(*)::int AS pendentes FROM service_ledger_entries
-          WHERE batch_id = ${existing.id} AND (confidence != 'CONFIRMED' OR revenue_nature = 'UNKNOWN')
+          WHERE batch_id = ${existing.id} AND (confidence != 'CONFIRMED' OR revenue_nature = 'UNKNOWN' OR service_family = 'UNKNOWN' OR service_id IS NULL)
         `);
         if (Number(qualidade?.pendentes ?? 0) > 0) {
           return { id: existing.id, alreadyPresent: true, closed: false, conflict: "OPEN_UNRESOLVED" as const };
