@@ -96,7 +96,7 @@ export function AnuncioDeOrigem({ adId, adAccountId, nome, rotulo = "Ver anúnci
         type="button"
         onClick={(e) => { e.stopPropagation(); setAberta(true); }}
         className={className}
-        style={className ? undefined : { fontSize: "12px", color: "var(--of-acao, #c2330f)", textDecoration: "underline", background: "none", border: 0, padding: 0, cursor: "pointer" }}
+        style={className ? undefined : { fontSize: "12px", color: "var(--of-coral-acao)", textDecoration: "underline", background: "none", border: 0, padding: 0, cursor: "pointer" }}
       >
         {rotulo}
       </button>
@@ -114,7 +114,7 @@ export function AnuncioDeOrigem({ adId, adAccountId, nome, rotulo = "Ver anúnci
             {carregando && <p className="text-[13px] opacity-70">Buscando o criativo na Meta…</p>}
 
             {erro && (
-              <div className="text-[13px]" style={{ color: "var(--of-alerta, #c2330f)" }}>
+              <div className="text-[13px]" style={{ color: "var(--of-coral-acao)" }}>
                 <p className="font-semibold">Não deu para carregar o criativo.</p>
                 <p className="opacity-80">{erro}</p>
               </div>
@@ -127,14 +127,14 @@ export function AnuncioDeOrigem({ adId, adAccountId, nome, rotulo = "Ver anúnci
                 title={`Prévia do anúncio ${titulo}`}
                 width="100%"
                 height={560}
-                style={{ border: "1px solid var(--of-borda, #e3e7e8)", borderRadius: "var(--of-raio-m, 12px)" }}
+                style={{ border: "1px solid var(--of-linha)", borderRadius: "var(--of-r-painel)" }}
               />
             ) : previa?.thumbnailUrl ? (
               /* Sem prévia renderizada (formato não suportado), a miniatura
                  ainda identifica o criativo. */
               // eslint-disable-next-line @next/next/no-img-element
               <img src={previa.thumbnailUrl} alt={`Criativo do anúncio ${titulo}`}
-                style={{ width: "100%", borderRadius: "var(--of-raio-m, 12px)", border: "1px solid var(--of-borda, #e3e7e8)" }} />
+                style={{ width: "100%", borderRadius: "var(--of-r-painel)", border: "1px solid var(--of-linha)" }} />
             ) : null}
 
             <dl className="text-[12px] flex flex-col gap-1">
@@ -153,7 +153,7 @@ export function AnuncioDeOrigem({ adId, adAccountId, nome, rotulo = "Ver anúnci
             {gerenciador && (
               <a href={gerenciador} target="_blank" rel="noreferrer"
                 className="text-[12px] font-semibold"
-                style={{ color: "var(--of-acao, #c2330f)" }}>
+                style={{ color: "var(--of-coral-acao)" }}>
                 Abrir no Gerenciador de Anúncios ↗
               </a>
             )}
