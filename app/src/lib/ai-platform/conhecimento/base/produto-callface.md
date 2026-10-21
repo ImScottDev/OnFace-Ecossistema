@@ -4,8 +4,8 @@ nome: O produto Callface (capacidades reais)
 categoria: produto
 governanca: aprovado
 origem: vault:02_PROJETOS/Callface/ESTRATEGIA/produto.md
-nota: mapa do produto navegado ao vivo em 11/06/2026; conferir capacidades novas com o time
-gerado_em: 2026-10-12
+nota: mapa de 11/06/2026 mais o estado verificado em 21/10/2026, navegado tela a tela com as versoes 2.16 a 2.21
+gerado_em: 2026-10-21
 ---
 
 # Callface — O Produto de Ponta a Ponta
@@ -159,3 +159,99 @@ Não fechar nada antes de cruzar com icp-callface (dores reais) numa sessão ded
 - PABX: R$51,6k/mes (12,8%) tocado por churn/downgrade aberto — maior parte downgrade em 5 contas grandes (Hospital Care, Vera Cruz, ELGIN, Atrio, Starsoft). Churn puro ainda faturando ~R$5,6k.
 - Callface.ai: churn de ~15%/mes em maio (16 cancels, R$5,4k MRR).
 - Deals de churn sem Amount desde jun/2025 (impossivel medir R$ no Zoho) e 53 parados no stage Contrato.
+
+---
+
+## Estado verificado do produto em 21/10/2026
+
+Escrito navegando a plataforma logado como administrador, tela por tela, e lendo
+as notas das versões 2.16 a 2.21. **Onde esta seção divergir do que está acima,
+esta seção vale** — o mapa anterior é de 11/06/2026 e o produto andou.
+
+### O que a plataforma faz hoje
+
+**Fazer a ligação**
+- **Discador preditivo** com campanha: progresso em leads discados, taxa de
+  sucesso, e política de retentativa configurável por campanha — número de
+  tentativas (1 a 10), intervalo mínimo (30 min a 24 h ou personalizado) e em
+  quais desfechos tentar de novo (não atendeu, ocupado, caixa postal, não
+  completada). Número inválido nunca é retentado.
+- **Agentes de IA de voz**: ligam sozinhos, conversam e qualificam. Quatro vozes
+  (Roberta, Yuri, Keren, Lax). Cada agente tem primeira mensagem com variáveis
+  no formato `{{variavel}}`, roteiro (system prompt) e **coleta de dados**:
+  campos customizados com nome, tipo (texto, número, verdadeiro/falso, data) e
+  descrição do que capturar da fala.
+- **Agente de prospecção**: um por organização. Liga automaticamente para todo
+  contato que entra pelo webhook de entrada. Pode ter um número de WhatsApp que
+  recebe aviso quando o lead demonstra interesse.
+- **BINA inteligente**, **chamada de vídeo** e **webphone** com escuta, sussurro
+  e invasão para supervisor.
+
+**Analisar a ligação**
+- Transcrição, resumo em markdown, áudio para download.
+- **Chance de fechar** (percentual) e **urgência do cliente**.
+- **Scorecard de 0 a 100** por template (Vendas, Suporte, Cobrança, Customer
+  Success), com quatro critérios ponderados cada. Por critério: nota, peso,
+  contribuição, racional escrito pela IA e **evidências com minuto, quem falou e
+  grau de aderência**. Marca o que está ancorado na conversa e o que não está.
+  Atribuição por time; os pesos somam 100.
+- **Resumo e scorecard só saem em conversa real**: mínimo de 30 segundos, 20
+  palavras e ao menos uma fala do cliente.
+- **Objeções detectadas** em códigos normalizados: falta de tempo, sem interesse
+  declarado, bloqueio técnico, preferência por concorrente, falta de necessidade.
+- **Qualificação** do agente: Qualificado, Parcial, Não qualificado, Sem
+  informação, Inelegível, Não avaliada.
+- **Desfecho** normalizado: reunião agendada, proposta enviada, venda, perdida,
+  follow-up, descoberta, entre outros.
+
+**CallPilot (durante a ligação)**
+- Copiloto ao vivo no webphone: transcrição em dois canais, sugestões, sentimento
+  e coach. Sobe sozinho só quando há conversa de verdade.
+- **Base da empresa**: nove seções que alimentam as sugestões — a empresa, para
+  quem vendemos, para quem não vendemos, o que vendemos com preços, **o que
+  nunca prometer**, provas e cases, tom de voz, metodologia e perguntas de
+  descoberta, objeções com a resposta que funciona. Aceita upload de TXT, MD e
+  PDF (sem OCR).
+- Sem objeção cadastrada, ele avisa que o cliente objetou e **não inventa** a
+  resposta. "O que nunca prometer" vira restrição dura: sugestão que viola é
+  barrada antes de chegar na tela.
+- Por ligação, mostra quantas dicas foram dadas, quantas usadas, aproveitamento,
+  e aponta padrão repetido do vendedor (ex.: apresentar produto antes de mapear
+  necessidade).
+
+**Organizar**
+- **Tarefas geradas pela IA** a partir da ligação, com categoria (agendar
+  reunião, enviar material, enviar proposta, follow-up), canal, prazo e a
+  citação da transcrição que a originou. Configurável: nenhuma ligação gera
+  tarefa, só as de campanha, ou todas. Ligação do CallPilot nunca gera tarefa.
+- **Relatórios** em três abas. Ativo: ligações, minutos, atendidas, tempo médio,
+  não atendidas, scorecard médio, ranking por vendedor, volume por horário.
+  Receptivo: abandono (meta abaixo de 5%), nível de serviço (atendidas em menos
+  de 30s, meta 80%), fila média, e a lista de chamadas abandonadas com tempo de
+  espera. Agentes IA: chamadas por status, por agente, por campanha, e
+  **minutos de agente consumidos contra o contratado**.
+- **15 integrações de CRM** prontas, mais webhook de saída e de entrada.
+
+### Para quem vende: o que mudou e vale dizer ao cliente
+
+- Caixa postal agora é status próprio, não se mistura a "não atendida".
+- Planilhas de campanha saem em português e no horário de Brasília.
+- O cliente cancela o plano sozinho pelo portal, vendo antes o que a equipe usou
+  no mês; cancelamento em até 7 dias de uma cobrança paga devolve o valor.
+- Parceiro white label configura a própria marca (logo, favicon, cores, domínio)
+  e cria organizações e usuários sem abrir chamado.
+- Acima de 80 ligações simultâneas a central recusa a nova em vez de degradar o
+  áudio de todas.
+
+### Limites honestos, para não prometer o que não existe
+
+- **Um webhook de saída por organização**, e ele não manda scorecard, dados
+  coletados, qualificação nem minuto tarifado — só resumo, transcrição, áudio,
+  duração, status, chance de fechar e agendamento.
+- **Um agente de prospecção por organização**: não dá para rotear leads
+  diferentes para agentes diferentes pelo webhook de entrada.
+- Todo contato do webhook de entrada cai numa campanha fixa, a "Funil" da
+  organização.
+- A edição dos critérios do scorecard ainda não está disponível na tela.
+- Não há webhook de fim de campanha, de tarefa nem de qualificação.
+- Minutos de agente são cota: campanha para quando acaba.
