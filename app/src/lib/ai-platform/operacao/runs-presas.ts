@@ -67,28 +67,63 @@ export async function encerrarRunsPresas(minutos = MINUTOS_ATE_DAR_POR_PERDIDA):
  * atendendo, horário, taxa, teto de gasto).
  */
 export async function recuperarRunsPresas(minutos = MINUTOS_ATE_DAR_POR_PERDIDA): Promise<{ encerradas: number; retomadas: number }> {
-  const presas = await encerrarRunsPresas(minutos);
+  const encerradas = (await encerrarRunsPresas(minutos)).length;
+  const retomadas = await responderQuemFicouNoVacuo(minutos);
+  return { encerradas, retomadas };
+}
+
+/**
+ * O cliente escreveu e ninguém respondeu. Esse é o critério — não "execução
+ * presa".
+ *
+ * A primeira versão disto só retomava as conversas cujas execuções ELA MESMA
+ * tinha acabado de encerrar. Quem já estava órfão antes (porque alguém
+ * destravou a execução na mão, porque a execução morreu sem deixar linha, ou
+ * porque a mensagem nunca chegou a virar execução) continuava no vácuo para
+ * sempre. O defeito que a varredura existia para corrigir sobrevivia à
+ * varredura.
+ *
+ * Aqui a pergunta é a do cliente: a última mensagem da conversa é dele, já
+ * passou tempo demais, e o número é de um agente que deveria ter respondido.
+ * `atenderPeloNumeroDoAgente` decide o resto — se há agente, se há motivo para
+ * calar (opt-out, pausa, pessoa atendendo), horário, taxa e teto de gasto.
+ */
+async function responderQuemFicouNoVacuo(minutos: number): Promise<number> {
+  const paradas = await db.execute<{
+    contato_id: string; organizacao_id: string; lead_id: string | null;
+    sessao_id: string | null; mensagem_id: string; conteudo: string;
+  }>(sql`
+    SELECT DISTINCT ON (m.contato_id)
+           m.contato_id::text, m.organizacao_id::text, c.lead_id::text,
+           c.sessao_id::text, m.id::text AS mensagem_id, m.conteudo
+      FROM whatsapp_mensagens m
+      JOIN contatos c ON c.id = m.contato_id
+      JOIN whatsapp_sessao s ON s.id = c.sessao_id AND NOT s.privado
+     WHERE m.created_at > now() - interval '24 hours'
+       AND m.created_at < now() - ${minutos}::int * interval '1 minute'
+       AND coalesce(m.conteudo, '') <> ''
+     ORDER BY m.contato_id, m.created_at DESC`);
+
   let retomadas = 0;
-
-  for (const p of presas) {
-    if (!p.contatoId) continue;
+  for (const p of paradas as unknown as Array<Record<string, string | null>>) {
     try {
-      const [ultima] = await db.execute<{ id: string; conteudo: string | null; direcao: string }>(sql`
-        SELECT id::text, conteudo, direcao FROM whatsapp_mensagens
-         WHERE contato_id = ${p.contatoId}::uuid ORDER BY created_at DESC LIMIT 1`);
-      if (!ultima || ultima.direcao !== "in" || !ultima.conteudo?.trim()) continue;
+      // `DISTINCT ON` já deu a última mensagem da conversa; só interessa quem parou numa mensagem DO CONTATO.
+      const [ultima] = await db.execute<{ direcao: string }>(sql`
+        SELECT direcao FROM whatsapp_mensagens WHERE id = ${p.mensagem_id}::uuid`);
+      if (ultima?.direcao !== "in") continue;
 
-      const { acionarAgente, EVENTO_MENSAGEM } = await import("./acionar");
-      const r = await acionarAgente({
-        organizacaoId: p.organizacaoId, agentId: p.agentId, contatoId: p.contatoId, leadId: p.leadId,
-        evento: EVENTO_MENSAGEM, mensagem: ultima.conteudo, sourceMessageId: ultima.id,
-        motivoDaExecucao: "retomada após execução interrompida",
+      const { atenderPeloNumeroDoAgente } = await import("./numero-do-agente");
+      const r = await atenderPeloNumeroDoAgente({
+        organizacaoId: p.organizacao_id!, contatoId: p.contato_id!, leadId: p.lead_id,
+        sessaoId: p.sessao_id, mensagem: p.conteudo!, sourceMessageId: p.mensagem_id,
       });
-      if (r.resultado === "respondeu" || r.resultado === "handover") retomadas++;
+      if (r.tratado && r.resultado === "respondeu") {
+        retomadas++;
+        console.log(`[RunsPresas] conversa ${p.contato_id} estava no vácuo e foi retomada`);
+      }
     } catch (e) {
-      console.error(`[RunsPresas] não retomou a conversa ${p.contatoId}:`, e instanceof Error ? e.message : e);
+      console.error(`[RunsPresas] não retomou a conversa ${p.contato_id}:`, e instanceof Error ? e.message : e);
     }
   }
-
-  return { encerradas: presas.length, retomadas };
+  return retomadas;
 }
