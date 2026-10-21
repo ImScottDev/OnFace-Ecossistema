@@ -475,12 +475,32 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
     },
   },
   {
-    id: "contact.propose_field", name: "contact_propose_field", description: "Propõe alteração de nome, email ou telefone para confirmação humana; não altera direto.", category: "crm", mutates: true,
+    id: "contact.propose_field", name: "contact_propose_field", description: "Registra nome, email ou telefone que o contato informou. Campo vazio é preenchido na hora; alterar valor que já existe vira proposta para uma pessoa confirmar.", category: "crm", mutates: true,
     parameters: objectSchema({ campo: { type: "string", enum: ["nome", "email", "telefone"] }, valor: stringProp("Novo valor"), trecho: stringProp("Trecho que comprova") }, ["campo", "valor"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "contact.propose_field", input); if (simulated) return simulated;
       if (!ctx.contatoId) return { ok: false, error: "contato ausente" };
       const contact = await contactContext(ctx); const campo = String(input.campo) as "nome" | "email" | "telefone";
+
+      /* Preencher um vazio NÃO é alterar cadastro: não há dado para destruir, e
+         exigir confirmação humana aqui custava caro — a reunião era marcada sem
+         e-mail, o convite não saía e o cliente não recebia nada. A agente pede o
+         e-mail e grava. Mudar valor que JÁ existe continua sendo proposta, que é
+         onde mora o risco de sobrescrever o certo pelo errado. */
+      const atual = (contact?.[campo] ?? "").toString().trim();
+      if (!atual) {
+        const valor = String(input.valor).trim();
+        if (campo === "email" && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(valor)) return { ok: false, error: "e-mail inválido: confirme com o contato e tente de novo" };
+        await db.update(contatos).set({ [campo]: valor, updatedAt: new Date() }).where(and(eq(contatos.id, ctx.contatoId), eq(contatos.organizacaoId, ctx.organizacaoId)));
+        // O lead é quem a equipe abre; sem isto o dado ficava só na conversa.
+        const leadDoContato = ctx.leadId ?? contact?.leadId ?? null;
+        if (leadDoContato && campo === "email") {
+          await db.execute(sql`UPDATE leads SET email = COALESCE(NULLIF(email,''), ${valor}), updated_at = now() WHERE id = ${leadDoContato}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+        }
+        await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: leadDoContato, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: `${campo === "email" ? "E-mail" : campo === "telefone" ? "Telefone" : "Nome"} informado pelo contato`, descricao: input.trecho ? `${valor}\n\n"${String(input.trecho)}"` : valor, dados: { aiRunId: ctx.runId, agentId: ctx.agentId, ferramenta: "contact.propose_field", campo } });
+        return { ok: true, data: { campo, valor, gravado: true } };
+      }
+
       const [proposal] = await db.insert(aiContactFieldProposals).values({ organizacaoId: ctx.organizacaoId, contatoId: ctx.contatoId, campo, valorProposto: String(input.valor), valorAnterior: contact?.[campo] ?? null, trecho: input.trecho ? String(input.trecho) : null, proposedByAgentId: ctx.agentId, expiresAt: new Date(Date.now() + 7 * 86_400_000) }).onConflictDoNothing().returning();
       return { ok: true, data: proposal ?? { deduplicated: true } };
     },
