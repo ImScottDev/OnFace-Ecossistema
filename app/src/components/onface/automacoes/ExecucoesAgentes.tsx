@@ -193,7 +193,7 @@ function Gaveta({ id, onClose, voltarFoco }: { id: string | null; onClose: () =>
                       <code>{f.nome}</code>
                       {f.simulada ? <span className="exe-selo" data-tom="atencao">Simulada</span> : null}
                       {f.aguardaAprovacao ? <span className="exe-selo" data-tom="atencao">Aguarda aprovação</span> : null}
-                      {f.erro ? <span className="exe-selo" data-tom="erro">Erro</span> : <span className="exe-selo" data-tom={f.status === "completed" ? "ok" : "neutro"}>{f.status === "completed" ? "Concluída" : f.status}</span>}
+                      {f.erro ? <span className="exe-selo" data-tom="erro">Erro</span> : <span className="exe-selo" data-tom={f.status === "completed" ? "ok" : "neutro"}>{f.status === "completed" ? "Concluída" : f.status === "preview" ? "Não executada" : f.status}</span>}
                       <span className="exa-fraco">{dur(f.latenciaMs)}</span>
                     </summary>
                     {f.erro ? <p className="exe-erro" data-tom="erro">{f.erro}</p> : null}

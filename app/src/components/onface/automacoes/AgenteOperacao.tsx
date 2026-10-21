@@ -479,7 +479,7 @@ function ResultadoSimulacao({ r }: { r: Resultado }) {
                     <strong>{f.nome}</strong>
                     {f.simulada ? <span className="agn-selo"><i />Simulada</span> : null}
                     {f.aguardaAprovacao ? <span className="agn-selo" data-tom="alerta"><i />Pediria aprovação</span> : null}
-                    <span className="agn-selo" data-tom={f.erro ? "alerta" : undefined}><i />{f.erro ? "Recusada" : f.status === "completed" ? "Concluída" : f.status}</span>
+                    <span className="agn-selo" data-tom={f.erro ? "alerta" : undefined}><i />{f.erro ? "Recusada" : f.status === "completed" ? "Concluída" : f.status === "preview" ? "Não executada" : f.status}</span>
                   </div>
                   <span className="age-texto-fraco">{f.erro ? f.erro : `Resultado ${f.simulada ? "(simulado, nada foi alterado)" : ""}: ${curto(f.resultado)}`}</span>
                   <details className="age-tool-det"><summary>Entrada enviada à ferramenta</summary><pre>{json(f.entrada)}</pre></details>

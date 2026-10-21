@@ -403,6 +403,17 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       if (cost > tetoDaExecucao) throw new Error(`Orçamento da execução estourado: US$ ${cost.toFixed(4)} passou do teto de US$ ${tetoDaExecucao.toFixed(4)} desta versão`);
     };
 
+    /* Ferramenta que só foi SIMULADA não pode ficar gravada como "concluída".
+       Em modo de teste, em copiloto e em "sob aprovação", `preview()` devolve
+       `ok: true` sem escrever nada — e o passo ia para o banco como `completed`,
+       igualzinho a uma ação de verdade. Medido em produção (21/10/2026): o
+       agente copiloto-cs tem 178 passos "concluídos" que não escreveram UMA
+       linha (`activity_note` 87 simulados e 0 reais, `task_create` 89 e 0), e
+       `atividades tipo='nota_agente'` está em zero no banco inteiro. Uma
+       operação parada parecendo saudável no log. */
+    const statusDoPasso = (r: AgentToolResult): string =>
+      !r.ok ? "failed" : (r.data as { preview?: unknown } | undefined)?.preview === true ? "preview" : "completed";
+
     const sinais: SinaisDaExecucao = { falhasDeFerramenta: 0, confianca: null };
     const registrarSinal = (nome: string, resultado: AgentToolResult) => {
       if (!resultado.ok) { sinais.falhasDeFerramenta++; return; }
@@ -445,7 +456,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       for (const call of subscription.toolCalls) {
         await persistStep({
           organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name,
-          status: call.result.ok ? "completed" : "failed", input: call.input, output: call.result,
+          status: statusDoPasso(call.result as AgentToolResult), input: call.input, output: call.result,
           errorCode: call.result.ok ? undefined : "tool_failed", errorMessage: call.result.error,
         });
         const previewData = call.result.data && typeof call.result.data === "object" ? call.result.data as Record<string, unknown> : null;
@@ -482,7 +493,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
           const startedTool = Date.now();
           try { result = await executeRegisteredTool(call.name, toolCtx, call.input); }
           catch (error) { result = { ok: false, error: error instanceof Error ? error.message : String(error) }; }
-          await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name, status: result.ok ? "completed" : "failed", input: call.input, output: result, latencyMs: Date.now() - startedTool, errorCode: result.ok ? undefined : "tool_failed", errorMessage: result.error });
+          await persistStep({ organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: call.name, status: statusDoPasso(result), input: call.input, output: result, latencyMs: Date.now() - startedTool, errorCode: result.ok ? undefined : "tool_failed", errorMessage: result.error });
         }
         const previewData = result.data && typeof result.data === "object" ? result.data as Record<string, unknown> : null;
         if (input.mode === "live" && previewData?.approvalRequired) {
@@ -518,7 +529,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
         });
         await persistStep({
           organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "tool_call", name: "handoff_request",
-          status: r.ok ? "completed" : "failed", input: { motivo: motivoAutomatico, origem: "politica_da_versao" }, output: r,
+          status: statusDoPasso(r), input: { motivo: motivoAutomatico, origem: "politica_da_versao" }, output: r,
           errorCode: r.ok ? undefined : "tool_failed", errorMessage: r.error,
         });
         trace.push({ type: "tool_call", name: "handoff_request", ok: r.ok, handoff: true, origem: "politica_da_versao" });
