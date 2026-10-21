@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auditLog, organizacoes, usuarios } from "@/lib/db/schema";
 import { getCtx } from "../compat.js";
-import { ErroDeRegra, historicoDasRegras, listarRegras, removerRegra, salvarRegra } from "@/lib/agentes/distribuicao";
+import { ErroDeRegra, historicoDasRegras, listarRegras, opcoesDeCriterios, removerRegra, resolverPorRegra, salvarRegra } from "@/lib/agentes/distribuicao";
 import { sincronizarUsuariosDosAgentes } from "@/lib/agentes/usuario-do-agente";
 import { lerPadroesDeAgentes } from "@/lib/agentes/handover";
 
@@ -39,6 +39,16 @@ const regraSchema = z.object({
   sessaoWhatsappId: z.string().uuid().nullish(),
 });
 
+/** Um lead hipotético: o que se sabe de onde ele veio. Campo em branco = o lead não traz o dado. */
+const valorSimulado = z.string().trim().max(200).nullish();
+const simulacaoSchema = z.object({
+  origem: valorSimulado,
+  utmSource: valorSimulado,
+  utmCampaign: valorSimulado,
+  metaCampaignId: valorSimulado,
+  formulario: valorSimulado,
+});
+
 const padroesSchema = z.object({
   humanoDevolucaoPadraoId: z.string().uuid().nullable(),
   agenteFollowupPadraoId: z.string().uuid().nullable(),
@@ -54,6 +64,30 @@ app.get("/", async (c) => {
   ]);
   const inbound = ((org[0]?.settings as { preVendas?: { responsavelInboundId?: string } } | null)?.preVendas?.responsavelInboundId) ?? null;
   return c.json({ regras, historico, padroes: { ...padroes, responsavelInboundId: inbound } });
+});
+
+/**
+ * Valores de campanha, fonte, origem, campanha da Meta e formulário que a
+ * organização já tem em leads, com a contagem de cada um. A tela oferece em vez
+ * de pedir digitação; a organização vem da sessão, nunca do cliente.
+ */
+app.get("/opcoes", async (c) => {
+  const ctx = await getCtx(c);
+  if (!GESTAO.includes(ctx.userRole)) return c.json({ error: "Forbidden" }, 403);
+  return c.json(await opcoesDeCriterios(ctx.organizacaoId));
+});
+
+/**
+ * "Para onde este lead iria?": roda as mesmas regras sem gastar o rodízio
+ * (`simular`), para conferir prioridade e destino antes de o lead real chegar.
+ */
+app.post("/simular", async (c) => {
+  const ctx = await getCtx(c);
+  if (!GESTAO.includes(ctx.userRole)) return c.json({ error: "Forbidden" }, 403);
+  const parsed = simulacaoSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "Dados inválidos" }, 400);
+  const resultado = await resolverPorRegra({ organizacaoId: ctx.organizacaoId, atribuicao: parsed.data, simular: true });
+  return c.json({ resultado });
 });
 
 app.post("/regras", async (c) => {

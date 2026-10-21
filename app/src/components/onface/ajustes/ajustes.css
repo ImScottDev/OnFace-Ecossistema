@@ -264,10 +264,31 @@
    não cresce, senão pílula, atualizar e CTA empilham um sobre o outro. */
 .aj-secao-cabeca > .aj-secao-acao { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem; flex: 0 0 auto; }
 
+/* O handoff gera `button{border:0;background:none;...}` em `proto/*Desenho.css`,
+   FORA de qualquer `@layer`. CSS sem camada vence qualquer camada, então o
+   `Button` e o `Switch` do DS (utilitários do Tailwind, em `@layer utilities`)
+   chegam às telas do produto sem fundo e sem borda: o CTA coral vira texto solto.
+   `revert-layer`, também sem camada e com seletor mais específico que `button`,
+   devolve o que a camada do Tailwind tinha dito. Escopo em `.aj-secao` de
+   propósito: aqui o DS é a fonte, e o resto do produto segue como está até
+   alguém decidir mexer no gerador. */
+.aj-secao [data-slot="button"], .aj-secao [data-slot="switch"] {
+  background: revert-layer;
+  border-width: revert-layer;
+  border-style: revert-layer;
+  border-color: revert-layer;
+  color: revert-layer;
+}
+
 .aj-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem 1rem; }
 .aj-campo { display: flex; flex-direction: column; gap: 0.375rem; min-width: 0; }
 .aj-campo > span:first-child { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-strong); }
 .aj-campo small { font-size: var(--text-xs); line-height: 1.4; color: var(--text-muted); }
+/* O `NativeSelect` do DS embrulha o `select` num `div` com `w-fit`, pensado para
+   filtro solto numa barra. Dentro de um campo de formulário isso faz o controle
+   nascer do tamanho da maior opção: duas caixas vizinhas com larguras
+   diferentes, e a coluna desalinhada. No campo, o controle ocupa o campo. */
+.aj-campo [data-slot="native-select-wrapper"] { width: 100%; }
 
 .aj-rodape-salvar {
   display: flex;

@@ -138,6 +138,52 @@ function descreverCriterios(r: Partial<CriteriosDaRegra>): string {
   return cs.length ? cs.map((c) => `${c.rotulo} = ${c.valores.join(" ou ")}`).join("; ") : "qualquer lead";
 }
 
+/* ── O que a organização já conhece (para a tela sugerir em vez de pedir digitação) ── */
+
+export interface ValorConhecido { valor: string; leads: number }
+/** Valores de atribuição que já existem nos leads da organização, por critério, do mais usado ao menos. */
+export type OpcoesDeCriterios = Record<keyof CriteriosDaRegra, ValorConhecido[]>;
+
+/** Quantos valores distintos por critério a tela recebe. Acima disso a busca do combobox é o caminho. */
+const TETO_POR_CRITERIO = 60;
+
+/**
+ * Valores de `utm_campaign`, `utm_source`, `origem`, campanha da Meta e
+ * formulário que a organização JÁ tem gravados em leads, com a contagem de
+ * leads de cada um.
+ *
+ * É leitura, só para sugestão: a regra continua aceitando valor que ainda não
+ * trouxe lead nenhum (campanha que vai começar). A contagem vai junto porque é
+ * ela que separa o valor que importa ("TRT - CALL FACE [2026]", 1.313 leads) do
+ * lixo que o rastreio deixou ("unknown", "(direct)").
+ *
+ * O formulário não tem coluna própria em `leads`: o id do formulário da Meta
+ * mora em `campos_custom->>'meta_formulario_id'`, que é de onde a captação o lê.
+ */
+export async function opcoesDeCriterios(organizacaoId: string): Promise<OpcoesDeCriterios> {
+  const linhas = await db.execute<{ campo: string; valor: string; leads: number }>(sql`
+    WITH base AS (
+      SELECT origem, utm_source, utm_campaign, meta_campaign_id,
+             campos_custom->>'meta_formulario_id' AS formulario
+        FROM leads WHERE organizacao_id = ${organizacaoId}::uuid
+    ), bruto AS (
+      SELECT 'origem' AS campo, btrim(origem) AS valor FROM base
+      UNION ALL SELECT 'utmSource', btrim(utm_source) FROM base
+      UNION ALL SELECT 'utmCampaign', btrim(utm_campaign) FROM base
+      UNION ALL SELECT 'metaCampaignIds', btrim(meta_campaign_id) FROM base
+      UNION ALL SELECT 'formulario', btrim(formulario) FROM base
+    ), contado AS (
+      SELECT campo, valor, count(*)::int AS leads,
+             row_number() OVER (PARTITION BY campo ORDER BY count(*) DESC, valor ASC) AS posicao
+        FROM bruto WHERE valor IS NOT NULL AND valor <> '' GROUP BY campo, valor
+    )
+    SELECT campo, valor, leads FROM contado WHERE posicao <= ${TETO_POR_CRITERIO}
+     ORDER BY campo, leads DESC, valor ASC`);
+  const vazio = { origem: [], utmSource: [], utmCampaign: [], metaCampaignIds: [], formulario: [] } as OpcoesDeCriterios;
+  for (const l of linhas) vazio[l.campo as keyof CriteriosDaRegra]?.push({ valor: l.valor, leads: Number(l.leads) });
+  return vazio;
+}
+
 /** Motivos gravados em `leads.distribuicao_motivo` quando nenhuma regra decidiu. */
 export const MOTIVO_POLITICA_INBOUND = "Sem regra de distribuição vigente: responsável padrão de inbound";
 export const MOTIVO_SEM_DONO = "Sem regra de distribuição vigente e sem responsável padrão de inbound";
@@ -187,9 +233,13 @@ async function avancarRodizio(organizacaoId: string, regraId: string, vivos: str
  *
  * Chame DEPOIS da deduplicação e uma vez POR LEAD: cada chamada de rodízio
  * gasta uma vez, e lead que já existia não deve gastar.
+ *
+ * `simular: true` responde a mesma pergunta SEM gastar: lê o cursor do rodízio
+ * em vez de avançá-lo, para a tela de Ajustes poder mostrar "para onde este
+ * lead iria" sem desalinhar a fila de quem está operando.
  */
 export async function resolverPorRegra(params: {
-  organizacaoId: string; etapa?: string; agora?: Date; atribuicao?: AtribuicaoCaptacao | null;
+  organizacaoId: string; etapa?: string; agora?: Date; atribuicao?: AtribuicaoCaptacao | null; simular?: boolean;
 }): Promise<ResultadoDistribuicao | null> {
   const agora = params.agora ?? new Date();
   const regras = ordenarRegras(await db.select().from(regrasDistribuicaoLeads)
@@ -206,7 +256,9 @@ export async function resolverPorRegra(params: {
     const ativoSet = new Set(ativos.map((u) => u.id));
     const vivos = candidatos.filter((id) => ativoSet.has(id));
     if (!vivos.length) continue;
-    const escolhido = r.alvoTipo === "rodizio" ? await avancarRodizio(params.organizacaoId, r.id, vivos) : vivos[0];
+    const escolhido = r.alvoTipo !== "rodizio" ? vivos[0]
+      : params.simular ? proximoDoRodizio(vivos, r.rodizioUltimoId)
+      : await avancarRodizio(params.organizacaoId, r.id, vivos);
     if (!escolhido) continue;
 
     // O número da regra só vale se continua desta organização e não virou privado.
