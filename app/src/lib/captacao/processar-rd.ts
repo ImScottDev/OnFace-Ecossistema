@@ -264,7 +264,7 @@ export async function processarLeadRd(entrada: {
         campaignId: metaIds?.campaignId, adsetId: metaIds?.adsetId, adId: metaIds?.adId,
         // O clique no anúncio. Sem ele a conversão devolvida pela CAPI chega à
         // Meta e não casa com ninguém: era 0 em 4.270 pontos de contato.
-        fbclid: p.fbclid, fbc: p.fbc, metaLeadId: metaIds?.fbLeadId,
+        fbclid: p.fbclid, fbc: p.fbc, fbp: p.fbp, metaLeadId: metaIds?.fbLeadId,
       },
       responsavelId: responsavelInboundId ?? null,
       idempotencyKey: p.email ? `rd:${organizacaoId}:${p.email}` : null,

@@ -37,6 +37,15 @@ test("o fbc é derivado no formato que a Meta aceita sem o cookie", () => {
     "o fbc tem que carregar o horário do clique, não o do processamento");
 });
 
+test("o fbc REAL do cookie do Pixel vence o derivado", () => {
+  // A LP passou a repassar `_fbc`/`_fbp`. O valor que a Meta escreveu é melhor
+  // que o nosso `fb.1.<ms>.<fbclid>`, e o parser estava descartando-o.
+  const p = parseRdLead(comTrafficSource(
+    `utm_source=fb&fbclid=${FBCLID}&fbc=fb.3.1792608247173.${FBCLID}&fbp=fb.3.999.888`));
+  assert.equal(p.fbc, `fb.3.1792608247173.${FBCLID}`, "o fbc derivado sobrepôs o cookie real");
+  assert.equal(p.fbp, "fb.3.999.888");
+});
+
 test("sem fbclid não se inventa fbc", () => {
   const p = parseRdLead(comTrafficSource("utm_source=organic"));
   assert.equal(p.fbclid, undefined);

@@ -30,6 +30,8 @@ export interface ParsedRdLead {
   fbclid?: string;
   /** `fb.1.<ms>.<fbclid>` — o que a Meta usa para casar a conversão com o clique. */
   fbc?: string;
+  /** Cookie `_fbp` do Pixel, quando a LP o repassa. */
+  fbp?: string;
   landingPage?: string;
 }
 
@@ -209,6 +211,10 @@ export function parseRdLead(lead: RdLead): ParsedRdLead {
      eram extraídos. `ParsedRdLead` já declarava o campo `fbclid` e nada o
      preenchia — campo fantasma desde que a interface existe. */
   let fbclid = "";
+  // `fbc`/`fbp` do cookie do Pixel, quando a LP os manda: é o valor que a Meta
+  // escreveu, melhor que o `fbc` derivado abaixo.
+  let fbcReal = "";
+  let fbp = "";
   const decoded = decodeTrafficSource(s(content.traffic_source));
   if (decoded) {
     try {
@@ -228,6 +234,8 @@ export function parseRdLead(lead: RdLead): ParsedRdLead {
           utmContent = u.utm_content || utmContent;
         }
         if (!fbclid && u.fbclid) fbclid = u.fbclid;
+        if (!fbcReal && u.fbc) fbcReal = u.fbc;
+        if (!fbp && u.fbp) fbp = u.fbp;
       }
     } catch {
       /* traffic_source não era JSON, ignora */
@@ -294,7 +302,8 @@ export function parseRdLead(lead: RdLead): ParsedRdLead {
     fbclid: cut(fbclid),
     // O horário do clique que a gente tem é o da conversão; é o que a Meta
     // aceita como timestamp do `fbc` quando o cookie não existe.
-    fbc: fbcDoFbclid(fbclid, dataDaConversao(content)) ?? undefined,
+    fbc: cut(fbcReal) ?? fbcDoFbclid(fbclid, dataDaConversao(content)) ?? undefined,
+    fbp: cut(fbp),
     landingPage: s(content.form_url || content.page_title) || undefined,
   };
 }
