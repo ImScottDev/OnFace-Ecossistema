@@ -25,7 +25,13 @@ const SRC = path.join(process.cwd(), "src");
 const PROPAGA = /syncOportunidadeFromNegocio|registrarMudancaDeEtapa|moverEtapaDaOportunidade/;
 
 /** Escreve o estado comercial do negócio: `status`, ganho ou perda. */
-const MOVE_ETAPA = /(?:UPDATE\s+negocios\b[\s\S]{0,250}?SET[\s\S]{0,200}?\bstatus\s*=|db\.update\(negocios\)[\s\S]{0,200}?\.set\(\{[\s\S]{0,200}?\bstatus:)/i;
+/* A janela não pode atravessar o fim do comando. Com `[\s\S]` ela atravessava:
+   um `UPDATE negocios SET service_family` casava com o `status =` de um
+   `UPDATE billing_audit_runs` oito linhas abaixo, e a trava acusava de mover
+   etapa um script que não move nenhuma (conciliar-familia-white-label.ts,
+   21/10/2026 — reprovou o portão e travou o deploy de todos). `[^;`]` para na
+   ponto-e-vírgula e no fim do template, que é onde o comando acaba. */
+const MOVE_ETAPA = /(?:UPDATE\s+negocios\b[^;`]{0,250}?SET[^;`]{0,200}?\bstatus\s*=|db\.update\(negocios\)[\s\S]{0,200}?\.set\(\{[\s\S]{0,200}?\bstatus:)/i;
 
 function arquivos(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
