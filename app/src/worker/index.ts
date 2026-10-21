@@ -425,7 +425,7 @@ async function crossSaveInterSession(opts: {
   const msgType = message.type || "text";
 
   // Save as IN on the recipient session's contato
-  await db.insert(whatsappMensagens).values({
+  const [inboundRow] = await db.insert(whatsappMensagens).values({
     contatoId,
     leadId: contatoLeadId || undefined,
     sessaoId: recipientSession.id,
@@ -438,7 +438,7 @@ async function crossSaveInterSession(opts: {
     uazapiMessageId: message.id ? `xsave-${message.id}` : null, // prefix to avoid PK conflict
     status: "received",
     statusAt: new Date(timestamp * 1000),
-  });
+  }).returning({ id: whatsappMensagens.id });
 
   // Update contato preview + unread
   const preview = content.length > 100 ? content.substring(0, 97) + "..." : content;
@@ -459,6 +459,38 @@ async function crossSaveInterSession(opts: {
   }
 
   console.log(`[WA-CrossSave] Saved IN message on session ${recipientSession.id} contato ${contatoId}`);
+
+  /* Quem escreve de um número que TAMBÉM é sessão da organização era gravado aqui e nunca
+     atendido: o caminho de entrada (`[WA-In] Skipping inter-session message`) sai antes de
+     acionar o agente, e este lado só gravava. Sintoma (21/10/2026, produção): o Scott mandou
+     "Oi" no número da Lia às 00:34 e 06:52 pelo Scott Corp e ficou sem resposta, enquanto o
+     mesmo "Oi" do número pessoal dele era respondido. Agora o cross-save chama a MESMA porta
+     do caminho normal (`atenderPeloNumeroDoAgente`), que decide sozinha se o número tem
+     agente e se há motivo para calar.
+
+     Guarda de loop: se o número de quem escreveu também tem agente, dois agentes se
+     responderiam para sempre. Nesse caso grava e não aciona. */
+  if (!content) return;
+  try {
+    const { agenteDoNumero, atenderPeloNumeroDoAgente } = await import("../lib/ai-platform/operacao/numero-do-agente");
+    if (await agenteDoNumero(organizacaoId, senderSessaoId)) {
+      console.log(`[WA-CrossSave] remetente ${senderPhone} também é número de agente: grava e não aciona (loop)`);
+      return;
+    }
+    const r = await atenderPeloNumeroDoAgente({
+      organizacaoId,
+      contatoId,
+      leadId: contatoLeadId,
+      sessaoId: recipientSession.id,
+      mensagem: content,
+      sourceMessageId: inboundRow?.id ?? null,
+    });
+    if (r.tratado) {
+      console.log(`[WA-CrossSave] agente do número atendeu o contato ${contatoId}: ${r.resultado}${r.motivo ? ` (${r.motivo})` : ""}`);
+    }
+  } catch (err) {
+    console.error(`[WA-CrossSave] falha ao acionar o agente do número para o contato ${contatoId}:`, err);
+  }
 }
 
 // ─── Phone Outgoing Handler (messages sent from phone, not CRM) ─────
