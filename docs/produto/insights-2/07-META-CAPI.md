@@ -74,9 +74,12 @@ As duas últimas linhas são o problema de negócio, não de código:
 
 - **Venda ganha nunca volta**: 0 dos 10 ganhos têm touchpoint Meta. O evento
   que mais ensina o algoritmo é exatamente o que não sai.
-- **`Purchase` nunca existiu**: nenhum pagamento entrou na outbox, em nenhum
-  momento. Sem ele a Meta não recebe valor, e otimizar por valor é o modo mais
-  eficaz de otimização que ela oferece.
+- **`Purchase` não existe no banco local**, e isso **não** prova que nunca
+  existiu. O caminho está completo no código: `handlePaymentConfirmed` publica
+  `PaymentCompleted` com `valor` em reais e `stripeSessionId`, a tradução leva a
+  `Purchase` e o `event_id` dedupa pela sessão do Stripe. O webhook do Stripe
+  não chega em dev — as chaves ficam vazias por decisão do `AGENTS.md` —, então
+  **só a medição em produção responde** se o `Purchase` sai.
 
 ## 3b. Metade da jornada não tinha destino — agora tem (`#MAPA`)
 
@@ -136,8 +139,8 @@ dia na atribuição. Passa a usar `payload.ocorrido_em`, com a fila como fallbac
 | # | O quê | Por que nesta ordem | Risco |
 |---|---|---|---|
 | 1 | **Confirmar em produção** se o sweep da outbox roda e desde quando | se estiver parado, o problema é muito maior que o CAPI | leitura |
-| 2 | **Capturar `fbclid` na landing** e derivar `fbc`/`fbp` | sem isto o evento chega e não casa; é o gargalo real | baixo |
-| 3 | **Publicar `PaymentConfirmed`** quando o pagamento é confirmado | é o `Purchase` com valor, e hoje não existe | baixo |
+| ~~2~~ | ~~Capturar o clique na landing~~ | **feito**, nas duas pontas (ver §6) | — |
+| 3 | **Confirmar se o `Purchase` sai em produção** | o código publica; dev não recebe webhook do Stripe | leitura |
 | 3b | ~~Mapear desqualificado, perdido, reunião realizada e negociação~~ | **feito** | — |
 | 4 | **Ligar o touchpoint Meta à oportunidade ganha** | 0 de 10 ganhos têm atribuição: o melhor evento não sai | médio |
 | 5 | **Destravar a fila dos 269** | **dispara conversão REAL em produção** | **exige autorização** |
@@ -146,3 +149,44 @@ dia na atribuição. Passa a usar `payload.ocorrido_em`, com a fila como fallbac
 O passo 5 é o único irreversível: enviado, o evento está no gerenciador. E não
 há `test_event_code` configurado, então não existe ensaio — o primeiro disparo é
 o real.
+
+---
+
+## 6. O clique passou a ser capturado (`1f8b2e11`, `5c213756`)
+
+Era o gargalo real: evento mapeado e entregue não vale nada se a Meta não tem
+com quem casar. Estava quebrado em **três** pontos do caminho, e cada um
+sozinho zerava o resultado.
+
+**Na LP** (`Callface - LP/callface-lp/`, repositório separado, não versionado):
+o `traffic_source` montado à mão levava só os `utm_*`. O `fbclid` vinha na URL
+o tempo todo e era descartado na origem. Agora existe `root/rastreio.js`, fonte
+única para as 5 LPs que o Dockerfile publica, carregado antes de cada `app.js`.
+Ele lê, por ordem de confiança: cookie `_fbc`/`_fbp` do Pixel (o valor REAL —
+as 5 LPs já têm Pixel instalado), depois o `fbclid` da URL, depois o que ficou
+de uma visita anterior. Guarda em `localStorage` por 90 dias porque o clique
+chega numa página e o formulário é enviado em outra. O horário do clique é
+estável — ele entra no `fbc`, e dois valores para o mesmo clique viram duas
+identidades do lado da Meta.
+
+**No parser do RD**: `ParsedRdLead` declarava `fbclid` desde que a interface
+existe e **nada o preenchia** — campo fantasma. Pior, a sessão só era lida
+quando continha `"utm_"`, então anúncio sem UTM caía fora inteiro. Agora o
+clique sai da sessão atual (com a primeira de rede) ou da URL do formulário, e
+o `fbc`/`fbp` do cookie vence o derivado.
+
+**No consumidor**: a rota `POST /leads`, maior porta de escrita de lead do
+sistema, aceitava `fbclid`, `fbc`, `fbp` e `gclid` no corpo e os descartava ao
+montar a atribuição canônica. Passa junto com o `meta_lead_id`, que o
+processamento do RD já conhecia e jogava fora (prova direta de Lead Ads, e
+estava em 2 de 4.270).
+
+**Provado no navegador**, com o Pixel real da LP: a página devolveu
+`fbc = fb.3.1792608247173.<fbclid>` (cookie do Pixel, não o derivado), o
+`traffic_source` do submit levou os três campos, e o parser real do CRM os
+recebeu com `veioDaMeta` verdadeiro. O `fetch` foi interceptado: **nenhum lead
+foi criado no RD**.
+
+**Falta publicar a LP.** Ela não é repositório git e o deploy é build do
+container `callface-lp`; as mudanças estão no disco, prontas. Até a LP subir, o
+lado do CRM recebe o clique só de quem já mandava.
