@@ -873,6 +873,19 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
   const fontes = apoio.dados?.fontes ?? [];
   const aprovadas = fontes.filter((s) => s.governanca === "aprovado" && s.status === "ready").length;
 
+  /** Relê os snapshots versionados do repositório e reindexa o que mudou. Idempotente. */
+  async function recarregarBase() {
+    setOcupada("recarregar");
+    try {
+      const r = await api("/api/automacoes/agentes-op/lia/criar", { method: "POST" }) as { conhecimento?: { criadas?: number; atualizadas?: number; iguais?: number } };
+      const c = r?.conhecimento;
+      toast.success(c ? `Base relida: ${c.atualizadas ?? 0} atualizada(s), ${c.criadas ?? 0} nova(s), ${c.iguais ?? 0} sem mudança.` : "Base relida.");
+      apoio.recarregar();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Não foi possível reler a base.");
+    } finally { setOcupada(null); }
+  }
+
   async function governar(id: string, corpo: { governanca?: string; categoria?: string | null }, ok: string) {
     setOcupada(id);
     try { await api(`/api/automacoes/agentes-op/conhecimento/${id}`, { method: "PATCH", body: JSON.stringify(corpo) }); toast.success(ok); apoio.recarregar(); }
@@ -929,7 +942,15 @@ function Conhecimento({ dados, form, set, travado, apoio, onMudou }: {
         ) : null}
         {apoio.dados && fontes.length ? (
           <>
-            <p className="age-texto-fraco" style={{ marginBottom: 10 }}><strong>{aprovadas} de {fontes.length}</strong> fontes valem para o agente agora (aprovadas e indexadas).</p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+              <p className="age-texto-fraco" style={{ margin: 0 }}><strong>{aprovadas} de {fontes.length}</strong> fontes valem para o agente agora (aprovadas e indexadas).</p>
+              {/* As fontes que vêm do repositório só mudam quando alguém manda reler.
+                  Sem este botão não havia caminho nenhum pela tela: o conteúdo era
+                  atualizado no código e a base ficava parada, sem ninguém notar. */}
+              <button type="button" className="agn-secundario" disabled={ocupada === "recarregar"} onClick={recarregarBase}>
+                {ocupada === "recarregar" ? "Atualizando…" : "Atualizar base do produto"}
+              </button>
+            </div>
             <ul className="age-fontes age-fontes-gov">
               {fontes.map((k) => (
                 <li key={k.id} data-gov={k.governanca}>
