@@ -169,6 +169,85 @@ Não é bug — é contrato: precisa ser pedido.
 
 ---
 
+## 4-B. O que foi verificado DENTRO da plataforma (21/10, logado como admin)
+
+Navegado no painel, não deduzido. Isto corrige o §5 abaixo em pontos
+importantes — leia esta seção primeiro.
+
+### O disparo do agente de voz pelo ONFACE já é possível HOJE
+
+Está escrito na tela de Integração › Webhooks › Entrada, palavra por palavra:
+
+> *"A cada evento, a Callface valida o token e adiciona o contato à campanha
+> 'Funil &lt;nome da sua organização&gt;', criando-a na primeira vez.
+> **A ligação inicial é disparada automaticamente pelo agente de prospecção
+> assim que o contato é criado. Escolha o agente na tela de Agentes.**"*
+
+Ou seja: **não falta contrato de API para a Lia mandar ligar.** O agente é
+escolhido **uma vez**, na tela de Agentes (botão "Definir agente de prospecção"),
+e todo contato enviado pelo `create-contact` que já usamos é ligado por ele.
+
+O que continua **não** sendo possível por API: escolher agente diferente por
+ligação, mandar roteiro ou variável por contato, e escolher a campanha de
+destino. Para isso vale o que está no §5.
+
+### Estado dos agentes na nossa organização
+
+| Agente | Papel | Campanhas | Chamadas | WhatsApp | Último uso |
+|---|---|---|---|---|---|
+| **Agente Mayra** | **agente de prospecção** (é quem atende o `create-contact`) | 320 | 7.643 | +55 11 91086-1344 | 20/10/2026 |
+| Agente de IA Mayara | — | 16 | 18 | não configurado | 20/10/2026 |
+| Assistente de Vendas | — | 5 | 6 | não configurado | 09/10/2026 |
+
+Três agentes ativos, **413 campanhas** no total. O Agente Mayra já tem WhatsApp
+de notificação de lead qualificado configurado (recurso da versão 2.19 deles).
+
+### O filtro de qualificado está DESLIGADO
+
+Integração › Configurações › "Enviar apenas leads qualificados": **desligado**.
+Não estamos perdendo ligação por causa dele. Pergunta encerrada.
+
+### O contrato do webhook de saída, oficial, tem 17 campos
+
+A própria tela mostra o payload de exemplo, e ele é **exatamente** o que
+recebemos: `deal_id`, `contact_id`, `call_date`, `summarization`,
+`transcription`, `call_link`, `call_duration`, `call_audio_url`, `user_email`,
+`user_name`, `destination_number`, `credentials`, `call_status`,
+`deal_closure_percentage`, `scheduling`.
+
+**Scorecard, dados coletados, qualificação, origem e minuto tarifado não estão
+no contrato.** Existem no painel e não são enviados. Isso confirma o §5.3: é
+pedido ao time, não defeito nosso.
+
+Nosso webhook de saída: `https://crm.callface.io/api/webhooks/callface`, ativo,
+secret configurado, criado em 22/07/2026.
+
+### O webhook de ENTRADA quase não é usado
+
+**17 eventos processados desde 22/07, último em 21/08/2026.** Bate com os 3 usos
+da rota manual mais testes. Confirma que o caminho ONFACE → discador está
+praticamente parado.
+
+### Um buraco que ninguém tinha visto: 38% das ligações não chegam ao CRM
+
+| Onde | Ligações |
+|---|---|
+| Painel da Callface (total) | **11.647** |
+| `ligacoes` no ONFACE | 7.215 |
+| **Diferença** | **4.432 (38%)** |
+
+Parte é anterior ao webhook (criado em 22/07) e parte são chamadas de vídeo, que
+o painel conta junto. **Mas a diferença precisa ser explicada antes de qualquer
+relatório de voz no ONFACE** — hoje qualquer número que a gente mostrar está
+incompleto e não sabemos o quanto.
+
+### Zoho continua conectado
+
+Em CRMs, **Zoho está "Conectado"** — o CRM legado segue recebendo registro de
+ligação em paralelo ao nosso webhook. Decidir se desconecta.
+
+---
+
 ## 5. O que depende da Callface, não de nós
 
 Estas são perguntas para o time de produto da Callface. Nenhuma se resolve
