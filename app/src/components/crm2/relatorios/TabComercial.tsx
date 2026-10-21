@@ -193,7 +193,7 @@ export default function TabComercial({ periodo, ocultarHero = false, safraSeleci
   // ── Alertas acionáveis (derivados do payload — o que fazer, não só o número) ──
   const alertas: AlertaUi[] = [];
   if (comercial) {
-    const mr = metaCom ? metaEmRisco(metaCom.valorAlvo, metaCom.realizado) : null;
+    const mr = metaCom && periodo === "mes_atual" ? metaEmRisco(metaCom.valorAlvo, metaCom.realizado) : null;
     if (mr) alertas.push(mr);
     const esfriando = comercial.pipelineEsfriando ?? [];
     if (esfriando.length >= 3) {

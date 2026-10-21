@@ -9,7 +9,7 @@ interface MetaProgressProps {
 }
 
 function fmt(tipo: string, v: number): string {
-  if (tipo === "mrr_fechado") {
+  if (tipo === "mrr_fechado" || tipo === "faturamento_fechado") {
     return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   return String(Math.round(v));
