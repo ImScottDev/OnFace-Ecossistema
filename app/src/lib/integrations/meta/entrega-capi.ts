@@ -78,6 +78,16 @@ export function tipoNaPolitica(eventType: string): string {
  * caminho (`DealWon` e o canônico `OpportunityWon`; sessão do Stripe reenviada):
  * a chave sai do negócio / da sessão, não do id da linha do outbox, para a Meta
  * deduplicar os dois em vez de contar a venda duas vezes.
+ *
+ * Para todo o resto a chave é o `domain_event_id` do payload — o id do evento de
+ * DOMÍNIO, que é o que `idDeterministicoDoEvento` documenta receber. Antes caía
+ * direto no id da linha do outbox, e aí Lead, QualifiedLead e Schedule perdiam a
+ * idempotência que a função promete: republicar o mesmo fato (reprocessamento,
+ * replay, republicação da entrada canônica) gera outra linha de outbox, outro
+ * `event_id`, e a Meta conta a conversão duas vezes. Medido em 21/10/2026:
+ * `domain_event_id` está presente em 100% dos eventos canônicos do outbox (446
+ * de 446); só o `DealWon` legado não o traz, e ele já é resolvido pelo negócio
+ * acima.
  */
 export function chaveDoFato(e: Pick<LinhaOutbox, "id" | "eventType" | "aggregateId" | "payload">): string {
   const p = e.payload ?? {};
@@ -87,7 +97,25 @@ export function chaveDoFato(e: Pick<LinhaOutbox, "id" | "eventType" | "aggregate
     if (typeof negocio === "string" && negocio) return negocio;
   }
   if (tipo === "PaymentConfirmed" && typeof p.stripeSessionId === "string" && p.stripeSessionId) return p.stripeSessionId;
+  if (typeof p.domain_event_id === "string" && p.domain_event_id) return p.domain_event_id;
   return e.id;
+}
+
+/**
+ * Quando o fato aconteceu.
+ *
+ * O `created_at` da linha do outbox é "quando a fila soube", e coincide com o
+ * fato só porque a publicação é na mesma transação. Em replay, importação ou
+ * backfill ele passa a ser a data da carga, e a conversão escorrega de dia na
+ * atribuição da Meta. O payload canônico carrega `ocorrido_em`; ele manda.
+ */
+export function instanteDoFato(e: Pick<LinhaOutbox, "payload" | "createdAt">): Date {
+  const oc = (e.payload ?? {}).ocorrido_em;
+  if (typeof oc === "string" || oc instanceof Date) {
+    const d = new Date(oc as string);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return e.createdAt instanceof Date ? e.createdAt : new Date(e.createdAt);
 }
 
 /** Resolve a identidade e a atribuição do fato, a partir do modelo canônico. */
@@ -172,7 +200,7 @@ export async function entregarEventoNaMeta(evento: LinhaOutbox): Promise<Resulta
   }
 
   const eventId = idDeterministicoDoEvento(chaveDoFato(evento), regra.nomeMeta);
-  const ocorrido = evento.createdAt instanceof Date ? evento.createdAt : new Date(evento.createdAt);
+  const ocorrido = instanteDoFato(evento);
 
   const capi: EventoCapi = {
     eventName: regra.nomeMeta,
