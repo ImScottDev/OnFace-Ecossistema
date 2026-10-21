@@ -104,6 +104,11 @@ COPY --from=build-backend /repo/app/src/lib/db/migrations ./app/dist/migrations
 # Texto oficial dos contratos: a API garante os modelos na subida.
 COPY --from=build-backend /repo/app/src/lib/crm/templates-contrato ./app/dist/templates-contrato
 ENV MODELOS_CONTRATO_DIR=/repo/app/dist/templates-contrato
+# Base de conhecimento dos agentes: sem isto a pasta não existe na imagem, a
+# carga não acha arquivo nenhum e volta ZERO em silêncio — a base de produção
+# ficou congelada em 13/10/2026 e todo conhecimento novo morria no repositório.
+COPY --from=build-backend /repo/app/src/lib/ai-platform/conhecimento/base ./app/dist/conhecimento-base
+ENV CONHECIMENTO_BASE_DIR=/repo/app/dist/conhecimento-base
 COPY --from=build-backend /repo/app/dist ./app/dist
 USER onface
 EXPOSE 3001
