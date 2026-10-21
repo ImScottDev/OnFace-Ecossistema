@@ -27,7 +27,7 @@ import { db } from "@/lib/db";
 import { sql, type SQL } from "drizzle-orm";
 import { janelaDoPeriodo } from "@/lib/metricas/janela";
 import { mrrOficialLinhas } from "@/lib/metricas/mrr-oficial";
-import { daFamilia, nomeDeTeste, semTestes, type Familia } from "@/lib/metricas/recorte";
+import { daFamilia, nomeDeTeste, origemDeTeste, semTestes, type Familia } from "@/lib/metricas/recorte";
 
 export type TipoMetrica = "EVENT" | "SNAPSHOT" | "COHORT";
 
@@ -86,6 +86,19 @@ export interface DefinicaoMetrica {
     somaValor?: boolean;
     /** Primeira data com dado confiável nesta fonte; antes disso a janela é encurtada e a tela avisa. */
     piso?: Date;
+  };
+  /**
+   * Sonda de preenchimento: devolve `universo` e `preenchido`, as linhas do universo da métrica que têm o
+   * campo de que o número depende. Sem ela, "zero" e "ninguém preencheu o campo" são indistinguíveis.
+   */
+  preenchimento?: {
+    rotulo: string;
+    sonda: (organizacaoId: string, p: Periodo) => SQL;
+    /**
+     * `cobertura` (padrão): `preenchido` < `universo` = dado parcial. `ausencia`: `universo` = linhas da fonte na janela,
+     * `preenchido` = linhas da natureza que a métrica soma; zero em qualquer um é AUSÊNCIA de dado, nunca um zero a exibir.
+     */
+    modo?: "cobertura" | "ausencia";
   };
   /** O valor agregado: derivado do recorte, nunca escrito à parte. */
   valor: (organizacaoId: string, p: Periodo) => SQL;
@@ -148,6 +161,23 @@ function recorteDaNatureza(natureza: "SETUP" | "ONE_TIME" | "USAGE") {
          AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, r.cliente_nome, '')"))}`;
   };
 }
+
+/**
+ * Sonda de AUSÊNCIA do faturamento por competência: a janela tem alguma competência fechada na fonte? E, para as
+ * métricas de uma natureza (setup, avulso, uso), a fonte tem alguma linha dessa natureza? Mês ainda não fechado
+ * é ausência, não zero (o catálogo declara isso em `faturamento_competencia`).
+ */
+const sondaCompetencia = (natureza?: string) => (org: string, p: Periodo): SQL => {
+  const { de, ate } = janela(p);
+  return sql`
+    SELECT (SELECT count(*) FROM cliente_receita_mensal r
+             WHERE r.organizacao_id = ${org}::uuid
+               AND r.competencia >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+               AND r.competencia <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date)::int AS universo,
+           ${natureza
+             ? sql`(SELECT count(*) FROM cliente_receita_mensal r WHERE r.organizacao_id = ${org}::uuid AND r.revenue_nature = ${natureza})::int`
+             : sql`1`} AS preenchido`;
+};
 
 const EXPLORAR_RECEITA_POR_NATUREZA: DefinicaoMetrica["explorar"] = {
   dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "confianca", rotulo: "Confiança da classificação" }, { chave: "fonte", rotulo: "Fonte do dado" }],
@@ -225,6 +255,7 @@ const METRICAS_DE_RECEITA: DefinicaoMetrica[] = [
     filtros: { familia: true },
     ordem: "t.competencia DESC, t.valor DESC",
     explorar: EXPLORAR_RECEITA_POR_NATUREZA,
+    preenchimento: { rotulo: "setup", sonda: sondaCompetencia("SETUP"), modo: "ausencia" },
     recorte: recorteDaNatureza("SETUP"),
   }),
   definir({
@@ -241,6 +272,7 @@ const METRICAS_DE_RECEITA: DefinicaoMetrica[] = [
     filtros: { familia: true },
     ordem: "t.competencia DESC, t.valor DESC",
     explorar: EXPLORAR_RECEITA_POR_NATUREZA,
+    preenchimento: { rotulo: "avulso (ONE_TIME)", sonda: sondaCompetencia("ONE_TIME"), modo: "ausencia" },
     recorte: recorteDaNatureza("ONE_TIME"),
   }),
   definir({
@@ -257,7 +289,333 @@ const METRICAS_DE_RECEITA: DefinicaoMetrica[] = [
     filtros: { familia: true },
     ordem: "t.competencia DESC, t.valor DESC",
     explorar: EXPLORAR_RECEITA_POR_NATUREZA,
+    preenchimento: { rotulo: "uso (USAGE)", sonda: sondaCompetencia("USAGE"), modo: "ausencia" },
     recorte: recorteDaNatureza("USAGE"),
+  }),
+];
+
+/**
+ * O universo de "aberta": UMA consulta para oportunidades_abertas, pipeline_aberto, pipeline_ponderado,
+ * pipeline_previsto e oportunidades_estagnadas. Se a regra de aberta mudar, muda aqui e as cinco mudam juntas.
+ */
+function recorteAbertas(org: string, p: Periodo): SQL {
+  return sql`
+      SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
+             o.etapa, o.valor::numeric AS valor, o.probabilidade, o.previsao_fechamento, o.estagnado_em,
+             o.negocio_id_legado::text AS negocio_id, o.empresa_id::text AS empresa_id
+        FROM oportunidades o
+        LEFT JOIN empresas e ON e.id = o.empresa_id
+       WHERE o.organizacao_id = ${org}::uuid
+         AND o.ganho_at IS NULL AND o.perdido_at IS NULL AND o.etapa IS NOT NULL
+         AND ${daFamilia("o.service_family", p.familia)}
+         AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(o.titulo, '')"))}`;
+}
+
+const EXPLORAR_ABERTAS = { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "etapa", rotulo: "Etapa" }], busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "etapa", "previsao_fechamento", "familia"] };
+
+/** Quantas abertas têm o campo `expr` preenchido. `expr` é expressão fixa do catálogo, nunca texto do usuário. */
+const sondaAbertas = (expr: string) => (org: string, p: Periodo): SQL =>
+  sql`SELECT count(*)::int AS universo, count(${sql.raw(expr)})::int AS preenchido FROM (${recorteAbertas(org, p)}) a`;
+
+const COBERTURA_STRIPE =
+  "Cobre SÓ assinaturas Stripe espelhadas no ONFACE. Boleto e nota fiscal do PABX não têm assinatura aqui: " +
+  "o número NÃO é o churn ou o risco da carteira inteira.";
+
+/** Métricas da Visão Geral executiva (pipeline, aquisição, risco, churn, movimento, meta). */
+const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
+  definir({
+    codigo: "pipeline_aberto",
+    nome: "Pipeline aberto",
+    tipo: "SNAPSHOT",
+    unidade: "BRL",
+    descricao: "Valor das oportunidades abertas agora: a soma do valor das mesmas oportunidades que oportunidades_abertas conta.",
+    fonte: "oportunidades abertas (mesmo recorte de oportunidades_abertas), somando valor.",
+    naoInclui: "oportunidade aberta SEM valor preenchido (entra na contagem, não na soma: veja o preenchimento), ganhas, perdidas e legado sem etapa.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.valor DESC NULLS LAST",
+    explorar: EXPLORAR_ABERTAS,
+    preenchimento: { rotulo: "oportunidades abertas com valor", sonda: sondaAbertas("a.valor") },
+    recorte: (org, p) => sql`
+      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento, a.negocio_id, a.empresa_id
+        FROM (${recorteAbertas(org, p)}) a`,
+  }),
+  definir({
+    codigo: "pipeline_ponderado",
+    nome: "Pipeline ponderado",
+    tipo: "SNAPSHOT",
+    unidade: "BRL",
+    descricao: "Valor das oportunidades abertas vezes a probabilidade de cada uma. Só soma a oportunidade que tem valor E probabilidade.",
+    fonte: "oportunidades abertas, valor x probabilidade / 100.",
+    naoInclui: "oportunidade sem probabilidade ou sem valor: ela não vira zero, fica FORA da soma e o preenchimento mostra quantas faltam.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.valor DESC NULLS LAST",
+    explorar: EXPLORAR_ABERTAS,
+    preenchimento: { rotulo: "oportunidades abertas com valor e probabilidade", sonda: sondaAbertas("a.valor * a.probabilidade") },
+    recorte: (org, p) => sql`
+      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.probabilidade,
+             (a.valor * a.probabilidade / 100.0)::numeric AS valor, a.previsao_fechamento, a.negocio_id, a.empresa_id
+        FROM (${recorteAbertas(org, p)}) a`,
+  }),
+  definir({
+    codigo: "pipeline_previsto",
+    nome: "Pipeline previsto no período",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao: "Valor das oportunidades abertas cuja previsão de fechamento cai dentro da janela.",
+    fonte: "oportunidades abertas com previsao_fechamento dentro da janela, somando valor.",
+    naoInclui: "oportunidade aberta sem data de previsão (não dá para saber em que período ela cairia: veja o preenchimento), ganhas e perdidas.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.previsao_fechamento, t.valor DESC NULLS LAST",
+    explorar: { ...EXPLORAR_ABERTAS, campoData: "previsao_fechamento", campoDataTipo: "data" },
+    preenchimento: { rotulo: "oportunidades abertas com previsão de fechamento", sonda: sondaAbertas("a.previsao_fechamento") },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento, a.negocio_id, a.empresa_id
+          FROM (${recorteAbertas(org, p)}) a
+         WHERE a.previsao_fechamento >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND a.previsao_fechamento <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date`;
+    },
+  }),
+  definir({
+    codigo: "oportunidades_criadas",
+    nome: "Oportunidades criadas",
+    tipo: "EVENT",
+    unidade: "contagem",
+    descricao: "Oportunidades que entraram no funil dentro da janela, pela data de criação.",
+    fonte: "oportunidades com created_at dentro da janela.",
+    naoInclui: "o que já era oportunidade antes da janela. Inclui as que já foram ganhas ou perdidas: é entrada no funil, não estoque.",
+    agregacao: "contagem",
+    filtros: { familia: true },
+    ordem: "t.criada_em DESC",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "situacao", rotulo: "Situação hoje" }], campoData: "criada_em", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "criada_em", "familia", "situacao"], somaValor: true },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
+               CASE WHEN o.ganho_at IS NOT NULL THEN 'ganha' WHEN o.perdido_at IS NOT NULL THEN 'perdida' ELSE 'aberta' END AS situacao,
+               COALESCE(o.valor, 0)::numeric AS valor, o.created_at AS criada_em, o.empresa_id::text AS empresa_id
+          FROM oportunidades o
+          LEFT JOIN empresas e ON e.id = o.empresa_id
+         WHERE o.organizacao_id = ${org}::uuid
+           AND o.created_at >= ${de}::timestamptz AND o.created_at < ${ate}::timestamptz
+           AND ${daFamilia("o.service_family", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(o.titulo, '')"))}`;
+    },
+  }),
+  definir({
+    codigo: "oportunidades_perdidas",
+    nome: "Oportunidades perdidas",
+    tipo: "EVENT",
+    unidade: "contagem",
+    descricao: "Oportunidades marcadas como perdidas dentro da janela, pela data da perda.",
+    fonte: "oportunidades com perdido_at dentro da janela.",
+    naoInclui:
+      "o motivo de negócio por trás da perda. Perda em lote (limpeza de funil) conta no dia em que foi marcada: " +
+      "fev/2026 tem 151 perdas e ago/2026 tem 192, picos que não são 151 ou 192 negócios morrendo naquele mês.",
+    agregacao: "contagem",
+    filtros: { familia: true },
+    ordem: "t.perdida_em DESC",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "motivo", rotulo: "Motivo da perda" }], campoData: "perdida_em", busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "perdida_em", "familia", "motivo"], somaValor: true },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
+               o.motivo_perda AS motivo, COALESCE(o.valor, 0)::numeric AS valor, o.perdido_at AS perdida_em, o.empresa_id::text AS empresa_id
+          FROM oportunidades o
+          LEFT JOIN empresas e ON e.id = o.empresa_id
+         WHERE o.organizacao_id = ${org}::uuid
+           AND o.perdido_at >= ${de}::timestamptz AND o.perdido_at < ${ate}::timestamptz
+           AND ${daFamilia("o.service_family", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(o.titulo, '')"))}`;
+    },
+  }),
+  definir({
+    codigo: "oportunidades_estagnadas",
+    nome: "Oportunidades marcadas como estagnadas",
+    tipo: "SNAPSHOT",
+    unidade: "contagem",
+    descricao: "Oportunidades abertas que alguém marcou como estagnadas, com motivo. É uma MARCA manual, não um cálculo de tempo parado.",
+    fonte: "oportunidades abertas com estagnado_em preenchido (gravado por lib/vendas/pipeline.ts quando o usuário informa o motivo).",
+    naoInclui: "oportunidade parada há muito tempo que ninguém marcou. Zero aqui significa 'ninguém marcou', não 'nada está parado'.",
+    agregacao: "contagem",
+    filtros: { familia: true },
+    ordem: "t.estagnado_em ASC",
+    explorar: EXPLORAR_ABERTAS,
+    recorte: (org, p) => sql`
+      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.estagnado_em, a.previsao_fechamento, a.negocio_id, a.empresa_id
+        FROM (${recorteAbertas(org, p)}) a
+       WHERE a.estagnado_em IS NOT NULL`,
+  }),
+  definir({
+    codigo: "leads_novos",
+    nome: "Leads novos",
+    tipo: "EVENT",
+    unidade: "contagem",
+    descricao: "Leads que entraram dentro da janela, pela data de criação do registro.",
+    fonte: "leads com created_at dentro da janela.",
+    naoInclui: "lead com origem de teste (qa, teste_local). O filtro de família não se aplica: lead não tem família de serviço.",
+    agregacao: "contagem",
+    filtros: { familia: false },
+    ordem: "t.criado_em DESC",
+    explorar: { dimensoes: [{ chave: "origem", rotulo: "Origem" }, { chave: "status", rotulo: "Status" }], campoData: "criado_em", busca: ["nome", "empresa"], ordenaveis: ["criado_em", "nome", "origem", "status"] },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT l.id::text AS id, trim(COALESCE(l.nome, '') || ' ' || COALESCE(l.sobrenome, '')) AS nome, l.empresa,
+               COALESCE(NULLIF(l.origem, ''), 'sem origem') AS origem, l.status, l.created_at AS criado_em
+          FROM leads l
+         WHERE l.organizacao_id = ${org}::uuid
+           AND l.created_at >= ${de}::timestamptz AND l.created_at < ${ate}::timestamptz
+           AND ${semTestes(p.incluirTestes, origemDeTeste("l.origem"))}`;
+    },
+  }),
+  definir({
+    codigo: "mrr_em_risco",
+    nome: "MRR em risco (cobrança falhando)",
+    tipo: "SNAPSHOT",
+    unidade: "BRL",
+    descricao: "MRR das assinaturas Stripe com cobrança vencida (status past_due): o cartão ou boleto falhou e o Stripe ainda está tentando.",
+    fonte: "assinaturas do CRM com status past_due, somando mrr.",
+    naoInclui:
+      COBERTURA_STRIPE + " Não inclui assinatura 'unpaid' (tentativas esgotadas), que o snapshot diário antigo chamava de risco, " +
+      "nem cliente que reduziu uso ou está para renovar.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.valor DESC NULLS LAST",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], busca: ["empresa"], ordenaveis: ["valor", "empresa", "familia", "periodo_ate"] },
+    recorte: (org, p) => sql`
+      SELECT a.id::text AS id, a.empresa_id::text AS empresa_id, e.nome AS empresa,
+             COALESCE(sc.service_family, 'UNKNOWN') AS familia, a.status, a.current_period_end AS periodo_ate,
+             COALESCE(a.mrr, 0)::numeric AS valor
+        FROM assinaturas a
+        LEFT JOIN empresas e ON e.id = a.empresa_id
+        LEFT JOIN servicos_canonicos sc ON sc.id = a.servico_id
+       WHERE a.organizacao_id = ${org}::uuid AND ${doCrm("a")} AND a.status = 'past_due'
+         AND ${daFamilia("COALESCE(sc.service_family, 'UNKNOWN')", p.familia)}
+         AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}`,
+  }),
+  definir({
+    codigo: "mrr_cancelado",
+    nome: "MRR cancelado (Stripe)",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao: "MRR das assinaturas Stripe canceladas dentro da janela, pela data do cancelamento.",
+    fonte: "assinaturas do CRM com status canceled e cancelada_em dentro da janela, somando mrr.",
+    naoInclui:
+      COBERTURA_STRIPE + " Não inclui assinatura que nunca ativou (incomplete_expired) nem cancelamento agendado ainda não efetivado.",
+    agregacao: "soma",
+    filtros: { familia: true },
+    ordem: "t.cancelada_em DESC",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "motivo", rotulo: "Motivo" }], campoData: "cancelada_em", busca: ["empresa"], ordenaveis: ["valor", "empresa", "cancelada_em", "familia"] },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT a.id::text AS id, a.empresa_id::text AS empresa_id, e.nome AS empresa,
+               COALESCE(sc.service_family, 'UNKNOWN') AS familia, a.motivo_cancelamento AS motivo,
+               a.cancelada_em, COALESCE(a.mrr, 0)::numeric AS valor
+          FROM assinaturas a
+          LEFT JOIN empresas e ON e.id = a.empresa_id
+          LEFT JOIN servicos_canonicos sc ON sc.id = a.servico_id
+         WHERE a.organizacao_id = ${org}::uuid AND ${doCrm("a")} AND a.status = 'canceled'
+           AND a.cancelada_em >= ${de}::timestamptz AND a.cancelada_em < ${ate}::timestamptz
+           AND ${daFamilia("COALESCE(sc.service_family, 'UNKNOWN')", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}`;
+    },
+  }),
+  definir({
+    codigo: "logos_cancelados",
+    nome: "Clientes que cancelaram (Stripe)",
+    tipo: "EVENT",
+    unidade: "contagem",
+    descricao: "Empresas distintas com assinatura Stripe cancelada na janela e SEM nenhuma assinatura viva (ativa, em teste ou vencida) hoje.",
+    fonte: "assinaturas do CRM canceladas na janela, agrupadas por empresa, descontando quem ainda tem assinatura viva.",
+    naoInclui:
+      COBERTURA_STRIPE + " Cliente que só trocou de plano (cancelou uma assinatura e segue com outra) não conta como logo perdido.",
+    agregacao: "contagem",
+    filtros: { familia: true },
+    ordem: "t.valor DESC",
+    explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }], campoData: "cancelada_em", busca: ["empresa"], ordenaveis: ["valor", "empresa", "cancelada_em", "familia"], somaValor: true },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT COALESCE(a.empresa_id::text, a.id::text) AS id, max(a.empresa_id::text) AS empresa_id, max(e.nome) AS empresa,
+               CASE WHEN count(DISTINCT COALESCE(sc.service_family, 'UNKNOWN')) = 1 THEN max(COALESCE(sc.service_family, 'UNKNOWN')) ELSE 'UNKNOWN' END AS familia,
+               max(a.cancelada_em) AS cancelada_em, sum(COALESCE(a.mrr, 0))::numeric AS valor
+          FROM assinaturas a
+          LEFT JOIN empresas e ON e.id = a.empresa_id
+          LEFT JOIN servicos_canonicos sc ON sc.id = a.servico_id
+         WHERE a.organizacao_id = ${org}::uuid AND ${doCrm("a")} AND a.status = 'canceled'
+           AND a.cancelada_em >= ${de}::timestamptz AND a.cancelada_em < ${ate}::timestamptz
+           AND NOT EXISTS (SELECT 1 FROM assinaturas v
+                            WHERE v.organizacao_id = a.organizacao_id AND v.empresa_id = a.empresa_id AND ${doCrm("v")}
+                              AND v.status IN ('active', 'trialing', 'past_due', 'unpaid'))
+           AND ${daFamilia("COALESCE(sc.service_family, 'UNKNOWN')", p.familia)}
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}
+         GROUP BY COALESCE(a.empresa_id::text, a.id::text)`;
+    },
+  }),
+  definir({
+    codigo: "mrr_movimento_liquido",
+    nome: "Movimento líquido de MRR (Stripe)",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao: "Soma dos movimentos de MRR da janela: novo + expansão + reativação - contração - churn.",
+    fonte: "mrr_movimentos (delta) pela data de ocorrência.",
+    naoInclui:
+      COBERTURA_STRIPE + " Os movimentos vêm do sync Stripe, de um backfill e de uma recuperação do Zoho (origem 'zoho_recovery', sem assinatura): " +
+      "são conceito diferente da variação do MRR faturável da planilha e NÃO fecham com ela (a invariante cruzada mede o gap).",
+    agregacao: "soma",
+    filtros: { familia: false },
+    ordem: "t.ocorrido_em DESC",
+    explorar: { dimensoes: [{ chave: "tipo", rotulo: "Tipo de movimento" }, { chave: "origem", rotulo: "Origem do movimento" }], campoData: "ocorrido_em", busca: ["empresa", "produto"], ordenaveis: ["valor", "empresa", "ocorrido_em", "tipo"] },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT m.id::text AS id, e.nome AS empresa, m.produto, m.tipo, m.origem, COALESCE(m.delta, 0)::numeric AS valor,
+               m.ocorrido_em, a.empresa_id::text AS empresa_id
+          FROM mrr_movimentos m
+          LEFT JOIN assinaturas a ON a.id = m.assinatura_id
+          LEFT JOIN empresas e ON e.id = a.empresa_id
+         WHERE m.organizacao_id = ${org}::uuid
+           AND m.ocorrido_em >= ${de}::timestamptz AND m.ocorrido_em < ${ate}::timestamptz
+           AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"))}`;
+    },
+  }),
+  definir({
+    codigo: "meta_booking",
+    nome: "Meta comercial (closers)",
+    tipo: "EVENT",
+    unidade: "BRL",
+    descricao: "Soma das metas mensais de faturamento fechado das closers ativas, para os meses da janela.",
+    fonte:
+      "metas das closers ativas (papéis closer/vendedor) por mês: tipo faturamento_fechado; no mês em que só existe o tipo " +
+      "aposentado mrr_fechado, vale ele (mesma regra de getMetaComercialAgregada).",
+    naoInclui:
+      "meta de SDR e meta de reuniões. Meses anteriores a 09/09/2026 só têm meta do tipo aposentado mrr_fechado (MRR, sem setup): " +
+      "comparar com booking_ganho, que inclui setup, superestima o atingimento nesses meses.",
+    agregacao: "soma",
+    filtros: { familia: false },
+    ordem: "t.competencia DESC, t.valor DESC",
+    explorar: { dimensoes: [{ chave: "tipo", rotulo: "Tipo da meta" }, { chave: "usuario", rotulo: "Closer" }], campoData: "competencia", campoDataTipo: "data", busca: ["usuario"], ordenaveis: ["valor", "usuario", "competencia", "tipo"], piso: new Date("2026-06-01T00:00:00-03:00") },
+    recorte: (org, p) => {
+      const { de, ate } = janela(p);
+      return sql`
+        SELECT m.id::text AS id, u.nome AS usuario, m.periodo AS competencia, m.tipo, m.valor_alvo::numeric AS valor
+          FROM metas m
+          JOIN usuarios u ON u.id = m.usuario_id AND u.organizacao_id = m.organizacao_id
+         WHERE m.organizacao_id = ${org}::uuid AND u.ativo = true AND u.role IN ('closer', 'vendedor')
+           AND m.tipo IN ('faturamento_fechado', 'mrr_fechado')
+           AND m.periodo >= (${de}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND m.periodo <  (${ate}::timestamptz AT TIME ZONE 'America/Sao_Paulo')::date
+           AND (m.tipo = 'faturamento_fechado'
+                OR NOT EXISTS (SELECT 1 FROM metas m2 JOIN usuarios u2 ON u2.id = m2.usuario_id
+                                WHERE m2.organizacao_id = m.organizacao_id AND m2.periodo = m.periodo
+                                  AND m2.tipo = 'faturamento_fechado' AND u2.ativo = true AND u2.role IN ('closer', 'vendedor')))`;
+    },
   }),
 ];
 
@@ -423,15 +781,8 @@ export const CATALOGO: DefinicaoMetrica[] = [
     ordem: "t.valor DESC NULLS LAST",
     explorar: { dimensoes: [{ chave: "familia", rotulo: "Família" }, { chave: "etapa", rotulo: "Etapa" }], busca: ["empresa", "titulo"], ordenaveis: ["valor", "empresa", "titulo", "etapa", "previsao_fechamento", "familia"] },
     recorte: (org, p) => sql`
-      SELECT o.id::text AS id, o.titulo, e.nome AS empresa, COALESCE(o.service_family, 'UNKNOWN') AS familia,
-             o.etapa, o.valor::numeric AS valor, o.previsao_fechamento,
-             o.negocio_id_legado::text AS negocio_id, o.empresa_id::text AS empresa_id
-        FROM oportunidades o
-        LEFT JOIN empresas e ON e.id = o.empresa_id
-       WHERE o.organizacao_id = ${org}::uuid
-         AND o.ganho_at IS NULL AND o.perdido_at IS NULL AND o.etapa IS NOT NULL
-         AND ${daFamilia("o.service_family", p.familia)}
-         AND ${semTestes(p.incluirTestes, nomeDeTeste("COALESCE(e.nome, '')"), nomeDeTeste("COALESCE(o.titulo, '')"))}`,
+      SELECT a.id, a.titulo, a.empresa, a.familia, a.etapa, a.valor, a.previsao_fechamento, a.negocio_id, a.empresa_id
+        FROM (${recorteAbertas(org, p)}) a`,
   }),
   definir({
     codigo: "faturamento_competencia",
@@ -462,6 +813,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
       busca: ["empresa", "documento"],
       ordenaveis: ["valor", "empresa", "competencia", "familia", "natureza"],
     },
+    preenchimento: { rotulo: "faturamento", sonda: sondaCompetencia(), modo: "ausencia" },
     recorte: (org, p) => {
       const { de, ate } = janela(p);
       return sql`
@@ -559,6 +911,7 @@ export const CATALOGO: DefinicaoMetrica[] = [
     },
   }),
   ...METRICAS_DE_RECEITA,
+  ...METRICAS_EXECUTIVAS,
 ];
 
 const POR_CODIGO = new Map(CATALOGO.map((m) => [m.codigo, m]));
@@ -589,6 +942,44 @@ export async function medir(
   return {
     codigo: d.codigo, nome: d.nome, tipo: d.tipo, unidade: d.unidade,
     fonte: d.fonte, valor: Number(linhas[0]?.valor ?? 0),
+  };
+}
+
+
+export interface MedicaoDetalhada extends ValorMetrica {
+  /** Linhas do recorte (o que o drill abre). */
+  registros: number;
+  /** Menor e maior data do campo de data da métrica no recorte (ISO; competência vem como YYYY-MM-DD). */
+  observadoDe: string | null;
+  observadoAte: string | null;
+  /** Preenchimento do campo de que o número depende, quando a métrica declara a sonda. */
+  preenchimento: { rotulo: string; universo: number; preenchido: number; modo: "cobertura" | "ausencia" } | null;
+}
+
+/**
+ * `medir` + registros + datas observadas + preenchimento, em UMA ida ao banco para o card.
+ * O valor sai de `d.valor` (a mesma definição de `medir`), embutida como subconsulta: não há soma reescrita aqui.
+ */
+export async function medirDetalhado(organizacaoId: string, codigo: string, p: Periodo = {}): Promise<MedicaoDetalhada> {
+  const d = definicao(codigo);
+  if (!d) throw new Error(`métrica desconhecida: ${codigo}`);
+  const campo = d.tipo === "EVENT" ? d.explorar.campoData : undefined;
+  const c = campo ? sql.raw(`t."${campo}"`) : null;
+  const fmt = (f: SQL) => d.explorar.campoDataTipo === "data"
+    ? sql`${f}::text`
+    : sql`to_char(${f} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
+  const [r] = await db.execute<{ valor: string; n: number; de: string | null; ate: string | null }>(sql`
+    SELECT (${d.valor(organizacaoId, p)}) AS valor, count(*)::int AS n,
+           ${c ? fmt(sql`min(${c})`) : sql`NULL::text`} AS de, ${c ? fmt(sql`max(${c})`) : sql`NULL::text`} AS ate
+      FROM (${d.recorte(organizacaoId, p)}) t`);
+  let preenchimento: MedicaoDetalhada["preenchimento"] = null;
+  if (d.preenchimento) {
+    const [s] = await db.execute<{ universo: number; preenchido: number }>(d.preenchimento.sonda(organizacaoId, p));
+    preenchimento = { rotulo: d.preenchimento.rotulo, universo: Number(s?.universo ?? 0), preenchido: Number(s?.preenchido ?? 0), modo: d.preenchimento.modo ?? "cobertura" };
+  }
+  return {
+    codigo: d.codigo, nome: d.nome, tipo: d.tipo, unidade: d.unidade, fonte: d.fonte,
+    valor: Number(r?.valor ?? 0), registros: Number(r?.n ?? 0), observadoDe: r?.de ?? null, observadoAte: r?.ate ?? null, preenchimento,
   };
 }
 
