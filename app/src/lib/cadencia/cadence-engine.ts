@@ -397,6 +397,15 @@ async function resolverContatoCompleto(
        O telefone passa pela régua de `lib/telefone`: os contatos do WhatsApp
        guardam DDI+DDD+número, e o lead de Pré-vendas costuma vir sem o 55 —
        sem isso a linha nasce com outro telefone e o índice nem é consultado. */
+    /* Um lead tem UMA conversa por responsável — `idx_contatos_lead_responsavel`.
+       Se a que existe não serve (número privado, ou fora da sessão escolhida), o
+       banco não deixa criar a segunda: devolver null faz o passo falhar com
+       motivo legível, em vez de estourar o índice no meio da cadência. */
+    if (lead.responsavelId) {
+      const [doResponsavel] = await db.select({ id: contatos.id }).from(contatos)
+        .where(and(eq(contatos.leadId, entityId), eq(contatos.responsavelId, lead.responsavelId))).limit(1);
+      if (doResponsavel) return null;
+    }
     const telefone = chaveTelefone(lead.telefone) ?? lead.telefone.replace(/\D/g, "");
     const [created] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone, email: lead.email, sessaoId: sessao.id, responsavelId: lead.responsavelId, leadId: entityId })
       .onConflictDoUpdate({

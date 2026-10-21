@@ -45,7 +45,12 @@ export async function garantirConversaDoLead(
     ?? todas.find((s) => usuarioId && s.usuarioId === usuarioId) ?? todas.find((s) => s.isDefault) ?? todas[0];
   if (!sessao) return;
 
-  /* A conversa é ÚNICA por (sessão, telefone). Se já existe uma com esse número
+  /* O outro índice único, `idx_contatos_lead_responsavel`, não é alcançável
+     daqui: a busca no topo procura conversa do lead em QUALQUER sessão e já
+     teria retornado. Quem filtra a busca por sessão ou por privacidade (a
+     cadência, a autonomia da agente) precisa checá-lo explicitamente, porque
+     um ON CONFLICT só nomeia um índice.
+     A conversa é ÚNICA por (sessão, telefone). Se já existe uma com esse número
      — criada pela mensagem que chegou antes de o lead existir, ou sem lead
      nenhum — ela é ADOTADA pelo lead, não duplicada: era isso que estourava
      `idx_contatos_sessao_phone` e derrubava quem só queria gravar a mensagem.

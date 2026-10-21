@@ -25,6 +25,10 @@ const CAMINHOS = [
 ];
 
 test("todo insert em contatos adota a conversa existente", () => {
+  // `contatos` tem DOIS índices únicos, e um ON CONFLICT só nomeia um: adotar
+  // em (sessão, telefone) deixa (lead_id, responsavel_id) estourando. Quem
+  // insere com responsável tem que resolver esse caso ANTES — era o que o
+  // `onConflictDoNothing()` escondia, junto com o conflito que importa.
   for (const caminho of CAMINHOS) {
     const src = readFileSync(caminho, "utf8");
     let i = -1;
@@ -37,6 +41,15 @@ test("todo insert em contatos adota a conversa existente", () => {
         `(sem onConflictDoUpdate, o índice único derruba o fluxo ou o returning volta vazio)`);
       assert.match(trecho, /COALESCE\(\$\{contatos\.leadId\}/,
         `${caminho}:${linha} adota a conversa mas pode ROUBAR o lead de outra: falta o COALESCE`);
+      // Insere com responsável? Então o segundo índice único é alcançável, e
+      // precisa de uma saída antes do insert, não de um erro de constraint.
+      const antes = src.slice(Math.max(0, i - 1200), i);
+      if (/responsavelId:\s*(lead\.r\b|lead\.responsavelId)/.test(trecho)) {
+        assert.match(antes, /eq\(contatos\.responsavelId|idx_contatos_lead_responsavel/,
+          `${caminho}:${linha} insere com responsável sem resolver idx_contatos_lead_responsavel: ` +
+          `o ON CONFLICT de (sessão, telefone) não cobre esse índice. Ou checa antes, ` +
+          `ou diz no comentário por que o conflito não alcança este caminho`);
+      }
     }
   }
 });

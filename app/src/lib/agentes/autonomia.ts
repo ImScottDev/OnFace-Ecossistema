@@ -180,14 +180,22 @@ export async function contatoDoLead(organizacaoId: string, leadId: string, sessa
       })()
     : sessoes.find((s) => s.id === sessaoDoAgente) ?? sessoes.find((s) => s.status === "connected" && s.isDefault) ?? sessoes.find((s) => s.status === "connected") ?? sessoes.find((s) => s.isDefault) ?? sessoes[0];
   if (!sessao) return null;
-  // Um lead tem uma conversa por responsável: se a dele está num número privado, não há
-  // conversa utilizável para o agente (null) — nunca reaproveita a privada nem derruba o ciclo.
-  /* `onConflictDoNothing().returning()` devolvia VAZIO quando o número já tinha
-     conversa (a mensagem chegou antes de o lead existir): a agente desistia do
-     lead em silêncio, sem erro e sem log. Adota a conversa existente, como a
-     porta única de Atendimento, e não rouba conversa de outro lead (COALESCE).
-     A sessão já passou por `numeroAceitaAutomacao`, então adotar aqui não
-     reaproveita número privado. */
+  /* Um lead tem UMA conversa por responsável — `idx_contatos_lead_responsavel`.
+     Se a dele está num número privado, a busca acima a descartou e o banco não
+     deixa criar outra: não há conversa utilizável para o agente (null). A regra
+     é explícita aqui porque antes ela só acontecia como efeito colateral de um
+     `onConflictDoNothing()`, que engolia este conflito junto com os outros. */
+  if (lead.r) {
+    const [doResponsavel] = await db.select({ id: contatos.id }).from(contatos)
+      .where(and(eq(contatos.leadId, leadId), eq(contatos.responsavelId, lead.r))).limit(1);
+    if (doResponsavel) return null;
+  }
+  /* Já no conflito de (sessão, telefone) a conversa existente é ADOTADA: ela é
+     do número que o agente vai usar e está sem lead porque a mensagem chegou
+     antes de o lead existir (~635 leads casam assim por telefone). Antes o
+     `onConflictDoNothing().returning()` devolvia vazio aqui também, e a agente
+     abandonava o lead sem erro e sem log. Nunca rouba lead de outra conversa
+     (COALESCE), e a sessão já passou por `numeroAceitaAutomacao`. */
   const [novo] = await db.insert(contatos).values({ organizacaoId, canal: "whatsapp", nome: lead.nome, telefone: tel, email: lead.email, sessaoId: sessao.id, responsavelId: lead.r, leadId })
     .onConflictDoUpdate({
       target: [contatos.sessaoId, contatos.telefone],
