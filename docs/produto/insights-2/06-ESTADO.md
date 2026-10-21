@@ -32,6 +32,7 @@ Insights segue fechado em produção por `AREAS_EM_BREVE=automacoes,insights`.
 | `34f7b06c` | Visão Geral com filtros, composição, meta, alertas e faíscas |
 | `d8a042d8` | esta documentação |
 | `a6efd5e6` | **booking da tela estava R$ 106 mil acima da regra** — a correção da política de receita nunca tinha chegado ao catálogo |
+| `79b71bac` | **F1 entregue**: filtro por responsável, etapa, pipeline, origem e campanha, declarado por métrica e chegando ao dado |
 
 Os dois últimos são **frontend não validado**: funcionam e estão provados no navegador, mas o
 desenho não foi aprovado e vai ser substituído pelo que sair do Figma. Ficam como estão — são
@@ -172,6 +173,13 @@ Entregas verticais: dados → consulta → endpoint → contrato → teste. **Se
 | **F6** | **Gate real** nos endpoints e `org` estrito em `financeiro/metricas.ts` | segurança | — |
 | **F7** | **Relatório salvo / visão salva**: persistência versionada | só depois que o catálogo e os filtros estabilizarem | F1, F3 |
 
-**Próximo passo concreto:** F1. Começar pela declaração de filtros suportados por métrica em
-`catalogo.ts` (hoje só `familia` e `testes`), estendendo `Periodo` e `lerPedido` para as dimensões
-novas, com 422 para o que a métrica não aceita e teste cobrindo cada par métrica×filtro.
+**F1 está entregue** (`79b71bac`). Onze métricas aceitam responsável, etapa e pipeline; leads também
+aceitam origem e campanha. O filtro é aplicado dentro de `definir()`, envolvendo o recorte, e por
+isso chega de uma vez ao card, ao detalhe, à composição, à série e à exportação. Equipe e canal
+ficaram fora: equipe não existe como coluna de fato (vem de `usuarios.team_id`) e canal depende da
+normalização de `canais.ts`.
+
+**Próximo passo concreto:** F2, o contrato de Performance — `GET /api/relatorios/performance` com
+régua por papel, papel vindo do evento (`status_changes`) e não de `usuarios.role`, e as réguas já
+conferidas em `lib/relatorios/performance.ts` preservadas. É a 4ª e a 5ª tela da fila do Figma, e
+agora tem o filtro de responsável de que precisa.
