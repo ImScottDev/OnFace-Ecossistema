@@ -320,23 +320,23 @@ for i in \$(seq 1 45); do
     # (14/10/2026). As imagens vêm prontas do GHCR, então aqui ele só ocupa disco.
     sudo docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
     # Cada deploy baixa uma tag nova do GHCR e a anterior ficava para sempre.
-    # Em 21/10/2026 eram 41 tags de `onface-backend` a 3,12 GB cada, mais 41 de
-    # `onface-app`: a caixa chegou a 91% com imagem que ninguém ia usar de novo.
+    # Em 21/10/2026 eram 41 tags de 'onface-backend' a 3,12 GB cada, mais 41 de
+    # 'onface-app': a caixa chegou a 91% com imagem que ninguém ia usar de novo.
     # Antes só existia o aviso logo abaixo, que pedia a um humano podar à mão —
     # e humano nenhum podava. Quem cria o lixo limpa o lixo.
     #
-    # Mantém as 5 mais recentes, a que está em uso e a `main`. Rollback mais
-    # fundo que isso continua possível: a tag vive no GHCR e `--versao <sha>`
+    # Mantém as 5 mais recentes, a que está em uso e a 'main'. Rollback mais
+    # fundo que isso continua possível: a tag vive no GHCR e '--versao <sha>'
     # faz o pull de novo.
     for repo in onface-app onface-backend; do
       img=ghcr.io/imscottdev/\$repo
       emuso=\$(sudo docker ps -a --format '{{.Image}}' | grep "^\$img:" | sed "s|^\$img:||" | sort -u || true)
-      # Desempate por tag (`-k1,1r`): duas tags do mesmo id herdam a MESMA data,
+      # Desempate por tag ('-k1,1r'): duas tags do mesmo id herdam a MESMA data,
       # e sem critério estável quais 5 sobrevivem mudava de execução para
       # execução. A tag em uso é protegida à parte, logo abaixo, então o
       # desempate só precisa ser determinístico, não esperto.
       todas=\$(sudo docker images "\$img" --format '{{.Tag}}|{{.CreatedAt}}' | sort -t'|' -k2,2r -k1,1r | cut -d'|' -f1)
-      # `if/then/continue` e não "teste && continue": ver o comentário abaixo.
+      # 'if/then/continue' e não "teste && continue": ver o comentário abaixo.
       for t in \$(printf '%s\n' "\$todas" | tail -n +6); do
         if [ "\$t" = main ] || [ "\$t" = "<none>" ]; then continue; fi
         if printf '%s\n' "\$emuso" | grep -qx "\$t"; then continue; fi
