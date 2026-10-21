@@ -54,26 +54,92 @@ export interface RegistroDoDesenho {
   anuncioHref: string | null;
 }
 
-/** Biblioteca de Anúncios da Meta: pública, abre o criativo pelo id do anúncio
- *  sem exigir login na conta de anúncios (o Gerenciador exige). */
-export function linkDoAnuncio(adId: string | null): string | null {
+/**
+ * Link para o criativo, no Gerenciador de Anúncios.
+ *
+ * Era a Biblioteca de Anúncios (`/ads/library/?id=`) por ser pública, e **não
+ * funcionava**: o `id` da Biblioteca é o *Ad Archive ID*, que não é o `ad_id`
+ * do Gerenciador. Buscar um ad_id lá dá "nenhum anúncio encontrado". E mesmo
+ * com o id certo a Biblioteca só mantém anúncio ativo (ou político), então
+ * criativo de campanha encerrada — o caso mais comum numa ficha antiga — some
+ * de qualquer jeito.
+ *
+ * O Gerenciador resolve por `ad_id` e guarda o histórico. Exige login na conta
+ * de anúncios, e é o preço de o link de fato abrir o criativo.
+ */
+export function linkDoAnuncio(adId: string | null, adAccountId?: string | null): string | null {
   const id = adId?.trim();
-  return id && /^\d+$/.test(id) ? `https://www.facebook.com/ads/library/?id=${id}` : null;
+  if (!id || !/^\d+$/.test(id)) return null;
+  const conta = adAccountId?.trim();
+  const act = conta ? `act=${conta.startsWith("act_") ? conta.slice(4) : conta}&` : "";
+  return `https://adsmanager.facebook.com/adsmanager/manage/ads?${act}selected_ad_ids=${id}`;
 }
 
-export function rastreioDoLead(a: DetalheLead["atribuicao"], meta?: Record<string, string>): RegistroDoDesenho["rastreio"] {
+/** Mesma régua para o conjunto e para a campanha: o Gerenciador abre os três. */
+export function linkDoConjunto(adsetId: string | null, adAccountId?: string | null): string | null {
+  const id = adsetId?.trim();
+  if (!id || !/^\d+$/.test(id)) return null;
+  const conta = adAccountId?.trim();
+  const act = conta ? `act=${conta.startsWith("act_") ? conta.slice(4) : conta}&` : "";
+  return `https://adsmanager.facebook.com/adsmanager/manage/adsets?${act}selected_adset_ids=${id}`;
+}
+
+export function linkDaCampanha(campaignId: string | null, adAccountId?: string | null): string | null {
+  const id = campaignId?.trim();
+  if (!id || !/^\d+$/.test(id)) return null;
+  const conta = adAccountId?.trim();
+  const act = conta ? `act=${conta.startsWith("act_") ? conta.slice(4) : conta}&` : "";
+  return `https://adsmanager.facebook.com/adsmanager/manage/campaigns?${act}selected_campaign_ids=${id}`;
+}
+
+/**
+ * Origem do contato, legível.
+ *
+ * Antes a ficha mostrava a MESMA coisa duas vezes: o nome, com rótulo de
+ * jargão ("Conteúdo (utm_content)"), e o id, como número cru de 17 dígitos
+ * ("ID do anúncio (Meta)"). Ninguém lê `120249446086250170`, e quem lê
+ * "Conteúdo (utm_content): Ads_copiloto" não sabe que aquilo é o nome do
+ * anúncio.
+ *
+ * Para lead de Meta Lead Ads os dois são a mesma entidade: foi o próprio
+ * sistema que preencheu `utm_term` com o conjunto e `utm_content` com o
+ * anúncio, a partir do `traffic_value` que a Meta manda como
+ * "{conjunto}@{anúncio}". Então viram uma linha só, com o nome à frente e o id
+ * levando ao Gerenciador.
+ *
+ * Sem id da Meta (lead de outra origem), `utm_term` e `utm_content` voltam a
+ * ser o que são — termo e conteúdo de UTM, que em busca paga significam outra
+ * coisa — e continuam com o rótulo técnico.
+ */
+export function rastreioDoLead(
+  a: DetalheLead["atribuicao"], meta?: Record<string, string>, adAccountId?: string | null,
+): RegistroDoDesenho["rastreio"] {
   const linhas: RegistroDoDesenho["rastreio"] = [];
   const add = (rotulo: string, valor: string | null, href?: string | null) => {
     if (valor?.trim()) linhas.push(href ? { rotulo, valor: valor.trim(), href } : { rotulo, valor: valor.trim() });
   };
-  add("Campanha", a.campanha);
+  const txt = (v: string | null | undefined) => (v?.trim() ? v.trim() : null);
+  const doMeta = Boolean(txt(a.metaCampaignId) || txt(a.metaAdsetId) || txt(a.metaAdId));
+
+  /* O NOME vem da própria Meta. `camposRastreioMeta` grava `meta_ad_nome`,
+     `meta_conjunto_nome` e `meta_campanha_nome` desde que o Lead Ads existe, e
+     a ficha não lia nenhum dos três: mostrava o id de 17 dígitos e, em outra
+     linha, o mesmo nome rotulado como "Conteúdo (utm_content)". A UTM é o
+     fallback — ela só carrega o nome porque o código a preencheu a partir do
+     `traffic_value`, e em campanha nativa nem sempre existe. */
+  add("Campanha", txt(meta?.meta_campanha_nome) ?? txt(a.campanha) ?? txt(a.metaCampaignId),
+    linkDaCampanha(a.metaCampaignId, adAccountId));
   add("Meio (utm_medium)", a.medium);
-  add("Conteúdo (utm_content)", a.conteudo);
-  add("Termo (utm_term)", a.termo);
+  if (doMeta) {
+    add("Conjunto", txt(meta?.meta_conjunto_nome) ?? txt(a.termo) ?? txt(a.metaAdsetId),
+      linkDoConjunto(a.metaAdsetId, adAccountId));
+    add("Anúncio", txt(meta?.meta_ad_nome) ?? txt(a.conteudo) ?? txt(a.metaAdId),
+      linkDoAnuncio(a.metaAdId, adAccountId));
+  } else {
+    add("Conteúdo (utm_content)", a.conteudo);
+    add("Termo (utm_term)", a.termo);
+  }
   add("Landing page", a.landingPage);
-  add("ID da campanha (Meta)", a.metaCampaignId);
-  add("ID do conjunto (Meta)", a.metaAdsetId);
-  add("ID do anúncio (Meta)", a.metaAdId, linkDoAnuncio(a.metaAdId));
   for (const l of linhasOrigemMeta(meta)) add(l.rotulo, l.valor);
   return linhas;
 }

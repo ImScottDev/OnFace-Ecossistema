@@ -50,6 +50,10 @@ export function linhasOrigemMeta(meta: Record<string, string> | undefined): Arra
   if (!meta) return [];
   const linhas: Array<{ rotulo: string; valor: string }> = [];
   const add = (rotulo: string, valor?: string) => { if (valor?.trim()) linhas.push({ rotulo, valor: valor.trim() }); };
+  /* `meta_campanha_nome`, `meta_conjunto_nome` e `meta_ad_nome` NÃO entram
+     aqui: eles são o nome das linhas Campanha/Conjunto/Anúncio em
+     `rastreioDoLead`, que já os mostra com o link para o Gerenciador. Repetir
+     daria a mesma informação duas vezes, que era o defeito original da ficha. */
   add("Formulário (Meta)", meta.meta_formulario_nome);
   if (meta.meta_plataforma) add("Plataforma", PLATAFORMAS[meta.meta_plataforma.toLowerCase()] ?? meta.meta_plataforma);
   if (meta.meta_organico) add("Lead orgânico", meta.meta_organico === "sim" ? "Sim" : "Não");
