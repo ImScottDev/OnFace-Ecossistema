@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chaveDoFato, instanteDoFato, tipoNaPolitica } from "./entrega-capi";
+import { POLITICA_EVENTOS, regraDoEvento } from "@onface/integrations-meta";
 
 const DEI = "b540ddfa-e20b-4f08-95e7-387bff45011a";
 
@@ -40,4 +41,54 @@ test("event_time é o do fato; o da fila é só fallback", () => {
   assert.equal(instanteDoFato({ payload: {}, createdAt: fila }).getTime(), fila.getTime());
   // Data podre no payload não pode virar NaN e mandar event_time inválido.
   assert.equal(instanteDoFato({ payload: { ocorrido_em: "nao-e-data" }, createdAt: fila }).getTime(), fila.getTime());
+});
+
+test("a jornada comercial inteira tem destino na Meta, etapa por etapa", () => {
+  // Cada estágio que o Scott cobrou, e o que a Meta recebe. O teste existe
+  // porque metade disto estava sem mapeamento: o evento entrava na fila e
+  // morria em "sem_mapeamento", em silêncio.
+  const jornada: Array<[string, Record<string, unknown>, string]> = [
+    ["AcquisitionCreated", {}, "Lead"],
+    ["AcquisitionQualified", {}, "QualifiedLead"],
+    ["AcquisitionDisqualified", {}, "LeadDisqualified"],
+    ["MeetingScheduled", {}, "Schedule"],
+    ["OpportunityCreated", {}, "OpportunityCreated"],
+    ["OpportunityStageChanged", { para: "reuniao_realizada" }, "MeetingHeld"],
+    ["OpportunityStageChanged", { para: "diagnostico" }, "MeetingHeld"],
+    ["ProposalSent", {}, "ProposalSent"],
+    ["OpportunityStageChanged", { para: "negociacao" }, "NegotiationStarted"],
+    ["OpportunityStageChanged", { para: "negociacao_iniciada" }, "NegotiationStarted"],
+    ["ProposalAccepted", {}, "ProposalAccepted"],
+    ["OpportunityWon", {}, "OpportunityWon"],
+    ["DealWon", {}, "OpportunityWon"],
+    ["OpportunityLost", {}, "OpportunityLost"],
+    ["PaymentConfirmed", {}, "Purchase"],
+    ["PaymentCompleted", {}, "Purchase"],
+  ];
+  for (const [eventType, payload, esperado] of jornada) {
+    const regra = regraDoEvento(tipoNaPolitica(eventType, payload));
+    assert.ok(regra, `${eventType} não tem destino na Meta: morre em "sem_mapeamento"`);
+    assert.equal(regra!.nomeMeta, esperado, `${eventType} foi para o evento errado`);
+  }
+});
+
+test("etapa sem sinal novo NÃO vira evento: duplicar inflaria a conversão", () => {
+  // Proposta, ganho, perda e desqualificação já têm evento próprio.
+  for (const etapa of ["proposta", "proposta_apresentada", "ganho", "perdido", "desqualificado", "entrada"]) {
+    assert.equal(regraDoEvento(tipoNaPolitica("OpportunityStageChanged", { para: etapa })), null,
+      `a etapa ${etapa} virou evento e vai contar a mesma conversão duas vezes`);
+  }
+});
+
+test("desfecho negativo é marcado, para ninguém configurar como conversão a otimizar", () => {
+  for (const nome of ["AcquisitionDisqualified", "OpportunityLost"] as const) {
+    assert.equal(POLITICA_EVENTOS[nome].desfecho, "negativo",
+      `${nome} sem marca de desfecho: alguém configura como objetivo e a Meta busca quem não fecha`);
+    assert.equal(POLITICA_EVENTOS[nome].padrao, false, "desfecho negativo não é evento padrão da Meta");
+  }
+});
+
+test("mudança de etapa sem a etapa no payload não inventa evento", () => {
+  assert.equal(regraDoEvento(tipoNaPolitica("OpportunityStageChanged", {})), null);
+  assert.equal(regraDoEvento(tipoNaPolitica("OpportunityStageChanged", null)), null);
 });

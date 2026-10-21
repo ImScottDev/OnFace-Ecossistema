@@ -78,6 +78,40 @@ As duas últimas linhas são o problema de negócio, não de código:
   momento. Sem ele a Meta não recebe valor, e otimizar por valor é o modo mais
   eficaz de otimização que ela oferece.
 
+## 3b. Metade da jornada não tinha destino — agora tem (`#MAPA`)
+
+A política cobria o avanço positivo e paravam ali. Desqualificado, perdido,
+reunião realizada e entrada em negociação **morriam em "sem_mapeamento"**: o
+evento entrava na fila e era descartado em silêncio.
+
+Pior, a mudança de etapa do pipeline chegava como um evento só
+(`OpportunityStageChanged`, 33 na fila) para seis etapas diferentes — devolvida
+crua, ensinaria a Meta a otimizar por "mexeu no card". A etapa de destino é que
+tem significado, então a tradução passa a olhar `payload.para`:
+
+| Etapa de destino | Vai como | Por quê |
+|---|---|---|
+| `reuniao_realizada`, `diagnostico` | `MeetingHeld` | `Schedule` diz que marcou, não que aconteceu — e no-show é grande |
+| `negociacao`, `negociacao_iniciada`, `em_fechamento` | `NegotiationStarted` | último sinal forte antes do ganho, que demora semanas |
+| `proposta`, `proposta_apresentada` | **nada** | `ProposalSent` já publica o mesmo fato; duplicar infla a conversão |
+| `ganho`, `perdido`, `desqualificado` | **nada** | têm evento próprio |
+
+E as saídas da jornada passam a voltar, marcadas como `desfecho: "negativo"`:
+
+| Evento | Vai como | Atenção |
+|---|---|---|
+| `AcquisitionDisqualified` | `LeadDisqualified` | **nunca** configurar como conversão a otimizar |
+| `OpportunityLost` | `OpportunityLost` | idem — a Meta buscaria quem não fecha |
+
+A marca existe porque o risco é de configuração no gerenciador, não de código:
+marcar "Perdido" como objetivo de campanha faz a Meta otimizar por perda. Eles
+servem para exclusão de público e leitura de qualidade.
+
+**O que segue sem destino, de propósito:** `TagAdded`/`TagRemoved`,
+`ProposalOpened`/`ProposalViewed` (abrir não é avançar), `DealCreated`,
+`SignatureRequested`, `ContractRequired` e os eventos de conversa. Nenhum é
+estágio comercial.
+
 ## 4. Dois defeitos de código, corrigidos (`e42a1af9`)
 
 Nenhum muda comportamento hoje — a entrega está parada —, mas os dois produzem
@@ -104,6 +138,7 @@ dia na atribuição. Passa a usar `payload.ocorrido_em`, com a fila como fallbac
 | 1 | **Confirmar em produção** se o sweep da outbox roda e desde quando | se estiver parado, o problema é muito maior que o CAPI | leitura |
 | 2 | **Capturar `fbclid` na landing** e derivar `fbc`/`fbp` | sem isto o evento chega e não casa; é o gargalo real | baixo |
 | 3 | **Publicar `PaymentConfirmed`** quando o pagamento é confirmado | é o `Purchase` com valor, e hoje não existe | baixo |
+| 3b | ~~Mapear desqualificado, perdido, reunião realizada e negociação~~ | **feito** | — |
 | 4 | **Ligar o touchpoint Meta à oportunidade ganha** | 0 de 10 ganhos têm atribuição: o melhor evento não sai | médio |
 | 5 | **Destravar a fila dos 269** | **dispara conversão REAL em produção** | **exige autorização** |
 | 6 | Decidir se UTM sozinha autoriza devolver conversão | hoje autoriza, e é o sinal mais fraco | decisão do Scott |

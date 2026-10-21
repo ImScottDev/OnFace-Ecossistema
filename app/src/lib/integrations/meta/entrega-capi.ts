@@ -32,7 +32,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import {
   regraDoEvento, veioDaMeta, idDeterministicoDoEvento, enviarParaCapi,
-  credenciaisCapi, type Atribuicao, type EventoCapi,
+  credenciaisCapi, ETAPA_COMO_EVENTO, type Atribuicao, type EventoCapi,
 } from "@onface/integrations-meta";
 
 export interface ResultadoEntrega {
@@ -69,7 +69,23 @@ export const TIPO_NA_POLITICA: Record<string, string> = {
   PaymentCompleted: "PaymentConfirmed",
 };
 
-export function tipoNaPolitica(eventType: string): string {
+/**
+ * Mudança de etapa não tem um nome só.
+ *
+ * `OpportunityStageChanged` é um evento para seis etapas diferentes: devolvido
+ * cru, ensina a Meta a otimizar por "mexeu no card". A etapa de destino é que
+ * tem significado, e só as que agregam sinal novo têm evento
+ * (`ETAPA_COMO_EVENTO`) — proposta, ganho, perda e desqualificação já têm
+ * evento próprio. Medido em 21/10: 33 mudanças de etapa na fila, todas
+ * "sem_mapeamento", nenhuma voltou.
+ */
+export function tipoNaPolitica(eventType: string, payload?: Record<string, unknown> | null): string {
+  if (eventType === "OpportunityStageChanged" || eventType === "StageChanged") {
+    const para = payload?.para ?? payload?.status;
+    const traduzido = typeof para === "string" ? ETAPA_COMO_EVENTO[para] : undefined;
+    // Etapa sem evento próprio continua sem mapeamento, de propósito.
+    return traduzido ?? eventType;
+  }
   return TIPO_NA_POLITICA[eventType] ?? eventType;
 }
 
@@ -91,7 +107,7 @@ export function tipoNaPolitica(eventType: string): string {
  */
 export function chaveDoFato(e: Pick<LinhaOutbox, "id" | "eventType" | "aggregateId" | "payload">): string {
   const p = e.payload ?? {};
-  const tipo = tipoNaPolitica(e.eventType);
+  const tipo = tipoNaPolitica(e.eventType, e.payload);
   if (tipo === "OpportunityWon") {
     const negocio = p.negocio_legado_id ?? p.negocioId ?? (e.eventType === "DealWon" ? e.aggregateId : null);
     if (typeof negocio === "string" && negocio) return negocio;
@@ -179,7 +195,7 @@ async function contexto(evento: LinhaOutbox): Promise<{
 
 /** Entrega um evento do outbox à Meta, se ele deve ser entregue. */
 export async function entregarEventoNaMeta(evento: LinhaOutbox): Promise<ResultadoEntrega> {
-  const regra = regraDoEvento(tipoNaPolitica(evento.eventType));
+  const regra = regraDoEvento(tipoNaPolitica(evento.eventType, evento.payload));
   if (!regra) return { entregue: false, motivo: "sem_mapeamento" };
 
   const cred = credenciaisCapi();
@@ -244,7 +260,7 @@ export async function registrarEntregaCapi(
       INSERT INTO meta_capi_entregas
         (organizacao_id, outbox_id, event_type, event_name, event_id, entregue, motivo, detalhe)
       VALUES (${evento.organizacaoId}::uuid, ${evento.id}::uuid, ${evento.eventType},
-              ${regraDoEvento(tipoNaPolitica(evento.eventType))?.nomeMeta ?? null}, ${r.eventId ?? null},
+              ${regraDoEvento(tipoNaPolitica(evento.eventType, evento.payload))?.nomeMeta ?? null}, ${r.eventId ?? null},
               ${r.entregue}, ${r.motivo ?? null}, ${r.detalhe?.slice(0, 500) ?? null})
       ON CONFLICT (outbox_id) DO UPDATE
         SET entregue = EXCLUDED.entregue, motivo = EXCLUDED.motivo,

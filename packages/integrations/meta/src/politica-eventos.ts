@@ -38,10 +38,14 @@ export type EventoDominioMeta =
   | "AcquisitionQualified"
   | "MeetingScheduled"
   | "OpportunityCreated"
+  | "MeetingHeld"
   | "ProposalSent"
+  | "NegotiationStarted"
   | "ProposalAccepted"
   | "OpportunityWon"
-  | "PaymentConfirmed";
+  | "PaymentConfirmed"
+  | "AcquisitionDisqualified"
+  | "OpportunityLost";
 
 export interface RegraEvento {
   /** Nome que vai para a Meta. */
@@ -50,6 +54,11 @@ export interface RegraEvento {
   padrao: boolean;
   /** Se leva valor monetário (`custom_data.value` + `currency`). */
   comValor: boolean;
+  /**
+   * Desfecho negativo (perdido, desqualificado). Nunca configurar como conversão
+   * a otimizar no gerenciador: a Meta passaria a buscar quem não fecha.
+   */
+  desfecho?: "negativo";
   /** Por que este nome, e não outro. Fica aqui porque é decisão, não detalhe. */
   porque: string;
 }
@@ -87,6 +96,23 @@ export const POLITICA_EVENTOS: Record<EventoDominioMeta, RegraEvento> = {
     comValor: false,
     porque: "InitiateCheckout tem outro sentido; forçá-lo sujaria o sinal",
   },
+  MeetingHeld: {
+    nomeMeta: "MeetingHeld",
+    padrao: false,
+    comValor: false,
+    porque:
+      "Schedule diz que marcou, não que aconteceu — e no-show é grande. A reunião REALIZADA é " +
+      "o primeiro sinal de que o lead era real, e chega semanas antes do ganho",
+  },
+  NegotiationStarted: {
+    nomeMeta: "NegotiationStarted",
+    padrao: false,
+    comValor: false,
+    porque:
+      "a etapa de negociação era o maior buraco da jornada: 33 mudanças de etapa na fila e " +
+      "nenhuma voltava. Entrar em negociação é o último sinal forte ANTES do ganho, e o ganho " +
+      "demora semanas — sem ele a Meta otimiza às cegas no meio do funil",
+  },
   ProposalAccepted: {
     nomeMeta: "ProposalAccepted",
     padrao: false,
@@ -107,6 +133,51 @@ export const POLITICA_EVENTOS: Record<EventoDominioMeta, RegraEvento> = {
     comValor: true,
     porque: "pagamento confirmado é a definição de Purchase, e é onde o valor real importa",
   },
+
+  /* ── Saídas da jornada ───────────────────────────────────────────────────
+   *
+   * Desqualificado e perdido também são resultado, e devolvê-los deixa a Meta
+   * distinguir o lead que avançou do que morreu — é assim que ela para de
+   * trazer mais gente parecida com quem não fecha.
+   *
+   * `desfecho: "negativo"` existe para quem configura no gerenciador: estes
+   * NÃO entram como conversão a otimizar. Marcar "Perdido" como objetivo de
+   * campanha faria a Meta buscar leads que perdem. Servem para exclusão de
+   * público e para a leitura de qualidade. */
+  AcquisitionDisqualified: {
+    nomeMeta: "LeadDisqualified",
+    padrao: false,
+    comValor: false,
+    desfecho: "negativo",
+    porque:
+      "o par de QualifiedLead: sem ele a Meta só recebe quem avançou e não aprende nada " +
+      "sobre quem foi descartado — que é metade da informação de qualidade",
+  },
+  OpportunityLost: {
+    nomeMeta: "OpportunityLost",
+    padrao: false,
+    comValor: false,
+    desfecho: "negativo",
+    porque:
+      "fechar o ciclo: o ganho voltava e a perda não, então toda oportunidade parecia aberta " +
+      "para sempre do lado da Meta",
+  },
+};
+
+/**
+ * Etapa do pipeline que vira evento próprio na Meta.
+ *
+ * `OpportunityStageChanged` sozinho não serve: um evento só para seis etapas
+ * diferentes ensina a Meta a otimizar por "mexeu no card". A etapa é que tem
+ * significado, e só a que agrega sinal novo entra — proposta, ganho, perda e
+ * desqualificação já têm evento próprio e duplicá-las inflaria a conversão.
+ */
+export const ETAPA_COMO_EVENTO: Record<string, EventoDominioMeta> = {
+  reuniao_realizada: "MeetingHeld",
+  diagnostico: "MeetingHeld",
+  negociacao: "NegotiationStarted",
+  negociacao_iniciada: "NegotiationStarted",
+  em_fechamento: "NegotiationStarted",
 };
 
 /** Traduz o evento de domínio, ou null quando ele não vai para a Meta. */

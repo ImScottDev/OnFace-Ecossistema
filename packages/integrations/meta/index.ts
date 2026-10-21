@@ -37,6 +37,7 @@ export {
 
 export {
   POLITICA_EVENTOS,
+  ETAPA_COMO_EVENTO,
   regraDoEvento,
   veioDaMeta,
   idDeterministicoDoEvento,
