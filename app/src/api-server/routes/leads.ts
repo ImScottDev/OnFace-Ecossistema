@@ -276,7 +276,20 @@ app.get("/leads", async (c) => {
       conditions.push(eq(leads.tipo, tipo));
     }
   }
-  if (status) conditions.push(eq(leads.status, status));
+  // `leads.status` está congelado em 'novo' nos 4.254 registros desde que a
+  // etapa migrou para `aquisicoes.etapa_id`: filtrar por ela devolvia TUDO
+  // (status=novo) ou NADA (qualquer outro valor), existindo 119 qualificados.
+  // A etapa real é a da aquisição, com `estagio_pre_vendas` de reserva e
+  // `qualificacao` como exceção do legado — a mesma regra de `carregarLead`.
+  if (status) {
+    conditions.push(sql`
+      CASE WHEN ${leads.estagioPreVendas} = 'qualificacao' THEN 'qualificacao'
+           ELSE COALESCE(
+             (SELECT pe.codigo FROM aquisicoes a
+                JOIN pipeline_etapas pe ON pe.id = a.etapa_id
+               WHERE a.lead_legado_id = ${leads.id} LIMIT 1),
+             ${leads.estagioPreVendas}) END = ${status}`);
+  }
   if (origem) conditions.push(eq(leads.origem, origem));
   if (setor) conditions.push(eq(leads.empresaSetor, setor));
   if (unread === "1") conditions.push(gte(leads.whatsappNaoLidas, 1));

@@ -774,7 +774,13 @@ async function semProximaAcaoDoCloser(orgId: string, userId: string) {
        AND o.ganho_at IS NULL AND o.perdido_at IS NULL
        AND o.etapa = ANY(${`{${ETAPAS_ABERTAS.map((e) => e.chave).join(",")}}`}::text[])
        AND COALESCE(o.stage, '') <> 'ativo'
-       AND NOT EXISTS (SELECT 1 FROM negocios nx WHERE nx.id = o.negocio_id_legado AND nx.proxima_acao IS NOT NULL)`);
+       -- Proxima acao é tarefa aberta, nao a coluna proxima_acao de negocios:
+       -- essa coluna esta preenchida em 0 de 1.645, entao o card acusava TODAS
+       -- as 278 oportunidades abertas como sem proxima acao, inclusive as 8 que
+       -- tem tarefa. Alerta que acende sempre é alerta que ninguem olha.
+       AND NOT EXISTS (
+         SELECT 1 FROM tarefas t
+          WHERE t.negocio_id = o.negocio_id_legado AND NOT COALESCE(t.concluida, false))`);
   return { n: r?.n ?? 0, valor: Number(r?.valor ?? 0) };
 }
 

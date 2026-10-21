@@ -88,10 +88,13 @@ export async function boardDeOportunidades(
              -- Buscar pelo nome que o cartão EXIBE: sem isto, procurar a
              -- empresa que está escrita no cartão não acha nada.
              OR lower(COALESCE(l.empresa, l.nome, '')) LIKE ${busca})
+        -- Proxima acao é tarefa aberta, nao a coluna proxima_acao de negocios:
+        -- essa coluna esta preenchida em 0 de 1.645 negocios, entao o filtro
+        -- "sem proxima acao" devolvia o board inteiro e nao filtrava nada.
         AND (${filtros.semProximaAcao ? true : null}::boolean IS NULL
-             OR NOT EXISTS (SELECT 1 FROM negocios nx
-                             WHERE nx.id = o.negocio_id_legado
-                               AND nx.proxima_acao IS NOT NULL))`;
+             OR NOT EXISTS (SELECT 1 FROM tarefas t
+                             WHERE t.negocio_id = o.negocio_id_legado
+                               AND NOT COALESCE(t.concluida, false)))`;
   const limite = filtros.limite ?? 400;
   // Limite POR COLUNA: com limite global as vagas vão todas para a etapa mais
   // cheia e as outras aparecem vazias mesmo tendo total.
