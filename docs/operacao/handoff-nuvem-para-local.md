@@ -214,3 +214,55 @@ anterior mostra `qualificacao` nula em 9/10 cenários) — não mexido.
 Em `4d43fd1d` (código igual ao `d4f1af56` publicado + script e docs):
 typecheck limpo, travas de arquitetura 117/117, `next build` passou
 (compilou em 93 s). Árvore da nuvem limpa: nada ficou só no disco.
+
+## 9. Noite de 20/10 — Lia em produção (depois do primeiro handoff)
+
+Produção: `publicar #9` verde em `ebfe0dd0` (00:26 UTC de 21/10). Contém:
+
+- **9f88bdfd — Lia responde qualquer pessoa no número dela.** Novo
+  `lib/ai-platform/operacao/numero-do-agente.ts`, chamado no INÍCIO de
+  `handleAiSdrResponse` (worker). Número "do agente" = mesmo critério da tela
+  de números: versão presa ao número, OU dono do número = usuário do agente,
+  OU agente no pool e número operacional (nunca privado). Sem cadastro: cria
+  lead em Pré-vendas por `criarLead` (nome do perfil do WhatsApp, origem
+  "WhatsApp"; telefone que já existe só liga a conversa por
+  `ligarConversaAoLead`; LID 14+ dígitos não vira lead) e conduz por
+  `acionarAgente` com `atribuir`. Cala só com opt-out, pausa manual
+  (`manual_toggle` / atribuição `pausada`) ou pessoa do time escrevendo na
+  conversa nas últimas 4 h. Atribuição `humano` sem ninguém respondendo:
+  `retomarAtribuicao` (nota na timeline) — era o "vácuo eterno".
+- **a0ff416a — número que é do próprio agente não é "não autorizado".** Com a
+  Lia no pool e nenhum número operacional em produção, `acionarAgente`
+  recusava o número dela (`numero_nao_autorizado_para_o_agente`). Agora vale
+  também número cujo dono é o usuário do agente.
+- **ebfe0dd0 — fontes locais.** `next/font/google` baixava as fontes a cada
+  build; o #8 caiu por rede no runner ("Can't resolve
+  '@vercel/turbopack-next/internal/font/google/font'"). Arquivos em
+  `app/src/app/fonts` + `next/font/local`; trava `build-sem-rede`.
+
+Testes: `numero-do-agente.test.ts` 6/6 (o 6º reproduz a recusa sem a correção),
+`handoff-aprovacao` + `lia-pool-operacional` 12/12, travas 124/124, typecheck
+e `next build` (sem acesso ao Google) limpos.
+
+**NÃO verificado em produção** (a nuvem não vê banco nem log): se a Lia de fato
+respondeu número novo depois do #9. Conferir primeiro:
+
+```sql
+-- últimas execuções da Lia e por que pararam
+SELECT r.started_at, r.status, r.abort_reason, c.nome, c.telefone, s.label
+  FROM ai_agent_runs r JOIN ai_agents a ON a.id = r.agent_id
+  LEFT JOIN contatos c ON c.id = r.contato_id LEFT JOIN whatsapp_sessao s ON s.id = c.sessao_id
+ WHERE a.slug = 'lia-sdr' ORDER BY r.started_at DESC LIMIT 20;
+```
+
+Log do worker: `[Agentes] número do agente, contato …: <resultado> (<motivo>)`.
+Se não houver linha nenhuma, `agenteDoNumero` não reconheceu o número: conferir
+`usuario_id`/`operacional`/`privado` da sessão da Lia. Se a mensagem veio de um
+número também conectado na OnFace, o worker a trata como inter-sessão e nem
+chega aqui (comportamento antigo, não mexido).
+
+Pendências do Scott, ditas em conversa: quer a Lia respondendo sempre, criando
+lead de quem não tem cadastro (feito) e sem deixar ninguém no vácuo (feito).
+Felipe Nascimento escreveu para ela antes do #9 — confirmar se teve resposta.
+Deploy pela nuvem segue bloqueado (403 em workflow_dispatch para a integração);
+o Scott dispara `publicar` pelo GitHub.
