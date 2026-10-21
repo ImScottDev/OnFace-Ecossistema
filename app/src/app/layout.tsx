@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Inter, Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 /**
@@ -22,23 +22,28 @@ import "./globals.css";
  * `--font-onface-display` (título) recebe Jakarta. Ninguém precisa mudar de
  * variável.
  */
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
+/* Arquivos das fontes ficam no repositório (src/app/fonts, subconjunto latin baixado do Google
+   Fonts em 21/10/2026, licença OFL). Com `next/font/google` o build BAIXAVA as fontes a cada deploy:
+   bastava a rede do runner piscar para a imagem não montar ("Can't resolve
+   '@vercel/turbopack-next/internal/font/google/font'") e o deploy ficar esperando imagem que nunca
+   vinha. Arquivo local não depende de rede. Mesmos pesos, mesmas variáveis CSS. */
+const jakarta = localFont({
+  src: [{ path: "./fonts/plus-jakarta-sans-latin-var.woff2", weight: "600 800", style: "normal" }],
   display: "swap",
   variable: "--font-onface-titulo",
 });
 
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const inter = localFont({
+  src: [{ path: "./fonts/inter-latin-var.woff2", weight: "400 700", style: "normal" }],
   display: "swap",
   variable: "--font-onface-corpo",
 });
 
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const plexMono = localFont({
+  src: [
+    { path: "./fonts/ibm-plex-mono-latin-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/ibm-plex-mono-latin-500.woff2", weight: "500", style: "normal" },
+  ],
   display: "swap",
   variable: "--font-onface-mono",
 });
