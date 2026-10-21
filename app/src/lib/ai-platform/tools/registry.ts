@@ -11,7 +11,7 @@ import { converterLeadEmOportunidade } from "@/lib/crm/converter-oportunidade";
 import { enviarParaDiscagem } from "@/lib/integrations/callface";
 import { publicarEvento } from "@/lib/events/outbox";
 import { adicionarTag, removerTag } from "@/lib/crm/tags";
-import type { Ator } from "@/lib/vendas/dominio";
+import type { Ator, Qualificacao } from "@/lib/vendas/dominio";
 import { executarAcaoAvulsa } from "@/lib/cadencia/cadence-engine";
 import { NEXO_TOOLS } from "@/lib/nexo/ferramentas";
 import { devolverAoHumano, resolverHumanoDeDevolucao } from "@/lib/agentes/handover";
@@ -308,12 +308,33 @@ export const AGENT_TOOLS: AgentToolRegistration[] = [
          ação de uma conversa inteira, e o backend devolveu "lead ausente". */
       const leadDaQualificacao = ctx.leadId ?? (await contactContext(ctx))?.leadId ?? null;
       if (!leadDaQualificacao) return { ok: false, error: "lead ausente" };
-      const [current] = await db.select({ camposCustom: leads.camposCustom }).from(leads).where(and(eq(leads.id, leadDaQualificacao), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
+      const [current] = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, leadDaQualificacao), eq(leads.organizacaoId, ctx.organizacaoId))).limit(1);
       if (!current) return { ok: false, error: "lead não encontrado" };
-      const qual = Object.fromEntries(Object.entries({ dor: input.dor, tomador_decisao: input.tomador, fit: input.fit, proxima_acao: input.proxima_acao }).filter(([, value]) => value != null && String(value).trim()));
-      const [lead] = await db.update(leads).set({ ...(input.empresa ? { empresa: String(input.empresa) } : {}), ...(input.cnpj ? { empresaCnpj: String(input.cnpj) } : {}), ...(input.cargo ? { cargo: String(input.cargo) } : {}), ...(input.setor ? { empresaSetor: String(input.setor) } : {}), ...(input.porte ? { empresaPorte: String(input.porte) } : {}), camposCustom: { ...((current.camposCustom as Record<string, unknown>) ?? {}), qualificacao: { ...((((current.camposCustom as Record<string, unknown>)?.qualificacao as Record<string, unknown>) ?? {})), ...qual } }, updatedAt: new Date() }).where(and(eq(leads.id, leadDaQualificacao), eq(leads.organizacaoId, ctx.organizacaoId))).returning({ id: leads.id });
-      if (lead) await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: leadDaQualificacao, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: "Qualificação registrada pela agente", descricao: Object.entries({ ...qual, empresa: input.empresa, cargo: input.cargo }).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("\n") || null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId, ferramenta: "lead.qualify" } });
-      return lead ? { ok: true, data: lead } : { ok: false, error: "lead não encontrado" };
+
+      /* A qualificação do ONFACE é a COLUNA `leads.qualificacao`, escrita pela
+         porta de vendas — é ela que Pré-vendas, a ficha do lead e o Cliente 360
+         leem. Esta ferramenta gravava em `campos_custom.qualificacao`, por fora
+         da porta, numa chave que NENHUMA tela do produto lê: o agente podia
+         qualificar perfeitamente e o painel seguiria mostrando zero.
+         (`campos_custom.qualificacaoSdr`, parecido no nome, é do CRM legado.)
+         AGENTS.md: escrita comercial passa por `lib/vendas`. */
+      const qual: Qualificacao = {
+        ...(input.dor ? { dor: String(input.dor) } : {}),
+        ...(input.tomador ? { decisor: String(input.tomador) } : {}),
+        ...(input.fit ? { icp: String(input.fit) } : {}),
+        ...(input.proxima_acao ? { observacoes: `Próxima ação combinada: ${String(input.proxima_acao)}` } : {}),
+      };
+      const dadosDaEmpresa = { ...(input.empresa ? { empresa: String(input.empresa) } : {}), ...(input.cnpj ? { empresaCnpj: String(input.cnpj) } : {}), ...(input.cargo ? { cargo: String(input.cargo) } : {}), ...(input.setor ? { empresaSetor: String(input.setor) } : {}), ...(input.porte ? { empresaPorte: String(input.porte) } : {}) };
+      if (Object.keys(dadosDaEmpresa).length) {
+        await db.update(leads).set({ ...dadosDaEmpresa, updatedAt: new Date() }).where(and(eq(leads.id, leadDaQualificacao), eq(leads.organizacaoId, ctx.organizacaoId)));
+      }
+      if (Object.keys(qual).length) {
+        const { salvarQualificacao } = await import("@/lib/vendas/pre-vendas");
+        await salvarQualificacao({ organizacaoId: ctx.organizacaoId, leadId: leadDaQualificacao, qualificacao: qual, ator: { tipo: "AI_AGENT", usuarioId: ctx.agenteUsuarioId ?? null, ref: ctx.agentId } });
+      }
+      if (!Object.keys(qual).length && !Object.keys(dadosDaEmpresa).length) return { ok: false, error: "nada para qualificar: informe ao menos um campo" };
+      await db.insert(atividades).values({ organizacaoId: ctx.organizacaoId, leadId: leadDaQualificacao, usuarioId: ctx.agenteUsuarioId ?? null, tipo: "nota_agente", titulo: "Qualificação registrada pela agente", descricao: Object.entries({ ...qual, ...dadosDaEmpresa }).filter(([, v]) => v).map(([k, v]) => `${k}: ${String(v)}`).join("\n") || null, dados: { aiRunId: ctx.runId, agentId: ctx.agentId, ferramenta: "lead.qualify" } });
+      return { ok: true, data: { id: leadDaQualificacao } };
     },
   },
   {
@@ -500,6 +521,21 @@ export function modelToolsForIds(ids: string[]): ModelTool[] {
   });
 }
 
+/**
+ * "acao (um de: adicionar|remover), tag (texto — Nome da tag)" em vez de "acao, tag".
+ * O que o modelo precisa para acertar na próxima volta sem adivinhar.
+ */
+export function descreverFaltando(tool: { parameters: unknown }, faltando: string[]): string {
+  const props = (tool.parameters as { properties?: Record<string, Record<string, unknown>> }).properties ?? {};
+  return faltando.map((chave) => {
+    const p = props[chave] as { type?: string; enum?: unknown[]; description?: string } | undefined;
+    if (!p) return chave;
+    const forma = Array.isArray(p.enum) && p.enum.length ? `um de: ${p.enum.join("|")}` : p.type === "string" ? "texto" : p.type;
+    const detalhe = [forma, p.description].filter(Boolean).join(" — ");
+    return detalhe ? `${chave} (${detalhe})` : chave;
+  }).join(", ");
+}
+
 export async function executeRegisteredTool(name: string, ctx: AgentToolContext, input: Record<string, unknown>): Promise<AgentToolResult> {
   const tool = byName.get(name);
   if (!tool) return { ok: false, error: `tool não registrada: ${name}` };
@@ -522,11 +558,17 @@ export async function executeRegisteredTool(name: string, ctx: AgentToolContext,
     return { ok: false, error: `sem permissão delegada para ${tool.id} (exige ${v.exigida})` };
   }
 
-  // Parâmetro obrigatório ausente vira erro que o agente lê e corrige. Sem isto
-  // `String(undefined)` gravava a nota "undefined" na timeline do lead.
+  /* Parâmetro obrigatório ausente vira erro que o agente lê e corrige. Sem isto
+     `String(undefined)` gravava a nota "undefined" na timeline do lead.
+     O erro diz a FORMA de cada campo, não só o nome: no provider da assinatura o
+     modelo não recebe schema nenhum (o catálogo vai achatado em texto dentro de
+     uma ferramenta genérica), então saber só que "falta acao" não bastava para
+     ele acertar na volta seguinte. Medido em produção (30 dias): 14 de 48 falhas
+     de ferramenta eram exatamente isto — `lead_tag` sem `acao`/`tag`,
+     `alert_create` sem `title`, `nexo_buscar` sem `termo`. */
   const obrigatorios = (tool.parameters as { required?: string[] }).required ?? [];
   const faltando = obrigatorios.filter((chave) => input[chave] === undefined || input[chave] === null || String(input[chave]).trim() === "");
-  if (faltando.length) return { ok: false, error: `parâmetro obrigatório ausente: ${faltando.join(", ")}` };
+  if (faltando.length) return { ok: false, error: `parâmetro obrigatório ausente: ${descreverFaltando(tool, faltando)}` };
 
   // Autonomia da CLASSE da ferramenta (ex.: mensagens autônomas, comercial sob aprovação).
   const efetiva = ctx.analise && tool.id === "activity.note" && ctx.mode === "live" ? "autonomous" : autonomiaDaFerramenta(tool.id, ctx.autonomy, ctx.autonomiaPorClasse ?? {});
