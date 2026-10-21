@@ -28,6 +28,8 @@ export interface ParsedRdLead {
   utmTerm?: string;
   utmContent?: string;
   fbclid?: string;
+  /** `fb.1.<ms>.<fbclid>` — o que a Meta usa para casar a conversão com o clique. */
+  fbc?: string;
   landingPage?: string;
 }
 
@@ -46,6 +48,25 @@ interface RdLead {
   last_conversion?: { content?: RdContent; conversion_origin?: RdOrigin };
   first_conversion?: { content?: RdContent };
   [key: string]: unknown;
+}
+
+/**
+ * `fbc` no formato que a Meta espera, derivado do `fbclid`.
+ *
+ * O cookie `_fbc` nunca chega aqui: o formulário da LP posta no RD Station, e o
+ * RD não repassa cookie. Mas a Meta documenta que, sem o cookie, o `fbc` pode
+ * ser montado como `fb.1.<timestamp do clique em ms>.<fbclid>` — e é esse campo
+ * que ela usa para casar a conversão com o clique no anúncio.
+ *
+ * Medido em 21/10/2026: `fbc`, `fbp` e `fbclid` estavam em ZERO das 4.270 linhas
+ * de `pontos_contato`. Toda a atribuição Meta do sistema era UTM, que qualquer
+ * um digita. Sem isto a conversão devolvida pela CAPI chega e não casa.
+ */
+export function fbcDoFbclid(fbclid: string | null | undefined, quando?: Date | null): string | null {
+  const id = (fbclid ?? "").trim();
+  if (!id) return null;
+  const ms = quando && !Number.isNaN(quando.getTime()) ? quando.getTime() : Date.now();
+  return `fb.1.${ms}.${id}`;
 }
 
 /**
@@ -87,6 +108,17 @@ function parseQS(qs: string): Record<string, string> {
       }
     });
   return out;
+}
+
+/** Quando a conversão aconteceu, se o RD disser. Senão, null (cai em "agora"). */
+function dataDaConversao(content: RdContent): Date | null {
+  for (const chave of ["created_at", "conversion_date", "event_timestamp", "date"]) {
+    const bruto = s(content[chave]);
+    if (!bruto) continue;
+    const d = new Date(bruto);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
 }
 
 function decodeTrafficSource(raw: string): string {
@@ -171,23 +203,46 @@ export function parseRdLead(lead: RdLead): ParsedRdLead {
   let utmCampaign = "";
   let utmTerm = "";
   let utmContent = "";
+  /* O `fbclid` é o clique no anúncio, e viaja na MESMA query string dos UTMs.
+     Ele era jogado fora duas vezes: a sessão só era lida quando continha
+     "utm_" (anúncio sem UTM caía fora inteiro) e, mesmo lida, só os `utm_*`
+     eram extraídos. `ParsedRdLead` já declarava o campo `fbclid` e nada o
+     preenchia — campo fantasma desde que a interface existe. */
+  let fbclid = "";
   const decoded = decodeTrafficSource(s(content.traffic_source));
   if (decoded) {
     try {
       const obj = JSON.parse(decoded) as {
         current_session?: { value?: string };
+        first_session?: { value?: string };
       };
-      const cs = s(obj.current_session?.value);
-      if (cs.indexOf("utm_") !== -1) {
-        const u = parseQS(cs);
-        utmSource = u.utm_source || "";
-        utmMedium = u.utm_medium || "";
-        utmCampaign = u.utm_campaign || "";
-        utmTerm = u.utm_term || "";
-        utmContent = u.utm_content || "";
+      // Sessão atual manda; a primeira serve de rede quando a atual veio vazia.
+      for (const qs of [s(obj.current_session?.value), s(obj.first_session?.value)]) {
+        if (!qs) continue;
+        const u = parseQS(qs);
+        if (!utmSource && u.utm_source) {
+          utmSource = u.utm_source;
+          utmMedium = u.utm_medium || utmMedium;
+          utmCampaign = u.utm_campaign || utmCampaign;
+          utmTerm = u.utm_term || utmTerm;
+          utmContent = u.utm_content || utmContent;
+        }
+        if (!fbclid && u.fbclid) fbclid = u.fbclid;
       }
     } catch {
       /* traffic_source não era JSON, ignora */
+    }
+  }
+  /* A URL do formulário também carrega o clique: a LP recebe ?fbclid= e o RD
+     grava a URL inteira em `form_url`. É o caminho que sobra quando o lead
+     chega sem traffic_source. */
+  if (!fbclid) {
+    for (const bruto of [s(content.form_url), s(content.fbclid), s(custom.fbclid)]) {
+      if (!bruto) continue;
+      if (bruto.indexOf("?") === -1 && bruto.indexOf("=") === -1) { fbclid = bruto; break; }
+      const i = bruto.indexOf("?");
+      const achado = parseQS(i >= 0 ? bruto.slice(i + 1) : bruto).fbclid;
+      if (achado) { fbclid = achado; break; }
     }
   }
   if (!utmSource) utmSource = s(origin.source);
@@ -236,6 +291,10 @@ export function parseRdLead(lead: RdLead): ParsedRdLead {
     utmCampaign: cut(utmCampaign),
     utmTerm: cut(utmTerm),
     utmContent: cut(utmContent),
+    fbclid: cut(fbclid),
+    // O horário do clique que a gente tem é o da conversão; é o que a Meta
+    // aceita como timestamp do `fbc` quando o cookie não existe.
+    fbc: fbcDoFbclid(fbclid, dataDaConversao(content)) ?? undefined,
     landingPage: s(content.form_url || content.page_title) || undefined,
   };
 }

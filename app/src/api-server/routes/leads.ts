@@ -2,6 +2,7 @@ import { MOTIVO_MANUAL, resolverPorRegra } from "@/lib/agentes/distribuicao";
 import { abrirEntrega, chavePorMinuto, fecharEntrega } from "@/lib/captacao/entregas";
 import { Hono } from "hono";
 import { garantirEntradaCanonica, travarEntrada, acharLeadPorContato } from "../../lib/vendas/ponte-canonica.js";
+import { fbcDoFbclid } from "../../lib/integrations/rd-station.js";
 import { cors } from "hono/cors";
 import { getCtx, parseBody } from "../compat.js";
 import { getTenantFromRequest } from "../auth.js";
@@ -645,6 +646,15 @@ app.post(
         utmSource: insertData.utmSource, utmMedium: insertData.utmMedium,
         utmCampaign: insertData.utmCampaign, utmTerm: insertData.utmTerm,
         utmContent: insertData.utmContent, landingPage: insertData.landingPage,
+        /* O clique no anúncio. A rota já aceitava estes campos no corpo e os
+           descartava aqui: por isso `fbclid`, `fbc` e `fbp` estavam em ZERO de
+           4.270 pontos de contato, e a conversão devolvida pela CAPI chegava à
+           Meta sem ter com quem casar. Quando a LP manda só o `fbclid`, o `fbc`
+           é derivado no formato que a Meta aceita sem o cookie. */
+        gclid: insertData.gclid,
+        fbclid: insertData.fbclid,
+        fbc: insertData.fbc ?? fbcDoFbclid(insertData.fbclid),
+        fbp: insertData.fbp,
       },
       responsavelId: insertData.responsavelId ?? null,
     }, newLead.id);
