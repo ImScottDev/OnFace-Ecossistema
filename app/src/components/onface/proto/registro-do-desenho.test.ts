@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { linkDoAnuncio, rastreioDoLead } from "./registro-do-desenho";
+import { linkDaCampanha, linkDoAnuncio, linkDoConjunto, rastreioDoLead } from "./registro-do-desenho";
 import { respostasDoFormulario } from "@/lib/vendas/consultas";
 
-const VAZIO = { origem: null, campanha: null, medium: null, conteudo: null, termo: null, landingPage: null, primeiroToque: null, ultimoToque: null, metaAdId: null, metaAdsetId: null, metaCampaignId: null };
+const VAZIO = { origem: null, campanha: null, medium: null, conteudo: null, termo: null, landingPage: null, primeiroToque: null, ultimoToque: null, metaAdId: null, metaAdsetId: null, metaCampaignId: null, metaAdAccountId: null };
 
 test("rastreio só mostra o que existe; link só com id numérico real", () => {
   assert.deepEqual(rastreioDoLead(VAZIO), []);
@@ -14,15 +14,18 @@ test("rastreio só mostra o que existe; link só com id numérico real", () => {
   assert.equal(r.length, 2);
 });
 
-test("o link do criativo vai ao Gerenciador, que resolve por ad_id", () => {
-  // A Biblioteca de Anúncios indexa pelo Ad Archive ID, não pelo ad_id do
-  // Gerenciador: o link antigo (/ads/library/?id=) abria "nenhum anúncio
-  // encontrado" para TODO lead de Meta.
-  const href = linkDoAnuncio("120249446086250170")!;
-  assert.ok(!href.includes("ads/library"), "voltou para a Biblioteca, que não acha por ad_id");
+test("sem a conta NÃO há link: o Gerenciador abriria na conta errada", () => {
+  // Medido em produção em 21/10: anúncio da conta 1979606826185515 aberto na
+  // 867028606744143, listando dois criativos que não eram o dele. Link que
+  // mostra o anúncio errado é pior que link nenhum — o errado parece certo.
+  assert.equal(linkDoAnuncio("120249446086250170"), null);
+  assert.equal(linkDoConjunto("120249446086240170"), null);
+  assert.equal(linkDaCampanha("120241581848630170"), null);
+
+  const href = linkDoAnuncio("120249446086250170", "act_1979606826185515")!;
+  assert.ok(href.includes("act=1979606826185515"), "a conta do anúncio tem que ir no link");
   assert.ok(href.includes("selected_ad_ids=120249446086250170"));
-  assert.ok(linkDoAnuncio("120249446086250170", "act_12345")!.includes("act=12345"),
-    "a conta, quando conhecida, evita o Gerenciador abrir na conta errada");
+  assert.ok(!href.includes("ads/library"), "a Biblioteca não acha por ad_id");
   assert.ok(linkDoAnuncio("1", "12345")!.includes("act=12345"), "o prefixo act_ é opcional");
 });
 
@@ -34,6 +37,7 @@ test("lead de Meta: o NOME na frente, e o id vira o link — não duas linhas", 
     ...VAZIO, campanha: "TRT - CALL FACE [2026]", medium: "cpc",
     conteudo: "Ads_copiloto", termo: "Mes-do-consumidor",
     metaCampaignId: "120241581848630170", metaAdsetId: "120249446086240170", metaAdId: "120249446086250170",
+    metaAdAccountId: "act_1979606826185515",
   });
   const porRotulo = Object.fromEntries(r.map((l) => [l.rotulo, l]));
   assert.equal(porRotulo["Anúncio"]?.valor, "Ads_copiloto");
@@ -67,7 +71,7 @@ test("o nome vem da Meta, não da UTM: é ele que a ficha mostra", () => {
 test("lead nativo sem UTM nenhuma ainda mostra campanha, conjunto e anúncio", () => {
   // Formulário nativo do Meta: a pessoa nunca sai do app, então não há UTM.
   const r = rastreioDoLead(
-    { ...VAZIO, metaCampaignId: "1", metaAdsetId: "2", metaAdId: "3" },
+    { ...VAZIO, metaCampaignId: "1", metaAdsetId: "2", metaAdId: "3", metaAdAccountId: "act_1979606826185515" },
     { meta_campanha_nome: "C", meta_conjunto_nome: "J", meta_ad_nome: "A" },
   );
   assert.deepEqual(r.map((l) => [l.rotulo, l.valor]), [["Campanha", "C"], ["Conjunto", "J"], ["Anúncio", "A"]]);

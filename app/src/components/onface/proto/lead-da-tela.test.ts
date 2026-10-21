@@ -23,7 +23,7 @@ function lead(o: Partial<DetalheLead> = {}): DetalheLead {
     pessoa: { nome: "Ana Souza", cargo: "CEO", email: "a@acme.com", telefone: "11999990000", whatsapp: null, linkedin: null, observacao: null, cidade: null },
     etapa: "em_contato", etapaRotulo: "Em contato", qualificado: false, qualificadoEm: null, qualificadoPor: null, qualificadoPorTipo: null,
     preQualificado: false, qualificacao: null,
-    atribuicao: { origem: "Meta Ads", campanha: null, medium: null, conteudo: null, termo: null, landingPage: null, primeiroToque: null, ultimoToque: null, metaAdId: null, metaAdsetId: null, metaCampaignId: null },
+    atribuicao: { origem: "Meta Ads", campanha: null, medium: null, conteudo: null, termo: null, landingPage: null, primeiroToque: null, ultimoToque: null, metaAdId: null, metaAdsetId: null, metaCampaignId: null, metaAdAccountId: null },
     respostasFormulario: [], responsavel: { id: null, nome: null }, servicos: null, tags: [],
     primeiroContatoEm: null, criadoEm: iso(10),
     nutricao: { motivo: null, retomarEm: null, observacao: null, desde: null },

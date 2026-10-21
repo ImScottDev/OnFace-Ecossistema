@@ -254,3 +254,83 @@ export function camposRastreioMeta(
   }
   return out;
 }
+
+/* ── Prévia do criativo ───────────────────────────────────────────────────
+ *
+ * O CRM mostrava o `ad_id` e um link para fora. Os dois falham para quem
+ * atende: o id de 17 dígitos não diz nada, e o Gerenciador exige acesso à
+ * conta de anúncios — colaborador não tem, e quem tem cai na última conta que
+ * usou, não na do anúncio (visto em 21/10: anúncio da conta 1979606826185515
+ * aberto na 867028606744143, listando dois criativos que não eram o dele).
+ *
+ * A Graph devolve a prévia RENDERIZADA do anúncio: um iframe com token
+ * próprio, que não pede login. É o que deixa qualquer um ver o criativo.
+ */
+
+export interface PreviaAnuncio {
+  adId: string;
+  nome: string | null;
+  /** Conta DO ANÚNCIO, não a do .env: é ela que faz o link do Gerenciador abrir certo. */
+  contaId: string | null;
+  status: string | null;
+  /** Miniatura do criativo. Expira: não guardar. */
+  thumbnailUrl: string | null;
+  /** `src` do iframe de prévia. Expira: não guardar. */
+  previaUrl: string | null;
+}
+
+/** Extrai o `src` do iframe que a Graph devolve em `/previews`. */
+export function srcDoIframe(html: string | null | undefined): string | null {
+  const m = /<iframe[^>]+src="([^"]+)"/i.exec(html ?? "");
+  if (!m) return null;
+  // A Graph devolve a URL com entidades HTML escapadas.
+  return m[1].replace(/&amp;/g, "&");
+}
+
+export async function previaDoAnuncio(
+  adId: string,
+  accessToken: string | null,
+  graphUrl: (caminho: string) => string,
+): Promise<{ ok: true; previa: PreviaAnuncio } | { ok: false; erro: string }> {
+  if (!/^\d+$/.test(adId)) return { ok: false, erro: "id de anúncio inválido" };
+  if (!accessToken) return { ok: false, erro: "META_ADS_ACCESS_TOKEN não configurado" };
+
+  const campos = "id,name,account_id,effective_status,creative{thumbnail_url}";
+  const pegar = async (url: string) => {
+    const r = await fetch(url);
+    const j = (await r.json()) as Record<string, unknown>;
+    if (!r.ok) {
+      const e = j.error as { message?: string } | undefined;
+      throw new Error(e?.message ?? `Graph respondeu ${r.status}`);
+    }
+    return j;
+  };
+
+  try {
+    const base = await pegar(`${graphUrl(adId)}?fields=${campos}&access_token=${encodeURIComponent(accessToken)}`);
+    // A prévia é best-effort: anúncio sem formato compatível ainda tem nome e
+    // miniatura, e meia ficha é melhor que erro.
+    let previaUrl: string | null = null;
+    try {
+      const p = await pegar(`${graphUrl(`${adId}/previews`)}?ad_format=MOBILE_FEED_STANDARD&access_token=${encodeURIComponent(accessToken)}`);
+      const lista = Array.isArray(p.data) ? (p.data as Array<{ body?: string }>) : [];
+      previaUrl = srcDoIframe(lista[0]?.body);
+    } catch { /* fica sem prévia, com miniatura */ }
+
+    const criativo = base.creative as { thumbnail_url?: string } | undefined;
+    const txt = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+    return {
+      ok: true,
+      previa: {
+        adId,
+        nome: txt(base.name),
+        contaId: txt(base.account_id),
+        status: txt(base.effective_status),
+        thumbnailUrl: txt(criativo?.thumbnail_url),
+        previaUrl,
+      },
+    };
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : String(e) };
+  }
+}

@@ -57,6 +57,12 @@ export interface RegistroDoDesenho {
 /**
  * Link para o criativo, no Gerenciador de Anúncios.
  *
+ * **Sem a conta, este link mente.** O Gerenciador abre na última conta que a
+ * pessoa usou e aplica o `selected_ad_ids` ali: em 21/10 um anúncio da conta
+ * 1979606826185515 abriu na 867028606744143 e listou dois criativos que não
+ * eram o dele — pior que não abrir, porque o errado parece certo. Por isso,
+ * sem `adAccountId`, o link não é oferecido.
+ *
  * Era a Biblioteca de Anúncios (`/ads/library/?id=`) por ser pública, e **não
  * funcionava**: o `id` da Biblioteca é o *Ad Archive ID*, que não é o `ad_id`
  * do Gerenciador. Buscar um ad_id lá dá "nenhum anúncio encontrado". E mesmo
@@ -71,8 +77,9 @@ export function linkDoAnuncio(adId: string | null, adAccountId?: string | null):
   const id = adId?.trim();
   if (!id || !/^\d+$/.test(id)) return null;
   const conta = adAccountId?.trim();
-  const act = conta ? `act=${conta.startsWith("act_") ? conta.slice(4) : conta}&` : "";
-  return `https://adsmanager.facebook.com/adsmanager/manage/ads?${act}selected_ad_ids=${id}`;
+  if (!conta) return null;
+  const act = conta.startsWith("act_") ? conta.slice(4) : conta;
+  return `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${act}&selected_ad_ids=${id}`;
 }
 
 /** Mesma régua para o conjunto e para a campanha: o Gerenciador abre os três. */
@@ -80,16 +87,18 @@ export function linkDoConjunto(adsetId: string | null, adAccountId?: string | nu
   const id = adsetId?.trim();
   if (!id || !/^\d+$/.test(id)) return null;
   const conta = adAccountId?.trim();
-  const act = conta ? `act=${conta.startsWith("act_") ? conta.slice(4) : conta}&` : "";
-  return `https://adsmanager.facebook.com/adsmanager/manage/adsets?${act}selected_adset_ids=${id}`;
+  if (!conta) return null;
+  const act = conta.startsWith("act_") ? conta.slice(4) : conta;
+  return `https://adsmanager.facebook.com/adsmanager/manage/adsets?act=${act}&selected_adset_ids=${id}`;
 }
 
 export function linkDaCampanha(campaignId: string | null, adAccountId?: string | null): string | null {
   const id = campaignId?.trim();
   if (!id || !/^\d+$/.test(id)) return null;
   const conta = adAccountId?.trim();
-  const act = conta ? `act=${conta.startsWith("act_") ? conta.slice(4) : conta}&` : "";
-  return `https://adsmanager.facebook.com/adsmanager/manage/campaigns?${act}selected_campaign_ids=${id}`;
+  if (!conta) return null;
+  const act = conta.startsWith("act_") ? conta.slice(4) : conta;
+  return `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${act}&selected_campaign_ids=${id}`;
 }
 
 /**
@@ -112,8 +121,11 @@ export function linkDaCampanha(campaignId: string | null, adAccountId?: string |
  * coisa — e continuam com o rótulo técnico.
  */
 export function rastreioDoLead(
-  a: DetalheLead["atribuicao"], meta?: Record<string, string>, adAccountId?: string | null,
+  a: DetalheLead["atribuicao"], meta?: Record<string, string>,
 ): RegistroDoDesenho["rastreio"] {
+  // A conta vem DENTRO da atribuição, do servidor: como terceiro parâmetro,
+  // qualquer chamador que a esquecesse perdia todos os links em silêncio.
+  const adAccountId = a.metaAdAccountId;
   const linhas: RegistroDoDesenho["rastreio"] = [];
   const add = (rotulo: string, valor: string | null, href?: string | null) => {
     if (valor?.trim()) linhas.push(href ? { rotulo, valor: valor.trim(), href } : { rotulo, valor: valor.trim() });
@@ -206,6 +218,6 @@ export function registroDoDesenho(l: DetalheLead): RegistroDoDesenho {
     leadScore: l.leadScore,
     empresaTel: formatarTelefone(l.empresa.telefone) || null,
     empresaObs: l.empresa.observacoes,
-    anuncioHref: linkDoAnuncio(l.atribuicao.metaAdId),
+    anuncioHref: linkDoAnuncio(l.atribuicao.metaAdId, l.atribuicao.metaAdAccountId),
   };
 }

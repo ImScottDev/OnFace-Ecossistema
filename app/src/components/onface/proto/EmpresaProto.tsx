@@ -190,7 +190,7 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
       /* Respostas do formulário de cada lead da empresa, com o anúncio de origem. */
       formularios: empresa.formularios.map((f) => ({
         id: f.leadId, titulo: [f.nome, f.criadoEm.slice(0, 10).split("-").reverse().join("/")].filter(Boolean).join(" · "),
-        adHref: linkDoAnuncio(f.metaAdId), linhas: f.respostas,
+        adHref: linkDoAnuncio(f.metaAdId, lead?.atribuicao.metaAdAccountId ?? null), linhas: f.respostas,
       })),
     };
   }, [empresa, lead]);

@@ -14,6 +14,7 @@
 import { classificarEmpresas, classificarLeads, ROTULO_CLASSE, type Classificacao } from "./classificacao";
 import { proximoCompromisso, temCompromissoAberto } from "./proxima-acao";
 import { origemCanonica } from "./origem-canonica";
+import { credenciaisAds } from "@onface/integrations-meta";
 import { pessoaNaoMesclada } from "./lead-mesclado";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -1885,6 +1886,16 @@ export interface DetalheLead {
     primeiroToque: string | null; ultimoToque: string | null;
     /** Ids da Meta: é com eles que se chega ao anúncio, ao conjunto e ao criativo. */
     metaAdId: string | null; metaAdsetId: string | null; metaCampaignId: string | null;
+    /**
+     * Conta de anúncios, do servidor.
+     *
+     * Sem ela o link do Gerenciador abre na última conta que a pessoa usou e
+     * aplica o filtro ali: em 21/10 um anúncio da conta 1979606826185515
+     * abriu na 867028606744143, listando criativos que não eram o dele. O id
+     * da conta não é segredo (aparece em toda URL do Gerenciador), mas vem do
+     * `.env` do servidor, não do cliente.
+     */
+    metaAdAccountId: string | null;
   };
   /** TODA resposta do formulário de origem, na ordem em que veio.
    *
@@ -2197,6 +2208,7 @@ export async function detalheLead(organizacaoId: string, leadId: string): Promis
       conteudo: l.utm_content, termo: l.utm_term, landingPage: l.landing_page,
       primeiroToque: toques?.primeiro ?? null, ultimoToque: toques?.ultimo ?? null,
       metaAdId: l.meta_ad_id, metaAdsetId: l.meta_adset_id, metaCampaignId: l.meta_campaign_id,
+      metaAdAccountId: credenciaisAds().adAccountId,
     },
     respostasFormulario: comIdentidadeDoFormulario(
       respostasDoFormulario(camposDoFormulario, await camposCustomDoLead(organizacaoId)),
