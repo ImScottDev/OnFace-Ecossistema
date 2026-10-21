@@ -142,6 +142,8 @@ export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
       const alvo = await equipeDaRegra(ctx);
       if ("erro" in alvo) return { ok: false, error: alvo.erro, data: { filaHumana: Boolean(alvo.filaHumana) } };
       const d = await horariosLivresEquipe({ organizacaoId: ctx.organizacaoId, closerIds: alvo.closerIds, preferidoId: alvo.closer.id, duracaoMin: Number(input.duracao ?? 30), exigirOutlook: exigirOutlook(ctx) });
+      // Ninguém na fila para avaliar não é "Outlook indisponível": o erro precisa dizer a causa certa.
+      if (!d.closers.length) return { ok: false, error: `${alvo.closer.nome} não está na fila de closers da agenda comercial`, data: { verificado: false, filaHumana: true } };
       if (!d.verificado && exigirOutlook(ctx)) return { ok: false, error: `agenda não verificada: ${d.closers.find((c) => c.motivo)?.motivo ?? "Outlook indisponível"}`, data: { verificado: false } };
       return { ok: true, data: { regra: alvo.regra, verificado: d.verificado, fuso: d.fuso, slots: d.slots.map((s) => ({ inicioISO: s.inicioISO, fimISO: s.fimISO, label: s.label, closer_id: s.closerId, closer: s.closerNome })) } };
     },
@@ -153,7 +155,9 @@ export const FERRAMENTAS_OPERACAO: AgentToolRegistration[] = [
       inicio: str("Início ISO exatamente como devolvido por agenda_slots"), duracao: { type: "integer", minimum: 15, maximum: 120 },
       closer_id: str("`closer_id` do horário escolhido, como devolvido por agenda_slots"),
       titulo: str("Título opcional"), resumo_para_closer: str("Resumo útil: contexto, dor, volume, decisor, objeções, o que o contato espera da reunião"),
-    }, ["inicio", "resumo_para_closer"]),
+      // `closer_id` é obrigatório: cada horário é de UMA closer. Sem ele a reunião caía na closer da vez
+      // do rodízio, que pode não ser a dona do horário escolhido — e aí o horário "não estava mais livre".
+    }, ["inicio", "closer_id", "resumo_para_closer"]),
     execute: async (ctx, input) => {
       const simulated = preview(ctx, "meeting.schedule", input); if (simulated) return simulated;
       if (!ctx.leadId) return { ok: false, error: "lead ausente" };

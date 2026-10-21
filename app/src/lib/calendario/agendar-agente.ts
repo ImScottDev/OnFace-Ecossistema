@@ -146,16 +146,30 @@ export async function agendarReuniao(e: EntradaAgendar): Promise<ResultadoAgenda
     reuniao: { data: inicio, titulo: e.titulo, duracao, notas: e.resumoParaCloser, tipo: "video" },
   });
   if ("error" in conv) return { ok: false, codigo: "lead_invalido", erro: String(conv.error) };
-  if (!conv.reuniaoId) return { ok: false, codigo: "lead_invalido", erro: "a oportunidade já existia e nenhuma reunião foi criada" };
 
-  const sync = await criarNaAgenda(e.organizacaoId, conv.reuniaoId);
+  /* Oportunidade já aberta (ou no-show recuperado) não é motivo para recusar a
+     reunião: a conversão só devolve `reuniaoId` quando criou o negócio ou
+     atualizou a reunião que já existia. Sem isto, o lead que já tem negócio no
+     pipeline — e pede uma demonstração pelo WhatsApp — ouvia "não consegui
+     marcar". A reunião nasce NA oportunidade que existe. */
+  let reuniaoId = conv.reuniaoId;
+  if (!reuniaoId) {
+    const [nova] = await db.insert(reunioes).values({
+      organizacaoId: e.organizacaoId, negocioId: conv.negocioId, leadId: e.leadId,
+      titulo: e.titulo?.trim() || "Reunião de qualificação", data: inicio, duracao,
+      tipo: "video", status: "agendada", notas: e.resumoParaCloser ?? null, responsavelId: e.closerId,
+    }).returning({ id: reunioes.id });
+    reuniaoId = nova.id;
+  }
+
+  const sync = await criarNaAgenda(e.organizacaoId, reuniaoId);
   if (!sync.sincronizado && exigir) {
     // Convite externo não saiu: não existe reunião confirmada. Cancela a interna para não deixar compromisso fantasma.
-    await db.update(reunioes).set({ status: "cancelada", updatedAt: new Date() }).where(eq(reunioes.id, conv.reuniaoId));
+    await db.update(reunioes).set({ status: "cancelada", updatedAt: new Date() }).where(eq(reunioes.id, reuniaoId));
     return { ok: false, codigo: "outlook_falhou", erro: sync.aviso ?? "o Outlook não aceitou o evento" };
   }
 
-  const [r] = await db.select({ link: reunioes.link }).from(reunioes).where(eq(reunioes.id, conv.reuniaoId)).limit(1);
+  const [r] = await db.select({ link: reunioes.link }).from(reunioes).where(eq(reunioes.id, reuniaoId)).limit(1);
   const quando = inicio.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   await db.insert(notificacoes).values({
     usuarioId: e.closerId, titulo: "Reunião marcada pela agente", tipo: "reuniao",
@@ -165,9 +179,9 @@ export async function agendarReuniao(e: EntradaAgendar): Promise<ResultadoAgenda
     organizacaoId: e.organizacaoId, leadId: e.leadId, negocioId: conv.negocioId ?? null, usuarioId: e.usuarioId ?? null, tipo: "nota",
     titulo: `Reunião confirmada com ${closer.nome} (${quando})`,
     descricao: [e.resumoParaCloser ? `Resumo para a closer:\n${e.resumoParaCloser}` : null, sync.sincronizado ? "Convite criado no calendário." : sync.aviso].filter(Boolean).join("\n\n"),
-    dados: { reuniaoId: conv.reuniaoId, calendario: sync.provider, eventId: sync.eventId ?? null },
+    dados: { reuniaoId, calendario: sync.provider, eventId: sync.eventId ?? null },
   });
-  return { ok: true, reuniaoId: conv.reuniaoId, negocioId: conv.negocioId ?? null, closerId: closer.id, closerNome: closer.nome, inicioISO: inicio.toISOString(), sincronizado: sync.sincronizado, link: sync.link ?? r?.link ?? null, jaExistia: false, aviso: sync.sincronizado ? null : sync.aviso ?? null };
+  return { ok: true, reuniaoId, negocioId: conv.negocioId ?? null, closerId: closer.id, closerNome: closer.nome, inicioISO: inicio.toISOString(), sincronizado: sync.sincronizado, link: sync.link ?? r?.link ?? null, jaExistia: false, aviso: sync.sincronizado ? null : sync.aviso ?? null };
 }
 
 export async function reagendarReuniao(p: { organizacaoId: string; reuniaoId: string; novoInicioISO: string; exigirOutlook?: boolean }): Promise<ResultadoAgendamento | { ok: false; codigo: "reuniao_nao_encontrada"; erro: string }> {

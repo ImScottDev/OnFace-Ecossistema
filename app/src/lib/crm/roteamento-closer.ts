@@ -51,23 +51,53 @@ export function regraQueCasa(regras: Regra[], e: { familia?: FamiliaComercial | 
   return casam.sort((a, b) => b.prioridade - a.prioridade || espec(b) - espec(a))[0] ?? null;
 }
 
+/**
+ * Por que este usuário NÃO pode receber a reunião (null quando pode).
+ *
+ * Mesma régua da fila de closers (`getActiveClosers`/`getFilaClosers`), inclusive
+ * o `role`: a disponibilidade da equipe só monta a agenda de quem está na fila, e
+ * quem não está devolvia lista vazia — o agente recebia "Outlook indisponível"
+ * para um usuário que nem é closer (caso real: Scott Ferraz, `super_admin` com
+ * `closer_disponibilidade` ativa).
+ */
+export function motivoIndisponivel(
+  u: { nome: string; ativo: boolean | null; tipo: string | null; role: string | null },
+  d: { ativo: boolean | null; pausado: boolean | null } | null,
+): string | null {
+  if (!u.ativo) return `${u.nome} está inativo(a)`;
+  if (u.tipo === "agente") return "o destino da regra é um agente, não uma pessoa";
+  if (u.role !== "closer") return `${u.nome} não está na fila de closers (perfil ${u.role ?? "sem perfil"}): a agenda comercial não oferece horário dela`;
+  if (!d || !d.ativo) return `${u.nome} não configurou a agenda de disponibilidade`;
+  if (d.pausado) return `${u.nome} está com a agenda pausada`;
+  return null;
+}
+
 async function closerDisponivel(organizacaoId: string, usuarioId: string): Promise<{ nome: string } | { motivo: string }> {
-  const [u] = await db.select({ nome: usuarios.nome, ativo: usuarios.ativo, tipo: usuarios.tipo }).from(usuarios)
+  const [u] = await db.select({ nome: usuarios.nome, ativo: usuarios.ativo, tipo: usuarios.tipo, role: usuarios.role }).from(usuarios)
     .where(and(eq(usuarios.id, usuarioId), eq(usuarios.organizacaoId, organizacaoId))).limit(1);
   if (!u) return { motivo: "o responsável da regra não existe mais nesta organização" };
-  if (!u.ativo) return { motivo: `${u.nome} está inativo(a)` };
-  if (u.tipo === "agente") return { motivo: "o destino da regra é um agente, não uma pessoa" };
   const [d] = await db.select({ ativo: closerDisponibilidade.ativo, pausado: closerDisponibilidade.pausadoRodizio }).from(closerDisponibilidade).where(eq(closerDisponibilidade.usuarioId, usuarioId)).limit(1);
-  if (!d || !d.ativo) return { motivo: `${u.nome} não configurou a agenda de disponibilidade` };
-  if (d.pausado) return { motivo: `${u.nome} está com a agenda pausada` };
-  return { nome: u.nome };
+  const motivo = motivoIndisponivel(u, d ?? null);
+  return motivo ? { motivo } : { nome: u.nome };
 }
 
 export async function resolverCloser(e: EntradaRoteamento): Promise<ResultadoRoteamento> {
   const agora = e.agora ?? new Date();
   const regras = await db.select().from(roteamentoComercialRegras).where(eq(roteamentoComercialRegras.organizacaoId, e.organizacaoId)).orderBy(desc(roteamentoComercialRegras.prioridade));
   const regra = regraQueCasa(regras, e, agora);
-  if (!regra) return { tipo: "fila_humana", motivo: "nenhuma regra de roteamento cobre esta família/campanha", regra: null };
+  /* Sem regra que cubra a família/campanha, o destino é o RODÍZIO, não a fila
+     humana: as regras existem para FIXAR o destino de uma origem específica, e
+     lead sem regra é o caso comum (em 21/10/2026, 2.905 dos 4.559 leads da
+     Callface — as duas regras vigentes só casam por campanha). Antes disso o
+     agente recebia "nenhuma regra de roteamento cobre esta família/campanha" e
+     não tinha horário nenhum para oferecer: o lead qualificado ficava esperando
+     uma pessoa. Fila humana só quando não há closer ativo no rodízio. */
+  if (!regra) {
+    const prox = await pickNextCloser(db, e.organizacaoId);
+    return prox
+      ? { tipo: "rodizio", usuarioId: prox.id, nome: prox.nome, regra: null }
+      : { tipo: "fila_humana", motivo: "nenhuma regra cobre esta família/campanha e não há closer ativo no rodízio", regra: null };
+  }
   const ref = { id: regra.id, nome: regra.nome };
   if (regra.destinoUsuarioId) {
     const ok = await closerDisponivel(e.organizacaoId, regra.destinoUsuarioId);
