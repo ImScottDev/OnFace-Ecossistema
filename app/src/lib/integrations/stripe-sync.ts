@@ -560,10 +560,22 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
             .where(and(
               eq(servicosCanonicos.organizacaoId, org.id),
               servicoDestaAssinatura,
-              // Só o que ainda não foi encerrado: a condição agora é por estado e roda a cada
-              // sync, então sem isto a mesma linha seria reescrita de 30 em 30 minutos e o
-              // `updated_at` diria "mexido agora" para sempre.
-              sql`${servicosCanonicos.commercialLifecycle} IS DISTINCT FROM 'CHURNED'`,
+              /* Só o que ainda não está no estado de encerrado COMPLETO. A condição roda a
+                 cada sync, então sem ela a mesma linha seria reescrita de 30 em 30 minutos e
+                 o `updated_at` diria "mexido agora" para sempre.
+
+                 Mas olhar só o `commercial_lifecycle` deixava um buraco: quem já chegou a
+                 CHURNED por OUTRA via (a carga do marco zero) nunca era tocado, e ficava com
+                 o `billing_status` velho para sempre. Medido em produção 21/10/2026: **47
+                 serviços CHURNED com `billing_status = 'ACTIVE'`, R$ 15.106,30/mês** — todos
+                 com a assinatura canceled ou unpaid no Stripe. A ficha do cliente lia esse
+                 ACTIVE e mostrava produto ativo para quem o Stripe parou de cobrar.
+
+                 Comparar os TRÊS campos mantém a idempotência (alinhado não é reescrito) e
+                 fecha o buraco. */
+              sql`(${servicosCanonicos.commercialLifecycle} IS DISTINCT FROM 'CHURNED'
+                   OR ${servicosCanonicos.billingStatus} IS DISTINCT FROM 'CANCELED'
+                   OR ${servicosCanonicos.portfolioIncluded} IS DISTINCT FROM false)`,
             ))
             .returning({ empresaId: servicosCanonicos.empresaId });
           for (const empresaId of new Set(encerrados.map((e) => e.empresaId).filter((e): e is string => !!e))) {
