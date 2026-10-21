@@ -1737,12 +1737,14 @@ app.get("/fechamento-comercial", async (c) => {
   const agendas = aplicarFiltrosFechamento(agendasTodas, filtros, { sdrComoAgendaKey: true });
   const atribuidas = aplicarFiltrosFechamento(atribuidasTodas, filtros);
 
-  const totalVendido = vendas.reduce((s, v) => s + ((v.tipoReceita === "avulso" || v.tipoReceita === "projeto") ? v.valorTotal : v.mrrFechado), 0);
+  // Booking (recorrente + setup) por `decomporVenda`, já calculado em `listarVendasFechadas`.
+  const totalVendido = vendas.reduce((s, v) => s + v.valorVendido, 0);
+  const totalAvulso = vendas.reduce((s, v) => s + v.valorAvulso, 0);
   const porCloser = new Map<string, { nome: string; total: number; qtd: number }>();
   for (const v of vendas) {
     if (!v.closerId) continue;
     const cur = porCloser.get(v.closerId) ?? { nome: v.closerNome ?? "—", total: 0, qtd: 0 };
-    cur.total += (v.tipoReceita === "avulso" || v.tipoReceita === "projeto") ? v.valorTotal : v.mrrFechado;
+    cur.total += v.valorVendido;
     cur.qtd += 1;
     porCloser.set(v.closerId, cur);
   }
@@ -1766,6 +1768,7 @@ app.get("/fechamento-comercial", async (c) => {
     },
     resumo: {
       totalVendido,
+      totalAvulso,
       quantidadeVendas: vendas.length,
       porCloser: [...porCloser.entries()].map(([id, v]) => ({ closerId: id, ...v })),
       porSdr: [...porSdr.entries()].map(([id, v]) => ({ sdrId: id, ...v })),

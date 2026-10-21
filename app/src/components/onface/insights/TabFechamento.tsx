@@ -27,6 +27,8 @@ interface VendaFechada {
   closerNome: string | null; sdrNome: string | null; sdrEvidencia: string;
   serviceFamily: string | null; tipoReceita: string | null;
   mrrFechado: number; valorTotal: number;
+  /** Booking da venda (recorrente + setup), decidido no servidor. */
+  valorVendido: number; valorAvulso: number;
   propostaId: string | null; propostaNumero: number | null;
   contratoId: string | null; contratoStatus: string | null; contratoZohoId: string | null;
   stripeSubscriptionId: string | null; stripeCustomerId: string | null; faturaHostedUrl: string | null;
@@ -52,7 +54,8 @@ interface FechamentoData {
 }
 
 const data = (v: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
-const valorDaVenda = (v: VendaFechada) => (v.tipoReceita === "avulso" || v.tipoReceita === "projeto" ? v.valorTotal : v.mrrFechado);
+// A regra de receita mora em `lib/relatorios/receita-fechada-shared.ts` e o servidor
+// já manda o booking pronto em `valorVendido`. A tela não decompõe venda.
 const ND = <span className="ins-falta">Não disponível</span>;
 
 export function TabFechamento({ periodo }: { periodo: string }) {
@@ -161,7 +164,7 @@ export function TabFechamento({ periodo }: { periodo: string }) {
                     <td>{v.closerNome ?? "—"}</td>
                     <td title={v.sdrEvidencia}>{v.sdrNome ?? ND}</td>
                     <td>{v.serviceFamily ?? "—"}</td>
-                    <td className="ins-num">{moedaExata(valorDaVenda(v))}</td>
+                    <td className="ins-num">{moedaExata(v.valorVendido)}</td>
                     <td>{v.propostaId && v.propostaNumero ? <Link href={`/propostas/${v.propostaId}`}>#{v.propostaNumero}</Link> : ND}</td>
                     <td>{v.contratoId ? (v.contratoZohoId ? "histórico (Zoho)" : v.contratoStatus ?? "—") : ND}</td>
                     <td>

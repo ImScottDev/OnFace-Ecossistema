@@ -6,10 +6,14 @@
  * relação que não está no dado — quando a evidência não existe, o campo vem
  * `null`/vazio e a UI mostra "Não disponível", nunca um valor fabricado.
  *
- * Mesma janela e mesma regra de receita de `comercial.ts::getFechadoPeriodo`/
- * `getFechadoPorResponsavel` (status='ganho', `ganho_at` na janela, recorrente=
- * `mrr_fechado`, avulso/projeto=`valor_total`) — os totais desta tela SEMPRE batem
- * com a aba Comercial/Meu desempenho, de propósito.
+ * Mesma janela e mesma regra de receita das outras superfícies (status='ganho',
+ * `ganho_at` na janela) — os totais desta tela SEMPRE batem com a aba
+ * Comercial/Meu desempenho, de propósito.
+ *
+ * A regra de receita vem de `decomporVenda` (`receita-fechada-shared.ts`) e de
+ * mais lugar nenhum: `valorVendido` é o booking (recorrente + setup) e
+ * `valorAvulso` é projeto/avulso, separado. Até 21/10/2026 esta tela calculava
+ * `avulso ? valor_total : mrr_fechado`, que PERDIA o setup da venda recorrente.
  *
  * Achado real de auditoria (20/08, não é bug desta feature): não existe role
  * de usuário "sdr" hoje — o time foi reorganizado depois de julho (Jenifer
@@ -22,6 +26,7 @@
  * existe no schema mas tem 0% de cobertura em produção — não é usado aqui.
  */
 import { assinaturaDoCrm, faturaDoCrm } from "@/lib/financeiro/espelho-crm";
+import { decomporVenda } from "@/lib/relatorios/receita-fechada-shared";
 import { db } from "@/lib/db";
 import { negocios, leads, empresas, usuarios, contratos, propostas, assinaturas, statusChanges, faturas } from "@/lib/db/schema";
 import { eq, and, gte, lt, inArray, sql, asc, desc } from "drizzle-orm";
@@ -48,6 +53,10 @@ export interface VendaFechada {
   mrrFechado: number;
   valorTotal: number;
   valorSetup: number;
+  /** O booking desta venda (recorrente + setup), por `decomporVenda`. A UI lê daqui. */
+  valorVendido: number;
+  /** Projeto/avulso desta venda. Fica FORA do booking, mostrado ao lado. */
+  valorAvulso: number;
   status: string;
   propostaId: string | null;
   propostaNumero: number | null;
@@ -237,6 +246,12 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
     const assinatura = contrato?.stripeSubscriptionId ? assinaturaPorStripeSub.get(contrato.stripeSubscriptionId) : undefined;
     const evento = n.leadId ? eventoPorLead.get(n.leadId) : undefined;
     const sdrNome = evento ? (evento.usuario_id ? sdrUsuarioPorId.get(evento.usuario_id) ?? null : "Agente SDR (IA)") : null;
+    const receita = decomporVenda({
+      tipoReceita: n.tipoReceita,
+      mrrFechado: num(n.mrrFechado),
+      valorSetup: num(n.valorSetup),
+      valorTotal: num(n.valorTotal),
+    });
 
     return {
       negocioId: n.id,
@@ -262,6 +277,8 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
       mrrFechado: num(n.mrrFechado),
       valorTotal: num(n.valorTotal),
       valorSetup: num(n.valorSetup),
+      valorVendido: receita.booking,
+      valorAvulso: receita.avulso,
       status: n.status,
       propostaId: proposta?.id ?? null,
       propostaNumero: proposta?.numero ?? null,
@@ -366,7 +383,7 @@ export async function listarVendasAtribuidasSdr(orgId: string, since: Date, unti
       closerNome: v.closerNome,
       empresaNome: v.empresaNome,
       ganhoAt: v.ganhoAt,
-      valor: (v.tipoReceita === "avulso" || v.tipoReceita === "projeto") ? v.valorTotal : v.mrrFechado,
+      valor: v.valorVendido,
       serviceFamily: v.serviceFamily,
       origemAtribuicao: v.sdrEvidencia,
     }));
