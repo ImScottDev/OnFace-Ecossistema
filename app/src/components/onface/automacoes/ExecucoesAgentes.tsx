@@ -49,7 +49,9 @@ const COMPROMISSO: Record<string, string> = { pendente: "Pendente", processando:
 
 const dataHora = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 const num = (n: number | null | undefined) => (n == null ? "sem dados" : n.toLocaleString("pt-BR"));
-const brl = (n: number | null | undefined) => (n == null ? "sem dados" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 4 }));
+// O custo gravado é em dólar (preço por milhão de tokens e `total_cost_usd` do
+// SDK). A tela dizia "R$" no mesmo número que a ficha do agente dizia "US$".
+const brl = (n: number | null | undefined) => (n == null ? "sem dados" : `US$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`);
 const seg = (s: number | null) => (s == null ? "sem dados" : s < 90 ? `${s} s` : `${Math.round(s / 60)} min`);
 const dur = (ms: number | null) => (ms == null ? "sem dados" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s`);
 

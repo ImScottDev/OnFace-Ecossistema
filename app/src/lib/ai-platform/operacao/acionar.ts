@@ -18,6 +18,7 @@ import { contagemDeMensagens, contatoDoLead, registrarRunBloqueado, versaoPublic
 import { dentroDoHorario, excedeTaxa, lerLimites, motivoDeParada, ROTULO_PARADA } from "@/lib/agentes/guardrails";
 import { devolverAoHumano } from "@/lib/agentes/handover";
 import { usuarioDoAgente } from "@/lib/agentes/usuario-do-agente";
+import { motivoDoTeto, tetoDeGastoEstourado } from "@/lib/agentes/custo";
 import { lerExpressoesHandoff } from "@/lib/ai/agente-escopo";
 import {
   ativaDesde, quemRespondeuDesde, atribuicaoViva, atribuirAgente, AtribuicaoRecusada, registrarExecucaoNaAtribuicao, soltarLease, tomarLease, transferirParaHumano,
@@ -210,6 +211,22 @@ export async function acionarAgente(e: EntradaAcionar): Promise<ResultadoAcionar
       const runId = await registrarBloqueio(e, versao?.id ?? null, `taxa_maxima_${estouro}`);
       await db.insert(aiAlerts).values({ organizacaoId: e.organizacaoId, kind: "taxa_maxima", severity: "warning", title: "Agente atingiu o limite de mensagens", body: `Conversa ${e.contatoId}: limite por ${estouro}.`, refKind: "contato", refId: e.contatoId });
       return bloqueado(`taxa_maxima_${estouro}`, runId);
+    }
+  }
+
+  // 3b. Teto de gasto da organização (o freio é a conta, não a contagem de mensagens)
+  if (mode === "live") {
+    const teto = await tetoDeGastoEstourado(e.organizacaoId, e.agentId);
+    if (teto) {
+      const motivo = motivoDoTeto(teto);
+      const runId = await registrarBloqueio(e, versao?.id ?? null, motivo);
+      await db.insert(aiAlerts).values({
+        organizacaoId: e.organizacaoId, kind: "teto_de_gasto", severity: "critical",
+        title: "Teto de gasto da IA atingido",
+        body: `Gasto no ${teto.periodo}: US$ ${teto.gasto.toFixed(4)} de US$ ${teto.teto.toFixed(2)}. Novos acionamentos estão bloqueados.`,
+        refKind: "run", refId: runId,
+      });
+      return bloqueado(motivo, runId);
     }
   }
 

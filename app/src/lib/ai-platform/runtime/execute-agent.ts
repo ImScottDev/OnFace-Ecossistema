@@ -13,6 +13,7 @@ import { executeRegisteredTool, modelToolsForIds, type AgentToolResult } from ".
 import { runModelCall, type AgentMessage, type AiProvider } from "./provider-gateway";
 import { ClaudeSubscriptionAdapter } from "./claude-subscription-adapter";
 import { usuarioDoAgente } from "@/lib/agentes/usuario-do-agente";
+import { custoEstimadoDoSdk, precoPorTokens } from "@/lib/agentes/custo";
 import { versaoAtendeSessao } from "@/lib/atendimento/ia-conversa";
 import { construirContexto, type ContextoMontado } from "../contexto/builder";
 import { autonomiaDaFerramenta, lerAutonomiaPorAcao, type ModoAutonomia } from "../tools/politica";
@@ -182,8 +183,7 @@ function responseMessages(text: string | null, prepared: string[]): string[] {
 
 async function calculateCost(provider: string, model: string, tokensInput: number, tokensOutput: number): Promise<number> {
   const [pricing] = await db.select().from(aiModels).where(and(eq(aiModels.provider, provider), eq(aiModels.modelId, model))).limit(1);
-  if (!pricing) return 0;
-  return (tokensInput / 1_000_000) * Number(pricing.inputPricePerMillion ?? 0) + (tokensOutput / 1_000_000) * Number(pricing.outputPricePerMillion ?? 0);
+  return precoPorTokens(tokensInput, tokensOutput, pricing);
 }
 
 async function assertBudget(runId: string, input: ExecuteAgentInput, agentId: string): Promise<void> {
@@ -402,11 +402,18 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<ExecuteAge
       tokensInput += subscription.tokensInput;
       tokensOutput += subscription.tokensOutput;
       finalText = subscription.text;
+      // O SDK já devolve o custo da chamada. Antes ele só ia para o JSON do
+      // passo e o número gravado era zero fixo — por isso o painel mostrava
+      // "R$ 0,00" com centenas de execuções. Quando não vier, a tabela de
+      // preços da Anthropic cobre o mesmo modelo.
+      const stepCost = custoEstimadoDoSdk(subscription.estimatedCostUsd)
+        ?? await calculateCost("anthropic", selected.version.modelo, subscription.tokensInput, subscription.tokensOutput);
+      cost += stepCost;
       await persistStep({
         organizacaoId: input.organizacaoId, runId: run.id, sequence: sequence++, kind: "model_call", name: selected.version.modelo,
         status: "completed", input: { provider: "claude_subscription", messageCount: messages.length },
         output: { text: subscription.text, toolCalls: subscription.toolCalls.map((call) => call.name), estimatedCostUsd: subscription.estimatedCostUsd },
-        tokensInput: subscription.tokensInput, tokensOutput: subscription.tokensOutput, cost: 0, latencyMs: Date.now() - started,
+        tokensInput: subscription.tokensInput, tokensOutput: subscription.tokensOutput, cost: stepCost, latencyMs: Date.now() - started,
       });
       trace.push({ type: "model_call", provider: "claude_subscription", toolCalls: subscription.toolCalls.map((call) => call.name), hasText: Boolean(subscription.text) });
 
