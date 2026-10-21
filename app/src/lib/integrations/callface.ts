@@ -298,13 +298,29 @@ async function tentarAutoAgendar(
   return { criado: true, negocioId: result.negocioId, closerId: result.closerId, closerNome, outlookCriado };
 }
 
-function labelStatus(status: string | undefined): string {
+/* `VOICEMAIL` ganhou status próprio na plataforma (versão 2.18 deles) e aqui
+   continuava sem tradução e fora da régua: 766 caixas postais em produção
+   contavam como ligação comum, apareciam como "voicemail" na timeline e, quando
+   o número não era de nenhum lead, ainda notificavam o admin como se alguém
+   tivesse conversado. Caixa postal é o contrário de conversa. */
+const SEM_CONVERSA = ["FAILED", "NOT_COMPLETED", "BUSY", "MISSED", "NOT_ANSWERED", "VOICEMAIL"];
+
+/** Houve conversa de verdade? Caixa postal, ocupado e chamada curta não contam. */
+export function ligacaoTeveConversa(status: string | undefined, duracaoSegundos: number): boolean {
+  if (SEM_CONVERSA.includes(String(status || "").toUpperCase())) return false;
+  return duracaoSegundos >= 15;
+}
+
+export function labelDoStatusDaLigacao(status: string | undefined): string {
   const map: Record<string, string> = {
     FINISHED: "finalizada",
     ANSWERED: "atendida",
     MISSED: "perdida",
     NOT_ANSWERED: "não atendida",
     NOT_COMPLETED: "não completada",
+    VOICEMAIL: "caixa postal",
+    BUSY: "ocupado",
+    FAILED: "não completada",
   };
   return map[String(status || "").toUpperCase()] || String(status || "finalizada").toLowerCase();
 }
@@ -459,7 +475,7 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
       negocioId: lead.negocioAtivoId ?? null,
       usuarioId,
       tipo: "ligacao",
-      titulo: `Ligação ${labelStatus(payload.call_status)} — ${quemLigou}${durFmt ? ` (${durFmt})` : ""}`,
+      titulo: `Ligação ${labelDoStatusDaLigacao(payload.call_status)} — ${quemLigou}${durFmt ? ` (${durFmt})` : ""}`,
       descricao: payload.summarization ? String(payload.summarization) : null,
       dados: {
         origem: "callface",
@@ -610,7 +626,7 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
   // viraria spam de notificação pros admins.
   const duracaoSeg = typeof payload.call_duration === "number" ? payload.call_duration : 0;
   const statusUp = String(payload.call_status || "").toUpperCase();
-  const semSubstancia = ["FAILED", "NOT_COMPLETED", "BUSY", "MISSED", "NOT_ANSWERED"].includes(statusUp) || duracaoSeg < 15;
+  const semSubstancia = !ligacaoTeveConversa(statusUp, duracaoSeg);
   if (semSubstancia) {
     return `ligação ${idempotencyKey} sem lead correspondente (órfã registrada, sem notificação — ${statusUp || "sem status"}/${duracaoSeg}s)`;
   }
@@ -623,7 +639,7 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
         tipo: "callface_ligacao_sem_lead",
         titulo: `Ligação sem lead no CRM — ${numeroFmt}`,
         mensagem:
-          `${quemLigou} ligou para ${numeroFmt} (${labelStatus(payload.call_status)}), mas nenhum lead tem esse telefone. ` +
+          `${quemLigou} ligou para ${numeroFmt} (${labelDoStatusDaLigacao(payload.call_status)}), mas nenhum lead tem esse telefone. ` +
           `A ligação foi guardada e pode ser vinculada depois.${payload.call_link ? ` Detalhes: ${payload.call_link}` : ""}`,
         link: `/leads`,
       })
