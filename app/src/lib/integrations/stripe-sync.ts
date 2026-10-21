@@ -350,6 +350,13 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
       if (lead) leadByCustomer.set(sCustId, lead);
       const mrr = mrrOf(s);
       const canceladaEm = s.canceled_at ? new Date(s.canceled_at * 1000) : null;
+      /* Cancelamento AGENDADO: o cliente já pediu para sair, a assinatura segue
+         cobrando até o fim do período. O dado chegava (`cancelada_em` e o motivo
+         ficam gravados) e nenhuma tela dizia nada — o cliente sumia no fim do mês
+         sem ninguém tentar reter. Medido em 21/10/2026: 8 contas, R$ 1.919,10/mês,
+         com motivo declarado ("muito caro", "não usei", "vou retomar").
+         Clássico usa `cancel_at_period_end`; flexible usa `cancel_at`. */
+      const vaiCancelar = Boolean(s.cancel_at_period_end || s.cancel_at || (canceladaEm && s.status === "active"));
       const motivo = motivoCancelamento(s);
       const item0 = s.items?.data?.[0];
       const item0ProductId = typeof item0?.price?.product === "string"
@@ -665,7 +672,8 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
              Idempotente pelo mesmo motivo do outro lado: só pega quem está CHURNED. */
           const revividos = await tx.update(servicosCanonicos)
             .set({
-              commercialLifecycle: "ACTIVE", portfolioIncluded: true, billingStatus: "ACTIVE", updatedAt: new Date(),
+              commercialLifecycle: "ACTIVE", portfolioIncluded: true,
+              billingStatus: vaiCancelar ? "ACTIVE_CANCEL_SCHEDULED" : "ACTIVE", updatedAt: new Date(),
               evidence: sql`coalesce(${servicosCanonicos.evidence}, '{}'::jsonb) || jsonb_build_object('reconciliacao_stripe', jsonb_build_object(
                 'em', now(), 'status_stripe', ${s.status}::text, 'commercial_lifecycle_antes', ${servicosCanonicos.commercialLifecycle},
                 'portfolio_included_antes', ${servicosCanonicos.portfolioIncluded}, 'billing_status_antes', ${servicosCanonicos.billingStatus}))`,
@@ -681,6 +689,22 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
               .where(and(eq(clientes.empresaId, empresaId), eq(clientes.organizacaoId, org.id),
                 sql`${clientes.statusFinanceiro} IS DISTINCT FROM 'ativo'`));
           }
+        }
+
+        /* O aviso de saída, para quem JÁ está ativo. O bloco de reativação acima
+           só toca quem está CHURNED, então sem isto o cancelamento agendado nunca
+           chegava ao serviço de um cliente ativo — que é justamente o caso que
+           interessa ao CS: ainda dá tempo de reter. Vale nos dois sentidos, porque
+           cliente que volta atrás tem de sair do aviso. */
+        if (s.status === "active") {
+          await tx.update(servicosCanonicos)
+            .set({ billingStatus: vaiCancelar ? "ACTIVE_CANCEL_SCHEDULED" : "ACTIVE", updatedAt: new Date() })
+            .where(and(
+              eq(servicosCanonicos.organizacaoId, org.id),
+              servicoDestaAssinatura,
+              eq(servicosCanonicos.commercialLifecycle, "ACTIVE"),
+              sql`${servicosCanonicos.billingStatus} IS DISTINCT FROM ${vaiCancelar ? "ACTIVE_CANCEL_SCHEDULED" : "ACTIVE"}`,
+            ));
         }
 
         // transição de status -> reflete no contrato espelho (Carteira)
