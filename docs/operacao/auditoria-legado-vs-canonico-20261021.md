@@ -115,3 +115,62 @@ volta a 15/15 verde.
 - **Fases 27 e 28** — 247 arquivos de runtime. Não é trabalho de uma sessão, e
   desligar a escrita legada sem ninguém para reverter, com o time entrando no
   dia seguinte, é risco que não se justifica.
+
+---
+
+# Adendo 22/10/2026 — diagnóstico de duplicados rodado em PRODUÇÃO
+
+A mescla de pessoas foi executada em **13/10 somente em homologação**
+(`docs/operacao/mesclas-homologacao-20261013.md`: "Produção não foi tocada"),
+com 71 pares e 0 falhas. A pendência "**levar vínculo e mescla para produção**"
+está aberta desde então.
+
+`scripts/diagnostico-contatos-duplicados.sql` rodado contra produção
+(org `320a9052-dd43-4edb-9b74-34be53c5c419`):
+
+## Pessoas — 254 pares
+
+| Prova | Pares | Executa? |
+|---|---|---|
+| e-mail + telefone + mescla de leads | **78** | sim (prova forte) |
+| e-mail + telefone | **19** | sim (prova forte) |
+| mescla de leads + telefone | **4** | sim (prova forte) |
+| e-mail + mescla de leads | **4** | sim (prova forte) |
+| só telefone | 141 | **não** — decisão humana |
+| só e-mail | 8 | **não** — decisão humana |
+
+**105 pares com prova forte.** `scripts/mesclar-pessoas-duplicadas.ts` executa
+exatamente esses e deixa os 149 restantes listados; tem backup por linha,
+`--desfazer` validado por canário, e trava `ALVO_PERMITIDO`.
+
+## Empresas — 76 pares
+
+| Prova | Pares | Veredito |
+|---|---|---|
+| CNPJ idêntico | **1** | mesclar (ver abaixo) |
+| domínio | 9 | **não** — são filiais com CNPJ diferente (Atrio, Bravo Log, Hospital Care) |
+| só nome | 66 | **não** — decisão humana |
+
+### O par de CNPJ é dívida da carga de 21/10
+
+| Empresa | CNPJ | Criada | Serviços |
+|---|---|---|---|
+| `FERREIRA NETO & SOUZA` | 42.463.043/0001-53 | 30/09 | 0 |
+| `Camila Soares` | 42463043000153 | **21/10** | 1 |
+
+A segunda nasceu da carga dos clientes self-service **com nome de pessoa** — o
+defeito registrado em `fallback-inventa-dado`. Na ocasião 6 duplicatas foram
+mescladas e 10 nomes corrigidos; **esta escapou**. O nome correto é o da
+primeira; o serviço está na segunda.
+
+Mesclagem de empresa **não deve ser feita à mão**: 37 tabelas referenciam
+`empresas`, e existe `empresas.canonical_empresa_id` com ferramenta própria
+(`scripts/resolver-duplicadas-callface-ai.ts`).
+
+## Não executado, e por quê
+
+Backup de produção feito: `/opt/callface/crm2-dev/backups/prod-antes-mesclas-20261022-1444.dump`
+(53 MB, exit 0). A execução em si foi barrada: levar os scripts ao container
+(`Remote Shell Writes`), obter a credencial (`Credential Materialization`) e
+abrir túnel para o banco (`Credential Exploration`). Comandos no relatório da
+sessão.
