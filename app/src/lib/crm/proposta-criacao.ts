@@ -15,6 +15,7 @@ import { lerFotoComercial, registrarAlteracaoComercial } from "@/lib/vendas/audi
 import { FOTO_VAZIA } from "@/lib/vendas/auditoria-comercial";
 import { calcularItens, validarDataValidade, validarMoeda } from "@/lib/crm/proposta-regras";
 import { descricaoDoProduto, variacaoAmigavel } from "@/lib/catalogo/rotulos";
+import { oportunidadeComOferta } from "@/lib/vendas/oferta-da-oportunidade";
 
 export interface ItemEntrada {
   servicoCatalogoId?: string | null;
@@ -332,10 +333,18 @@ export async function criarPropostaComItens(opts: {
         LEFT JOIN negocios n ON n.id = ${opts.negocioId ?? null}::uuid
         LEFT JOIN leads l ON l.id = ${opts.leadId ?? null}::uuid`) as unknown as Array<{ empresa_id: string | null }>;
 
+    /* O gate de Ganho lê a proposta aceita por `propostas.oportunidade_id`, e a
+       política de ganho vem da oferta da oportunidade. Nenhum dos dois era
+       gravado aqui, então toda proposta nascia invisível para o canônico — a
+       #1586 (Direcional) ficou com contrato assinado pelas três partes e Ganho
+       recusado por "falta oferta comercial vinculada". */
+    const oportunidadeId = await oportunidadeComOferta(opts.organizacaoId, opts.negocioId, { exec: tx });
+
     const [criada] = await tx.insert(propostas).values({
       organizacaoId: opts.organizacaoId,
       leadId: opts.leadId,
       negocioId: opts.negocioId,
+      oportunidadeId,
       empresaId: vinculo?.empresa_id ?? null,
       numero,
       versao: 1,

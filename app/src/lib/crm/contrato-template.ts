@@ -26,6 +26,7 @@ import { linhasDeItens, linhasSetupResumoHtml, mrrDosItens, quadroSetupHtml, moe
 import { politicaContratual } from "@/lib/crm/contrato-politica";
 import { ehCliente } from "@/lib/crm/proposta-signatarios";
 import { renderizarCorpo, variaveisFaltando } from "@/lib/crm/contrato-variaveis";
+import { oportunidadeComOferta } from "@/lib/vendas/oferta-da-oportunidade";
 
 /**
  * `tipo_documento` separa contrato, aditivo e renovação dentro da MESMA
@@ -378,10 +379,20 @@ export async function gerarContratoDeTemplate(grupoId: string): Promise<{ contra
   const { variaveis, proposta, grupo, serviceFamily, tipoDocumento, itens, mrr, setup, inicioVigencia } = await montarVariaveisDoGrupo(grupoId);
   const { corpoGerado, templateId, templateVersao } = await resolverCorpoContrato(proposta.organizacaoId, grupo.commercialModel, variaveis, serviceFamily, tipoDocumento);
   const inicioContrato = inicioVigencia;
+
+  /* O gate de Ganho procura o contrato assinado por `contratos.oportunidade_id`
+     — não por `negocio_id`. Sem o vínculo o sistema não enxerga a assinatura e
+     a venda fica presa, mesmo com todas as partes tendo assinado.
+     `porContrato` corrige a oferta escolhida no tempo da proposta: ali ainda
+     não existia contrato, então ela caiu em CALLFACE_AI_DIRECT, que exige
+     pagamento. Fechar por contrato ganha na assinatura. */
+  const oportunidadeId = await oportunidadeComOferta(proposta.organizacaoId, proposta.negocioId, { porContrato: true });
+
   const [contrato] = await db.insert(contratos).values({
     organizacaoId: proposta.organizacaoId,
     leadId: proposta.leadId,
     negocioId: proposta.negocioId,
+    oportunidadeId,
     grupoComercialId: grupoId,
     templateId,
     templateVersao,
