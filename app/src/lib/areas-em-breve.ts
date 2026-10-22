@@ -14,28 +14,37 @@ export const AREAS_FECHAVEIS = { automacoes: "Automações", insights: "Insights
 export type AreaFechavel = keyof typeof AREAS_FECHAVEIS;
 
 /**
- * Áreas que o super admin vê mesmo fechadas (`AREAS_SO_SUPERADMIN`).
+ * Áreas que a administração vê mesmo fechadas (`AREAS_SO_ADMIN`).
  *
- * Decisão do Scott em 22/10: Insights abre em produção **só para ele**, e o
- * time continua vendo "Em breve". É uma lista própria, e não "super admin fura
- * tudo", porque Automações segue fechada para todo mundo — abrir por tabela
- * entregaria ao time uma área que ninguém validou.
+ * Decisão do Scott em 22/10: Insights abre em produção para **admin e super
+ * admin**, e o resto do time continua vendo "Em breve". É uma lista própria, e
+ * não "admin fura tudo", porque Automações segue fechada para todo mundo —
+ * abrir por tabela entregaria ao time uma área que ninguém validou.
  *
  * Como o resto do arquivo: muda por ambiente, não por commit.
  */
-export function areasSoSuperAdmin(): string[] {
-  return (process.env.AREAS_SO_SUPERADMIN || "").split(",").map((a) => a.trim().toLowerCase()).filter(Boolean);
+export function areasSoAdmin(): string[] {
+  return (process.env.AREAS_SO_ADMIN || "").split(",").map((a) => a.trim().toLowerCase()).filter(Boolean);
+}
+
+/**
+ * Quem fura a trava. Só os dois papéis de administração do produto — `gerente`
+ * e os papéis de gestão novos (director, coordinator, operations) veem o
+ * agregado da empresa, mas não são donos do que ainda não foi validado.
+ */
+export function ehAdministracao(papel?: string | null): boolean {
+  return papel === "admin" || papel === "super_admin";
 }
 
 /**
  * A área está fechada para QUEM está olhando?
  *
- * O papel é o EFETIVO (já com "ver como" aplicado), de propósito: super admin
+ * O papel é o EFETIVO (já com "ver como" aplicado), de propósito: admin
  * simulando um SDR precisa ver o que o SDR vê, senão a simulação mente.
  */
 export function areaEmBreve(area: AreaFechavel, papel?: string | null): boolean {
   if (!areasEmBreve().includes(area)) return false;
-  if (papel === "super_admin" && areasSoSuperAdmin().includes(area)) return false;
+  if (ehAdministracao(papel) && areasSoAdmin().includes(area)) return false;
   return true;
 }
 
