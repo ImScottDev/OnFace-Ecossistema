@@ -11,7 +11,7 @@ import { Cf2ThemeRoot } from "@/components/crm2/ThemeRoot";
 import { Cf2CamadaModal } from "@/components/crm2/CamadaModal";
 import { OnfaceThemeRoot } from "@/components/onface/OnfaceThemeRoot";
 import { CascaProto } from "@/components/onface/proto/CascaProto";
-import { areasEmBreve } from "@/lib/areas-em-breve";
+import { areasEmBrevePara } from "@/lib/areas-em-breve";
 import { nomesDeAgentesDaOrg } from "@/lib/agentes/nomes-de-agentes";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -130,6 +130,10 @@ export default async function ProdutoLayout({
 
   const naoLidas = await conversasNaoLidas();
   const usuario = await usuarioDaCasca(session.user);
+  /* O papel EFETIVO (já com "ver como" aplicado) decide o que o menu esconde:
+     `areasEmBreve()` crua não sabe de papel, e o Scott veria o selo "Em breve"
+     numa área que ele pode abrir. */
+  const papel = (await getTenantContext().catch(() => null))?.userRole ?? null;
   const agentes = await agentesDaOrg();
 
   return (
@@ -164,7 +168,7 @@ export default async function ProdutoLayout({
         <AvisoVersaoNova />
 
         <Cf2SidebarProvider className="contents">
-          <CascaProto naoLidas={naoLidas} usuario={usuario} agentes={agentes} areasEmBreve={areasEmBreve()}>{children}</CascaProto>
+          <CascaProto naoLidas={naoLidas} usuario={usuario} agentes={agentes} areasEmBreve={areasEmBrevePara(papel)}>{children}</CascaProto>
         </Cf2SidebarProvider>
       </TooltipProvider>
     </Providers>
