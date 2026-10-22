@@ -278,6 +278,9 @@ export function EmpresaProto({ empresa, lead, timeline, arquivos, enriquecimento
     if (patch.empresa) {
       const p = patch.empresa as Record<string, any>;
       const campos: Record<string, string> = {};
+      // O patch só traz `nome` quando a pessoa realmente editou o campo; a
+      // action recusa nome vazio, porque a ficha inteira é indexada por ele.
+      if ("nome" in p && v(p.nome)) campos.nome = v(p.nome);
       if ("cnpj" in p) campos.cnpj = v(p.cnpj);
       if ("site" in p) campos.website = v(p.site);
       if ("segmento" in p) campos.setor = v(p.segmento);

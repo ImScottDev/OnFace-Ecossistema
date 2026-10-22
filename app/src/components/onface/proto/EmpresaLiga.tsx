@@ -393,6 +393,11 @@ posFlutuante(r, alto) {
     const todasTags = ["Inbound", "Enterprise", "Fit Alto", "Fit Médio", "Callface AI", "PABX", "White Label", seg.split(" ")[0]].filter((t, i, a) => a.indexOf(t) === i);
     const telas = {
       resumo: { titulo: "Editar resumo da empresa", campos: [
+        // O nome vem primeiro porque é o que identifica a empresa em toda a
+        // ficha. Ele não era editável em lugar nenhum do produto: quem nascia
+        // com nome errado (carga que usou nome de pessoa, por exemplo) ficava
+        // errado para sempre.
+        campoTexto("nome", "Nome da empresa", "Razão social ou nome fantasia", true),
         campoTexto("cnpj", "CNPJ", "00.000.000/0000-00"), campoTexto("porte", "Porte (atendentes)", "45"),
         campoTexto("site", "Site", "https://", true), campoTexto("cidade", "Cidade / UF", "São Paulo / SP"),
         campoTexto("segmento", "Segmento", "Logística e Transporte"),
@@ -426,7 +431,9 @@ posFlutuante(r, alto) {
     const salvar = () => {
       const k = S.editando;
       if (k === "resumo") {
-        this.gravarEmpresa(nomeEmp, { cnpj: R.cnpj, site: R.site, cidade: R.cidade, segmento: R.segmento, funcionarios: R.funcionarios || undefined, faturamento: R.faturamento || undefined, telefone: R.telefone || undefined, linkedin: R.linkedin || undefined, tecnologias: R.tecnologias || undefined });
+        // `nomeEmp` (a chave do registro local) continua sendo o nome ANTIGO:
+        // é por ele que a peça acha o que atualizar. O nome novo vai no patch.
+        this.gravarEmpresa(nomeEmp, { nome: R.nome, cnpj: R.cnpj, site: R.site, cidade: R.cidade, segmento: R.segmento, funcionarios: R.funcionarios || undefined, faturamento: R.faturamento || undefined, telefone: R.telefone || undefined, linkedin: R.linkedin || undefined, tecnologias: R.tecnologias || undefined });
         const n = String(R.porte || "").replace(/[^0-9]/g, "");
         if (n) this.gravarQual(E.id, { tamanho: n });
       }
@@ -754,7 +761,7 @@ posFlutuante(r, alto) {
         e.target.value = "";
       },
 
-      editarResumo: () => abrirEd("resumo", { cnpj, porte, site, cidade, segmento: seg, funcionarios: X.funcionarios || "", faturamento: X.faturamento || "", telefone: X.telefone || "", linkedin: X.linkedin || "", tecnologias: X.tecnologias || "" }),
+      editarResumo: () => abrirEd("resumo", { nome: nomeEmp === "Sem empresa" ? "" : nomeEmp, cnpj, porte, site, cidade, segmento: seg, funcionarios: X.funcionarios || "", faturamento: X.faturamento || "", telefone: X.telefone || "", linkedin: X.linkedin || "", tecnologias: X.tecnologias || "" }),
       editarQualif: () => abrirEd("qualif", { interesse: qualIni, dor: qual.dor || "", canal: qual.canal || (E.origem === "WhatsApp" ? "WhatsApp" : "Telefone"), urgencia: qual.urgencia || "Média", fit: qual.fit || "Alto" }),
       ...(() => {
         const lista = (X.notas || []).slice().sort((a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0));

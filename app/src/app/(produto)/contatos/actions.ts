@@ -660,6 +660,7 @@ export async function acaoAdicionarPessoaNaEmpresa(empresaId: string, d: {
  * ("320 · 201–500") e o número puro também vai para `employee_count`.
  */
 export async function acaoSalvarDadosDaEmpresa(empresaId: string, c: {
+  nome?: string;
   cnpj?: string; website?: string; setor?: string; telefone?: string; cidade?: string; estado?: string;
   funcionarios?: string; faturamento?: string; linkedin?: string; tecnologias?: string;
 }): Promise<Resultado<null>> {
@@ -667,7 +668,7 @@ export async function acaoSalvarDadosDaEmpresa(empresaId: string, c: {
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("salvar empresa", async () => {
     const [atual] = await db.execute<Record<string, string | number | null>>(sql`
-      SELECT cnpj, website, setor, telefone, cidade, estado, linkedin, annual_revenue, employee_count,
+      SELECT nome, cnpj, website, setor, telefone, cidade, estado, linkedin, annual_revenue, employee_count,
              campos_custom->>'funcionarios' AS funcionarios, campos_custom->>'tecnologias' AS tecnologias
         FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
     if (!atual) throw new RegraDeNegocio("empresa_inexistente", "Empresa não encontrada.");
@@ -684,10 +685,28 @@ export async function acaoSalvarDadosDaEmpresa(empresaId: string, c: {
     }
     const fone = t(c.telefone);
     if (fone && !normalizarE164(fone)) throw new RegraDeNegocio("telefone_invalido", "Telefone geral inválido. Use DDD + número, ou + e o código do país.");
+
+    /* O nome não era editável em NENHUMA tela: o modal de resumo não tinha o
+       campo e esta action não aceitava a chave. Empresa que nasceu com nome
+       errado — e há muitas, vindas de carga que usou nome de pessoa — ficava
+       errada para sempre. Vazio continua recusado, porque `resolverEmpresa`
+       exige nome e a ficha inteira é indexada por ele. */
+    const nome = t(c.nome);
+    if (nome !== undefined && !nome) throw new RegraDeNegocio("nome_obrigatorio", "A empresa precisa de um nome.");
+    /* Renomear para o nome de outra empresa não é bloqueado — às vezes é o
+       primeiro passo de uma mesclagem legítima —, mas avisa, porque a
+       deduplicação por nome normalizado passa a casar as duas. */
+    if (nome && nome.toLowerCase() !== String(atual.nome ?? "").toLowerCase()) {
+      const [homonima] = await db.execute<{ nome: string }>(sql`
+        SELECT nome FROM empresas WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND id <> ${empresaId}::uuid
+           AND lower(btrim(nome)) = ${nome.toLowerCase()} LIMIT 1`);
+      if (homonima) console.warn(`[empresa ${empresaId}] renomeada para "${nome}", que já é o nome de outra empresa da organização`);
+    }
     const func = t(c.funcionarios), tec = t(c.tecnologias);
     const numero = func !== undefined && /^\d{1,7}$/.test(func.replace(/\./g, "")) ? Number(func.replace(/\./g, "")) : null;
     await db.execute(sql`
-      UPDATE empresas SET cnpj = ${cnpj}, website = ${pick(t(c.website), atual.website)}, setor = ${pick(t(c.setor), atual.setor)},
+      UPDATE empresas SET nome = ${nome === undefined ? (atual.nome as string) : nome},
+             cnpj = ${cnpj}, website = ${pick(t(c.website), atual.website)}, setor = ${pick(t(c.setor), atual.setor)},
              telefone = ${pick(fone === undefined ? undefined : telefoneParaGravar(fone) ?? "", atual.telefone)}, cidade = ${pick(t(c.cidade), atual.cidade)}, estado = ${pick(t(c.estado), atual.estado)},
              linkedin = ${pick(t(c.linkedin), atual.linkedin)}, annual_revenue = ${pick(t(c.faturamento), atual.annual_revenue)},
              employee_count = ${func === undefined ? atual.employee_count : numero},
