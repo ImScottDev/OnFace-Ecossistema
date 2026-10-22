@@ -121,6 +121,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS="--max-old-space-size=768"
+# chromium: o PDF do contrato é gerado por puppeteer DENTRO do Next
+# (lib/propostas/proposta-pdf.ts), não no backend. Só o estágio `backend`
+# instalava o navegador, então em produção o aceite da proposta falhava com
+# "Could not find Chrome ... cache path /home/nextjs/.cache/puppeteer" e o
+# contrato não era gerado nem enviado — medido em 22/10/2026 na proposta #1590.
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont ttf-liberation
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 # Em monorepo o `standalone` preserva a árvore a partir de
