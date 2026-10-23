@@ -414,3 +414,109 @@ export async function retrieveCheckoutSession(sessionId: string): Promise<{ id: 
   if (getStripeCheckoutMode() === "mock") return { id: sessionId, status: "open", payment_status: "unpaid" };
   return stripeGet(`checkout/sessions/${sessionId}`);
 }
+
+/**
+ * Assinatura FATURADA — o caminho de quem vende por contrato.
+ *
+ * Callface AI, PABX e White Label por contrato são pós-pagos: o contrato
+ * assinado é a evidência de fechamento, o serviço é ativado, e a mensalidade
+ * é faturada por boleto no dia combinado. Antes disto esse caminho não
+ * existia — o contrato assinado gerava um Checkout Session PRÉ-PAGO, isto é,
+ * o cliente tinha que pagar antes para a assinatura nascer, contradizendo o
+ * próprio contrato que ele acabara de assinar.
+ *
+ * Medido em 23/10/2026: as sete propostas por contrato da base TÊM o dia de
+ * vencimento combinado (`dia_vencimento_mes`: 17, 20, 20, 30...), ele sai
+ * escrito no contrato ("Mensalidade com vencimento todo dia 20") e nunca
+ * chegava ao Stripe. Dos dois contratos assinados, ZERO viraram assinatura.
+ *
+ * Mecânica (decisões do Scott, 23/10/2026):
+ *  - `collection_method=send_invoice`: o Stripe emite a fatura e manda o
+ *    boleto, em vez de debitar um cartão que o cliente nunca cadastrou.
+ *  - `billing_cycle_anchor_config[day_of_month]`: o ciclo vira no dia
+ *    combinado, todo mês, para sempre.
+ *  - `proration_behavior=none`: o pedaço quebrado entre a vigência e o
+ *    primeiro vencimento NÃO é cobrado. A primeira fatura é um MÊS CHEIO, com
+ *    o mesmo valor de todas as outras — é o que o contrato diz e o que o
+ *    financeiro consegue conferir.
+ *
+ * Setup/implantação não entra aqui: vai em boleto separado, emitido na
+ * assinatura do contrato (`criarCobrancaAvulsa`).
+ */
+export async function createFaturadaSubscription(params: CreateGroupCheckoutParams & {
+  /** Dia do mês do vencimento, combinado na proposta. */
+  diaVencimentoMes?: number | null;
+  /** Dias para pagar depois que a fatura é emitida. 0 = vence no próprio dia do ciclo. */
+  diasParaPagar?: number | null;
+}): Promise<{ subscriptionId: string; faturaId: string | null; faturaUrl: string | null; mocked: boolean }> {
+  const mode = getStripeCheckoutMode();
+  const recorrentes = params.itensRecorrentes.filter((item) => item.valorUnitario > 0);
+  if (recorrentes.length === 0) throw new Error("Assinatura faturada exige ao menos um item recorrente.");
+  if (recorrentes.some((item) => item.moeda.toUpperCase() !== params.moeda.toUpperCase())) {
+    throw new Error("A moeda de um Price oficial não coincide com a moeda da proposta.");
+  }
+
+  if (mode === "mock") {
+    return { subscriptionId: `sub_mock_${params.grupoComercialId.replace(/-/g, "")}`, faturaId: null, faturaUrl: null, mocked: true };
+  }
+
+  const form = new URLSearchParams();
+  form.append("customer", params.customerId);
+  form.append("collection_method", "send_invoice");
+  /* Antecedência: a fatura é emitida quando o ciclo abre e vence `days_until_due`
+     dias depois. Trinta dias é o que faz o boleto existir cedo o bastante para
+     ser registrado e APARECER NO DDA do cliente — boleto emitido no dia do
+     vencimento não aparece em DDA nenhum, chega como cobrança de última hora.
+     Também é o que torna a venda pós-paga de verdade: o cliente usa o mês e
+     paga no fim dele, no dia combinado. */
+  const diasParaPagar = Math.min(60, Math.max(1, Math.trunc(params.diasParaPagar || 30)));
+  form.append("days_until_due", String(diasParaPagar));
+  // Sem o pedaço quebrado: a primeira fatura é um mês cheio, como o contrato diz.
+  form.append("proration_behavior", "none");
+  /* O boleto precisa durar MAIS que o prazo da fatura. O default da conta é 3
+     dias: com ele, um boleto emitido 30 dias antes do vencimento expirava
+     muito antes de o cliente poder pagar, e a cobrança morria sozinha. */
+  appendNested(form, "payment_settings", {
+    payment_method_types: ["boleto", "card"],
+    payment_method_options: { boleto: { expires_after_days: diasParaPagar } },
+  });
+  const dia = Math.trunc(params.diaVencimentoMes ?? 0);
+  if (dia >= 1 && dia <= 31) form.append("billing_cycle_anchor_config[day_of_month]", String(dia));
+
+  linhasDoCheckout(recorrentes).forEach((linha, i) => {
+    form.append(`items[${i}][price]`, linha.stripePriceId);
+    form.append(`items[${i}][quantity]`, String(linha.quantidade));
+  });
+
+  /* O desconto negociado: mesma regra do checkout — em recorrente ele vale
+     enquanto a assinatura valer, nunca só o primeiro mês. */
+  const desconto = discountTotal(recorrentes);
+  const metadata: Record<string, string> = {
+    ...params.metadata,
+    crm_proposal_id: params.propostaId,
+    crm_group_id: params.grupoComercialId,
+    organizacaoId: params.organizacaoId,
+    propostaId: params.propostaId,
+    crm_billing_mode: "pos_pago_contrato",
+    ...(params.negocioId ? { crm_negocio_id: params.negocioId, negocioId: params.negocioId } : {}),
+  };
+  const couponId = await createCoupon(desconto, params.moeda, metadata, params.attemptKey || "initial", duracaoDoDescontoRecorrente(params.descontoRecorrenteMeses));
+  if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
+  appendMetadata(form, metadata);
+
+  /* A chave de idempotência é o grupo: retomada do aceite, clique duplo ou
+     webhook repetido devolvem a MESMA assinatura em vez de criar uma segunda
+     e cobrar o cliente duas vezes pelo mesmo contrato. */
+  const sub = await stripePost<{ id: string; latest_invoice?: string | { id?: string; hosted_invoice_url?: string | null } | null }>(
+    "subscriptions", form, { idempotencyKey: stableIdempotencyKey(`crm-sub-faturada-${params.grupoComercialId}-${params.attemptKey || "initial"}`) },
+  );
+
+  const faturaId = typeof sub.latest_invoice === "string" ? sub.latest_invoice : sub.latest_invoice?.id ?? null;
+  let faturaUrl = typeof sub.latest_invoice === "object" ? sub.latest_invoice?.hosted_invoice_url ?? null : null;
+  if (faturaId && !faturaUrl) {
+    const f = await stripeGet<{ hosted_invoice_url?: string | null }>(`invoices/${encodeURIComponent(faturaId)}`)
+      .catch(() => null);
+    faturaUrl = f?.hosted_invoice_url ?? null;
+  }
+  return { subscriptionId: sub.id, faturaId, faturaUrl, mocked: false };
+}

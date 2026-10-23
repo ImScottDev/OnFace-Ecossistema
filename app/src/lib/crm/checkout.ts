@@ -23,7 +23,8 @@ import { eq, asc, sql } from "drizzle-orm";
 import {
   checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos, leads, empresas, negocios,
 } from "@/lib/db/schema";
-import { boletoExpiresAfterDaysFromValidade, createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
+import { boletoExpiresAfterDaysFromValidade, createFaturadaSubscription, createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
+import { diaDoVencimento, logradouroFiscal, vendaEhFaturada } from "@/lib/crm/condicoes-comerciais";
 import { publicarEvento } from "@/lib/events/outbox";
 import { vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
 import { montarMetadataComercial } from "@/lib/crm/metadata-comercial";
@@ -37,6 +38,13 @@ export type CriarCheckoutResult =
      pagamento precisa ser obrigado pelo compilador a tratar este caso, em vez
      de mostrar "aguardando pagamento" para uma venda já cobrada. */
   | { ok: true; expansao: true; subscriptionId: string; itensAplicados: number; faturaId: string | null; faturaUrl: string | null }
+  /* Venda por CONTRATO: pós-paga. A assinatura é ativada e a mensalidade é
+     faturada por boleto no dia combinado — não há link de pagamento a enviar
+     antes, porque a evidência de fechamento foi a assinatura do contrato.
+     Variante própria pelo mesmo motivo da expansão: o compilador obriga quem
+     espera `url` a tratar este caso em vez de mostrar "aguardando pagamento"
+     numa venda já fechada e já faturada. */
+  | { ok: true; faturada: true; subscriptionId: string; faturaId: string | null; faturaUrl: string | null }
   | { ok: false; error: string; /** Para onde ir resolver: a alteração da assinatura no Cliente 360. */ alterarAssinaturaUrl?: string };
 
 /**
@@ -119,7 +127,7 @@ export async function criarCheckoutParaGrupo(opts: {
     empresa: leads.empresa, empresaId: leads.empresaId, empresaCnpj: leads.empresaCnpj, stripeCustomerId: leads.stripeCustomerId,
   }).from(leads).where(eq(leads.id, proposta.leadId)).limit(1);
   const [empresa] = lead?.empresaId
-    ? await db.select({ id: empresas.id, nome: empresas.nome, cnpj: empresas.cnpj, telefone: empresas.telefone, endereco: empresas.endereco, cep: empresas.cep, cidade: empresas.cidade, estado: empresas.estado, pais: empresas.pais, stripeCustomerId: empresas.stripeCustomerId })
+    ? await db.select({ id: empresas.id, nome: empresas.nome, cnpj: empresas.cnpj, telefone: empresas.telefone, endereco: empresas.endereco, logradouro: empresas.logradouro, numero: empresas.numero, cep: empresas.cep, cidade: empresas.cidade, estado: empresas.estado, pais: empresas.pais, stripeCustomerId: empresas.stripeCustomerId })
       .from(empresas).where(eq(empresas.id, lead.empresaId)).limit(1)
     : [undefined];
 
@@ -146,7 +154,7 @@ export async function criarCheckoutParaGrupo(opts: {
       email: lead?.email,
       phone: empresa?.telefone || lead?.telefone,
       address: {
-        line1: empresa?.endereco,
+        line1: logradouroFiscal({ endereco: empresa?.endereco, logradouro: empresa?.logradouro, numero: empresa?.numero }),
         city: empresa?.cidade,
         state: empresa?.estado,
         postalCode: empresa?.cep,
@@ -217,6 +225,43 @@ export async function criarCheckoutParaGrupo(opts: {
     const [checkoutAnterior] = await db.select().from(checkouts).where(eq(checkouts.id, grupo.checkoutId)).limit(1);
     if (checkoutAnterior?.stripeSessionId && ["criado", "aberto"].includes(checkoutAnterior.status)) {
       await expireCheckoutSession(checkoutAnterior.stripeSessionId).catch((e) => console.error(`[checkout] falha ao expirar sessão anterior do grupo ${opts.grupoId}:`, e));
+    }
+  }
+
+  /* Venda por contrato é pós-paga: ativa a assinatura e fatura no dia
+     combinado, em vez de pedir pagamento antes. Os itens, o Customer (já com
+     ID fiscal) e o desconto conferidos acima são os MESMOS — só muda o
+     destino, e é por isso que esta ramificação mora aqui dentro e não num
+     segundo caminho paralelo. */
+  if (vendaEhFaturada({ modoFechamento: proposta.modoFechamento, diaVencimentoMes: proposta.diaVencimentoMes, temItemRecorrente: itensRecorrentes.length > 0 })) {
+    try {
+      const assinatura = await createFaturadaSubscription({
+        propostaId: proposta.id, negocioId: proposta.negocioId, grupoComercialId: opts.grupoId, organizacaoId: proposta.organizacaoId,
+        moeda: proposta.moeda || "BRL", itensRecorrentes, itensAvulsos: [], customerId, metadata,
+        attemptKey: grupo.checkoutId || "initial",
+        successUrl: "", cancelUrl: "",
+        descontoRecorrenteMeses: proposta.descontoTemporarioAlvo === "mrr" ? proposta.descontoTemporarioMeses : null,
+        diaVencimentoMes: diaDoVencimento(proposta.diaVencimentoMes, new Date()),
+        diasParaPagar: proposta.vencimentoDias,
+      });
+      const [linha] = await db.insert(checkouts).values({
+        organizacaoId: proposta.organizacaoId, propostaId: proposta.id, negocioId: proposta.negocioId,
+        grupoComercialId: opts.grupoId, origem: opts.origem, criadoPorId: opts.criadoPorId ?? null,
+        stripeSubscriptionId: assinatura.subscriptionId, stripeInvoiceId: assinatura.faturaId,
+        stripeCheckoutUrl: assinatura.faturaUrl, stripeCustomerId: customerId,
+        // Faturada: a assinatura está ativa e a cobrança segue o ciclo. Quem
+        // confirma o pagamento é o webhook `invoice.paid`, como em todo boleto.
+        status: "aberto", paymentStatus: "pendente", metadata,
+      }).returning();
+      if (linha) await vincularCheckoutAoGrupo(opts.grupoId, linha.id);
+      await publicarEvento({
+        organizacaoId: proposta.organizacaoId, eventType: "SubscriptionActivated", aggregateType: "grupo_comercial", aggregateId: opts.grupoId,
+        payload: { propostaId: proposta.id, negocioId: proposta.negocioId, subscriptionId: assinatura.subscriptionId, faturaId: assinatura.faturaId, diaVencimento: diaDoVencimento(proposta.diaVencimentoMes, new Date()) },
+        idempotencyKey: `subscription-activated:${opts.grupoId}`,
+      });
+      return { ok: true, faturada: true, subscriptionId: assinatura.subscriptionId, faturaId: assinatura.faturaId, faturaUrl: assinatura.faturaUrl };
+    } catch (err) {
+      return { ok: false, error: `Falha ao ativar a assinatura faturada no Stripe: ${String(err)}` };
     }
   }
 

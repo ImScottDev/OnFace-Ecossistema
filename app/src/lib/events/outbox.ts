@@ -37,6 +37,10 @@ export type EventoDominio =
   // Commercial Core (ADR-EXEC-020) — fechamento ponta a ponta
   // Oportunidade -> Proposta -> Aceite -> Contrato -> Won -> Serviço Canônico.
   | "PaymentStarted"
+  // Venda por contrato (pós-paga): a assinatura foi ativada e a mensalidade
+  // passa a ser faturada no ciclo. Não é `PaymentStarted` — não há link de
+  // pagamento esperando o cliente, a cobrança entrou no ciclo da assinatura.
+  | "SubscriptionActivated"
   | "PaymentCompleted"
   | "ContractRequired"
   | "ContractGenerated"

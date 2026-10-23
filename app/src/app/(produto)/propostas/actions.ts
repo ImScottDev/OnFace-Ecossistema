@@ -857,6 +857,9 @@ export async function acaoCobrarUpgradeNaAssinatura(
     if (!r.ok) throw new RegraDeNegocio("upgrade_recusado", r.error);
     revalidatePath(ROTA);
     if ("expansao" in r) return { url: r.faturaUrl, itens: r.itensAplicados };
+    // Venda por contrato: a assinatura foi ativada e o que o cliente recebe é
+    // o boleto da fatura, não um link de checkout.
+    if ("faturada" in r) return { url: r.faturaUrl, itens: 0 };
     return { url: r.url, itens: 0 };
   });
 }

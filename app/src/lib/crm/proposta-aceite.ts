@@ -437,6 +437,15 @@ async function avancarGrupoAposAceite(args: {
       checkoutUrl: checkout.faturaUrl,
     };
   }
+  /* Venda por contrato: a assinatura foi ATIVADA e a mensalidade será faturada
+     no dia combinado. Não há link de pagamento para enviar antes — o que o
+     cliente recebe é o boleto da fatura, pelo Stripe. */
+  if (checkout.ok && "faturada" in checkout) {
+    return {
+      grupoId: grupo.id, commercialModel: grupo.commercialModel, proximoPasso: "pagamento",
+      serviceFamily: familia, estado: "pagamento_pendente", checkoutUrl: checkout.faturaUrl,
+    };
+  }
   if (checkout.ok) {
     await publicarEvento({
       organizacaoId: opts.organizacaoId, eventType: "PaymentStarted", aggregateType: "checkout", aggregateId: checkout.checkoutId,

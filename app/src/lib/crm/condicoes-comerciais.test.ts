@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { condicoesDoEditor, variaveisDeCondicoes, type CondicoesDaProposta } from "./condicoes-comerciais";
+import { condicoesDoEditor, diaDoVencimento, logradouroFiscal, variaveisDeCondicoes, vendaEhFaturada, type CondicoesDaProposta } from "./condicoes-comerciais";
 import { variaveisFaltando } from "./contrato-variaveis";
 
 /** O que o editor (PropostaLiga) guarda em `propostas.editor`, com as condições negociadas. */
@@ -86,5 +86,48 @@ describe("condição negociada chega ao contrato", () => {
   it("não escreve o dia do mês em vencimento_dias, que é 'dias após a emissão' (boleto e pendência leem isso)", () => {
     const c = condicoesDoEditor(editorNegociado, { temSetup: true }) as Record<string, unknown>;
     assert.equal("vencimentoDias" in c, false);
+  });
+});
+
+/* Venda por contrato é pós-paga: o contrato assinado fecha, o serviço é
+   ativado e a mensalidade é faturada no dia combinado. 23/10/2026. */
+describe("qual caminho de cobrança a venda toma", () => {
+  it("venda por contrato com recorrente é faturada, não cobrada antes", () => {
+    assert.equal(vendaEhFaturada({ modoFechamento: "CONTRACT", diaVencimentoMes: 20, temItemRecorrente: true }), true);
+  });
+
+  it("pré-pago continua no checkout, onde o pagamento é a evidência", () => {
+    assert.equal(vendaEhFaturada({ modoFechamento: "PREPAID", diaVencimentoMes: 20, temItemRecorrente: true }), false);
+  });
+
+  it("contrato só com item avulso não vira assinatura", () => {
+    assert.equal(vendaEhFaturada({ modoFechamento: "CONTRACT", diaVencimentoMes: 20, temItemRecorrente: false }), false);
+  });
+
+  it("sem dia combinado, o vencimento cai no dia da ativação", () => {
+    assert.equal(diaDoVencimento(20, new Date("2026-10-22T12:00:00Z")), 20);
+    assert.equal(diaDoVencimento(null, new Date("2026-10-22T12:00:00Z")), 22);
+    assert.equal(diaDoVencimento(0, new Date("2026-10-07T12:00:00Z")), 7);
+    assert.equal(diaDoVencimento(99, new Date("2026-10-07T12:00:00Z")), 7);
+  });
+});
+
+/* Boleto exige endereço completo, e `empresas` guarda a rua em duas colunas
+   diferentes. A cobrança lia só a que está vazia. 23/10/2026. */
+describe("logradouro que vai para o Stripe", () => {
+  it("usa logradouro + número quando `endereco` está vazio", () => {
+    assert.equal(logradouroFiscal({ endereco: "", logradouro: "Alameda Rio Negro", numero: "1030" }), "Alameda Rio Negro, 1030");
+  });
+
+  it("`endereco` preenchido vence: veio do Stripe ou do portal", () => {
+    assert.equal(logradouroFiscal({ endereco: "Rua A, 10", logradouro: "Rua B", numero: "99" }), "Rua A, 10");
+  });
+
+  it("número sujo não polui o endereço", () => {
+    assert.equal(logradouroFiscal({ endereco: null, logradouro: "Rio de Janeiro", numero: "00-" }), "Rio de Janeiro, 00");
+  });
+
+  it("sem rua nenhuma devolve null em vez de string vazia", () => {
+    assert.equal(logradouroFiscal({ endereco: null, logradouro: null, numero: "10" }), null);
   });
 });

@@ -162,10 +162,12 @@ export async function processarContratoAssinado(opts: {
     }).catch((e) => console.error("[pos-assinatura] falha ao registrar atividade (best-effort):", e));
   }
 
-  // Checkout automático pós-assinatura (comportamento preservado da v2 —
-  // PABX/White Label também faturam via Stripe). Falhar aqui é esperado
-  // quando o catálogo não tem stripeProductId: o grupo fica em
-  // aguardando_checkout e o vendedor gera manualmente.
+  /* A cobrança depois da assinatura. Para venda por contrato — que é POS-PAGA
+     — `criarCheckoutParaGrupo` ativa a assinatura e deixa a mensalidade sendo
+     faturada no dia combinado, em vez de gerar um link de pagamento
+     antecipado. Falhar aqui é esperado quando o catálogo não tem
+     stripeProductId: o grupo fica em aguardando_checkout e o vendedor
+     resolve à mão. */
   let checkoutUrl: string | null = null;
   let erroCheckout: string | null = null;
   const checkoutResult = await criarCheckoutParaGrupo({ grupoId, origem: "automatico_pos_aceite" });
@@ -174,6 +176,12 @@ export async function processarContratoAssinado(opts: {
      aconteceu. */
   if (checkoutResult.ok && "expansao" in checkoutResult) {
     console.log(`[pos-assinatura] grupo ${grupoId} cobrado na assinatura ${checkoutResult.subscriptionId} (${checkoutResult.itensAplicados} item(ns))`);
+  } else if (checkoutResult.ok && "faturada" in checkoutResult) {
+    /* Pós-pago: a assinatura está ativa e o cliente recebe o boleto da fatura
+       pelo Stripe. Não há PaymentStarted a publicar — o pagamento não
+       "começou" num link, ele entrou no ciclo da assinatura. */
+    checkoutUrl = checkoutResult.faturaUrl;
+    console.log(`[pos-assinatura] grupo ${grupoId}: assinatura ${checkoutResult.subscriptionId} ativada, faturamento no ciclo (fatura ${checkoutResult.faturaId ?? "ainda não emitida"})`);
   } else if (checkoutResult.ok) {
     checkoutUrl = checkoutResult.url;
     await publicarEvento({

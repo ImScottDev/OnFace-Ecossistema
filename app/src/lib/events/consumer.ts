@@ -202,7 +202,7 @@ for (const eventType of [
   "LeadCreated", "DealCreated", "StageChanged", "DealWon", "DealLost", "CustomerCreated",
   "ProposalSent", "ProposalViewed", "ProposalAccepted", "ProposalRejected",
   // Commercial Core (ADR-EXEC-020)
-  "PaymentStarted", "PaymentCompleted", "ContractRequired", "ContractGenerated", "ContractPreparationFailed", "SignatureRequested",
+  "PaymentStarted", "SubscriptionActivated", "PaymentCompleted", "ContractRequired", "ContractGenerated", "ContractPreparationFailed", "SignatureRequested",
   "SignerViewed", "SignerSigned", "ContractCompleted", "FinalDocumentGenerated", "ContractDeclined",
   "ContractExpired", "ContractSigned", "CanonicalServiceActivated",
   // Commercial Core v2 (ADR-EXEC-021)

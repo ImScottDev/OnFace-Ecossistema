@@ -153,3 +153,63 @@ export function variaveisDeCondicoes(p: CondicoesDaProposta, setup: number, hoje
     },
   };
 }
+
+/**
+ * Esta venda é faturada (pós-paga) em vez de cobrada antes?
+ *
+ * Venda por CONTRATO é pós-paga: o contrato assinado é a evidência de
+ * fechamento, o serviço é ativado e a mensalidade é faturada no dia
+ * combinado. Pedir pagamento antes contradiz o contrato que o cliente acabou
+ * de assinar — e era o que acontecia, porque o único caminho de cobrança era
+ * o Checkout Session, que é sempre pré-pago.
+ *
+ * Pré-pago (`PREPAID`, Callface AI direto pelo site/vendedor) continua indo
+ * para o checkout: ali o pagamento É a evidência de fechamento.
+ */
+export function vendaEhFaturada(p: {
+  modoFechamento?: string | null;
+  diaVencimentoMes?: number | null;
+  temItemRecorrente: boolean;
+}): boolean {
+  return p.modoFechamento === "CONTRACT" && p.temItemRecorrente;
+}
+
+/**
+ * Em que dia do mês a mensalidade vence.
+ *
+ * Sem dia combinado na proposta, cai no dia da ativação — o ciclo passa a
+ * virar nesse dia todo mês. Nunca inventa um dia fixo: o cliente que não
+ * combinou dia nenhum espera a data em que assinou.
+ */
+export function diaDoVencimento(diaCombinado: number | null | undefined, ativacao: Date): number {
+  const d = Math.trunc(diaCombinado ?? 0);
+  if (d >= 1 && d <= 31) return d;
+  return ativacao.getDate();
+}
+
+/**
+ * O logradouro que vai para o Stripe (`address.line1`).
+ *
+ * `empresas` tem DUAS colunas de rua: `endereco`, que o webhook do Stripe e o
+ * portal preenchem, e `logradouro`/`numero`/`bairro`, que vêm do cadastro e da
+ * consulta de CNPJ. O código de cobrança lia só `endereco` — e ela está vazia
+ * em quase toda a base (8 empresas com `logradouro`, 35 com `endereco`, de
+ * 3.198). Resultado: Customer criado no Stripe sem rua nenhuma, e boleto exige
+ * endereço completo (LIVA, 23/10/2026: `logradouro` = "Alameda Rio Negro",
+ * `numero` = 1030, e o Stripe recebendo vazio).
+ *
+ * Prefere `endereco` quando preenchido (é o mais recente, veio do próprio
+ * Stripe ou do portal) e cai para logradouro + número.
+ */
+export function logradouroFiscal(e: {
+  endereco?: string | null;
+  logradouro?: string | null;
+  numero?: string | null;
+}): string | null {
+  const pronto = e.endereco?.trim();
+  if (pronto) return pronto;
+  const rua = e.logradouro?.trim();
+  if (!rua) return null;
+  const n = e.numero?.trim().replace(/[^0-9A-Za-z/ -]/g, "").replace(/[-\s]+$/, "");
+  return n ? `${rua}, ${n}` : rua;
+}

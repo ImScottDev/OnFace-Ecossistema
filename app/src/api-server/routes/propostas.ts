@@ -594,6 +594,8 @@ app.get("/propostas/:id/publica", async (c) => {
           const regen = await criarCheckoutParaGrupo({ grupoId: grupo.id, origem: "automatico_pos_aceite" });
           // Expansão não regenera link: a cobrança foi para a assinatura do cliente.
           if (regen.ok && "expansao" in regen) { checkoutUrl = null; pagamentoEstado = "pago"; }
+          // Faturada: o link é o da fatura do Stripe (boleto), não o do checkout.
+          else if (regen.ok && "faturada" in regen) { checkoutUrl = regen.faturaUrl; pagamentoEstado = "aberto"; }
           else if (regen.ok) { checkoutUrl = `${base}/checkout/${regen.checkoutId}`; pagamentoEstado = "aberto"; }
           else pagamentoEstado = "indisponivel";
         } else {
@@ -750,6 +752,11 @@ app.post("/propostas/grupos/:grupoId/gerar-checkout", async (c) => {
   // Expansão cobra na assinatura do cliente: não há link de pagamento a devolver.
   if ("expansao" in result) {
     return c.json({ expansao: true, subscriptionId: result.subscriptionId, itensAplicados: result.itensAplicados, faturaId: result.faturaId, url: result.faturaUrl });
+  }
+  // Venda por contrato: a assinatura foi ativada e a mensalidade é faturada no
+  // ciclo. O que o cliente recebe é o boleto da fatura, não um link de checkout.
+  if ("faturada" in result) {
+    return c.json({ faturada: true, subscriptionId: result.subscriptionId, faturaId: result.faturaId, url: result.faturaUrl });
   }
   return c.json({ checkoutId: result.checkoutId, url: result.url });
 });
