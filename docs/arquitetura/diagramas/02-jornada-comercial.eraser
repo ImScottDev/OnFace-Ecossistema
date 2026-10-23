@@ -1,0 +1,70 @@
+// ONFACE — a jornada, de onde o lead entra ate a receita recorrente.
+// Cada caixa diz ONDE a regra mora no codigo. O que esta em laranja e
+// legado que ainda e lido; vermelho e defeito medido, nao suspeita.
+
+title ONFACE — jornada comercial e onde cada regra mora
+
+Entrada [color: blue] {
+  Meta Lead Ads [icon: facebook]
+  Landing page [icon: globe]
+  Prospeccao [icon: search]
+  Entrada manual [icon: edit]
+}
+
+Pre-vendas [color: green] {
+  aquisicao [icon: target, label: "aquisicoes + pontos_contato"]
+  qualificacao [icon: filter, label: "estagio_pre_vendas e a coluna canonica"]
+  leads_status [icon: alert-triangle, color: red, label: "leads.status: 'novo' em 4.254 de 4.254"]
+}
+
+Pipeline [color: purple] {
+  oportunidade [icon: briefcase, label: "oportunidades (canonico)"]
+  negocio [icon: briefcase, color: orange, label: "negocios (legado, ainda escrito)"]
+  proposta [icon: file-text]
+  ganho [icon: check-circle, label: "won-evidence.ts decide"]
+}
+
+Fechamento [color: teal] {
+  contrato [icon: file-check]
+  checkout [icon: credit-card, label: "Stripe"]
+  servico [icon: package, label: "servicos_canonicos"]
+}
+
+Receita [color: pink] {
+  assinatura [icon: refresh-cw]
+  mrr [icon: dollar-sign, label: "cliente_receita_mensal"]
+  white_label [icon: alert-triangle, color: red, label: "WL: setup e unico, MRR so por licenca ativa"]
+}
+
+Volta para a Meta [color: blue] {
+  outbox [icon: repeat, label: "event_outbox > sweep de 60s"]
+  capi [icon: send, label: "Conversions API"]
+}
+
+Meta Lead Ads > aquisicao
+Landing page > aquisicao
+Prospeccao > aquisicao
+Entrada manual > aquisicao
+
+aquisicao > qualificacao
+qualificacao > oportunidade
+oportunidade > proposta
+proposta > ganho
+ganho > contrato
+contrato > checkout
+checkout > servico
+servico > assinatura
+assinatura > mrr
+
+// O caminho de volta: o que ensina o algoritmo da Meta.
+aquisicao > outbox: AcquisitionCreated > Lead
+qualificacao > outbox: AcquisitionQualified > QualifiedLead
+oportunidade > outbox: etapa > MeetingHeld / NegotiationStarted
+proposta > outbox: ProposalSent
+ganho > outbox: OpportunityWon
+checkout > outbox: PaymentCompleted > Purchase
+outbox > capi
+
+// A ponte do dual-write: as duas tabelas contam a mesma historia,
+// e so uma e o modelo final.
+oportunidade <> negocio: espelho (negocio_id_legado)

@@ -1,0 +1,3744 @@
+// ONFACE — banco (so tabelas com dados)
+// Gerado do schema de PRODUCAO (callface_crm_mz) — nao do schema.ts.
+// Contagem de linhas por count(*) real, nao estimativa do planner.
+// Laranja = legado do dual-write: existe para morrer (fases 27/28 do refactor).
+
+title ONFACE — banco (so tabelas com dados)
+
+Atendimento [color: teal] {
+  atividades {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    usuario_id uuid
+    tipo string
+    titulo string
+    descricao string
+    dados json
+    duracao_segundos int
+    created_at timestamp
+    descricao_raw string
+    superseded_by_note_id uuid
+    timeline_visible bool
+    usuario_display_name string
+    usuario_source_id string
+    empresa_id uuid
+    // 18.518 linhas
+  }
+  communications {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    canal string
+    direcao string
+    conteudo string
+    duracao_segundos int
+    status string
+    external_id string
+    usuario_id uuid
+    ocorrido_em timestamp
+    origem_legado_id uuid
+    raw json
+    created_at timestamp
+    conversa_id uuid
+    empresa_id uuid
+    oportunidade_id uuid
+    tipo string
+    provider string
+    subject string
+    summary string
+    transcript string
+    created_by_user_id uuid
+    metadata json
+    origem_tabela string
+    // 55.955 linhas
+  }
+  email_contas {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    tipo string
+    email string
+    nome string
+    access_token string
+    refresh_token string
+    token_expiry timestamp
+    imap_host string
+    imap_port int
+    smtp_host string
+    smtp_port int
+    imap_user string
+    smtp_user string
+    imap_pass string
+    smtp_pass string
+    sync_status string
+    sync_mode string
+    sync_filtro_label string
+    last_sync_at timestamp
+    last_error string
+    delta_cursor string
+    backfill_status string
+    backfill_progress int
+    assinatura string
+    envio_como string
+    is_default bool
+    created_at timestamp
+    updated_at timestamp
+    // 12 linhas
+  }
+  email_templates {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    assunto string
+    corpo string
+    variaveis json
+    categoria string
+    created_at timestamp
+    updated_at timestamp
+    // 4 linhas
+  }
+  emails {
+    id uuid pk
+    organizacao_id uuid
+    contato_id uuid
+    lead_id uuid
+    conta_id uuid
+    de string
+    para string
+    cc string
+    bcc string
+    assunto string
+    corpo string
+    corpo_texto string
+    direcao string
+    status string
+    lido bool
+    enviado_por_id uuid
+    message_id string
+    in_reply_to string
+    thread_id string
+    provider_message_id string
+    labels json
+    anexos json
+    sequencia_execucao_id uuid
+    created_at timestamp
+    entrega_estado string
+    entrega_detalhe string
+    entrega_verificada_em timestamp
+    origem_tipo string
+    origem_id uuid
+    // 15.494 linhas
+  }
+  ligacoes {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    usuario_id uuid
+    idempotency_key string
+    callface_call_id string
+    callface_contact_id string
+    callface_deal_id string
+    user_email string
+    user_name string
+    destination_number string
+    call_date timestamp
+    duracao_segundos int
+    call_status string
+    resumo string
+    transcricao json
+    call_link string
+    audio_url string
+    closure_percentage int
+    scheduling json
+    payload_raw json
+    created_at timestamp
+    // 7.753 linhas
+  }
+  notas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    empresa_id uuid
+    conteudo string
+    autor_id uuid
+    pipedrive_id string
+    created_at timestamp
+    updated_at timestamp
+    autor_display_name string
+    autor_source_id string
+    conteudo_raw string
+    cliente_id uuid
+    reuniao_id uuid
+    // 5.776 linhas
+  }
+  scripts_atendimento {
+    id uuid pk
+    organizacao_id uuid
+    titulo string
+    categoria string
+    conteudo string
+    versao int
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    // 6 linhas
+  }
+  tarefas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    usuario_id uuid
+    titulo string
+    descricao string
+    tipo string
+    prioridade string
+    data_vencimento date
+    concluida bool
+    concluida_em timestamp
+    created_at timestamp
+    negocio_id uuid
+    vence_em timestamp
+    empresa_id uuid
+    servico_canonico_id uuid
+    origem string
+    motivo string
+    chave_idempotencia string
+    status string
+    // 945 linhas
+  }
+  whatsapp_mensagens {
+    id uuid pk
+    contato_id uuid
+    lead_id uuid
+    sessao_id uuid
+    telefone string
+    direcao string
+    tipo string
+    conteudo string
+    media_url string
+    media_type string
+    media_filename string
+    uazapi_message_id string
+    status string
+    status_at timestamp
+    reply_to_id uuid
+    template_nome string
+    enviado_por_id uuid
+    dados json
+    reactions json
+    created_at timestamp
+    // 39.222 linhas
+  }
+  whatsapp_sessao {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    session_name string
+    label string
+    is_default bool
+    api_token string
+    tipo string
+    assign_strategy string
+    status string
+    phone_number string
+    qr_code string
+    last_connected_at timestamp
+    updated_at timestamp
+    finalidade string
+    privado bool
+    operacional bool
+    // 12 linhas
+  }
+  whatsapp_templates {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    categoria string
+    conteudo string
+    botoes json
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    // 17 linhas
+  }
+}
+
+Eventos e auditoria [color: gray] {
+  audit_log {
+    id uuid pk
+    organizacao_id uuid
+    actor_id uuid
+    action string
+    entity_type string
+    entity_id uuid
+    before json
+    after json
+    source string
+    ip string
+    created_at timestamp
+    // 3.758 linhas
+  }
+  domain_events {
+    id uuid pk
+    organizacao_id uuid
+    event_type string
+    aggregate_type string
+    aggregate_id uuid
+    actor_type string
+    actor_id uuid
+    occurred_at timestamp
+    correlation_id uuid
+    causation_id uuid
+    idempotency_key string
+    source string
+    payload json
+    created_at timestamp
+    // 3.801 linhas
+  }
+  event_outbox {
+    id uuid pk
+    organizacao_id uuid
+    event_type string
+    aggregate_type string
+    aggregate_id uuid
+    payload json
+    correlation_id uuid
+    idempotency_key string
+    status string
+    attempts int
+    last_error string
+    processed_at timestamp
+    created_at timestamp
+    processing_started_at timestamp
+    // 3.155 linhas
+  }
+  status_changes {
+    id uuid pk
+    lead_id uuid
+    negocio_id uuid
+    de_status string
+    para_status string
+    usuario_id uuid
+    motivo string
+    created_at timestamp
+    confianca string
+    evidencia json
+    zoho_id string
+    // 7.622 linhas
+  }
+  timeline_events {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    pessoa_id uuid
+    aquisicao_id uuid
+    oportunidade_id uuid
+    servico_canonico_id uuid
+    domain_event_id uuid
+    tipo string
+    titulo string
+    descricao string
+    icone string
+    actor_type string
+    actor_id uuid
+    occurred_at timestamp
+    metadata json
+    created_at timestamp
+    // 34.013 linhas
+  }
+}
+
+Financeiro [color: purple] {
+  assinatura_itens {
+    id uuid pk
+    organizacao_id uuid
+    assinatura_id uuid
+    stripe_subscription_item_id string
+    stripe_product_id string
+    stripe_price_id string
+    produto string
+    quantidade int
+    preco_unitario decimal
+    moeda string
+    recurring_interval string
+    service_family string
+    revenue_nature string
+    servico_canonico_id uuid
+    desconto_percentual decimal
+    proration_behavior string
+    current_period_start timestamp
+    current_period_end timestamp
+    status string
+    raw json
+    synced_at timestamp
+    created_at timestamp
+    updated_at timestamp
+    // 461 linhas
+  }
+  assinaturas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    empresa_id uuid
+    contrato_id uuid
+    stripe_subscription_id string
+    stripe_customer_id string
+    produto string
+    stripe_price_id string
+    quantidade int
+    mrr decimal
+    moeda string
+    status string
+    iniciada_em timestamp
+    cancelada_em timestamp
+    motivo_cancelamento string
+    current_period_end timestamp
+    raw json
+    synced_at timestamp
+    created_at timestamp
+    updated_at timestamp
+    revenue_nature string
+    billing_status string
+    commercial_lifecycle string
+    semantic_confidence string
+    semantic_evidence json
+    servico_id uuid
+    fora_do_espelho_em timestamp
+    fora_do_espelho_motivo string
+    // 407 linhas
+  }
+  billing_customer_aliases {
+    id uuid pk
+    billing_identity_id uuid
+    stripe_customer_id string
+    is_canonical bool
+    resolution_source string
+    evidence json
+    created_at timestamp
+    updated_at timestamp
+    // 2 linhas
+  }
+  billing_identities {
+    id uuid pk
+    organizacao_id uuid
+    canonical_empresa_id uuid
+    canonical_lead_id uuid
+    provider string
+    external_customer_id string
+    emails json
+    phones json
+    confidence string
+    evidence json
+    created_at timestamp
+    empresa_id uuid
+    lead_id uuid
+    canonical_stripe_customer_id string
+    cnpj_normalized string
+    primary_email_normalized string
+    status string
+    updated_at timestamp
+    // 235 linhas
+  }
+  billing_resolution_cases {
+    id uuid pk
+    audit_run_id uuid
+    organizacao_id uuid
+    queue string
+    stripe_customer_id string
+    stripe_subscription_id string
+    crm_entity_type string
+    crm_entity_id uuid
+    evidence json
+    recommended_action json
+    status string
+    created_at timestamp
+    resolved_at timestamp
+    // 32 linhas
+  }
+  checkouts {
+    id uuid pk
+    organizacao_id uuid
+    proposta_id uuid
+    negocio_id uuid
+    grupo_comercial_id uuid
+    origem string
+    criado_por_id uuid
+    stripe_session_id string
+    stripe_subscription_id string
+    stripe_checkout_url string
+    status string
+    criado_em timestamp
+    abertura_em timestamp
+    completado_em timestamp
+    expira_em timestamp
+    stripe_customer_id string
+    stripe_invoice_id string
+    stripe_payment_intent_id string
+    payment_status string
+    next_payment_due_at timestamp
+    paid_at timestamp
+    metadata json
+    // 15 linhas
+  }
+  cliente_receita_mensal {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    customer_key string
+    cliente_nome string
+    documento string
+    competencia date
+    valor decimal
+    quantidade_lancamentos int
+    service_family string
+    revenue_nature string
+    canonical_product string
+    confidence string
+    source string
+    source_file string
+    source_row string
+    evidence json
+    source_hash string
+    created_at timestamp
+    updated_at timestamp
+    // 12.041 linhas
+  }
+  cs_cancelamentos {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    contrato_id uuid
+    status string
+    motivo string
+    motivo_detalhe string
+    canal string
+    solicitado_em timestamp
+    solicitado_por uuid
+    data_desejada date
+    contrato_vigente bool
+    multa_aplicavel bool
+    multa_valor decimal
+    pendencia_financeira decimal
+    equipamentos_pendentes string
+    tentativa_retencao string
+    oferta_retencao string
+    decisao string
+    decidido_em timestamp
+    decidido_por uuid
+    data_efetiva date
+    motivo_final string
+    motivo_final_detalhe string
+    created_at timestamp
+    updated_at timestamp
+    // 4 linhas
+  }
+  cs_health_snapshots {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    score int
+    status string
+    factors json
+    calculation_version string
+    calculated_at timestamp
+    created_at timestamp
+    // 5.948 linhas
+  }
+  cs_marcos {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    codigo string
+    ciclo int
+    titulo string
+    objetivo string
+    due_date date
+    status string
+    tarefa_id uuid
+    tarefa_gerada_em timestamp
+    resultado json
+    concluido_em timestamp
+    concluido_por uuid
+    chave_idempotencia string
+    created_at timestamp
+    updated_at timestamp
+    // 763 linhas
+  }
+  cs_riscos {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    tipo string
+    severidade string
+    origem string
+    motivo string
+    fonte string
+    detalhe json
+    status string
+    responsavel_id uuid
+    aberto_em timestamp
+    aberto_por uuid
+    resolvido_em timestamp
+    resolvido_por uuid
+    resolucao string
+    tarefa_id uuid
+    created_at timestamp
+    updated_at timestamp
+    // 760 linhas
+  }
+  fatura_itens {
+    id uuid pk
+    fatura_id uuid
+    servico_catalogo_id uuid
+    nome string
+    descricao string
+    quantidade decimal
+    valor_unitario decimal
+    desconto decimal
+    subtotal decimal
+    moeda string
+    zoho_id string
+    provenance string
+    created_at timestamp
+    servico_id uuid
+    // 226 linhas
+  }
+  faturas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    empresa_id uuid
+    assinatura_id uuid
+    contrato_id uuid
+    origem string
+    external_id string
+    valor decimal
+    moeda string
+    status string
+    competencia date
+    emitida_em timestamp
+    paga_em timestamp
+    tentativas int
+    raw json
+    synced_at timestamp
+    created_at timestamp
+    updated_at timestamp
+    vencimento timestamp
+    hosted_invoice_url string
+    acionado_cobranca bool
+    acionado_em timestamp
+    acionado_por uuid
+    receivable_state string
+    semantic_confidence string
+    semantic_evidence json
+    negocio_id uuid
+    grupo_comercial_id uuid
+    servico_canonico_id uuid
+    fora_do_espelho_em timestamp
+    fora_do_espelho_motivo string
+    // 1.225 linhas
+  }
+  fulfillment_formularios {
+    id uuid pk
+    organizacao_id uuid
+    fulfillment_id uuid
+    status string
+    respostas json
+    enviado_em timestamp
+    submetido_em timestamp
+    revisado_por uuid
+    revisado_em timestamp
+    nota_revisao string
+    created_at timestamp
+    updated_at timestamp
+    // 4 linhas
+  }
+  fulfillment_itens {
+    id uuid pk
+    organizacao_id uuid
+    fulfillment_id uuid
+    workstream string
+    titulo string
+    status string
+    blocker_type string
+    blocker_reason string
+    ordem int
+    metadata json
+    completed_at timestamp
+    completed_by uuid
+    responsavel_id uuid
+    due_date timestamp
+    priority string
+    blocked_at timestamp
+    blocker_impact string
+    created_at timestamp
+    updated_at timestamp
+    // 3.826 linhas
+  }
+  fulfillment_linhas_portabilidade {
+    id uuid pk
+    organizacao_id uuid
+    fulfillment_id uuid
+    ddd string
+    numero string
+    tipo string
+    operadora_atual string
+    titular string
+    anexo_url string
+    anexo_id string
+    created_at timestamp
+    // 3 linhas
+  }
+  fulfillment_ramais {
+    id uuid pk
+    organizacao_id uuid
+    fulfillment_id uuid
+    departamento string
+    numero_externo string
+    ramal string
+    usuario string
+    email string
+    celular string
+    modelo_aparelho string
+    usa_aparelho_fisico bool
+    gravacao bool
+    ligacoes_internacionais bool
+    paises_permitidos array
+    created_at timestamp
+    // 6 linhas
+  }
+  fulfillment_servicos {
+    fulfillment_id uuid pk
+    servico_canonico_id uuid pk
+    organizacao_id uuid
+    created_at timestamp
+    // 56 linhas
+  }
+  mrr_movimentos {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    assinatura_id uuid
+    contrato_id uuid
+    produto string
+    tipo string
+    delta decimal
+    mrr_antes decimal
+    mrr_depois decimal
+    ocorrido_em timestamp
+    origem string
+    created_at timestamp
+    evento_comercial_id uuid
+    negocio_id uuid
+    detectado_fora_do_crm bool
+    // 835 linhas
+  }
+  pagamentos {
+    id uuid pk
+    organizacao_id uuid
+    fatura_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    provider string
+    external_payment_id string
+    payment_method string
+    amount decimal
+    currency string
+    status string
+    paid_at timestamp
+    failed_at timestamp
+    refunded_at timestamp
+    idempotency_key string
+    metadata json
+    created_at timestamp
+    updated_at timestamp
+    // 758 linhas
+  }
+  service_ledger_batches {
+    id uuid pk
+    organizacao_id uuid
+    competence date
+    version string
+    source_file string
+    source_sha256 string
+    expected_total decimal
+    imported_total decimal
+    row_count int
+    status string
+    evidence json
+    imported_at timestamp
+    closed_at timestamp
+    // 1 linhas
+  }
+  service_ledger_entries {
+    id uuid pk
+    batch_id uuid
+    organizacao_id uuid
+    source_row_hash string
+    source_row_number int
+    document string
+    company_name string
+    billed_value decimal
+    service_family string
+    revenue_nature string
+    service_id uuid
+    confidence string
+    evidence json
+    created_at timestamp
+    // 302 linhas
+  }
+  servicos_canonicos {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    lead_id uuid
+    contrato_id uuid
+    canonical_key string
+    service_family string
+    canonical_product string
+    revenue_nature string
+    billing_source string
+    commercial_lifecycle string
+    billing_status string
+    current_recurring_value decimal
+    current_subscription_id string
+    as_of_date date
+    portfolio_included bool
+    confidence string
+    evidence json
+    created_at timestamp
+    updated_at timestamp
+    oportunidade_origem_id uuid
+    oferta_comercial_id uuid
+    quantidade decimal
+    // 617 linhas
+  }
+}
+
+Outros [color: gray] {
+  _bkp_ganhos_sem_empresa_20261008 {
+    negocio_id uuid
+    empresa_id_antes uuid
+    feito_em timestamp
+    // 149 linhas
+  }
+  _bkp_leads_enriquecimento_meta_20261008 {
+    id uuid
+    campos_custom json
+    utm_source string
+    utm_medium string
+    utm_campaign string
+    utm_content string
+    utm_term string
+    meta_ad_id string
+    meta_adset_id string
+    meta_campaign_id string
+    feito_em timestamp
+    // 4.112 linhas
+  }
+  _bkp_opps_ganhos_sem_empresa_20261008 {
+    oportunidade_id uuid
+    empresa_id_antes uuid
+    negocio_id_legado uuid
+    // 149 linhas
+  }
+  _consolidacao_email_contas_20261013 {
+    id bigint pk
+    criado_em timestamp
+    grupo string
+    conta_canonica uuid
+    acao string
+    tabela string
+    registro_id string
+    dados json
+    // 549 linhas
+  }
+  _enriquecimento_meta_20261013 {
+    lead_id uuid
+    campos_custom_antes json
+    campos_custom_depois json
+    fonte string
+    // 472 linhas
+  }
+  _limpeza_quadros_20261013 {
+    id uuid
+    tabela string
+    antes json
+    depois json
+    motivo string
+    acao string
+    feito_em timestamp
+    // 97 linhas
+  }
+  _limpeza_quadros_20261013_leg_leads {
+    id uuid
+    tipo string
+    sdr_status string
+    origem string
+    merged bool
+    motivo_perda string
+    updated_at timestamp
+    nome string
+    email string
+    // 4.170 linhas
+  }
+  _limpeza_quadros_20261013_leg_neg {
+    id uuid
+    lead_id uuid
+    status string
+    origem_negocio string
+    motivo_perda string
+    updated_at timestamp
+    titulo string
+    ganho bool
+    // 1.639 linhas
+  }
+  _limpeza_quadros_20261013_leg_nl {
+    lead_id uuid
+    negocio_id uuid
+    // 1.257 linhas
+  }
+  _limpeza_testes_20261013 {
+    n bigint pk
+    acao string
+    tabela string
+    registro_id string
+    linha json
+    feito_em timestamp
+    // 369 linhas
+  }
+  _migracoes_aplicadas {
+    nome string pk
+    hash string
+    aplicada_em timestamp
+    baseline bool
+    // 134 linhas
+  }
+  _produto_legado_20261013 {
+    n bigint pk
+    servico_id uuid
+    linha json
+    origem string
+    produto_novo string
+    feito_em timestamp
+    // 134 linhas
+  }
+  _qa_removido {
+    tabela string
+    id string
+    linha json
+    removido_em timestamp
+    // 38 linhas
+  }
+  _relacoes_conversao_20261013 {
+    aquisicao_id uuid pk
+    etapa_id uuid
+    closed_at timestamp
+    qualificado bool
+    salvo_em timestamp
+    // 95 linhas
+  }
+  _virada_mescla_20261013 {
+    fica uuid
+    sai uuid
+    lead_sai json
+    aquisicoes_sai json
+    campos_fica_antes json
+    // 62 linhas
+  }
+  _virada_mescla_20261013_b {
+    fica uuid
+    sai uuid
+    lead_sai json
+    aquisicoes_sai json
+    campos_fica_antes json
+    motivo string
+    // 15 linhas
+  }
+  automacao_execucoes {
+    id uuid pk
+    automacao_id uuid
+    organizacao_id uuid
+    entity_type string
+    entity_id uuid
+    status string
+    resultado json
+    erro string
+    executed_at timestamp
+    version_id uuid
+    trigger_event_id uuid
+    started_at timestamp
+    finished_at timestamp
+    modo string
+    estado json
+    no_atual string
+    retomar_em timestamp
+    claimed_until timestamp
+    profundidade int
+    idempotency_key string
+    // 3 linhas
+  }
+  automacao_inscricoes {
+    id uuid pk
+    organizacao_id uuid
+    automacao_id uuid
+    version_id uuid
+    entity_type string
+    entity_id uuid
+    status string
+    current_node_id string
+    proximo_passo_em timestamp
+    enrolled_at timestamp
+    finished_at timestamp
+    motivo_saida string
+    metadata json
+    created_at timestamp
+    updated_at timestamp
+    // 3 linhas
+  }
+  automacao_passos_execucao {
+    id uuid pk
+    organizacao_id uuid
+    execucao_id uuid
+    node_id string
+    node_type string
+    ordem int
+    status string
+    input json
+    output json
+    erro string
+    started_at timestamp
+    finished_at timestamp
+    created_at timestamp
+    saida string
+    idempotency_key string
+    // 3 linhas
+  }
+  automacao_versoes {
+    id uuid pk
+    organizacao_id uuid
+    automacao_id uuid
+    version int
+    nodes json
+    edges json
+    trigger_config json
+    settings json
+    published_at timestamp
+    created_by_id uuid
+    created_at timestamp
+    // 8 linhas
+  }
+  backfill_provenance {
+    id uuid pk
+    organizacao_id uuid
+    fase string
+    entidade_canonica string
+    id_canonico uuid
+    tabela_origem string
+    id_origem string
+    chave_identidade string
+    metodo string
+    created_at timestamp
+    // 3.534 linhas
+  }
+  catalogo_mapeamentos_legacy {
+    id uuid pk
+    organizacao_id uuid
+    legacy_product_id string
+    legacy_name string
+    canonical_product_id uuid
+    canonical_name string
+    service_family string
+    default_revenue_nature string
+    active_selectable bool
+    historical_only bool
+    confidence string
+    evidence string
+    created_at timestamp
+    legacy_source string
+    categoria_crm string
+    rule_source string
+    reviewed_status string
+    revisado_por uuid
+    revisado_em timestamp
+    notes string
+    ocorrencias int
+    classificado_em timestamp
+    updated_at timestamp
+    nome_normalizado string
+    // 193 linhas
+  }
+  clientes {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    pessoa_principal_id uuid
+    oportunidade_origem_id uuid
+    cliente_desde timestamp
+    status_financeiro string
+    lead_id_legado uuid
+    created_at timestamp
+    updated_at timestamp
+    responsavel_id uuid
+    entrou_carteira_em timestamp
+    observacoes_cs string
+    jornada_iniciada_em timestamp
+    cs_sem_evidencia bool
+    responsavel_cs_id uuid
+    lifecycle_status string
+    ultimo_contato_em timestamp
+    proxima_revisao_em timestamp
+    health_atual int
+    // 416 linhas
+  }
+  file_objects {
+    id uuid pk
+    organizacao_id uuid
+    storage_provider string
+    storage_key string
+    bucket string
+    nome_original string
+    mime_type string
+    tamanho_bytes bigint
+    checksum_sha256 string
+    retencao_ate timestamp
+    enviado_por_id uuid
+    metadata json
+    created_at timestamp
+    deleted_at timestamp
+    // 9 linhas
+  }
+  fulfillments {
+    id uuid pk
+    organizacao_id uuid
+    servico_canonico_id uuid
+    service_family string
+    status string
+    responsavel_id uuid
+    started_at timestamp
+    target_at timestamp
+    completed_at timestamp
+    escopo_vendido_snapshot json
+    public_token uuid
+    created_at timestamp
+    updated_at timestamp
+    cycle_number int
+    due_at timestamp
+    cancelled_at timestamp
+    tipo string
+    oportunidade_id uuid
+    fulfillment_anterior_id uuid
+    etapas_herdadas json
+    // 57 linhas
+  }
+  ganhos_empresa_bkp_20261014174939 {
+    tabela string
+    id uuid
+    organizacao_id uuid
+    empresa_id_anterior uuid
+    acao string
+    // 639 linhas
+  }
+  lead_user_unread {
+    id uuid pk
+    lead_id uuid
+    usuario_id uuid
+    whatsapp_nao_lidas int
+    email_nao_lidos int
+    // 531 linhas
+  }
+  negocio_leads {
+    id uuid pk
+    negocio_id uuid
+    lead_id uuid
+    papel string
+    created_at timestamp
+    // 1.311 linhas
+  }
+  negocios_bkp_familia_20261014115942 {
+    id uuid
+    organizacao_id uuid
+    service_family string
+    // 622 linhas
+  }
+  pipelines {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    slug string
+    ordem int
+    stages json
+    closed_stages json
+    is_default bool
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    tipo string
+    // 3 linhas
+  }
+  reconciliacao_casos {
+    id uuid pk
+    organizacao_id uuid
+    fase string
+    tipo string
+    entidade_alvo string
+    origens json
+    evidencia json
+    sugestao json
+    status string
+    resolvido_por_id uuid
+    resolvido_em timestamp
+    resolucao json
+    created_at timestamp
+    updated_at timestamp
+    // 968 linhas
+  }
+  reunioes {
+    id uuid pk
+    organizacao_id uuid
+    negocio_id uuid
+    lead_id uuid
+    titulo string
+    data timestamp
+    duracao int
+    tipo string
+    status string
+    participantes array
+    notas string
+    transcript string
+    resumo_transcript string
+    responsavel_id uuid
+    created_at timestamp
+    updated_at timestamp
+    link string
+    outlook_event_id string
+    lembrete_30min_enviado_em timestamp
+    calendar_provider string
+    calendar_event_id string
+    calendar_sync_status string
+    calendar_sync_erro string
+    calendar_sync_em timestamp
+    calendar_conta_id uuid
+    participantes_respostas json
+    calendar_remocao_pendente json
+    // 377 linhas
+  }
+  roteamento_comercial_regras {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    familia string
+    campanha string
+    prioridade int
+    ativa bool
+    vigente_de timestamp
+    vigente_ate timestamp
+    destino_usuario_id uuid
+    fallback string
+    criado_por uuid
+    created_at timestamp
+    updated_at timestamp
+    // 2 linhas
+  }
+  servicos_canonicos_bkp_mz_churn_20261015090633 {
+    id uuid
+    organizacao_id uuid
+    empresa_id uuid
+    lead_id uuid
+    contrato_id uuid
+    canonical_key string
+    service_family string
+    canonical_product string
+    revenue_nature string
+    billing_source string
+    commercial_lifecycle string
+    billing_status string
+    current_recurring_value decimal
+    current_subscription_id string
+    as_of_date date
+    portfolio_included bool
+    confidence string
+    evidence json
+    created_at timestamp
+    updated_at timestamp
+    oportunidade_origem_id uuid
+    oferta_comercial_id uuid
+    quantidade decimal
+    // 36 linhas
+  }
+  servicos_canonicos_bkp_produto_20261013114524 {
+    id uuid
+    organizacao_id uuid
+    canonical_product string
+    evidence json
+    updated_at timestamp
+    backup_em timestamp
+    lote string
+    // 86 linhas
+  }
+  servicos_catalogo {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    descricao string
+    tipo string
+    moeda string
+    valor_sugerido decimal
+    unidade string
+    ativo bool
+    ordem int
+    created_at timestamp
+    stripe_product_id string
+    categoria string
+    requer_contrato bool
+    creates_canonical_service bool
+    creates_fulfillment bool
+    quantity_behavior string
+    requires_payment_before_won bool
+    requires_signature bool
+    revenue_nature string
+    supports_downgrade bool
+    supports_proration bool
+    supports_upgrade bool
+    service_family string
+    commercial_model_padrao string
+    origem_catalogo string
+    sku_produto string
+    descricao_extrato string
+    etiqueta_unidade string
+    destino_pos_venda string
+    observacao_operacional string
+    catalogo_sincronizado_em timestamp
+    descricao_comercial string
+    // 293 linhas
+  }
+  servicos_catalogo_bkp_familia_20261014175018 {
+    id uuid
+    organizacao_id uuid
+    service_family string
+    // 6 linhas
+  }
+  stripe_webhook_events {
+    id uuid pk
+    event_id string
+    event_type string
+    payload json
+    status string
+    attempts int
+    last_error string
+    received_at timestamp
+    processing_started_at timestamp
+    processed_at timestamp
+    organizacao_id uuid
+    api_version string
+    livemode bool
+    created_at timestamp
+    updated_at timestamp
+    // 1.498 linhas
+  }
+  tarefa_comentarios {
+    id uuid pk
+    organizacao_id uuid
+    tarefa_id uuid
+    autor_id uuid
+    corpo string
+    mencoes json
+    created_at timestamp
+    editado_em timestamp
+    // 16 linhas
+  }
+  tarefa_subtarefas {
+    id uuid pk
+    organizacao_id uuid
+    tarefa_id uuid
+    titulo string
+    descricao string
+    concluida bool
+    concluida_em timestamp
+    ordem int
+    responsavel_id uuid
+    vence_em date
+    created_at timestamp
+    created_by uuid
+    // 1 linhas
+  }
+  user_roles {
+    usuario_id uuid pk
+    role_id uuid pk
+    organizacao_id uuid
+    concedido_por_id uuid
+    created_at timestamp
+    // 18 linhas
+  }
+  vendas_eventos {
+    id uuid pk
+    organizacao_id uuid
+    tipo string
+    lead_id uuid
+    negocio_id uuid
+    empresa_id uuid
+    pessoa_id uuid
+    proposta_id uuid
+    reuniao_id uuid
+    usuario_id uuid
+    ator_tipo string
+    ator_ref string
+    contexto json
+    ocorrido_em timestamp
+    created_at timestamp
+    // 3.454 linhas
+  }
+}
+
+Legado (dual-write) [color: orange] {
+  _mz_depara {
+    status_legado string pk
+    etapa string
+    status_novo string
+    motivo_chave string
+    estagnado bool
+    // 13 linhas
+  }
+  _mz_empresa_merge {
+    origem_id uuid pk
+    destino_id uuid
+    doc string
+    motivo string
+    // 64 linhas
+  }
+  _mz_esperado {
+    chave string pk
+    valor bigint
+    base_06out bigint
+    nota string
+    // 29 linhas
+  }
+  _mz_lead_estado {
+    lead_id uuid pk
+    tipo string
+    etapa string
+    qualificado bool
+    qualificado_em timestamp
+    desqualificado_em timestamp
+    desq_motivo string
+    desq_detalhe string
+    nutricao_status string
+    retomar_em timestamp
+    nutrido_em timestamp
+    closed_at timestamp
+    qualificacao json
+    prospeccao_estado string
+    pre_qualificado bool
+    negocio_ativo_ok bool
+    // 4.170 linhas
+  }
+  _mz_meta {
+    chave string pk
+    valor string
+    // 2 linhas
+  }
+  _mz_negocio_depara {
+    negocio_id uuid pk
+    lead_id uuid
+    status_legado string
+    etapa string
+    status_novo string
+    estagnado bool
+    motivo_chave string
+    aberto bool
+    perdido_at timestamp
+    ganho_at timestamp
+    estagnado_em timestamp
+    no_show_em timestamp
+    no_show_contagem int
+    trial_iniciado_em timestamp
+    etapa_desde timestamp
+    precisa_sintetico bool
+    // 1.639 linhas
+  }
+  anexos_legado {
+    id uuid pk
+    organizacao_id uuid
+    entidade_tipo string
+    entidade_id uuid
+    categoria string
+    zoho_id string
+    nome_arquivo string
+    tamanho_bytes bigint
+    criado_em_original timestamp
+    storage_path string
+    created_at timestamp
+    checksum_sha256 string
+    // 1.980 linhas
+  }
+  contatos {
+    id uuid pk
+    organizacao_id uuid
+    canal string
+    nome string
+    telefone string
+    email string
+    avatar_url string
+    sessao_id uuid
+    conta_id uuid
+    responsavel_id uuid
+    lead_id uuid
+    ultima_msg string
+    ultima_msg_at timestamp
+    nao_lidas int
+    created_at timestamp
+    updated_at timestamp
+    zoho_id string
+    status string
+    snoozed_until timestamp
+    closed_at timestamp
+    closed_by_id uuid
+    bot_silenced_until timestamp
+    active_ai_agent_id uuid
+    active_ai_intent string
+    active_ai_agent_set_at timestamp
+    // 2.863 linhas
+  }
+  leads {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    sobrenome string
+    email string
+    telefone string
+    cargo string
+    linkedin string
+    avatar_url string
+    empresa_id uuid
+    empresa string
+    empresa_cnpj string
+    empresa_setor string
+    empresa_porte string
+    empresa_cidade string
+    empresa_estado string
+    num_usuarios_ti int
+    num_filiais int
+    servicos_interesse array
+    modelo_preferido string
+    origem string
+    utm_source string
+    utm_medium string
+    utm_campaign string
+    utm_term string
+    utm_content string
+    gclid string
+    gbraid string
+    wbraid string
+    fbclid string
+    fbc string
+    fbp string
+    event_id string
+    landing_page string
+    ip_address string
+    user_agent string
+    lead_score int
+    status string
+    motivo_perda string
+    motivo_perda_detalhe string
+    valor_total decimal
+    tipo_receita string
+    mrr_estimado decimal
+    mrr_fechado decimal
+    valor_setup decimal
+    valor_projeto decimal
+    pipedrive_id string
+    apollo_id string
+    enriched_at timestamp
+    enrich_status string
+    apollo_seniority string
+    apollo_headline string
+    apollo_photo_url string
+    apollo_city string
+    apollo_state string
+    apollo_country string
+    apollo_departments array
+    apollo_employment_history json
+    twitter string
+    github string
+    facebook string
+    apollo_likely_engage bool
+    como_conheceu string
+    indicado_por string
+    indicado_por_lead_id uuid
+    concorrente_atual string
+    contrato_vence_em date
+    responsavel_id uuid
+    created_at timestamp
+    updated_at timestamp
+    primeiro_contato_at timestamp
+    convertido_at timestamp
+    cliente_desde timestamp
+    proximo_nps timestamp
+    nps_score int
+    contrato_tipo string
+    contrato_vencimento date
+    renovacao_alertada bool
+    tipo string
+    whatsapp_ultima_msg string
+    whatsapp_nao_lidas int
+    whatsapp_ultima_msg_at timestamp
+    email_nao_lidos int
+    email_ultimo_assunto string
+    email_ultima_msg_at timestamp
+    negocio_ativo_id uuid
+    campos_custom json
+    lp_url string
+    instagram string
+    whatsapp string
+    cipa_score int
+    cipa_diagnostico json
+    cipa_pagespeed json
+    screenshot_url string
+    pagespeed_report_url string
+    analysis_notes string
+    insumo_comercial json
+    sdr_status string
+    outreach_channel string
+    outreach_started_at timestamp
+    last_contact_at timestamp
+    next_followup_at timestamp
+    zoho_id string
+    stripe_customer_id string
+    contato_desde_at timestamp
+    agenda_closer_id uuid
+    meta_ad_id string
+    meta_adset_id string
+    meta_campaign_id string
+    canonical_lead_id uuid
+    identity_confidence string
+    identity_evidence json
+    crm2_pre_vendas_stage string
+    crm2_pre_vendas_stage_fonte string
+    crm2_reuniao_realizada_em timestamp
+    crm2_cliente_convertido_em timestamp
+    crm2_no_show_em timestamp
+    crm2_migrado_em timestamp
+    estagio_pre_vendas string
+    qualificado bool
+    qualificado_em timestamp
+    qualificado_por uuid
+    qualificado_por_tipo string
+    qualificacao json
+    qualificacao_iniciada_em timestamp
+    nutricao_motivo string
+    nutricao_retomar_em date
+    nutricao_observacao string
+    nutrido_em timestamp
+    nutrido_por uuid
+    desqualificacao_motivo string
+    desqualificacao_detalhe string
+    desqualificado_em timestamp
+    desqualificado_por uuid
+    desqualificado_de_etapa string
+    pre_qualificado bool
+    pre_qualificado_em timestamp
+    pre_qualificado_por uuid
+    prospeccao_estado string
+    prospeccao_descarte_motivo string
+    prospeccao_descartado_em timestamp
+    prospeccao_descartado_por uuid
+    distribuicao_regra_id uuid
+    distribuicao_motivo string
+    sessao_whatsapp_preferida_id uuid
+    // 4.616 linhas
+  }
+  negocios {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    empresa_id uuid
+    titulo string
+    descricao string
+    status string
+    temperatura string
+    valor_total decimal
+    tipo_receita string
+    mrr_estimado decimal
+    valor_projeto decimal
+    mrr_fechado decimal
+    valor_setup decimal
+    moeda string
+    previsao_fechamento date
+    pipeline_origem string
+    pipedrive_id string
+    motivo_perda string
+    motivo_perda_detalhe string
+    origem_negocio string
+    servicos_interesse array
+    necessidades_constatadas array
+    concorrente_atual string
+    contrato_vence_em date
+    responsavel_id uuid
+    pipeline_id uuid
+    contrato_tipo string
+    negocio_origem_id uuid
+    campos_custom json
+    lp_url string
+    cipa_score int
+    cipa_diagnostico json
+    cipa_pagespeed json
+    screenshot_url string
+    pagespeed_report_url string
+    analysis_notes string
+    insumo_comercial json
+    cipa_analyzed_at timestamp
+    apresentacao_config json
+    apresentacao_gerada_at timestamp
+    created_at timestamp
+    updated_at timestamp
+    convertido_at timestamp
+    ganho_at timestamp
+    zoho_id string
+    origem_qualificacao string
+    service_family string
+    revenue_nature string
+    semantic_confidence string
+    semantic_evidence json
+    semantic_provenance string
+    semantic_as_of_date date
+    commercial_motion string
+    bundle_id uuid
+    servico_origem_id uuid
+    etapa string
+    source_process string
+    proxima_acao string
+    proxima_acao_em timestamp
+    proxima_acao_responsavel_id uuid
+    no_show_em timestamp
+    no_show_contagem int
+    trial_iniciado_em timestamp
+    trial_encerrado_em timestamp
+    motivo_perda_chave string
+    etapa_desde timestamp
+    motivo_estagnacao string
+    estagnado_em timestamp
+    // 1.724 linhas
+  }
+}
+
+Plataforma Callface AI [color: red] {
+  callface_ai_equipes {
+    organizacao_id uuid pk
+    tipo string pk
+    ref_id string pk
+    external_organization_id string
+    nome string
+    status string
+    coletado_em timestamp
+    // 728 linhas
+  }
+  callface_ai_external_identities {
+    id uuid pk
+    entity_type string
+    entity_id uuid
+    provider string
+    external_type string
+    external_id string
+    confidence string
+    source string
+    verified_at timestamp
+    created_at timestamp
+    evidencia json
+    estado string
+    org_nome string
+    // 463 linhas
+  }
+  callface_ai_licencas {
+    organizacao_id uuid pk
+    license_id string pk
+    external_organization_id string
+    plan_id string
+    motivo string
+    inicio_em timestamp
+    revogada_em timestamp
+    expira_em timestamp
+    atribuida bool
+    coletado_em timestamp
+    // 2.511 linhas
+  }
+  callface_ai_org_stripe {
+    organizacao_id uuid pk
+    external_organization_id string pk
+    stripe_customer_id string
+    stripe_migrado bool
+    coletado_em timestamp
+    // 463 linhas
+  }
+  callface_ai_parceiro_fatura_itens {
+    organizacao_id uuid pk
+    item_id string pk
+    invoice_id string
+    license_id string
+    external_organization_id string
+    dias_ativos int
+    dias_no_ciclo int
+    proporcional bool
+    preco_unitario decimal
+    total_linha decimal
+    licenca_inicio_em timestamp
+    licenca_revogada_em timestamp
+    coletado_em timestamp
+    // 297 linhas
+  }
+  callface_ai_parceiro_faturas {
+    organizacao_id uuid pk
+    invoice_id string pk
+    partner_id string
+    status string
+    competencia date
+    ciclo_inicio date
+    ciclo_fim date
+    vencimento timestamp
+    paga_em timestamp
+    total decimal
+    moeda string
+    coletado_em timestamp
+    // 15 linhas
+  }
+  callface_ai_parceiro_licencas {
+    organizacao_id uuid pk
+    license_id string pk
+    partner_id string
+    external_organization_id string
+    org_nome string
+    inicio_em timestamp
+    revogada_em timestamp
+    expira_em timestamp
+    coletado_em timestamp
+    // 109 linhas
+  }
+  callface_ai_parceiro_pendencias {
+    organizacao_id uuid pk
+    chave string pk
+    tipo string
+    severidade string
+    partner_id string
+    invoice_id string
+    mensagem string
+    esperado decimal
+    encontrado decimal
+    detectada_em timestamp
+    ultima_vista_em timestamp
+    resolvida_em timestamp
+    // 18 linhas
+  }
+  callface_ai_parceiros {
+    organizacao_id uuid pk
+    partner_id string pk
+    nome string
+    preco_por_licenca decimal
+    dia_faturamento int
+    prazo_pagamento_dias int
+    dominio string
+    dns_verificado bool
+    ativo bool
+    empresa_id uuid
+    vinculo_origem string
+    coletado_em timestamp
+    // 6 linhas
+  }
+  callface_ai_planos {
+    organizacao_id uuid pk
+    plan_id string pk
+    nome string
+    preco decimal
+    preco_coluna string
+    stripe_price_id string
+    intervalo string
+    coletado_em timestamp
+    // 24 linhas
+  }
+  callface_ai_receptivos {
+    organizacao_id uuid pk
+    did_id string pk
+    external_organization_id string
+    numero string
+    destino_tipo string
+    destino_id string
+    disponivel bool
+    status string
+    coletado_em timestamp
+    // 73 linhas
+  }
+  callface_ai_reconciliation_candidates {
+    id uuid pk
+    empresa_id uuid
+    external_organization_id string
+    match_signal string
+    score decimal
+    status string
+    created_at timestamp
+    evidencia json
+    razao string
+    org_nome string
+    decidido_por uuid
+    decidido_em timestamp
+    updated_at timestamp
+    // 93 linhas
+  }
+  callface_ai_saude_diaria {
+    external_identity_id uuid pk
+    dia date pk
+    ultima_atividade_em timestamp
+    ultima_chamada_em timestamp
+    ultima_copiloto_em timestamp
+    ultima_reuniao_em timestamp
+    dias_silencio int
+    inicio_em timestamp
+    usuarios_total int
+    usuarios_ativos int
+    licencas_pagas int
+    licencas_em_uso int
+    minutos_mes decimal
+    minutos_contratados_mes decimal
+    minutos_14d decimal
+    minutos_14d_anteriores decimal
+    copiloto_sessoes_30d int
+    copiloto_sugestoes_30d int
+    copiloto_usadas_30d int
+    assinaturas_total int
+    assinaturas_canceladas int
+    cancelada_em timestamp
+    cancelamento_motivo string
+    licenca_vence_em timestamp
+    licencas_vencendo_30d int
+    licencas_vencendo_60d int
+    semaforo string
+    motivos json
+    calculado_em timestamp
+    // 1.018 linhas
+  }
+  callface_ai_tenant_detalhe {
+    external_identity_id uuid pk
+    org_nome string
+    org_criada_em timestamp
+    org_desativada_em timestamp
+    licencas json
+    usuarios json
+    campanhas json
+    agentes json
+    integracoes json
+    coletado_em timestamp
+    // 117 linhas
+  }
+  callface_ai_tenant_snapshots {
+    id uuid pk
+    external_identity_id uuid
+    snapshot_at timestamp
+    usuarios_total int
+    usuarios_ativos int
+    usuarios_pendentes int
+    licencas_ativas int
+    workspaces_ativos int
+    campanhas_ativas int
+    campanhas_concluidas int
+    chamadas_total int
+    chamadas_finalizadas int
+    minutos_uso decimal
+    agentes_prontos int
+    integracao_whatsapp_conectada bool
+    created_at timestamp
+    janela_dias int
+    chamadas_ambiguas int
+    chamadas_sem_atribuicao int
+    sessoes_copilot int
+    contatos_base int
+    usuarios_com_atividade int
+    reunioes int
+    apps_ativos int
+    webhooks_ativos int
+    ultima_atividade_em timestamp
+    coletado_em timestamp
+    minutos_duracao decimal
+    chamadas_sem_tarifa int
+    // 2.036 linhas
+  }
+  callface_ai_uso_diario {
+    external_identity_id uuid pk
+    dia date pk
+    chamadas int
+    finalizadas int
+    minutos decimal
+    usuarios_ativos int
+    coletado_em timestamp
+    minutos_duracao decimal
+    chamadas_sem_tarifa int
+    // 3.590 linhas
+  }
+  callface_ai_usuarios {
+    organizacao_id uuid pk
+    vinculo_id string pk
+    external_organization_id string
+    papel string
+    aceite string
+    convite string
+    desativado_em timestamp
+    usuario_ativo bool
+    crm_user_id string
+    coletado_em timestamp
+    // 1.681 linhas
+  }
+}
+
+Comercial [color: blue] {
+  aquisicoes {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    pessoa_id uuid
+    tipo string
+    origem string
+    canal string
+    source_provider string
+    pipeline_id uuid
+    etapa_id uuid
+    responsavel_id uuid
+    qualificado bool
+    qualificado_em timestamp
+    desqualificado_em timestamp
+    motivo_desqualificacao string
+    nutricao_status string
+    retomar_em timestamp
+    first_touch_at timestamp
+    last_touch_at timestamp
+    created_at timestamp
+    updated_at timestamp
+    closed_at timestamp
+    lead_legado_id uuid
+    // 4.444 linhas
+  }
+  catalogo_precos {
+    id uuid pk
+    organizacao_id uuid
+    servico_catalogo_id uuid
+    stripe_price_id string
+    sku string
+    lookup_key string
+    variacao string
+    descricao string
+    valor decimal
+    moeda string
+    tipo string
+    recorrente bool
+    periodo string
+    revenue_nature string
+    modelo_cobranca string
+    modelo_preco_stripe string
+    exige_contrato bool
+    observacao string
+    ativo bool
+    ordem int
+    created_at timestamp
+    updated_at timestamp
+    oferta_comercial_id uuid
+    intervalo_contagem int
+    faixa_min int
+    faixa_max int
+    // 180 linhas
+  }
+  closer_disponibilidade {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    horario_trabalho json
+    pausa_almoco json
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    pausado_rodizio bool
+    // 3 linhas
+  }
+  comercial_evidencia {
+    id uuid pk
+    organizacao_id uuid
+    negocio_id uuid
+    tipo string
+    source_ref string
+    metadata json
+    verificado_por uuid
+    verificado_em timestamp
+    created_at timestamp
+    grupo_comercial_id uuid
+    // 449 linhas
+  }
+  contrato_itens {
+    id uuid pk
+    contrato_id uuid
+    servico_catalogo_id uuid
+    nome string
+    descricao string
+    quantidade decimal
+    valor_unitario decimal
+    desconto decimal
+    subtotal decimal
+    zoho_id string
+    created_at timestamp
+    service_family string
+    revenue_nature string
+    recurring_value decimal
+    non_recurring_value decimal
+    billing_source string
+    semantic_confidence string
+    semantic_evidence json
+    provenance string
+    // 443 linhas
+  }
+  contrato_templates {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    versao int
+    commercial_model string
+    corpo_template string
+    ativo bool
+    created_at timestamp
+    service_family string
+    tipo_documento string
+    // 9 linhas
+  }
+  contratos {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    tipo string
+    descricao string
+    moeda string
+    mrr decimal
+    valor_setup decimal
+    servicos array
+    inicio date
+    vencimento date
+    renovacao_auto bool
+    status string
+    notas string
+    motivo_churn string
+    finalizado_at timestamp
+    created_at timestamp
+    updated_at timestamp
+    zoho_id string
+    stripe_subscription_id string
+    produto string
+    assinatura_legado_zoho json
+    codigo_legado string
+    commercial_lifecycle string
+    current_recurring_value decimal
+    multa_percentual decimal
+    prazo_meses int
+    semantic_confidence string
+    semantic_evidence json
+    service_family string
+    assinatura_status string
+    assinado_em timestamp
+    assinado_nome string
+    assinado_ip string
+    grupo_comercial_id uuid
+    template_id uuid
+    template_versao int
+    variaveis_preenchidas json
+    corpo_gerado string
+    documento_final_url string
+    signature_provider_ref string
+    signature_status string
+    signatarios json
+    email_entrega json
+    documento_publico_token_hash string
+    documento_publico_expira_em timestamp
+    signature_provider string
+    signature_enviado_em timestamp
+    signature_public_url string
+    oferta_comercial_id uuid
+    oportunidade_id uuid
+    empresa_id uuid
+    // 450 linhas
+  }
+  ofertas_comerciais {
+    id uuid pk
+    organizacao_id uuid
+    servico_catalogo_id uuid
+    codigo string
+    nome string
+    ativo bool
+    requires_company_before_proposal bool
+    requires_contract bool
+    win_condition string
+    payment_trigger string
+    creates_subscription bool
+    billing_model string
+    onboarding_required bool
+    implementation_required bool
+    contrato_template_id uuid
+    checkout_provider string
+    metadata json
+    created_at timestamp
+    updated_at timestamp
+    permite_trial bool
+    // 4 linhas
+  }
+  oportunidade_itens {
+    id uuid pk
+    organizacao_id uuid
+    oportunidade_id uuid
+    produto string
+    service_family string
+    revenue_nature string
+    quantidade decimal
+    preco_unitario decimal
+    desconto decimal
+    valor_total decimal
+    servico_canonico_id uuid
+    origem_legado string
+    contrato_item_id_legado uuid
+    proposta_item_id_legado uuid
+    created_at timestamp
+    updated_at timestamp
+    commercial_model string
+    grupo_comercial_id uuid
+    catalogo_preco_id uuid
+    stripe_product_id string
+    stripe_price_id string
+    sku_preco string
+    // 52 linhas
+  }
+  oportunidades {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    pipeline_id uuid
+    stage string
+    responsavel_id uuid
+    valor decimal
+    mrr decimal
+    probabilidade int
+    previsao_fechamento date
+    ganho_at timestamp
+    perdido_at timestamp
+    motivo_perda string
+    negocio_id_legado uuid
+    created_at timestamp
+    updated_at timestamp
+    bundle_id uuid
+    titulo string
+    service_family string
+    etapa string
+    commercial_motion string
+    source_process string
+    lead_id uuid
+    oferta_comercial_id uuid
+    setup_estimado decimal
+    servico_catalogo_id uuid
+    etapa_id uuid
+    motivo_estagnacao string
+    estagnado_em timestamp
+    trial_iniciado_em timestamp
+    trial_encerrado_em timestamp
+    // 1.697 linhas
+  }
+  pipeline_etapas {
+    id uuid pk
+    organizacao_id uuid
+    pipeline_id uuid
+    codigo string
+    nome string
+    ordem int
+    tipo_fechamento string
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    // 35 linhas
+  }
+  proposta_grupo_comercial {
+    id uuid pk
+    organizacao_id uuid
+    proposta_id uuid
+    negocio_id uuid
+    oportunidade_id uuid
+    commercial_model string
+    status string
+    contrato_id uuid
+    checkout_id uuid
+    concluido_em timestamp
+    created_at timestamp
+    updated_at timestamp
+    service_family string
+    contrato_assinado_em timestamp
+    entrega_liberada_em timestamp
+    entrega_liberada_por string
+    pagamento_status string
+    pagamento_vence_em timestamp
+    pagamento_confirmado_em timestamp
+    caminho_fechamento string
+    fechamento_erro string
+    fechamento_tentativas int
+    fechamento_ultima_tentativa_em timestamp
+    // 15 linhas
+  }
+  proposta_grupo_comercial_itens {
+    id uuid pk
+    grupo_id uuid
+    proposta_item_id uuid
+    created_at timestamp
+    // 18 linhas
+  }
+  proposta_itens {
+    id uuid pk
+    proposta_id uuid
+    servico_catalogo_id uuid
+    nome string
+    descricao string
+    tipo string
+    moeda string
+    quantidade decimal
+    valor_unitario decimal
+    desconto decimal
+    desconto_tipo string
+    subtotal decimal
+    ordem int
+    created_at timestamp
+    billing_source string
+    non_recurring_value decimal
+    provenance string
+    recurring_value decimal
+    revenue_nature string
+    semantic_confidence string
+    semantic_evidence json
+    service_family string
+    zoho_id string
+    commercial_model string
+    catalogo_preco_id uuid
+    stripe_product_id string
+    stripe_price_id string
+    sku_preco string
+    variacao string
+    valor_tabela decimal
+    exige_contrato bool
+    periodo string
+    // 2.829 linhas
+  }
+  proposta_sequencias {
+    organizacao_id uuid pk
+    ultimo_numero int
+    // 1 linhas
+  }
+  propostas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    numero int
+    versao int
+    proposta_original_id uuid
+    moeda string
+    status string
+    data_emissao date
+    data_validade date
+    observacoes string
+    condicoes_pagamento string
+    total_recorrente decimal
+    total_avulso decimal
+    total_geral decimal
+    criado_por_id uuid
+    contrato_id uuid
+    created_at timestamp
+    updated_at timestamp
+    checkout_url string
+    stripe_session_id string
+    enviada_em timestamp
+    proximo_passo string
+    visualizacoes int
+    primeira_visualizacao_em timestamp
+    ultima_visualizacao_em timestamp
+    cliente_respondeu_em timestamp
+    motivo_recusa string
+    signatarios json
+    prazo_contrato_meses int
+    condicao_pagamento_tipo string
+    parcelas int
+    vencimento_dias int
+    modo_fechamento string
+    validade_dias int
+    ajuste_solicitado_em timestamp
+    ajuste_solicitado_descricao string
+    substituida_em timestamp
+    substituida_por_id uuid
+    aceita_em timestamp
+    recusada_em timestamp
+    expirada_em timestamp
+    tipo_contratual string
+    contrato_base_id uuid
+    service_family string
+    oferta_comercial_id uuid
+    oportunidade_id uuid
+    empresa_id uuid
+    trial_dias int
+    editor json
+    numero_duplicado_legado bool
+    dia_vencimento_mes int
+    reajuste_indice string
+    inicio_vigencia_tipo string
+    data_inicio_vigencia date
+    fidelidade_meses int
+    desconto_temporario_alvo string
+    desconto_temporario_meses int
+    modelo_pdf string
+    // 1.631 linhas
+  }
+  won_evidence_policies {
+    id uuid pk
+    organizacao_id uuid
+    produto string
+    tipos_aceitos json
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    required_combinations json
+    // 3 linhas
+  }
+}
+
+Identidade [color: green] {
+  empresas {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    cnpj string
+    setor string
+    porte string
+    cidade string
+    estado string
+    website string
+    instagram string
+    linkedin string
+    tiktok string
+    telefone string
+    pipedrive_id string
+    num_usuarios_ti int
+    num_filiais int
+    observacoes string
+    campos_custom json
+    apollo_id string
+    enriched_at timestamp
+    enrich_status string
+    industry string
+    employee_count int
+    annual_revenue string
+    founded_year int
+    apollo_description string
+    logo_url string
+    endereco string
+    cep string
+    pais string
+    total_funding string
+    funding_stage string
+    growth_6m decimal
+    growth_12m decimal
+    twitter string
+    facebook string
+    tech_stack array
+    apollo_keywords array
+    created_at timestamp
+    updated_at timestamp
+    zoho_id string
+    stripe_customer_id string
+    canonical_empresa_id uuid
+    identity_confidence string
+    identity_evidence json
+    tags array
+    razao_social string
+    logradouro string
+    numero string
+    complemento string
+    bairro string
+    dominio string
+    // 3.201 linhas
+  }
+  organizacoes {
+    id uuid pk
+    nome string
+    slug string
+    dominio string
+    logo_url string
+    cor_primaria string
+    apollo_api_key string
+    whatsapp_enabled bool
+    pipeline_config json
+    max_usuarios int
+    max_leads int
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    settings json
+    // 1 linhas
+  }
+  pessoa_empresa_vinculos {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    papel string
+    principal bool
+    iniciado_em timestamp
+    encerrado_em timestamp
+    created_at timestamp
+    cargo string
+    updated_at timestamp
+    // 3.213 linhas
+  }
+  pessoas {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    nome string
+    sobrenome string
+    email string
+    telefone string
+    whatsapp string
+    cargo string
+    lead_id_legado uuid
+    metadata json
+    created_at timestamp
+    updated_at timestamp
+    // 4.473 linhas
+  }
+  usuarios {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    email string
+    senha_hash string
+    role string
+    avatar_url string
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    team_id uuid
+    tipo string
+    agente_id uuid
+    // 18 linhas
+  }
+}
+
+Marketing [color: pink] {
+  automacoes {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    gatilho string
+    condicao json
+    acao string
+    acao_config json
+    ativo bool
+    created_at timestamp
+    tipo string
+    current_version_id uuid
+    created_by_id uuid
+    updated_at timestamp
+    rascunho json
+    rascunho_salvo_em timestamp
+    pasta string
+    webhook_token string
+    proxima_execucao_em timestamp
+    // 7 linhas
+  }
+  cadence_definition_pointers {
+    cadence_definition_id uuid pk
+    organizacao_id uuid
+    draft_version_id uuid
+    published_version_id uuid
+    updated_at timestamp
+    // 9 linhas
+  }
+  cadence_definitions {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    entity_type string
+    steps json
+    ativo bool
+    created_at timestamp
+    updated_at timestamp
+    draft_steps json
+    versao int
+    published_at timestamp
+    trigger_config json
+    handoff_policy json
+    status string
+    owner_id uuid
+    visibility string
+    // 9 linhas
+  }
+  cadence_enrollment_events {
+    id uuid pk
+    enrollment_id uuid
+    step_id string
+    status string
+    resultado json
+    attempt int
+    created_at timestamp
+    idempotency_key string
+    // 92 linhas
+  }
+  cadence_enrollments {
+    id uuid pk
+    organizacao_id uuid
+    cadence_definition_id uuid
+    entity_type string
+    entity_id uuid
+    current_step_id string
+    status string
+    scheduled_at timestamp
+    vars json
+    attempt int
+    started_at timestamp
+    completed_at timestamp
+    cancelled_at timestamp
+    cancel_reason string
+    updated_at timestamp
+    cadence_version_id uuid
+    current_node_id string
+    next_eval_at timestamp
+    claimed_until timestamp
+    last_inbound_at timestamp
+    handoff_snapshot json
+    source_event_id uuid
+    idempotency_key string
+    // 30 linhas
+  }
+  cadence_versions {
+    id uuid pk
+    organizacao_id uuid
+    cadence_definition_id uuid
+    version_number int
+    status string
+    graph json
+    compiled_steps json
+    trigger_config json
+    handoff_policy json
+    validation_snapshot json
+    created_by_id uuid
+    published_at timestamp
+    superseded_at timestamp
+    created_at timestamp
+    // 23 linhas
+  }
+  cadencia_execucoes {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    ordem int
+    canal string
+    status string
+    enviado_por_id uuid
+    sessao_id uuid
+    conteudo_enviado string
+    enviado_em timestamp
+    created_at timestamp
+    // 1.521 linhas
+  }
+  campanhas {
+    id uuid pk
+    organizacao_id uuid
+    plataforma string
+    nome string
+    utm_campaign string
+    investimento_mensal decimal
+    status string
+    created_at timestamp
+    // 18 linhas
+  }
+  captacao_entregas {
+    id uuid pk
+    organizacao_id uuid
+    canal string
+    chave_idempotencia string
+    payload json
+    status string
+    erro string
+    lead_id uuid
+    regra_id uuid
+    entregas int
+    ultima_entrega_em timestamp
+    created_at timestamp
+    processada_em timestamp
+    // 103 linhas
+  }
+  meta_capi_entregas {
+    id uuid pk
+    organizacao_id uuid
+    outbox_id uuid
+    event_type string
+    event_name string
+    event_id string
+    entregue bool
+    motivo string
+    detalhe string
+    tentativas int
+    criado_em timestamp
+    atualizado_em timestamp
+    // 342 linhas
+  }
+  meta_lead_staging {
+    id uuid pk
+    fb_lead_id string
+    email string
+    telefone string
+    ad_id string
+    adset_id string
+    campaign_id string
+    ad_name string
+    adset_name string
+    campaign_name string
+    usado bool
+    created_at timestamp
+    // 713 linhas
+  }
+  metas {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    periodo date
+    tipo string
+    valor_alvo decimal
+    criado_por uuid
+    created_at timestamp
+    updated_at timestamp
+    // 15 linhas
+  }
+  metric_catalog {
+    id uuid pk
+    codigo string
+    nome string
+    tipo string
+    unidade string
+    descricao string
+    fonte string
+    nao_inclui string
+    versao int
+    tem_drilldown bool
+    created_at timestamp
+    updated_at timestamp
+    // 6 linhas
+  }
+  metricas_diarias {
+    id uuid pk
+    organizacao_id uuid
+    data date
+    meta_valor_alvo decimal
+    meta_realizado decimal
+    meta_closers int
+    pipeline_total decimal
+    pipeline_ponderado decimal
+    pipeline_negocios_abertos int
+    fechado_mes_ganhos int
+    fechado_mes_receita decimal
+    fechado_mes_recorrente decimal
+    fechado_mes_avulso decimal
+    mrr_stripe decimal
+    mrr_stripe_clientes int
+    mrr_risco decimal
+    mrr_risco_qtd int
+    calculado_em timestamp
+    // 17 linhas
+  }
+  pontos_contato {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    source string
+    medium string
+    campaign string
+    term string
+    content string
+    landing_page string
+    referrer string
+    campaign_id string
+    source_id string
+    tipo_origem string
+    is_first_touch bool
+    is_last_touch bool
+    ocorrido_em timestamp
+    raw json
+    created_at timestamp
+    lead_id_legado uuid
+    aquisicao_id uuid
+    gclid string
+    fbclid string
+    fbc string
+    fbp string
+    meta_lead_id string
+    adset_id string
+    ad_id string
+    provider string
+    metadata json
+    // 5.422 linhas
+  }
+  regras_distribuicao_leads {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    etapa string
+    alvo_tipo string
+    alvo_usuario_id uuid
+    rodizio_usuario_ids array
+    rodizio_ultimo_id uuid
+    dias_semana array
+    hora_inicio time
+    hora_fim time
+    humano_devolucao_id uuid
+    prioridade int
+    ativo bool
+    created_by uuid
+    created_at timestamp
+    updated_at timestamp
+    descricao string
+    origem array
+    utm_source array
+    utm_campaign array
+    meta_campaign_ids array
+    formulario array
+    sessao_whatsapp_id uuid
+    // 3 linhas
+  }
+}
+
+Acesso [color: gray] {
+  auth_tokens {
+    id uuid pk
+    usuario_id uuid
+    tipo string
+    token_hash string
+    expira_em timestamp
+    usado_em timestamp
+    criado_em timestamp
+    // 22 linhas
+  }
+  calendario_assinaturas {
+    conta_id uuid pk
+    organizacao_id uuid
+    subscription_id string
+    expira_em timestamp
+    delta_link string
+    delta_iniciado_em timestamp
+    ultimo_delta_em timestamp
+    ultimo_erro string
+    updated_at timestamp
+    // 3 linhas
+  }
+  contato_labels {
+    id uuid pk
+    contato_id uuid
+    label_id uuid
+    created_at timestamp
+    // 98 linhas
+  }
+  entity_labels {
+    id uuid pk
+    organizacao_id uuid
+    entity_type string
+    entity_id uuid
+    label_id uuid
+    created_by_id uuid
+    created_at timestamp
+    // 216 linhas
+  }
+  file_links {
+    id uuid pk
+    organizacao_id uuid
+    file_object_id uuid
+    entity_type string
+    entity_id uuid
+    papel string
+    created_by_id uuid
+    created_at timestamp
+    // 9 linhas
+  }
+  integracao_sync_estado {
+    id uuid pk
+    organizacao_id uuid
+    provider string
+    recurso string
+    cursor string
+    ultimo_sync_em timestamp
+    ultimo_sucesso_em timestamp
+    status string
+    erro string
+    tentativas int
+    itens_ultimo_sync int
+    duracao_ms int
+    created_at timestamp
+    updated_at timestamp
+    // 4 linhas
+  }
+  labels {
+    id uuid pk
+    nome string
+    cor string
+    organizacao_id uuid
+    created_at timestamp
+    // 11 linhas
+  }
+  lead_labels {
+    id uuid pk
+    lead_id uuid
+    label_id uuid
+    created_at timestamp
+    // 297 linhas
+  }
+  negocio_labels {
+    id uuid pk
+    negocio_id uuid
+    label_id uuid
+    created_at timestamp
+    // 15 linhas
+  }
+  notificacoes {
+    id uuid pk
+    usuario_id uuid
+    titulo string
+    mensagem string
+    tipo string
+    lida bool
+    link string
+    created_at timestamp
+    // 5.270 linhas
+  }
+  permissions {
+    id uuid pk
+    codigo string
+    dominio string
+    descricao string
+    created_at timestamp
+    // 16 linhas
+  }
+  role_permissions {
+    role_id uuid pk
+    permission_id uuid pk
+    created_at timestamp
+    // 106 linhas
+  }
+  roles {
+    id uuid pk
+    organizacao_id uuid
+    codigo string
+    nome string
+    descricao string
+    sistema bool
+    created_at timestamp
+    updated_at timestamp
+    // 8 linhas
+  }
+}
+
+IA e agentes [color: yellow] {
+  ai_agent_atribuicoes {
+    id uuid pk
+    organizacao_id uuid
+    agent_id uuid
+    contato_id uuid
+    lead_id uuid
+    negocio_id uuid
+    empresa_id uuid
+    status string
+    objetivo string
+    autonomia string
+    origem string
+    origem_ref string
+    atribuido_por uuid
+    copiloto bool
+    humano_usuario_id uuid
+    motivo_estado string
+    resumo_handoff string
+    estado json
+    ultimo_run_id uuid
+    ultima_execucao_em timestamp
+    created_at timestamp
+    updated_at timestamp
+    encerrada_em timestamp
+    // 5 linhas
+  }
+  ai_agent_compromissos {
+    id uuid pk
+    organizacao_id uuid
+    agent_id uuid
+    atribuicao_id uuid
+    contato_id uuid
+    lead_id uuid
+    tipo string
+    motivo string
+    instrucao string
+    due_at timestamp
+    status string
+    bloqueio_motivo string
+    tentativas int
+    origem_run_id uuid
+    origem_mensagem_id uuid
+    run_id uuid
+    idempotency_key string
+    reagendado_de timestamp
+    created_at timestamp
+    updated_at timestamp
+    concluido_em timestamp
+    // 1 linhas
+  }
+  ai_agent_run_steps {
+    id uuid pk
+    organizacao_id uuid
+    run_id uuid
+    sequence int
+    kind string
+    name string
+    status string
+    input json
+    output json
+    tokens_input int
+    tokens_output int
+    custo decimal
+    latency_ms int
+    error_code string
+    error_message string
+    started_at timestamp
+    completed_at timestamp
+    // 1.386 linhas
+  }
+  ai_agent_runs {
+    id uuid pk
+    organizacao_id uuid
+    agent_id uuid
+    version_id uuid
+    contato_id uuid
+    lead_id uuid
+    source_message_id uuid
+    modo string
+    status string
+    input json
+    trace json
+    tokens int
+    custo decimal
+    erro string
+    handoff_motivo string
+    started_at timestamp
+    completed_at timestamp
+    outbound_message_id uuid
+    channel_session_id uuid
+    correlation_id uuid
+    tokens_input int
+    tokens_output int
+    error_code string
+    abort_reason string
+    latency_ms int
+    steps_count int
+    // 581 linhas
+  }
+  ai_agent_versions {
+    id uuid pk
+    agent_id uuid
+    versao int
+    status string
+    system_prompt string
+    provider string
+    modelo string
+    tools json
+    trigger_config json
+    handoff_config json
+    knowledge_config json
+    max_steps int
+    token_budget int
+    cost_budget decimal
+    created_by_id uuid
+    published_at timestamp
+    created_at timestamp
+    organizacao_id uuid
+    credential_id uuid
+    channel_session_id uuid
+    guardrail_config json
+    history_message_window int
+    history_token_window int
+    cases_enabled bool
+    superseded_at timestamp
+    // 11 linhas
+  }
+  ai_agents {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    slug string
+    descricao string
+    finalidade string
+    prioridade int
+    status string
+    created_by_id uuid
+    created_at timestamp
+    updated_at timestamp
+    kind string
+    published_version_id uuid
+    archived_at timestamp
+    // 7 linhas
+  }
+  ai_alerts {
+    id uuid pk
+    organizacao_id uuid
+    kind string
+    severity string
+    title string
+    body string
+    ref_kind string
+    ref_id uuid
+    status string
+    acknowledged_by_id uuid
+    acknowledged_at timestamp
+    resolved_at timestamp
+    created_at timestamp
+    // 191 linhas
+  }
+  ai_analysis {
+    id uuid pk
+    organizacao_id uuid
+    entity_type string
+    entity_id uuid
+    resumo string
+    sentimento string
+    intencao string
+    objecoes json
+    necessidades json
+    proximos_passos string
+    score decimal
+    risco string
+    oportunidade string
+    modelo_usado string
+    raw json
+    created_at timestamp
+    // 1.675 linhas
+  }
+  ai_case_events {
+    id uuid pk
+    organizacao_id uuid
+    case_id uuid
+    kind string
+    actor_kind string
+    actor_user_id uuid
+    human_action string
+    body string
+    metadata json
+    created_at timestamp
+    // 1 linhas
+  }
+  ai_cases {
+    id uuid pk
+    organizacao_id uuid
+    contato_id uuid
+    lead_id uuid
+    agent_id uuid
+    run_id uuid
+    status string
+    title string
+    summary string
+    blocker string
+    context_snapshot json
+    source string
+    followup_attempts int
+    opened_at timestamp
+    closed_at timestamp
+    created_at timestamp
+    updated_at timestamp
+    // 187 linhas
+  }
+  ai_knowledge_chunks {
+    id uuid pk
+    organizacao_id uuid
+    version_id uuid
+    sequence int
+    content string
+    token_count int
+    embedding json
+    metadata json
+    created_at timestamp
+    busca tsvector
+    // 140 linhas
+  }
+  ai_knowledge_sources {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    source_type string
+    source_uri string
+    mime_type string
+    checksum string
+    status string
+    error_message string
+    metadata json
+    created_by_id uuid
+    indexed_at timestamp
+    created_at timestamp
+    updated_at timestamp
+    governanca string
+    categoria string
+    // 6 linhas
+  }
+  ai_knowledge_versions {
+    id uuid pk
+    organizacao_id uuid
+    source_id uuid
+    version_number int
+    content string
+    chunk_count int
+    status string
+    created_at timestamp
+    // 7 linhas
+  }
+  ai_memoria_fatos {
+    id uuid pk
+    organizacao_id uuid
+    escopo string
+    contato_id uuid
+    lead_id uuid
+    empresa_id uuid
+    tipo string
+    chave string
+    valor string
+    fonte string
+    fonte_ref string
+    confirmado bool
+    confianca decimal
+    status string
+    valido_ate timestamp
+    agent_id uuid
+    run_id uuid
+    usuario_id uuid
+    created_at timestamp
+    updated_at timestamp
+    // 7 linhas
+  }
+  ai_models {
+    id uuid pk
+    provider string
+    model_id string
+    display_name string
+    description string
+    context_window int
+    input_price_per_million decimal
+    output_price_per_million decimal
+    supports_tools bool
+    supports_vision bool
+    is_default_for_provider bool
+    deprecated_at timestamp
+    metadata json
+    created_at timestamp
+    // 6 linhas
+  }
+  ai_sdr_contato_state {
+    id uuid pk
+    contato_id uuid
+    organizacao_id uuid
+    ai_ativo bool
+    handoff_at timestamp
+    handoff_motivo string
+    handoff_usuario_id uuid
+    ultima_ai_msg_at timestamp
+    ai_msgs_na_janela int
+    janela_reset_at timestamp
+    qualificacao_extraida json
+    conversation_summary string
+    intent_detectado string
+    confianca decimal
+    total_tokens_usados int
+    total_msgs_ai int
+    created_at timestamp
+    updated_at timestamp
+    handoff_status string
+    ia_ligada_por uuid
+    ia_ligada_em timestamp
+    // 6 linhas
+  }
+  ai_send_ledger {
+    id uuid pk
+    organizacao_id uuid
+    run_id uuid
+    sequence int
+    body_hash string
+    channel string
+    status string
+    external_message_id string
+    attempts int
+    last_error string
+    sent_at timestamp
+    created_at timestamp
+    // 69 linhas
+  }
+}
+
+// Relacoes: as 595 chaves estrangeiras reais do banco.
+ai_agent_atribuicoes.agent_id > ai_agents.id
+ai_agent_atribuicoes.atribuido_por > usuarios.id
+ai_agent_atribuicoes.contato_id > contatos.id
+ai_agent_atribuicoes.empresa_id > empresas.id
+ai_agent_atribuicoes.humano_usuario_id > usuarios.id
+ai_agent_atribuicoes.lead_id > leads.id
+ai_agent_atribuicoes.negocio_id > negocios.id
+ai_agent_atribuicoes.organizacao_id > organizacoes.id
+ai_agent_compromissos.agent_id > ai_agents.id
+ai_agent_compromissos.atribuicao_id > ai_agent_atribuicoes.id
+ai_agent_compromissos.contato_id > contatos.id
+ai_agent_compromissos.lead_id > leads.id
+ai_agent_compromissos.organizacao_id > organizacoes.id
+ai_agent_run_steps.organizacao_id > organizacoes.id
+ai_agent_run_steps.run_id > ai_agent_runs.id
+ai_agent_runs.agent_id > ai_agents.id
+ai_agent_runs.channel_session_id > whatsapp_sessao.id
+ai_agent_runs.contato_id > contatos.id
+ai_agent_runs.lead_id > leads.id
+ai_agent_runs.organizacao_id > organizacoes.id
+ai_agent_runs.outbound_message_id > whatsapp_mensagens.id
+ai_agent_runs.source_message_id > whatsapp_mensagens.id
+ai_agent_runs.version_id > ai_agent_versions.id
+ai_agent_versions.agent_id > ai_agents.id
+ai_agent_versions.channel_session_id > whatsapp_sessao.id
+ai_agent_versions.created_by_id > usuarios.id
+ai_agent_versions.organizacao_id > organizacoes.id
+ai_agents.created_by_id > usuarios.id
+ai_agents.organizacao_id > organizacoes.id
+ai_agents.published_version_id > ai_agent_versions.id
+ai_alerts.acknowledged_by_id > usuarios.id
+ai_alerts.organizacao_id > organizacoes.id
+ai_analysis.organizacao_id > organizacoes.id
+ai_case_events.actor_user_id > usuarios.id
+ai_case_events.case_id > ai_cases.id
+ai_case_events.organizacao_id > organizacoes.id
+ai_cases.agent_id > ai_agents.id
+ai_cases.contato_id > contatos.id
+ai_cases.lead_id > leads.id
+ai_cases.organizacao_id > organizacoes.id
+ai_cases.run_id > ai_agent_runs.id
+ai_knowledge_chunks.organizacao_id > organizacoes.id
+ai_knowledge_chunks.version_id > ai_knowledge_versions.id
+ai_knowledge_sources.created_by_id > usuarios.id
+ai_knowledge_sources.organizacao_id > organizacoes.id
+ai_knowledge_versions.organizacao_id > organizacoes.id
+ai_knowledge_versions.source_id > ai_knowledge_sources.id
+ai_memoria_fatos.agent_id > ai_agents.id
+ai_memoria_fatos.contato_id > contatos.id
+ai_memoria_fatos.empresa_id > empresas.id
+ai_memoria_fatos.lead_id > leads.id
+ai_memoria_fatos.organizacao_id > organizacoes.id
+ai_memoria_fatos.usuario_id > usuarios.id
+ai_sdr_contato_state.contato_id > contatos.id
+ai_sdr_contato_state.handoff_usuario_id > usuarios.id
+ai_sdr_contato_state.ia_ligada_por > usuarios.id
+ai_sdr_contato_state.organizacao_id > organizacoes.id
+ai_send_ledger.organizacao_id > organizacoes.id
+ai_send_ledger.run_id > ai_agent_runs.id
+anexos_legado.organizacao_id > organizacoes.id
+aquisicoes.empresa_id > empresas.id
+aquisicoes.etapa_id > pipeline_etapas.id
+aquisicoes.organizacao_id > organizacoes.id
+aquisicoes.pessoa_id > pessoas.id
+aquisicoes.pipeline_id > pipelines.id
+aquisicoes.responsavel_id > usuarios.id
+assinatura_itens.assinatura_id > assinaturas.id
+assinatura_itens.organizacao_id > organizacoes.id
+assinatura_itens.servico_canonico_id > servicos_canonicos.id
+assinaturas.contrato_id > contratos.id
+assinaturas.empresa_id > empresas.id
+assinaturas.lead_id > leads.id
+assinaturas.organizacao_id > organizacoes.id
+assinaturas.servico_id > servicos_canonicos.id
+atividades.empresa_id > empresas.id
+atividades.lead_id > leads.id
+atividades.negocio_id > negocios.id
+atividades.organizacao_id > organizacoes.id
+atividades.usuario_id > usuarios.id
+audit_log.actor_id > usuarios.id
+audit_log.organizacao_id > organizacoes.id
+auth_tokens.usuario_id > usuarios.id
+automacao_execucoes.automacao_id > automacoes.id
+automacao_execucoes.organizacao_id > organizacoes.id
+automacao_execucoes.trigger_event_id > domain_events.id
+automacao_execucoes.version_id > automacao_versoes.id
+automacao_inscricoes.automacao_id > automacoes.id
+automacao_inscricoes.organizacao_id > organizacoes.id
+automacao_inscricoes.version_id > automacao_versoes.id
+automacao_passos_execucao.execucao_id > automacao_execucoes.id
+automacao_passos_execucao.organizacao_id > organizacoes.id
+automacao_versoes.automacao_id > automacoes.id
+automacao_versoes.created_by_id > usuarios.id
+automacao_versoes.organizacao_id > organizacoes.id
+automacoes.created_by_id > usuarios.id
+automacoes.current_version_id > automacao_versoes.id
+automacoes.organizacao_id > organizacoes.id
+backfill_provenance.organizacao_id > organizacoes.id
+billing_customer_aliases.billing_identity_id > billing_identities.id
+billing_identities.canonical_empresa_id > empresas.id
+billing_identities.canonical_lead_id > leads.id
+billing_identities.empresa_id > empresas.id
+billing_identities.lead_id > leads.id
+billing_identities.organizacao_id > organizacoes.id
+billing_resolution_cases.organizacao_id > organizacoes.id
+cadence_definition_pointers.cadence_definition_id > cadence_definitions.id
+cadence_definition_pointers.draft_version_id > cadence_versions.id
+cadence_definition_pointers.organizacao_id > organizacoes.id
+cadence_definition_pointers.published_version_id > cadence_versions.id
+cadence_definitions.organizacao_id > organizacoes.id
+cadence_definitions.owner_id > usuarios.id
+cadence_enrollment_events.enrollment_id > cadence_enrollments.id
+cadence_enrollments.cadence_definition_id > cadence_definitions.id
+cadence_enrollments.cadence_version_id > cadence_versions.id
+cadence_enrollments.organizacao_id > organizacoes.id
+cadence_enrollments.source_event_id > event_outbox.id
+cadence_versions.cadence_definition_id > cadence_definitions.id
+cadence_versions.created_by_id > usuarios.id
+cadence_versions.organizacao_id > organizacoes.id
+cadencia_execucoes.enviado_por_id > usuarios.id
+cadencia_execucoes.lead_id > leads.id
+cadencia_execucoes.organizacao_id > organizacoes.id
+cadencia_execucoes.sessao_id > whatsapp_sessao.id
+calendario_assinaturas.conta_id > email_contas.id
+calendario_assinaturas.organizacao_id > organizacoes.id
+callface_ai_equipes.organizacao_id > organizacoes.id
+callface_ai_licencas.organizacao_id > organizacoes.id
+callface_ai_org_stripe.organizacao_id > organizacoes.id
+callface_ai_parceiro_fatura_itens.organizacao_id > organizacoes.id
+callface_ai_parceiro_faturas.organizacao_id > organizacoes.id
+callface_ai_parceiro_licencas.organizacao_id > organizacoes.id
+callface_ai_parceiro_pendencias.organizacao_id > organizacoes.id
+callface_ai_parceiros.empresa_id > empresas.id
+callface_ai_parceiros.organizacao_id > organizacoes.id
+callface_ai_planos.organizacao_id > organizacoes.id
+callface_ai_receptivos.organizacao_id > organizacoes.id
+callface_ai_reconciliation_candidates.empresa_id > empresas.id
+callface_ai_saude_diaria.external_identity_id > callface_ai_external_identities.id
+callface_ai_tenant_detalhe.external_identity_id > callface_ai_external_identities.id
+callface_ai_tenant_snapshots.external_identity_id > callface_ai_external_identities.id
+callface_ai_uso_diario.external_identity_id > callface_ai_external_identities.id
+callface_ai_usuarios.organizacao_id > organizacoes.id
+campanhas.organizacao_id > organizacoes.id
+captacao_entregas.lead_id > leads.id
+captacao_entregas.organizacao_id > organizacoes.id
+captacao_entregas.regra_id > regras_distribuicao_leads.id
+catalogo_mapeamentos_legacy.canonical_product_id > servicos_catalogo.id
+catalogo_mapeamentos_legacy.organizacao_id > organizacoes.id
+catalogo_mapeamentos_legacy.revisado_por > usuarios.id
+catalogo_precos.oferta_comercial_id > ofertas_comerciais.id
+catalogo_precos.organizacao_id > organizacoes.id
+catalogo_precos.servico_catalogo_id > servicos_catalogo.id
+checkouts.criado_por_id > usuarios.id
+checkouts.grupo_comercial_id > proposta_grupo_comercial.id
+checkouts.negocio_id > negocios.id
+checkouts.organizacao_id > organizacoes.id
+checkouts.proposta_id > propostas.id
+cliente_receita_mensal.empresa_id > empresas.id
+cliente_receita_mensal.organizacao_id > organizacoes.id
+clientes.empresa_id > empresas.id
+clientes.lead_id_legado > leads.id
+clientes.oportunidade_origem_id > oportunidades.id
+clientes.organizacao_id > organizacoes.id
+clientes.pessoa_principal_id > pessoas.id
+clientes.responsavel_cs_id > usuarios.id
+clientes.responsavel_id > usuarios.id
+closer_disponibilidade.organizacao_id > organizacoes.id
+closer_disponibilidade.usuario_id > usuarios.id
+comercial_evidencia.grupo_comercial_id > proposta_grupo_comercial.id
+comercial_evidencia.negocio_id > negocios.id
+comercial_evidencia.organizacao_id > organizacoes.id
+comercial_evidencia.verificado_por > usuarios.id
+communications.created_by_user_id > usuarios.id
+communications.empresa_id > empresas.id
+communications.oportunidade_id > oportunidades.id
+communications.organizacao_id > organizacoes.id
+communications.pessoa_id > pessoas.id
+communications.usuario_id > usuarios.id
+contato_labels.contato_id > contatos.id
+contato_labels.label_id > labels.id
+contatos.active_ai_agent_id > ai_agents.id
+contatos.closed_by_id > usuarios.id
+contatos.conta_id > email_contas.id
+contatos.lead_id > leads.id
+contatos.organizacao_id > organizacoes.id
+contatos.responsavel_id > usuarios.id
+contatos.sessao_id > whatsapp_sessao.id
+contrato_itens.contrato_id > contratos.id
+contrato_itens.servico_catalogo_id > servicos_catalogo.id
+contrato_templates.organizacao_id > organizacoes.id
+contratos.empresa_id > empresas.id
+contratos.grupo_comercial_id > proposta_grupo_comercial.id
+contratos.lead_id > leads.id
+contratos.negocio_id > negocios.id
+contratos.oferta_comercial_id > ofertas_comerciais.id
+contratos.oportunidade_id > oportunidades.id
+contratos.organizacao_id > organizacoes.id
+contratos.template_id > contrato_templates.id
+cs_cancelamentos.contrato_id > contratos.id
+cs_cancelamentos.decidido_por > usuarios.id
+cs_cancelamentos.empresa_id > empresas.id
+cs_cancelamentos.organizacao_id > organizacoes.id
+cs_cancelamentos.servico_canonico_id > servicos_canonicos.id
+cs_cancelamentos.solicitado_por > usuarios.id
+cs_health_snapshots.empresa_id > empresas.id
+cs_health_snapshots.organizacao_id > organizacoes.id
+cs_health_snapshots.servico_canonico_id > servicos_canonicos.id
+cs_marcos.concluido_por > usuarios.id
+cs_marcos.empresa_id > empresas.id
+cs_marcos.organizacao_id > organizacoes.id
+cs_marcos.servico_canonico_id > servicos_canonicos.id
+cs_marcos.tarefa_id > tarefas.id
+cs_riscos.aberto_por > usuarios.id
+cs_riscos.empresa_id > empresas.id
+cs_riscos.organizacao_id > organizacoes.id
+cs_riscos.resolvido_por > usuarios.id
+cs_riscos.responsavel_id > usuarios.id
+cs_riscos.servico_canonico_id > servicos_canonicos.id
+cs_riscos.tarefa_id > tarefas.id
+domain_events.organizacao_id > organizacoes.id
+email_contas.organizacao_id > organizacoes.id
+email_contas.usuario_id > usuarios.id
+email_templates.organizacao_id > organizacoes.id
+emails.conta_id > email_contas.id
+emails.enviado_por_id > usuarios.id
+emails.lead_id > leads.id
+emails.organizacao_id > organizacoes.id
+empresas.canonical_empresa_id > empresas.id
+empresas.organizacao_id > organizacoes.id
+entity_labels.created_by_id > usuarios.id
+entity_labels.label_id > labels.id
+entity_labels.organizacao_id > organizacoes.id
+event_outbox.organizacao_id > organizacoes.id
+fatura_itens.fatura_id > faturas.id
+fatura_itens.servico_catalogo_id > servicos_catalogo.id
+fatura_itens.servico_id > servicos_canonicos.id
+faturas.acionado_por > usuarios.id
+faturas.assinatura_id > assinaturas.id
+faturas.contrato_id > contratos.id
+faturas.empresa_id > empresas.id
+faturas.grupo_comercial_id > proposta_grupo_comercial.id
+faturas.lead_id > leads.id
+faturas.negocio_id > negocios.id
+faturas.organizacao_id > organizacoes.id
+faturas.servico_canonico_id > servicos_canonicos.id
+file_links.created_by_id > usuarios.id
+file_links.file_object_id > file_objects.id
+file_links.organizacao_id > organizacoes.id
+file_objects.enviado_por_id > usuarios.id
+file_objects.organizacao_id > organizacoes.id
+fulfillment_formularios.fulfillment_id > fulfillments.id
+fulfillment_formularios.organizacao_id > organizacoes.id
+fulfillment_formularios.revisado_por > usuarios.id
+fulfillment_itens.completed_by > usuarios.id
+fulfillment_itens.fulfillment_id > fulfillments.id
+fulfillment_itens.organizacao_id > organizacoes.id
+fulfillment_itens.responsavel_id > usuarios.id
+fulfillment_linhas_portabilidade.fulfillment_id > fulfillments.id
+fulfillment_linhas_portabilidade.organizacao_id > organizacoes.id
+fulfillment_ramais.fulfillment_id > fulfillments.id
+fulfillment_ramais.organizacao_id > organizacoes.id
+fulfillment_servicos.fulfillment_id > fulfillments.id
+fulfillment_servicos.organizacao_id > organizacoes.id
+fulfillment_servicos.servico_canonico_id > servicos_canonicos.id
+fulfillments.fulfillment_anterior_id > fulfillments.id
+fulfillments.oportunidade_id > oportunidades.id
+fulfillments.organizacao_id > organizacoes.id
+fulfillments.responsavel_id > usuarios.id
+fulfillments.servico_canonico_id > servicos_canonicos.id
+integracao_sync_estado.organizacao_id > organizacoes.id
+labels.organizacao_id > organizacoes.id
+lead_labels.label_id > labels.id
+lead_labels.lead_id > leads.id
+lead_user_unread.lead_id > leads.id
+lead_user_unread.usuario_id > usuarios.id
+leads.agenda_closer_id > usuarios.id
+leads.canonical_lead_id > leads.id
+leads.desqualificado_por > usuarios.id
+leads.distribuicao_regra_id > regras_distribuicao_leads.id
+leads.empresa_id > empresas.id
+leads.nutrido_por > usuarios.id
+leads.organizacao_id > organizacoes.id
+leads.pre_qualificado_por > usuarios.id
+leads.prospeccao_descartado_por > usuarios.id
+leads.qualificado_por > usuarios.id
+leads.responsavel_id > usuarios.id
+leads.sessao_whatsapp_preferida_id > whatsapp_sessao.id
+ligacoes.lead_id > leads.id
+ligacoes.negocio_id > negocios.id
+ligacoes.organizacao_id > organizacoes.id
+ligacoes.usuario_id > usuarios.id
+meta_capi_entregas.organizacao_id > organizacoes.id
+meta_capi_entregas.outbox_id > event_outbox.id
+metas.criado_por > usuarios.id
+metas.organizacao_id > organizacoes.id
+metas.usuario_id > usuarios.id
+metricas_diarias.organizacao_id > organizacoes.id
+mrr_movimentos.assinatura_id > assinaturas.id
+mrr_movimentos.contrato_id > contratos.id
+mrr_movimentos.lead_id > leads.id
+mrr_movimentos.organizacao_id > organizacoes.id
+negocio_labels.label_id > labels.id
+negocio_labels.negocio_id > negocios.id
+negocio_leads.lead_id > leads.id
+negocio_leads.negocio_id > negocios.id
+negocios.empresa_id > empresas.id
+negocios.lead_id > leads.id
+negocios.organizacao_id > organizacoes.id
+negocios.pipeline_id > pipelines.id
+negocios.proxima_acao_responsavel_id > usuarios.id
+negocios.responsavel_id > usuarios.id
+negocios.servico_origem_id > servicos_canonicos.id
+notas.autor_id > usuarios.id
+notas.cliente_id > clientes.id
+notas.empresa_id > empresas.id
+notas.lead_id > leads.id
+notas.negocio_id > negocios.id
+notas.organizacao_id > organizacoes.id
+notas.reuniao_id > reunioes.id
+notificacoes.usuario_id > usuarios.id
+ofertas_comerciais.contrato_template_id > contrato_templates.id
+ofertas_comerciais.organizacao_id > organizacoes.id
+ofertas_comerciais.servico_catalogo_id > servicos_catalogo.id
+oportunidade_itens.catalogo_preco_id > catalogo_precos.id
+oportunidade_itens.contrato_item_id_legado > contrato_itens.id
+oportunidade_itens.grupo_comercial_id > proposta_grupo_comercial.id
+oportunidade_itens.oportunidade_id > oportunidades.id
+oportunidade_itens.organizacao_id > organizacoes.id
+oportunidade_itens.proposta_item_id_legado > proposta_itens.id
+oportunidade_itens.servico_canonico_id > servicos_canonicos.id
+oportunidades.empresa_id > empresas.id
+oportunidades.etapa_id > pipeline_etapas.id
+oportunidades.lead_id > leads.id
+oportunidades.negocio_id_legado > negocios.id
+oportunidades.oferta_comercial_id > ofertas_comerciais.id
+oportunidades.organizacao_id > organizacoes.id
+oportunidades.pessoa_id > pessoas.id
+oportunidades.pipeline_id > pipelines.id
+oportunidades.responsavel_id > usuarios.id
+oportunidades.servico_catalogo_id > servicos_catalogo.id
+pagamentos.empresa_id > empresas.id
+pagamentos.fatura_id > faturas.id
+pagamentos.organizacao_id > organizacoes.id
+pagamentos.servico_canonico_id > servicos_canonicos.id
+pessoa_empresa_vinculos.empresa_id > empresas.id
+pessoa_empresa_vinculos.organizacao_id > organizacoes.id
+pessoa_empresa_vinculos.pessoa_id > pessoas.id
+pessoas.empresa_id > empresas.id
+pessoas.lead_id_legado > leads.id
+pessoas.organizacao_id > organizacoes.id
+pipeline_etapas.organizacao_id > organizacoes.id
+pipeline_etapas.pipeline_id > pipelines.id
+pipelines.organizacao_id > organizacoes.id
+pontos_contato.aquisicao_id > aquisicoes.id
+pontos_contato.empresa_id > empresas.id
+pontos_contato.lead_id_legado > leads.id
+pontos_contato.organizacao_id > organizacoes.id
+pontos_contato.pessoa_id > pessoas.id
+proposta_grupo_comercial.checkout_id > checkouts.id
+proposta_grupo_comercial.contrato_id > contratos.id
+proposta_grupo_comercial.negocio_id > negocios.id
+proposta_grupo_comercial.oportunidade_id > oportunidades.id
+proposta_grupo_comercial.organizacao_id > organizacoes.id
+proposta_grupo_comercial.proposta_id > propostas.id
+proposta_grupo_comercial_itens.grupo_id > proposta_grupo_comercial.id
+proposta_grupo_comercial_itens.proposta_item_id > proposta_itens.id
+proposta_itens.catalogo_preco_id > catalogo_precos.id
+proposta_itens.proposta_id > propostas.id
+proposta_itens.servico_catalogo_id > servicos_catalogo.id
+proposta_sequencias.organizacao_id > organizacoes.id
+propostas.contrato_base_id > contratos.id
+propostas.contrato_id > contratos.id
+propostas.criado_por_id > usuarios.id
+propostas.empresa_id > empresas.id
+propostas.lead_id > leads.id
+propostas.negocio_id > negocios.id
+propostas.oferta_comercial_id > ofertas_comerciais.id
+propostas.oportunidade_id > oportunidades.id
+propostas.organizacao_id > organizacoes.id
+propostas.substituida_por_id > propostas.id
+reconciliacao_casos.organizacao_id > organizacoes.id
+reconciliacao_casos.resolvido_por_id > usuarios.id
+regras_distribuicao_leads.alvo_usuario_id > usuarios.id
+regras_distribuicao_leads.created_by > usuarios.id
+regras_distribuicao_leads.humano_devolucao_id > usuarios.id
+regras_distribuicao_leads.organizacao_id > organizacoes.id
+regras_distribuicao_leads.sessao_whatsapp_id > whatsapp_sessao.id
+reunioes.calendar_conta_id > email_contas.id
+reunioes.lead_id > leads.id
+reunioes.negocio_id > negocios.id
+reunioes.organizacao_id > organizacoes.id
+reunioes.responsavel_id > usuarios.id
+role_permissions.permission_id > permissions.id
+role_permissions.role_id > roles.id
+roles.organizacao_id > organizacoes.id
+roteamento_comercial_regras.criado_por > usuarios.id
+roteamento_comercial_regras.destino_usuario_id > usuarios.id
+roteamento_comercial_regras.organizacao_id > organizacoes.id
+scripts_atendimento.organizacao_id > organizacoes.id
+service_ledger_batches.organizacao_id > organizacoes.id
+service_ledger_entries.batch_id > service_ledger_batches.id
+service_ledger_entries.organizacao_id > organizacoes.id
+service_ledger_entries.service_id > servicos_canonicos.id
+servicos_canonicos.contrato_id > contratos.id
+servicos_canonicos.empresa_id > empresas.id
+servicos_canonicos.lead_id > leads.id
+servicos_canonicos.oferta_comercial_id > ofertas_comerciais.id
+servicos_canonicos.oportunidade_origem_id > oportunidades.id
+servicos_canonicos.organizacao_id > organizacoes.id
+servicos_catalogo.organizacao_id > organizacoes.id
+status_changes.lead_id > leads.id
+status_changes.negocio_id > negocios.id
+status_changes.usuario_id > usuarios.id
+stripe_webhook_events.organizacao_id > organizacoes.id
+tarefa_comentarios.autor_id > usuarios.id
+tarefa_comentarios.organizacao_id > organizacoes.id
+tarefa_comentarios.tarefa_id > tarefas.id
+tarefa_subtarefas.created_by > usuarios.id
+tarefa_subtarefas.organizacao_id > organizacoes.id
+tarefa_subtarefas.responsavel_id > usuarios.id
+tarefa_subtarefas.tarefa_id > tarefas.id
+tarefas.empresa_id > empresas.id
+tarefas.lead_id > leads.id
+tarefas.negocio_id > negocios.id
+tarefas.organizacao_id > organizacoes.id
+tarefas.servico_canonico_id > servicos_canonicos.id
+tarefas.usuario_id > usuarios.id
+timeline_events.aquisicao_id > aquisicoes.id
+timeline_events.domain_event_id > domain_events.id
+timeline_events.empresa_id > empresas.id
+timeline_events.oportunidade_id > oportunidades.id
+timeline_events.organizacao_id > organizacoes.id
+timeline_events.pessoa_id > pessoas.id
+timeline_events.servico_canonico_id > servicos_canonicos.id
+user_roles.concedido_por_id > usuarios.id
+user_roles.organizacao_id > organizacoes.id
+user_roles.role_id > roles.id
+user_roles.usuario_id > usuarios.id
+usuarios.agente_id > ai_agents.id
+usuarios.organizacao_id > organizacoes.id
+vendas_eventos.empresa_id > empresas.id
+vendas_eventos.lead_id > leads.id
+vendas_eventos.negocio_id > negocios.id
+vendas_eventos.organizacao_id > organizacoes.id
+vendas_eventos.pessoa_id > pessoas.id
+vendas_eventos.proposta_id > propostas.id
+vendas_eventos.reuniao_id > reunioes.id
+vendas_eventos.usuario_id > usuarios.id
+whatsapp_mensagens.enviado_por_id > usuarios.id
+whatsapp_mensagens.lead_id > leads.id
+whatsapp_mensagens.sessao_id > whatsapp_sessao.id
+whatsapp_sessao.organizacao_id > organizacoes.id
+whatsapp_sessao.usuario_id > usuarios.id
+whatsapp_templates.organizacao_id > organizacoes.id
+won_evidence_policies.organizacao_id > organizacoes.id
+
+// As DUAS pontes do cutover. NAO sao chave estrangeira: sao convencao,
+// e e por isso que ninguem as enxerga no banco.
+aquisicoes.lead_legado_id > leads.id
+oportunidades.negocio_id_legado > negocios.id

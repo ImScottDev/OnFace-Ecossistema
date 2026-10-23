@@ -1,0 +1,57 @@
+// ONFACE — o que roda, onde, e o que fala com o mundo.
+// Producao e a pilha crm2-dev em /opt/callface/crm2-dev (nome legado da pasta).
+
+title ONFACE — arquitetura de execucao
+
+Navegador [icon: monitor]
+
+EC2 34.204.200.52 [color: gray] {
+  Traefik [icon: shield, label: "TLS + roteamento"]
+
+  Producao [icon: server, color: green] {
+    app [icon: nextjs, label: "Next.js 16 — telas"]
+    api [icon: server, label: "Hono — rotas de dados"]
+    worker [icon: cpu, label: "BullMQ — filas e sweeps"]
+    postgres [icon: postgres, label: "callface_crm_mz"]
+    redis [icon: redis]
+    wuzapi [icon: message-circle, label: "WhatsApp"]
+  }
+
+  Homologacao [icon: server, color: blue, label: "dev.crm.callface.io — .env de producao, banco copia"]
+  LP [icon: globe, label: "lp.callface.ai — nginx estatico"]
+  n8n [icon: workflow]
+  Legado [icon: archive, color: orange, label: "homolog.crm.callface.io — so consulta, worker parado"]
+}
+
+Fora [color: purple] {
+  Stripe [icon: stripe, label: "assinatura, checkout, fatura"]
+  Meta [icon: facebook, label: "Lead Ads + Conversions API + Ads Insights"]
+  Documenso [icon: file-text, label: "assinatura de contrato"]
+  Resend [icon: mail]
+  Microsoft365 [icon: mail, label: "calendario e e-mail"]
+  CallfaceAI [icon: phone, label: "telefonia — banco proprio"]
+}
+
+Navegador > Traefik
+Traefik > app
+Traefik > Homologacao
+Traefik > LP
+app > api
+api > postgres
+worker > postgres
+worker > redis
+api > redis
+worker > wuzapi
+
+// Integracoes: quem chama quem, e em que sentido.
+Stripe > api: webhook (pagamento, assinatura)
+api > Stripe: checkout, fatura
+Meta > api: webhook de Lead Ads
+worker > Meta: Conversions API (volta a conversao)
+api > Meta: Ads Insights (gasto)
+worker > Documenso
+worker > Resend
+worker > Microsoft365
+api > CallfaceAI
+worker > n8n: barramento de eventos
+LP > Meta: Pixel (_fbc / _fbp)

@@ -1,0 +1,358 @@
+// ONFACE — nucleo do banco, gerado do schema de PRODUCAO (callface_crm_mz).
+// Contagem real por count(*), nao estimativa do planner.
+// Regerar: docs/arquitetura/diagramas/README.md
+
+title ONFACE — nucleo de dados
+
+Modelo canonico (o destino) [color: green] {
+  pessoas [icon: user] {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    nome string
+    email string
+    telefone string
+    lead_id_legado uuid
+    created_at timestamp
+    // +5 colunas nao mostradas (13 no total)
+    // 4.473 linhas
+  }
+  empresas [icon: building] {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    cnpj string
+    telefone string
+    pipedrive_id string
+    apollo_id string
+    created_at timestamp
+    zoho_id string
+    stripe_customer_id string
+    canonical_empresa_id uuid
+    // +41 colunas nao mostradas (52 no total)
+    // 3.201 linhas
+  }
+  pessoa_empresa_vinculos [icon: link] {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    created_at timestamp
+    // +6 colunas nao mostradas (11 no total)
+    // 3.213 linhas
+  }
+  aquisicoes [icon: target] {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    pessoa_id uuid
+    tipo string
+    origem string
+    pipeline_id uuid
+    etapa_id uuid
+    responsavel_id uuid
+    created_at timestamp
+    lead_legado_id uuid
+    // +12 colunas nao mostradas (23 no total)
+    // 4.444 linhas
+  }
+  oportunidades [icon: briefcase] {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    pipeline_id uuid
+    stage string
+    responsavel_id uuid
+    valor decimal
+    mrr decimal
+    ganho_at timestamp
+    perdido_at timestamp
+    negocio_id_legado uuid
+    created_at timestamp
+    bundle_id uuid
+    // +18 colunas nao mostradas (32 no total)
+    // 1.697 linhas
+  }
+  oportunidade_itens [icon: list] {
+    id uuid pk
+    organizacao_id uuid
+    oportunidade_id uuid
+    service_family string
+    revenue_nature string
+    servico_canonico_id uuid
+    contrato_item_id_legado uuid
+    proposta_item_id_legado uuid
+    created_at timestamp
+    grupo_comercial_id uuid
+    catalogo_preco_id uuid
+    stripe_product_id string
+    stripe_price_id string
+    // +9 colunas nao mostradas (22 no total)
+    // 52 linhas
+  }
+  pontos_contato [icon: megaphone] {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    campaign_id string
+    source_id string
+    ocorrido_em timestamp
+    created_at timestamp
+    lead_id_legado uuid
+    aquisicao_id uuid
+    meta_lead_id string
+    adset_id string
+    ad_id string
+    // +17 colunas nao mostradas (30 no total)
+    // 5.422 linhas
+  }
+}
+
+Legado do dual-write (existe para morrer) [color: orange] {
+  leads [icon: user-x] {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    email string
+    telefone string
+    empresa_id uuid
+    origem string
+    event_id string
+    status string
+    pipedrive_id string
+    apollo_id string
+    indicado_por_lead_id uuid
+    responsavel_id uuid
+    created_at timestamp
+    // +131 colunas nao mostradas (145 no total)
+    // 4.616 linhas
+  }
+  negocios [icon: briefcase] {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    empresa_id uuid
+    status string
+    pipedrive_id string
+    responsavel_id uuid
+    pipeline_id uuid
+    negocio_origem_id uuid
+    created_at timestamp
+    ganho_at timestamp
+    zoho_id string
+    service_family string
+    revenue_nature string
+    // +55 colunas nao mostradas (69 no total)
+    // 1.724 linhas
+  }
+  contatos [icon: message-circle] {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    telefone string
+    email string
+    sessao_id uuid
+    conta_id uuid
+    responsavel_id uuid
+    lead_id uuid
+    created_at timestamp
+    zoho_id string
+    status string
+    closed_by_id uuid
+    active_ai_agent_id uuid
+    // +11 colunas nao mostradas (25 no total)
+    // 2.863 linhas
+  }
+}
+
+Fechamento [color: blue] {
+  propostas [icon: file-text] {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    proposta_original_id uuid
+    status string
+    criado_por_id uuid
+    contrato_id uuid
+    created_at timestamp
+    stripe_session_id string
+    substituida_por_id uuid
+    contrato_base_id uuid
+    service_family string
+    oferta_comercial_id uuid
+    // +46 colunas nao mostradas (60 no total)
+    // 1.631 linhas
+  }
+  contratos [icon: file-check] {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    tipo string
+    mrr decimal
+    status string
+    created_at timestamp
+    zoho_id string
+    stripe_subscription_id string
+    service_family string
+    grupo_comercial_id uuid
+    template_id uuid
+    oferta_comercial_id uuid
+    // +39 colunas nao mostradas (53 no total)
+    // 450 linhas
+  }
+  pipeline_etapas [icon: columns] {
+    id uuid pk
+    organizacao_id uuid
+    pipeline_id uuid
+    codigo string
+    nome string
+    created_at timestamp
+    // +4 colunas nao mostradas (10 no total)
+    // 35 linhas
+  }
+}
+
+Receita [color: purple] {
+  servicos_canonicos [icon: package] {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    lead_id uuid
+    contrato_id uuid
+    service_family string
+    revenue_nature string
+    current_subscription_id string
+    created_at timestamp
+    oportunidade_origem_id uuid
+    oferta_comercial_id uuid
+    // +12 colunas nao mostradas (23 no total)
+    // 617 linhas
+  }
+  assinaturas [icon: refresh-cw] {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    empresa_id uuid
+    contrato_id uuid
+    stripe_subscription_id string
+    stripe_customer_id string
+    stripe_price_id string
+    mrr decimal
+    status string
+    created_at timestamp
+    revenue_nature string
+    servico_id uuid
+    // +16 colunas nao mostradas (29 no total)
+    // 407 linhas
+  }
+  cliente_receita_mensal [icon: dollar-sign] {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    valor decimal
+    service_family string
+    revenue_nature string
+    created_at timestamp
+    // +13 colunas nao mostradas (20 no total)
+    // 12.041 linhas
+  }
+}
+
+Base [color: gray] {
+  usuarios [icon: shield] {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    email string
+    role string
+    created_at timestamp
+    team_id uuid
+    tipo string
+    agente_id uuid
+    // +4 colunas nao mostradas (13 no total)
+    // 18 linhas
+  }
+  event_outbox [icon: repeat] {
+    id uuid pk
+    organizacao_id uuid
+    event_type string
+    aggregate_id uuid
+    correlation_id uuid
+    status string
+    attempts int
+    processed_at timestamp
+    created_at timestamp
+    // +5 colunas nao mostradas (14 no total)
+    // 3.155 linhas
+  }
+}
+
+// Relacoes reais (chaves estrangeiras do banco).
+aquisicoes.empresa_id > empresas.id
+aquisicoes.etapa_id > pipeline_etapas.id
+aquisicoes.pessoa_id > pessoas.id
+aquisicoes.responsavel_id > usuarios.id
+assinaturas.contrato_id > contratos.id
+assinaturas.empresa_id > empresas.id
+assinaturas.lead_id > leads.id
+assinaturas.servico_id > servicos_canonicos.id
+cliente_receita_mensal.empresa_id > empresas.id
+contatos.closed_by_id > usuarios.id
+contatos.lead_id > leads.id
+contatos.responsavel_id > usuarios.id
+contratos.empresa_id > empresas.id
+contratos.lead_id > leads.id
+contratos.negocio_id > negocios.id
+contratos.oportunidade_id > oportunidades.id
+empresas.canonical_empresa_id > empresas.id
+leads.agenda_closer_id > usuarios.id
+leads.canonical_lead_id > leads.id
+leads.desqualificado_por > usuarios.id
+leads.empresa_id > empresas.id
+leads.nutrido_por > usuarios.id
+leads.pre_qualificado_por > usuarios.id
+leads.prospeccao_descartado_por > usuarios.id
+leads.qualificado_por > usuarios.id
+leads.responsavel_id > usuarios.id
+negocios.empresa_id > empresas.id
+negocios.lead_id > leads.id
+negocios.proxima_acao_responsavel_id > usuarios.id
+negocios.responsavel_id > usuarios.id
+negocios.servico_origem_id > servicos_canonicos.id
+oportunidade_itens.oportunidade_id > oportunidades.id
+oportunidade_itens.servico_canonico_id > servicos_canonicos.id
+oportunidades.empresa_id > empresas.id
+oportunidades.etapa_id > pipeline_etapas.id
+oportunidades.lead_id > leads.id
+oportunidades.negocio_id_legado > negocios.id
+oportunidades.pessoa_id > pessoas.id
+oportunidades.responsavel_id > usuarios.id
+pessoa_empresa_vinculos.empresa_id > empresas.id
+pessoa_empresa_vinculos.pessoa_id > pessoas.id
+pessoas.empresa_id > empresas.id
+pessoas.lead_id_legado > leads.id
+pontos_contato.aquisicao_id > aquisicoes.id
+pontos_contato.empresa_id > empresas.id
+pontos_contato.lead_id_legado > leads.id
+pontos_contato.pessoa_id > pessoas.id
+propostas.contrato_base_id > contratos.id
+propostas.contrato_id > contratos.id
+propostas.criado_por_id > usuarios.id
+propostas.empresa_id > empresas.id
+propostas.lead_id > leads.id
+propostas.negocio_id > negocios.id
+propostas.oportunidade_id > oportunidades.id
+propostas.substituida_por_id > propostas.id
+servicos_canonicos.contrato_id > contratos.id
+servicos_canonicos.empresa_id > empresas.id
+servicos_canonicos.lead_id > leads.id
+servicos_canonicos.oportunidade_origem_id > oportunidades.id
+
+// As DUAS pontes do cutover — sem elas nao da para ler o sistema.
+// Nao sao FK no banco: sao convencao, e por isso ninguem as ve.
+aquisicoes.lead_legado_id > leads.id
+oportunidades.negocio_id_legado > negocios.id
