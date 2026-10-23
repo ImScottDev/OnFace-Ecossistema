@@ -49,7 +49,27 @@ export interface AssinaturaStripe {
   cancel_at_period_end?: boolean;
   latest_invoice?: string | null;
   metadata?: Record<string, string>;
+  payment_settings?: { payment_method_types?: string[] | null } | null;
+  default_payment_method?: string | { id?: string; type?: string } | null;
   items: { data: ItemStripe[] };
+}
+
+/**
+ * Métodos que NUNCA confirmam na hora: o cliente recebe um documento e paga
+ * depois (boleto compensa em 1 a 3 dias úteis).
+ */
+const PAGAMENTO_ASSINCRONO = new Set(["boleto", "oxxo", "customer_balance", "sepa_debit", "konbini"]);
+
+/**
+ * A assinatura é paga por um método assíncrono?
+ *
+ * Decide entre `error_if_incomplete` e `allow_incomplete` — e a escolha errada
+ * não é um detalhe: ver o comentário em `pedidoDoStripe`.
+ */
+export function pagamentoEhAssincrono(a: Pick<AssinaturaStripe, "payment_settings" | "default_payment_method">): boolean {
+  if ((a.payment_settings?.payment_method_types ?? []).some((m) => PAGAMENTO_ASSINCRONO.has(m))) return true;
+  const padrao = a.default_payment_method;
+  return typeof padrao === "object" && padrao !== null && !!padrao.type && PAGAMENTO_ASSINCRONO.has(padrao.type);
 }
 
 /** Quem pediu e a que venda a alteração pertence. Tudo opcional menos a organização. */
@@ -77,7 +97,9 @@ export function ehDoSaas(metadata: Record<string, string> | undefined): boolean 
 }
 
 export async function lerAssinatura(subscriptionId: string): Promise<AssinaturaStripe> {
-  const sub = await stripe<AssinaturaStripe>(`subscriptions/${subscriptionId}?expand[]=items.data.price`);
+  /* `default_payment_method` expandido porque é ele que diz se o cliente paga
+     por boleto — sem expandir vem só o id e `pagamentoEhAssincrono` erra. */
+  const sub = await stripe<AssinaturaStripe>(`subscriptions/${subscriptionId}?expand[]=items.data.price&expand[]=default_payment_method`);
   if (ehDoSaas(sub.metadata)) {
     throw new ErroDeAlteracao(409, "Esta assinatura pertence ao SaaS Callface (conta Stripe compartilhada). O ONFACE não altera.");
   }
@@ -218,7 +240,31 @@ export function pedidoDoStripe(
     });
     if (plano.efeito === "agora") {
       form.append("proration_behavior", "always_invoice");
-      form.append("payment_behavior", "error_if_incomplete");
+      /* `error_if_incomplete` só serve para quem paga na hora.
+
+         Com boleto o pagamento é assíncrono por definição: o Stripe emite o
+         documento, o PaymentIntent fica em `requires_action` e o
+         `error_if_incomplete` entende isso como "não completou" — desfaz a
+         alteração, apaga a fatura do pró-rata e devolve erro. O boleto, esse,
+         fica de pé: válido, no nome do cliente, órfão de fatura e por isso
+         impossível de cancelar pela API ("You cannot cancel PaymentIntents
+         created by invoices"). Pago, o dinheiro entra e não entrega nada.
+
+         Aconteceu duas vezes com a mesma venda (Maíra cred, proposta #1581,
+         21 e 23/10/2026: R$ 149,07 e R$ 139,22 em boleto vivo, assinatura
+         intacta em 1 usuário). A retentativa não conserta — o Stripe passa a
+         recusar a alteração enquanto o boleto não expirar, e ao expirar o
+         ciclo recomeça igual.
+
+         Para esses, `allow_incomplete`: a alteração entra, a fatura do
+         pró-rata fica em aberto e o cliente paga o boleto dela. É o mesmo
+         pós-pago que vale para venda por contrato. */
+      form.append(
+        "payment_behavior",
+        pagamentoEhAssincrono(plano.assinatura)
+          ? "allow_incomplete"
+          : "error_if_incomplete",
+      );
     } else {
       form.append("proration_behavior", "none");
     }

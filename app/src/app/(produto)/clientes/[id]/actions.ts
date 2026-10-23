@@ -15,6 +15,7 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { registrarEvento } from "@/lib/vendas/eventos";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { criarOportunidade } from "@/lib/vendas/pipeline";
+import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
 import { RegraDeNegocio } from "@/lib/vendas/dominio";
 import type { Familia, Motion, ProcessoOrigem } from "@/lib/vendas/dominio";
 
@@ -263,9 +264,40 @@ export async function acaoAdicionarPessoaAoCliente(empresaId: string, d: {
   if (dup) return { ok: false, erro: `${nome} já está na conta.` };
 
   const papel = PAPEL_DO_DESENHO[d.papel ?? ""] ?? "outro";
+  /* O lead nasce JUNTO, e a pessoa aponta para ele.
+     `pessoas` é o modelo canônico, mas quem recebe proposta ainda é o `lead`
+     legado. Criando só a pessoa, ela entrava na conta e a tela de proposta a
+     recusava — "não tem cadastro de contato (lead)" — sem caminho nenhum para
+     resolver, porque o botão que a criou é exatamente este. Caso real: Felipe
+     Saman, V4 Company, 23/10/2026, com a proposta pronta para enviar. */
+  const [lead] = await db.execute<{ id: string }>(sql`
+    INSERT INTO leads (organizacao_id, empresa_id, nome, email, telefone, cargo, origem, tipo, status)
+    VALUES (${ctx.organizacaoId}::uuid, ${empresaId}::uuid, ${nome}, ${email}, ${d.telefone?.trim() || null},
+            ${d.cargo?.trim() || null}, 'Cadastro manual', 'contato', 'novo')
+    RETURNING id::text`);
+  /* O lead nasce no legado e no canônico, como em todo criador migrado: sem a
+     porta não há aquisição nem `AcquisitionCreated`, e o contato fica invisível
+     para as telas que leem o canônico. `void` porque a criação da pessoa não
+     depende disso — é o mesmo que `contatos-unified` faz. */
+  /* A empresa vai por NOME + CNPJ porque é assim que a porta a resolve — ela
+     não recebe id. Sem o CNPJ, nome parecido casaria com outra empresa ou
+     criaria uma duplicata; quando a conta não tem CNPJ, é melhor a aquisição
+     nascer sem empresa do que ligada à errada: o lead já guarda o vínculo. */
+  const [emp] = await db.execute<{ nome: string; cnpj: string | null }>(sql`
+    SELECT nome, cnpj FROM empresas WHERE id = ${empresaId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid`);
+  void garantirEntradaCanonica({
+    organizacaoId: ctx.organizacaoId,
+    tipo: "MANUAL",
+    origem: "Cadastro manual",
+    provider: "cliente-360",
+    pessoa: { nome, email, telefone: d.telefone?.trim() || null, cargo: d.cargo?.trim() || null },
+    empresa: emp?.cnpj ? { nome: emp.nome, cnpj: emp.cnpj } : null,
+    responsavelId: ctx.userId,
+  }, lead.id);
+
   const [nova] = await db.execute<{ id: string }>(sql`
-    INSERT INTO pessoas (organizacao_id, empresa_id, nome, email, telefone, cargo)
-    VALUES (${ctx.organizacaoId}::uuid, ${empresaId}::uuid, ${nome}, ${email}, ${d.telefone?.trim() || null}, ${d.cargo?.trim() || null})
+    INSERT INTO pessoas (organizacao_id, empresa_id, nome, email, telefone, cargo, lead_id_legado)
+    VALUES (${ctx.organizacaoId}::uuid, ${empresaId}::uuid, ${nome}, ${email}, ${d.telefone?.trim() || null}, ${d.cargo?.trim() || null}, ${lead.id}::uuid)
     RETURNING id::text`);
   await db.execute(sql`
     INSERT INTO pessoa_empresa_vinculos (organizacao_id, pessoa_id, empresa_id, papel, principal, cargo)

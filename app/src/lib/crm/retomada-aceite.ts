@@ -52,15 +52,18 @@ export const MAX_TENTATIVAS_AUTOMATICAS = 5;
 /**
  * O grupo parou porque está ESPERANDO alguém de fora, não porque falhou?
  *
- * Caso real (Maíra cred #1581, 21/10/2026): a venda é expansão e a assinatura
- * tinha um boleto emitido e não pago. O Stripe recusa qualquer alteração em
- * assinatura com PaymentIntent de boleto em `requires_action` — e vai recusar
- * até o cliente pagar ou o boleto vencer, o que leva DIAS.
+ * O Stripe recusa alterar assinatura que tem PaymentIntent de boleto em
+ * `requires_action`, e recusa até o cliente pagar ou o boleto vencer — dias.
+ * Tratar isso como falha comum queimava as cinco tentativas em minutos e
+ * matava a venda na fila. Espera não gasta tentativa; o intervalo entre elas
+ * já cresce até 6 h, então esperar sai barato.
  *
- * O sistema tratou isso como falha comum: cinco tentativas em poucos minutos,
- * limite esgotado, e a venda morta na fila justamente no caso em que a espera
- * resolveria sozinha. Espera não gasta o limite de tentativas; o intervalo
- * entre elas já cresce até 6 h, então esperar sai barato.
+ * Isto é a paciência, NÃO o conserto. O caso que deu origem a esta função
+ * (Maíra cred #1581, 21 e 23/10/2026) não esperava nada: o boleto em aberto
+ * era lixo que o próprio sistema tinha criado, porque `error_if_incomplete`
+ * desfaz a alteração e deixa o boleto de pé. Isso se corrigiu na origem, em
+ * `stripe-assinatura-acoes.ts`. O que sobra aqui é o caso legítimo — boleto
+ * que o cliente de fato tem para pagar.
  */
 export function ehEsperaDeTerceiro(erro: string | null | undefined): boolean {
   if (!erro) return false;
@@ -74,10 +77,17 @@ export function ehEsperaDeTerceiro(erro: string | null | undefined): boolean {
  * O que dizer ao vendedor quando a alteração da assinatura esbarra num boleto
  * em aberto. O erro cru do Stripe chegava à tela como JSON em inglês, e não
  * diz o que fazer.
+ *
+ * A versão anterior desta mensagem prometia duas coisas falsas — que a
+ * alteração entraria sozinha ao vencer o boleto, e que dava para cancelá-lo
+ * no Cliente 360. Nenhuma das duas: ao vencer, a tentativa seguinte repetia o
+ * mesmo erro, e boleto cujo PaymentIntent nasceu de fatura não se cancela pela
+ * API ("You cannot cancel PaymentIntents created by invoices"). Mensagem que
+ * manda fazer o impossível custa mais caro que erro em inglês.
  */
 export function mensagemDeEsperaDeTerceiro(erro: string): string {
   if (!ehEsperaDeTerceiro(erro)) return erro;
   return "Esta assinatura tem um boleto emitido e ainda não pago, e o Stripe não permite alterá-la enquanto ele estiver em aberto. "
-    + "A alteração entra sozinha assim que o cliente pagar o boleto ou ele vencer — não é preciso refazer a proposta. "
-    + "Para cobrar agora, cancele o boleto em aberto em Cliente 360 › Assinaturas e reprocese o aceite.";
+    + "O sistema tenta de novo sozinho, e a alteração entra assim que esse boleto for pago ou expirar — não é preciso refazer a proposta. "
+    + "Para cobrar antes disso, o caminho é o cliente pagar o boleto que já está com ele.";
 }

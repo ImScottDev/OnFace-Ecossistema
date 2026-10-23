@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aplicarAlteracao, ErroDeAlteracao, pedidoDoStripe, planejarAlteracao } from "./stripe-assinatura-acoes";
+import { aplicarAlteracao, ErroDeAlteracao, pagamentoEhAssincrono, pedidoDoStripe, planejarAlteracao } from "./stripe-assinatura-acoes";
 
 /* Stripe falso: nada aqui sai para a rede. Cada teste instala o seu fetch. */
 const preco = (id: string, centavos: number, interval = "month") => ({ id, active: true, unit_amount: centavos, recurring: { interval, interval_count: 1 } });
@@ -111,4 +111,26 @@ test("aplicar manda a chave de idempotência estável e nenhuma outra escrita", 
   assert.equal(posts.length, 2);
   assert.ok(posts.every((p) => p.idem === "onface-assin-abc-123"));
   assert.equal(r1.faturaId, "in_9");
+});
+
+/* Boleto: `error_if_incomplete` desfaz a alteração e deixa o boleto de pé,
+   válido e impossível de cancelar. Aconteceu duas vezes com a mesma venda
+   (Maíra cred #1581, 21 e 23/10/2026). Quem paga assim vai de
+   `allow_incomplete`: a alteração entra e a fatura fica em aberto. */
+test("quem paga por boleto não leva error_if_incomplete", async () => {
+  fakeStripe({ "subscriptions/sub_1": SUB({ default_payment_method: { id: "pm_1", type: "boleto" } }) });
+  const acao = { tipo: "alterar_quantidade", itemId: "si_a", quantidade: 5 } as const;
+  const f = pedidoDoStripe(await planejarAlteracao("sub_1", acao), acao, ORIGEM).form;
+  assert.equal(f.get("proration_behavior"), "always_invoice");
+  assert.equal(f.get("payment_behavior"), "allow_incomplete");
+});
+
+test("pagamentoEhAssincrono olha os dois lugares, não só payment_settings", () => {
+  // o caso real tinha payment_method_types null e o boleto só no método padrão
+  assert.equal(pagamentoEhAssincrono({ payment_settings: { payment_method_types: null }, default_payment_method: { type: "boleto" } }), true);
+  assert.equal(pagamentoEhAssincrono({ payment_settings: { payment_method_types: ["boleto", "card"] } }), true);
+  // método padrão não expandido vem como id solto: não dá para afirmar que é assíncrono
+  assert.equal(pagamentoEhAssincrono({ default_payment_method: "pm_1" }), false);
+  assert.equal(pagamentoEhAssincrono({ payment_settings: { payment_method_types: ["card"] }, default_payment_method: { type: "card" } }), false);
+  assert.equal(pagamentoEhAssincrono({}), false);
 });
