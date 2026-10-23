@@ -135,6 +135,20 @@ export interface PortaStripe {
   assinaturasDoCustomer(id: string): Promise<{ metadata?: Record<string, string> | null }[]>;
   criar(form: URLSearchParams, chaveIdempotencia: string): Promise<CustomerStripe>;
   completarMetadata(id: string, faltantes: Record<string, string>): Promise<void>;
+  /** CPF/CNPJ já cadastrados no Customer. */
+  taxIds(id: string): Promise<{ type: string; value: string }[]>;
+  criarTaxId(id: string, type: string, value: string): Promise<void>;
+}
+
+/**
+ * `br_cnpj` com 14 dígitos, `br_cpf` com 11 — e nada quando não é nem um nem
+ * outro, porque o Stripe recusa o documento mal formado e derrubaria a
+ * resolução inteira do Customer por causa de um dado de cadastro.
+ */
+export function tipoDeDocumentoBr(digitos: string | null | undefined): "br_cnpj" | "br_cpf" | null {
+  if (digitos?.length === 14) return "br_cnpj";
+  if (digitos?.length === 11) return "br_cpf";
+  return null;
 }
 
 export interface PortasCustomer {
@@ -292,6 +306,16 @@ const stripeReal: PortaStripe = {
     const assinatura = Object.keys(faltantes).sort().join(",");
     await stripe(`customers/${encodeURIComponent(id)}`, form, `onface-customer-meta-${id}-${assinatura}`);
   },
+  async taxIds(id) {
+    const r = await stripe<{ data: { type: string; value: string }[] }>(`customers/${encodeURIComponent(id)}/tax_ids?limit=100`);
+    return r.data ?? [];
+  },
+  async criarTaxId(id, type, value) {
+    const form = new URLSearchParams();
+    form.append("type", type);
+    form.append("value", value);
+    await stripe(`customers/${encodeURIComponent(id)}/tax_ids`, form, `onface-customer-taxid-${id}-${value}`);
+  },
 };
 
 export const PORTAS_REAIS: PortasCustomer = { modo: getStripeCheckoutMode, banco: bancoReal, stripe: stripeReal };
@@ -344,6 +368,26 @@ async function resolver(e: EntradaCustomer, criar: boolean, p: PortasCustomer, l
         if (Object.keys(faltam).length) {
           await p.stripe.completarMetadata(c.id, faltam)
             .catch((err) => avisos.push(`metadata não completada em ${c.id}: ${String(err).slice(0, 160)}`));
+        }
+      }
+      /* CPF/CNPJ como ID FISCAL, não só como metadata.
+       *
+       * O documento ia para `metadata.crm_cnpj` e parava ali. Para o Stripe,
+       * metadata é texto livre: não entra na fatura, não entra no boleto e,
+       * por isso, o boleto não é reconhecido no DDA do cliente — a
+       * documentação do boleto exige nome, endereço E ID fiscal no Customer, e
+       * era o ID fiscal que faltava (LIVA, 23/10/2026: o Customer tinha nome e
+       * endereço, "Dados de faturamento" sem documento nenhum).
+       *
+       * Best-effort de propósito: documento mal formado ou recusado não pode
+       * derrubar a resolução do Customer e travar a venda inteira. */
+      const tipoDoc = tipoDeDocumentoBr(cnpj);
+      if (tipoDoc && cnpj && modo !== "mock") {
+        try {
+          const jaTem = await p.stripe.taxIds(c.id);
+          if (!jaTem.some((t) => t.value.replace(/\D/g, "") === cnpj)) await p.stripe.criarTaxId(c.id, tipoDoc, cnpj);
+        } catch (err) {
+          avisos.push(`ID fiscal não gravado em ${c.id}: ${String(err).slice(0, 160)}`);
         }
       }
       await v.gravar({ organizacaoId: e.organizacaoId, empresaId: e.empresaId, leadId: e.leadId, customerId: c.id, metodo, email: e.email, cnpj: e.cnpj });

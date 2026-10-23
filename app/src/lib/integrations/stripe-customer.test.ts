@@ -7,6 +7,7 @@ import {
   idCompativelComModo,
   localizarCustomerDaEmpresa,
   localizarCustomerParaPortal,
+  tipoDeDocumentoBr,
   type CustomerStripe,
   type EntradaCustomer,
   type GravacaoCustomer,
@@ -31,6 +32,7 @@ interface Mundo {
   gravacoes: GravacaoCustomer[];
   criacoes: { form: URLSearchParams; chave: string }[];
   completadas: { id: string; faltantes: Record<string, string> }[];
+  taxIds: Map<string, { type: string; value: string }[]>;
   idem: Map<string, CustomerStripe>;
   seq: number;
 }
@@ -38,7 +40,7 @@ interface Mundo {
 function mundo(parcial: Partial<Mundo> = {}): Mundo {
   return {
     customers: new Map(), assinaturas: new Map(), empresa: new Map(), identidade: new Map(), espelho: new Map(),
-    gravacoes: [], criacoes: [], completadas: [], idem: new Map(), seq: 0, ...parcial,
+    gravacoes: [], criacoes: [], completadas: [], taxIds: new Map(), idem: new Map(), seq: 0, ...parcial,
   };
 }
 
@@ -90,6 +92,10 @@ function portas(m: Mundo): PortasCustomer {
         m.completadas.push({ id, faltantes });
         const c = m.customers.get(id)!;
         c.metadata = { ...faltantes, ...(c.metadata ?? {}) };
+      },
+      taxIds: async (id) => m.taxIds.get(id) ?? [],
+      criarTaxId: async (id, type, value) => {
+        m.taxIds.set(id, [...(m.taxIds.get(id) ?? []), { type, value }]);
       },
     },
   };
@@ -368,4 +374,46 @@ test("portal: Customer do SaaS achado pelo CNPJ também serve; apagado e de outr
   poe(m, { id: "cus_cnpj", created: 1, metadata: { user_cnpj: CNPJ, crm_cnpj: CNPJ } });
   poe(m, { id: "cus_outra", created: 1, metadata: { user_name: "x", crm_cnpj: CNPJ, empresaId: OUTRA } });
   assert.equal((await localizarCustomerParaPortal(entrada(), portas(m)))?.id, "cus_cnpj");
+});
+
+/* ── ID fiscal ──────────────────────────────────────────────────────────── */
+/* O boleto (e o DDA do cliente) exige nome, endereço e ID FISCAL no Customer.
+   O CNPJ ia só para `metadata.crm_cnpj`, que é texto livre e não entra em
+   fatura nem em boleto — LIVA, 23/10/2026. */
+
+test("grava o CNPJ como tax_id quando o Customer é criado", async () => {
+  const m = mundo();
+  const r = await garantirCustomerDaEmpresa(entrada(), portas(m));
+  assert.deepEqual(m.taxIds.get(r.id), [{ type: "br_cnpj", value: CNPJ.replace(/\D/g, "") }]);
+});
+
+test("completa o ID fiscal num Customer que já existia sem ele", async () => {
+  const m = mundo();
+  poe(m, { id: "cus_antigo", metadata: { crm_company_id: EMP } });
+  m.empresa.set(EMP, "cus_antigo");
+  await garantirCustomerDaEmpresa(entrada(), portas(m));
+  assert.deepEqual(m.taxIds.get("cus_antigo"), [{ type: "br_cnpj", value: CNPJ.replace(/\D/g, "") }]);
+});
+
+test("não duplica o ID fiscal que já está lá, mesmo formatado com pontuação", async () => {
+  const m = mundo();
+  poe(m, { id: "cus_antigo", metadata: { crm_company_id: EMP } });
+  m.empresa.set(EMP, "cus_antigo");
+  const d = CNPJ.replace(/\D/g, "");
+  m.taxIds.set("cus_antigo", [{ type: "br_cnpj", value: `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}` }]);
+  await garantirCustomerDaEmpresa(entrada(), portas(m));
+  assert.equal(m.taxIds.get("cus_antigo")!.length, 1);
+});
+
+test("documento com tamanho inválido não vira tax_id nem derruba a venda", async () => {
+  const m = mundo();
+  const r = await garantirCustomerDaEmpresa(entrada({ cnpj: "123" }), portas(m));
+  assert.equal(m.taxIds.get(r.id), undefined);
+  assert.ok(r.id);
+});
+
+test("CPF entra como br_cpf, CNPJ como br_cnpj, lixo como nada", () => {
+  assert.equal(tipoDeDocumentoBr("12345678901"), "br_cpf");
+  assert.equal(tipoDeDocumentoBr("12345678000199"), "br_cnpj");
+  assert.equal(tipoDeDocumentoBr("123"), null);
 });
