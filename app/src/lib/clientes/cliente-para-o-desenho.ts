@@ -191,10 +191,14 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
   const servicos = await db.execute<{
     id: string; familia: string; produto: string | null; valor: string;
     billing_status: string | null; lifecycle: string | null; contrato_id: string | null; origem?: string | null;
+    assinatura_id?: string | null;
   }>(sql`
     SELECT id::text, service_family AS familia, canonical_product AS produto,
            current_recurring_value::text AS valor, billing_status, billing_source AS origem,
-           commercial_lifecycle AS lifecycle, contrato_id::text
+           commercial_lifecycle AS lifecycle, contrato_id::text,
+           -- A assinatura que este serviço representa: é por ela que se sabe se
+           -- a assinatura já está na tela, e não pela família (ver abaixo).
+           COALESCE(current_subscription_id, NULLIF(split_part(canonical_key, 'STRIPE:', 2), '')) AS assinatura_id
       FROM servicos_canonicos
      WHERE organizacao_id = ${organizacaoId}::uuid AND empresa_id = ${empresaId}::uuid
        -- + o serviço que o Ganho acabou de criar (CRM_POSVENDA): nasce fora do portfólio de receita
@@ -374,7 +378,19 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     // Assinatura sem serviço atribuído: o único serviço ainda zerado é o dono
     // dela. Com mais de um candidato não se escolhe no chute — vira linha própria.
     const zerados = servicos.filter((x) => Number(x.valor ?? 0) === 0);
-    const jaTem = servicos.find((x) => x.familia === familia)
+    /* Casar pela ASSINATURA primeiro, não pela família.
+     *
+     * A família era o único critério, e quando a assinatura chegava sem
+     * família ela virava "UNKNOWN", não achava par (o serviço está gravado
+     * como CALLFACE_AI) e ganhava uma linha nova com o MESMO dinheiro. O 360
+     * mostrava o produto duas vezes e o MRR DOBRADO — medido em 23/10/2026 na
+     * Maíra cred (R$ 180 + R$ 180 = R$ 360 para uma assinatura de R$ 179,90) e
+     * na LIVA (R$ 2.159 para um contrato de R$ 719,40).
+     *
+     * A assinatura é identidade de verdade: se um serviço já representa este
+     * `sub_...`, a assinatura já está na tela, com família ou sem. */
+    const jaTem = (a.stripeSubscriptionId ? servicos.find((x) => x.assinatura_id === a.stripeSubscriptionId) : undefined)
+      ?? servicos.find((x) => x.familia === familia)
       ?? (b.serviceFamily === null && zerados.length === 1 ? zerados[0] : undefined);
     if (jaTem) {
       // Serviço existe mas ainda sem valor (portfólio criado antes do primeiro
