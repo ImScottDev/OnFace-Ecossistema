@@ -73,7 +73,7 @@ async function paradas(): Promise<Parada[]> {
       FROM propostas p
       JOIN negocios n ON n.id = p.negocio_id
       LEFT JOIN empresas e ON e.id = n.empresa_id
-     WHERE p.status = 'aceita' AND n.status <> 'ganho'
+     WHERE p.status = 'aceita' AND n.status NOT IN ('ganho', 'perdido')
        ${sohEsta ? sql`AND p.numero = ${sohEsta}` : sql``}
      ORDER BY p.numero DESC`);
   return r as unknown as Parada[];
@@ -116,19 +116,25 @@ async function main(): Promise<void> {
       }
     }
 
-    // 2. Tem a prova e não ganhou. A política da oferta decide, não o script.
+    /* 2. Tem a prova e não ganhou. A política da oferta decide, não o script.
+
+       Ganho e cobrança são ações INDEPENDENTES e podem valer para a MESMA
+       venda: a LIVA #1570 tem contrato assinado (ganha) E um link de
+       pagamento que cobra a mais do 2º mês em diante (precisa regerar).
+       Parar aqui deixaria a venda ganha com a cobrança errada. */
+    let ganhou = false;
     if (v.tem_evidencia || (APLICAR && v.checkout_status === "pago")) {
       console.log(`${quem}: tem evidência e está em '${v.status_negocio}' → pedir o Ganho.`);
       if (APLICAR) {
         try {
           await marcarNegocioGanhoSeAindaNao(v.negocio_id, v.organizacao_id);
           const [depois] = await db.execute<{ status: string }>(sql`SELECT status FROM negocios WHERE id = ${v.negocio_id}::uuid`) as unknown as { status: string }[];
+          ganhou = depois?.status === "ganho";
           console.log(`    → agora: ${depois?.status ?? "?"}`);
         } catch (e) {
           console.error(`    ! o Ganho foi recusado: ${String(e).slice(0, 200)}`);
         }
       }
-      continue;
     }
 
     // 3. Link de pagamento vivo com desconto em item recorrente: o cupom antigo
@@ -147,7 +153,7 @@ async function main(): Promise<void> {
       continue;
     }
 
-    console.log(`${quem}: em '${v.status_negocio}', sem evidência e sem cobrança paga — aguardando o cliente.`);
+    if (!ganhou && !v.tem_evidencia) console.log(`${quem}: em '${v.status_negocio}', sem evidência e sem cobrança paga — aguardando o cliente.`);
   }
 }
 
