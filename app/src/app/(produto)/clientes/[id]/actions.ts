@@ -270,7 +270,19 @@ export async function acaoAdicionarPessoaAoCliente(empresaId: string, d: {
      recusava — "não tem cadastro de contato (lead)" — sem caminho nenhum para
      resolver, porque o botão que a criou é exatamente este. Caso real: Felipe
      Saman, V4 Company, 23/10/2026, com a proposta pronta para enviar. */
-  const [lead] = await db.execute<{ id: string }>(sql`
+  /* Reusa o lead que a pessoa já tem, em vez de criar outro.
+     O mesmo e-mail pode já ter entrado pelo site, por campanha ou por
+     importação; criar um lead paralelo partiria o histórico em dois e deixaria
+     a origem real (UTM, campanha, aquisição) no registro que ninguém mais
+     olha. Medido em 23/10/2026: de 9 contatos sem lead, 3 já tinham lead vindo
+     do site — Jonas, Jonatas e Mauricio. */
+  const [existente] = email
+    ? await db.execute<{ id: string }>(sql`
+        SELECT id::text FROM leads
+         WHERE organizacao_id = ${ctx.organizacaoId}::uuid AND lower(email) = ${email}
+         ORDER BY created_at LIMIT 1`)
+    : [];
+  const [lead] = existente ? [existente] : await db.execute<{ id: string }>(sql`
     INSERT INTO leads (organizacao_id, empresa_id, nome, email, telefone, cargo, origem, tipo, status)
     VALUES (${ctx.organizacaoId}::uuid, ${empresaId}::uuid, ${nome}, ${email}, ${d.telefone?.trim() || null},
             ${d.cargo?.trim() || null}, 'Cadastro manual', 'contato', 'novo')
