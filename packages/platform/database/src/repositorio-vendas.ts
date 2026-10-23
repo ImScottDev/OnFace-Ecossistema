@@ -65,7 +65,14 @@ export function criarRepositorioVendas(db: Executor, sql: SqlTag): RepositorioVe
       //   empresa      → a oportunidade tem empresa resolvida
       //   proposta     → existe proposta aceita ligada a ela
       //   contrato     → existe contrato com assinatura COMPLETA
-      //   pagamento    → existe pagamento PAGO de fatura dela
+      //   pagamento    → fatura PAGA no financeiro OU evidência comercial de
+      //                  pagamento (é o webhook do Stripe que grava esta, e ela
+      //                  era a única que existia: medido em 23/10/2026, as 230
+      //                  evidências de pagamento da base tinham ZERO linha
+      //                  correspondente em `pagamentos`/`faturas`, então esta
+      //                  prova nunca era verdadeira para venda por checkout e
+      //                  nenhuma oferta PAYMENT_CONFIRMED fechava sozinha —
+      //                  Sicolos #1587, pago e parado em Negociação)
       //   aprovação    → registro explícito em comercial_evidencia
       const r = await um<Record<string, boolean>>(sql`
         SELECT
@@ -75,11 +82,15 @@ export function criarRepositorioVendas(db: Executor, sql: SqlTag): RepositorioVe
           EXISTS (SELECT 1 FROM contratos c
                    WHERE c.oportunidade_id = o.id
                      AND lower(coalesce(c.status,'')) IN ('fully_signed','assinado','ativo')) AS contrato_assinado,
-          EXISTS (SELECT 1 FROM pagamentos pg
+          (EXISTS (SELECT 1 FROM pagamentos pg
                    JOIN faturas f ON f.id = pg.fatura_id
                    WHERE pg.status = 'PAID'
                      AND (f.negocio_id = o.negocio_id_legado
-                          OR f.empresa_id = o.empresa_id AND f.servico_canonico_id IS NOT NULL)) AS pagamento_confirmado,
+                          OR f.empresa_id = o.empresa_id AND f.servico_canonico_id IS NOT NULL))
+           OR EXISTS (SELECT 1 FROM comercial_evidencia ce
+                   WHERE ce.negocio_id = o.negocio_id_legado
+                     AND lower(coalesce(ce.tipo,'')) IN ('stripe_payment','stripe_subscription','financial_attestation'))
+          ) AS pagamento_confirmado,
           EXISTS (SELECT 1 FROM comercial_evidencia ce
                    WHERE ce.negocio_id = o.negocio_id_legado
                      AND lower(coalesce(ce.tipo,'')) IN ('admin_approval','aprovacao_manual')) AS aprovacao_manual
