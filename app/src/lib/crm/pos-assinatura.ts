@@ -17,6 +17,7 @@ import { contratos, atividades } from "@/lib/db/schema";
 import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
 import { marcarContratoAssinadoNoGrupo, liberarEntregaDoGrupo, registrarPagamentoDoGrupo } from "@/lib/crm/grupo-comercial";
 import { resolverFamiliaDoGrupo, regraDaFamilia, ganhaPorContrato } from "@/lib/crm/politica-familia";
+import { decidirGanhoPelaOferta } from "@/lib/vendas/ponte-ganho";
 import { registrarPendenciaFinanceira } from "@/lib/crm/pendencia-financeira";
 import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
 import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
@@ -93,7 +94,19 @@ export async function processarContratoAssinado(opts: {
   let entregaLiberada = false;
   let pendenciaFinanceiraId: string | null = null;
 
-  if (ganhaPorContrato(familia) && contrato.negocioId) {
+  /* A família é o PISO, não a palavra final. A mesma família é vendida por
+     oferta que fecha na assinatura (CALLFACE_AI_CONTRACT) e por oferta que
+     fecha no pagamento (CALLFACE_AI_DIRECT) — perguntar só à família decide
+     errado em uma das duas, por construção.
+     O gate (`avaliarEvidenciaWon`) já consultava a oferta; só o GATILHO aqui
+     não consultava. Efeito medido na LIVA #1570 (23/10/2026): quatro
+     assinaturas no contrato, a tela dizendo "a assinatura é a evidência de
+     fechamento desta oportunidade", e o negócio parado em Negociação
+     esperando um pagamento que a oferta não exige. */
+  const pelaOferta = contrato.negocioId ? await decidirGanhoPelaOferta(contrato.negocioId) : { aplicavel: false as const };
+  const fechaNaAssinatura = pelaOferta.aplicavel ? pelaOferta.permitido === true : ganhaPorContrato(familia);
+
+  if (fechaNaAssinatura && contrato.negocioId) {
     // Contrato assinado É a evidência de ganho desta família — não espera
     // pagamento. Ver won_evidence_policies (migration 0033).
     await marcarNegocioGanhoSeAindaNao(contrato.negocioId, contrato.organizacaoId, { familiaHint: familia });
