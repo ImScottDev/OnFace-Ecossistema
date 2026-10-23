@@ -62,12 +62,16 @@ COPY . .
 # ERR_MODULE_NOT_FOUND (são TypeScript puro, sem build próprio, SPEC §34).
 # migrar e checar-env-runtime: o deploy roda migrations e confere o ambiente
 # com a imagem NOVA antes de trocar containers, sem tsx no runtime.
+# destravar-vendas-paradas: ferramenta de operação, rodada à mão no container
+# quando uma venda aceita não fecha. A imagem não leva `src/` nem tsx, então
+# script de operação só existe no servidor se estiver bundlado aqui.
 # smoke-*: rodam dentro do worker DEV (assinatura Claude, NEXO, Documenso).
 RUN cd app && pnpm dlx esbuild@0.28.2 \
     api/index=src/api-server/index.ts \
     worker/index=src/worker/index.ts \
     migrar=src/lib/db/migrar.ts \
     checar-env-runtime=src/scripts/checar-env-runtime.ts \
+    destravar-vendas-paradas=src/scripts/destravar-vendas-paradas.ts \
     smoke-claude-subscription=src/scripts/smoke-claude-subscription.ts \
     smoke-claude-subscription-tools=src/scripts/smoke-claude-subscription-tools.ts \
     smoke-nexo-claude-subscription=src/scripts/smoke-nexo-claude-subscription.ts \

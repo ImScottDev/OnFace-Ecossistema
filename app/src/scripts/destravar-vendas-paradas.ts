@@ -21,7 +21,12 @@
  * `marcarNegocioGanhoSeAindaNao`, que consulta a política da oferta. Se a
  * política disser não, o script respeita e explica.
  *
- * Uso:
+ * Uso (no servidor, dentro do container; a imagem leva o bundle em dist/):
+ *   docker exec -w /repo/app <container> node dist/destravar-vendas-paradas.mjs
+ *   ... --aplicar            # executa
+ *   ... --proposta 1570      # só uma proposta
+ *
+ * Uso (local, com tsx):
  *   tsx --env-file=.env src/scripts/destravar-vendas-paradas.ts            # só mostra
  *   tsx --env-file=.env src/scripts/destravar-vendas-paradas.ts --aplicar  # executa
  *   ... --proposta 1570        # só uma proposta, pelo número
