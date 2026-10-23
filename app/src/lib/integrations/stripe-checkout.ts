@@ -548,7 +548,17 @@ export async function createFaturadaSubscription(params: CreateGroupCheckoutPara
      webhook repetido devolvem a MESMA assinatura em vez de criar uma segunda
      e cobrar o cliente duas vezes pelo mesmo contrato. */
   const sub = await stripePost<{ id: string; latest_invoice?: string | { id?: string; hosted_invoice_url?: string | null } | null }>(
-    "subscriptions", form, { idempotencyKey: stableIdempotencyKey(`crm-sub-faturada-${params.grupoComercialId}-${params.attemptKey || "initial"}`) },
+    "subscriptions", form,
+    /* O QUE SE COBRA entra na chave, não só o grupo.
+       Sem isso, re-gerar a cobrança do mesmo grupo com preço, quantidade ou
+       vencimento diferentes era recusado pelo Stripe com `idempotency_error`:
+       a chave já existia, amarrada aos parâmetros antigos, e a venda ficava
+       impossível de corrigir. Mesma venda com os mesmos valores continua
+       devolvendo a MESMA assinatura, que é o ponto da chave. */
+    { idempotencyKey: stableIdempotencyKey(
+        `crm-sub-faturada-${params.grupoComercialId}-${params.attemptKey || "initial"}`
+        + `-${recorrentes.map((i) => `${i.stripeProductId}x${i.quantidade}@${amountInCents(i.valorUnitario)}`).sort().join("|")}`
+        + `-d${params.diaVencimentoMes ?? 0}-p${diasParaPagar}`) },
   );
 
   const faturaId = typeof sub.latest_invoice === "string" ? sub.latest_invoice : sub.latest_invoice?.id ?? null;
