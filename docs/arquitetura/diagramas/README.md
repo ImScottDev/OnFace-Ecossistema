@@ -16,6 +16,13 @@ um diagrama novo, ou deixe que o MCP publique.
 | `02-jornada-comercial.eraser` | do lead ao MRR, e onde cada regra mora no código | leitura |
 | `03-sistema.eraser` | containers, filas e integrações externas | leitura |
 
+Publicados em **https://app.eraser.io/workspace/EPHGtKvquS9b6nKOA7sL** (5 diagramas
+num arquivo só, para não gastar o plano gratuito). O DSL vai verbatim, então não
+consome crédito de IA do Eraser.
+
+E o mapa que o banco sozinho não mostra: [`../MAPA-TELAS.md`](../MAPA-TELAS.md) —
+cada uma das 121 telas e o que ela consome, gerado por `../mapear-codigo.py`.
+
 Comece pelo **02** (a jornada) e pelo **01** (o núcleo). O `00` é o retrato
 completo, para procurar o que ninguém lembra que existe.
 

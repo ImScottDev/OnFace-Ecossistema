@@ -1,0 +1,1228 @@
+// ONFACE — banco de PRODUCAO (callface_crm_mz), bloco 3 de 3.
+// Volume por count(*) real. O reltuples do planner errou por 80 tabelas.
+// Colunas: chaves, estado e dinheiro. As demais estao contadas no rodape de cada tabela.
+
+title ONFACE — 3 — Operacao: atendimento, marketing, IA, eventos e apoio
+
+Atendimento [color: teal] {
+  atividades {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    usuario_id uuid
+    tipo string
+    superseded_by_note_id uuid
+    usuario_source_id string
+    empresa_id uuid
+    // 18.518 linhas · +8 col
+  }
+  communications {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    status string
+    external_id string
+    usuario_id uuid
+    origem_legado_id uuid
+    conversa_id uuid
+    empresa_id uuid
+    oportunidade_id uuid
+    // 55.955 linhas · +15 col
+  }
+  conversas {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    pessoa_id uuid
+    external_thread_id string
+    responsavel_id uuid
+    status string
+    // VAZIA · +5 col
+  }
+  documentos_atendimento {
+    id uuid pk
+    organizacao_id uuid
+    ativo bool
+    // VAZIA · +7 col
+  }
+  email_contas {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    tipo string
+    nome string
+    // 12 linhas · +25 col
+  }
+  email_sequencia_execucoes {
+    id uuid pk
+    sequencia_id uuid
+    lead_id uuid
+    conta_id uuid
+    status string
+    // VAZIA · +5 col
+  }
+  email_sequencia_passos {
+    id uuid pk
+    sequencia_id uuid
+    tipo string
+    template_id uuid
+    // VAZIA · +4 col
+  }
+  email_sequencias {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    ativo bool
+    // VAZIA · +5 col
+  }
+  email_templates {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    // 4 linhas · +6 col
+  }
+  emails {
+    id uuid pk
+    organizacao_id uuid
+    contato_id uuid
+    lead_id uuid
+    conta_id uuid
+    status string
+    enviado_por_id uuid
+    message_id string
+    thread_id string
+    provider_message_id string
+    // 15.494 linhas · +19 col
+  }
+  ligacoes {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    usuario_id uuid
+    callface_call_id string
+    callface_contact_id string
+    callface_deal_id string
+    // 7.753 linhas · +15 col
+  }
+  notas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    empresa_id uuid
+    autor_id uuid
+    pipedrive_id string
+    autor_source_id string
+    cliente_id uuid
+    reuniao_id uuid
+    // 5.776 linhas · +5 col
+  }
+  scripts_atendimento {
+    id uuid pk
+    organizacao_id uuid
+    ativo bool
+    // 6 linhas · +6 col
+  }
+  tarefas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    usuario_id uuid
+    tipo string
+    negocio_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    origem string
+    status string
+    // 945 linhas · +10 col
+  }
+  whatsapp_mensagens {
+    id uuid pk
+    contato_id uuid
+    lead_id uuid
+    sessao_id uuid
+    tipo string
+    uazapi_message_id string
+    status string
+    reply_to_id uuid
+    enviado_por_id uuid
+    // 39.222 linhas · +11 col
+  }
+  whatsapp_sessao {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    tipo string
+    status string
+    // 12 linhas · +12 col
+  }
+  whatsapp_sessao_acesso {
+    sessao_id uuid pk
+    usuario_id uuid pk
+    // VAZIA · +2 col
+  }
+  whatsapp_supervisao {
+    organizacao_id uuid
+    supervisor_id uuid pk
+    alvo_usuario_id uuid pk
+    // VAZIA · +2 col
+  }
+  whatsapp_templates {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    ativo bool
+    // 17 linhas · +5 col
+  }
+}
+
+Marketing e cadencia [color: pink] {
+  automacoes {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    ativo bool
+    tipo string
+    current_version_id uuid
+    created_by_id uuid
+    // 7 linhas · +11 col
+  }
+  cadence_definition_pointers {
+    cadence_definition_id uuid pk
+    organizacao_id uuid
+    draft_version_id uuid
+    published_version_id uuid
+    // 9 linhas · +1 col
+  }
+  cadence_definitions {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    ativo bool
+    status string
+    owner_id uuid
+    // 9 linhas · +10 col
+  }
+  cadence_enrollment_events {
+    id uuid pk
+    enrollment_id uuid
+    step_id string
+    status string
+    // 92 linhas · +4 col
+  }
+  cadence_enrollments {
+    id uuid pk
+    organizacao_id uuid
+    cadence_definition_id uuid
+    entity_id uuid
+    current_step_id string
+    status string
+    cadence_version_id uuid
+    current_node_id string
+    source_event_id uuid
+    // 30 linhas · +14 col
+  }
+  cadence_versions {
+    id uuid pk
+    organizacao_id uuid
+    cadence_definition_id uuid
+    status string
+    created_by_id uuid
+    // 23 linhas · +9 col
+  }
+  cadencia_execucoes {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    status string
+    enviado_por_id uuid
+    sessao_id uuid
+    // 1.521 linhas · +5 col
+  }
+  campanhas {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    status string
+    // 18 linhas · +4 col
+  }
+  captacao_entregas {
+    id uuid pk
+    organizacao_id uuid
+    status string
+    lead_id uuid
+    regra_id uuid
+    // 103 linhas · +8 col
+  }
+  contato_listas {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    // VAZIA · +3 col
+  }
+  lead_listas {
+    id uuid pk
+    lead_id uuid
+    lista_id uuid
+    // VAZIA · +1 col
+  }
+  meta_capi_entregas {
+    id uuid pk
+    organizacao_id uuid
+    outbox_id uuid
+    event_type string
+    event_id string
+    // 342 linhas · +7 col
+  }
+  meta_lead_staging {
+    id uuid pk
+    fb_lead_id string
+    ad_id string
+    adset_id string
+    campaign_id string
+    // 713 linhas · +7 col
+  }
+  metas {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    tipo string
+    // 15 linhas · +5 col
+  }
+  metric_catalog {
+    id uuid pk
+    codigo string
+    nome string
+    tipo string
+    // 6 linhas · +8 col
+  }
+  metricas_diarias {
+    id uuid pk
+    organizacao_id uuid
+    // 17 linhas · +16 col
+  }
+  outreach_campanha_destinatarios {
+    id uuid pk
+    organizacao_id uuid
+    campanha_id uuid
+    lead_id uuid
+    nome string
+    status string
+    mensagem_id string
+    // VAZIA · +5 col
+  }
+  outreach_campanhas {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    status string
+    // VAZIA · +13 col
+  }
+  pontos_contato {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    campaign_id string
+    source_id string
+    lead_id_legado uuid
+    aquisicao_id uuid
+    meta_lead_id string
+    adset_id string
+    // 5.422 linhas · +20 col
+  }
+  regras_distribuicao_leads {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    etapa string
+    alvo_usuario_id uuid
+    rodizio_ultimo_id uuid
+    humano_devolucao_id uuid
+    ativo bool
+    origem array
+    sessao_whatsapp_id uuid
+    // 3 linhas · +14 col
+  }
+}
+
+IA e agentes [color: yellow] {
+  ai_agent_atribuicoes {
+    id uuid pk
+    organizacao_id uuid
+    agent_id uuid
+    contato_id uuid
+    lead_id uuid
+    negocio_id uuid
+    empresa_id uuid
+    status string
+    origem string
+    humano_usuario_id uuid
+    // 5 linhas · +13 col
+  }
+  ai_agent_compromissos {
+    id uuid pk
+    organizacao_id uuid
+    agent_id uuid
+    atribuicao_id uuid
+    contato_id uuid
+    lead_id uuid
+    tipo string
+    status string
+    origem_run_id uuid
+    origem_mensagem_id uuid
+    // 1 linhas · +11 col
+  }
+  ai_agent_run_steps {
+    id uuid pk
+    organizacao_id uuid
+    run_id uuid
+    status string
+    // 1.386 linhas · +13 col
+  }
+  ai_agent_runs {
+    id uuid pk
+    organizacao_id uuid
+    agent_id uuid
+    version_id uuid
+    contato_id uuid
+    lead_id uuid
+    source_message_id uuid
+    status string
+    outbound_message_id uuid
+    channel_session_id uuid
+    // 581 linhas · +16 col
+  }
+  ai_agent_versions {
+    id uuid pk
+    agent_id uuid
+    status string
+    created_by_id uuid
+    organizacao_id uuid
+    credential_id uuid
+    channel_session_id uuid
+    // 11 linhas · +18 col
+  }
+  ai_agents {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    status string
+    created_by_id uuid
+    published_version_id uuid
+    // 7 linhas · +8 col
+  }
+  ai_alerts {
+    id uuid pk
+    organizacao_id uuid
+    ref_id uuid
+    status string
+    acknowledged_by_id uuid
+    // 191 linhas · +8 col
+  }
+  ai_analysis {
+    id uuid pk
+    organizacao_id uuid
+    entity_id uuid
+    // 1.675 linhas · +13 col
+  }
+  ai_case_events {
+    id uuid pk
+    organizacao_id uuid
+    case_id uuid
+    actor_user_id uuid
+    // 1 linhas · +6 col
+  }
+  ai_cases {
+    id uuid pk
+    organizacao_id uuid
+    contato_id uuid
+    lead_id uuid
+    agent_id uuid
+    run_id uuid
+    status string
+    // 187 linhas · +10 col
+  }
+  ai_contact_field_proposals {
+    id uuid pk
+    organizacao_id uuid
+    contato_id uuid
+    message_id uuid
+    proposed_by_agent_id uuid
+    status string
+    decided_by_user_id uuid
+    // VAZIA · +9 col
+  }
+  ai_improvement_proposals {
+    id uuid pk
+    organizacao_id uuid
+    status string
+    decided_by_id uuid
+    // VAZIA · +6 col
+  }
+  ai_knowledge_chunks {
+    id uuid pk
+    organizacao_id uuid
+    version_id uuid
+    // 140 linhas · +7 col
+  }
+  ai_knowledge_searches {
+    id uuid pk
+    organizacao_id uuid
+    run_id uuid
+    knowledge_version_id uuid
+    // VAZIA · +4 col
+  }
+  ai_knowledge_sources {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    status string
+    created_by_id uuid
+    // 6 linhas · +11 col
+  }
+  ai_knowledge_versions {
+    id uuid pk
+    organizacao_id uuid
+    source_id uuid
+    status string
+    // 7 linhas · +4 col
+  }
+  ai_memoria_fatos {
+    id uuid pk
+    organizacao_id uuid
+    contato_id uuid
+    lead_id uuid
+    empresa_id uuid
+    tipo string
+    valor string
+    status string
+    agent_id uuid
+    run_id uuid
+    // 7 linhas · +10 col
+  }
+  ai_memory_entries {
+    id uuid pk
+    organizacao_id uuid
+    status string
+    created_by_id uuid
+    // VAZIA · +5 col
+  }
+  ai_memory_pointers {
+    organizacao_id uuid pk
+    version_id uuid
+    // VAZIA · +1 col
+  }
+  ai_memory_versions {
+    id uuid pk
+    organizacao_id uuid
+    created_by_id uuid
+    // VAZIA · +3 col
+  }
+  ai_models {
+    id uuid pk
+    model_id string
+    // 6 linhas · +12 col
+  }
+  ai_provider_credentials {
+    id uuid pk
+    organizacao_id uuid
+    ativo bool
+    created_by_id uuid
+    // VAZIA · +12 col
+  }
+  ai_purpose_bindings {
+    id uuid pk
+    organizacao_id uuid
+    credential_id uuid
+    model_id string
+    ativo bool
+    // VAZIA · +5 col
+  }
+  ai_router_decisions {
+    id uuid pk
+    organizacao_id uuid
+    router_id uuid
+    contato_id uuid
+    agent_id uuid
+    correlation_id uuid
+    // VAZIA · +4 col
+  }
+  ai_router_members {
+    id uuid pk
+    organizacao_id uuid
+    router_id uuid
+    agent_id uuid
+    // VAZIA · +6 col
+  }
+  ai_routers {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    channel_session_id uuid
+    ativo bool
+    fallback_agent_id uuid
+    created_by_id uuid
+    // VAZIA · +3 col
+  }
+  ai_sdr_config {
+    id uuid pk
+    organizacao_id uuid
+    ativo bool
+    // VAZIA · +20 col
+  }
+  ai_sdr_contato_state {
+    id uuid pk
+    contato_id uuid
+    organizacao_id uuid
+    handoff_usuario_id uuid
+    // 6 linhas · +17 col
+  }
+  ai_sdr_logs {
+    id uuid pk
+    organizacao_id uuid
+    contato_id uuid
+    lead_id uuid
+    tipo string
+    // VAZIA · +13 col
+  }
+  ai_send_ledger {
+    id uuid pk
+    organizacao_id uuid
+    run_id uuid
+    status string
+    external_message_id string
+    attempts int
+    // 69 linhas · +6 col
+  }
+  ai_skill_activations {
+    id uuid pk
+    organizacao_id uuid
+    skill_version_id uuid
+    run_id uuid
+    // VAZIA · +3 col
+  }
+  ai_skill_pointers {
+    id uuid pk
+    organizacao_id uuid
+    version_id uuid
+    ativo bool
+    // VAZIA · +2 col
+  }
+  ai_skill_versions {
+    id uuid pk
+    organizacao_id uuid
+    forked_from_version_id uuid
+    created_by_id uuid
+    // VAZIA · +6 col
+  }
+  ai_usage_budgets {
+    id uuid pk
+    organizacao_id uuid
+    agent_id uuid
+    ativo bool
+    // VAZIA · +8 col
+  }
+  nexo_memoria {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    conversa_id uuid
+    status string
+    // VAZIA · +7 col
+  }
+  sdr_memory {
+    id uuid pk
+    organizacao_id uuid
+    role string
+    // VAZIA · +4 col
+  }
+}
+
+Eventos e auditoria [color: gray] {
+  audit_log {
+    id uuid pk
+    organizacao_id uuid
+    actor_id uuid
+    entity_id uuid
+    // 3.758 linhas · +7 col
+  }
+  domain_events {
+    id uuid pk
+    organizacao_id uuid
+    event_type string
+    aggregate_id uuid
+    actor_id uuid
+    correlation_id uuid
+    causation_id uuid
+    // 3.801 linhas · +7 col
+  }
+  event_outbox {
+    id uuid pk
+    organizacao_id uuid
+    event_type string
+    aggregate_id uuid
+    correlation_id uuid
+    status string
+    attempts int
+    processed_at timestamp
+    // 3.155 linhas · +6 col
+  }
+  eventos {
+    id uuid pk
+    lead_id uuid
+    session_id string
+    tipo string
+    // VAZIA · +6 col
+  }
+  status_changes {
+    id uuid pk
+    lead_id uuid
+    negocio_id uuid
+    usuario_id uuid
+    zoho_id string
+    // 7.622 linhas · +6 col
+  }
+  timeline_events {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    pessoa_id uuid
+    aquisicao_id uuid
+    oportunidade_id uuid
+    servico_canonico_id uuid
+    domain_event_id uuid
+    tipo string
+    actor_id uuid
+    // 34.013 linhas · +7 col
+  }
+}
+
+Acesso e apoio [color: gray] {
+  anexos {
+    id uuid pk
+    organizacao_id uuid
+    negocio_id uuid
+    nota_id uuid
+    criado_por_id uuid
+    file_object_id uuid
+    // VAZIA · +5 col
+  }
+  api_tokens {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    criado_por_id uuid
+    // VAZIA · +7 col
+  }
+  auth_tokens {
+    id uuid pk
+    usuario_id uuid
+    tipo string
+    // 22 linhas · +4 col
+  }
+  buscas_salvas {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    // VAZIA · +3 col
+  }
+  calendario_assinaturas {
+    conta_id uuid pk
+    organizacao_id uuid
+    subscription_id string
+    // 3 linhas · +6 col
+  }
+  contato_labels {
+    id uuid pk
+    contato_id uuid
+    label_id uuid
+    // 98 linhas · +1 col
+  }
+  custom_fields {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    tipo string
+    ativo bool
+    // VAZIA · +7 col
+  }
+  entity_labels {
+    id uuid pk
+    organizacao_id uuid
+    entity_id uuid
+    label_id uuid
+    created_by_id uuid
+    // 216 linhas · +2 col
+  }
+  file_links {
+    id uuid pk
+    organizacao_id uuid
+    file_object_id uuid
+    entity_id uuid
+    created_by_id uuid
+    // 9 linhas · +3 col
+  }
+  integracao_sync_estado {
+    id uuid pk
+    organizacao_id uuid
+    status string
+    // 4 linhas · +11 col
+  }
+  labels {
+    id uuid pk
+    nome string
+    organizacao_id uuid
+    // 11 linhas · +2 col
+  }
+  lead_labels {
+    id uuid pk
+    lead_id uuid
+    label_id uuid
+    // 297 linhas · +1 col
+  }
+  negocio_labels {
+    id uuid pk
+    negocio_id uuid
+    label_id uuid
+    // 15 linhas · +1 col
+  }
+  notificacoes {
+    id uuid pk
+    usuario_id uuid
+    tipo string
+    // 5.270 linhas · +5 col
+  }
+  permissions {
+    id uuid pk
+    codigo string
+    // 16 linhas · +3 col
+  }
+  role_permissions {
+    role_id uuid pk
+    permission_id uuid pk
+    // 106 linhas · +1 col
+  }
+  roles {
+    id uuid pk
+    organizacao_id uuid
+    codigo string
+    nome string
+    // 8 linhas · +4 col
+  }
+  teams {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    manager_id uuid
+    // VAZIA · +2 col
+  }
+  visoes_salvas {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    nome string
+    // VAZIA · +3 col
+  }
+}
+
+Outros [color: gray] {
+  _bkp_ganhos_sem_empresa_20261008 {
+    negocio_id uuid
+    // 149 linhas · +2 col
+  }
+  _bkp_leads_enriquecimento_meta_20261008 {
+    meta_ad_id string
+    meta_adset_id string
+    meta_campaign_id string
+    // 4.112 linhas · +8 col
+  }
+  _bkp_opps_ganhos_sem_empresa_20261008 {
+    oportunidade_id uuid
+    negocio_id_legado uuid
+    // 149 linhas · +1 col
+  }
+  _consolidacao_email_contas_20261013 {
+    id bigint pk
+    registro_id string
+    // 549 linhas · +6 col
+  }
+  _enriquecimento_meta_20261013 {
+    lead_id uuid
+    // 472 linhas · +3 col
+  }
+  _limpeza_quadros_20261013 {
+    // 97 linhas · +7 col
+  }
+  _limpeza_quadros_20261013_leg_leads {
+    tipo string
+    origem string
+    nome string
+    // 4.170 linhas · +6 col
+  }
+  _limpeza_quadros_20261013_leg_neg {
+    lead_id uuid
+    status string
+    // 1.639 linhas · +6 col
+  }
+  _limpeza_quadros_20261013_leg_nl {
+    lead_id uuid
+    negocio_id uuid
+    // 1.257 linhas
+  }
+  _limpeza_testes_20261013 {
+    n bigint pk
+    registro_id string
+    // 369 linhas · +4 col
+  }
+  _migracoes_aplicadas {
+    nome string pk
+    // 134 linhas · +3 col
+  }
+  _produto_legado_20261013 {
+    n bigint pk
+    servico_id uuid
+    origem string
+    // 134 linhas · +3 col
+  }
+  _qa_removido {
+    // 38 linhas · +4 col
+  }
+  _relacoes_conversao_20261013 {
+    aquisicao_id uuid pk
+    etapa_id uuid
+    // 95 linhas · +3 col
+  }
+  _virada_mescla_20261013 {
+    // 62 linhas · +5 col
+  }
+  _virada_mescla_20261013_b {
+    // 15 linhas · +6 col
+  }
+  api_token_usos {
+    id uuid pk
+    token_id uuid
+    organizacao_id uuid
+    status int
+    // VAZIA · +4 col
+  }
+  automacao_execucoes {
+    id uuid pk
+    automacao_id uuid
+    organizacao_id uuid
+    entity_id uuid
+    status string
+    version_id uuid
+    trigger_event_id uuid
+    // 3 linhas · +13 col
+  }
+  automacao_inscricoes {
+    id uuid pk
+    organizacao_id uuid
+    automacao_id uuid
+    version_id uuid
+    entity_id uuid
+    status string
+    current_node_id string
+    // 3 linhas · +8 col
+  }
+  automacao_passos_execucao {
+    id uuid pk
+    organizacao_id uuid
+    execucao_id uuid
+    node_id string
+    status string
+    // 3 linhas · +10 col
+  }
+  automacao_versoes {
+    id uuid pk
+    organizacao_id uuid
+    automacao_id uuid
+    created_by_id uuid
+    // 8 linhas · +7 col
+  }
+  backfill_provenance {
+    id uuid pk
+    organizacao_id uuid
+    // 3.534 linhas · +8 col
+  }
+  catalogo_mapeamentos_legacy {
+    id uuid pk
+    organizacao_id uuid
+    legacy_product_id string
+    canonical_product_id uuid
+    service_family string
+    // 193 linhas · +19 col
+  }
+  clientes {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    pessoa_principal_id uuid
+    oportunidade_origem_id uuid
+    lead_id_legado uuid
+    responsavel_id uuid
+    responsavel_cs_id uuid
+    // 416 linhas · +12 col
+  }
+  current_service_portfolio {
+    organizacao_id uuid
+    service_family string
+    // VAZIA · +6 col
+  }
+  delegacoes_agente {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    agente_usuario_id uuid
+    humano_usuario_id uuid
+    status string
+    // VAZIA · +12 col
+  }
+  file_objects {
+    id uuid pk
+    organizacao_id uuid
+    enviado_por_id uuid
+    // 9 linhas · +11 col
+  }
+  fulfillments {
+    id uuid pk
+    organizacao_id uuid
+    servico_canonico_id uuid
+    service_family string
+    status string
+    responsavel_id uuid
+    tipo string
+    oportunidade_id uuid
+    fulfillment_anterior_id uuid
+    // 57 linhas · +11 col
+  }
+  ganhos_empresa_bkp_20261014174939 {
+    organizacao_id uuid
+    // 639 linhas · +4 col
+  }
+  lead_user_unread {
+    id uuid pk
+    lead_id uuid
+    usuario_id uuid
+    // 531 linhas · +2 col
+  }
+  negocio_leads {
+    id uuid pk
+    negocio_id uuid
+    lead_id uuid
+    // 1.311 linhas · +2 col
+  }
+  negocios_bkp_familia_20261014115942 {
+    organizacao_id uuid
+    service_family string
+    // 622 linhas · +1 col
+  }
+  pipelines {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    ativo bool
+    tipo string
+    // 3 linhas · +7 col
+  }
+  reconciliacao_casos {
+    id uuid pk
+    organizacao_id uuid
+    tipo string
+    status string
+    resolvido_por_id uuid
+    // 968 linhas · +9 col
+  }
+  reunioes {
+    id uuid pk
+    organizacao_id uuid
+    negocio_id uuid
+    lead_id uuid
+    tipo string
+    status string
+    responsavel_id uuid
+    outlook_event_id string
+    calendar_event_id string
+    calendar_conta_id uuid
+    // 377 linhas · +17 col
+  }
+  roteamento_comercial_regras {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    destino_usuario_id uuid
+    // 2 linhas · +10 col
+  }
+  servicos_canonicos_bkp_mz_churn_20261015090633 {
+    organizacao_id uuid
+    empresa_id uuid
+    lead_id uuid
+    contrato_id uuid
+    service_family string
+    revenue_nature string
+    current_subscription_id string
+    oportunidade_origem_id uuid
+    oferta_comercial_id uuid
+    // 36 linhas · +14 col
+  }
+  servicos_canonicos_bkp_produto_20261013114524 {
+    organizacao_id uuid
+    // 86 linhas · +6 col
+  }
+  servicos_catalogo {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    tipo string
+    ativo bool
+    stripe_product_id string
+    revenue_nature string
+    service_family string
+    // 293 linhas · +25 col
+  }
+  servicos_catalogo_bkp_familia_20261014175018 {
+    organizacao_id uuid
+    service_family string
+    // 6 linhas · +1 col
+  }
+  stripe_webhook_events {
+    id uuid pk
+    event_id string
+    event_type string
+    status string
+    attempts int
+    processed_at timestamp
+    organizacao_id uuid
+    // 1.498 linhas · +8 col
+  }
+  tarefa_comentarios {
+    id uuid pk
+    organizacao_id uuid
+    tarefa_id uuid
+    autor_id uuid
+    // 16 linhas · +4 col
+  }
+  tarefa_subtarefas {
+    id uuid pk
+    organizacao_id uuid
+    tarefa_id uuid
+    responsavel_id uuid
+    // 1 linhas · +8 col
+  }
+  user_roles {
+    usuario_id uuid pk
+    role_id uuid pk
+    organizacao_id uuid
+    concedido_por_id uuid
+    // 18 linhas · +1 col
+  }
+  vendas_eventos {
+    id uuid pk
+    organizacao_id uuid
+    tipo string
+    lead_id uuid
+    negocio_id uuid
+    empresa_id uuid
+    pessoa_id uuid
+    proposta_id uuid
+    reuniao_id uuid
+    usuario_id uuid
+    // 3.454 linhas · +5 col
+  }
+}
+
+// 88 chaves estrangeiras reais deste bloco.
+ai_agent_atribuicoes.agent_id > ai_agents.id
+ai_agent_compromissos.agent_id > ai_agents.id
+ai_agent_compromissos.atribuicao_id > ai_agent_atribuicoes.id
+ai_agent_run_steps.run_id > ai_agent_runs.id
+ai_agent_runs.agent_id > ai_agents.id
+ai_agent_runs.channel_session_id > whatsapp_sessao.id
+ai_agent_runs.outbound_message_id > whatsapp_mensagens.id
+ai_agent_runs.source_message_id > whatsapp_mensagens.id
+ai_agent_runs.version_id > ai_agent_versions.id
+ai_agent_versions.agent_id > ai_agents.id
+ai_agent_versions.channel_session_id > whatsapp_sessao.id
+ai_agent_versions.credential_id > ai_provider_credentials.id
+ai_agents.published_version_id > ai_agent_versions.id
+ai_case_events.case_id > ai_cases.id
+ai_cases.agent_id > ai_agents.id
+ai_cases.run_id > ai_agent_runs.id
+ai_contact_field_proposals.message_id > whatsapp_mensagens.id
+ai_contact_field_proposals.proposed_by_agent_id > ai_agents.id
+ai_knowledge_chunks.version_id > ai_knowledge_versions.id
+ai_knowledge_searches.knowledge_version_id > ai_knowledge_versions.id
+ai_knowledge_searches.run_id > ai_agent_runs.id
+ai_knowledge_versions.source_id > ai_knowledge_sources.id
+ai_memoria_fatos.agent_id > ai_agents.id
+ai_memory_pointers.version_id > ai_memory_versions.id
+ai_purpose_bindings.credential_id > ai_provider_credentials.id
+ai_router_decisions.agent_id > ai_agents.id
+ai_router_decisions.router_id > ai_routers.id
+ai_router_members.agent_id > ai_agents.id
+ai_router_members.router_id > ai_routers.id
+ai_routers.channel_session_id > whatsapp_sessao.id
+ai_routers.fallback_agent_id > ai_agents.id
+ai_send_ledger.run_id > ai_agent_runs.id
+ai_skill_activations.run_id > ai_agent_runs.id
+ai_skill_activations.skill_version_id > ai_skill_versions.id
+ai_skill_pointers.version_id > ai_skill_versions.id
+ai_skill_versions.forked_from_version_id > ai_skill_versions.id
+ai_usage_budgets.agent_id > ai_agents.id
+anexos.file_object_id > file_objects.id
+anexos.nota_id > notas.id
+api_token_usos.token_id > api_tokens.id
+automacao_execucoes.automacao_id > automacoes.id
+automacao_execucoes.trigger_event_id > domain_events.id
+automacao_execucoes.version_id > automacao_versoes.id
+automacao_inscricoes.automacao_id > automacoes.id
+automacao_inscricoes.version_id > automacao_versoes.id
+automacao_passos_execucao.execucao_id > automacao_execucoes.id
+automacao_versoes.automacao_id > automacoes.id
+automacoes.current_version_id > automacao_versoes.id
+cadence_definition_pointers.cadence_definition_id > cadence_definitions.id
+cadence_definition_pointers.draft_version_id > cadence_versions.id
+cadence_definition_pointers.published_version_id > cadence_versions.id
+cadence_enrollment_events.enrollment_id > cadence_enrollments.id
+cadence_enrollments.cadence_definition_id > cadence_definitions.id
+cadence_enrollments.cadence_version_id > cadence_versions.id
+cadence_enrollments.source_event_id > event_outbox.id
+cadence_versions.cadence_definition_id > cadence_definitions.id
+cadencia_execucoes.sessao_id > whatsapp_sessao.id
+calendario_assinaturas.conta_id > email_contas.id
+captacao_entregas.regra_id > regras_distribuicao_leads.id
+catalogo_mapeamentos_legacy.canonical_product_id > servicos_catalogo.id
+communications.conversa_id > conversas.id
+contato_labels.label_id > labels.id
+email_sequencia_execucoes.conta_id > email_contas.id
+email_sequencia_execucoes.sequencia_id > email_sequencias.id
+email_sequencia_passos.sequencia_id > email_sequencias.id
+email_sequencia_passos.template_id > email_templates.id
+emails.conta_id > email_contas.id
+entity_labels.label_id > labels.id
+file_links.file_object_id > file_objects.id
+fulfillments.fulfillment_anterior_id > fulfillments.id
+lead_labels.label_id > labels.id
+lead_listas.lista_id > contato_listas.id
+meta_capi_entregas.outbox_id > event_outbox.id
+negocio_labels.label_id > labels.id
+notas.cliente_id > clientes.id
+notas.reuniao_id > reunioes.id
+outreach_campanha_destinatarios.campanha_id > outreach_campanhas.id
+regras_distribuicao_leads.sessao_whatsapp_id > whatsapp_sessao.id
+reunioes.calendar_conta_id > email_contas.id
+role_permissions.permission_id > permissions.id
+role_permissions.role_id > roles.id
+tarefa_comentarios.tarefa_id > tarefas.id
+tarefa_subtarefas.tarefa_id > tarefas.id
+timeline_events.domain_event_id > domain_events.id
+user_roles.role_id > roles.id
+vendas_eventos.reuniao_id > reunioes.id
+whatsapp_mensagens.sessao_id > whatsapp_sessao.id
+whatsapp_sessao_acesso.sessao_id > whatsapp_sessao.id
+
+// +275 relacoes saem deste bloco para outro (ver os blocos vizinhos).

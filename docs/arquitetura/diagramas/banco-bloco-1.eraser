@@ -1,0 +1,460 @@
+// ONFACE — banco de PRODUCAO (callface_crm_mz), bloco 1 de 3.
+// Volume por count(*) real. O reltuples do planner errou por 80 tabelas.
+// Colunas: chaves, estado e dinheiro. As demais estao contadas no rodape de cada tabela.
+
+title ONFACE — 1 — Nucleo: identidade, legado e comercial
+
+Identidade [color: green] {
+  empresas {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    pipedrive_id string
+    apollo_id string
+    zoho_id string
+    stripe_customer_id string
+    canonical_empresa_id uuid
+    // 3.201 linhas · +44 col
+  }
+  organizacoes {
+    id uuid pk
+    nome string
+    ativo bool
+    // 1 linhas · +12 col
+  }
+  pessoa_empresa_vinculos {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    // 3.213 linhas · +7 col
+  }
+  pessoas {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    nome string
+    lead_id_legado uuid
+    // 4.473 linhas · +8 col
+  }
+  usuarios {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    role string
+    ativo bool
+    team_id uuid
+    tipo string
+    agente_id uuid
+    // 18 linhas · +5 col
+  }
+}
+
+LEGADO — existe para morrer [color: orange] {
+  _carga_contagem_antes {
+    tabela string pk
+    // VAZIA · +1 col
+  }
+  _mz_depara {
+    status_legado string pk
+    etapa string
+    // 13 linhas · +3 col
+  }
+  _mz_empresa_merge {
+    origem_id uuid pk
+    destino_id uuid
+    // 64 linhas · +2 col
+  }
+  _mz_esperado {
+    chave string pk
+    valor bigint
+    // 29 linhas · +2 col
+  }
+  _mz_lead_estado {
+    lead_id uuid pk
+    tipo string
+    etapa string
+    // 4.170 linhas · +13 col
+  }
+  _mz_meta {
+    chave string pk
+    valor string
+    // 2 linhas
+  }
+  _mz_negocio_depara {
+    negocio_id uuid pk
+    lead_id uuid
+    status_legado string
+    etapa string
+    perdido_at timestamp
+    ganho_at timestamp
+    // 1.639 linhas · +10 col
+  }
+  anexos_legado {
+    id uuid pk
+    organizacao_id uuid
+    entidade_id uuid
+    zoho_id string
+    // 1.980 linhas · +8 col
+  }
+  contatos {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    sessao_id uuid
+    conta_id uuid
+    responsavel_id uuid
+    lead_id uuid
+    zoho_id string
+    status string
+    closed_by_id uuid
+    // 2.863 linhas · +15 col
+  }
+  leads {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    empresa_id uuid
+    origem string
+    event_id string
+    status string
+    pipedrive_id string
+    apollo_id string
+    indicado_por_lead_id uuid
+    // 4.616 linhas · +135 col
+  }
+  legacy_provenance {
+    id uuid pk
+    organizacao_id uuid
+    entidade_id uuid
+    zoho_id string
+    // VAZIA · +4 col
+  }
+  negocios {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    empresa_id uuid
+    status string
+    pipedrive_id string
+    responsavel_id uuid
+    pipeline_id uuid
+    negocio_origem_id uuid
+    ganho_at timestamp
+    // 1.724 linhas · +59 col
+  }
+}
+
+Comercial [color: blue] {
+  aquisicoes {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    pessoa_id uuid
+    tipo string
+    origem string
+    pipeline_id uuid
+    etapa_id uuid
+    responsavel_id uuid
+    lead_legado_id uuid
+    // 4.444 linhas · +13 col
+  }
+  catalogo_precos {
+    id uuid pk
+    organizacao_id uuid
+    servico_catalogo_id uuid
+    stripe_price_id string
+    valor decimal
+    tipo string
+    revenue_nature string
+    ativo bool
+    oferta_comercial_id uuid
+    // 180 linhas · +17 col
+  }
+  closer_bloqueios {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    outlook_event_id string
+    // VAZIA · +4 col
+  }
+  closer_disponibilidade {
+    id uuid pk
+    organizacao_id uuid
+    usuario_id uuid
+    ativo bool
+    // 3 linhas · +5 col
+  }
+  comercial_evidencia {
+    id uuid pk
+    organizacao_id uuid
+    negocio_id uuid
+    tipo string
+    grupo_comercial_id uuid
+    // 449 linhas · +5 col
+  }
+  contrato_itens {
+    id uuid pk
+    contrato_id uuid
+    servico_catalogo_id uuid
+    nome string
+    zoho_id string
+    service_family string
+    revenue_nature string
+    // 443 linhas · +12 col
+  }
+  contrato_templates {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    ativo bool
+    service_family string
+    // 9 linhas · +5 col
+  }
+  contratos {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    tipo string
+    mrr decimal
+    status string
+    zoho_id string
+    stripe_subscription_id string
+    codigo_legado string
+    // 450 linhas · +43 col
+  }
+  eventos_comerciais {
+    id uuid pk
+    organizacao_id uuid
+    negocio_id uuid
+    negocio_origem_id uuid
+    contrato_id uuid
+    tipo string
+    zoho_id string
+    responsavel_id uuid
+    origem string
+    servico_id uuid
+    // VAZIA · +4 col
+  }
+  ofertas_comerciais {
+    id uuid pk
+    organizacao_id uuid
+    servico_catalogo_id uuid
+    codigo string
+    nome string
+    ativo bool
+    contrato_template_id uuid
+    // 4 linhas · +13 col
+  }
+  oportunidade_bundle {
+    id uuid pk
+    organizacao_id uuid
+    nome string
+    lead_id uuid
+    empresa_id uuid
+    // VAZIA · +1 col
+  }
+  oportunidade_itens {
+    id uuid pk
+    organizacao_id uuid
+    oportunidade_id uuid
+    service_family string
+    revenue_nature string
+    servico_canonico_id uuid
+    origem_legado string
+    contrato_item_id_legado uuid
+    proposta_item_id_legado uuid
+    grupo_comercial_id uuid
+    // 52 linhas · +12 col
+  }
+  oportunidades {
+    id uuid pk
+    organizacao_id uuid
+    pessoa_id uuid
+    empresa_id uuid
+    pipeline_id uuid
+    stage string
+    responsavel_id uuid
+    valor decimal
+    mrr decimal
+    ganho_at timestamp
+    // 1.697 linhas · +22 col
+  }
+  pipeline_etapas {
+    id uuid pk
+    organizacao_id uuid
+    pipeline_id uuid
+    codigo string
+    nome string
+    ativo bool
+    // 35 linhas · +4 col
+  }
+  proposta_grupo_comercial {
+    id uuid pk
+    organizacao_id uuid
+    proposta_id uuid
+    negocio_id uuid
+    oportunidade_id uuid
+    status string
+    contrato_id uuid
+    checkout_id uuid
+    service_family string
+    // 15 linhas · +14 col
+  }
+  proposta_grupo_comercial_itens {
+    id uuid pk
+    grupo_id uuid
+    proposta_item_id uuid
+    // 18 linhas · +1 col
+  }
+  proposta_itens {
+    id uuid pk
+    proposta_id uuid
+    servico_catalogo_id uuid
+    nome string
+    tipo string
+    revenue_nature string
+    service_family string
+    zoho_id string
+    catalogo_preco_id uuid
+    stripe_product_id string
+    // 2.829 linhas · +22 col
+  }
+  proposta_sequencias {
+    organizacao_id uuid pk
+    // 1 linhas · +1 col
+  }
+  propostas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    negocio_id uuid
+    proposta_original_id uuid
+    status string
+    criado_por_id uuid
+    contrato_id uuid
+    stripe_session_id string
+    substituida_por_id uuid
+    // 1.631 linhas · +50 col
+  }
+  won_evidence_policies {
+    id uuid pk
+    organizacao_id uuid
+    ativo bool
+    // 3 linhas · +5 col
+  }
+}
+
+// 102 chaves estrangeiras reais deste bloco.
+anexos_legado.organizacao_id > organizacoes.id
+aquisicoes.empresa_id > empresas.id
+aquisicoes.etapa_id > pipeline_etapas.id
+aquisicoes.organizacao_id > organizacoes.id
+aquisicoes.pessoa_id > pessoas.id
+aquisicoes.responsavel_id > usuarios.id
+catalogo_precos.oferta_comercial_id > ofertas_comerciais.id
+catalogo_precos.organizacao_id > organizacoes.id
+closer_bloqueios.organizacao_id > organizacoes.id
+closer_bloqueios.usuario_id > usuarios.id
+closer_disponibilidade.organizacao_id > organizacoes.id
+closer_disponibilidade.usuario_id > usuarios.id
+comercial_evidencia.grupo_comercial_id > proposta_grupo_comercial.id
+comercial_evidencia.negocio_id > negocios.id
+comercial_evidencia.organizacao_id > organizacoes.id
+comercial_evidencia.verificado_por > usuarios.id
+contatos.closed_by_id > usuarios.id
+contatos.lead_id > leads.id
+contatos.organizacao_id > organizacoes.id
+contatos.responsavel_id > usuarios.id
+contrato_itens.contrato_id > contratos.id
+contrato_templates.organizacao_id > organizacoes.id
+contratos.empresa_id > empresas.id
+contratos.grupo_comercial_id > proposta_grupo_comercial.id
+contratos.lead_id > leads.id
+contratos.negocio_id > negocios.id
+contratos.oferta_comercial_id > ofertas_comerciais.id
+contratos.oportunidade_id > oportunidades.id
+contratos.organizacao_id > organizacoes.id
+contratos.template_id > contrato_templates.id
+empresas.canonical_empresa_id > empresas.id
+empresas.organizacao_id > organizacoes.id
+eventos_comerciais.contrato_id > contratos.id
+eventos_comerciais.negocio_id > negocios.id
+eventos_comerciais.organizacao_id > organizacoes.id
+eventos_comerciais.responsavel_id > usuarios.id
+leads.agenda_closer_id > usuarios.id
+leads.canonical_lead_id > leads.id
+leads.desqualificado_por > usuarios.id
+leads.empresa_id > empresas.id
+leads.nutrido_por > usuarios.id
+leads.organizacao_id > organizacoes.id
+leads.pre_qualificado_por > usuarios.id
+leads.prospeccao_descartado_por > usuarios.id
+leads.qualificado_por > usuarios.id
+leads.responsavel_id > usuarios.id
+legacy_provenance.organizacao_id > organizacoes.id
+negocios.bundle_id > oportunidade_bundle.id
+negocios.empresa_id > empresas.id
+negocios.lead_id > leads.id
+negocios.organizacao_id > organizacoes.id
+negocios.proxima_acao_responsavel_id > usuarios.id
+negocios.responsavel_id > usuarios.id
+ofertas_comerciais.contrato_template_id > contrato_templates.id
+ofertas_comerciais.organizacao_id > organizacoes.id
+oportunidade_bundle.empresa_id > empresas.id
+oportunidade_bundle.lead_id > leads.id
+oportunidade_bundle.organizacao_id > organizacoes.id
+oportunidade_itens.catalogo_preco_id > catalogo_precos.id
+oportunidade_itens.contrato_item_id_legado > contrato_itens.id
+oportunidade_itens.grupo_comercial_id > proposta_grupo_comercial.id
+oportunidade_itens.oportunidade_id > oportunidades.id
+oportunidade_itens.organizacao_id > organizacoes.id
+oportunidade_itens.proposta_item_id_legado > proposta_itens.id
+oportunidades.bundle_id > oportunidade_bundle.id
+oportunidades.empresa_id > empresas.id
+oportunidades.etapa_id > pipeline_etapas.id
+oportunidades.lead_id > leads.id
+oportunidades.negocio_id_legado > negocios.id
+oportunidades.oferta_comercial_id > ofertas_comerciais.id
+oportunidades.organizacao_id > organizacoes.id
+oportunidades.pessoa_id > pessoas.id
+oportunidades.responsavel_id > usuarios.id
+pessoa_empresa_vinculos.empresa_id > empresas.id
+pessoa_empresa_vinculos.organizacao_id > organizacoes.id
+pessoa_empresa_vinculos.pessoa_id > pessoas.id
+pessoas.empresa_id > empresas.id
+pessoas.lead_id_legado > leads.id
+pessoas.organizacao_id > organizacoes.id
+pipeline_etapas.organizacao_id > organizacoes.id
+proposta_grupo_comercial.contrato_id > contratos.id
+proposta_grupo_comercial.negocio_id > negocios.id
+proposta_grupo_comercial.oportunidade_id > oportunidades.id
+proposta_grupo_comercial.organizacao_id > organizacoes.id
+proposta_grupo_comercial.proposta_id > propostas.id
+proposta_grupo_comercial_itens.grupo_id > proposta_grupo_comercial.id
+proposta_grupo_comercial_itens.proposta_item_id > proposta_itens.id
+proposta_itens.catalogo_preco_id > catalogo_precos.id
+proposta_itens.proposta_id > propostas.id
+proposta_sequencias.organizacao_id > organizacoes.id
+propostas.contrato_base_id > contratos.id
+propostas.contrato_id > contratos.id
+propostas.criado_por_id > usuarios.id
+propostas.empresa_id > empresas.id
+propostas.lead_id > leads.id
+propostas.negocio_id > negocios.id
+propostas.oferta_comercial_id > ofertas_comerciais.id
+propostas.oportunidade_id > oportunidades.id
+propostas.organizacao_id > organizacoes.id
+propostas.substituida_por_id > propostas.id
+usuarios.organizacao_id > organizacoes.id
+won_evidence_policies.organizacao_id > organizacoes.id
+
+// A ponte INVISIVEL do cutover.
+// pessoas.lead_id_legado e oportunidades.negocio_id_legado SAO chave
+// estrangeira e ja aparecem acima. Esta nao e: `aquisicoes.lead_legado_id`
+// e so convencao, entao nenhuma ferramenta que leia o banco a mostra —
+// e e justamente a ponte da aquisicao, a entrada de todo lead.
+aquisicoes.lead_legado_id > leads.id
+
+// +362 relacoes saem deste bloco para outro (ver os blocos vizinhos).

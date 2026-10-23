@@ -1,0 +1,466 @@
+// ONFACE — banco de PRODUCAO (callface_crm_mz), bloco 2 de 3.
+// Volume por count(*) real. O reltuples do planner errou por 80 tabelas.
+// Colunas: chaves, estado e dinheiro. As demais estao contadas no rodape de cada tabela.
+
+title ONFACE — 2 — Dinheiro: financeiro, receita e plataforma
+
+Financeiro e receita [color: purple] {
+  assinatura_itens {
+    id uuid pk
+    organizacao_id uuid
+    assinatura_id uuid
+    stripe_subscription_item_id string
+    stripe_product_id string
+    stripe_price_id string
+    service_family string
+    revenue_nature string
+    servico_canonico_id uuid
+    status string
+    // 461 linhas · +13 col
+  }
+  assinaturas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    empresa_id uuid
+    contrato_id uuid
+    stripe_subscription_id string
+    stripe_customer_id string
+    stripe_price_id string
+    mrr decimal
+    status string
+    // 407 linhas · +19 col
+  }
+  billing_audit_runs {
+    id uuid pk
+    organizacao_id uuid
+    status string
+    // VAZIA · +5 col
+  }
+  billing_correction_ledger {
+    id uuid pk
+    audit_run_id uuid
+    billing_identity_id uuid
+    organizacao_id uuid
+    entity_id uuid
+    // VAZIA · +10 col
+  }
+  billing_customer_aliases {
+    id uuid pk
+    billing_identity_id uuid
+    stripe_customer_id string
+    // 2 linhas · +5 col
+  }
+  billing_identities {
+    id uuid pk
+    organizacao_id uuid
+    canonical_empresa_id uuid
+    canonical_lead_id uuid
+    external_customer_id string
+    empresa_id uuid
+    lead_id uuid
+    canonical_stripe_customer_id string
+    status string
+    // 235 linhas · +9 col
+  }
+  billing_resolution_cases {
+    id uuid pk
+    audit_run_id uuid
+    organizacao_id uuid
+    stripe_customer_id string
+    stripe_subscription_id string
+    crm_entity_id uuid
+    status string
+    // 32 linhas · +6 col
+  }
+  checkouts {
+    id uuid pk
+    organizacao_id uuid
+    proposta_id uuid
+    negocio_id uuid
+    grupo_comercial_id uuid
+    origem string
+    criado_por_id uuid
+    stripe_session_id string
+    stripe_subscription_id string
+    status string
+    // 15 linhas · +12 col
+  }
+  cliente_receita_mensal {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    competencia date
+    valor decimal
+    service_family string
+    revenue_nature string
+    // 12.041 linhas · +13 col
+  }
+  correction_change_log {
+    id bigint pk
+    run_id uuid
+    entity_id string
+    // VAZIA · +8 col
+  }
+  correction_runs {
+    id uuid pk
+    // VAZIA · +6 col
+  }
+  cs_cancelamentos {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    contrato_id uuid
+    status string
+    // 4 linhas · +21 col
+  }
+  cs_health_snapshots {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    status string
+    // 5.948 linhas · +5 col
+  }
+  cs_marcos {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    codigo string
+    status string
+    tarefa_id uuid
+    // 763 linhas · +11 col
+  }
+  cs_renovacoes {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    contrato_id uuid
+    status string
+    responsavel_id uuid
+    negocio_id uuid
+    // VAZIA · +14 col
+  }
+  cs_riscos {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    tipo string
+    origem string
+    status string
+    responsavel_id uuid
+    tarefa_id uuid
+    // 760 linhas · +11 col
+  }
+  fatura_itens {
+    id uuid pk
+    fatura_id uuid
+    servico_catalogo_id uuid
+    nome string
+    zoho_id string
+    servico_id uuid
+    // 226 linhas · +8 col
+  }
+  faturas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    empresa_id uuid
+    assinatura_id uuid
+    contrato_id uuid
+    origem string
+    external_id string
+    valor decimal
+    status string
+    // 1.225 linhas · +22 col
+  }
+  fulfillment_formularios {
+    id uuid pk
+    organizacao_id uuid
+    fulfillment_id uuid
+    status string
+    // 4 linhas · +8 col
+  }
+  fulfillment_itens {
+    id uuid pk
+    organizacao_id uuid
+    fulfillment_id uuid
+    status string
+    responsavel_id uuid
+    // 3.826 linhas · +14 col
+  }
+  fulfillment_linhas_portabilidade {
+    id uuid pk
+    organizacao_id uuid
+    fulfillment_id uuid
+    tipo string
+    anexo_id string
+    // 3 linhas · +6 col
+  }
+  fulfillment_ramais {
+    id uuid pk
+    organizacao_id uuid
+    fulfillment_id uuid
+    // 6 linhas · +12 col
+  }
+  fulfillment_servicos {
+    fulfillment_id uuid pk
+    servico_canonico_id uuid pk
+    organizacao_id uuid
+    // 56 linhas · +1 col
+  }
+  mrr_movimentos {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    assinatura_id uuid
+    contrato_id uuid
+    tipo string
+    origem string
+    evento_comercial_id uuid
+    negocio_id uuid
+    // 835 linhas · +7 col
+  }
+  nps_respostas {
+    id uuid pk
+    organizacao_id uuid
+    lead_id uuid
+    contrato_id uuid
+    tipo string
+    empresa_id uuid
+    marco_id uuid
+    // VAZIA · +8 col
+  }
+  pagamentos {
+    id uuid pk
+    organizacao_id uuid
+    fatura_id uuid
+    empresa_id uuid
+    servico_canonico_id uuid
+    external_payment_id string
+    status string
+    // 758 linhas · +11 col
+  }
+  portfolio_snapshots {
+    id uuid pk
+    organizacao_id uuid
+    // VAZIA · +8 col
+  }
+  reconciliation_changes {
+    id uuid pk
+    run_id uuid
+    action_id string
+    // VAZIA · +7 col
+  }
+  reconciliation_runs {
+    id uuid pk
+    organizacao_id uuid
+    status string
+    // VAZIA · +9 col
+  }
+  service_ledger_batches {
+    id uuid pk
+    organizacao_id uuid
+    status string
+    // 1 linhas · +10 col
+  }
+  service_ledger_entries {
+    id uuid pk
+    batch_id uuid
+    organizacao_id uuid
+    service_family string
+    revenue_nature string
+    service_id uuid
+    // 302 linhas · +8 col
+  }
+  servico_billing_timeline {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    lead_id uuid
+    contrato_id uuid
+    assinatura_id uuid
+    external_id string
+    service_family string
+    revenue_nature string
+    servico_id uuid
+    // VAZIA · +8 col
+  }
+  servicos_canonicos {
+    id uuid pk
+    organizacao_id uuid
+    empresa_id uuid
+    lead_id uuid
+    contrato_id uuid
+    service_family string
+    revenue_nature string
+    current_subscription_id string
+    oportunidade_origem_id uuid
+    oferta_comercial_id uuid
+    // 617 linhas · +13 col
+  }
+}
+
+Plataforma Callface AI [color: red] {
+  callface_ai_equipes {
+    organizacao_id uuid pk
+    tipo string pk
+    ref_id string pk
+    external_organization_id string
+    nome string
+    status string
+    // 728 linhas · +1 col
+  }
+  callface_ai_external_identities {
+    id uuid pk
+    entity_id uuid
+    external_id string
+    // 463 linhas · +10 col
+  }
+  callface_ai_licencas {
+    organizacao_id uuid pk
+    license_id string pk
+    external_organization_id string
+    plan_id string
+    // 2.511 linhas · +6 col
+  }
+  callface_ai_org_stripe {
+    organizacao_id uuid pk
+    external_organization_id string pk
+    stripe_customer_id string
+    // 463 linhas · +2 col
+  }
+  callface_ai_parceiro_fatura_itens {
+    organizacao_id uuid pk
+    item_id string pk
+    invoice_id string
+    license_id string
+    external_organization_id string
+    // 297 linhas · +8 col
+  }
+  callface_ai_parceiro_faturas {
+    organizacao_id uuid pk
+    invoice_id string pk
+    partner_id string
+    status string
+    competencia date
+    // 15 linhas · +7 col
+  }
+  callface_ai_parceiro_licencas {
+    organizacao_id uuid pk
+    license_id string pk
+    partner_id string
+    external_organization_id string
+    // 109 linhas · +5 col
+  }
+  callface_ai_parceiro_pendencias {
+    organizacao_id uuid pk
+    chave string pk
+    tipo string
+    partner_id string
+    invoice_id string
+    // 18 linhas · +7 col
+  }
+  callface_ai_parceiros {
+    organizacao_id uuid pk
+    partner_id string pk
+    nome string
+    ativo bool
+    empresa_id uuid
+    // 6 linhas · +7 col
+  }
+  callface_ai_planos {
+    organizacao_id uuid pk
+    plan_id string pk
+    nome string
+    stripe_price_id string
+    // 24 linhas · +4 col
+  }
+  callface_ai_receptivos {
+    organizacao_id uuid pk
+    did_id string pk
+    external_organization_id string
+    destino_id string
+    status string
+    // 73 linhas · +4 col
+  }
+  callface_ai_reconciliation_candidates {
+    id uuid pk
+    empresa_id uuid
+    external_organization_id string
+    status string
+    // 93 linhas · +9 col
+  }
+  callface_ai_saude_diaria {
+    external_identity_id uuid pk
+    dia date pk
+    // 1.018 linhas · +27 col
+  }
+  callface_ai_tenant_detalhe {
+    external_identity_id uuid pk
+    // 117 linhas · +9 col
+  }
+  callface_ai_tenant_snapshots {
+    id uuid pk
+    external_identity_id uuid
+    // 2.036 linhas · +27 col
+  }
+  callface_ai_usage_events {
+    id uuid pk
+    external_identity_id uuid
+    event_type string
+    // VAZIA · +3 col
+  }
+  callface_ai_uso_diario {
+    external_identity_id uuid pk
+    dia date pk
+    // 3.590 linhas · +7 col
+  }
+  callface_ai_usuarios {
+    organizacao_id uuid pk
+    vinculo_id string pk
+    external_organization_id string
+    crm_user_id string
+    // 1.681 linhas · +6 col
+  }
+}
+
+// 32 chaves estrangeiras reais deste bloco.
+assinatura_itens.assinatura_id > assinaturas.id
+assinatura_itens.servico_canonico_id > servicos_canonicos.id
+assinaturas.servico_id > servicos_canonicos.id
+billing_correction_ledger.audit_run_id > billing_audit_runs.id
+billing_correction_ledger.billing_identity_id > billing_identities.id
+billing_customer_aliases.billing_identity_id > billing_identities.id
+billing_resolution_cases.audit_run_id > billing_audit_runs.id
+callface_ai_saude_diaria.external_identity_id > callface_ai_external_identities.id
+callface_ai_tenant_detalhe.external_identity_id > callface_ai_external_identities.id
+callface_ai_tenant_snapshots.external_identity_id > callface_ai_external_identities.id
+callface_ai_usage_events.external_identity_id > callface_ai_external_identities.id
+callface_ai_uso_diario.external_identity_id > callface_ai_external_identities.id
+correction_change_log.run_id > correction_runs.id
+cs_cancelamentos.servico_canonico_id > servicos_canonicos.id
+cs_health_snapshots.servico_canonico_id > servicos_canonicos.id
+cs_marcos.servico_canonico_id > servicos_canonicos.id
+cs_renovacoes.servico_canonico_id > servicos_canonicos.id
+cs_riscos.servico_canonico_id > servicos_canonicos.id
+fatura_itens.fatura_id > faturas.id
+fatura_itens.servico_id > servicos_canonicos.id
+faturas.assinatura_id > assinaturas.id
+faturas.servico_canonico_id > servicos_canonicos.id
+fulfillment_servicos.servico_canonico_id > servicos_canonicos.id
+mrr_movimentos.assinatura_id > assinaturas.id
+nps_respostas.marco_id > cs_marcos.id
+pagamentos.fatura_id > faturas.id
+pagamentos.servico_canonico_id > servicos_canonicos.id
+reconciliation_changes.run_id > reconciliation_runs.id
+service_ledger_entries.batch_id > service_ledger_batches.id
+service_ledger_entries.service_id > servicos_canonicos.id
+servico_billing_timeline.assinatura_id > assinaturas.id
+servico_billing_timeline.servico_id > servicos_canonicos.id
+
+// +109 relacoes saem deste bloco para outro (ver os blocos vizinhos).

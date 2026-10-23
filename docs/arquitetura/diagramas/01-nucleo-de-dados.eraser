@@ -352,7 +352,9 @@ servicos_canonicos.empresa_id > empresas.id
 servicos_canonicos.lead_id > leads.id
 servicos_canonicos.oportunidade_origem_id > oportunidades.id
 
-// As DUAS pontes do cutover — sem elas nao da para ler o sistema.
-// Nao sao FK no banco: sao convencao, e por isso ninguem as ve.
+// A ponte INVISIVEL do cutover.
+// pessoas.lead_id_legado e oportunidades.negocio_id_legado SAO chave
+// estrangeira e ja aparecem acima. Esta nao e: `aquisicoes.lead_legado_id`
+// e so convencao, entao nenhuma ferramenta que leia o banco a mostra —
+// e e justamente a ponte da aquisicao, a entrada de todo lead.
 aquisicoes.lead_legado_id > leads.id
-oportunidades.negocio_id_legado > negocios.id
