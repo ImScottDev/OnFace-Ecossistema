@@ -267,5 +267,29 @@ export async function aplicarExpansaoNaAssinatura(opts: {
   await registrarPagamentoDoGrupo(opts.grupoId, "confirmado");
   await concluirGrupo(opts.grupoId);
 
+  /* A evidência e o Ganho: aqui, não no webhook.
+   *
+   * O comentário acima conta a intenção — a linha de `checkouts` existe para o
+   * webhook achar o negócio quando o pagamento chegar. Só que na fatura de
+   * pró-rata paga NA HORA (cartão) ela já nasce `paid`, e o `invoice.paid`
+   * dessa fatura não encontra a linha que ainda está sendo criada. Resultado
+   * medido no Sicolos #1594 (23/10/2026): R$ 89,75 cobrados e confirmados no
+   * cartão, grupo concluído, e a oportunidade sem evidência nenhuma, parada em
+   * "proposta apresentada".
+   *
+   * O caminho do boleto continua com o webhook, que é quem sabe quando pagou. */
+  if (opts.negocioId) {
+    await registrarEvidencia({
+      negocioId: opts.negocioId,
+      organizacaoId: opts.organizacaoId,
+      tipo: "stripe_subscription",
+      sourceRef: faturaId ?? assinatura.subscriptionId,
+      grupoComercialId: opts.grupoId,
+      metadata: { origem: "expansao_assinatura", subscriptionId: assinatura.subscriptionId, faturaId },
+    });
+    await marcarNegocioGanhoSeAindaNao(opts.negocioId, opts.organizacaoId)
+      .catch((e) => console.error(`[expansao] evidência registrada, mas o Ganho do negócio ${opts.negocioId} falhou (best-effort):`, e));
+  }
+
   return { ok: true, subscriptionId: assinatura.subscriptionId, itensAplicados: aplicados, faturaId, faturaUrl };
 }
