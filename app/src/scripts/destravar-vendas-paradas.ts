@@ -76,10 +76,17 @@ async function paradas(): Promise<Parada[]> {
       JOIN negocios n ON n.id = p.negocio_id
       LEFT JOIN empresas e ON e.id = n.empresa_id
      WHERE p.status = 'aceita' AND n.status <> 'perdido'
+       /* Venda ganha só entra quando o grupo ainda espera cobrança E nenhuma
+          cobrança foi PAGA. Não basta `checkout_id IS NULL`: a LIVA #1570
+          ficou com um checkout expirado vinculado, e por causa dele a venda
+          ganha e não cobrada não aparecia aqui. O que importa não é existir
+          uma linha de checkout, é ter dinheiro entrado. */
        AND (n.status <> 'ganho'
-            OR EXISTS (SELECT 1 FROM proposta_grupo_comercial g
-                        WHERE g.proposta_id = p.id AND g.checkout_id IS NULL
-                          AND g.status IN ('aguardando_checkout', 'aguardando_contrato', 'falhou')))
+            OR (EXISTS (SELECT 1 FROM proposta_grupo_comercial g
+                         WHERE g.proposta_id = p.id
+                           AND g.status IN ('aguardando_checkout', 'aguardando_contrato', 'falhou'))
+                AND NOT EXISTS (SELECT 1 FROM checkouts ck
+                                 WHERE ck.proposta_id = p.id AND ck.status = 'pago')))
        ${sohEsta ? sql`AND p.numero = ${sohEsta}` : sql``}
      ORDER BY p.numero DESC`);
   return r as unknown as Parada[];
