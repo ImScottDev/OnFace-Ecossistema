@@ -473,13 +473,16 @@ export async function createFaturadaSubscription(params: CreateGroupCheckoutPara
   form.append("days_until_due", String(diasParaPagar));
   // Sem o pedaço quebrado: a primeira fatura é um mês cheio, como o contrato diz.
   form.append("proration_behavior", "none");
-  /* O boleto precisa durar MAIS que o prazo da fatura. O default da conta é 3
-     dias: com ele, um boleto emitido 30 dias antes do vencimento expirava
-     muito antes de o cliente poder pagar, e a cobrança morria sozinha. */
-  appendNested(form, "payment_settings", {
-    payment_method_types: ["boleto", "card"],
-    payment_method_options: { boleto: { expires_after_days: diasParaPagar } },
-  });
+  /* Boleto e cartão nas faturas desta assinatura.
+     `payment_method_options[boleto]` NÃO existe aqui: o Stripe recusa com
+     `parameter_unknown` (medido em produção, 23/10/2026, ativando a
+     assinatura da LIVA). Esse campo é de Checkout Session, e eu o trouxe de
+     um para o outro sem conferir.
+     A validade da guia é a configurada na conta (Dashboard › Formas de
+     pagamento › Boleto) e conta a partir de quando o cliente gera o boleto na
+     fatura, não da emissão dela — por isso não precisa cobrir os 30 dias de
+     antecedência. */
+  appendNested(form, "payment_settings", { payment_method_types: ["boleto", "card"] });
   const dia = Math.trunc(params.diaVencimentoMes ?? 0);
   if (dia >= 1 && dia <= 31) form.append("billing_cycle_anchor_config[day_of_month]", String(dia));
 
