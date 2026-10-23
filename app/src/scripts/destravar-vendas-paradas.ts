@@ -52,6 +52,7 @@ interface Parada extends Record<string, unknown> {
   tem_evidencia: boolean;
   checkout_id: string | null;
   checkout_status: string | null;
+  grupo_status: string | null;
   desconto_recorrente: string | null;
   contrato_pendente: boolean;
 }
@@ -64,6 +65,7 @@ async function paradas(): Promise<Parada[]> {
            EXISTS (SELECT 1 FROM comercial_evidencia ev WHERE ev.negocio_id = p.negocio_id) AS tem_evidencia,
            (SELECT ck.id::text FROM checkouts ck WHERE ck.proposta_id = p.id ORDER BY ck.criado_em DESC LIMIT 1) AS checkout_id,
            (SELECT ck.status FROM checkouts ck WHERE ck.proposta_id = p.id ORDER BY ck.criado_em DESC LIMIT 1) AS checkout_status,
+           (SELECT g.status FROM proposta_grupo_comercial g WHERE g.proposta_id = p.id ORDER BY g.created_at LIMIT 1) AS grupo_status,
            (SELECT round(sum(i.valor_tabela * i.quantidade - i.subtotal), 2)::text
               FROM proposta_itens i
              WHERE i.proposta_id = p.id AND i.tipo = 'recorrente'
@@ -73,7 +75,11 @@ async function paradas(): Promise<Parada[]> {
       FROM propostas p
       JOIN negocios n ON n.id = p.negocio_id
       LEFT JOIN empresas e ON e.id = n.empresa_id
-     WHERE p.status = 'aceita' AND n.status NOT IN ('ganho', 'perdido')
+     WHERE p.status = 'aceita' AND n.status <> 'perdido'
+       AND (n.status <> 'ganho'
+            OR EXISTS (SELECT 1 FROM proposta_grupo_comercial g
+                        WHERE g.proposta_id = p.id AND g.checkout_id IS NULL
+                          AND g.status IN ('aguardando_checkout', 'aguardando_contrato')))
        ${sohEsta ? sql`AND p.numero = ${sohEsta}` : sql``}
      ORDER BY p.numero DESC`);
   return r as unknown as Parada[];
@@ -85,7 +91,7 @@ async function main(): Promise<void> {
     console.log("Nenhuma venda aceita parada. Nada a fazer.");
     return;
   }
-  console.log(`${lista.length} venda(s) aceita(s) sem Ganho${APLICAR ? "" : "  (simulação — use --aplicar para executar)"}\n`);
+  console.log(`${lista.length} venda(s) aceita(s) por resolver${APLICAR ? "" : "  (simulação — use --aplicar para executar)"}\n`);
 
   const { registrarEvidencia, marcarNegocioGanhoSeAindaNao } = await import("@/lib/crm/won-evidence");
   const { criarCheckoutParaGrupo } = await import("@/lib/crm/checkout");
@@ -141,8 +147,14 @@ async function main(): Promise<void> {
     //    vale só o 1º mês, então o cliente seria cobrado o preço de tabela a
     //    partir do 2º. Regerar cria o cupom com a duração certa.
     const desconto = Number(v.desconto_recorrente ?? 0);
-    if (desconto > 0 && v.grupo_id && v.checkout_status !== "pago") {
-      console.log(`${quem}: checkout '${v.checkout_status ?? "nenhum"}' com R$ ${desconto.toFixed(2)}/mês de desconto recorrente → REGERAR (o link atual cobra a mais do 2º mês em diante).`);
+    /* Duas razões para (re)gerar a cobrança:
+         - desconto em item recorrente: o cupom antigo vale só o 1º mês;
+         - grupo aguardando cobrança e sem checkout nenhum: a venda fechou e
+           NINGUÉM vai cobrar, porque pela tela ela já está ganha. Foi o caso
+           da Direcional #1586 (ganha, dia de vencimento 17, zero cobrança). */
+    const semCobranca = !v.checkout_status && v.grupo_status === "aguardando_checkout";
+    if ((desconto > 0 || semCobranca) && v.grupo_id && v.checkout_status !== "pago") {
+      console.log(`${quem}: ${semCobranca ? "venda fechada e SEM cobrança gerada" : `checkout '${v.checkout_status ?? "nenhum"}' com R$ ${desconto.toFixed(2)}/mês de desconto recorrente`} → ${semCobranca ? "GERAR" : "REGERAR"} a cobrança.`);
       if (APLICAR) {
         const r = await criarCheckoutParaGrupo({ grupoId: v.grupo_id, origem: "manual_vendedor" });
         if (!r.ok) console.error(`    ! não regerou: ${r.error}`);
