@@ -24,7 +24,7 @@ import {
   checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos, leads, empresas, negocios,
 } from "@/lib/db/schema";
 import { boletoExpiresAfterDaysFromValidade, createFaturadaSubscription, createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
-import { diaDoVencimento, logradouroFiscal, vendaEhFaturada } from "@/lib/crm/condicoes-comerciais";
+import { diaDoVencimento, logradouroFiscal, proximoDiaDoMes, vendaEhFaturada } from "@/lib/crm/condicoes-comerciais";
 import { publicarEvento } from "@/lib/events/outbox";
 import { vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
 import { montarMetadataComercial } from "@/lib/crm/metadata-comercial";
@@ -242,6 +242,7 @@ export async function criarCheckoutParaGrupo(opts: {
         successUrl: "", cancelUrl: "",
         descontoRecorrenteMeses: proposta.descontoTemporarioAlvo === "mrr" ? proposta.descontoTemporarioMeses : null,
         diaVencimentoMes: diaDoVencimento(proposta.diaVencimentoMes, new Date()),
+        inicioDoCiclo: proximoDiaDoMes(diaDoVencimento(proposta.diaVencimentoMes, new Date()), new Date()),
         diasParaPagar: proposta.vencimentoDias,
       });
       const [linha] = await db.insert(checkouts).values({

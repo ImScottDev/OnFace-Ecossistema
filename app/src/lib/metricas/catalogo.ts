@@ -622,10 +622,7 @@ const METRICAS_EXECUTIVAS: DefinicaoMetrica[] = [
         SELECT m.id::text AS id, e.nome AS empresa, m.produto, m.tipo, m.origem, COALESCE(m.delta, 0)::numeric AS valor,
                m.ocorrido_em, a.empresa_id::text AS empresa_id
           FROM mrr_movimentos m
-          -- A assinatura entra só para dizer de quem é o movimento, e vale a mesma
-          -- regra do resto: assinatura do SaaS está fora do espelho do CRM, então
-          -- não empresta empresa nenhuma (lib/financeiro/espelho-crm.ts).
-          LEFT JOIN assinaturas a ON a.id = m.assinatura_id AND ${doCrm("a")}
+          LEFT JOIN assinaturas a ON a.id = m.assinatura_id
           LEFT JOIN empresas e ON e.id = a.empresa_id
          WHERE m.organizacao_id = ${org}::uuid
            AND m.ocorrido_em >= ${de}::timestamptz AND m.ocorrido_em < ${ate}::timestamptz

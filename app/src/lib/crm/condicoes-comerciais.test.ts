@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { condicoesDoEditor, diaDoVencimento, logradouroFiscal, variaveisDeCondicoes, vendaEhFaturada, type CondicoesDaProposta } from "./condicoes-comerciais";
+import { condicoesDoEditor, diaDoVencimento, logradouroFiscal, proximoDiaDoMes, variaveisDeCondicoes, vendaEhFaturada, type CondicoesDaProposta } from "./condicoes-comerciais";
 import { variaveisFaltando } from "./contrato-variaveis";
 
 /** O que o editor (PropostaLiga) guarda em `propostas.editor`, com as condições negociadas. */
@@ -129,5 +129,26 @@ describe("logradouro que vai para o Stripe", () => {
 
   it("sem rua nenhuma devolve null em vez de string vazia", () => {
     assert.equal(logradouroFiscal({ endereco: null, logradouro: null, numero: "10" }), null);
+  });
+});
+
+/* O primeiro ciclo começa na próxima ocorrência do dia combinado; o trecho
+   antes disso não é cobrado. LIVA, 23/10/2026: sem isso, R$ 719,40 por 7 dias. */
+describe("quando o primeiro ciclo começa", () => {
+  it("dia ainda por vir neste mês", () => {
+    assert.equal(proximoDiaDoMes(30, new Date("2026-10-23T12:00:00Z")).toISOString().slice(0, 10), "2026-10-30");
+  });
+
+  it("dia já passou: vai para o mês seguinte", () => {
+    assert.equal(proximoDiaDoMes(17, new Date("2026-10-23T12:00:00Z")).toISOString().slice(0, 10), "2026-11-17");
+  });
+
+  it("hoje é o dia: só vale a próxima, nunca cobra retroativo", () => {
+    assert.equal(proximoDiaDoMes(23, new Date("2026-10-23T18:00:00Z")).toISOString().slice(0, 10), "2026-11-23");
+  });
+
+  it("mês curto não ganha dia que não existe", () => {
+    assert.equal(proximoDiaDoMes(31, new Date("2026-11-05T12:00:00Z")).toISOString().slice(0, 10), "2026-11-30");
+    assert.equal(proximoDiaDoMes(30, new Date("2027-02-05T12:00:00Z")).toISOString().slice(0, 10), "2027-02-28");
   });
 });

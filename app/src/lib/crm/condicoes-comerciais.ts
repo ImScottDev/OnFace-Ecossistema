@@ -188,6 +188,27 @@ export function diaDoVencimento(diaCombinado: number | null | undefined, ativaca
 }
 
 /**
+ * A próxima ocorrência do dia combinado, a partir de agora.
+ *
+ * É onde o primeiro ciclo começa. O trecho entre a ativação e essa data NÃO é
+ * cobrado: na LIVA (23/10/2026, vencimento dia 30) o primeiro período ia de
+ * 23 a 30/10 — sete dias — e seria faturado como mês CHEIO, R$ 719,40 por uma
+ * semana. Mês cheio só vale para mês cheio.
+ *
+ * Mês curto não ganha dia que não existe: dia 31 em novembro vira 30/11.
+ */
+export function proximoDiaDoMes(dia: number, agora: Date): Date {
+  const d = Math.min(Math.max(Math.trunc(dia), 1), 31);
+  const tentar = (ano: number, mes: number): Date => {
+    const ultimo = new Date(Date.UTC(ano, mes + 1, 0)).getUTCDate();
+    return new Date(Date.UTC(ano, mes, Math.min(d, ultimo), 12, 0, 0));
+  };
+  const esteMes = tentar(agora.getUTCFullYear(), agora.getUTCMonth());
+  if (esteMes.getTime() > agora.getTime()) return esteMes;
+  return tentar(agora.getUTCFullYear(), agora.getUTCMonth() + 1);
+}
+
+/**
  * O logradouro que vai para o Stripe (`address.line1`).
  *
  * `empresas` tem DUAS colunas de rua: `endereco`, que o webhook do Stripe e o

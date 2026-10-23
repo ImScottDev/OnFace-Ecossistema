@@ -446,6 +446,8 @@ export async function retrieveCheckoutSession(sessionId: string): Promise<{ id: 
 export async function createFaturadaSubscription(params: CreateGroupCheckoutParams & {
   /** Dia do mês do vencimento, combinado na proposta. */
   diaVencimentoMes?: number | null;
+  /** Quando o primeiro ciclo começa: a próxima ocorrência do dia combinado. */
+  inicioDoCiclo?: Date | null;
   /** Dias para pagar depois que a fatura é emitida. 0 = vence no próprio dia do ciclo. */
   diasParaPagar?: number | null;
 }): Promise<{ subscriptionId: string; faturaId: string | null; faturaUrl: string | null; mocked: boolean }> {
@@ -483,17 +485,48 @@ export async function createFaturadaSubscription(params: CreateGroupCheckoutPara
      fatura, não da emissão dela — por isso não precisa cobrir os 30 dias de
      antecedência. */
   appendNested(form, "payment_settings", { payment_method_types: ["boleto", "card"] });
-  const dia = Math.trunc(params.diaVencimentoMes ?? 0);
-  if (dia >= 1 && dia <= 31) form.append("billing_cycle_anchor_config[day_of_month]", String(dia));
+  /* O ciclo começa na PRÓXIMA ocorrência do dia combinado, e o trecho entre a
+     ativação e essa data não é cobrado.
+     `billing_cycle_anchor_config` sozinho não resolvia: ele ancora o ciclo no
+     dia certo, mas o primeiro período — da ativação até a âncora — continuava
+     sendo faturado como mês cheio. Na LIVA seriam R$ 719,40 por sete dias.
+     `trial_end` na mesma data não cobra esse trecho E ancora o ciclo ali, que
+     é o que "mês cheio, vencendo no dia combinado" quer dizer. */
+  if (params.inicioDoCiclo) {
+    form.append("trial_end", String(Math.floor(params.inicioDoCiclo.getTime() / 1000)));
+    // Sem forma de pagamento salva no fim do teste a assinatura seria cancelada;
+    // aqui o pagamento é boleto por fatura, então ela segue e o Stripe fatura.
+    form.append("trial_settings[end_behavior][missing_payment_method]", "create_invoice");
+  }
 
-  linhasDoCheckout(recorrentes).forEach((linha, i) => {
-    form.append(`items[${i}][price]`, linha.stripePriceId);
-    form.append(`items[${i}][quantity]`, String(linha.quantidade));
+  /* O preço NEGOCIADO vai no item, não num cupom à parte.
+   *
+   * Usar o Price de tabela e jogar a diferença num cupom fecha o total da
+   * fatura, mas mente para todo o resto: o item da assinatura fica com o valor
+   * cheio, e quem lê a assinatura — o MRR, o serviço canônico, o Cliente 360,
+   * a própria tela do Stripe e a linha que o cliente vê na fatura — enxerga o
+   * preço de tabela. Medido na LIVA (23/10/2026): contrato de R$ 719,40/mês,
+   * assinatura mostrando "6 × R$ 179,90 = R$ 1.079,40", serviço canônico
+   * gravado com R$ 1.079,40 e o Cliente 360 somando R$ 2.159 de MRR.
+   *
+   * `price_data` cria o preço desta venda sobre o MESMO produto oficial do
+   * catálogo — o produto continua sendo o do catálogo, e o valor continua
+   * conferido contra a tabela antes de chegar aqui (`mapItem` recusa item
+   * acima do Price oficial). */
+  recorrentes.forEach((item, i) => {
+    if (!item.stripeProductId) throw new Error(`Item '${item.nome}' não tem produto oficial no Stripe.`);
+    form.append(`items[${i}][price_data][product]`, item.stripeProductId);
+    form.append(`items[${i}][price_data][currency]`, params.moeda.toLowerCase());
+    form.append(`items[${i}][price_data][unit_amount]`, String(amountInCents(item.valorUnitario)));
+    form.append(`items[${i}][price_data][recurring][interval]`, "month");
+    form.append(`items[${i}][quantity]`, String(item.quantidade));
   });
 
-  /* O desconto negociado: mesma regra do checkout — em recorrente ele vale
-     enquanto a assinatura valer, nunca só o primeiro mês. */
-  const desconto = discountTotal(recorrentes);
+  /* Aqui NÃO entra cupom: o desconto já está no preço do item, acima. Cupom
+     por cima do preço negociado descontaria duas vezes.
+     O desconto COM PRAZO (`descontoRecorrenteMeses`) continua precisando de
+     cupom, porque é temporário por natureza — e aí ele incide sobre o preço
+     já negociado, pelos meses combinados. */
   const metadata: Record<string, string> = {
     ...params.metadata,
     crm_proposal_id: params.propostaId,
@@ -503,8 +536,12 @@ export async function createFaturadaSubscription(params: CreateGroupCheckoutPara
     crm_billing_mode: "pos_pago_contrato",
     ...(params.negocioId ? { crm_negocio_id: params.negocioId, negocioId: params.negocioId } : {}),
   };
-  const couponId = await createCoupon(desconto, params.moeda, metadata, params.attemptKey || "initial", duracaoDoDescontoRecorrente(params.descontoRecorrenteMeses));
-  if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
+  const mesesDeDesconto = Math.trunc(params.descontoRecorrenteMeses ?? 0);
+  if (mesesDeDesconto > 0) {
+    const temporario = discountTotal(recorrentes);
+    const couponId = await createCoupon(temporario, params.moeda, metadata, params.attemptKey || "initial", duracaoDoDescontoRecorrente(mesesDeDesconto));
+    if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
+  }
   appendMetadata(form, metadata);
 
   /* A chave de idempotência é o grupo: retomada do aceite, clique duplo ou
