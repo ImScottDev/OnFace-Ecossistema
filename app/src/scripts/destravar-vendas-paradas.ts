@@ -79,7 +79,7 @@ async function paradas(): Promise<Parada[]> {
        AND (n.status <> 'ganho'
             OR EXISTS (SELECT 1 FROM proposta_grupo_comercial g
                         WHERE g.proposta_id = p.id AND g.checkout_id IS NULL
-                          AND g.status IN ('aguardando_checkout', 'aguardando_contrato')))
+                          AND g.status IN ('aguardando_checkout', 'aguardando_contrato', 'falhou')))
        ${sohEsta ? sql`AND p.numero = ${sohEsta}` : sql``}
      ORDER BY p.numero DESC`);
   return r as unknown as Parada[];
@@ -152,10 +152,26 @@ async function main(): Promise<void> {
          - grupo aguardando cobrança e sem checkout nenhum: a venda fechou e
            NINGUÉM vai cobrar, porque pela tela ela já está ganha. Foi o caso
            da Direcional #1586 (ganha, dia de vencimento 17, zero cobrança). */
-    const semCobranca = !v.checkout_status && v.grupo_status === "aguardando_checkout";
+    const semCobranca = v.grupo_status === "aguardando_checkout"
+      ? !v.checkout_status
+      /* Grupo em 'falhou' é grupo ESPERANDO cobrança: a tentativa anterior não
+         cobrou nada, só deixou o estado sujo — e nesse estado
+         `criarCheckoutParaGrupo` se recusa a agir, então a venda fica presa
+         para sempre sem alguém mexer no banco. Acontece sempre que o provedor
+         recusa a chamada (LIVA #1570, 23/10/2026: um parâmetro que o Stripe
+         não aceita em subscriptions). */
+      : v.grupo_status === "falhou" && v.checkout_status !== "pago";
     if ((desconto > 0 || semCobranca) && v.grupo_id && v.checkout_status !== "pago") {
       console.log(`${quem}: ${semCobranca ? "venda fechada e SEM cobrança gerada" : `checkout '${v.checkout_status ?? "nenhum"}' com R$ ${desconto.toFixed(2)}/mês de desconto recorrente`} → ${semCobranca ? "GERAR" : "REGERAR"} a cobrança.`);
       if (APLICAR) {
+        if (v.grupo_status === "falhou") {
+          await db.execute(sql`
+            UPDATE proposta_grupo_comercial
+               SET status = 'aguardando_checkout', pagamento_status = 'pendente',
+                   checkout_id = NULL, fechamento_erro = NULL, updated_at = now()
+             WHERE id = ${v.grupo_id}::uuid AND status = 'falhou'`);
+          console.log("    (grupo estava em 'falhou' e voltou para 'aguardando cobrança')");
+        }
         const r = await criarCheckoutParaGrupo({ grupoId: v.grupo_id, origem: "manual_vendedor" });
         if (!r.ok) console.error(`    ! não regerou: ${r.error}`);
         else if ("faturada" in r) console.log(`    → assinatura ${r.subscriptionId} ativada, fatura ${r.faturaUrl ?? "(no ciclo)"}`);
