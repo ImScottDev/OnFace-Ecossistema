@@ -55,6 +55,8 @@ export interface CustomerStripe {
   name?: string | null;
   created?: number;
   metadata?: Record<string, string> | null;
+  /** Endereço de cobrança: o boleto exige, e Customer antigo costuma estar sem. */
+  address?: { line1?: string | null; city?: string | null; state?: string | null; postal_code?: string | null; country?: string | null } | null;
 }
 
 /**
@@ -138,6 +140,8 @@ export interface PortaStripe {
   /** CPF/CNPJ já cadastrados no Customer. */
   taxIds(id: string): Promise<{ type: string; value: string }[]>;
   criarTaxId(id: string, type: string, value: string): Promise<void>;
+  /** Completa o endereço de cobrança de um Customer que já existe. */
+  completarEndereco(id: string, endereco: Record<string, string>): Promise<void>;
 }
 
 /**
@@ -316,6 +320,12 @@ const stripeReal: PortaStripe = {
     form.append("value", value);
     await stripe(`customers/${encodeURIComponent(id)}/tax_ids`, form, `onface-customer-taxid-${id}-${value}`);
   },
+  async completarEndereco(id, endereco) {
+    const form = new URLSearchParams();
+    for (const [k, v] of Object.entries(endereco)) form.append(`address[${k}]`, v);
+    const assinatura = Object.keys(endereco).sort().join(",");
+    await stripe(`customers/${encodeURIComponent(id)}`, form, `onface-customer-end-${id}-${assinatura}`);
+  },
 };
 
 export const PORTAS_REAIS: PortasCustomer = { modo: getStripeCheckoutMode, banco: bancoReal, stripe: stripeReal };
@@ -388,6 +398,28 @@ async function resolver(e: EntradaCustomer, criar: boolean, p: PortasCustomer, l
           if (!jaTem.some((t) => t.value.replace(/\D/g, "") === cnpj)) await p.stripe.criarTaxId(c.id, tipoDoc, cnpj);
         } catch (err) {
           avisos.push(`ID fiscal não gravado em ${c.id}: ${String(err).slice(0, 160)}`);
+        }
+      }
+      /* Endereço de cobrança no Customer que JÁ EXISTE.
+       *
+       * Gravar o endereço só na criação não bastava: o Customer costuma nascer
+       * de uma venda antiga, quando o cadastro da empresa ainda estava
+       * incompleto, e nunca mais era tocado. O boleto exige endereço — a LIVA
+       * (23/10/2026) tinha CNPJ, nome e `line1` VAZIO no Stripe, com o
+       * logradouro preenchido no CRM o tempo todo.
+       *
+       * Só PREENCHE o que falta; nunca sobrescreve o que o Stripe já tem (lá
+       * pode estar o endereço que o próprio cliente digitou no checkout). */
+      if (metodo !== "criado" && modo !== "mock" && e.endereco) {
+        const faltando: Record<string, string> = {};
+        if (!c.address?.line1 && e.endereco.line1) faltando.line1 = e.endereco.line1;
+        if (!c.address?.city && e.endereco.city) faltando.city = e.endereco.city;
+        if (!c.address?.state && e.endereco.state) faltando.state = e.endereco.state;
+        if (!c.address?.postal_code && e.endereco.postalCode) faltando.postal_code = e.endereco.postalCode;
+        if (!c.address?.country && e.endereco.country) faltando.country = e.endereco.country;
+        if (Object.keys(faltando).length) {
+          await p.stripe.completarEndereco(c.id, faltando)
+            .catch((err) => avisos.push(`endereço não completado em ${c.id}: ${String(err).slice(0, 160)}`));
         }
       }
       await v.gravar({ organizacaoId: e.organizacaoId, empresaId: e.empresaId, leadId: e.leadId, customerId: c.id, metodo, email: e.email, cnpj: e.cnpj });

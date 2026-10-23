@@ -93,6 +93,10 @@ function portas(m: Mundo): PortasCustomer {
         const c = m.customers.get(id)!;
         c.metadata = { ...faltantes, ...(c.metadata ?? {}) };
       },
+      completarEndereco: async (id, endereco) => {
+        const c = m.customers.get(id)!;
+        c.address = { ...(c.address ?? {}), ...endereco };
+      },
       taxIds: async (id) => m.taxIds.get(id) ?? [],
       criarTaxId: async (id, type, value) => {
         m.taxIds.set(id, [...(m.taxIds.get(id) ?? []), { type, value }]);
@@ -416,4 +420,27 @@ test("CPF entra como br_cpf, CNPJ como br_cnpj, lixo como nada", () => {
   assert.equal(tipoDeDocumentoBr("12345678901"), "br_cpf");
   assert.equal(tipoDeDocumentoBr("12345678000199"), "br_cnpj");
   assert.equal(tipoDeDocumentoBr("123"), null);
+});
+
+/* Endereço de cobrança em Customer que já existe. O boleto exige endereço, e
+   a LIVA (23/10/2026) tinha CNPJ e nome no Stripe com `line1` vazio, enquanto
+   o logradouro estava preenchido no CRM o tempo todo. */
+test("completa o endereço de um Customer que já existia sem ele", async () => {
+  const m = mundo();
+  poe(m, { id: "cus_antigo", metadata: { crm_company_id: EMP } });
+  m.empresa.set(EMP, "cus_antigo");
+  await garantirCustomerDaEmpresa(entrada({ endereco: { line1: "Alameda Rio Negro, 1030", city: "Barueri", state: "SP", postalCode: "06454-000", country: "BR" } }), portas(m));
+  assert.equal(m.customers.get("cus_antigo")!.address?.line1, "Alameda Rio Negro, 1030");
+  assert.equal(m.customers.get("cus_antigo")!.address?.city, "Barueri");
+});
+
+test("não sobrescreve o endereço que o cliente já digitou no checkout", async () => {
+  const m = mundo();
+  poe(m, { id: "cus_antigo", metadata: { crm_company_id: EMP }, address: { line1: "Rua do cliente, 7", city: "Santos" } });
+  m.empresa.set(EMP, "cus_antigo");
+  await garantirCustomerDaEmpresa(entrada({ endereco: { line1: "Outra rua, 99", city: "Barueri", postalCode: "06454-000" } }), portas(m));
+  const a = m.customers.get("cus_antigo")!.address!;
+  assert.equal(a.line1, "Rua do cliente, 7");
+  assert.equal(a.city, "Santos");
+  assert.equal(a.postal_code, "06454-000", "o que faltava entra");
 });
