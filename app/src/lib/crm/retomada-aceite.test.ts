@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { decidirRetomada, esperaEntreTentativasMs, MAX_TENTATIVAS_AUTOMATICAS, type EstadoDoGrupo } from "./retomada-aceite";
+import { decidirRetomada, ehEsperaDeTerceiro, esperaEntreTentativasMs, mensagemDeEsperaDeTerceiro, MAX_TENTATIVAS_AUTOMATICAS, type EstadoDoGrupo } from "./retomada-aceite";
 
 const base: EstadoDoGrupo = { caminho: "contrato", status: "aguardando_contrato", contratoId: null, checkoutId: null, contratoAssinadoEm: null };
 
@@ -37,5 +37,26 @@ describe("retomar o aceite não duplica contrato, cobrança nem regride o grupo"
     assert.deepEqual([1, 2, 3, 4, 5].map((n) => esperaEntreTentativasMs(n) / 60_000), [5, 10, 20, 40, 80]);
     assert.equal(esperaEntreTentativasMs(30), 6 * 3_600_000);
     assert.equal(MAX_TENTATIVAS_AUTOMATICAS, 5);
+  });
+});
+
+/* Maíra cred #1581: expansão numa assinatura com boleto em aberto. O Stripe
+   recusa até o boleto ser pago ou vencer — dias. O sistema gastou as cinco
+   tentativas em minutos e matou a venda na fila. */
+describe("espera por terceiro não é falha", () => {
+  it("boleto em aberto na assinatura é espera, não falha", () => {
+  const erroDoStripe = 'Stripe subscriptions/sub_1URCWHEd4dqxpSBf7C3jQ7OA: HTTP 400 { "error": { "message": '
+    + '"The Boleto PaymentIntent cannot be updated or canceled when it has a requires_action status. '
+    + 'You must either wait for the payment instructions to expire or for your customer to complete the payment." } }';
+  assert.equal(ehEsperaDeTerceiro(erroDoStripe), true);
+  const dito = mensagemDeEsperaDeTerceiro(erroDoStripe);
+  assert.match(dito, /boleto/i);
+  assert.ok(!dito.includes("HTTP 400"), "o JSON cru do Stripe não vai para a tela");
+  });
+
+  it("erro comum continua falha, e a mensagem não é trocada", () => {
+  assert.equal(ehEsperaDeTerceiro("Grupo de expansão sem item recorrente."), false);
+  assert.equal(ehEsperaDeTerceiro(null), false);
+  assert.equal(mensagemDeEsperaDeTerceiro("cartão recusado"), "cartão recusado");
   });
 });

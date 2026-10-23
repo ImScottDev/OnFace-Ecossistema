@@ -3222,20 +3222,25 @@ const slaWorker = new Worker(
       // Proposta ACEITA cujo grupo parou antes do contrato/checkout (falha do provedor, dado faltando, processo caído).
       // `retomar` é idempotente (retomada-aceite.ts): não gera segundo contrato, não reenvia, não cria outra cobrança.
       const { processarAceiteDaProposta } = await import("../lib/crm/proposta-aceite");
-      const { esperaEntreTentativasMs, MAX_TENTATIVAS_AUTOMATICAS } = await import("../lib/crm/retomada-aceite");
-      const parados = await db.execute<{ proposta_id: string; organizacao_id: string; tentativas: number; ultima: string | null }>(rawSql`
+      const { esperaEntreTentativasMs, MAX_TENTATIVAS_AUTOMATICAS, ehEsperaDeTerceiro } = await import("../lib/crm/retomada-aceite");
+      /* O limite de tentativas é filtrado em JS, não no SQL, porque grupo que
+         está ESPERANDO alguém de fora (boleto em aberto na assinatura) não
+         gasta tentativa: ele resolve sozinho quando o cliente pagar, e desistir
+         em cinco tentativas matava justamente o caso que a espera resolveria.
+         O intervalo entre tentativas já cresce até 6 h, então esperar é barato. */
+      const parados = await db.execute<{ proposta_id: string; organizacao_id: string; tentativas: number; ultima: string | null; erro: string | null }>(rawSql`
         SELECT g.proposta_id::text, g.organizacao_id::text, g.fechamento_tentativas AS tentativas,
-               g.fechamento_ultima_tentativa_em::text AS ultima
+               g.fechamento_ultima_tentativa_em::text AS ultima, g.fechamento_erro AS erro
           FROM proposta_grupo_comercial g
           JOIN propostas p ON p.id = g.proposta_id
          WHERE p.status = 'aceita' AND p.aceita_em < now() - interval '3 minutes'
            AND g.contrato_assinado_em IS NULL AND g.checkout_id IS NULL
            AND g.status IN ('aguardando_aceite', 'aguardando_contrato', 'aguardando_checkout')
-           AND g.fechamento_tentativas < ${MAX_TENTATIVAS_AUTOMATICAS}
          LIMIT 100`);
       const agora = Date.now();
       const devidas = new Map<string, string>();
       for (const g of parados) {
+        if (g.tentativas >= MAX_TENTATIVAS_AUTOMATICAS && !ehEsperaDeTerceiro(g.erro)) continue;
         const espera = esperaEntreTentativasMs(g.tentativas);
         if (g.ultima && agora - new Date(g.ultima).getTime() < espera) continue;
         devidas.set(g.proposta_id, g.organizacao_id);

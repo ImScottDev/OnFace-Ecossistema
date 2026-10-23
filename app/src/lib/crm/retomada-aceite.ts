@@ -48,3 +48,36 @@ export function esperaEntreTentativasMs(tentativas: number): number {
   return Math.min(5 * 60_000 * 2 ** Math.max(0, tentativas - 1), 6 * 3_600_000);
 }
 export const MAX_TENTATIVAS_AUTOMATICAS = 5;
+
+/**
+ * O grupo parou porque está ESPERANDO alguém de fora, não porque falhou?
+ *
+ * Caso real (Maíra cred #1581, 21/10/2026): a venda é expansão e a assinatura
+ * tinha um boleto emitido e não pago. O Stripe recusa qualquer alteração em
+ * assinatura com PaymentIntent de boleto em `requires_action` — e vai recusar
+ * até o cliente pagar ou o boleto vencer, o que leva DIAS.
+ *
+ * O sistema tratou isso como falha comum: cinco tentativas em poucos minutos,
+ * limite esgotado, e a venda morta na fila justamente no caso em que a espera
+ * resolveria sozinha. Espera não gasta o limite de tentativas; o intervalo
+ * entre elas já cresce até 6 h, então esperar sai barato.
+ */
+export function ehEsperaDeTerceiro(erro: string | null | undefined): boolean {
+  if (!erro) return false;
+  const e = erro.toLowerCase();
+  return e.includes("requires_action")
+    || e.includes("cannot be updated or canceled")
+    || e.includes("wait for the payment instructions to expire");
+}
+
+/**
+ * O que dizer ao vendedor quando a alteração da assinatura esbarra num boleto
+ * em aberto. O erro cru do Stripe chegava à tela como JSON em inglês, e não
+ * diz o que fazer.
+ */
+export function mensagemDeEsperaDeTerceiro(erro: string): string {
+  if (!ehEsperaDeTerceiro(erro)) return erro;
+  return "Esta assinatura tem um boleto emitido e ainda não pago, e o Stripe não permite alterá-la enquanto ele estiver em aberto. "
+    + "A alteração entra sozinha assim que o cliente pagar o boleto ou ele vencer — não é preciso refazer a proposta. "
+    + "Para cobrar agora, cancele o boleto em aberto em Cliente 360 › Assinaturas e reprocese o aceite.";
+}

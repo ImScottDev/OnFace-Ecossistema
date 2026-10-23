@@ -37,6 +37,7 @@ import {
 } from "@/lib/integrations/stripe-assinatura-acoes";
 import { registrarEvidencia, marcarNegocioGanhoSeAindaNao } from "@/lib/crm/won-evidence";
 import { registrarPagamentoDoGrupo, concluirGrupo, vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
+import { mensagemDeEsperaDeTerceiro } from "@/lib/crm/retomada-aceite";
 
 /** O item da proposta, já validado contra o catálogo oficial pelo checkout. */
 export interface ItemDeExpansao {
@@ -212,9 +213,12 @@ export async function aplicarExpansaoNaAssinatura(opts: {
       const motivo = err instanceof ErroDeAlteracao ? err.message : String(err);
       /* Falha no meio: o que já entrou está cobrado e fica. Dizer quantos
          entraram é o que permite terminar à mão sem cobrar duas vezes. */
+      // Boleto em aberto na assinatura não é falha: é espera, e o erro cru do
+      // Stripe chegava à tela como JSON em inglês.
+      const explicado = mensagemDeEsperaDeTerceiro(motivo);
       return { ok: false, error: aplicados > 0
-        ? `${aplicados} item(ns) já foram adicionados à assinatura, mas o item do Price ${priceId} falhou: ${motivo}. Conclua o que falta em Cliente 360 › Assinaturas.`
-        : `Não foi possível alterar a assinatura: ${motivo}` };
+        ? `${aplicados} item(ns) já foram adicionados à assinatura, mas o item do Price ${priceId} falhou: ${explicado}. Conclua o que falta em Cliente 360 › Assinaturas.`
+        : explicado === motivo ? `Não foi possível alterar a assinatura: ${motivo}` : explicado };
     }
   }
 
