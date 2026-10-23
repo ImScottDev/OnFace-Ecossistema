@@ -60,7 +60,12 @@ export async function reconhecerClienteDoSaas(organizacaoId: string, a: Assinatu
     .values({
       organizacaoId,
       empresaId: a.empresaId,
-      canonicalKey: `CALLFACE_AI:${a.id}`,
+      /* A chave é a MESMA do sync do Stripe (`STRIPE:<sub>`), porque é a mesma
+         assinatura. Com o prefixo `CALLFACE_AI:` os dois sincronizadores
+         gravavam duas linhas para uma assinatura só — o conflito nunca batia —
+         e o cliente aparecia com o produto duplicado. Medido em 23/10/2026:
+         30 pares exatamente assim, um com o valor real e outro zerado. */
+      canonicalKey: `STRIPE:${a.id}`,
       serviceFamily: classificarProdutoPorNome(a.produto),
       canonicalProduct: a.produto,
       // Fora do portfólio e sem natureza de receita: não entra em MRR nem na carteira.
