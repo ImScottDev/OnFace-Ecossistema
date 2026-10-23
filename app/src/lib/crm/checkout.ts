@@ -234,6 +234,9 @@ export async function criarCheckoutParaGrupo(opts: {
          com item recorrente — o Stripe ignora `trial` em cobrança avulsa, e
          mandar assim mesmo só polui a sessão. */
       trialDias: itensRecorrentes.length > 0 ? proposta.trialDias : null,
+      /* Desconto com prazo só vale como prazo quando o alvo é a mensalidade;
+         com alvo "setup" ele não tem nada a ver com a duração do recorrente. */
+      descontoRecorrenteMeses: proposta.descontoTemporarioAlvo === "mrr" ? proposta.descontoTemporarioMeses : null,
       successUrl: process.env.CHECKOUT_SUCCESS_URL || `${base}/p/${proposta.id}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: process.env.CHECKOUT_CANCEL_URL || `${base}/p/${proposta.id}?checkout=cancelled`,
     });

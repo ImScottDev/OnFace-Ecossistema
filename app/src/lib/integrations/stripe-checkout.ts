@@ -180,6 +180,12 @@ export interface CreateGroupCheckoutParams {
   boletoExpiresAfterDays?: number;
   /** Dias de teste antes da primeira cobrança. Ausente ou 0 = sem teste. */
   trialDias?: number | null;
+  /**
+   * Prazo, em meses, do desconto sobre a mensalidade, quando o vendedor marcou
+   * "desconto com prazo" na proposta. Ausente ou 0 = o preço negociado vale
+   * enquanto a assinatura durar. Ver `duracaoDoDescontoRecorrente`.
+   */
+  descontoRecorrenteMeses?: number | null;
 }
 
 function appendNested(form: URLSearchParams, key: string, value: unknown): void {
@@ -219,14 +225,40 @@ function discountTotal(items: CheckoutItem[]): number {
  * errado, sem erro nenhum aparecer. O valor também entra na chave: dois
  * descontos diferentes nunca podem compartilhar cupom.
  */
-async function createOneTimeCoupon(amount: number, currency: string, metadata: Record<string, string>, attemptKey: string): Promise<string | null> {
+export type DuracaoCupom =
+  | { duration: "once" }
+  | { duration: "forever" }
+  | { duration: "repeating"; duration_in_months: number };
+
+/**
+ * Quanto tempo o desconto de um item RECORRENTE dura no Stripe.
+ *
+ * `once` aqui é cobrança errada, e silenciosa: o Stripe desconta só a primeira
+ * fatura e cobra o preço de tabela de todas as outras. Medido na proposta
+ * #1570 (LIVA, 23/10/2026) — vendida a R$ 719,40/mês com contrato de 24 meses
+ * assinado, o checkout cobraria R$ 1.079,40 a partir do 2º mês, R$ 360 a mais
+ * por mês, sem erro nenhum aparecer em lugar nenhum.
+ *
+ * O preço negociado de um recorrente vale enquanto a assinatura valer:
+ * `forever`. Só tem prazo quando o vendedor marcou "desconto com prazo" na
+ * proposta — e aí o prazo é o que ele marcou.
+ */
+export function duracaoDoDescontoRecorrente(meses: number | null | undefined): DuracaoCupom {
+  const n = Math.trunc(meses ?? 0);
+  return n > 0 ? { duration: "repeating", duration_in_months: n } : { duration: "forever" };
+}
+
+async function createCoupon(amount: number, currency: string, metadata: Record<string, string>, attemptKey: string, duracao: DuracaoCupom): Promise<string | null> {
   if (amount <= 0) return null;
   const form = new URLSearchParams();
   form.append("amount_off", String(amountInCents(amount)));
   form.append("currency", currency.toLowerCase());
-  form.append("duration", "once");
+  for (const [chave, valor] of Object.entries(duracao)) form.append(chave, String(valor));
   appendMetadata(form, { ...metadata, crm_discount_type: "proposal_negotiated_discount" });
-  const coupon = await stripePost<{ id: string }>("coupons", form, { idempotencyKey: stableIdempotencyKey(`crm-coupon-${metadata.crm_group_id || "group"}-${attemptKey}-${amountInCents(amount)}`) });
+  // A duração entra na chave: um cupom `once` já criado não pode ser devolvido
+  // no lugar do `forever` só porque o valor bate.
+  const assinatura = "duration_in_months" in duracao ? `${duracao.duration}-${duracao.duration_in_months}` : duracao.duration;
+  const coupon = await stripePost<{ id: string }>("coupons", form, { idempotencyKey: stableIdempotencyKey(`crm-coupon-${metadata.crm_group_id || "group"}-${attemptKey}-${amountInCents(amount)}-${assinatura}`) });
   return coupon.id;
 }
 
@@ -275,7 +307,16 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
     ...(negocioId ? { crm_negocio_id: negocioId, negocioId } : {}),
     ...(empresaId ? { empresaId } : {}),
   };
-  const discount = discountTotal(allItems);
+  /* Recorrente e avulso têm durações de desconto diferentes, e uma Checkout
+     Session aceita UM cupom só. Separar é o que impede o desconto do setup de
+     virar desconto eterno na mensalidade (e vice-versa). Nenhuma proposta da
+     base tem desconto nos dois ao mesmo tempo; se aparecer, é melhor recusar
+     com o caminho manual do que cobrar errado calado. */
+  const descontoRecorrente = discountTotal(recorrentes);
+  const descontoAvulso = discountTotal(avulsos);
+  if (descontoRecorrente > 0 && descontoAvulso > 0) {
+    throw new Error("Esta proposta tem desconto no item recorrente E no avulso. O Stripe aceita um cupom por checkout, e os dois precisam de durações diferentes — concentre o desconto em um dos dois ou cobre o setup à parte.");
+  }
 
   if (mode === "mock") {
     return { sessionId: `cs_test_mock_${params.grupoComercialId.replace(/-/g, "")}`, url: `mock://stripe-checkout/${params.grupoComercialId}`, mocked: true };
@@ -324,7 +365,9 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
     form.append(`line_items[${index}][quantity]`, String(linha.quantidade));
   });
 
-  const couponId = await createOneTimeCoupon(discount, params.moeda, metadata, params.attemptKey || "initial");
+  const couponId = descontoRecorrente > 0
+    ? await createCoupon(descontoRecorrente, params.moeda, metadata, params.attemptKey || "initial", duracaoDoDescontoRecorrente(params.descontoRecorrenteMeses))
+    : await createCoupon(descontoAvulso, params.moeda, metadata, params.attemptKey || "initial", { duration: "once" });
   if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
   if (stripeMode === "subscription") {
     /* Período de teste, quando o vendedor marcou na proposta.
