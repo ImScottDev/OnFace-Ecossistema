@@ -179,6 +179,9 @@ const BILLABLE = new Set(["active", "past_due", "trialing"]);
  *
  * Qualquer outro estado (`incomplete`, `incomplete_expired`, `paused`) não diz nada: não mexe.
  */
+/** Assinatura que ainda cobra: `past_due` é o normal de quem paga por boleto. */
+const VIVA_NO_STRIPE = new Set(["active", "trialing", "past_due"]);
+
 export function reconciliacaoDoServico(statusStripe: string): "encerrar" | "reativar" | null {
   if (statusStripe === "canceled" || statusStripe === "unpaid") return "encerrar";
   if (BILLABLE.has(statusStripe)) return "reativar";
@@ -705,33 +708,38 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
               eq(servicosCanonicos.commercialLifecycle, "ACTIVE"),
               sql`${servicosCanonicos.billingStatus} IS DISTINCT FROM ${vaiCancelar ? "ACTIVE_CANCEL_SCHEDULED" : "ACTIVE"}`,
             ));
+        }
 
-          /* O VALOR do serviço também acompanha a assinatura, não só o status.
+        /* O VALOR do serviço também acompanha a assinatura, não só o status.
 
-             O serviço canônico nascia no Won (ou aqui, na reconciliação) e
-             ficava congelado no valor daquele dia. Quem mudasse de plano ou
-             ganhasse mais um usuário continuava no 360 com o preço antigo —
-             e o MRR da carteira se lê do serviço, não da assinatura.
+           O serviço canônico nascia no Won (ou aqui, na reconciliação) e
+           ficava congelado no valor daquele dia. Quem mudasse de plano ou
+           ganhasse mais um usuário continuava no 360 com o preço antigo — e o
+           MRR da carteira se lê do serviço, não da assinatura.
 
-             Medido em 23/10/2026 na Maíra cred: assinatura em 2 × R$ 179,90 =
-             R$ 359,80 depois da expansão, serviço parado em 1 × R$ 179,90.
+           Medido em 23/10/2026 na Maíra cred: assinatura em 2 × R$ 179,90 =
+           R$ 359,80 depois da expansão, serviço parado em 1 × R$ 179,90.
 
-             Só MRR do portfólio cobrado pelo Stripe, e nunca para zero: valor
-             ausente é falha de leitura, não cliente que parou de pagar — quem
-             cancela passa pelo bloco de encerramento, que é outro caminho. */
-          if (mrr !== null && Number(mrr) > 0) {
-            await tx.update(servicosCanonicos)
-              .set({ currentRecurringValue: String(mrr), quantidade: String(quantidadeTotal), updatedAt: new Date() })
-              .where(and(
-                eq(servicosCanonicos.organizacaoId, org.id),
-                servicoDestaAssinatura,
-                eq(servicosCanonicos.commercialLifecycle, "ACTIVE"),
-                eq(servicosCanonicos.revenueNature, "MRR"),
-                eq(servicosCanonicos.portfolioIncluded, true),
-                sql`(${servicosCanonicos.currentRecurringValue} IS DISTINCT FROM ${String(mrr)}::numeric
-                     OR ${servicosCanonicos.quantidade} IS DISTINCT FROM ${String(quantidadeTotal)}::numeric)`,
-              ));
-          }
+           Vale para assinatura VIVA, não só `active`. Quem paga por boleto
+           passa dias em `past_due` a cada fatura em aberto — é o estado normal
+           dele, não um defeito —, e foi exatamente onde a primeira versão
+           disto não alcançava: ficava dentro do bloco de `active` e deixava
+           parada justamente a assinatura que acabara de mudar de valor.
+
+           Nunca para zero: valor ausente é falha de leitura, não cliente que
+           parou de pagar — quem cancela passa pelo bloco de encerramento. */
+        if (VIVA_NO_STRIPE.has(s.status) && mrr !== null && Number(mrr) > 0) {
+          await tx.update(servicosCanonicos)
+            .set({ currentRecurringValue: String(mrr), quantidade: String(quantidadeTotal), updatedAt: new Date() })
+            .where(and(
+              eq(servicosCanonicos.organizacaoId, org.id),
+              servicoDestaAssinatura,
+              eq(servicosCanonicos.commercialLifecycle, "ACTIVE"),
+              eq(servicosCanonicos.revenueNature, "MRR"),
+              eq(servicosCanonicos.portfolioIncluded, true),
+              sql`(${servicosCanonicos.currentRecurringValue} IS DISTINCT FROM ${String(mrr)}::numeric
+                   OR ${servicosCanonicos.quantidade} IS DISTINCT FROM ${String(quantidadeTotal)}::numeric)`,
+            ));
         }
 
         // transição de status -> reflete no contrato espelho (Carteira)
