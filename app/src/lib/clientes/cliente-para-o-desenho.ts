@@ -29,6 +29,8 @@ export interface ServicoDoCliente {
   familia: string;
   produto: string | null;
   valor: number;
+  /** Quantos itens o cliente tem deste serviço (2 usuários, 5 licenças...). */
+  quantidade: number;
   billingStatus: string | null;
   lifecycle: string | null;
   contratoId: string | null;
@@ -189,12 +191,13 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
   if (!empresa) return null;
 
   const servicos = await db.execute<{
-    id: string; familia: string; produto: string | null; valor: string;
+    id: string; familia: string; produto: string | null; valor: string; quantidade: string | null;
     billing_status: string | null; lifecycle: string | null; contrato_id: string | null; origem?: string | null;
     assinatura_id?: string | null;
   }>(sql`
     SELECT id::text, service_family AS familia, canonical_product AS produto,
-           current_recurring_value::text AS valor, billing_status, billing_source AS origem,
+           current_recurring_value::text AS valor, quantidade::text AS quantidade,
+           billing_status, billing_source AS origem,
            commercial_lifecycle AS lifecycle, contrato_id::text,
            -- A assinatura que este serviço representa: é por ela que se sabe se
            -- a assinatura já está na tela, e não pela família (ver abaixo).
@@ -223,7 +226,7 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
      GROUP BY 1`);
   for (const f of faturadoMrr) {
     if (servicos.some((x) => x.familia === f.familia)) continue;
-    servicos.push({ id: "receita:" + f.familia, familia: f.familia, produto: null, valor: f.valor, billing_status: null, lifecycle: null, contrato_id: null });
+    servicos.push({ id: "receita:" + f.familia, familia: f.familia, produto: null, valor: f.valor, quantidade: null, billing_status: null, lifecycle: null, contrato_id: null });
   }
 
   /* Contrato não tem um caminho só até a empresa. Os três (empresa_id direto,
@@ -400,7 +403,8 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     }
     servicos.push({
       id: "assinatura:" + a.stripeSubscriptionId, familia, produto: b.produtoCanonico ?? a.produto,
-      valor: a.mrr, billing_status: a.status, lifecycle: null, contrato_id: null,
+      valor: a.mrr, quantidade: a.quantidade === null ? null : String(a.quantidade),
+      billing_status: a.status, lifecycle: null, contrato_id: null,
     });
     assinaturaDoServico.set("assinatura:" + a.stripeSubscriptionId, a);
   }
@@ -416,6 +420,9 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
     clienteDesde: cli.cliente_desde,
     servicos: servicos.map((s) => ({
       id: s.id, familia: s.familia, produto: s.produto, valor: Number(s.valor ?? 0),
+      /* Pelo menos 1: o serviço existe, então o cliente tem ao menos uma
+         unidade dele. Quantidade ausente é dado que falta, não zero itens. */
+      quantidade: Math.max(1, Math.round(Number(s.quantidade ?? 1)) || 1),
       billingStatus: s.billing_status, lifecycle: s.lifecycle, contratoId: s.contrato_id,
       assinaturaStatus: assinaturaDoServico.get(s.id)?.statusFin ?? null,
       produtoReal: assinaturaDoServico.get(s.id)?.produtoReal ?? null,

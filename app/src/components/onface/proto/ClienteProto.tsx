@@ -297,7 +297,12 @@ class ClienteLigada extends ClienteLiga {
         // Regra única do nome (lib/catalogo/rotulos): nome do Stripe/catálogo, senão o do legado marcado como
         // histórico; nunca o rótulo da família. Sem nome nenhum, diz que não há.
         const p = produtoParaExibir(s);
-        return [{ nome: p.nome ?? `${F.l} (produto não identificado)`, qtd: 1, preco: s.valor, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.assinaturaStatus === "vencida" || s.assinaturaStatus === "inadimplente" ? "Assinatura " + ROTULO_STATUS_ASSINATURA[s.assinaturaStatus].toLowerCase() : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : p.historico ? "Serviço · histórico do legado" : "Serviço", desde }];
+        /* A quantidade vem do serviço, não é 1 fixo.
+           Com `qtd: 1` a ficha dizia "1 × Callface AI - Full" para quem tinha
+           dois usuários — o total batia (o valor recorrente já é o da conta
+           toda), só a linha mentia sobre o que o cliente comprou. O unitário
+           sai do total dividido pela quantidade, senão o subtotal dobraria. */
+        return [{ nome: p.nome ?? `${F.l} (produto não identificado)`, qtd: s.quantidade, preco: s.valor / s.quantidade, sub: s.valor, tipo: s.billingStatus === "CANCELED" ? "Cobrança cancelada" : s.assinaturaStatus === "vencida" || s.assinaturaStatus === "inadimplente" ? "Assinatura " + ROTULO_STATUS_ASSINATURA[s.assinaturaStatus].toLowerCase() : s.valor === 0 && s.billingStatus === "NOT_APPLICABLE" ? "Aguardando faturamento" : p.historico ? "Serviço · histórico do legado" : "Serviço", desde }];
       });
       const cancelado = svs.every((s) => s.billingStatus === "CANCELED");
       // Pagamento vencido ganha de "Ativo": a assinatura existe, mas o Stripe diz que a cobrança não passou.
