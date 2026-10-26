@@ -410,7 +410,7 @@ async function lerCobrancaNaAssinatura(organizacaoId: string, propostaId: string
       JOIN propostas p ON p.id = g.proposta_id
       JOIN checkouts c ON c.id = g.checkout_id
       -- a conta Stripe é compartilhada com o SaaS: assinatura que não é do CRM
-      -- não é cobrança de venda nossa. O filtro sai de `doCrm`, fonte única.
+      -- não é cobrança de venda nossa. O filtro sai de doCrm, fonte única.
       JOIN assinaturas a ON a.stripe_subscription_id = c.stripe_subscription_id
                         AND ${doCrm("a")}
       -- a fatura em aberto mais recente desta assinatura, se já houver
