@@ -18,6 +18,8 @@ import { lerAlteracoesDaProposta } from "@/lib/vendas/auditoria-comercial-regist
 import type { RegistroDeAlteracao } from "@/lib/vendas/auditoria-comercial";
 import { atualizarEntregaDaOrigem, entregasDaOrigem } from "@/lib/email/entrega";
 import { avisarClienteDaPropostaEnviada, type ResultadoEmail, type ResultadoWhatsapp, type ViaEmail } from "@/lib/crm/enviar-proposta";
+import { diasParaPagarDaVenda } from "@/lib/integrations/stripe-checkout";
+import { doCrm } from "@/lib/financeiro/espelho-crm";
 
 const ROTA = "/propostas";
 
@@ -193,6 +195,22 @@ export interface DetalheProposta {
   alteracoes: RegistroDeAlteracao[];
   /** Onde o cliente paga esta venda. O vendedor precisa ver (e copiar) o mesmo link que o cliente. */
   linksDePagamento: Array<{ grupoId: string; url: string; tipo: "checkout" | "fatura"; pago: boolean }>;
+  /**
+   * Venda por contrato: a cobrança não é um link, é a fatura que a assinatura
+   * emite. Dizer QUANDO ela sai e dar o link quando existir é o que o vendedor
+   * precisa — antes disso a tela oferecia um checkout que não existe nesse
+   * modelo e levava a "Pagamento online indisponível".
+   */
+  cobrancaNaAssinatura: {
+    produto: string | null;
+    /** Quando o Stripe emite a próxima fatura. */
+    proximaFaturaEm: string | null;
+    diasParaPagar: number | null;
+    /** A fatura em aberto, quando já foi emitida. */
+    faturaUrl: string | null;
+    faturaVenceEm: string | null;
+    faturaValor: number | null;
+  } | null;
 }
 
 export async function acaoDetalhe(propostaId: string): Promise<Resultado<DetalheProposta | null>> {
@@ -312,6 +330,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       entregas: await lerEntregasDaProposta(ctx.organizacaoId, propostaId, p.negocio_id),
       pendenciasDoAceite: p.status === "aceita" ? await lerPendenciasDoAceite(ctx.organizacaoId, propostaId) : [],
       linksDePagamento: await lerLinksDePagamento(ctx.organizacaoId, propostaId),
+      cobrancaNaAssinatura: await lerCobrancaNaAssinatura(ctx.organizacaoId, propostaId),
       alteracoes: await lerAlteracoesDaProposta(ctx.organizacaoId, propostaId),
     };
   });
@@ -346,11 +365,18 @@ async function lerEntregasDaProposta(organizacaoId: string, propostaId: string, 
  */
 async function lerLinksDePagamento(organizacaoId: string, propostaId: string): Promise<DetalheProposta["linksDePagamento"]> {
   const base = appUrl();
+  /* Só o checkout que EXISTE no Stripe vira link.
+     A venda por contrato também grava uma linha em `checkouts` — é por ela que
+     o webhook acha o negócio —, mas sem sessão nenhuma: a cobrança dela é a
+     fatura da assinatura. Sem este filtro, a tela oferecia "Abrir checkout"
+     para essa linha e o cliente caía em "Pagamento online indisponível"
+     (Instituto Educacional Fernando Mesquita, proposta #1590, 26/10/2026). */
   const doCheckout = await db.execute<{ grupo: string; id: string; status: string }>(sql`
     SELECT g.id::text AS grupo, c.id::text AS id, c.status
       FROM proposta_grupo_comercial g
       JOIN checkouts c ON c.id = g.checkout_id
-     WHERE g.proposta_id = ${propostaId}::uuid AND g.organizacao_id = ${organizacaoId}::uuid`);
+     WHERE g.proposta_id = ${propostaId}::uuid AND g.organizacao_id = ${organizacaoId}::uuid
+       AND (c.stripe_checkout_url IS NOT NULL OR c.stripe_session_id IS NOT NULL)`);
 
   const daExpansao = await db.execute<{ grupo: string; url: string | null }>(sql`
     SELECT ev.grupo_comercial_id::text AS grupo, ev.metadata->>'faturaUrl' AS url
@@ -364,6 +390,51 @@ async function lerLinksDePagamento(organizacaoId: string, propostaId: string): P
     ...doCheckout.map((c) => ({ grupoId: c.grupo, url: `${base}/checkout/${c.id}`, tipo: "checkout" as const, pago: c.status === "pago" })),
     ...daExpansao.filter((e) => e.url).map((e) => ({ grupoId: e.grupo, url: e.url as string, tipo: "fatura" as const, pago: false })),
   ];
+}
+
+/**
+ * A cobrança de uma venda por contrato: a assinatura e a fatura que ela emite.
+ *
+ * Vem do espelho do CRM, não do Stripe: a tela não espera rede para dizer
+ * quando o cliente vai ser cobrado.
+ */
+async function lerCobrancaNaAssinatura(organizacaoId: string, propostaId: string): Promise<DetalheProposta["cobrancaNaAssinatura"]> {
+  const [linha] = await db.execute<{
+    produto: string | null; proxima: string | null; assinatura_id: string; dias: number | null;
+    fatura_url: string | null; fatura_vence: string | null; fatura_valor: string | null;
+  }>(sql`
+    SELECT a.produto, a.current_period_end::text AS proxima, a.id::text AS assinatura_id,
+           p.vencimento_dias AS dias,
+           f.hosted_invoice_url AS fatura_url, f.vencimento::text AS fatura_vence, f.valor::text AS fatura_valor
+      FROM proposta_grupo_comercial g
+      JOIN propostas p ON p.id = g.proposta_id
+      JOIN checkouts c ON c.id = g.checkout_id
+      -- a conta Stripe é compartilhada com o SaaS: assinatura que não é do CRM
+      -- não é cobrança de venda nossa. O filtro sai de `doCrm`, fonte única.
+      JOIN assinaturas a ON a.stripe_subscription_id = c.stripe_subscription_id
+                        AND ${doCrm("a")}
+      -- a fatura em aberto mais recente desta assinatura, se já houver
+      LEFT JOIN LATERAL (
+        SELECT hosted_invoice_url, vencimento, valor FROM faturas
+         WHERE assinatura_id = a.id AND ${doCrm("faturas")}
+           AND status <> 'paid' AND hosted_invoice_url IS NOT NULL
+         ORDER BY emitida_em DESC NULLS LAST LIMIT 1
+      ) f ON true
+     WHERE g.proposta_id = ${propostaId}::uuid AND g.organizacao_id = ${organizacaoId}::uuid
+       AND c.stripe_subscription_id IS NOT NULL
+       -- só quando NÃO há checkout de verdade: com checkout, quem manda é o link dele
+       AND c.stripe_checkout_url IS NULL AND c.stripe_session_id IS NULL
+     LIMIT 1`);
+  if (!linha) return null;
+  return {
+    produto: linha.produto,
+    proximaFaturaEm: linha.proxima,
+    // o MESMO cálculo que foi ao Stripe, não uma cópia dele
+    diasParaPagar: diasParaPagarDaVenda(linha.dias),
+    faturaUrl: linha.fatura_url,
+    faturaVenceEm: linha.fatura_vence,
+    faturaValor: linha.fatura_valor === null ? null : Number(linha.fatura_valor),
+  };
 }
 
 async function lerPendenciasDoAceite(organizacaoId: string, propostaId: string): Promise<DetalheProposta["pendenciasDoAceite"]> {

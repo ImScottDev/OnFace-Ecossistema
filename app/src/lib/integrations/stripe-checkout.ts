@@ -443,6 +443,17 @@ export async function retrieveCheckoutSession(sessionId: string): Promise<{ id: 
  * Setup/implantação não entra aqui: vai em boleto separado, emitido na
  * assinatura do contrato (`criarCobrancaAvulsa`).
  */
+/**
+ * Quantos dias o cliente tem para pagar a fatura da assinatura.
+ *
+ * Função única porque a TELA precisa dizer ao vendedor o mesmo número que foi
+ * ao Stripe: prometer um vencimento que o boleto não tem faz o vendedor
+ * combinar com o cliente uma data que não existe.
+ */
+export function diasParaPagarDaVenda(dias: number | null | undefined): number {
+  return Math.min(60, Math.max(1, Math.trunc(dias || 30)));
+}
+
 export async function createFaturadaSubscription(params: CreateGroupCheckoutParams & {
   /** Dia do mês do vencimento, combinado na proposta. */
   diaVencimentoMes?: number | null;
@@ -471,7 +482,7 @@ export async function createFaturadaSubscription(params: CreateGroupCheckoutPara
      vencimento não aparece em DDA nenhum, chega como cobrança de última hora.
      Também é o que torna a venda pós-paga de verdade: o cliente usa o mês e
      paga no fim dele, no dia combinado. */
-  const diasParaPagar = Math.min(60, Math.max(1, Math.trunc(params.diasParaPagar || 30)));
+  const diasParaPagar = diasParaPagarDaVenda(params.diasParaPagar);
   form.append("days_until_due", String(diasParaPagar));
   // Sem o pedaço quebrado: a primeira fatura é um mês cheio, como o contrato diz.
   form.append("proration_behavior", "none");

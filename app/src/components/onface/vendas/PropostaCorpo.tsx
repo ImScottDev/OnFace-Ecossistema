@@ -160,6 +160,48 @@ export function CorpoProposta({ proposta, pendente, bloqueio, variante, acoes }:
         </div>
       ) : null}
 
+      {/* Venda por contrato: a cobrança é a fatura que a assinatura emite, não um
+          link de checkout. Dizer a data e o prazo é o que o vendedor precisa
+          para falar com o cliente — e evita o botão que levava a "Pagamento
+          online indisponível" (proposta #1590, 26/10/2026). */}
+      {proposta.cobrancaNaAssinatura ? (
+        <div className="ov-bloqueio" role="status">
+          <FileText aria-hidden />
+          <div>
+            <strong>Cobrança na assinatura do cliente</strong>
+            <div style={{ marginTop: 6 }}>
+              {proposta.cobrancaNaAssinatura.faturaUrl ? (
+                <>
+                  Fatura emitida{proposta.cobrancaNaAssinatura.faturaValor !== null
+                    ? ` de ${moedaExata(proposta.cobrancaNaAssinatura.faturaValor)}`
+                    : ""}
+                  {proposta.cobrancaNaAssinatura.faturaVenceEm
+                    ? `, vence em ${dataCurta(proposta.cobrancaNaAssinatura.faturaVenceEm)}`
+                    : ""}. Mande o link ao cliente.
+                </>
+              ) : (
+                <>
+                  Não há link de pagamento agora: esta venda é por contrato e o
+                  cliente paga depois de usar.{" "}
+                  {proposta.cobrancaNaAssinatura.proximaFaturaEm
+                    ? `A primeira fatura sai em ${dataCurta(proposta.cobrancaNaAssinatura.proximaFaturaEm)}`
+                    : "A fatura sai na virada do ciclo"}
+                  {`, com ${proposta.cobrancaNaAssinatura.diasParaPagar} dias para pagar. `}
+                  O boleto vai para o cliente por e-mail quando for emitido.
+                </>
+              )}
+            </div>
+            {proposta.cobrancaNaAssinatura.faturaUrl ? (
+              <div className="ov-acoes" style={{ marginTop: 8, alignItems: "center", gap: 8 }}>
+                <a className="ov-botao" href={proposta.cobrancaNaAssinatura.faturaUrl} target="_blank" rel="noreferrer">Abrir fatura</a>
+                <button type="button" className="ov-botao"
+                  onClick={() => void navigator.clipboard?.writeText(proposta.cobrancaNaAssinatura!.faturaUrl!)}>Copiar link</button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {aceita ? (
         <div className="ov-bloqueio" role="status">
           <FileText aria-hidden />
