@@ -6,7 +6,7 @@ import { contratoPdfHtml, renderContratoPdf, localizarAncoras } from "@/lib/crm/
 import { politicaContratual } from "@/lib/crm/contrato-politica";
 import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 import {
-  ANCORA_DO_PAPEL, comPadraoDaPolitica, ehCliente, ehPapelCallface, emailValido, faltaRepresentante, normalizarSignatarios, type Signatario,
+  ANCORA_DO_PAPEL, comPadraoDaPolitica, ehCliente, ehPapelCallface, emailValido, faltaRepresentante, normalizarSignatarios, PAPEL_TESTEMUNHA_2, type Signatario,
 } from "@/lib/crm/proposta-signatarios";
 import type {
   ConfirmarAssinaturaResult,
@@ -68,9 +68,16 @@ type Area = { pagina: number; x: number; y: number; largura: number; altura: num
 
 /**
  * Destinatários do envelope e o campo de assinatura de cada um, no bloco certo do PDF:
- * clientes repartem `cf-sig-contratante`; o representante legal assina em `cf-sig-contratada`;
- * as testemunhas em `cf-sig-testemunha-1` (vendedor) e `-2`. Só assina quem tem e-mail; a
- * testemunha só com nome continua impressa no documento (variável do modelo).
+ * quem representa o cliente assina em `cf-sig-contratante`; o representante legal da Callface
+ * em `cf-sig-contratada`; as testemunhas em `cf-sig-testemunha-1` (vendedor) e `-2`. Só assina
+ * quem tem e-mail; a testemunha só com nome continua impressa no documento (variável do modelo).
+ *
+ * Quem o cliente acrescenta além do primeiro é TESTEMUNHA, e assina no bloco
+ * de testemunhas — não espremido na linha do CONTRATANTE. Antes, todos os
+ * signatários do cliente repartiam a largura de `cf-sig-contratante`: duas
+ * pessoas viravam duas caixas lado a lado em cima do nome da empresa, como se
+ * ambas a representassem. A segunda coluna de testemunhas existe justamente
+ * para o lado do cliente (a primeira é do vendedor da Callface).
  */
 export function montarDestinatarios(todos: Signatario[], ancoras: Record<string, Area>): Record<string, unknown>[] {
   const clientes = todos.filter(ehCliente);
@@ -79,7 +86,16 @@ export function montarDestinatarios(todos: Signatario[], ancoras: Record<string,
   if (faltaRep) throw new Error(faltaRep);
   const alvo = ancoras["cf-sig-contratante"];
   if (!alvo) throw new Error("O modelo do contrato não tem o bloco de assinatura do CONTRATANTE (âncora cf-sig-contratante); corrija em Ajustes > Contratos");
-  const fatia = alvo.largura / clientes.length;
+
+  /* O bloco das testemunhas do cliente, quando existe no modelo e a Callface
+     não o está usando com uma segunda testemunha própria. Sem ele, o
+     comportamento antigo continua valendo: melhor dividir a caixa do que
+     deixar alguém sem lugar para assinar. */
+  const callfaceUsaTestemunha2 = todos.some((s) => String(s.papel) === PAPEL_TESTEMUNHA_2 && emailValido(s.email));
+  const blocoTestemunhaDoCliente = callfaceUsaTestemunha2 ? undefined : ancoras["cf-sig-testemunha-2"];
+  const noContratante = blocoTestemunhaDoCliente ? clientes.slice(0, 1) : clientes;
+  const testemunhasDoCliente = blocoTestemunhaDoCliente ? clientes.slice(1) : [];
+  const fatia = alvo.largura / Math.max(noContratante.length, 1);
   const campo = (a: Area, x = a.x, largura = a.largura): Campo => ({
     identifier: 0, type: "SIGNATURE", page: a.pagina, positionX: x, positionY: a.y, width: largura, height: a.altura,
   });
@@ -93,7 +109,17 @@ export function montarDestinatarios(todos: Signatario[], ancoras: Record<string,
   };
   todos.filter((s) => emailValido(s.email) && (ehCliente(s) || ehPapelCallface(s.papel))).forEach((s, index) => {
     const ordem = index + 1;
-    if (ehCliente(s)) { adiciona(s, ordem, campo(alvo, alvo.x + clientes.indexOf(s) * fatia, Math.max(fatia - 1, 8))); return; }
+    if (ehCliente(s)) {
+      const comoTestemunha = testemunhasDoCliente.indexOf(s);
+      if (comoTestemunha >= 0 && blocoTestemunhaDoCliente) {
+        const t = blocoTestemunhaDoCliente;
+        const parte = t.largura / testemunhasDoCliente.length;
+        adiciona(s, ordem, campo(t, t.x + comoTestemunha * parte, Math.max(parte - 1, 8)));
+        return;
+      }
+      adiciona(s, ordem, campo(alvo, alvo.x + noContratante.indexOf(s) * fatia, Math.max(fatia - 1, 8)));
+      return;
+    }
     const nomeAncora = ANCORA_DO_PAPEL[String(s.papel)];
     const a = ancoras[nomeAncora];
     if (!a) throw new Error(`O modelo do contrato não tem o bloco de assinatura de ${s.nome} (âncora ${nomeAncora}); corrija em Ajustes > Contratos`);
