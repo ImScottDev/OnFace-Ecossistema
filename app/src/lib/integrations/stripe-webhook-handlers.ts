@@ -10,9 +10,9 @@
  * Todos são idempotentes: o Stripe reentrega, e a fila reprocessa.
  */
 import { db } from "@/lib/db";
-import { propostas, leads, empresas, checkouts, notificacoes, usuarios, billingResolutionCases } from "@/lib/db/schema";
+import { propostas, leads, empresas, checkouts, notificacoes, usuarios, billingResolutionCases, propostaGrupoComercial } from "@/lib/db/schema";
 import { eq, and, isNull, or, sql, desc, gt } from "drizzle-orm";
-import { negocioIdDaMetadata, subscriptionIdDe } from "./stripe-financeiro";
+import { negocioIdDaMetadata, subscriptionIdDe, formatarValor } from "./stripe-financeiro";
 import { montarCaso } from "./stripe-caso-cobranca";
 import { buscarCheckoutPorSessionId } from "@/lib/crm/checkout";
 import { concluirGrupo, marcarPagamentoFalhouNoGrupo } from "@/lib/crm/grupo-comercial";
@@ -202,6 +202,61 @@ export async function handleInvoicePaid(invoice: Record<string, unknown>, organi
     payment_status: "paid",
   };
   return handlePaymentConfirmed(session, checkout, organizacaoId);
+}
+
+/**
+ * Fatura EMITIDA (`invoice.finalized`): avisa quem vendeu, com o link na mão.
+ *
+ * Na venda por contrato o cliente não paga na hora: assina, e a cobrança só
+ * existe quando a assinatura emite a primeira fatura — dias ou semanas depois.
+ * Até aqui ninguém era avisado: o Stripe mandava o e-mail ao cliente e o
+ * vendedor não tinha o link para cobrar pelo WhatsApp, nem sabia que já dava
+ * para cobrar (Instituto Educacional Fernando Mesquita, #1590, 26/10/2026:
+ * contrato assinado em 26/10 e primeira fatura só em 20/11).
+ *
+ * Só avisa quando a venda AINDA espera o pagamento (`pagamento_status` do
+ * grupo em 'pendente'). Sem essa guarda, toda renovação mensal de todo cliente
+ * viraria notificação, e aviso que chega sempre é aviso que ninguém lê.
+ */
+export async function handleInvoiceFinalized(invoice: Record<string, unknown>): Promise<string> {
+  const link = typeof invoice.hosted_invoice_url === "string" ? invoice.hosted_invoice_url : null;
+  if (!link) return "invoice.finalized sem link para o cliente — nada a avisar";
+
+  const checkout = await findCheckoutForBillingObject(invoice);
+  if (!checkout?.grupoComercialId) return "invoice.finalized sem venda rastreada — fica pro sync";
+
+  const [grupo] = await db.select({ pagamento: propostaGrupoComercial.pagamentoStatus })
+    .from(propostaGrupoComercial).where(eq(propostaGrupoComercial.id, checkout.grupoComercialId)).limit(1);
+  if (grupo?.pagamento !== "pendente") return "venda não espera pagamento — renovação não vira aviso";
+
+  const [proposta] = checkout.propostaId
+    ? await db.select().from(propostas).where(eq(propostas.id, checkout.propostaId)).limit(1)
+    : [];
+  const destinatario = proposta?.criadoPorId ?? null;
+  if (!destinatario) return "fatura emitida, mas a venda não tem responsável para avisar";
+
+  const [lead] = proposta?.leadId
+    ? await db.select({ nome: leads.nome, empresa: leads.empresa }).from(leads).where(eq(leads.id, proposta.leadId)).limit(1)
+    : [];
+  const quem = lead?.empresa || lead?.nome || "o cliente";
+  // `formatarValor` já recebe centavos, que é o que o Stripe manda: dividir aqui faria R$ 16,48 virar R$ 0,16
+  const valor = typeof invoice.total === "number"
+    ? formatarValor(invoice.total, typeof invoice.currency === "string" ? invoice.currency : null)
+    : null;
+  const vence = typeof invoice.due_date === "number"
+    ? new Date(invoice.due_date * 1000).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })
+    : null;
+
+  await inserirNotificacaoUmaVez({
+    usuarioId: destinatario,
+    tipo: "fatura_emitida",
+    titulo: `Fatura emitida — ${quem}`,
+    mensagem: `A cobrança${valor ? ` de ${valor}` : ""} de ${quem} já está disponível`
+      + `${vence ? `, com vencimento em ${vence}` : ""}. Mande o link ao cliente: ${link}`,
+    link: proposta ? `/propostas/${proposta.id}` : "/propostas",
+  }).catch((e) => console.error("[StripeWebhook] falha ao avisar fatura emitida:", e));
+
+  return `fatura emitida avisada ao responsável da venda ${checkout.grupoComercialId}`;
 }
 
 export async function handleSubscriptionLink(subscription: Record<string, unknown>): Promise<string> {

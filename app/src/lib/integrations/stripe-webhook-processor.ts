@@ -31,6 +31,8 @@ export interface ContextoProcessamento { organizacaoId: string; inboxId: string 
 export interface DepsProcessamento {
   paymentConfirmed(session: Obj, organizacaoId: string): Promise<string>;
   invoicePaid(invoice: Obj, organizacaoId: string): Promise<string>;
+  /** Fatura emitida: avisa quem vendeu, com o link para mandar ao cliente. */
+  invoiceFinalized(invoice: Obj): Promise<string>;
   asyncPaymentFailed(session: Obj): Promise<string>;
   checkoutExpired(session: Obj): Promise<string>;
   invoicePaymentFailed(invoice: Obj): Promise<string>;
@@ -66,6 +68,7 @@ export async function depsReais(): Promise<DepsProcessamento> {
   return {
     paymentConfirmed: (o, org) => h.handlePaymentConfirmed(o, undefined, org),
     invoicePaid: (o, org) => h.handleInvoicePaid(o, org),
+    invoiceFinalized: h.handleInvoiceFinalized,
     asyncPaymentFailed: h.handleAsyncPaymentFailed,
     checkoutExpired: h.handleCheckoutExpired,
     invoicePaymentFailed: h.handleInvoicePaymentFailed,
@@ -106,6 +109,7 @@ export async function processarEventoStripe(
   if (type === "checkout.session.expired") await passo("checkout expirado", () => deps.checkoutExpired(object));
   if (type === "invoice.payment_failed") await passo("cobrança falhou", () => deps.invoicePaymentFailed(object));
   if (type === "invoice.paid") await passo("fatura paga", () => deps.invoicePaid(object, org));
+  if (type === "invoice.finalized") await passo("fatura emitida", () => deps.invoiceFinalized(object));
   if (type === "charge.refunded") await passo("estorno", () => deps.chargeRefunded(object));
   if (type === "charge.dispute.created" || type === "charge.dispute.closed") {
     await passo("contestação", () => deps.dispute(object, type.endsWith(".closed")));

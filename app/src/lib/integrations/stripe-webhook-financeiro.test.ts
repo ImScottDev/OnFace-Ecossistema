@@ -152,6 +152,7 @@ function depsFalsas(chamadas: string[], falhaEm?: string): DepsProcessamento {
   const f = (nome: string, ret = "ok") => async () => { chamadas.push(nome); if (nome === falhaEm) throw new Error(`boom em ${nome}`); return ret; };
   return {
     paymentConfirmed: f("paymentConfirmed"), invoicePaid: f("invoicePaid"), asyncPaymentFailed: f("asyncPaymentFailed"),
+    invoiceFinalized: f("invoiceFinalized"),
     checkoutExpired: f("checkoutExpired"), invoicePaymentFailed: f("invoicePaymentFailed"), chargeRefunded: f("chargeRefunded"),
     dispute: f("dispute"), subscriptionCanceled: f("subscriptionCanceled"), subscriptionLink: f("subscriptionLink"),
     mockMode: () => false,
@@ -268,4 +269,13 @@ test("worker: falha não re-enfileira (o BullMQ refaz com backoff)", async () =>
   const { portas, estado } = portasEmMemoria({ falhar: true });
   await executarComPortas(portas, "i1", { enfileirarSeFalhar: false });
   assert.deepEqual(estado.fila, []);
+});
+
+/* Fatura emitida avisa quem vendeu: na venda por contrato o cliente paga dias
+   depois de assinar, e sem este aviso o vendedor não sabe que já dá para
+   cobrar nem tem o link para mandar (Instituto #1590, 26/10/2026). */
+test("invoice.finalized chama o aviso de fatura emitida", async () => {
+  const c: string[] = [];
+  await processarEventoStripe(evento("invoice.finalized", invoiceBasil({ status: "open" })), ctx, depsFalsas(c));
+  assert.ok(c.includes("invoiceFinalized"), `esperava invoiceFinalized em ${JSON.stringify(c)}`);
 });

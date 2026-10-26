@@ -45,7 +45,8 @@ const r = (centavos: number) => centavos / 100;
 
 export type StatusAssinatura =
   | "ativa" | "em_teste" | "vencida" | "inadimplente" | "cancelamento_agendado"
-  | "cancelada" | "aguardando_pagamento" | "nao_concluida" | "pausada" | "desconhecido";
+  | "cancelada" | "aguardando_pagamento" | "nao_concluida" | "pausada" | "desconhecido"
+  | "fatura_em_aberto";
 
 export const ROTULO_STATUS_ASSINATURA: Record<StatusAssinatura, string> = {
   ativa: "Ativa",
@@ -58,6 +59,7 @@ export const ROTULO_STATUS_ASSINATURA: Record<StatusAssinatura, string> = {
   nao_concluida: "Não concluída",
   pausada: "Pausada",
   desconhecido: "Status desconhecido",
+  fatura_em_aberto: "Fatura em aberto",
 };
 
 /**
@@ -65,12 +67,29 @@ export const ROTULO_STATUS_ASSINATURA: Record<StatusAssinatura, string> = {
  * `ativa`: a assinatura segue cobrando até o fim do período, mas quem olha
  * precisa saber que ela vai acabar.
  */
-export function statusDaAssinatura(status: string, cancelaNoFim: boolean): StatusAssinatura {
+export function statusDaAssinatura(
+  status: string,
+  cancelaNoFim: boolean,
+  /**
+   * Vencimento da fatura em aberto, quando se sabe.
+   *
+   * Sem isto, `past_due` virava "Vencida" em vermelho para TODO cliente que
+   * paga por boleto — o Stripe marca `past_due` assim que emite a fatura, e o
+   * boleto leva dias para compensar. O CS passaria o mês perseguindo churn que
+   * não existe. Com a data, só é "Vencida" quem de fato passou do prazo.
+   */
+  faturaEmAbertoVenceEm?: Date | null,
+): StatusAssinatura {
   switch (status) {
     case "active": return cancelaNoFim ? "cancelamento_agendado" : "ativa";
     case "trialing": return cancelaNoFim ? "cancelamento_agendado" : "em_teste";
     // past_due é o "Vencida" do Stripe (ainda tenta cobrar); unpaid é quando ele desistiu.
-    case "past_due": return "vencida";
+    case "past_due":
+      // Prazo ainda correndo não é atraso. Sem data, mantém "vencida": na
+      // dúvida sobre dinheiro, o alarme fica de pé.
+      return faturaEmAbertoVenceEm && faturaEmAbertoVenceEm.getTime() >= Date.now()
+        ? "fatura_em_aberto"
+        : "vencida";
     case "unpaid": return "inadimplente";
     case "canceled": return "cancelada";
     case "incomplete": return "aguardando_pagamento";
@@ -92,6 +111,8 @@ export function varianteDoStatusAssinatura(status: StatusAssinatura): "success" 
     case "em_teste": return "info";
     case "vencida": case "inadimplente": return "danger";
     case "cancelamento_agendado": case "aguardando_pagamento": case "pausada": return "warning";
+    // cobrança em curso, dentro do prazo: avisa sem gritar
+    case "fatura_em_aberto": return "warning";
     default: return "secondary"; // cancelada, não concluída, desconhecido
   }
 }
@@ -144,6 +165,8 @@ export interface AssinaturaBruta {
   iniciadaEm: Date | null;
   canceladaEm: Date | null;
   periodoFim: Date | null;
+  /** Vencimento da fatura em aberto, para não chamar de atraso o que está no prazo. */
+  faturaEmAbertoVenceEm?: Date | null;
   itens: ItemBruto[];
 }
 
@@ -180,7 +203,7 @@ export function assinaturaFinanceira(a: AssinaturaBruta): AssinaturaFinanceira {
   // Fim do período: o da assinatura, ou o mais próximo dos itens (o Stripe novo só informa no item).
   const fimItens = itens.map((i) => i.periodoFim).filter((d): d is Date => !!d).sort((x, y) => x.getTime() - y.getTime())[0] ?? null;
   const fim = a.periodoFim ?? fimItens;
-  const status = statusDaAssinatura(a.status, a.cancelaNoFim);
+  const status = statusDaAssinatura(a.status, a.cancelaNoFim, a.faturaEmAbertoVenceEm);
   // Só cobra de novo quem está cobrando e não vai ser cancelado no fim do período.
   const cobraDeNovo = assinaturaCobra(a.status) && !a.cancelaNoFim && !a.canceladaEm;
   return {

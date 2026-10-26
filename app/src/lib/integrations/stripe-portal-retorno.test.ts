@@ -97,6 +97,7 @@ function deps(c: string[], divergencias: string[] = []): DepsProcessamento {
   const f = (n: string) => async () => { c.push(n); return "ok"; };
   return {
     paymentConfirmed: f("paymentConfirmed"), invoicePaid: f("invoicePaid"), asyncPaymentFailed: f("a"), checkoutExpired: f("b"),
+    invoiceFinalized: f("invoiceFinalized"),
     invoicePaymentFailed: f("c"), chargeRefunded: f("d"), dispute: f("e"), subscriptionCanceled: f("subscriptionCanceled"), subscriptionLink: f("subscriptionLink"),
     mockMode: () => false,
     sync: async () => { c.push("sync"); return {}; },

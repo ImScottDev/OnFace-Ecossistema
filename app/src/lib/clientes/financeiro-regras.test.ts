@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { assinaturaFinanceira, classificarFatura, rotuloMesCobranca, situacaoFinanceira, statusDaAssinatura } from "./financeiro-regras";
+import { assinaturaFinanceira, classificarFatura, rotuloMesCobranca, situacaoFinanceira, statusDaAssinatura, varianteDoStatusAssinatura } from "./financeiro-regras";
 import { periodoCorrente } from "../integrations/stripe-financeiro";
 
 /** O caso Ademicon (Stripe live, 13/10/2026): faturas de 12/08, 12/09 e 12/10, assinatura past_due. */
@@ -79,4 +79,20 @@ describe("situação financeira do cliente (hoje 14/10/2026)", () => {
   it("sem assinatura nenhuma", () => {
     assert.deepEqual(situacaoFinanceira([], [], hoje).proxima, { data: null, motivo: "sem_assinatura" });
   });
+});
+
+/* Quem paga por boleto fica `past_due` do dia da emissão até compensar — dias.
+   Chamar isso de "Vencida" em vermelho faria o CS perseguir churn que não
+   existe, todo mês, em todo cliente de boleto. */
+it("past_due no prazo é fatura em aberto; passou do vencimento é vencida", () => {
+  const amanha = new Date(Date.now() + 24 * 3600 * 1000);
+  const ontem = new Date(Date.now() - 24 * 3600 * 1000);
+  assert.equal(statusDaAssinatura("past_due", false, amanha), "fatura_em_aberto");
+  assert.equal(statusDaAssinatura("past_due", false, ontem), "vencida");
+  // sem data não se inventa folga: na dúvida sobre dinheiro, o alarme fica
+  assert.equal(statusDaAssinatura("past_due", false, null), "vencida");
+  assert.equal(statusDaAssinatura("past_due", false), "vencida");
+  // o selo avisa sem gritar
+  assert.equal(varianteDoStatusAssinatura("fatura_em_aberto"), "warning");
+  assert.equal(varianteDoStatusAssinatura("vencida"), "danger");
 });

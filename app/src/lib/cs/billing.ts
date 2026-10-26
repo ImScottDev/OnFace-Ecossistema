@@ -227,6 +227,14 @@ export async function billingDaConta(organizacaoId: string, empresaId: string): 
           mrr: assinaturaRow.mrr == null ? null : Number(assinaturaRow.mrr),
           iniciadaEm: paraData(assinaturaRow.iniciada_em), canceladaEm: paraData(assinaturaRow.cancelada_em),
           periodoFim: paraData(assinaturaRow.periodo_fim),
+          /* O vencimento da fatura em aberto mais próxima: é ele que separa
+             "ainda no prazo" de "atrasada". Sem isso, todo cliente de boleto
+             aparece como "Vencida" entre a emissão e a compensação. */
+          faturaEmAbertoVenceEm: faturas
+            .filter((f) => f.status === "aberta" && f.vencimento)
+            .map((f) => new Date(f.vencimento as string))
+            .filter((d) => !Number.isNaN(d.getTime()))
+            .sort((x, y) => x.getTime() - y.getTime())[0] ?? null,
           itens: itensRows.filter((i) => String(i.assinatura_id) === String(assinaturaRow.id)).map((i) => ({
             precoUnitario: i.preco == null ? null : Number(i.preco), quantidade: Number(i.quantidade ?? 1),
             intervalo: (i.recurring_interval as string) ?? null, periodoCatalogo: null, status: (i.status as string) ?? null,
