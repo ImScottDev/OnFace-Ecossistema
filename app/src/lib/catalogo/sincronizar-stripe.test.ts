@@ -119,6 +119,7 @@ test("price escalonado não entra valendo zero", () => {
   assert.ok(motivoSemValorUnitario(preco({ valorCentavos: null })), "sem unit_amount é recusado");
   assert.equal(motivoSemValorUnitario(preco({ valorCentavos: 0 })), null, "zero declarado pelo Stripe é valor, não ausência");
   assert.equal(motivoSemValorUnitario(preco({ valorCentavos: 9990 })), null);
+  assert.equal(motivoSemValorUnitario(preco({ valorCentavos: null, recorrente: false, valorPersonalizado: { minimum: null, maximum: null, preset: null } })), null);
 });
 
 test("faixa do price vira dado", () => {

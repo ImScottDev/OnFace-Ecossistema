@@ -61,6 +61,7 @@ export interface PrecoStripe {
   produtoId: string;
   /** `unit_amount`. null = o price não tem valor unitário (escalonado/tiered): NUNCA tratar como zero. */
   valorCentavos: number | null;
+  valorPersonalizado?: { minimum: number | null; maximum: number | null; preset: number | null } | null;
   moeda: string;
   recorrente: boolean;
   intervalo: "month" | "year" | null;
@@ -169,6 +170,7 @@ export async function lerCatalogoDoStripe(): Promise<CatalogoStripe> {
         id: String(p.id),
         produtoId: String(p.product),
         valorCentavos: p.unit_amount == null ? null : Number(p.unit_amount),
+        valorPersonalizado: (p.custom_unit_amount as PrecoStripe["valorPersonalizado"]) ?? null,
         escalonado: ehPrecoEscalonado(p as { billing_scheme?: string; tiers_mode?: string }),
         moeda: String(p.currency ?? "brl").toUpperCase(),
         recorrente: p.type === "recurring",

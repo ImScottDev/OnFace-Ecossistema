@@ -132,6 +132,9 @@ export interface CheckoutItem {
   valorUnitario: number;
   /** Valor oficial de tabela por unidade. */
   valorTabela: number;
+  valorPersonalizado?: boolean | null;
+  valorMinimoCentavos?: number | null;
+  valorMaximoCentavos?: number | null;
   stripePriceId: string;
   stripeProductId?: string | null;
   moeda: string;
@@ -211,6 +214,7 @@ function amountInCents(value: number): number {
 
 function discountTotal(items: CheckoutItem[]): number {
   return items.reduce((total, item) => {
+    if (item.valorPersonalizado) return total;
     const quantity = Math.max(1, Math.round(item.quantidade || 1));
     return total + Math.max(0, item.valorTabela * quantity - item.valorUnitario * quantity);
   }, 0);
@@ -248,17 +252,18 @@ export function duracaoDoDescontoRecorrente(meses: number | null | undefined): D
   return n > 0 ? { duration: "repeating", duration_in_months: n } : { duration: "forever" };
 }
 
-async function createCoupon(amount: number, currency: string, metadata: Record<string, string>, attemptKey: string, duracao: DuracaoCupom): Promise<string | null> {
+async function createCoupon(amount: number, currency: string, metadata: Record<string, string>, attemptKey: string, duracao: DuracaoCupom, produtos?: string[]): Promise<string | null> {
   if (amount <= 0) return null;
   const form = new URLSearchParams();
   form.append("amount_off", String(amountInCents(amount)));
   form.append("currency", currency.toLowerCase());
+  produtos?.forEach((produto) => form.append("applies_to[products][]", produto));
   for (const [chave, valor] of Object.entries(duracao)) form.append(chave, String(valor));
   appendMetadata(form, { ...metadata, crm_discount_type: "proposal_negotiated_discount" });
   // A duração entra na chave: um cupom `once` já criado não pode ser devolvido
   // no lugar do `forever` só porque o valor bate.
   const assinatura = "duration_in_months" in duracao ? `${duracao.duration}-${duracao.duration_in_months}` : duracao.duration;
-  const coupon = await stripePost<{ id: string }>("coupons", form, { idempotencyKey: stableIdempotencyKey(`crm-coupon-${metadata.crm_group_id || "group"}-${attemptKey}-${amountInCents(amount)}-${assinatura}`) });
+  const coupon = await stripePost<{ id: string }>("coupons", form, { idempotencyKey: stableIdempotencyKey(`crm-coupon-${metadata.crm_group_id || "group"}-${attemptKey}-${amountInCents(amount)}-${assinatura}-${produtos?.join(",") ?? "todos"}`) });
   return coupon.id;
 }
 
@@ -278,6 +283,47 @@ export function linhasDoCheckout(itens: CheckoutItem[]): Array<{ stripePriceId: 
     porPrice.set(item.stripePriceId, (porPrice.get(item.stripePriceId) ?? 0) + Math.max(1, Math.round(item.quantidade || 1)));
   }
   return [...porPrice].map(([stripePriceId, quantidade]) => ({ stripePriceId, quantidade }));
+}
+
+export function validarValorDoItem(item: CheckoutItem): void {
+  const centavos = amountInCents(item.valorUnitario);
+  if (!Number.isFinite(item.valorUnitario) || item.valorUnitario < 0) throw new Error(`Valor inválido para '${item.nome}'.`);
+  if (item.valorPersonalizado) {
+    if (centavos < (item.valorMinimoCentavos ?? 0) || (item.valorMaximoCentavos != null && centavos > item.valorMaximoCentavos)) {
+      throw new Error(`O valor de '${item.nome}' está fora dos limites configurados no Stripe.`);
+    }
+  } else if (item.valorUnitario > item.valorTabela + 0.01) {
+    throw new Error(`O valor negociado do item '${item.nome}' excede o Price oficial; revise a proposta.`);
+  }
+}
+
+export function produtosDoDesconto(itens: CheckoutItem[], personalizados: CheckoutItem[]): string[] | undefined {
+  if (!personalizados.length) return undefined;
+  const descontados = itens.filter((i) => !i.valorPersonalizado && i.valorUnitario < i.valorTabela);
+  if (descontados.some((i) => !i.stripeProductId || personalizados.some((p) => p.stripeProductId === i.stripeProductId))) {
+    throw new Error("Separe a cobrança do setup: o desconto não pode incidir no mesmo produto de valor escolhido.");
+  }
+  return [...new Set(descontados.map((i) => i.stripeProductId!))].sort();
+}
+
+/** O vendedor fixa o valor; o cliente paga exatamente o que foi contratado. */
+export function adicionarLinhasDoCheckout(form: URLSearchParams, recorrentes: CheckoutItem[], avulsos: CheckoutItem[], moeda: string): void {
+  if (recorrentes.some((i) => i.valorPersonalizado)) throw new Error("Preço de valor escolhido só pode ser avulso.");
+  const fixos = [...recorrentes, ...avulsos.filter((i) => !i.valorPersonalizado)];
+  for (const item of [...recorrentes, ...avulsos]) validarValorDoItem(item);
+  const linhas = linhasDoCheckout(fixos);
+  linhas.forEach((linha, index) => {
+    form.append(`line_items[${index}][price]`, linha.stripePriceId);
+    form.append(`line_items[${index}][quantity]`, String(linha.quantidade));
+  });
+  avulsos.filter((i) => i.valorPersonalizado).forEach((item, n) => {
+    if (!item.stripeProductId) throw new Error(`Item '${item.nome}' sem produto oficial.`);
+    const prefixo = `line_items[${linhas.length + n}]`;
+    form.append(`${prefixo}[price_data][product]`, item.stripeProductId);
+    form.append(`${prefixo}[price_data][currency]`, moeda.toLowerCase());
+    form.append(`${prefixo}[price_data][unit_amount]`, String(amountInCents(item.valorUnitario)));
+    form.append(`${prefixo}[quantity]`, String(Math.max(1, Math.round(item.quantidade || 1))));
+  });
 }
 
 export async function createGroupCheckout(params: CreateGroupCheckoutParams): Promise<{ sessionId: string; url: string; mocked: boolean }> {
@@ -360,14 +406,11 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
 
   /* Recorrente e avulso nunca dividem Price (o Price é de um tipo só), então juntar por Price em cada
      lista dá o mesmo resultado que juntar tudo; a ordem (recorrentes primeiro) fica como era. */
-  [...linhasDoCheckout(recorrentes), ...linhasDoCheckout(avulsos)].forEach((linha, index) => {
-    form.append(`line_items[${index}][price]`, linha.stripePriceId);
-    form.append(`line_items[${index}][quantity]`, String(linha.quantidade));
-  });
+  adicionarLinhasDoCheckout(form, recorrentes, avulsos, params.moeda);
 
   const couponId = descontoRecorrente > 0
-    ? await createCoupon(descontoRecorrente, params.moeda, metadata, params.attemptKey || "initial", duracaoDoDescontoRecorrente(params.descontoRecorrenteMeses))
-    : await createCoupon(descontoAvulso, params.moeda, metadata, params.attemptKey || "initial", { duration: "once" });
+    ? await createCoupon(descontoRecorrente, params.moeda, metadata, params.attemptKey || "initial", duracaoDoDescontoRecorrente(params.descontoRecorrenteMeses), produtosDoDesconto(recorrentes, avulsos.filter((i) => i.valorPersonalizado)))
+    : await createCoupon(descontoAvulso, params.moeda, metadata, params.attemptKey || "initial", { duration: "once" }, produtosDoDesconto(avulsos, avulsos.filter((i) => i.valorPersonalizado)));
   if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
   if (stripeMode === "subscription") {
     /* Período de teste, quando o vendedor marcou na proposta.

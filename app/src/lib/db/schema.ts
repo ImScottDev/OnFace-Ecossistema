@@ -1602,6 +1602,9 @@ export const catalogoPrecos = pgTable("catalogo_precos", {
   revenueNature: text("revenue_nature").notNull(), // MRR | SETUP | ONE_TIME | USAGE | HARDWARE
   modeloCobranca: text("modelo_cobranca"), // recorrencia_mensal | recorrencia_anual | avulso | avulso_ou_parcelavel
   modeloPrecoStripe: text("modelo_preco_stripe"), // Tarifa fixa | Tarifa fixa por unidade
+  valorPersonalizado: boolean("valor_personalizado").default(false).notNull(),
+  valorMinimoCentavos: integer("valor_minimo_centavos"),
+  valorMaximoCentavos: integer("valor_maximo_centavos"),
 
   // Exigência de contrato POR PRICE. Regra explícita do briefing: White Label
   // Licença vendida isoladamente pra quem já é White Label NÃO exige

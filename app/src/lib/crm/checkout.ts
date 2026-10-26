@@ -23,7 +23,7 @@ import { eq, asc, sql } from "drizzle-orm";
 import {
   checkouts, propostas, propostaGrupoComercial, propostaGrupoComercialItens, propostaItens, servicosCatalogo, catalogoPrecos, leads, empresas, negocios,
 } from "@/lib/db/schema";
-import { boletoExpiresAfterDaysFromValidade, createFaturadaSubscription, createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
+import { boletoExpiresAfterDaysFromValidade, createFaturadaSubscription, createGroupCheckout, createStripeCustomer, expireCheckoutSession, getStripeCheckoutMode, validarValorDoItem, type CheckoutItem } from "@/lib/integrations/stripe-checkout";
 import { diaDoVencimento, logradouroFiscal, proximoDiaDoMes, vendaEhFaturada } from "@/lib/crm/condicoes-comerciais";
 import { publicarEvento } from "@/lib/events/outbox";
 import { vincularCheckoutAoGrupo } from "@/lib/crm/grupo-comercial";
@@ -97,6 +97,9 @@ export async function criarCheckoutParaGrupo(opts: {
       stripeProductId: sql<string | null>`COALESCE(${propostaItens.stripeProductId}, ${servicosCatalogo.stripeProductId})`,
       valorTabela: sql<string | null>`COALESCE(${propostaItens.valorTabela}, ${catalogoPrecos.valor})`,
       moeda: catalogoPrecos.moeda,
+      valorPersonalizado: catalogoPrecos.valorPersonalizado,
+      valorMinimoCentavos: catalogoPrecos.valorMinimoCentavos,
+      valorMaximoCentavos: catalogoPrecos.valorMaximoCentavos,
       recorrente: catalogoPrecos.recorrente,
       precoAtivo: catalogoPrecos.ativo,
       produtoAtivo: servicosCatalogo.ativo,
@@ -174,10 +177,11 @@ export async function criarCheckoutParaGrupo(opts: {
       throw new Error(`O item '${i.nome}' não está vinculado a um Price oficial ativo do catálogo.`);
     }
     const valorUnitario = quantidade > 0 ? subtotal / quantidade : subtotal;
-    if (valorUnitario > parseFloat(i.valorTabela) + 0.01) throw new Error(`O valor negociado do item '${i.nome}' excede o Price oficial; revise a proposta.`);
     const esperadoRecorrente = i.tipo === "recorrente";
     if (Boolean(i.recorrente) !== esperadoRecorrente) throw new Error(`O Price oficial do item '${i.nome}' não corresponde ao tipo ${i.tipo}.`);
-    return { nome: i.nome, valorUnitario, valorTabela: parseFloat(i.valorTabela), quantidade, stripePriceId: i.stripePriceId, stripeProductId: i.stripeProductId, moeda: i.moeda };
+    const item = { nome: i.nome, valorUnitario, valorTabela: parseFloat(i.valorTabela), quantidade, stripePriceId: i.stripePriceId, stripeProductId: i.stripeProductId, moeda: i.moeda, valorPersonalizado: i.valorPersonalizado, valorMinimoCentavos: i.valorMinimoCentavos, valorMaximoCentavos: i.valorMaximoCentavos };
+    validarValorDoItem(item);
+    return item;
   };
   let itensRecorrentes: CheckoutItem[];
   let itensAvulsos: CheckoutItem[];

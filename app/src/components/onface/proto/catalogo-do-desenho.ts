@@ -18,6 +18,7 @@ export interface PrecoDoDesenho {
   /** `catalogoPrecoId`: é ELE que `acaoCriar` exige por item. */
   id: string;
   v: number;
+  valorPersonalizado?: boolean;
   /** "mes" | "ano" | "avulso" — o desenho decide o rótulo e a natureza por aqui. */
   int: "mes" | "ano" | "avulso";
   d: string;
@@ -131,6 +132,7 @@ export function catalogoDoDesenho(
       const novo = {
         id: item.catalogoPrecoId,
         v: Number(item.valor),
+        valorPersonalizado: item.valorPersonalizado,
         int: intervaloDe(item),
         d: rotuloDoPreco(item),
         variacao: variacaoDoPreco(item),

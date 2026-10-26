@@ -496,7 +496,7 @@ class Logica extends React.Component<any, any> {
         const tier = !!P && P.precos.some(x => x.min != null);
         const step = P && P.tipo === "minutos" ? 100 : 1;
         const fora = !!PR && Math.abs(n(it.valor) - PR.v) > 0.001;
-        const dica = !P ? "" : it.prod === "wl-setup" ? "1 setup por licença reservada · acompanha a quantidade de licenças" + (fora ? " · valor negociado" : "") : it.prod === "wl-lic" ? (PR.d.split(" · ")[1] || PR.d) + " · reserva: a mensalidade é cobrada por licença ativada" : fora ? "Preço de tabela " + brlP(P, PR) + " · valor negociado"
+        const dica = !P ? "" : PR?.valorPersonalizado ? "Valor definido na proposta" : it.prod === "wl-setup" ? "1 setup por licença reservada · acompanha a quantidade de licenças" + (fora ? " · valor negociado" : "") : it.prod === "wl-lic" ? (PR.d.split(" · ")[1] || PR.d) + " · reserva: a mensalidade é cobrada por licença ativada" : fora ? "Preço de tabela " + brlP(P, PR) + " · valor negociado"
           : tier ? PR.d + " · a faixa muda sozinha com a quantidade"
           : (P.tipo === "minutos" || P.tipo === "pacote") ? (PR.int === "avulso" ? "Compra única · não entra na assinatura" : PR.int === "ano" ? "Entra na assinatura · cobrado todo ano" : "Entra na assinatura · cobrado todo mês")
           : "";

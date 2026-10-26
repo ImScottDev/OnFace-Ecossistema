@@ -92,6 +92,7 @@ const ROTULO_PERIODO: Record<string, string> = {
 /** Por que o price não pode entrar valendo um valor; null = tem valor unitário. Escalonado NUNCA vira 0,00. */
 export function motivoSemValorUnitario(preco: PrecoStripe): string | null {
   if (preco.escalonado) return "escalonado (tiered)";
+  if (preco.valorPersonalizado && !preco.recorrente) return null;
   if (preco.valorCentavos == null) return "sem unit_amount";
   return null;
 }
@@ -223,7 +224,7 @@ export async function sincronizarCatalogoStripe(
     // de graça. Vira pendência e fica FORA do construtor (inativo) até alguém resolver. Mesma regra
     // do portal de planos (ehPrecoEscalonado).
     const semValor = motivoSemValorUnitario(preco);
-    if (semValor || preco.valorCentavos == null) {
+    if (semValor) {
       r.pendencias.push({
         produto: produto.nome, stripeProductId: produto.id,
         oQueFalta: `price ${preco.id} ${semValor}: sem valor unitário, fora do construtor de proposta até ser resolvido`,
@@ -248,18 +249,20 @@ export async function sincronizarCatalogoStripe(
         organizacao_id, servico_catalogo_id, stripe_price_id, sku, lookup_key,
         variacao, descricao, valor, moeda, tipo, recorrente, periodo,
         revenue_nature, modelo_cobranca, exige_contrato, ativo,
-        intervalo_contagem, faixa_min, faixa_max
+        intervalo_contagem, faixa_min, faixa_max,
+        valor_personalizado, valor_minimo_centavos, valor_maximo_centavos
       ) VALUES (
         ${organizacaoId}::uuid, ${servicoId}::uuid, ${preco.id},
         ${preco.metadata.sku_interno ?? preco.lookupKey ?? null}, ${preco.lookupKey},
         ${variacaoDoPreco(preco)}, ${preco.apelido},
-        ${(preco.valorCentavos / 100).toFixed(2)}, ${preco.moeda},
+        ${((preco.valorCentavos ?? preco.valorPersonalizado?.preset ?? 0) / 100).toFixed(2)}, ${preco.moeda},
         ${tipoDoPreco(preco, catPreco)}, ${preco.recorrente}, ${periodoDoPreco(preco)},
         ${naturezaDaReceita(preco, catPreco)},
         ${preco.metadata.modelo_cobranca ?? produto.metadata.modelo_cobranca ?? null},
         ${(preco.metadata.exige_contrato ?? produto.metadata.exige_contrato) === "sim"},
         ${preco.ativo},
-        ${preco.recorrente ? (preco.intervaloContagem ?? 1) : null}, ${faixa.min}, ${faixa.max}
+        ${preco.recorrente ? (preco.intervaloContagem ?? 1) : null}, ${faixa.min}, ${faixa.max},
+        ${!!preco.valorPersonalizado}, ${preco.valorPersonalizado?.minimum ?? null}, ${preco.valorPersonalizado?.maximum ?? null}
       )
       ON CONFLICT (organizacao_id, stripe_price_id) DO UPDATE SET
         servico_catalogo_id = EXCLUDED.servico_catalogo_id,
@@ -279,6 +282,9 @@ export async function sincronizarCatalogoStripe(
         intervalo_contagem = EXCLUDED.intervalo_contagem,
         faixa_min = EXCLUDED.faixa_min,
         faixa_max = EXCLUDED.faixa_max,
+        valor_personalizado = EXCLUDED.valor_personalizado,
+        valor_minimo_centavos = EXCLUDED.valor_minimo_centavos,
+        valor_maximo_centavos = EXCLUDED.valor_maximo_centavos,
         updated_at = now()
         -- ordem e observacao ficam de fora pelo mesmo motivo do produto.
       RETURNING (xmax = 0) AS criado`);

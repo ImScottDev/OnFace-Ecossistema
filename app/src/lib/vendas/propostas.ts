@@ -48,6 +48,7 @@ export interface ItemCatalogo {
   periodo?: string | null;
   /** lookup_key do Price: só para detectar variação que é o próprio lookup_key; nunca vai para a tela. */
   lookupKey?: string | null;
+  valorPersonalizado?: boolean;
 }
 
 /**
@@ -67,10 +68,10 @@ export async function catalogoDaFamilia(organizacaoId: string, familia: Familia)
     catalogo_preco_id: string; servico_catalogo_id: string; nome: string;
     variacao: string | null; sku: string | null; valor: string;
     revenue_nature: string; service_family: string | null; exige_contrato: boolean;
-    descricao: string | null; periodo: string | null; lookup_key: string | null;
+    descricao: string | null; periodo: string | null; lookup_key: string | null; valor_personalizado: boolean;
   }>(sql`
     SELECT cp.id::text AS catalogo_preco_id, sc.id::text AS servico_catalogo_id,
-           sc.nome, cp.variacao, cp.sku, cp.valor::text,
+           sc.nome, cp.variacao, cp.sku, cp.valor::text, cp.valor_personalizado,
            cp.revenue_nature, sc.service_family, cp.exige_contrato,
            COALESCE(NULLIF(btrim(sc.descricao_comercial), ''), sc.descricao) AS descricao, cp.periodo, cp.lookup_key
       FROM catalogo_precos cp
@@ -95,6 +96,7 @@ export async function catalogoDaFamilia(organizacaoId: string, familia: Familia)
     descricao: l.descricao,
     periodo: l.periodo,
     lookupKey: l.lookup_key,
+    valorPersonalizado: l.valor_personalizado,
   }));
 }
 
@@ -436,12 +438,12 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
 
   /* A venda não pode morrer DEPOIS do aceite: o checkout (lib/crm/checkout.ts, mapItem) recusa item sem Price
      oficial ativo do catálogo e item vendido ACIMA do preço de tabela. Aqui a mesma conta, antes de o cliente ver. */
-  const problemas = await db.execute<{ nome: string; motivo: "sem_preco" | "acima_da_tabela" }>(sql`
+  const problemas = await db.execute<{ nome: string; motivo: "sem_preco" | "acima_da_tabela" | "fora_limites" }>(sql`
     SELECT i.nome,
            CASE WHEN COALESCE(i.stripe_price_id, cp.stripe_price_id) IS NULL OR COALESCE(i.stripe_product_id, sc.stripe_product_id) IS NULL
                   OR cp.id IS NULL OR NOT cp.ativo OR NOT COALESCE(sc.ativo, false) OR sc.origem_catalogo IS DISTINCT FROM 'oficial_stripe'
                   OR cp.recorrente <> (i.tipo = 'recorrente')
-                THEN 'sem_preco' ELSE 'acima_da_tabela' END AS motivo
+                THEN 'sem_preco' WHEN cp.valor_personalizado THEN 'fora_limites' ELSE 'acima_da_tabela' END AS motivo
       FROM proposta_itens i
       LEFT JOIN catalogo_precos cp ON cp.id = i.catalogo_preco_id
       LEFT JOIN servicos_catalogo sc ON sc.id = i.servico_catalogo_id
@@ -449,7 +451,10 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
        AND (COALESCE(i.stripe_price_id, cp.stripe_price_id) IS NULL OR COALESCE(i.stripe_product_id, sc.stripe_product_id) IS NULL
             OR cp.id IS NULL OR NOT cp.ativo OR NOT COALESCE(sc.ativo, false) OR sc.origem_catalogo IS DISTINCT FROM 'oficial_stripe'
             OR cp.recorrente <> (i.tipo = 'recorrente')
-            OR i.subtotal::numeric / GREATEST(1, round(i.quantidade::numeric)) > COALESCE(i.valor_tabela, cp.valor)::numeric + 0.01)
+            OR (NOT cp.valor_personalizado AND i.subtotal::numeric / GREATEST(1, round(i.quantidade::numeric)) > COALESCE(i.valor_tabela, cp.valor)::numeric + 0.01)
+            OR (cp.valor_personalizado AND (
+              round(i.subtotal::numeric / GREATEST(1, round(i.quantidade::numeric)) * 100) < COALESCE(cp.valor_minimo_centavos, 0)
+              OR round(i.subtotal::numeric / GREATEST(1, round(i.quantidade::numeric)) * 100) > cp.valor_maximo_centavos)))
      ORDER BY i.ordem`);
   const semPreco = problemas.filter((p) => p.motivo === "sem_preco").map((p) => `"${p.nome}"`);
   if (semPreco.length) {
@@ -459,6 +464,8 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
     );
   }
   const acima = problemas.filter((p) => p.motivo === "acima_da_tabela").map((p) => `"${p.nome}"`);
+  const foraLimites = problemas.filter((p) => p.motivo === "fora_limites").map((p) => `"${p.nome}"`);
+  if (foraLimites.length) throw new RegraDeNegocio("item_fora_limites", `${foraLimites.join(", ")}: ajuste o valor aos limites configurados no Stripe.`);
   if (acima.length) {
     throw new RegraDeNegocio(
       "item_acima_da_tabela",
