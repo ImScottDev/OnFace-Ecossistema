@@ -101,6 +101,7 @@ export async function criarCheckoutParaGrupo(opts: {
       valorMinimoCentavos: catalogoPrecos.valorMinimoCentavos,
       valorMaximoCentavos: catalogoPrecos.valorMaximoCentavos,
       recorrente: catalogoPrecos.recorrente,
+      periodo: catalogoPrecos.periodo,
       precoAtivo: catalogoPrecos.ativo,
       produtoAtivo: servicosCatalogo.ativo,
       origemCatalogo: servicosCatalogo.origemCatalogo,
@@ -179,7 +180,8 @@ export async function criarCheckoutParaGrupo(opts: {
     const valorUnitario = quantidade > 0 ? subtotal / quantidade : subtotal;
     const esperadoRecorrente = i.tipo === "recorrente";
     if (Boolean(i.recorrente) !== esperadoRecorrente) throw new Error(`O Price oficial do item '${i.nome}' não corresponde ao tipo ${i.tipo}.`);
-    const item = { nome: i.nome, valorUnitario, valorTabela: parseFloat(i.valorTabela), quantidade, stripePriceId: i.stripePriceId, stripeProductId: i.stripeProductId, moeda: i.moeda, valorPersonalizado: i.valorPersonalizado, valorMinimoCentavos: i.valorMinimoCentavos, valorMaximoCentavos: i.valorMaximoCentavos };
+    const item = { nome: i.nome, valorUnitario, valorTabela: parseFloat(i.valorTabela), quantidade, stripePriceId: i.stripePriceId, stripeProductId: i.stripeProductId, moeda: i.moeda, valorPersonalizado: i.valorPersonalizado, valorMinimoCentavos: i.valorMinimoCentavos, valorMaximoCentavos: i.valorMaximoCentavos, /* "mensal"/"anual" do catálogo vira o intervalo que o Stripe entende. */
+      recurringInterval: i.periodo === "anual" ? "year" : "month" };
     validarValorDoItem(item);
     return item;
   };

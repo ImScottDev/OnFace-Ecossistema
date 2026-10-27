@@ -138,6 +138,8 @@ export interface CheckoutItem {
   stripePriceId: string;
   stripeProductId?: string | null;
   moeda: string;
+  /** `month` | `year` para recorrente; vazio em avulso. Vai no `price_data`. */
+  recurringInterval?: string | null;
 }
 
 /**
@@ -292,9 +294,15 @@ export function validarValorDoItem(item: CheckoutItem): void {
     if (centavos < (item.valorMinimoCentavos ?? 0) || (item.valorMaximoCentavos != null && centavos > item.valorMaximoCentavos)) {
       throw new Error(`O valor de '${item.nome}' está fora dos limites configurados no Stripe.`);
     }
-  } else if (item.valorUnitario > item.valorTabela + 0.01) {
-    throw new Error(`O valor negociado do item '${item.nome}' excede o Price oficial; revise a proposta.`);
   }
+  /* Não existe mais teto no preço de tabela.
+     O checkout cobrava pelo Price oficial e tirava a diferença com cupom — e
+     cupom só abaixa. Vender acima da tabela era recusado, e vender abaixo
+     dependia de um cupom por checkout, o que impedia desconto no recorrente e
+     no avulso ao mesmo tempo. Agora o valor combinado vai no próprio item
+     (`price_data`), para mais ou para menos, como já é na assinatura faturada
+     desde 23/10/2026. A tabela continua gravada na linha da proposta: é ela
+     que mostra "preço de tabela X · valor negociado Y" na tela. */
 }
 
 export function produtosDoDesconto(itens: CheckoutItem[], personalizados: CheckoutItem[]): string[] | undefined {
@@ -306,22 +314,31 @@ export function produtosDoDesconto(itens: CheckoutItem[], personalizados: Checko
   return [...new Set(descontados.map((i) => i.stripeProductId!))].sort();
 }
 
-/** O vendedor fixa o valor; o cliente paga exatamente o que foi contratado. */
+/**
+ * O vendedor fixa o valor; o cliente paga exatamente o que foi contratado.
+ *
+ * Toda linha vai por `price_data` sobre o PRODUTO oficial, com o valor
+ * combinado — nunca pelo Price de tabela com cupom por cima. O Price fixo
+ * obrigava o desconto a sair de um cupom, e cupom só abaixa: vender acima da
+ * tabela era recusado e, abaixo, o Stripe aceita um cupom por Session, o que
+ * impedia desconto no recorrente e no avulso na mesma venda.
+ *
+ * O produto continua sendo o oficial do catálogo, que é o que liga a cobrança
+ * ao serviço; o Price oficial segue gravado na linha da proposta como
+ * referência de tabela.
+ */
 export function adicionarLinhasDoCheckout(form: URLSearchParams, recorrentes: CheckoutItem[], avulsos: CheckoutItem[], moeda: string): void {
   if (recorrentes.some((i) => i.valorPersonalizado)) throw new Error("Preço de valor escolhido só pode ser avulso.");
-  const fixos = [...recorrentes, ...avulsos.filter((i) => !i.valorPersonalizado)];
   for (const item of [...recorrentes, ...avulsos]) validarValorDoItem(item);
-  const linhas = linhasDoCheckout(fixos);
-  linhas.forEach((linha, index) => {
-    form.append(`line_items[${index}][price]`, linha.stripePriceId);
-    form.append(`line_items[${index}][quantity]`, String(linha.quantidade));
-  });
-  avulsos.filter((i) => i.valorPersonalizado).forEach((item, n) => {
-    if (!item.stripeProductId) throw new Error(`Item '${item.nome}' sem produto oficial.`);
-    const prefixo = `line_items[${linhas.length + n}]`;
+  [...recorrentes, ...avulsos].forEach((item, index) => {
+    if (!item.stripeProductId) throw new Error(`Item '${item.nome}' sem produto oficial no Stripe.`);
+    const prefixo = `line_items[${index}]`;
     form.append(`${prefixo}[price_data][product]`, item.stripeProductId);
-    form.append(`${prefixo}[price_data][currency]`, moeda.toLowerCase());
+    form.append(`${prefixo}[price_data][currency]`, (item.moeda || moeda).toLowerCase());
     form.append(`${prefixo}[price_data][unit_amount]`, String(amountInCents(item.valorUnitario)));
+    if (recorrentes.includes(item)) {
+      form.append(`${prefixo}[price_data][recurring][interval]`, item.recurringInterval || "month");
+    }
     form.append(`${prefixo}[quantity]`, String(Math.max(1, Math.round(item.quantidade || 1))));
   });
 }
@@ -353,17 +370,6 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
     ...(negocioId ? { crm_negocio_id: negocioId, negocioId } : {}),
     ...(empresaId ? { empresaId } : {}),
   };
-  /* Recorrente e avulso têm durações de desconto diferentes, e uma Checkout
-     Session aceita UM cupom só. Separar é o que impede o desconto do setup de
-     virar desconto eterno na mensalidade (e vice-versa). Nenhuma proposta da
-     base tem desconto nos dois ao mesmo tempo; se aparecer, é melhor recusar
-     com o caminho manual do que cobrar errado calado. */
-  const descontoRecorrente = discountTotal(recorrentes);
-  const descontoAvulso = discountTotal(avulsos);
-  if (descontoRecorrente > 0 && descontoAvulso > 0) {
-    throw new Error("Esta proposta tem desconto no item recorrente E no avulso. O Stripe aceita um cupom por checkout, e os dois precisam de durações diferentes — concentre o desconto em um dos dois ou cobre o setup à parte.");
-  }
-
   if (mode === "mock") {
     return { sessionId: `cs_test_mock_${params.grupoComercialId.replace(/-/g, "")}`, url: `mock://stripe-checkout/${params.grupoComercialId}`, mocked: true };
   }
@@ -408,10 +414,11 @@ export async function createGroupCheckout(params: CreateGroupCheckoutParams): Pr
      lista dá o mesmo resultado que juntar tudo; a ordem (recorrentes primeiro) fica como era. */
   adicionarLinhasDoCheckout(form, recorrentes, avulsos, params.moeda);
 
-  const couponId = descontoRecorrente > 0
-    ? await createCoupon(descontoRecorrente, params.moeda, metadata, params.attemptKey || "initial", duracaoDoDescontoRecorrente(params.descontoRecorrenteMeses), produtosDoDesconto(recorrentes, avulsos.filter((i) => i.valorPersonalizado)))
-    : await createCoupon(descontoAvulso, params.moeda, metadata, params.attemptKey || "initial", { duration: "once" }, produtosDoDesconto(avulsos, avulsos.filter((i) => i.valorPersonalizado)));
-  if (couponId) appendNested(form, "discounts", [{ coupon: couponId }]);
+  /* Sem cupom: o preço combinado já está no `price_data` de cada linha.
+     Somar um cupom aqui descontaria DE NOVO e o cliente pagaria menos do que
+     assinou. A restrição que caía junto é a de só poder descontar no
+     recorrente OU no avulso — agora os dois podem ter o valor que foi
+     negociado, cada um no seu item. */
   if (stripeMode === "subscription") {
     /* Período de teste, quando o vendedor marcou na proposta.
      *
