@@ -44,6 +44,30 @@ const createTarefaSchema = z.object({
   venceEm: z.string().optional().nullable(), // data+hora ISO (lembrete/follow-up)
 });
 
+/**
+ * O prazo da tarefa, como o banco o aceita.
+ *
+ * `vence_em` é `timestamp` e o Drizzle chama `.toISOString()` no valor: string
+ * crua estoura `value.toISOString is not a function` e a tela só mostra
+ * "Internal server error". O POST já convertia; o PATCH mandava a string do
+ * JSON direto, e remarcar a data de QUALQUER atividade falhava (relatado pela
+ * Jenifer em 27/10/2026). Função única para os dois caminhos.
+ *
+ * `null` limpa o prazo. Data que não dá para ler devolve `undefined`, e quem
+ * chama recusa com 400 em vez de gravar lixo.
+ */
+export function prazoParaOBanco(valor: string | null | undefined): Date | null | undefined {
+  if (valor === null) return null;
+  if (valor === undefined) return undefined;
+  const d = new Date(valor);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+/** A parte data do prazo (`data_vencimento`, coluna `date`), para o dashboard do dia. */
+export function diaDoPrazo(venceEm: Date | null | undefined): string | null {
+  return venceEm ? venceEm.toISOString().split("T")[0] : null;
+}
+
 const updateTarefaSchema = z.object({
   titulo: z.string().min(1).optional(),
   descricao: z.string().optional().nullable(),
@@ -305,10 +329,8 @@ app.post("/tarefas", async (c) => {
 
   // venceEm = data+hora combinadas; deriva também data_vencimento (parte data) pra
   // compatibilidade com o dashboard "Tarefas do Dia" (que filtra por data_vencimento).
-  const venceEm = parsed.data.venceEm ? new Date(parsed.data.venceEm) : null;
-  const dataVenc =
-    parsed.data.dataVencimento ||
-    (venceEm && !isNaN(venceEm.getTime()) ? venceEm.toISOString().split("T")[0] : null);
+  const venceEm = prazoParaOBanco(parsed.data.venceEm) ?? null;
+  const dataVenc = parsed.data.dataVencimento || diaDoPrazo(venceEm);
 
   const [tarefa] = await db
     .insert(tarefas)
@@ -487,8 +509,18 @@ app.patch("/tarefas/:id", async (c) => {
     return c.json({ error: "Sem permissao" }, 403);
   }
 
-  const { responsavelId, leadId, negocioId, ...rest } = parsed.data;
+  const { responsavelId, leadId, negocioId, venceEm: venceEmBruto, ...rest } = parsed.data;
   const updateData: Record<string, unknown> = { ...rest };
+
+  /* O prazo vira Date antes de chegar ao Drizzle. Mexer na data também acerta
+     `data_vencimento`, senão a tarefa muda de hora e continua no dia antigo do
+     dashboard "Tarefas do Dia", que filtra por essa coluna. */
+  if (venceEmBruto !== undefined) {
+    const venceEm = prazoParaOBanco(venceEmBruto);
+    if (venceEm === undefined) return c.json({ error: "Data de vencimento invalida" }, 400);
+    updateData.venceEm = venceEm;
+    if (parsed.data.dataVencimento === undefined) updateData.dataVencimento = diaDoPrazo(venceEm);
+  }
 
   if (responsavelId) {
     const [resp] = await db
