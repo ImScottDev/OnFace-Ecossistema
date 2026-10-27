@@ -23,7 +23,12 @@
 import { mrrDaAssinatura, previaDeAlteracao, stripe, type PreviaDeAlteracao } from "./stripe-assinatura";
 
 export type AcaoDeAssinatura =
-  | { tipo: "adicionar_item"; priceId: string; quantidade: number }
+  /**
+   * `precoUnitario` + `produtoId`: o valor COMBINADO na venda, quando difere
+   * da tabela. Sem eles o item entra pelo Price oficial, a preço cheio, e o
+   * cliente paga mais do que aceitou.
+   */
+  | { tipo: "adicionar_item"; priceId: string; quantidade: number; precoUnitario?: number | null; produtoId?: string | null; intervalo?: string | null }
   | { tipo: "alterar_quantidade"; itemId: string; quantidade: number }
   | { tipo: "remover_item"; itemId: string }
   | { tipo: "trocar_price"; itemId: string; novoPriceId: string; quantidade?: number }
@@ -88,7 +93,9 @@ export interface Plano {
   mrrAntes: number;
   mrrDepois: number;
   /** Itens no formato do `invoices/create_preview`; vazio para cancelar/reativar. */
-  itensDaPrevia: { id?: string; price?: string; quantity?: number; deleted?: boolean }[];
+  itensDaPrevia: { id?: string; price?: string; quantity?: number; deleted?: boolean;
+    /** Preço combinado, em reais, quando a venda não é pelo valor de tabela. */
+    precoUnitario?: number | null; produtoId?: string | null; intervalo?: string | null }[];
 }
 
 /** Assinatura do SaaS Callface: tem estes ids na metadata. Nunca tocamos. */
@@ -146,7 +153,8 @@ export async function planejarAlteracao(
       }
       const preco = await lerPreco(acao.priceId);
       finais = [...sub.items.data, { quantity: acao.quantidade, price: preco }];
-      itensDaPrevia = [{ price: acao.priceId, quantity: acao.quantidade }];
+      itensDaPrevia = [{ price: acao.priceId, quantity: acao.quantidade,
+        precoUnitario: acao.precoUnitario ?? null, produtoId: acao.produtoId ?? null, intervalo: acao.intervalo ?? null }];
       break;
     }
     case "alterar_quantidade": {
@@ -233,7 +241,15 @@ export function pedidoDoStripe(
   else {
     plano.itensDaPrevia.forEach((it, i) => {
       if (it.id) form.append(`items[${i}][id]`, it.id);
-      if (it.price) form.append(`items[${i}][price]`, it.price);
+      /* Preço combinado vai no item (`price_data`) sobre o produto oficial, em
+         vez do Price de tabela: é o que permite vender acima ou abaixo da
+         tabela para quem já é cliente, como no checkout da venda nova. */
+      if (it.precoUnitario != null && it.produtoId) {
+        form.append(`items[${i}][price_data][product]`, it.produtoId);
+        form.append(`items[${i}][price_data][currency]`, "brl");
+        form.append(`items[${i}][price_data][unit_amount]`, String(Math.round(it.precoUnitario * 100)));
+        form.append(`items[${i}][price_data][recurring][interval]`, it.intervalo || "month");
+      } else if (it.price) form.append(`items[${i}][price]`, it.price);
       if (it.quantity !== undefined) form.append(`items[${i}][quantity]`, String(it.quantity));
       if (it.deleted) form.append(`items[${i}][deleted]`, "true");
       if (!it.id) comMeta(`items[${i}][metadata]`); // item novo nasce com a origem

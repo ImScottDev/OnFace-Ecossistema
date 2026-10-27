@@ -305,15 +305,6 @@ export function validarValorDoItem(item: CheckoutItem): void {
      que mostra "preço de tabela X · valor negociado Y" na tela. */
 }
 
-export function produtosDoDesconto(itens: CheckoutItem[], personalizados: CheckoutItem[]): string[] | undefined {
-  if (!personalizados.length) return undefined;
-  const descontados = itens.filter((i) => !i.valorPersonalizado && i.valorUnitario < i.valorTabela);
-  if (descontados.some((i) => !i.stripeProductId || personalizados.some((p) => p.stripeProductId === i.stripeProductId))) {
-    throw new Error("Separe a cobrança do setup: o desconto não pode incidir no mesmo produto de valor escolhido.");
-  }
-  return [...new Set(descontados.map((i) => i.stripeProductId!))].sort();
-}
-
 /**
  * O vendedor fixa o valor; o cliente paga exatamente o que foi contratado.
  *

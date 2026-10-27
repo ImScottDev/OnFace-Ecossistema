@@ -213,6 +213,8 @@ export async function criarCheckoutParaGrupo(opts: {
       assinaturaEscolhidaId: opts.assinaturaEscolhidaId ?? null,
       itens: itensRecorrentes.map((i) => ({
         nome: i.nome, quantidade: i.quantidade, stripePriceId: i.stripePriceId,
+        // produto e intervalo levam o preço combinado para dentro da assinatura
+        stripeProductId: i.stripeProductId, intervalo: i.recurringInterval,
         valorUnitario: i.valorUnitario, valorTabela: i.valorTabela,
       })),
     });

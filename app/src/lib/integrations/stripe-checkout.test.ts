@@ -1,14 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { adicionarLinhasDoCheckout, produtosDoDesconto, validarValorDoItem, duracaoDoDescontoRecorrente, linhasDoCheckout, type CheckoutItem } from "./stripe-checkout";
-
-it("desconto da mensalidade não reduz o setup negociado", () => {
-  const plano = { ...item("price_plano", 1), stripeProductId: "prod_plano", valorTabela: 200, valorUnitario: 100 };
-  const setup = { ...item("price_setup", 1), stripeProductId: "prod_setup", valorPersonalizado: true };
-  assert.deepEqual(produtosDoDesconto([plano], [setup]), ["prod_plano"]);
-  assert.throws(() => produtosDoDesconto([plano], [{ ...setup, stripeProductId: "prod_plano" }]), /Separe/);
-});
+import { adicionarLinhasDoCheckout, validarValorDoItem, duracaoDoDescontoRecorrente, linhasDoCheckout, type CheckoutItem } from "./stripe-checkout";
 
 it("cada linha cobra o valor combinado sobre o produto oficial, nunca o Price de tabela", () => {
   const setup = { ...item("price_setup", 1, "PABX - Setup"), stripeProductId: "prod_setup", valorTabela: 0, valorUnitario: 1649.9, valorPersonalizado: true };

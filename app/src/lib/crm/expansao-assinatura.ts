@@ -44,7 +44,10 @@ export interface ItemDeExpansao {
   nome: string;
   quantidade: number;
   stripePriceId: string;
-  /** Preço de tabela e preço negociado: se divergirem, a expansão não segue. */
+  /** Produto oficial: é sobre ele que o preço combinado entra na assinatura. */
+  stripeProductId?: string | null;
+  intervalo?: string | null;
+  /** Preço de tabela e preço combinado. Divergindo, manda o combinado. */
   valorUnitario: number;
   valorTabela: number;
 }
@@ -58,20 +61,29 @@ export type ResultadoExpansao =
   | { ok: false; semAssinaturaViva?: false; error: string };
 
 /**
- * O primeiro item cujo desconto a alteração de assinatura não sabe aplicar.
+ * O item vendido fora da tabela que não tem produto oficial para levar o preço.
  *
- * O cupom é coisa do checkout; aqui o item entraria a preço de tabela e o
- * cliente pagaria mais do que aceitou. A margem de um centavo é a mesma que o
- * checkout usa para arredondamento.
+ * A alteração de assinatura entrava sempre pelo Price de tabela, então
+ * qualquer desconto era recusado aqui: o cliente pagaria mais do que aceitou.
+ * Agora o preço combinado vai no item (`price_data`) sobre o PRODUTO oficial —
+ * para mais ou para menos. Sem produto oficial não há onde pôr o preço, e aí
+ * sim é melhor parar do que cobrar o valor errado.
  */
 export function itemComDescontoQueNaoPodeIr(itens: ItemDeExpansao[]): ItemDeExpansao | null {
-  return itens.find((i) => i.valorUnitario < i.valorTabela - 0.01) ?? null;
+  return itens.find((i) => Math.abs(i.valorUnitario - i.valorTabela) > 0.01 && !i.stripeProductId) ?? null;
 }
 
-/** Soma as linhas do mesmo Price: a proposta pode trazer o item repetido. */
-export function agruparPorPrice(itens: ItemDeExpansao[]): Map<string, number> {
-  const porPrice = new Map<string, number>();
-  for (const i of itens) porPrice.set(i.stripePriceId, (porPrice.get(i.stripePriceId) ?? 0) + i.quantidade);
+/**
+ * Soma as linhas do mesmo Price: a proposta pode trazer o item repetido.
+ * Leva junto o preço combinado, que é o que vai ao Stripe quando difere da
+ * tabela — a soma é por Price, mas o valor é por unidade e não se soma.
+ */
+export function agruparPorPrice(itens: ItemDeExpansao[]): Map<string, { quantidade: number; item: ItemDeExpansao }> {
+  const porPrice = new Map<string, { quantidade: number; item: ItemDeExpansao }>();
+  for (const i of itens) {
+    const ja = porPrice.get(i.stripePriceId);
+    porPrice.set(i.stripePriceId, { quantidade: (ja?.quantidade ?? 0) + i.quantidade, item: ja?.item ?? i });
+  }
   return porPrice;
 }
 
@@ -169,7 +181,7 @@ export async function aplicarExpansaoNaAssinatura(opts: {
 
   const descontado = itemComDescontoQueNaoPodeIr(opts.itens);
   if (descontado) {
-    return { ok: false, error: `O item '${descontado.nome}' foi negociado abaixo do preço de tabela, e a alteração de assinatura cobraria o valor cheio. Conclua em Cliente 360 › Assinaturas aplicando o desconto combinado.` };
+    return { ok: false, error: `O item '${descontado.nome}' foi negociado fora do preço de tabela, mas não tem produto oficial no Stripe para levar esse valor. Conclua em Cliente 360 › Assinaturas aplicando o valor combinado.` };
   }
 
   const assinatura = await assinaturaParaExpandir(opts.organizacaoId, opts.empresaId, opts.assinaturaEscolhidaId ?? null);
@@ -198,11 +210,16 @@ export async function aplicarExpansaoNaAssinatura(opts: {
 
   let faturaId: string | null = null;
   let aplicados = 0;
-  for (const [priceId, quantidade] of agruparPorPrice(opts.itens)) {
+  for (const [priceId, { quantidade, item }] of agruparPorPrice(opts.itens)) {
     const existente = jaNaAssinatura.find((i) => i.priceId === priceId && i.itemId);
+    /* Fora da tabela, o preço combinado acompanha o item. No mesmo Price que o
+       cliente já tem, só a quantidade muda: mexer no preço ali trocaria o
+       valor do que ele já paga, que não é o que a venda combinou. */
+    const foraDaTabela = Math.abs(item.valorUnitario - item.valorTabela) > 0.01;
     const acao: AcaoDeAssinatura = existente?.itemId
       ? { tipo: "alterar_quantidade", itemId: existente.itemId, quantidade: (existente.quantidade ?? 1) + quantidade }
-      : { tipo: "adicionar_item", priceId, quantidade };
+      : { tipo: "adicionar_item", priceId, quantidade,
+          ...(foraDaTabela ? { precoUnitario: item.valorUnitario, produtoId: item.stripeProductId, intervalo: item.intervalo } : {}) };
 
     try {
       const plano = await planejarAlteracao(assinatura.subscriptionId, acao);

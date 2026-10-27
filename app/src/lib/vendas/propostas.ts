@@ -437,13 +437,21 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
   }
 
   /* A venda não pode morrer DEPOIS do aceite: o checkout (lib/crm/checkout.ts, mapItem) recusa item sem Price
-     oficial ativo do catálogo e item vendido ACIMA do preço de tabela. Aqui a mesma conta, antes de o cliente ver. */
-  const problemas = await db.execute<{ nome: string; motivo: "sem_preco" | "acima_da_tabela" | "fora_limites" }>(sql`
+     oficial ativo do catálogo. Aqui a mesma conta, antes de o cliente ver.
+
+     Preço ACIMA da tabela não entra mais nesta lista: o checkout cobra pelo
+     valor combinado em `price_data` sobre o produto oficial, para mais ou para
+     menos. Enquanto cobrava pelo Price fixo e descontava com cupom, vender
+     acima era impossível e barrar aqui evitava a venda morrer depois do
+     aceite; hoje barrar só impede o vendedor de fechar pelo valor que
+     combinou (visto em 27/10/2026 na proposta #1606, White Label). O limite
+     que sobra é o do preço de valor escolhido, que o próprio Stripe recusa. */
+  const problemas = await db.execute<{ nome: string; motivo: "sem_preco" | "fora_limites" }>(sql`
     SELECT i.nome,
            CASE WHEN COALESCE(i.stripe_price_id, cp.stripe_price_id) IS NULL OR COALESCE(i.stripe_product_id, sc.stripe_product_id) IS NULL
                   OR cp.id IS NULL OR NOT cp.ativo OR NOT COALESCE(sc.ativo, false) OR sc.origem_catalogo IS DISTINCT FROM 'oficial_stripe'
                   OR cp.recorrente <> (i.tipo = 'recorrente')
-                THEN 'sem_preco' WHEN cp.valor_personalizado THEN 'fora_limites' ELSE 'acima_da_tabela' END AS motivo
+                THEN 'sem_preco' ELSE 'fora_limites' END AS motivo
       FROM proposta_itens i
       LEFT JOIN catalogo_precos cp ON cp.id = i.catalogo_preco_id
       LEFT JOIN servicos_catalogo sc ON sc.id = i.servico_catalogo_id
@@ -451,7 +459,6 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
        AND (COALESCE(i.stripe_price_id, cp.stripe_price_id) IS NULL OR COALESCE(i.stripe_product_id, sc.stripe_product_id) IS NULL
             OR cp.id IS NULL OR NOT cp.ativo OR NOT COALESCE(sc.ativo, false) OR sc.origem_catalogo IS DISTINCT FROM 'oficial_stripe'
             OR cp.recorrente <> (i.tipo = 'recorrente')
-            OR (NOT cp.valor_personalizado AND i.subtotal::numeric / GREATEST(1, round(i.quantidade::numeric)) > COALESCE(i.valor_tabela, cp.valor)::numeric + 0.01)
             OR (cp.valor_personalizado AND (
               round(i.subtotal::numeric / GREATEST(1, round(i.quantidade::numeric)) * 100) < COALESCE(cp.valor_minimo_centavos, 0)
               OR round(i.subtotal::numeric / GREATEST(1, round(i.quantidade::numeric)) * 100) > cp.valor_maximo_centavos)))
@@ -463,15 +470,8 @@ export async function enviarProposta(envio: EnvioDeProposta): Promise<{ proposta
       `${semPreco.join(", ")}: este item não tem preço oficial do catálogo e não vai gerar cobrança depois do aceite. Volte aos itens e escolha o item do catálogo (o preço pode ser ajustado com desconto).`,
     );
   }
-  const acima = problemas.filter((p) => p.motivo === "acima_da_tabela").map((p) => `"${p.nome}"`);
   const foraLimites = problemas.filter((p) => p.motivo === "fora_limites").map((p) => `"${p.nome}"`);
   if (foraLimites.length) throw new RegraDeNegocio("item_fora_limites", `${foraLimites.join(", ")}: ajuste o valor aos limites configurados no Stripe.`);
-  if (acima.length) {
-    throw new RegraDeNegocio(
-      "item_acima_da_tabela",
-      `${acima.join(", ")}: o valor está acima do preço de tabela do catálogo, e o pagamento não consegue cobrar mais que a tabela. Ajuste o valor para no máximo o da tabela (ou peça ao financeiro para criar o preço no catálogo).`,
-    );
-  }
 
   if (envio.modoFechamento === "CONTRACT") {
     if (!proposta.empresa_id) {
