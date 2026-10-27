@@ -447,6 +447,9 @@ app.get("/propostas/:id/pdf", async (c) => {
       dataEmissao: propostas.dataEmissao,
       dataValidade: propostas.dataValidade,
       condicoesPagamento: propostas.condicoesPagamento,
+      // O que o vendedor combinou em palavras (franquia, preço por minuto,
+      // regra de excedente). Ficava gravado e não chegava a lugar nenhum.
+      observacoes: propostas.observacoes,
       condicaoPagamentoTipo: propostas.condicaoPagamentoTipo,
       parcelas: propostas.parcelas,
       prazoContratoMeses: propostas.prazoContratoMeses,
@@ -635,6 +638,7 @@ app.get("/propostas/:id/publica", async (c) => {
     dataEmissao: proposta.dataEmissao ?? proposta.enviadaEm ?? proposta.createdAt,
     prazoContratoMeses: proposta.prazoContratoMeses,
     condicoesPagamento: proposta.condicoesPagamento,
+    observacoes: proposta.observacoes ?? null,
     totalRecorrente: proposta.totalRecorrente,
     totalAvulso: proposta.totalAvulso,
     totalGeral: proposta.totalGeral,

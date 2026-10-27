@@ -39,6 +39,8 @@ interface Grupo {
 interface PropostaPublicaData {
   id: string; numero: number; versao: number; status: string; moeda: string;
   dataValidade: string | null; dataEmissao: string | null; condicoesPagamento: string | null;
+  /** O que foi combinado em palavras: franquia, excedente, preço por minuto. */
+  observacoes?: string | null;
   totalRecorrente: string; totalAvulso: string; totalGeral: string;
   motivoRecusa: string | null; clienteRespondeuEm: string | null;
   clienteNome: string | null; clienteCargo: string | null;
@@ -578,6 +580,15 @@ export function PropostaPublica({ id }: { id: string }) {
               ) : null}
             </div>
             {p.condicoesPagamento ? <p style={{ margin: "12px 0 0", fontSize: 12.5, color: "var(--of-tinta-3)" }}>{p.condicoesPagamento}</p> : null}
+            {/* O que o vendedor combinou em palavras — franquia, excedente,
+                preço por minuto. Ficava só no rascunho interno, e o cliente
+                recebia a proposta sem a regra que define a conta dele. */}
+            {p.observacoes ? (
+              <div style={{ margin: "16px 0 0", padding: "14px 16px", border: "1px solid var(--of-linha)", borderRadius: 10 }}>
+                <span className="pp-overline" style={{ display: "block", marginBottom: 6 }}>Condições combinadas</span>
+                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", color: "var(--of-tinta-2)" }}>{p.observacoes}</p>
+              </div>
+            ) : null}
           </section>
 
           {/* Pré-aceite: o cliente decide uma vez só, mesmo numa composição mista. */}

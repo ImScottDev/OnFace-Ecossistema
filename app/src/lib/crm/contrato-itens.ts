@@ -56,6 +56,23 @@ export function linhasSetupResumoHtml(setupTotal: string, forma: string, temSetu
   return [linha("SETUP", setupTotal), forma ? linha("FORMA DE PAGAMENTO DO SETUP", forma) : ""].filter(Boolean).join("\n");
 }
 
+/**
+ * As condições que o vendedor escreveu em palavras, no contrato.
+ *
+ * Franquia, excedente, preço por minuto: regras que definem a conta do
+ * cliente e que ficavam só no rascunho interno — ele assinava sem elas
+ * (visto na proposta #1606, 27/10/2026). Vazio sem observação, para o
+ * modelo não imprimir um título sozinho; cada linha do texto vira um
+ * parágrafo, preservando como foi escrito.
+ */
+export function blocoDeObservacoes(texto: string | null | undefined): string {
+  const limpo = String(texto ?? "").trim();
+  if (!limpo) return "";
+  const paragrafos = limpo.split(/\n{1,}/).map((l) => l.trim()).filter(Boolean)
+    .map((l) => `<p>${escaparHtml(l)}</p>`).join("");
+  return `<p><b>Condições comerciais combinadas</b></p>${paragrafos}`;
+}
+
 /** Quadro do setup (White Label, cláusula 6): itens discriminados, total e forma. Vazio sem setup. */
 export function quadroSetupHtml(linhasItens: string, setupTotal: string, forma: string, temSetup: boolean): string {
   if (!temSetup) return "";

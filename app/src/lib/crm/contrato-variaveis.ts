@@ -60,6 +60,8 @@ export const VARIAVEIS_CONTRATO: VariavelContrato[] = [
   { chave: "quadro_setup_html", rotulo: "Quadro de setup completo: itens, total e forma de pagamento (vazio sem setup)", exemplo: "<table class=\"cf-valores\" border=\"1\"><tbody><tr><td>Setup de implantação</td><td>Configuração inicial</td><td>1</td><td>R$ 2.500,00</td><td>R$ 2.500,00</td></tr></tbody></table>", grupo: "Itens e valores", opcional: true },
   { chave: "valor_total", rotulo: "Valor total", exemplo: "R$ 4.299,00", grupo: "Itens e valores", zoho: "Contratos.Total Geral" },
   { chave: "mrr_total", rotulo: "Total mensal recorrente", exemplo: "R$ 1.799,00", grupo: "Itens e valores", zoho: "Contratos.Total Recorrente" },
+  { chave: "observacoes", rotulo: "Condições combinadas (texto do vendedor)", exemplo: "Franquia de 40.000 minutos mensais. Excedente: R$ 0,15/min.", grupo: "Itens e valores", opcional: true },
+  { chave: "observacoes_html", rotulo: "Condições combinadas: bloco pronto com título (vazio sem observação)", exemplo: "<p><b>Condições comerciais combinadas</b></p><p>Franquia de 40.000 minutos mensais.</p>", grupo: "Itens e valores", opcional: true },
   { chave: "setup_total", rotulo: "Total de setup", exemplo: "R$ 2.500,00", grupo: "Itens e valores", zoho: "Contratos.Total Setup" },
   { chave: "forma_pagamento_setup", rotulo: "Forma de pagamento do setup", exemplo: "À vista, no cartão de crédito", grupo: "Itens e valores", zoho: "Setup..Forma de pagamento" },
   { chave: "condicoes_pagamento", rotulo: "Condições de pagamento da proposta", exemplo: "Boleto mensal, vencimento todo dia 10", grupo: "Itens e valores" },
