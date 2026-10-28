@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowUpRight, BellRing, CalendarDays, Check, ChevronRight, Clock3, Layers, ListTodo, Plus, RefreshCw, ShieldCheck, Sparkles, Target, TrendingUp, Workflow, AlertTriangle, BarChart3 } from "lucide-react";
 import { Pagina } from "@/components/onface/shell/Pagina";
 import { abrirNexo } from "@/lib/nexo/cliente";
-import { brlInteiro, moedaCompacta } from "@/lib/inicio/lente";
+import { brlInteiro, moedaCompacta, deltaDePct } from "@/lib/inicio/lente";
 import { atualizarInicio } from "@/app/(produto)/inicio/actions";
 import type { Atencao, Entrega, Financeiro, Funil, Hero, Kpi, PainelInicio, Saude } from "@/lib/inicio/tipos";
 import "./inicio-next.css";
@@ -56,7 +56,9 @@ function Hero({ hero, data, permitirLinks }: { hero: Hero; data: string; permiti
       <div className="nx-hero-top"><span><i/> RESULTADO EM FOCO <b>/</b> {mesAtual.toUpperCase()}</span><span>01 / 04</span></div>
       <div className="nx-hero-middle">
         <div className="nx-hero-figure"><span className="nx-hero-label">{titulo}</span><strong>{valor}</strong>
-          {fat ? <p className="nx-hero-context"><span data-negative={fat.deltaPct!==null&&fat.deltaPct<0}>{fat.deltaPct === null ? "Sem base" : `${fat.deltaPct>0?"+":""}${fat.deltaPct}%`}</span> comparado ao mesmo período anterior</p> :
+          {/* `deltaDePct` é quem arredonda e escreve o sinal — imprimir `deltaPct`
+              cru punha "-76.65859549848565%" no card principal. */}
+          {fat ? <p className="nx-hero-context"><span data-negative={deltaDePct(fat.deltaPct).tom==="risco"}>{fat.deltaPct === null ? "Sem base" : deltaDePct(fat.deltaPct).texto}</span> comparado ao mesmo período anterior</p> :
             meta ? <p className="nx-hero-context">{meta.alvo===null ? "Ainda não existe meta definida" : `Objetivo: ${meta.unidade==="faturamento" ? brlInteiro(meta.alvo) : numero(meta.alvo)}`}</p> :
             fila ? <p className="nx-hero-context">{numero(fila.foraDoSla)} fora do SLA · {numero(fila.vencendo)} perto do prazo</p> : entrega ? <p className="nx-hero-context">{numero(entrega.bloqueadas)} bloqueadas · {numero(entrega.atrasadas)} atrasadas</p> : null}
           {pct !== null ? <div className="nx-progress"><div><span>Progresso da meta</span><strong>{numero(pct)}%</strong></div><div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100,pct)} aria-label="Progresso da meta"><span style={{width:percentual(pct)}}/></div><small>{fat?.metaMes ? `${brlInteiro(fat.metaMes.realizado)} de ${brlInteiro(fat.metaMes.alvo)}` : meta?.alvo ? `${numero(meta.realizado)} de ${numero(meta.alvo)}` : ""}</small></div> : null}
