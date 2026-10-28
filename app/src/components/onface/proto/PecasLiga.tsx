@@ -23,6 +23,7 @@
 
 import * as React from "react";
 import { avatarDe } from "./avatar-do-proto";
+import { estiloDoMenu } from "./dropdown-ancorado";
 import { abrirUrlExterna } from "@/lib/callface-ligar";
 import { formatPhoneDisplay } from "@/lib/whatsapp/phone-utils";
 import { toast } from "sonner";
@@ -635,11 +636,18 @@ class Logica extends React.Component<any, any> {
       dropTitulo: S.dropMenu === "resp" ? "RESPONSÁVEL" : "MOVER PARA",
       dropStyle: (() => {
         const r = S.dropRect;
-        const vh = typeof window !== "undefined" ? (typeof window !== "undefined" ? window.innerHeight : 900) : 800;
-        const alto = S.dropMenu === "resp" ? 170 : 330;
-        const paraCima = !!r && (vh - r.bottom - 12) < alto && r.top > vh - r.bottom;
-        const pos = r ? (paraCima ? "bottom:" + (vh - r.top + 6) + "px;" : "top:" + (r.bottom + 6) + "px;") + "left:" + r.left + "px;width:" + Math.max(236, r.width) + "px;" : "top:120px;left:120px;width:240px;";
-        return "position:fixed;" + pos + "max-height:" + (vh - 24) + "px;overflow-y:auto;z-index:70;background:#fff;border-radius:10px;padding:4px;box-shadow:0 0 0 1px #e3e7e8,0 12px 32px -8px rgba(18,23,29,.22);animation:of-fade .12s ease-out both";
+        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        /* A altura desejada é a da lista inteira (38px por item): com a equipe
+           toda em "responsável" ela passa da tela, e é o espaço real do lado
+           escolhido que vira `max-height` — senão o menu desce para fora da
+           janela e o scroll nunca liga. */
+        const itens = S.dropMenu === "resp"
+          ? ((this.dadosDoProto && this.dadosDoProto.EQUIPE) || []).length || 6
+          : 7;
+        const pos = r
+          ? estiloDoMenu(r, vh, 44 + itens * 38)
+          : "top:120px;left:120px;width:240px;max-height:" + (vh - 24) + "px;";
+        return "position:fixed;" + pos + "overflow-y:auto;z-index:70;background:#fff;border-radius:10px;padding:4px;box-shadow:0 0 0 1px #e3e7e8,0 12px 32px -8px rgba(18,23,29,.22);animation:of-fade .12s ease-out both";
       })(),
       dropItens: (() => {
         const fechar = { dropMenu: null };
