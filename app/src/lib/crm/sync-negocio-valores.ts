@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { negocios } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { totaisDoNegocio } from "@/lib/crm/series-que-valem";
 
 /**
  * Recalculates negocio financial fields (mrrEstimado, valorProjeto, valorTotal)
@@ -22,25 +23,38 @@ export async function syncNegocioValoresFromPropostas(
   /* Uma proposta é uma SÉRIE (o mesmo `numero`, versões v1, v2…): só a versão mais nova que
      não foi recusada nem substituída vale. Somar as versões dobrava o valor quando existia
      um rascunho v2 ao lado da v1 aceita, e o cartão, a lista e o detalhe passavam a
-     mostrar números diferentes para a mesma venda. */
-  const [totals] = await db.execute<{ totalRecorrente: string; totalAvulso: string; totalGeral: string }>(sql`
+     mostrar números diferentes para a mesma venda.
+
+     O SQL só soma cada série; QUAIS séries entram é `seriesQueValem` — um
+     negócio com várias séries vale o que foi aceito, não a soma das
+     alternativas. */
+  const linhas = await db.execute<{ id: string; status: string; recorrente: string; avulso: string; geral: string }>(sql`
     WITH vigentes AS (
-      SELECT DISTINCT ON (p.numero) p.id
+      SELECT DISTINCT ON (p.numero) p.id, p.status
         FROM propostas p
        WHERE p.negocio_id = ${negocioId}::uuid AND p.status NOT IN ('recusada', 'substituida')
        ORDER BY p.numero, p.versao DESC
     )
-    SELECT COALESCE(SUM(CASE WHEN i.tipo = 'recorrente' THEN i.subtotal ELSE 0 END), 0)::text AS "totalRecorrente",
-           COALESCE(SUM(CASE WHEN i.tipo IN ('avulso', 'setup') THEN i.subtotal ELSE 0 END), 0)::text AS "totalAvulso",
-           COALESCE(SUM(i.subtotal), 0)::text AS "totalGeral"
-      FROM proposta_itens i JOIN vigentes v ON v.id = i.proposta_id`);
+    SELECT v.id::text AS id, v.status,
+           COALESCE(SUM(CASE WHEN i.tipo = 'recorrente' THEN i.subtotal ELSE 0 END), 0)::text AS "recorrente",
+           COALESCE(SUM(CASE WHEN i.tipo IN ('avulso', 'setup') THEN i.subtotal ELSE 0 END), 0)::text AS "avulso",
+           COALESCE(SUM(i.subtotal), 0)::text AS "geral"
+      FROM vigentes v LEFT JOIN proposta_itens i ON i.proposta_id = v.id
+     GROUP BY v.id, v.status`);
+
+  const totals = totaisDoNegocio(
+    Array.from(linhas, (l) => ({
+      id: l.id, status: l.status,
+      recorrente: Number(l.recorrente), avulso: Number(l.avulso), geral: Number(l.geral),
+    })),
+  );
 
   await db
     .update(negocios)
     .set({
-      mrrEstimado: totals.totalRecorrente,
-      valorProjeto: totals.totalAvulso,
-      valorTotal: totals.totalGeral,
+      mrrEstimado: totals.totalRecorrente.toFixed(2),
+      valorProjeto: totals.totalAvulso.toFixed(2),
+      valorTotal: totals.totalGeral.toFixed(2),
       // O relógio só anda quando há trabalho por trás da chamada.
       //
       // As rotas chamam este sync DENTRO de uma ação real (mudar o status do
