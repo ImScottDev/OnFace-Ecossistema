@@ -16,6 +16,7 @@ import { proximoCompromisso, temCompromissoAberto } from "./proxima-acao";
 import { origemCanonica } from "./origem-canonica";
 import { credenciaisAds } from "@onface/integrations-meta";
 import { pessoaNaoMesclada } from "./lead-mesclado";
+import { pessoaDaEmpresa } from "./pessoa-da-empresa";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -1387,7 +1388,7 @@ export async function diretorioEmpresas(organizacaoId: string, filtros: {
   }>(sql`
     WITH base AS (
       SELECT e.id, e.nome, e.cnpj, e.setor, e.cidade,
-        (SELECT count(*)::int FROM pessoas p WHERE p.empresa_id = e.id
+        (SELECT count(*)::int FROM pessoas p WHERE ${pessoaDaEmpresa("p", sql.raw("e.id"))}
            AND ${pessoaNaoMesclada("p")})
           + (SELECT count(*)::int FROM leads l WHERE l.empresa_id = e.id AND l.canonical_lead_id IS NULL AND NOT EXISTS (
                SELECT 1 FROM pessoas p2 WHERE p2.lead_id_legado = l.id)) AS pessoas,
@@ -1553,7 +1554,8 @@ export async function diretorioPessoas(organizacaoId: string, filtros: {
       LEFT JOIN empresas e ON e.id = p.empresa_id
      WHERE p.organizacao_id = ${organizacaoId}::uuid
        AND ${pessoaNaoMesclada("p")}
-       AND (${filtros.empresaId ?? null}::uuid IS NULL OR p.empresa_id = ${filtros.empresaId ?? null}::uuid)
+       AND (${filtros.empresaId ?? null}::uuid IS NULL
+            OR ${pessoaDaEmpresa("p", sql`${filtros.empresaId ?? null}::uuid`)})
        AND (${filtros.semEmpresa ?? false} = false OR p.empresa_id IS NULL)
        AND (${busca}::text IS NULL OR lower(concat_ws(' ', p.nome, p.sobrenome)) LIKE ${busca}
             OR lower(COALESCE(p.email, '')) LIKE ${busca})
@@ -1679,8 +1681,9 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
     SELECT p.id::text, 'pessoa' AS fonte, p.lead_id_legado::text AS lead_id, NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS nome,
            p.cargo, v.papel, p.email, p.telefone
       FROM pessoas p
-      LEFT JOIN pessoa_empresa_vinculos v ON v.pessoa_id = p.id AND v.empresa_id = p.empresa_id AND v.encerrado_em IS NULL
-     WHERE p.empresa_id = ${empresaId}::uuid
+      LEFT JOIN pessoa_empresa_vinculos v ON v.pessoa_id = p.id AND v.empresa_id = ${empresaId}::uuid AND v.encerrado_em IS NULL
+     WHERE ${pessoaDaEmpresa("p", sql`${empresaId}::uuid`)}
+       AND p.organizacao_id = ${organizacaoId}::uuid
        AND ${pessoaNaoMesclada("p")}
     UNION ALL
     SELECT l.id::text, 'lead' AS fonte, l.id::text AS lead_id, NULLIF(trim((CASE WHEN COALESCE(trim(l.sobrenome),'')='' THEN trim(l.nome) WHEN lower(trim(l.sobrenome))=lower(trim(l.nome)) OR lower(trim(l.sobrenome)) LIKE lower(trim(l.nome))||' %' THEN trim(l.sobrenome) WHEN lower(trim(l.nome)) LIKE '% '||lower(trim(l.sobrenome)) THEN trim(l.nome) ELSE trim(l.nome)||' '||trim(l.sobrenome) END)), '') AS nome,
