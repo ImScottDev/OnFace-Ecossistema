@@ -29,6 +29,7 @@ import { toast } from "sonner";
 
 import { PipelineDesenho } from "./PipelineDesenho";
 import { tempoNaEtapa } from "@/lib/vendas/tempo-na-etapa";
+import { formatarTelefone } from "@/lib/telefone";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 
 interface Props {
@@ -300,7 +301,11 @@ class Logica extends React.Component<any, any> {
          carrega desde que o botão "Ligar" do drawer foi consertado, então o
          dado já está na mão; só faltava a coluna. */
       const COLS = [["opp", "Oportunidade", o => (FAM[o.familia] || "") + " · " + o.empresa], ["empresa", "Empresa", o => o.empresa], ["pessoa", "Contato", o => o.pessoa], ["cargo", "Cargo", o => o.cargo || ""],
-        ["telefone", "Telefone", o => o.telefone || ""], ["whatsapp", "WhatsApp", o => o.whatsapp || ""], ["email", "E-mail", o => o.email || ""],
+        /* Telefone pela régua única (`formatarTelefone`), como em Pré-vendas: a base
+           guarda formato misturado, e o número cru ("5533999709200") a planilha lê
+           como NÚMERO — alinha à direita, come o zero e pode virar notação
+           científica. Com "+55 (33) 99970-9200" ela trata como texto. */
+        ["telefone", "Telefone", o => formatarTelefone(o.telefone)], ["whatsapp", "WhatsApp", o => formatarTelefone(o.whatsapp)], ["email", "E-mail", o => o.email || ""],
         ["etapa", "Etapa", o => ROT[o.etapa]], ["familia", "Produto", o => FAM[o.familia]], ["tipo", "Tipo", o => TIPO[o.tipo || "nova"]],
         ["mrr", "Recorrente/mês", o => somas(o).mrr], ["un", "Único", o => somas(o).un], ["prop", "Proposta", o => o.proposta ? PROPS[o.proposta.status] || o.proposta.status : "Sem proposta"], ["resp", "Closer", o => o.resp], ["dias", "Dias na etapa", o => o.dias], ["origem", "Origem", o => o.origem || ""], ["prox", "Próxima atividade", o => { const a = (o.atvs || []).find(x => !x.feita); return a ? a.titulo + " · " + (a.quando || "") : ""; }]];
       // Contato vem marcado por padrão: é o que o time usa a planilha para fazer.

@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import { PreVendasDesenho } from "./PreVendasDesenho";
 import { UsuarioDoProtoContexto } from "./usuario-do-proto";
 import { tempoNaEtapa } from "@/lib/vendas/tempo-na-etapa";
+import { formatarTelefone } from "@/lib/telefone";
 
 interface Props {
   /** O que o protótipo lia do store. Preencher com dado real. */
@@ -316,7 +317,7 @@ class Logica extends React.Component<any, any> {
          calculado do id — contato falso que o operador levava para discar. Até
          o board trazer o valor real, a coluna sai vazia. */
       if (k === "email") return L.email && L.email !== "sim" ? L.email : "";
-      if (k === "telefone") return L.telefone && L.telefone !== "sim" ? L.telefone : "";
+      if (k === "telefone") return L.telefone && L.telefone !== "sim" ? formatarTelefone(L.telefone) : "";
       if (k === "etapa") return etapas[L.etapa];
       if (k === "responsavel") return L.resp || "Sem responsável";
       if (k === "origem") return L.origem;
