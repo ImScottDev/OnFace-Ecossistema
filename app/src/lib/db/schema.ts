@@ -1763,7 +1763,7 @@ export const propostaItens = pgTable(
     moeda: text("moeda").default("BRL").notNull(), // BRL, USD, EUR, CAD (herda da proposta)
     quantidade: decimal("quantidade", { precision: 10, scale: 2 }).default("1").notNull(),
     valorUnitario: decimal("valor_unitario", { precision: 12, scale: 2 }).default("0").notNull(),
-    desconto: decimal("desconto", { precision: 5, scale: 2 }).default("0"),
+    desconto: decimal("desconto", { precision: 12, scale: 2 }).default("0"),
     descontoTipo: text("desconto_tipo").default("percentual").notNull(), // percentual | valor
     subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0").notNull(),
     ordem: integer("ordem").default(0).notNull(),
@@ -3760,7 +3760,7 @@ export const contratoItens = pgTable("contrato_itens", {
   descricao: text("descricao"),
   quantidade: decimal("quantidade", { precision: 10, scale: 2 }).default("1").notNull(),
   valorUnitario: decimal("valor_unitario", { precision: 12, scale: 2 }).default("0").notNull(),
-  desconto: decimal("desconto", { precision: 5, scale: 2 }).default("0"),
+  desconto: decimal("desconto", { precision: 12, scale: 2 }).default("0"),
   subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0").notNull(),
   zohoId: text("zoho_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
