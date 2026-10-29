@@ -739,7 +739,11 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
              -- telefone no cadastro. A consulta já une leads e pessoas para
              -- mostrar "Pessoa · Cargo": o contato vinha de graça.
              COALESCE(ps.telefone, l.telefone) AS telefone,
-             COALESCE(ps.whatsapp, l.whatsapp) AS whatsapp,
+             -- Mesmo fallback do board de Pre-vendas: a coluna whatsapp esta
+             -- preenchida em 26 de 4.542 pessoas, e nas que tem as duas o numero
+             -- é o mesmo do telefone em todas menos 4. Sem o fallback a coluna
+             -- WhatsApp da planilha do Pipeline saía vazia em TODAS as linhas.
+             COALESCE(ps.whatsapp, l.whatsapp, ps.telefone, l.telefone) AS whatsapp,
              COALESCE(ps.email, l.email) AS email,
              -- Proposta é canônica (SPEC §13.1); o vínculo é que tem duas portas.
              --
