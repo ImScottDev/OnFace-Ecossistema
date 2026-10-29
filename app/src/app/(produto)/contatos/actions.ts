@@ -18,6 +18,7 @@ import { criarLead } from "@/lib/vendas/pre-vendas";
 import { criarOportunidade } from "@/lib/vendas/pipeline";
 import { salvarDadosJuridicos, conferirDadosJuridicos, type DadosJuridicos } from "@/lib/vendas/propostas";
 import { empresa360, type Empresa360 } from "@/lib/vendas/consultas";
+import { pessoaNaoMesclada } from "@/lib/vendas/lead-mesclado";
 import { lerLinhaDoTempo, registrarEvento, type LinhaDoTempo } from "@/lib/vendas/eventos";
 
 const ROTA = "/contatos";
@@ -633,6 +634,9 @@ export async function acaoAdicionarPessoaNaEmpresa(empresaId: string, d: {
     const [dup] = await db.execute<{ id: string }>(sql`
       SELECT p.id::text FROM pessoas p
        WHERE p.organizacao_id = ${ctx.organizacaoId}::uuid
+         -- Pessoa mesclada não aparece em listagem nenhuma: barrar por ela é
+         -- recusar o cadastro por um registro que a tela não mostra.
+         AND ${pessoaNaoMesclada("p")}
          AND (p.empresa_id = ${empresaId}::uuid
               OR EXISTS (SELECT 1 FROM pessoa_empresa_vinculos v WHERE v.pessoa_id = p.id AND v.empresa_id = ${empresaId}::uuid AND v.encerrado_em IS NULL))
          AND (lower(trim(concat_ws(' ', p.nome, p.sobrenome))) = ${nome.toLowerCase()}

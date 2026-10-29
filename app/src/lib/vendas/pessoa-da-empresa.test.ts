@@ -29,3 +29,34 @@ test("pessoa vinculada como secundária é lida como pessoa da empresa", async (
     });
   } catch (e) { if (e !== DESFAZ) throw e; }
 });
+
+test("pessoa mesclada não é reaproveitada: o vínculo vai para a que está viva", async (t) => {
+  if (!process.env.DATABASE_URL) return t.skip("DATABASE_URL não definida");
+  const DESFAZ = new Error("desfaz");
+  const [o] = await db.execute<{ id: string }>(sql`SELECT id::text FROM organizacoes ORDER BY created_at LIMIT 1`);
+  try {
+    await db.transaction(async (tx) => {
+      const email = `m${Math.random()}@x.com`;
+      const alvo = await resolverEmpresa(o.id, { nome: `Alvo ${Math.random()}` }, ATOR_SISTEMA, tx).then((r) => r.empresaId);
+      // Dois leads: o duplicado aponta para o canônico, como a mescla de 13/10 deixou a base.
+      const [canonico] = await tx.execute<{ id: string }>(sql`
+        INSERT INTO leads (organizacao_id, nome, email) VALUES (${o.id}::uuid, 'Viva', ${email}) RETURNING id::text`);
+      const [duplicado] = await tx.execute<{ id: string }>(sql`
+        INSERT INTO leads (organizacao_id, nome, email, canonical_lead_id)
+        VALUES (${o.id}::uuid, 'Morta', ${email}, ${canonico.id}::uuid) RETURNING id::text`);
+      const [viva] = await tx.execute<{ id: string }>(sql`
+        INSERT INTO pessoas (organizacao_id, nome, email, lead_id_legado)
+        VALUES (${o.id}::uuid, 'Viva', ${email}, ${canonico.id}::uuid) RETURNING id::text`);
+      const [morta] = await tx.execute<{ id: string }>(sql`
+        INSERT INTO pessoas (organizacao_id, nome, email, lead_id_legado)
+        VALUES (${o.id}::uuid, 'Morta', ${email}, ${duplicado.id}::uuid) RETURNING id::text`);
+
+      const r = await resolverPessoa(o.id, { nome: "Morta", email, empresaId: alvo }, ATOR_SISTEMA, tx);
+      assert.equal(r.pessoaId, viva.id, `resolveu para a viva, não para ${morta.id}`);
+      const achadas = (await tx.execute<{ id: string }>(sql`
+        SELECT p.id::text FROM pessoas p WHERE ${pessoaDaEmpresa("p", sql`${alvo}::uuid`)}`)).map((x) => x.id);
+      assert.deepEqual(achadas, [viva.id], "e a ficha da empresa mostra essa pessoa");
+      throw DESFAZ;
+    });
+  } catch (e) { if (e !== DESFAZ) throw e; }
+});

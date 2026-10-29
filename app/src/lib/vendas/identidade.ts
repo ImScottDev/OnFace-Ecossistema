@@ -17,6 +17,7 @@ import type { ExecutorDb } from "./executor";
 import { registrarEvento } from "./eventos";
 import { type Ator, type RelacionamentoEmpresa, type PapelPessoa } from "./dominio";
 import { chaveTelefone, normalizarE164 } from "@/lib/telefone";
+import { pessoaNaoMesclada } from "./lead-mesclado";
 
 
 
@@ -229,6 +230,20 @@ async function completarEmpresa(empresaId: string, dados: DadosEmpresa, tx: Exec
 
 /* ── Pessoa ────────────────────────────────────────────────────────────── */
 
+/**
+ * Reaproveitar uma pessoa MESCLADA é pior do que não reaproveitar nada: ela
+ * ficou de fora de toda listagem (`pessoaNaoMesclada`), então o vínculo criado
+ * para ela desaparece da tela — foi o que aconteceu com o Mateus Santana no
+ * Instituto Dra Suelen em 29/10/2026: vínculo gravado, ficha vazia, e a trava
+ * de duplicata barrando o novo cadastro por causa do fantasma. A busca por
+ * e-mail/telefone prefere quem está viva e, se só sobrar a mesclada, salta
+ * para a pessoa do lead canônico — a mesma pessoa, para o resto do sistema.
+ */
+const PESSOA_VIVA = sql.raw(
+  "COALESCE((SELECT pc.id FROM leads lm JOIN pessoas pc ON pc.lead_id_legado = lm.canonical_lead_id"
+  + " WHERE lm.id = p.lead_id_legado AND lm.canonical_lead_id IS NOT NULL LIMIT 1), p.id)",
+);
+
 export interface DadosPessoa {
   nome: string;
   sobrenome?: string | null;
@@ -275,17 +290,19 @@ export async function resolverPessoa(
   const existente = async (): Promise<ResultadoPessoa | null> => {
     if (email) {
       const [porEmail] = await tx.execute<{ id: string }>(sql`
-        SELECT id::text FROM pessoas
-         WHERE organizacao_id = ${organizacaoId}::uuid AND lower(email) = ${email}
+        SELECT ${PESSOA_VIVA}::text AS id FROM pessoas p
+         WHERE p.organizacao_id = ${organizacaoId}::uuid AND lower(p.email) = ${email}
+         ORDER BY (CASE WHEN ${pessoaNaoMesclada("p")} THEN 0 ELSE 1 END), p.created_at
          LIMIT 1
       `);
       if (porEmail) return { pessoaId: porEmail.id, criada: false, resolvidaPor: "email" };
     }
     if (chave) {
       const [porTelefone] = await tx.execute<{ id: string }>(sql`
-        SELECT id::text FROM pessoas
-         WHERE organizacao_id = ${organizacaoId}::uuid
-           AND (${telefoneChaveSql("telefone")} = ${chave} OR ${telefoneChaveSql("whatsapp")} = ${chave})
+        SELECT ${PESSOA_VIVA}::text AS id FROM pessoas p
+         WHERE p.organizacao_id = ${organizacaoId}::uuid
+           AND (${telefoneChaveSql("p.telefone")} = ${chave} OR ${telefoneChaveSql("p.whatsapp")} = ${chave})
+         ORDER BY (CASE WHEN ${pessoaNaoMesclada("p")} THEN 0 ELSE 1 END), p.created_at
          LIMIT 1
       `);
       if (porTelefone) return { pessoaId: porTelefone.id, criada: false, resolvidaPor: "telefone" };
