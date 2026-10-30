@@ -732,7 +732,7 @@ class Logica extends React.Component<any, any> {
       ...(() => {
         const cfg = (() => {
           const ql = (S.qual && S.qual[L0.id]) || {};
-          const opcoes = ["White Label", "Callface AI", "PABX", "Não identificado"];
+          const opcoes = ["White Label", "Callface AI", "PABX", "Callface Assistant", "Não identificado"];
           const val = ql.interesse !== undefined ? ql.interesse : (this._int && this._int.qualPadrao ? this._int.qualPadrao.interesse : "");
           return { opcoes, marcados: String(val || "").split("|").filter(Boolean), padrao: this._int ? this._int.qualPadrao : undefined };
         })();
@@ -879,7 +879,7 @@ class Logica extends React.Component<any, any> {
       qualProgSelo: "flex:0 0 auto;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:5px;font-size:10.5px;font-weight:700;white-space:nowrap;background:"
         + (qualPreenchidos === 4 ? "#e6f4ee;color:#1f7256" : qualPreenchidos === 0 ? "#f7edd8;color:#6e5420" : "#eeeff3;color:#4a5560"),
       qualif: [
-        { campo: "interesse", label: "Interesse", tipo: "multi", opcoes: ["White Label", "Callface AI", "PABX", "Não identificado"] },
+        { campo: "interesse", label: "Interesse", tipo: "multi", opcoes: ["White Label", "Callface AI", "PABX", "Callface Assistant", "Não identificado"] },
         { campo: "tamanho", label: "Tamanho da operação", tipo: "numero" },
         { campo: "dor", label: "Dor principal", tipo: "texto", dica: "Ex: atendimento manual não escala" },
         { campo: "fit", label: "Fit", tipo: "escolha", opcoes: ["Alto", "Médio", "Baixo"] },
@@ -1395,7 +1395,7 @@ class Logica extends React.Component<any, any> {
           iniciais: iniciaisDe(alvo.empresa || alvo.pessoa),
 
           interesseConta: interesses.length ? interesses.length + " selecionado" + (interesses.length > 1 ? "s" : "") : "escolha ao menos um",
-          interesses: ["White Label", "Callface AI", "PABX", "Não identificado"].map(op => {
+          interesses: ["White Label", "Callface AI", "PABX", "Callface Assistant", "Não identificado"].map(op => {
             const on = interesses.indexOf(op) >= 0;
             return {
               label: op, on,

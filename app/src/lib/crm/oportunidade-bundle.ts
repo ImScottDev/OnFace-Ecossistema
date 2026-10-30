@@ -19,7 +19,7 @@ import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { criarPropostaComItens, type ItemEntrada } from "@/lib/crm/proposta-criacao";
 import { resolverServiceFamiliesPorCatalogoIds } from "@/lib/crm/composicao-comercial";
 
-export const FAMILY_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Outros" };
+export const FAMILY_LABEL: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Outros", ASSISTANT: "Callface Assistant" };
 
 /** Agrupa um carrinho de itens por linha comercial (service_family do catálogo). */
 export async function agruparItensPorLinhaComercial(itens: ItemEntrada[]): Promise<Map<string, ItemEntrada[]>> {

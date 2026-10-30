@@ -230,14 +230,14 @@ class Logica extends React.Component<any, any> {
     /* E-mail REAL do contato (lead, ou a pessoa da oportunidade); nunca montado a partir do nome. */
     const DEST = destinatarioDe(O.contato, destinatarioDoLead(O.leadId, O.pessoas || [], LD));
     const email = DEST.email;
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
     const cat = this.catalogo()[O.familia || "CALLFACE_AI"] || [];
     const base = {
       titulo: (FAM[O.familia] || "Callface AI") + " · " + O.empresa, familia: O.familia || "CALLFACE_AI", contato: O.pessoa, validade: 30,
       itens: cat.filter(p => p.inicial).map(p => this.novoItem(p, this.faixaPara(p, p.qtd) || p.precos.find(x => x.padrao) || p.precos[0])),
       desc: { tipo: "pct", valor: "", alvo: "mrr", meses: "sempre", justif: "" },
       prazo: "0", parcelas: "1", dia: "10", inicio: "assinatura", dataInicio: "", fidelidade: "12", reajuste: "IPCA", obs: "",
-      fechamento: O.familia === "PABX" || O.familia === "WHITE_LABEL" ? "contrato" : "checkout", minuta: O.familia === "WHITE_LABEL" ? "revenda" : O.familia === "PABX" ? "locacao" : "saas", sigs: [{ nome: O.pessoa || "", email }], testemunhas: false,
+      fechamento: O.familia === "PABX" || O.familia === "WHITE_LABEL" || O.familia === "ASSISTANT" ? "contrato" : "checkout", minuta: O.familia === "WHITE_LABEL" ? "revenda" : O.familia === "PABX" ? "locacao" : "saas", sigs: [{ nome: O.pessoa || "", email }], testemunhas: false,
       forma: "cliente", auto: true, canais: ["email"].concat(DEST.telefone ? ["whatsapp"] : []), cc: [], assunto: "", intro: "", msgWa: "", wa: DEST.telefone, repCf: this.eu, vendAssina: true, prazoData: "", destinatarios: [O.pessoa].filter(Boolean), extras: [], teste: false, testeDias: "7", setupForma: "vista", canal: "email", para: email, msg: ""
     };
     /* gravado || contato: um rascunho que guardou `para`/`wa` vazios não esconde o contato real (vale para propostas e versões que já existem). */
@@ -354,8 +354,8 @@ class Logica extends React.Component<any, any> {
     if (!d.destinatarios) d.destinatarios = [d.contato].filter(Boolean);
     if (!d.extras) d.extras = [];
     const c = this.calc(d);
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
-    const FICO = { CALLFACE_AI: "M3 14v-2a9 9 0 0 1 18 0v2M21 15a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2zM3 15a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2zM18 17v1a3 3 0 0 1-3 3h-2", PABX: "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39", WHITE_LABEL: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
+    const FICO = { CALLFACE_AI: "M3 14v-2a9 9 0 0 1 18 0v2M21 15a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2zM3 15a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2zM18 17v1a3 3 0 0 1-3 3h-2", PABX: "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39", WHITE_LABEL: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5", ASSISTANT: "M12 8V4H8M4 12h16v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6zM2 14h2M20 14h2M15 13v2M9 13v2" };
     const NAT = { MRR: "Mensal", ARR: "Anual", SETUP: "Setup", ONE_TIME: "Único", HARDWARE: "Hardware", USAGE: "Por uso" };
     const NATC = { MRR: "background:#e6f4ee;color:#1f7256", ARR: "background:#dcefe7;color:#17553f", SETUP: "background:#fff6f4;color:#9c3210", ONE_TIME: "background:#fff6f4;color:#9c3210", HARDWARE: "background:#e8f0fb;color:#2c5f9e", USAGE: "background:#f7edd8;color:#6e5420" };
     const NICO = { MRR: "M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5", ARR: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", SETUP: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z", ONE_TIME: "M20 6 9 17l-5-5", HARDWARE: "M5 2h14a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM12 18h.01", USAGE: "M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" };
@@ -656,7 +656,7 @@ class Logica extends React.Component<any, any> {
     const adtLinhas = adtO ? [["Hoje", brl(adtO.mrr) + "/mês"], ["Com o aditivo", brl(c.mrrLiq) + "/mês"], ["Diferença", (difM >= 0 ? "+ " : "− ") + brl(Math.abs(difM)) + "/mês", true]]
       .concat(adtVig === "agora" ? [[difM >= 0 ? "Pró-rata cobrado agora" : "Crédito no próximo ciclo", brl(Math.abs(prorata)), true]] : [["Primeira cobrança nova", fmtD(proxV)]]) : [];
     const f3 = {
-      soContrato: d.familia !== "CALLFACE_AI", soContratoTxt: (d.familia === "PABX" ? "PABX" : "White Label") + " fecha sempre com contrato assinado.",
+      soContrato: d.familia !== "CALLFACE_AI", soContratoTxt: (FAM[d.familia] || "Esta família") + " fecha sempre com contrato assinado.",
       formaNota: d.forma === "cliente" ? "No checkout do Stripe o cliente escolhe a forma de pagamento. " + (c.mrrLiq > 0 ? "Com mensalidade, só cartão e boleto: o Pix não existe para cobrança recorrente." : "Como a proposta é só pagamento único, o Pix também aparece.") : "O checkout abre direto em " + FM.toLowerCase() + ".",
       vend: O.resp || "—", vendIni: ini(O.resp || ""), toggleVend: () => up({ vendAssina: d.vendAssina === false }), vendTrilho: trilho(d.vendAssina !== false), vendBola: bolaT,
       rep: d.repCf || this.eu, repIni: ini(d.repCf || this.eu), setRep: (e) => up({ repCf: e.target.value }),
@@ -727,8 +727,8 @@ class Logica extends React.Component<any, any> {
     const pSig = (O.pessoas || []).find(p => p.nome === sigNome) || {};
     const SD = { sigNome, sigCargo: pessoas.indexOf(sigNome) >= 0 ? papelDe(sigNome) : "", sigEmail: (sig0.nome === sigNome ? (sig0.email || "") : (pSig.email || "")) || this.destinatarioDe(sigNome).email, sigTel: pSig.telefone || this.destinatarioDe(sigNome).telefone, sigCpf: pSig.cpf || "",
       prazo: n(d.fidelidade) ? String(n(d.fidelidade)) : "", renov: "auto", aviso: "30", multa: "", dataBase: "Aniversário do contrato",
-      prazoImpl: { CALLFACE_AI: "7", PABX: "15", WHITE_LABEL: "30" }[d.familia], inicioImpl: "assinatura", sla: "",
-      escopo: { CALLFACE_AI: "Configuração da conta, agentes de IA, números e integrações padrão.", PABX: "Provisionamento de ramais, URA, filas, portabilidade de números e treinamento da equipe.", WHITE_LABEL: "Ambiente com marca própria, domínio, identidade visual, painel do parceiro e treinamento inicial." }[d.familia],
+      prazoImpl: { CALLFACE_AI: "7", PABX: "15", WHITE_LABEL: "30", ASSISTANT: "20" }[d.familia], inicioImpl: "assinatura", sla: "",
+      escopo: { CALLFACE_AI: "Configuração da conta, agentes de IA, números e integrações padrão.", PABX: "Provisionamento de ramais, URA, filas, portabilidade de números e treinamento da equipe.", WHITE_LABEL: "Ambiente com marca própria, domínio, identidade visual, painel do parceiro e treinamento inicial.", ASSISTANT: "Base de conhecimento, treinamento do assistente, regras de escalonamento, conexão dos canais e validação antes do go-live." }[d.familia],
       especiais: d.obs || "" };
     const cv = (k) => ctD[k] != null ? ctD[k] : (EV[k] != null ? EV[k] : (SD[k] != null ? SD[k] : ""));
     const dg = (s) => String(s || "").replace(/\D/g, "");

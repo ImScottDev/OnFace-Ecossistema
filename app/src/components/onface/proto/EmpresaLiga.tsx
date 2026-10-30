@@ -406,7 +406,7 @@ posFlutuante(r, alto) {
         campoTexto("tecnologias", "Tecnologias", "Separe com ·", true)
       ] },
       qualif: { titulo: "Editar qualificação", campos: [
-        campoOpcoes("interesse", "Interesse", ["White Label", "Callface AI", "PABX", "Não identificado"], true),
+        campoOpcoes("interesse", "Interesse", ["White Label", "Callface AI", "PABX", "Callface Assistant", "Não identificado"], true),
         campoTexto("dor", "Dor principal", "Ex: alto custo com telefonia", true, "O que motivou o contato"),
         campoOpcoes("canal", "Canal preferido", ["Telefone", "WhatsApp", "E-mail"]),
         campoOpcoes("urgencia", "Urgência", ["Baixa", "Média", "Alta"]),

@@ -10,7 +10,7 @@
  */
 import { classificarLegado } from "@/lib/crm/classificar-legado";
 
-export const FAMILIAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL"] as const;
+export const FAMILIAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT"] as const;
 export type Familia = (typeof FAMILIAS)[number];
 const ehFamilia = (f: string | null | undefined): f is Familia => !!f && (FAMILIAS as readonly string[]).includes(f);
 
