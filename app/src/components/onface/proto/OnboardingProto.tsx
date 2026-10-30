@@ -217,7 +217,7 @@ export function OnboardingProto({ dados, acoes, projetoInicial, abaInicial, fami
     const naoGrava = () => avisar("Esta ação ainda não grava por esta tela.");
     return {
       Projetos: {
-        FAM: { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Sem família", ASSISTANT: "Callface Assistant" },
+        FAM: { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Sem família" },
         EQUIPE_ONB: nomes,
         EQUIPE_IMP: ["", ...nomes],
         garantir() {},

@@ -120,7 +120,7 @@ class Logica extends React.Component<any, any> {
       const p0 = (ctx.pessoas || [])[0] || {};
       const L = this.leads().find(l => l.empresa === ctx.empresa) || {};
       this.setState({ ctx, passo: 0, cam: null, tentou: false,
-        f: { contato: ctx.pessoa || p0.nome || "", origem: L.origem && L.origem !== "Outbound" ? L.origem : "", etapa: "novo", resp: ctx.resp || "Camila Reis", interesse: L.interesse || "Callface AI", cadencia: "Primeiro contato", tipo: ctx.rel === "Cliente" ? "expansao" : "nova", familia: ({ "Callface AI": "CALLFACE_AI", PABX: "PABX", "White Label": "WHITE_LABEL", "Callface Assistant": "ASSISTANT" })[L.interesse] || "CALLFACE_AI", motivo: "" } });
+        f: { contato: ctx.pessoa || p0.nome || "", origem: L.origem && L.origem !== "Outbound" ? L.origem : "", etapa: "novo", resp: ctx.resp || "Camila Reis", interesse: L.interesse || "Callface AI", cadencia: "Primeiro contato", tipo: ctx.rel === "Cliente" ? "expansao" : "nova", familia: ({ "Callface AI": "CALLFACE_AI", PABX: "PABX", "White Label": "WHITE_LABEL" })[L.interesse] || "CALLFACE_AI", motivo: "" } });
     });
     this._esc = (e) => { if (e.key === "Escape" && this.state.ctx) this.setState({ ctx: null }); };
     document.addEventListener("keydown", this._esc);
@@ -137,7 +137,7 @@ class Logica extends React.Component<any, any> {
     const F = S.f, up = (p) => this.setState(s => ({ f: Object.assign({}, s.f, p), tentou: false }));
     const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n));
     const equipe = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const TIPO = { nova: "Nova venda", expansao: "Expansão", upgrade: "Upgrade", renovacao: "Renovação" };
     const ETQ = { novo: "Novo", em_contato: "Em contato", qualificacao: "Qualificação" };
     const chip = (on) => "height:32px;padding:0 12px;border-radius:9999px;border:0;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap;" + (on ? "background:#12171d;color:#fff" : "background:#fff;color:#1f252c;box-shadow:inset 0 0 0 1px #dbdede");

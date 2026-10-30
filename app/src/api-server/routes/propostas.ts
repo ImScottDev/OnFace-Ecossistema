@@ -520,30 +520,13 @@ app.get("/propostas/:id/pdf", async (c) => {
 // Mesmo modelo de confiança do PDF/checkout já existentes: UUID não-enumerável
 // como trust boundary, sem verificação de organização via sessão.
 
-// Rotas públicas (/p/:id): o UUID é a chave do link. Id malformado vira 404 (antes
-// era erro do Postgres → 500) e link desativado pelo time vira 410 (D6, 27/10/2026).
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-async function propostaDoLinkPublico(id: string) {
-  if (!UUID.test(id)) return { erro: 404 as const };
-  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
-  if (!proposta) return { erro: 404 as const };
-  if (proposta.linkPublicoRevogadoEm) return { erro: 410 as const };
-  return { proposta };
-}
-function respostaDoLinkPublico(c: Context, erro: 404 | 410) {
-  return erro === 410
-    ? c.json({ error: "Este link foi desativado. Fale com quem te enviou a proposta.", desativado: true }, 410)
-    : c.json({ error: "Proposta não encontrada" }, 404);
-}
-
 // GET /propostas/:id/publica — payload pra página pública ver a proposta.
 // Registra visualização (contador + evento ProposalViewed no 1º view real).
 app.get("/propostas/:id/publica", async (c) => {
   const id = c.req.param("id");
 
-  const link = await propostaDoLinkPublico(id);
-  if (!link.proposta) return respostaDoLinkPublico(c, link.erro);
-  const proposta = link.proposta;
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
 
   const [lead] = await db
     // CNPJ e cargo (01/09, 2B): a página pública é a visão do CLIENTE — ele
@@ -684,9 +667,8 @@ app.get("/propostas/:id/publica", async (c) => {
 // POST /propostas/:id/aceitar-publico — cliente aceita na página pública
 app.post("/propostas/:id/aceitar-publico", async (c) => {
   const id = c.req.param("id");
-  const link = await propostaDoLinkPublico(id);
-  if (!link.proposta) return respostaDoLinkPublico(c, link.erro);
-  const proposta = link.proposta;
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
 
   const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("x-real-ip") || null;
   const userAgent = c.req.header("user-agent") || null;
@@ -702,9 +684,8 @@ app.post("/propostas/:id/recusar-publico", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const motivo = typeof body?.motivo === "string" ? body.motivo : undefined;
 
-  const link = await propostaDoLinkPublico(id);
-  if (!link.proposta) return respostaDoLinkPublico(c, link.erro);
-  const proposta = link.proposta;
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
 
   const result = await recusarPropostaPublica(proposta, motivo);
   if (!result.ok) return c.json({ error: result.error }, 400);
@@ -718,9 +699,8 @@ app.post("/propostas/:id/ajuste-publico", async (c) => {
   const mensagem = typeof body?.mensagem === "string" ? body.mensagem.trim() : "";
   if (!mensagem) return c.json({ error: "Descreva o ajuste que você gostaria de solicitar." }, 400);
 
-  const link = await propostaDoLinkPublico(id);
-  if (!link.proposta) return respostaDoLinkPublico(c, link.erro);
-  const proposta = link.proposta;
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
 
   await solicitarAjustePropostaPublica(proposta, mensagem);
   return c.json({ ok: true });
@@ -739,9 +719,8 @@ app.post("/propostas/:id/assinar-publico", async (c) => {
   if (!nomeCompleto) return c.json({ error: "Informe o nome completo de quem está assinando." }, 400);
   if (!contratoId) return c.json({ error: "contratoId é obrigatório." }, 400);
 
-  const link = await propostaDoLinkPublico(id);
-  if (!link.proposta) return respostaDoLinkPublico(c, link.erro);
-  const proposta = link.proposta;
+  const [proposta] = await db.select().from(propostas).where(eq(propostas.id, id)).limit(1);
+  if (!proposta) return c.json({ error: "Proposta não encontrada" }, 404);
   if (proposta.status !== "aceita") return c.json({ error: "A proposta precisa estar aceita antes da assinatura do contrato." }, 400);
 
   const [vinculoContrato] = await db.select({ id: propostaGrupoComercial.id })

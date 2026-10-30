@@ -15,14 +15,13 @@
  */
 import { sql, type SQL } from "drizzle-orm";
 
-export const FAMILIAS = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"] as const;
+export const FAMILIAS = ["CALLFACE_AI", "PABX", "WHITE_LABEL"] as const;
 export type Familia = (typeof FAMILIAS)[number];
 
 export const ROTULO_FAMILIA: Record<Familia | "UNKNOWN", string> = {
   CALLFACE_AI: "Callface AI",
   PABX: "PABX",
   WHITE_LABEL: "White Label",
-  ASSISTANT: "Callface Assistant",
   UNKNOWN: "Sem família",
 };
 

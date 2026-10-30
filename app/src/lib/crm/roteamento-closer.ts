@@ -119,7 +119,7 @@ export async function sinaisDoLead(organizacaoId: string, leadId: string): Promi
   if (!l) return { familia: null, campanha: null };
   const [n] = await db.execute<{ f: string | null }>(sql`SELECT service_family AS f FROM negocios WHERE lead_id = ${leadId}::uuid AND organizacao_id = ${organizacaoId}::uuid AND service_family IS NOT NULL ORDER BY updated_at DESC LIMIT 1`);
   const campanha = l.campanha ?? l.origem ?? null;
-  const familia = (n?.f && ["CALLFACE_AI", "WHITE_LABEL", "ASSISTANT", "PABX"].includes(n.f) ? n.f as FamiliaComercial : null)
+  const familia = (n?.f && ["CALLFACE_AI", "WHITE_LABEL", "PABX"].includes(n.f) ? n.f as FamiliaComercial : null)
     ?? familiaDoTexto(l.servicos ?? [], l.campanha, l.origem);
   return { familia, campanha };
 }

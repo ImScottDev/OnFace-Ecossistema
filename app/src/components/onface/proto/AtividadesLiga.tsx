@@ -153,7 +153,7 @@ class Logica extends React.Component<any, any> {
     this.proprias().forEach((a, i) => { const ini = a.iniD ? this.deIso(a.iniD, a.iniH) : this.rel(a.inicio), fim = a.fimD ? this.deIso(a.fimD, a.fimH) : this.rel(a.fim);
       out.push(Object.assign({}, a, { key: "p:" + a.id, src: "p", idx: i, ini, fim, sub: (a.sub || []).map(s => Object.assign({}, s, { fimX: s.fimD ? this.deIso(s.fimD) : this.rel(s.fim) })), assignees: a.assignees || (a.resp ? [a.resp] : []), comentarios: a.comentarios || [] })); });
     const opps = (E && E.ler("opps", null)) || D.OPORTUNIDADES || [];
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     opps.forEach(o => (o.atvs || []).forEach((a, i) => { const fim = a.fimD ? this.deIso(a.fimD, a.fimH) : this.parseQuando(a.quando); const ini = a.iniD ? this.deIso(a.iniD, a.iniH) : null;
       out.push({ key: "o:" + o.id + ":" + i, src: "o", oppId: o.id, idx: i, titulo: a.titulo || "Atividade", desc: a.desc || "", tipo: a.tipo || "Tarefa", situacao: a.situacao || (a.feita ? "Feita" : "A fazer"), prioridade: a.prioridade || (a.auto ? "Alta" : "Média"),
         resp: a.autor || o.resp, area: o.etapa === "ganho" ? "Onboarding" : "Comercial", ini, fim, empresa: o.empresa, pessoa: o.pessoa, oppRot: (FAM[o.familia] || "") + " · " + o.empresa, sub: a.sub || [], reuniao: a.reuniao }); }));
@@ -437,7 +437,7 @@ class Logica extends React.Component<any, any> {
       const lerArq = (fs) => fs.forEach(fl => { const r = new FileReader(); r.onload = () => this.setState(s => ({ ed: Object.assign({}, s.ed, { f: Object.assign({}, s.ed.f, { anexos: (s.ed.f.anexos || []).concat([{ nome: fl.name || "arquivo", url: r.result, tipo: fl.type }]) }) }) })); r.readAsDataURL(fl); });
       const outro = F2.dest === "outro";
       const oppsL = (E && E.ler("opps", null)) || D.OPORTUNIDADES || [];
-      const FAMr = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
+      const FAMr = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
       const pessoasL = todas.map(x => x.pessoa).filter(Boolean).filter((v, i, a2) => a2.indexOf(v) === i).sort();
       const VT = { nenhum: "Sem vínculo", empresa: "Empresa", pessoa: "Pessoa", opp: "Oportunidade" };
       const alvos = F2.vincTipo === "empresa" ? empresasTodas.filter(x => x !== "—").map(x => ({ v: x, l: x })) : F2.vincTipo === "pessoa" ? pessoasL.map(x => ({ v: x, l: x })) : F2.vincTipo === "opp" ? oppsL.filter(o => o.etapa !== "perdido").map(o => ({ v: o.id, l: (FAMr[o.familia] || "") + " · " + o.empresa })) : [];
@@ -648,7 +648,7 @@ class Logica extends React.Component<any, any> {
       };
     })());
 
-    const FAMp = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
+    const FAMp = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const meuX = (x) => (x.assignees && x.assignees.length ? x.assignees.indexOf(EU) >= 0 : x.resp === EU);
     const filhosDe = (p) => todas.filter(x => x.projetoId === p.id);
     const progDe = (p) => { const f = filhosDe(p), d = f.filter(x => x.situacao === "Feita").length; return { n: f.length, d, pct: f.length ? Math.round(d / f.length * 100) : 0, late: f.filter(atrasada).length }; };

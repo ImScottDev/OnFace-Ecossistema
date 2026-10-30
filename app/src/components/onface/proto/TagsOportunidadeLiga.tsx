@@ -142,7 +142,7 @@ class Logica extends React.Component<any, any> {
     const ehLead = S.tipo === "lead";
     const O = S.oppId ? (ehLead ? this.leadAlvo(S.oppId) : this.opp(S.oppId)) : null;
     if (!O) return { aberto: false, auto: [], org: [], pessoas: [], tiposNova: [] };
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const criadas = ((E && E.ler("tagsCriadas", [])) || []).map(t => typeof t === "string" ? { nome: t, auto: false } : t);
     const CAT_LEAD = [
       { nome: "Reunião pedida", auto: true, agente: "Cadência Primeiro contato", efeito: "Dispara o fluxo de agendamento com os horários livres do SDR" },

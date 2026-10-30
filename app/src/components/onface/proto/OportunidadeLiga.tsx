@@ -231,7 +231,7 @@ class Logica extends React.Component<any, any> {
     const slug = D.slug || (x => x);
     const ROT = { entrada: "Entrada", diagnostico: "Diagnóstico", proposta: "Proposta", negociacao: "Negociação", ganho: "Ganho", perdido: "Perdido" };
     const COR = { entrada: "#4a5560", diagnostico: "#2c5f9e", proposta: "#9c7a2e", negociacao: "#fe4f2b", ganho: "#1f7256", perdido: "#8b949e" };
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const NAT = { MRR: "Recorrente", SETUP: "Setup", PROJECT: "Projeto", ONE_TIME: "Avulso", USAGE: "Uso", HARDWARE: "Hardware" };
     const PROP = { rascunho: "Rascunho", enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado", aceita: "Aceita", recusada: "Recusada", expirada: "Expirada", substituida: "Substituída" };
     const brl = (n) => "R$ " + (+n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -398,7 +398,7 @@ class Logica extends React.Component<any, any> {
         const bloq = Fm.familia && (Fm.familia === O.familia || jaTem(Fm.familia));
         const pessoasOp = (O.pessoas || []).map(p => p.nome).filter(Boolean);
         if (O.pessoa && pessoasOp.indexOf(O.pessoa) < 0) pessoasOp.unshift(O.pessoa);
-        const FICO = { CALLFACE_AI: "M12 3l1.9 5.8L20 10.7l-5 3.7 1.9 5.9L12 16.6l-4.9 3.7L9 14.4l-5-3.7 6.1-1.9z", PABX: "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39", WHITE_LABEL: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5", ASSISTANT: "M12 8V4H8M4 12h16v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6zM2 14h2M20 14h2M15 13v2M9 13v2" };
+        const FICO = { CALLFACE_AI: "M12 3l1.9 5.8L20 10.7l-5 3.7 1.9 5.9L12 16.6l-4.9 3.7L9 14.4l-5-3.7 6.1-1.9z", PABX: "M13.83 16.57a1 1 0 0 0 1.21-.3l.36-.47A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.47.35a1 1 0 0 0-.29 1.23 14 14 0 0 0 6.39 6.39", WHITE_LABEL: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" };
         const erroM = !!(S.tentou && !(Fm.motivo || "").trim());
         m = Object.assign(m, { titulo: "Derivar oportunidade", sub: "Outra negociação na " + O.empresa + ", para outro produto.",
           d: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9", icoStyle: ico("#fff6f4", "#c2330f"),

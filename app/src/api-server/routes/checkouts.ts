@@ -24,14 +24,10 @@ const app = new Hono();
  */
 app.get("/checkouts/:id/publica", async (c) => {
   const id = c.req.param("id");
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return c.json({ error: "Checkout não encontrado" }, 404);
   const [checkout] = await db.select().from(checkouts).where(eq(checkouts.id, id)).limit(1);
   if (!checkout) return c.json({ error: "Checkout não encontrado" }, 404);
 
-  const [proposta] = await db.select({ numero: propostas.numero, versao: propostas.versao, revogado: propostas.linkPublicoRevogadoEm }).from(propostas).where(eq(propostas.id, checkout.propostaId)).limit(1);
-
-  // Link da proposta desativado (D6) desativa também o pagamento que nasceu dele.
-  if (proposta?.revogado) return c.json({ error: "Este link foi desativado. Fale com quem te enviou a proposta.", desativado: true }, 410);
+  const [proposta] = await db.select({ numero: propostas.numero, versao: propostas.versao }).from(propostas).where(eq(propostas.id, checkout.propostaId)).limit(1);
 
   await registrarAberturaCheckout(id);
 

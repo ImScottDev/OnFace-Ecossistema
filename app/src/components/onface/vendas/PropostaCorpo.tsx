@@ -46,8 +46,6 @@ export interface AcoesCorpoProposta {
   reprocessar?: () => Promise<void>;
   /** Troca o modelo do PDF desta proposta. Sem isso, o bloco do PDF só pré-visualiza. */
   salvarModeloPdf?: (modelo: ModeloPdf) => Promise<void>;
-  /** Desativa/reativa o link público. Sem isso, o bloco só copia e abre. */
-  alternarLinkPublico?: (ativo: boolean) => Promise<void>;
 }
 
 /** Marcadores de estado, iguais nas duas superfícies. */
@@ -361,7 +359,7 @@ export function ApoioProposta({ proposta, variante, contato, acoes }: {
         </Wrap>
       ) : null}
 
-      <LinkPublico proposta={proposta} acoes={acoes} Wrap={Wrap} />
+      <LinkPublico proposta={proposta} Wrap={Wrap} />
       <ModeloDoPdf proposta={proposta} acoes={acoes} Wrap={Wrap} />
       <ContratoDaProposta proposta={proposta} Wrap={Wrap} />
       <EmailsDaProposta proposta={proposta} Wrap={Wrap} />
@@ -447,26 +445,8 @@ const ROTULO_ASSINATURA: Record<string, string> = {
 };
 
 /** O link que o cliente abre. Existe desde o envio; antes dele não há o que copiar. */
-function LinkPublico({ proposta, acoes, Wrap }: { proposta: DetalheProposta; acoes: AcoesCorpoProposta; Wrap: typeof Secao }) {
-  const [salvando, setSalvando] = React.useState(false);
+function LinkPublico({ proposta, Wrap }: { proposta: DetalheProposta; Wrap: typeof Secao }) {
   if (proposta.status === "rascunho" || proposta.status === "substituida") return null;
-  const alternar = (ativo: boolean) => {
-    if (!acoes.alternarLinkPublico) return;
-    setSalvando(true);
-    void acoes.alternarLinkPublico(ativo).finally(() => setSalvando(false));
-  };
-  if (proposta.linkRevogadoEm) {
-    return (
-      <Wrap titulo="Link para o cliente">
-        <p className="ov-nota">Link desativado em {dataHora(proposta.linkRevogadoEm)}. Quem abrir vê "link desativado" e não consegue aceitar nem pagar.</p>
-        {acoes.alternarLinkPublico ? (
-          <div className="ov-acoes">
-            <button type="button" className="ov-botao" data-variante="contorno" disabled={salvando} onClick={() => alternar(true)}>Reativar link</button>
-          </div>
-        ) : null}
-      </Wrap>
-    );
-  }
   const copiar = async () => {
     const link = `${window.location.origin}/p/${proposta.id}`;
     try { await navigator.clipboard.writeText(link); toast.success("Link da proposta copiado."); }
@@ -478,9 +458,6 @@ function LinkPublico({ proposta, acoes, Wrap }: { proposta: DetalheProposta; aco
       <div className="ov-acoes">
         <button type="button" className="ov-botao" data-variante="contorno" onClick={copiar}>Copiar link</button>
         <a className="ov-botao" data-variante="contorno" href={`/p/${proposta.id}`} target="_blank" rel="noreferrer">Abrir como cliente</a>
-        {acoes.alternarLinkPublico ? (
-          <button type="button" className="ov-botao" data-variante="contorno" disabled={salvando} onClick={() => alternar(false)}>Desativar link</button>
-        ) : null}
       </div>
     </Wrap>
   );

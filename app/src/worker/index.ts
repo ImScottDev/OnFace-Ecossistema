@@ -7,11 +7,6 @@ import http from "node:http";
 import { telefoneDoJid } from "./telefone-do-jid";
 import type { WuzapiSessionConfig } from "../lib/whatsapp/client";
 
-// Dados pessoais fora do log (D12, 27/10/2026): telefone vira os 4 últimos
-// dígitos e e-mail vira inicial@domínio; nome de contato não entra.
-const tel = (v: unknown) => (v ? `…${String(v).replace(/\D/g, "").slice(-4)}` : "?");
-const mail = (v: unknown) => (v ? String(v).replace(/^(.).*@/, "$1***@") : "?");
-
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 const url = new URL(redisUrl);
 
@@ -138,9 +133,14 @@ const notificationWorker = new Worker(
 );
 
 // Conversion Sync Worker
-// `conversion-sync` e `follow-up` eram workers que só faziam console.log: nenhum
-// produtor enfileira neles (grep em 26/10/2026) e as filas ficavam vazias no Redis.
-// Removidos no L1 para que o painel de filas mostre só o que existe de verdade.
+const conversionSyncWorker = new Worker(
+  "conversion-sync",
+  async (job) => {
+    const { platform, events } = job.data;
+    console.log(`[ConversionSync] Syncing ${events?.length || 0} events to ${platform}`);
+  },
+  { connection, concurrency: 1 }
+);
 
 // Stripe webhook: the HTTP route already persisted the payload by Stripe event
 // ID. The worker replays that record idempotently; 30-minute polling remains
@@ -162,6 +162,15 @@ stripeWebhookEventsWorker.on("failed", (job, err) => {
 });
 trackRedisConnection(stripeWebhookEventsWorker);
 
+// Follow-up Worker
+const followUpWorker = new Worker(
+  "follow-up",
+  async (job) => {
+    const { leadId, action } = job.data;
+    console.log(`[FollowUp] Lead ${leadId}: ${action}`);
+  },
+  { connection, concurrency: 1 }
+);
 
 // ─── Helper: Find or create contato for a WhatsApp session + phone ─────
 async function findOrCreateContato(data: {
@@ -395,7 +404,7 @@ async function crossSaveInterSession(opts: {
     }).returning({ id: contatos.id, leadId: contatos.leadId });
     contatoId = newContato.id;
     contatoLeadId = newContato.leadId;
-    console.log(`[WA-CrossSave] Created contato ${contatoId} on session ${recipientSession.id} for ${tel(senderPhone)}`);
+    console.log(`[WA-CrossSave] Created contato ${contatoId} on session ${recipientSession.id} for ${senderPhone}`);
   }
 
   // Dedup: check if this message was already saved (by uazapiMessageId)
@@ -430,15 +439,7 @@ async function crossSaveInterSession(opts: {
     uazapiMessageId: message.id ? `xsave-${message.id}` : null, // prefix to avoid PK conflict
     status: "received",
     statusAt: new Date(timestamp * 1000),
-  }).onConflictDoNothing({ target: whatsappMensagens.uazapiMessageId }).returning({ id: whatsappMensagens.id });
-
-  // Reentrega do wuzapi (mesmo message.id): a linha já existe. Antes isto estourava o
-  // índice único e o job inteiro ia para `failed` (38 falhas entre 14 e 22/10/2026);
-  // agora é no-op, e o preview/não-lidas não contam duas vezes.
-  if (!inboundRow) {
-    console.log(`[WA-CrossSave] mensagem ${message.id ?? "(sem id)"} já gravada na sessão ${recipientSession.id}: reentrega ignorada`);
-    return;
-  }
+  }).returning({ id: whatsappMensagens.id });
 
   // Update contato preview + unread
   const preview = content.length > 100 ? content.substring(0, 97) + "..." : content;
@@ -474,7 +475,7 @@ async function crossSaveInterSession(opts: {
   try {
     const { agenteDoNumero, atenderPeloNumeroDoAgente } = await import("../lib/ai-platform/operacao/numero-do-agente");
     if (await agenteDoNumero(organizacaoId, senderSessaoId)) {
-      console.log(`[WA-CrossSave] remetente ${tel(senderPhone)} também é número de agente: grava e não aciona (loop)`);
+      console.log(`[WA-CrossSave] remetente ${senderPhone} também é número de agente: grava e não aciona (loop)`);
       return;
     }
     const r = await atenderPeloNumeroDoAgente({
@@ -508,7 +509,7 @@ async function handlePhoneOutgoing(data: {
 
   const normalized = normalizePhone(phone);
   const last8 = phoneLastDigits(phone);
-  console.log(`[WA-PhoneOut] Message sent from phone to ${tel(normalized)}`);
+  console.log(`[WA-PhoneOut] Message sent from phone to ${normalized}`);
 
   // Dedup: skip if this wuzapi message ID was already stored (sent via CRM)
   if (message.id) {
@@ -610,7 +611,7 @@ async function handlePhoneOutgoing(data: {
     }
   }
 
-  const saidaGravada = await db.insert(whatsappMensagens).values({
+  await db.insert(whatsappMensagens).values({
     contatoId: contato.id,
     leadId: contato.leadId || undefined,
     sessaoId: sessaoId || null,
@@ -625,14 +626,7 @@ async function handlePhoneOutgoing(data: {
     statusAt: new Date(timestamp * 1000),
     enviadoPorId,
     dados: { enviadoPeloCelular: true },
-  }).onConflictDoNothing({ target: whatsappMensagens.uazapiMessageId }).returning({ id: whatsappMensagens.id });
-
-  // Reentrega do wuzapi: a mensagem já está gravada. Sem isto o insert estourava o
-  // índice único `uazapi_message_id` e o job caía em `failed` (produção, 14 a 22/10/2026).
-  if (message.id && saidaGravada.length === 0) {
-    console.log(`[WA-PhoneOut] mensagem ${message.id} já gravada para o contato ${contato.id}: reentrega ignorada`);
-    return;
-  }
+  });
 
   // Update contato preview
   const preview = content.length > 100 ? content.substring(0, 97) + "..." : content;
@@ -652,7 +646,7 @@ async function handlePhoneOutgoing(data: {
     }).where(eq(leads.id, contato.leadId));
   }
 
-  console.log(`[WA-PhoneOut] Stored outgoing message for contato ${contato.id}`);
+  console.log(`[WA-PhoneOut] Stored outgoing message for contato ${contato.id} (${contato.nome})`);
 
   // Cross-save: if recipient is another connected session, save as IN on their side
   if (sessaoId) {
@@ -826,14 +820,14 @@ async function handleWebhookEvent(data: {
           usuarioId: sessao.usuarioId || null,
           message: msgPayload, timestamp, isFromMe: true,
         }, { removeOnComplete: 100, removeOnFail: 500 });
-        console.log(`[Webhook] Outgoing (from phone) queued to ${tel(phone)} via ${instanceName}`);
+        console.log(`[Webhook] Outgoing (from phone) queued to ${phone} via ${instanceName}`);
       } else {
         await waInQueue.add("incoming-message", {
           phone, organizacaoId, sessaoId,
           usuarioId: sessao.usuarioId || null,
           message: msgPayload, timestamp,
         }, { removeOnComplete: 100, removeOnFail: 500 });
-        console.log(`[Webhook] Message queued from ${tel(phone)} via ${instanceName}`);
+        console.log(`[Webhook] Message queued from ${phone} (${pushName || "unknown"}) via ${instanceName}`);
       }
       break;
     }
@@ -878,7 +872,7 @@ async function handleWebhookEvent(data: {
           phone: callPhone, organizacaoId, sessaoId,
           timestamp: Math.floor(Date.now() / 1000),
         }, { removeOnComplete: 50, removeOnFail: 200 });
-        console.log(`[Webhook] Call ${eventType} from ${tel(callPhone)} via ${instanceName}`);
+        console.log(`[Webhook] Call ${eventType} from ${callPhone} via ${instanceName}`);
       }
       break;
     }
@@ -931,7 +925,7 @@ async function handleReaction(msgId: string, emoji: string, fromMe: boolean) {
         WHERE uazapi_message_id = ${msgId}
       `);
     }
-    console.log(`[Webhook] Reaction ${emoji || "(removed)"} on ${msgId} from ${tel(sender)}`);
+    console.log(`[Webhook] Reaction ${emoji || "(removed)"} on ${msgId} from ${sender}`);
   } catch (err) {
     console.error(`[Webhook] Reaction update failed for ${msgId}:`, err);
   }
@@ -2269,7 +2263,7 @@ const whatsappIncomingWorker = new Worker(
         });
       }
 
-      console.log(`[WA-Call] ${callLabels[type]} from contato ${contato.id} (${tel(normalized)})`);
+      console.log(`[WA-Call] ${callLabels[type]} from ${contato.nome} (${normalized})`);
       return;
     }
 
@@ -2397,7 +2391,7 @@ const whatsappIncomingWorker = new Worker(
               updatedAt: new Date(),
             }).where(eq(contatosT.id, contato.id));
           }
-          console.log(`[HistorySync] Imported ${convImported} msgs for contato ${contato.id} (${tel(normalized)})`);
+          console.log(`[HistorySync] Imported ${convImported} msgs for ${contato.nome} (${normalized})`);
         }
       }
 
@@ -2420,7 +2414,7 @@ const whatsappIncomingWorker = new Worker(
 
     const normalized = normalizePhone(phone);
     const last8 = phoneLastDigits(phone);
-    console.log(`[WA-In] Message from ${tel(normalized)}`);
+    console.log(`[WA-In] Message from ${normalized} (match: %${last8})`);
 
     // Skip inter-session messages: if sender phone matches another session in the same org,
     // the outgoing handler on that session already cross-saved this as IN via crossSaveInterSession
@@ -2440,7 +2434,7 @@ const whatsappIncomingWorker = new Worker(
       });
 
       if (senderIsSession) {
-        console.log(`[WA-In] Skipping inter-session message from ${tel(normalized)} (handled by cross-save)`);
+        console.log(`[WA-In] Skipping inter-session message from ${normalized} (handled by cross-save)`);
         return;
       }
     }
@@ -2654,7 +2648,7 @@ const whatsappIncomingWorker = new Worker(
     // WhatsApp unread counts are shown via sidebar badge (contatos.naoLidas),
     // no need to flood the notification bell with every message.
 
-    console.log(`[WA-In] Processed message for contato ${contato.id}${contato.leadId ? ` → lead ${contato.leadId}` : ''}`);
+    console.log(`[WA-In] Processed message for contato ${contato.id} (${contato.nome})${contato.leadId ? ` → lead ${contato.leadId}` : ''}`);
 
     // ─── AI SDR: check if we should auto-respond ────────────────
     // Respond to text messages and media with captions; for media without text,
@@ -2779,7 +2773,7 @@ const whatsappOutgoingWorker = new Worker(
     // Build reply context if replying to a message
     const reply = replyStanzaId ? { stanzaId: replyStanzaId } : undefined;
 
-    console.log(`[WA-Out] Sending ${tipo} to ${tel(phone)} (msg: ${messageId})${reply ? ` [reply to ${reply.stanzaId}]` : ""}`);
+    console.log(`[WA-Out] Sending ${tipo} to ${phone} (msg: ${messageId})${reply ? ` [reply to ${reply.stanzaId}]` : ""}`);
 
     // Pre-check: resolve LID and correct phone number via WhatsApp lookup
     let correctedPhone = phone;
@@ -2787,7 +2781,7 @@ const whatsappOutgoingWorker = new Worker(
       const { checkWhatsApp } = await import("../lib/whatsapp/client");
       const [check] = await checkWhatsApp([phone], config);
       if (check && !check.isOnWhatsApp) {
-        console.log(`[WA-Out] Phone ${tel(phone)} not found on WhatsApp`);
+        console.log(`[WA-Out] Phone ${phone} not found on WhatsApp`);
       } else if (check?.jid) {
         // WhatsApp may return a corrected JID (e.g. removing extra 9th digit)
         const jidPhone = check.jid.replace(/@.*$/, "");
@@ -2800,10 +2794,10 @@ const whatsappOutgoingWorker = new Worker(
           && originalDigits.length >= 8
           && jidDigits.endsWith(originalDigits.slice(-8));
         if (isSameRecipient && jidDigits !== originalDigits) {
-          console.log(`[WA-Out] WhatsApp corrected phone: ${tel(phone)} → ${tel(jidPhone)}`);
+          console.log(`[WA-Out] WhatsApp corrected phone: ${phone} → ${jidPhone}`);
           correctedPhone = jidDigits;
         } else if (!isSameRecipient && jidPhone) {
-          console.warn(`[WA-Out] Ignoring mismatched WhatsApp lookup result for ${tel(phone)}`);
+          console.warn(`[WA-Out] Ignoring mismatched WhatsApp lookup result for ${phone}`);
         }
       }
     } catch (err) {
@@ -2976,23 +2970,7 @@ const whatsappStatusWorker = new Worker(
 );
 
 // Scheduled Jobs Queue
-const scheduledQueue = new Queue("scheduled-jobs", { connection, defaultJobOptions: { removeOnComplete: { count: 200 }, removeOnFail: { age: 7 * 24 * 3600, count: 500 } } });
-
-// Sync completo do Stripe em fila própria (ONF-0010, 27/10/2026). Medido em
-// produção: 23,7 s a cada 30 min, enquanto todo o resto de `scheduled-jobs`
-// roda abaixo de 1,2 s. Na mesma fila serial ele segurava cadência, outbox e
-// agentes atrás dele. Aqui roda em paralelo, ainda um de cada vez.
-const stripeSyncQueue = new Queue("stripe-sync", { connection, defaultJobOptions: { removeOnComplete: { count: 50 }, removeOnFail: { age: 7 * 24 * 3600, count: 100 } } });
-const stripeSyncWorker = new Worker(
-  "stripe-sync",
-  async () => {
-    if (!process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_API_KEY) return;
-    const { syncStripe } = await import("../lib/integrations/stripe-sync");
-    await syncStripe();
-  },
-  { connection, concurrency: 1 },
-);
-stripeSyncWorker.on("failed", (_job, err) => console.error("[StripeSync] erro:", err.message));
+const scheduledQueue = new Queue("scheduled-jobs", { connection, defaultJobOptions: { removeOnComplete: { count: 200 }, removeOnFail: { count: 500 } } });
 
 // Callface AI: fila PRÓPRIA. O sync lê o RDS do SaaS (3,8 milhões de chamadas) e
 // leva minutos; dentro de `scheduled-jobs` (concurrency 1) ele seguraria o
@@ -3181,6 +3159,16 @@ const slaWorker = new Worker(
         if (res.enviados > 0) console.log(`[AI-SDR-Confirmacao] ${res.enviados} confirmações de reunião enviadas`);
       } catch (e) {
         console.error("[AI-SDR-Confirmacao] erro:", e instanceof Error ? e.message : e);
+      }
+      return;
+    }
+
+    if (job.name === "stripe-sync") {
+      try {
+        const { syncStripe } = await import("../lib/integrations/stripe-sync");
+        await syncStripe();
+      } catch (e) {
+        console.error("[StripeSync] erro:", e instanceof Error ? e.message : e);
       }
       return;
     }
@@ -3775,9 +3763,9 @@ const emailSyncWorker = new Worker(
           updatedAt: new Date(),
         }).where(eq(emailContasT.id, contaId));
 
-        console.log(`[EmailSync] Imported ${totalImported} emails for ${mail(conta.email)}`);
+        console.log(`[EmailSync] Imported ${totalImported} emails for ${conta.email}`);
       } catch (error) {
-        console.error(`[EmailSync] Error syncing ${mail(conta.email)}:`, error);
+        console.error(`[EmailSync] Error syncing ${conta.email}:`, error);
         await db.update(emailContasT).set({
           lastError: error instanceof Error ? error.message : "Sync failed",
           updatedAt: new Date(),
@@ -3840,9 +3828,9 @@ const emailSyncWorker = new Worker(
           updatedAt: new Date(),
         }).where(eq(emailContasT.id, contaId));
 
-        console.log(`[EmailSync] Backfill completed: ${totalImported} emails for ${mail(conta.email)}`);
+        console.log(`[EmailSync] Backfill completed: ${totalImported} emails for ${conta.email}`);
       } catch (error) {
-        console.error(`[EmailSync] Backfill error for ${mail(conta.email)}:`, error);
+        console.error(`[EmailSync] Backfill error for ${conta.email}:`, error);
         await db.update(emailContasT).set({
           backfillStatus: "error",
           lastError: `Backfill failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -4126,7 +4114,7 @@ const emailSequenceWorker = new Worker(
             sequenciaExecucaoId: exec.id,
           });
 
-          console.log(`[Sequence] Sent step ${exec.passoAtual} to ${mail(lead.email)}`);
+          console.log(`[Sequence] Sent step ${exec.passoAtual} to ${lead.email}`);
 
           // F2/dual-write (Communication Intelligence) — email de sequência
           // automatizada, best-effort, mesmo padrão do resto do canal email.
@@ -4358,7 +4346,7 @@ async function removerSchedulersObsoletos(queue: Queue, chavesAtuais: string[]):
 /** Chaves dos schedulers da fila `scheduled-jobs` nesta versão — fonte da limpeza acima. */
 const SCHEDULERS_JOBS_AGENDADOS = [
   "sla-check", "sdr-followup-escalation", "ai-sdr-outreach", "agentes-autonomia", "agentes-retomadas", "ai-sdr-retry",
-  "ai-sdr-meeting-confirmation", "reconcile-pagamentos", "expirar-propostas",
+  "ai-sdr-meeting-confirmation", "stripe-sync", "reconcile-pagamentos", "expirar-propostas",
   "rd-criativo-sync", "outlook-reuniao-sync", "follow-up-proposta", "cs-sweep", "calendar-sync-retry",
   "alerta-renovacao", "reativar-lead-perdido", "check-whatsapp-connection", "snapshot-diario",
   "cadence-sweep", "event-outbox-sweep", "lembrete-reuniao-30min", "fluxos-sweep",
@@ -4375,7 +4363,7 @@ async function setupScheduledJobs() {
   await scheduledQueue.upsertJobScheduler("ai-sdr-retry", { every: 15 * 60 * 1000 }, { name: "ai-sdr-retry" });
   await scheduledQueue.upsertJobScheduler("ai-sdr-meeting-confirmation", { pattern: "0 9 * * *", tz: "America/Sao_Paulo" }, { name: "ai-sdr-meeting-confirmation" });
   // Stripe = fonte da verdade de billing AI: sync a cada 30 min (polling; vira webhook quando publicar)
-  await stripeSyncQueue.upsertJobScheduler("stripe-sync", { every: 30 * 60 * 1000 }, { name: "stripe-sync" });
+  await scheduledQueue.upsertJobScheduler("stripe-sync", { every: 30 * 60 * 1000 }, { name: "stripe-sync" });
   await scheduledQueue.upsertJobScheduler("reconcile-pagamentos", { every: 24 * 60 * 60 * 1000 }, { name: "reconcile-pagamentos" });
   await scheduledQueue.upsertJobScheduler("expirar-propostas", { every: 60 * 60 * 1000 }, { name: "expirar-propostas" });
   await scheduledQueue.upsertJobScheduler("rd-criativo-sync", { every: 6 * 60 * 60 * 1000 }, { name: "rd-criativo-sync" });
@@ -4689,7 +4677,7 @@ const shutdown = async () => {
   await Promise.all([
     scoringWorker.close(),
     notificationWorker.close(), whatsappIncomingWorker.close(), whatsappOutgoingWorker.close(),
-    whatsappStatusWorker.close(), slaWorker.close(), enrichmentWorker.close(), scheduledQueue.close(), stripeSyncWorker.close(), stripeSyncQueue.close(), callfaceAiWorker.close(), callfaceAiQueue.close(),
+    whatsappStatusWorker.close(), slaWorker.close(), enrichmentWorker.close(), scheduledQueue.close(), callfaceAiWorker.close(), callfaceAiQueue.close(),
     emailSyncWorker.close(), emailSequenceWorker.close(), emailSyncQueue.close(),
     siteLeadQualifyWorker.close(), callfaceCallEventsWorker.close(),
   ]);

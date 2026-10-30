@@ -165,7 +165,7 @@ class Logica extends React.Component<any, any> {
       cal: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", video: "m16 10 5-3v10l-5-3zM4 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z", clip: "M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" };
     const FAM = { CALLFACE_AI: { l: "Callface AI", cor: "#fe4f2b", d: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z", tile: ["#fff6f4", "#c2330f"] },
       PABX: { l: "PABX", cor: "#ff9f85", d: I.tel, tile: ["#12171d", "#fff"] }, WHITE_LABEL: { l: "White Label", cor: "#ffd5c8", d: I.layers, tile: ["#eeeff3", "#1f252c"] } };
-    const PK = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"];
+    const PK = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
     const SKU = { CALLFACE_AI: [["CF-STARTER", "Callface AI Starter", "Plano", "usuários", 189, false], ["CF-FULL", "Callface AI Full", "Plano", "usuários", 349, false], ["CF-AG-ATD", "Agente de IA · Atendimento", "Agente", "agentes", 490, false], ["CF-AG-SDR", "Agente de IA · SDR", "Agente", "agentes", 690, false]],
       PABX: [["PX-ESS", "PABX Cloud Essencial", "Plano", "ramais", 39, false], ["PX-PRO", "PABX Cloud Pro", "Plano", "ramais", 59, false], ["PX-GRAV", "Gravação de chamadas", "Add-on", "pacote", 290, true], ["PX-URA", "URA inteligente", "Add-on", "pacote", 390, true]],
       WHITE_LABEL: [["WL-PLAT", "White Label · Plataforma", "Plano", "plataforma", 3900, true], ["WL-REV", "Licença de revenda", "Licença", "clientes finais", 190, false], ["WL-DOM", "Domínio e marca própria", "Add-on", "pacote", 490, true]] };
@@ -368,7 +368,7 @@ class Logica extends React.Component<any, any> {
       rot: W.map((m, i) => ({ l: MES[m.getMonth()], st: "position:absolute;top:0;font-size:10.5px;white-space:nowrap;color:" + (hv === i ? "#fff" : "#67787c") + ";left:" + (i / 11 * 100) + "%;transform:" + (i === 0 ? "none" : i === 11 ? "translateX(-100%)" : "translateX(-50%)") })) };
 
     // Oportunidade (fluxo de Propostas, para cliente)
-    const FAML = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
+    const FAML = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
     const TIPO = { expansao: "Upsell · expansão", upgrade: "Upgrade", crosssell: "Cross-sell", renovacao: "Renovação" };
     const naoTem = PK.filter(k => fks.indexOf(k) < 0);
     const abrirOpp = (tipo, familia) => this.setState({ menu: null, resp: null, modal: { k: "opp", passo: tipo ? 1 : 0, tipo: tipo || null, familia: familia || (tipo === "crosssell" ? (naoTem[0] || fks[0]) : fks[0]), contato: principal.nome, closer, obs: "", valor: "", erro: "" } });

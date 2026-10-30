@@ -1538,7 +1538,7 @@ class Logica extends React.Component<any, any> {
           temSugestoes: sugestoes.length > 0,
           sugestoes: sugestoes.map(n => ({ nome: n, onClick: () => setNL({ empresa: n }) })),
           empresaInfo: !NL || !(NL.empresa || "").trim() ? "Opcional · dá para associar depois" : existe ? "Vincula à empresa existente" : "Cria a empresa “" + NL.empresa.trim() + "”",
-          interesses: ["White Label", "Callface AI", "PABX", "Callface Assistant", "Não identificado"].map(i => ({ label: i, titulo: i, style: ESTILO_PILL(NL && NL.interesse === i), onClick: () => setNL({ interesse: i }) })),
+          interesses: ["White Label", "Callface AI", "PABX", "Não identificado"].map(i => ({ label: i, titulo: i, style: ESTILO_PILL(NL && NL.interesse === i), onClick: () => setNL({ interesse: i }) })),
           resps: EQUIPE.map(n => ({ label: n + (n === EU ? " (você)" : ""), titulo: n, style: ESTILO_PILL(NL && NL.resp === n), onClick: () => setNL({ resp: n }) })),
           origem: C.canal === "E-mail" ? "Formulário" : "WhatsApp",
           btnStyle: "height:36px;padding:0 16px;border-radius:9999px;border:0;font-size:13px;font-weight:600;white-space:nowrap;" + (okNL ? "background:#fe4f2b;color:#fff;cursor:pointer" : "background:#e3e7e8;color:#a3a8a4;cursor:not-allowed"),

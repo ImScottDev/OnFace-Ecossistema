@@ -18,7 +18,7 @@ import { carteiraEmRisco } from "@/lib/cs/carteira-em-risco";
 import { ROTULO_ETAPA_PIPELINE, type EtapaPipeline } from "@/lib/vendas/dominio";
 
 type Row = Record<string, any>;
-const FAMILIAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT"] as const;
+const FAMILIAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL"] as const;
 export const INICIO_SEM_EVIDENCIA = "0000-01";
 
 export interface ClienteDaTela {

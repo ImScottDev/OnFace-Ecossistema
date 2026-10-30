@@ -333,7 +333,7 @@ export function PropostaPublica({ id }: { id: string }) {
       const acompanhar = jaAbriu.current;
       jaAbriu.current = true;
       const r = await fetch(`/api/propostas/${id}/publica${acompanhar ? "?acompanhar=1" : ""}`);
-      if (!r.ok) throw new Error(r.status === 410 ? "desativado" : "not-found");
+      if (!r.ok) throw new Error("not-found");
       return r.json();
     },
     retry: false,
@@ -405,9 +405,6 @@ export function PropostaPublica({ id }: { id: string }) {
   });
 
   if (isLoading) return <Carregando />;
-  if (error?.message === "desativado") {
-    return <EstadoUnico tom="erro" titulo="Link desativado" corpo="Este link de proposta foi desativado. Fale com quem te enviou a proposta na Callface para receber um novo." />;
-  }
   if (error || !p) {
     return <EstadoUnico tom="erro" titulo="Proposta não encontrada" corpo="Confira se o link chegou completo ou fale com quem te enviou a proposta na Callface." />;
   }

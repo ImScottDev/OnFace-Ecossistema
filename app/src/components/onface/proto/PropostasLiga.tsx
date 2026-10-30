@@ -133,8 +133,8 @@ class Logica extends React.Component<any, any> {
     const S = this.state, D = this.dadosDoProto || {}, Es = this.E;
     const ini = (n) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n));
     const equipe = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
-    const FAMC = { CALLFACE_AI: ["#fff6f4", "#c2330f"], PABX: ["#e8f0fb", "#2c5f9e"], WHITE_LABEL: ["#efecfa", "#4f3fa8"], ASSISTANT: ["#e7f6f2", "#13745e"] };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+    const FAMC = { CALLFACE_AI: ["#fff6f4", "#c2330f"], PABX: ["#e8f0fb", "#2c5f9e"], WHITE_LABEL: ["#efecfa", "#4f3fa8"] };
     const ST = { rascunho: ["Rascunho", "#eeeff3", "#4a5560", "M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"], enviada: ["Enviada", "#e8f0fb", "#2c5f9e", "M22 2 11 13M22 2l-7 20-4-9-9-4z"], visualizada: ["Visualizada", "#f7edd8", "#6e5420", "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],
       ajuste_solicitado: ["Ajuste solicitado", "#fff6f4", "#c2330f", "M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"], aceita: ["Aceita", "#e6f4ee", "#1f7256", "M20 6 9 17l-5-5"], recusada: ["Recusada", "#fdeeea", "#c2330f", "M18 6 6 18M6 6l12 12"],
       expirada: ["Expirada", "#eeeff3", "#67787c", "M12 6v6l4 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"], substituida: ["Substituída", "#eeeff3", "#8b949e", "M3 12a9 9 0 1 0 3-6.7L3 8"] };
@@ -540,7 +540,7 @@ class Logica extends React.Component<any, any> {
         return { titulo: "Proposta " + (FAM[o.familia] || ""), codigo: "#" + P.codigo + "-v" + (P.versao || 1), empresa: o.empresa, pessoa: o.pessoa, familia: FAM[o.familia] || "—",
           famStyle: "justify-self:start;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;white-space:nowrap;color:#1f252c",
           famDot: "flex:0 0 auto;color:" + fc[1],
-          famD: { CALLFACE_AI: "M12 8V4H8M4 12h16a0 0 0 0 1 0 0v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6zM2 14h2M20 14h2M15 13v2M9 13v2M6 8h12a2 2 0 0 1 2 2v2H4v-2a2 2 0 0 1 2-2z", PABX: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", WHITE_LABEL: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5", ASSISTANT: "M12 8V4H8M4 12h16v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6zM2 14h2M20 14h2M15 13v2M9 13v2" }[o.familia] || "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z",
+          famD: { CALLFACE_AI: "M12 8V4H8M4 12h16a0 0 0 0 1 0 0v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6zM2 14h2M20 14h2M15 13v2M9 13v2M6 8h12a2 2 0 0 1 2 2v2H4v-2a2 2 0 0 1 2-2z", PABX: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", WHITE_LABEL: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" }[o.familia] || "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z",
           famIco: "flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:" + fc[0] + ";color:" + fc[1],
           empIni: ini(o.empresa),
           valor: (s.mrr || s.un) ? (s.mrr ? brl(s.mrr) : brl(s.un)) : "—", valorSuf: s.mrr ? "/mês" : "", valorSub: s.mrr ? (s.un ? "+ setup " + brl(s.un) : "recorrente") : (s.un ? "pagamento único" : "sem itens"),

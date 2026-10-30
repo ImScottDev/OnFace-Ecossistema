@@ -132,7 +132,7 @@ export function bannerDoLead(l: DetalheLead, agora = new Date()): BannerDoLead |
 
 export interface QualDaTela { interesse: string[]; tamanho: string; dor: string; fit: string; observacao: string }
 
-export const OPCOES_INTERESSE = ["White Label", "Callface AI", "PABX", "Callface Assistant", "Não identificado"] as const;
+export const OPCOES_INTERESSE = ["White Label", "Callface AI", "PABX", "Não identificado"] as const;
 export const OPCOES_FIT = ["Alto", "Médio", "Baixo"] as const;
 
 /** A qualificação gravada, na forma dos campos da tela. Mesma fonte do drawer (`qualDoDesenho`). */

@@ -178,7 +178,7 @@ export interface EvidenciaDaOportunidade {
   titulo?: string | null;
 }
 
-const FAMILIAS: string[] = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"];
+const FAMILIAS: string[] = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
 const valida = (f: string | null | undefined): f is Exclude<FamiliaServico, "UNKNOWN"> => !!f && FAMILIAS.includes(f);
 
 export function familiaDaOportunidade(e: EvidenciaDaOportunidade): { familia: FamiliaServico; fonte: string } {

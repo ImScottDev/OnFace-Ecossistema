@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { segredoConfere } from "@/lib/webhooks/segredo";
 import { db } from "@/lib/db";
 import { organizacoes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -36,13 +35,13 @@ interface RdPayloadLead {
 export async function POST(req: NextRequest) {
   // Auth simples por token (query ?token= ou header x-webhook-secret)
   const token =
-    req.headers.get("x-webhook-secret") ||
-    req.nextUrl.searchParams.get("token");
+    req.nextUrl.searchParams.get("token") ||
+    req.headers.get("x-webhook-secret");
   if (!SECRET) {
     console.error("[RdLeadWebhook] RD_WEBHOOK_SECRET não configurado — recusando evento (fail-closed)");
     return NextResponse.json({ ok: false, error: "webhook secret not configured" }, { status: 503 });
   }
-  if (!segredoConfere(token, SECRET)) {
+  if (token !== SECRET) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 

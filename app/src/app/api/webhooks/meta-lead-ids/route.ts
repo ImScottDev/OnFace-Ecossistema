@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { segredoConfere } from "@/lib/webhooks/segredo";
 import { db } from "@/lib/db";
 import { telefoneUsavel } from "@/lib/whatsapp/phone-utils";
 import { leads, organizacoes, metaLeadStaging } from "@/lib/db/schema";
@@ -46,13 +45,13 @@ interface MetaLeadIdsPayload {
 
 export async function POST(req: NextRequest) {
   const token =
-    req.headers.get("x-webhook-secret") ||
-    req.nextUrl.searchParams.get("token");
+    req.nextUrl.searchParams.get("token") ||
+    req.headers.get("x-webhook-secret");
   if (!SECRET) {
     console.error("[MetaLeadIdsWebhook] META_LEADIDS_WEBHOOK_SECRET não configurado — recusando evento (fail-closed)");
     return NextResponse.json({ ok: false, error: "webhook secret not configured" }, { status: 503 });
   }
-  if (!segredoConfere(token, SECRET)) {
+  if (token !== SECRET) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
