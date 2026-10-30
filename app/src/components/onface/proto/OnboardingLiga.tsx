@@ -182,7 +182,7 @@ class Logica extends React.Component<any, any> {
     const wsOnb = { titulo: "Onboarding", sub: "Contato, kickoff, materiais e passagem para implantação", n: String(onbAll.length), stats: stats(onbAll, [onbAll.filter(r => r.c.pronto).length, " prontos p/ handoff", "#3ecf8e", "pronto"]),
       chips: chipsF(onbAll, S.obF, "obF", [["todos", "Todos"], ["CALLFACE_AI", "Callface AI"], ["PABX", "PABX"], ["WHITE_LABEL", "White Label"], ["ASSISTANT", "Callface Assistant"]]), linhas: onbL.map(linhaDe), vazio: !onbL.length, vazioTxt: "Nenhum onboarding com esses filtros." };
     const wsImp = { titulo: "Implantação", sub: "Provisionamento, portabilidade, homologação e go-live", n: String(impAll.length), stats: stats(impAll, [impAll.filter(r => r.c.golive).length, " perto do go-live", "#3ecf8e", "golive"]),
-      chips: chipsF(impAll, S.imF, "imF", [["todos", "Todos"], ["PABX", "PABX"], ["WHITE_LABEL", "White Label"]]), linhas: impL.map(linhaDe), vazio: !impL.length, vazioTxt: "Nenhuma implantação com esses filtros." };
+      chips: chipsF(impAll, S.imF, "imF", [["todos", "Todos"], ["PABX", "PABX"], ["WHITE_LABEL", "White Label"], ["ASSISTANT", "Callface Assistant"]]), linhas: impL.map(linhaDe), vazio: !impL.length, vazioTxt: "Nenhuma implantação com esses filtros." };
 
     const atItens = []; base.forEach(r => { const p = r.p, c = r.c;
       if (c.atraso > 0) atItens.push({ r, sev: 0, nome: p.empresa, txt: "Atrasado há " + c.atraso + (c.atraso > 1 ? " dias" : " dia") + " · " + c.faseNome });

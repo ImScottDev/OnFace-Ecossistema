@@ -390,7 +390,7 @@ posFlutuante(r, alto) {
       };
     };
     const equipe = D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"];
-    const todasTags = ["Inbound", "Enterprise", "Fit Alto", "Fit Médio", "Callface AI", "PABX", "White Label", seg.split(" ")[0]].filter((t, i, a) => a.indexOf(t) === i);
+    const todasTags = ["Inbound", "Enterprise", "Fit Alto", "Fit Médio", "Callface AI", "PABX", "White Label", "Callface Assistant", seg.split(" ")[0]].filter((t, i, a) => a.indexOf(t) === i);
     const telas = {
       resumo: { titulo: "Editar resumo da empresa", campos: [
         // O nome vem primeiro porque é o que identifica a empresa em toda a

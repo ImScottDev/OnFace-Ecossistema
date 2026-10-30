@@ -150,7 +150,7 @@ class Logica extends React.Component<any, any> {
       { nome: "Enterprise", auto: true, agente: "Cadência Pós-proposta", efeito: "Roteia para o time de contas grandes" },
       { nome: "Reativar", auto: true, agente: "Cadência Reativação", efeito: "Entra na régua de retomada" },
       { nome: "Inbound", auto: false }, { nome: "Sem CNPJ", auto: false }, { nome: "Concorrente", auto: false },
-      { nome: "Callface AI", auto: false }, { nome: "PABX", auto: false }, { nome: "White Label", auto: false }, { nome: "No-show", auto: false }
+      { nome: "Callface AI", auto: false }, { nome: "PABX", auto: false }, { nome: "White Label", auto: false }, { nome: "Callface Assistant", auto: false }, { nome: "No-show", auto: false }
     ];
     /* Catálogo REAL (labels) para lead e oportunidade; o fixo do protótipo (CAT_LEAD) não existe mais. */
     const CATB = this.dadosDoProto.TagsOpp || [];

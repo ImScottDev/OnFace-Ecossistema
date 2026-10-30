@@ -71,7 +71,7 @@ const TIPOS_EXPANSAO = [
 ] as const;
 
 const FAMILIA_LABEL: Record<string, string> = {
-  CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Produto em revisão",
+  CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant", UNKNOWN: "Produto em revisão",
 };
 
 function dataBr(iso: string | null): string {

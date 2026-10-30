@@ -374,6 +374,7 @@ class Logica extends React.Component<any, any> {
         { v: "callface_ai", label: "Callface AI", campo: "" },
         { v: "pabx", label: "PABX", campo: "" },
         { v: "white_label", label: "White Label", campo: "" },
+        { v: "callface_assistant", label: "Callface Assistant", campo: "" },
         { v: "sem_interesse", label: "Não informado", campo: "" }
       ] },
       { k: "sla", label: "SLA", titulo: "RISCO OPERACIONAL",
@@ -493,7 +494,7 @@ class Logica extends React.Component<any, any> {
         if (so.indexOf(L.origem) < 0) return false;
       }
       if (si.length) {
-        const mapa = { callface_ai: "Callface AI", pabx: "PABX", white_label: "White Label", sem_interesse: null };
+        const mapa = { callface_ai: "Callface AI", pabx: "PABX", white_label: "White Label", callface_assistant: "Callface Assistant", sem_interesse: null };
         if (si.map(k => mapa[k]).indexOf(L.interesse) < 0) return false;
       }
       if (ss.length) {

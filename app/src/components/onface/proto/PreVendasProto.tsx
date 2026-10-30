@@ -273,7 +273,7 @@ export async function executarIntencao(
 
 /** O serviço que o modal de oportunidade mostra → a família do domínio. */
 const FAMILIA_DO_INTERESSE: Record<string, Familia> = {
-  "Callface AI": "CALLFACE_AI", PABX: "PABX", "White Label": "WHITE_LABEL",
+  "Callface AI": "CALLFACE_AI", PABX: "PABX", "White Label": "WHITE_LABEL", "Callface Assistant": "ASSISTANT",
 };
 
 /** O que a peça sabia no instante em que gravou. */

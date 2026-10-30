@@ -10,7 +10,7 @@ export const ROTULOS: Record<string, string> = {
 };
 
 export const VALOR_FAMILIA: Record<string, string> = {
-  CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Sem família",
+  CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant", UNKNOWN: "Sem família",
 };
 export const VALOR_ORIGEM: Record<string, string> = {
   fechamento: "Competência fechada", assinatura: "Assinatura sem fechamento",

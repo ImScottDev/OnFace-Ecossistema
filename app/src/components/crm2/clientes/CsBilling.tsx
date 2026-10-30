@@ -46,7 +46,7 @@ interface RespostaBilling {
 }
 
 const FAMILIA_LABEL: Record<string, string> = {
-  CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", UNKNOWN: "Produto em revisão",
+  CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant", UNKNOWN: "Produto em revisão",
 };
 
 const STATUS_ASSINATURA: Record<string, { rotulo: string; variante: "success" | "warning" | "danger" | "neutral" }> = {

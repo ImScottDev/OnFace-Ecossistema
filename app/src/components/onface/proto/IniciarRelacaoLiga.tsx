@@ -213,7 +213,7 @@ class Logica extends React.Component<any, any> {
       etapas: Object.keys(ETQ).map(k => ({ l: ETQ[k], style: chip(F.etapa === k), onClick: () => up({ etapa: k }) })),
       resp: F.resp, setResp: (e) => up({ resp: e.target.value }), equipe: equipe.map(p => ({ v: p, l: p })),
       selBox: "position:relative;display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-radius:10px;background:#fff;box-shadow:inset 0 0 0 1px #dbdede;cursor:pointer",
-      interesses: ["Callface AI", "PABX", "White Label"].map(o => ({ l: o, style: chip(F.interesse === o), onClick: () => up({ interesse: o }) })),
+      interesses: ["Callface AI", "PABX", "White Label", "Callface Assistant"].map(o => ({ l: o, style: chip(F.interesse === o), onClick: () => up({ interesse: o }) })),
       cadencias: [""].concat(D.CADENCIAS || []).map(c => ({ l: c || "Sem cadência", style: chip((F.cadencia || "") === c), onClick: () => up({ cadencia: c }) })),
       tipos: Object.keys(TIPO).filter(k => rel === "Cliente" || k === "nova").map(k => ({ l: TIPO[k], style: chip(F.tipo === k), onClick: () => up({ tipo: k }) })),
       familias: Object.keys(FAM).map(k => ({ l: FAM[k], style: chip(F.familia === k), onClick: () => up({ familia: k }) })),
