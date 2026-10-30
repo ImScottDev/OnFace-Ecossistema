@@ -190,6 +190,17 @@ export async function exigeContratoNoGrupoAsync(
   return regraDaFamilia(familia).exigeContrato;
 }
 
+/**
+ * A família passa por IMPLANTAÇÃO (e não por onboarding)? Era a mesma pergunta
+ * escrita à mão em três lugares como `familia === "PABX" || familia ===
+ * "WHITE_LABEL"`, e cada produto novo com implantação precisava ser lembrado nos
+ * três. `UNKNOWN` continua fora: sem família conhecida o evento segue sendo
+ * "Onboarding concluído", como antes.
+ */
+export function ehImplantacao(familia: string | null | undefined): boolean {
+  return regraDaFamilia(familia).trilha.startsWith("implantacao_");
+}
+
 export function trilhaPosGanho(familia: string | null | undefined): TrilhaPosGanho {
   return regraDaFamilia(familia).trilha;
 }

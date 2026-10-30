@@ -151,7 +151,7 @@ app.get("/clientes-crm2/resumo", async (c) => {
         EXISTS (SELECT 1 FROM faturas_atrasadas fa WHERE fa.empresa_id = u.empresa_id AND fa.n > 0) AS em_risco,
         EXISTS (
           SELECT 1 FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
-          WHERE sc.empresa_id = u.empresa_id AND sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL')
+          WHERE sc.empresa_id = u.empresa_id AND sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL', 'ASSISTANT')
             AND f.status NOT IN ('COMPLETED', 'CANCELED')
         ) AS implantacao,
         EXISTS (
@@ -323,7 +323,7 @@ app.get("/clientes-crm2", async (c) => {
         ) AS em_risco_calc,
         EXISTS (
           SELECT 1 FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
-          WHERE sc.empresa_id = e.id AND sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL') AND f.status NOT IN ('COMPLETED', 'CANCELED')
+          WHERE sc.empresa_id = e.id AND sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL', 'ASSISTANT') AND f.status NOT IN ('COMPLETED', 'CANCELED')
         ) AS implantacao_calc,
         EXISTS (
           SELECT 1 FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
@@ -420,7 +420,7 @@ app.get("/clientes-crm2", async (c) => {
     implantacao_agg AS (
       SELECT DISTINCT sc.empresa_id
       FROM servicos_canonicos sc JOIN fulfillments f ON f.servico_canonico_id = sc.id
-      WHERE sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL') AND f.status NOT IN ('COMPLETED', 'CANCELED')
+      WHERE sc.portfolio_included = true AND sc.service_family IN ('PABX', 'WHITE_LABEL', 'ASSISTANT') AND f.status NOT IN ('COMPLETED', 'CANCELED')
     ),
     onboarding_agg AS (
       SELECT DISTINCT sc.empresa_id

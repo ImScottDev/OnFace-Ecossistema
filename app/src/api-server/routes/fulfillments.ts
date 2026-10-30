@@ -11,6 +11,7 @@ import { condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { guardarNoAcervo } from "@/lib/arquivos/servico";
 import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM, FASE_ASSISTANT_POR_WORKSTREAM, MARCO_AI_POR_WORKSTREAM, MARCOS_AI, FAMILIAS_ONBOARDING } from "@/lib/crm/fulfillment";
+import { ehImplantacao } from "@/lib/crm/politica-familia";
 
 const app = new Hono();
 
@@ -838,7 +839,7 @@ app.patch("/fulfillments/:id/concluir", async (c) => {
       eq(tarefas.concluida, false),
     ));
 
-  const ehPabxOuWhiteLabel = fulfillment.serviceFamily === "PABX" || fulfillment.serviceFamily === "WHITE_LABEL";
+  const ehPabxOuWhiteLabel = ehImplantacao(fulfillment.serviceFamily);
   const tipoEvento = ehPabxOuWhiteLabel ? "implantacao_concluida" : "onboarding_concluido";
   const rotuloEvento = ehPabxOuWhiteLabel ? "Implantação concluída" : "Onboarding concluído";
 

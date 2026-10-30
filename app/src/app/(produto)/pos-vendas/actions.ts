@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { entregarParaImplantacao } from "@/lib/pos-venda/handoff-implantacao";
+import { ehImplantacao } from "@/lib/crm/politica-familia";
 
 export type ResultadoOnb = { ok: true; msg?: string } | { ok: false; erro: string };
 
@@ -86,7 +87,7 @@ export async function acaoConcluirOnboarding(fulfillmentId: string): Promise<Res
       UPDATE fulfillments SET status = 'COMPLETED', completed_at = now(), updated_at = now()
        WHERE id = ${fulfillmentId}::uuid`);
     if (f.lead_id) {
-      const pabxOuWl = f.service_family === "PABX" || f.service_family === "WHITE_LABEL";
+      const pabxOuWl = ehImplantacao(f.service_family as string | null);
       const rotulo = pabxOuWl ? "Implantação concluída" : "Onboarding concluído";
       await db.execute(sql`
         INSERT INTO atividades (organizacao_id, lead_id, usuario_id, tipo, titulo, descricao, dados)
