@@ -43,7 +43,7 @@ export type { ChecklistSeed, ChecklistItemMetadata, EstagioPedagogico } from "@/
 // que as telas possam importá-lo sem arrastar `db` junto. Reexportado aqui
 // porque sete chamadores já o pegam deste caminho.
 export {
-  FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM,
+  FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM, FASE_ASSISTANT_POR_WORKSTREAM,
   MARCOS_AI, MARCO_AI_POR_WORKSTREAM, type MarcoAI,
 } from "@/lib/crm/pos-venda-checklists";
 

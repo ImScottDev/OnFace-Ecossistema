@@ -10,7 +10,7 @@ import { getCtx } from "../compat.js";
 import { condicaoConversaNaoPrivada } from "@/lib/whatsapp/acesso";
 import { registrarMudancaResponsavel } from "@/lib/crm/owner";
 import { guardarNoAcervo } from "@/lib/arquivos/servico";
-import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM, MARCO_AI_POR_WORKSTREAM, MARCOS_AI, FAMILIAS_ONBOARDING } from "@/lib/crm/fulfillment";
+import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, FASE_PABX_POR_WORKSTREAM, FASE_WHITE_LABEL_POR_WORKSTREAM, FASE_ASSISTANT_POR_WORKSTREAM, MARCO_AI_POR_WORKSTREAM, MARCOS_AI, FAMILIAS_ONBOARDING } from "@/lib/crm/fulfillment";
 
 const app = new Hono();
 
@@ -199,6 +199,17 @@ app.get("/fulfillments", async (c) => {
       })();
       const primeiroPendente = itens.find(naoConcluidos);
       return { ...r, fase, marco: null, etapa_atual: primeiroPendente?.titulo ?? null, estado_operacional: null };
+    }
+    if (r.service_family === "ASSISTANT") {
+      const fase = r.status === "COMPLETED" ? "concluida" : (() => {
+        const primeiroPendente = itens.find(naoConcluidos);
+        return primeiroPendente ? FASE_ASSISTANT_POR_WORKSTREAM[primeiroPendente.workstream] ?? "planejamento" : "validacao";
+      })();
+      const primeiroPendente = itens.find(naoConcluidos);
+      return {
+        ...r, fase, marco: null, etapa_atual: primeiroPendente?.titulo ?? null,
+        estado_operacional: estadoOperacionalOnboarding(r.status, !!r.proxima_reuniao_em),
+      };
     }
     if (r.service_family === "WHITE_LABEL") {
       const fase = r.status === "COMPLETED" ? "concluida" : (() => {

@@ -180,7 +180,7 @@ class Logica extends React.Component<any, any> {
     const stats = (arr, extra) => [[arr.filter(r => ["andamento", "atrasado"].indexOf(r.c.estado) >= 0).length, " em andamento", "#8b949e", null], [arr.filter(r => r.c.estado === "aguardando").length, " aguardando cliente", "#e0b04f", "aguard"], [arr.filter(r => r.c.atraso > 0).length, " em atraso", "#ff6a55", "atraso"], extra]
       .map(([n, l, cor, f]) => ({ n: String(n), l, dot: "width:6px;height:6px;border-radius:9999px;background:" + cor, onClick: f ? setF(f) : () => {} }));
     const wsOnb = { titulo: "Onboarding", sub: "Contato, kickoff, materiais e passagem para implantação", n: String(onbAll.length), stats: stats(onbAll, [onbAll.filter(r => r.c.pronto).length, " prontos p/ handoff", "#3ecf8e", "pronto"]),
-      chips: chipsF(onbAll, S.obF, "obF", [["todos", "Todos"], ["CALLFACE_AI", "Callface AI"], ["PABX", "PABX"], ["WHITE_LABEL", "White Label"]]), linhas: onbL.map(linhaDe), vazio: !onbL.length, vazioTxt: "Nenhum onboarding com esses filtros." };
+      chips: chipsF(onbAll, S.obF, "obF", [["todos", "Todos"], ["CALLFACE_AI", "Callface AI"], ["PABX", "PABX"], ["WHITE_LABEL", "White Label"], ["ASSISTANT", "Callface Assistant"]]), linhas: onbL.map(linhaDe), vazio: !onbL.length, vazioTxt: "Nenhum onboarding com esses filtros." };
     const wsImp = { titulo: "Implantação", sub: "Provisionamento, portabilidade, homologação e go-live", n: String(impAll.length), stats: stats(impAll, [impAll.filter(r => r.c.golive).length, " perto do go-live", "#3ecf8e", "golive"]),
       chips: chipsF(impAll, S.imF, "imF", [["todos", "Todos"], ["PABX", "PABX"], ["WHITE_LABEL", "White Label"]]), linhas: impL.map(linhaDe), vazio: !impL.length, vazioTxt: "Nenhuma implantação com esses filtros." };
 

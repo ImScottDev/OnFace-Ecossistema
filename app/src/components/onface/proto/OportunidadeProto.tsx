@@ -35,23 +35,24 @@ export interface AcoesOportunidade extends CommandsDeEtapa {
   definirProximaAcao: (negocioId: string, descricao: string | null, quando: string | null) => Promise<Resultado>;
   /** Derivar nova oportunidade da mesma empresa. Sem isto o botao avisa que nao grava. */
   criarOportunidade?: (entrada: {
-    empresaId: string; familias: Array<"CALLFACE_AI" | "PABX" | "WHITE_LABEL">; responsavelId: string;
+    empresaId: string; familias: Array<"CALLFACE_AI" | "PABX" | "WHITE_LABEL" | "ASSISTANT">; responsavelId: string;
     titulo?: string | null; leadId?: string | null;
   }) => Promise<Resultado<{ ids: string[] }>>;
   /** Define/corrige a família comercial desta oportunidade. Usado pelos
    *  negócios LEGADOS que vieram do dump sem família — sem ela o card não
    *  avança para Proposta/Negociação nem fecha em Ganho. */
-  alterarFamilia?: (negocioId: string, familia: "CALLFACE_AI" | "PABX" | "WHITE_LABEL", motivo: string | null) => Promise<Resultado<{ propostasIncompativeis: number }>>;
+  alterarFamilia?: (negocioId: string, familia: "CALLFACE_AI" | "PABX" | "WHITE_LABEL" | "ASSISTANT", motivo: string | null) => Promise<Resultado<{ propostasIncompativeis: number }>>;
   atribuirResponsavel?: (negocioId: string, nome: string) => Promise<Resultado>;
   salvarResumo?: (negocioId: string, campos: Record<string, string>) => Promise<Resultado>;
   recusarProposta?: (propostaId: string, motivo: string) => Promise<Resultado>;
   excluirRascunho?: (propostaId: string) => Promise<Resultado>;
 }
 
-const FAMILIAS_ESCOLHA: Array<{ v: "CALLFACE_AI" | "PABX" | "WHITE_LABEL"; rotulo: string; desc: string }> = [
+const FAMILIAS_ESCOLHA: Array<{ v: "CALLFACE_AI" | "PABX" | "WHITE_LABEL" | "ASSISTANT"; rotulo: string; desc: string }> = [
   { v: "CALLFACE_AI", rotulo: "Callface AI", desc: "Discador e inteligência de ligação" },
   { v: "PABX", rotulo: "PABX", desc: "Telefonia, ramais e linhas" },
   { v: "WHITE_LABEL", rotulo: "White Label", desc: "Revenda da plataforma" },
+  { v: "ASSISTANT", rotulo: "Callface Assistant", desc: "Assistente de IA que atende o N1" },
 ];
 
 /* ── Persistência ──────────────────────────────────────────────────────── */
@@ -167,7 +168,7 @@ export function OportunidadeProto({ oportunidade, timeline, acoes, equipe = [], 
     if (abrirDefinirFamilia && semFamilia) setFamAberto(true);
   }, [abrirDefinirFamilia, semFamilia]);
 
-  const escolherFamilia = React.useCallback(async (familia: "CALLFACE_AI" | "PABX" | "WHITE_LABEL") => {
+  const escolherFamilia = React.useCallback(async (familia: "CALLFACE_AI" | "PABX" | "WHITE_LABEL" | "ASSISTANT") => {
     if (!acoes.alterarFamilia) { toast.error("Definir família ainda não está ligado nesta tela."); return; }
     setFamSalvando(familia);
     const r = await acoes.alterarFamilia(oportunidade.id, familia, "Família definida na oportunidade legada");

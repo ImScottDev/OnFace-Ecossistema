@@ -45,6 +45,7 @@ import {
   PABX_CHECKLIST,
   AI_CHECKLIST_BASE,
   WHITE_LABEL_CHECKLIST,
+  ASSISTANT_CHECKLIST,
   type ChecklistSeed,
 } from "@/lib/crm/pos-venda-checklists";
 
@@ -52,6 +53,7 @@ export type TrilhaPosGanho =
   | "onboarding"
   | "implantacao_pabx"
   | "implantacao_white_label"
+  | "implantacao_assistant"
   | "validacao_manual";
 
 interface RegraFamilia {
@@ -84,6 +86,15 @@ const REGRAS: Record<FamiliaServico, RegraFamilia> = {
     checklist: WHITE_LABEL_CHECKLIST,
     // A fila recebe White Label sem dono. O time define o responsável antes
     // de iniciar, em vez de herdar automaticamente o comercial.
+    automacaoInicial: false,
+    tarefaInicial: null,
+  },
+  ASSISTANT: {
+    trilha: "implantacao_assistant",
+    trilhaLabel: "Implantação Assistant",
+    checklist: ASSISTANT_CHECKLIST,
+    // Como o White Label: entra sem dono, alguém do time assume antes do
+    // primeiro contato. Quem vendeu nem sempre é quem implanta.
     automacaoInicial: false,
     tarefaInicial: null,
   },

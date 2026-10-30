@@ -184,7 +184,7 @@ export type MotivoPerda = (typeof MOTIVOS_PERDA)[number]["chave"];
 
 /* ── Famílias e receita ────────────────────────────────────────────────── */
 
-export const FAMILIAS = ["CALLFACE_AI", "PABX", "WHITE_LABEL"] as const;
+export const FAMILIAS = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"] as const;
 export type Familia = (typeof FAMILIAS)[number];
 
 /** `UNKNOWN` existe só para o legado. Bloco 02 §2: oportunidade nova nunca
@@ -195,6 +195,7 @@ export const ROTULO_FAMILIA: Record<FamiliaComLegado, string> = {
   CALLFACE_AI: "Callface AI",
   PABX: "PABX",
   WHITE_LABEL: "White Label",
+  ASSISTANT: "Callface Assistant",
   UNKNOWN: "Não classificada",
 };
 

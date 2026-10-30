@@ -176,7 +176,7 @@ class Logica extends React.Component<any, any> {
     const PROD = { CALLFACE_AI: ["Callface AI", "#fe4f2b", "#fff6f4", "#c2330f", "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8z"],
       WHITE_LABEL: ["White Label", "#4f3fa8", "#efecfa", "#4f3fa8", "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"],
       PABX: ["PABX", "#2c5f9e", "#e8f0fb", "#2c5f9e", "M13.8 16.6a1 1 0 0 0 1.2-.3l.4-.5A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.5.4a1 1 0 0 0-.3 1.2 14 14 0 0 0 6.4 6.4z"] };
-    const PK = ["CALLFACE_AI", "WHITE_LABEL", "PABX"];
+    const PK = ["CALLFACE_AI", "WHITE_LABEL", "PABX", "ASSISTANT"];
     const P = (k) => PROD[k] || PROD.CALLFACE_AI;
     const brl = (n) => "R$ " + Math.round(n).toLocaleString("pt-BR");
     const brlK = (n) => n >= 1000 ? "R$ " + (n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " mil" : brl(n);
@@ -220,7 +220,7 @@ class Logica extends React.Component<any, any> {
     const EN = S.evoN || 12, mE = Array.from({ length: EN }, (_, i) => new Date(hoje.getFullYear(), hoje.getMonth() - (EN - 1 - i), 1));
     const oculto = S.evoOff || {};
     const DKC = { CALLFACE_AI: "#fe4f2b", WHITE_LABEL: "#9a8cf2", PABX: "#5b9be6" };
-    const ORD = ["PABX", "WHITE_LABEL", "CALLFACE_AI"].filter(k => !oculto[k]);
+    const ORD = ["PABX", "WHITE_LABEL", "CALLFACE_AI", "ASSISTANT"].filter(k => !oculto[k]);
     const serie = (k) => mE.map(m => C.filter(c => c.produto === k && ativoEm(c, m)).reduce((a, c) => a + c.mrr, 0));
     const vals = ORD.map(serie);
     const cum = ORD.map((_, j) => mE.map((__, i) => vals.slice(0, j + 1).reduce((a, v) => a + v[i], 0)));
@@ -248,7 +248,7 @@ class Logica extends React.Component<any, any> {
       dicaL: hE != null ? ORD.slice().reverse().map(k => ({ l: P(k)[0], v: brl(serie(k)[hE]), dot: "width:8px;height:8px;border-radius:2px;background:" + DKC[k] })) : [],
       dicaTot: hE != null ? brl(totE[hE]) : "",
       dicaPos: hE != null ? "position:absolute;z-index:3;pointer-events:none;top:6px;left:clamp(0px,calc(" + dicaX + "% - 90px),calc(100% - 180px));width:180px;padding:9px 11px;border-radius:10px;background:#1f252c;box-shadow:0 0 0 1px #2a3139,0 14px 30px -12px rgba(0,0,0,.6)" : "display:none",
-      legenda: ["CALLFACE_AI", "WHITE_LABEL", "PABX"].map(k => { const off = !!oculto[k]; return { l: P(k)[0], onClick: () => this.setState(s => ({ evoOff: Object.assign({}, s.evoOff || {}, { [k]: !off }) })),
+      legenda: ["CALLFACE_AI", "WHITE_LABEL", "PABX", "ASSISTANT"].map(k => { const off = !!oculto[k]; return { l: P(k)[0], onClick: () => this.setState(s => ({ evoOff: Object.assign({}, s.evoOff || {}, { [k]: !off }) })),
         st: "display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 6px;border-radius:7px;border:0;background:transparent;cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap;color:" + (off ? "#4a5560;text-decoration:line-through" : "#a3aab0"),
         dot: "width:9px;height:9px;border-radius:2px;background:" + (off ? "#2a3139" : DKC[k]) }; }) };
 

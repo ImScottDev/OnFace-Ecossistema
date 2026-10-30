@@ -39,7 +39,7 @@ import { exigeContrato as exigeContratoPorModelo, type CommercialModel } from "@
 export type { FamiliaServico };
 
 /** Trilha de entrega pós-ganho. Cada uma tem tela/fila própria hoje. */
-export type TrilhaPosGanho = "onboarding" | "implantacao_pabx" | "implantacao_white_label" | "validacao_manual";
+export type TrilhaPosGanho = "onboarding" | "implantacao_pabx" | "implantacao_white_label" | "implantacao_assistant" | "validacao_manual";
 
 export interface RegraFamilia {
   familia: FamiliaServico;
@@ -95,6 +95,20 @@ const REGRAS: Record<FamiliaServico, RegraFamilia> = {
     // explicitamente "Definir responsável" antes do primeiro contato. Não
     // herda o comercial, porque esse nem sempre será quem executará a
     // implantação.
+    automacaoInicial: false,
+    tarefaInicial: null,
+  },
+  ASSISTANT: {
+    familia: "ASSISTANT",
+    // Decisão do Scott (30/10/2026): Assistant fecha por CONTRATO ASSINADO,
+    // como PABX e White Label — não pelo pagamento, como o Callface AI.
+    exigeContrato: true,
+    exigePagamentoParaGanho: false,
+    evidenciaDeGanho: "signed_contract",
+    trilha: "implantacao_assistant",
+    trilhaLabel: "Implantação Assistant",
+    // Produto novo: a implantação começa com alguém do time assumindo, como no
+    // White Label. Sem tarefa genérica automática até o fluxo próprio existir.
     automacaoInicial: false,
     tarefaInicial: null,
   },
@@ -185,6 +199,7 @@ export const FAMILIAS_POR_TRILHA: Record<TrilhaPosGanho, FamiliaServico[]> = {
   onboarding: (Object.values(REGRAS).filter((r) => r.trilha === "onboarding").map((r) => r.familia)),
   implantacao_pabx: (Object.values(REGRAS).filter((r) => r.trilha === "implantacao_pabx").map((r) => r.familia)),
   implantacao_white_label: (Object.values(REGRAS).filter((r) => r.trilha === "implantacao_white_label").map((r) => r.familia)),
+  implantacao_assistant: (Object.values(REGRAS).filter((r) => r.trilha === "implantacao_assistant").map((r) => r.familia)),
   validacao_manual: (Object.values(REGRAS).filter((r) => r.trilha === "validacao_manual").map((r) => r.familia)),
 };
 

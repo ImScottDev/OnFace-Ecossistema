@@ -691,7 +691,7 @@ posFlutuante(r, alto) {
         const N = S.nova; if (!N) return { aberto: false, tipos: [], familias: [], equipe: [], contatos: [] };
         const Es = this.E, DD = this.dadosDoProto || {};
         const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
-        const INT = { "Callface AI": "CALLFACE_AI", "PABX": "PABX", "White Label": "WHITE_LABEL" };
+        const INT = { "Callface AI": "CALLFACE_AI", "PABX": "PABX", "White Label": "WHITE_LABEL", "Callface Assistant": "ASSISTANT" };
         const famPad = INT[E.interesse] || INT[qualIni[0]] || "CALLFACE_AI";
         const fam = N.familia || famPad;
         /* Antes: inventava "Contrato nº CT-2xxx, assinado 12/03/2026, R$ x/mês" (número sorteado do nome, MRR fixo por produto).

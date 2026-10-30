@@ -392,6 +392,43 @@ export const MARCO_AI_POR_WORKSTREAM: Record<string, MarcoAI> = {
   validacao_final: "validacao_final",
 };
 
+/** Implantação do Callface Assistant.
+ *
+ *  O trabalho é diferente do White Label (lá se monta um ambiente de marca;
+ *  aqui se ensina um assistente a atender o N1 do cliente), então o checklist é
+ *  próprio. As FASES são as mesmas quatro colunas das outras implantações,
+ *  porque o board é o mesmo. */
+export const ASSISTANT_CHECKLIST: ChecklistSeed = [
+  { workstream: "abertura", titulo: "Iniciar implantação e confirmar responsável interno" },
+  { workstream: "abertura", titulo: "Revisar o plano vendido: franquia de atendimentos e usuários" },
+  { workstream: "comunicacao", titulo: "Fazer o primeiro contato de boas-vindas" },
+  { workstream: "comunicacao", titulo: "Apresentar as etapas e o prazo estimado da implantação" },
+  { workstream: "conhecimento", titulo: "Coletar a base de conhecimento e as perguntas frequentes do cliente" },
+  { workstream: "conhecimento", titulo: "Definir tom de voz, saudação e limites de resposta do assistente" },
+  { workstream: "conhecimento", titulo: "Mapear o que o assistente resolve e o que ele escala para humano" },
+  { workstream: "treinamento", titulo: "Treinar o assistente com a base do cliente" },
+  { workstream: "treinamento", titulo: "Configurar as regras de escalonamento para o time de atendimento" },
+  { workstream: "canais", titulo: "Conectar os canais de atendimento acordados" },
+  { workstream: "canais", titulo: "Cadastrar os usuários do plano e seus acessos" },
+  { workstream: "qa_interno", titulo: "Executar QA interno: rodar os casos de teste do cliente" },
+  { workstream: "validacao_cliente", titulo: "Validar as respostas com o cliente e ajustar o que ele apontar" },
+  { workstream: "go_live", titulo: "Ativar o assistente em produção e acompanhar o primeiro dia" },
+  { workstream: "conclusao", titulo: "Revisar o volume do primeiro ciclo e passar a conta para o CS" },
+];
+
+/** Fase do Assistant, derivada da ORDEM do `ASSISTANT_CHECKLIST` acima. */
+export const FASE_ASSISTANT_POR_WORKSTREAM: Record<string, "planejamento" | "preparacao" | "execucao" | "validacao"> = {
+  abertura: "planejamento",
+  comunicacao: "planejamento",
+  conhecimento: "preparacao",     // o insumo vem do cliente, como os materiais do White Label
+  treinamento: "execucao",
+  canais: "execucao",
+  qa_interno: "validacao",
+  validacao_cliente: "validacao",
+  go_live: "validacao",           // o cliente ainda pode reprovar
+  conclusao: "validacao",         // sem fase, a entrega quase pronta cairia em Planejamento
+};
+
 /** Fase do White Label, derivada da ORDEM do `WHITE_LABEL_CHECKLIST` acima.
  *
  *  Não é vocabulário novo: são as mesmas cinco colunas do PABX, porque as duas

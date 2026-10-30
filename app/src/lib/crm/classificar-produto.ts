@@ -17,12 +17,16 @@
  * não foi materializado, que hoje é a esmagadora maioria dos contratos.
  */
 
-export type FamiliaServico = "CALLFACE_AI" | "PABX" | "WHITE_LABEL" | "UNKNOWN";
+export type FamiliaServico = "CALLFACE_AI" | "PABX" | "WHITE_LABEL" | "ASSISTANT" | "UNKNOWN";
 
 /** Termos extraídos dos nomes REAIS de itens de proposta aceita em produção. */
 const REGRAS: { familia: Exclude<FamiliaServico, "UNKNOWN">; termos: string[] }[] = [
   // White Label primeiro: "white label - callface ai" contém "callface ai".
   { familia: "WHITE_LABEL", termos: ["white label", "whitelabel"] },
+  // Assistant antes de Callface AI: "Callface Assistant" não contém "callface ai",
+  // mas "assistente de ia" é vizinho perigoso de "agente de ia". Testar aqui
+  // mantém o Assistant com nome próprio em vez de cair no catálogo antigo.
+  { familia: "ASSISTANT", termos: ["callface assistant", "assistant", "assistente"] },
   {
     familia: "CALLFACE_AI",
     // "copilot" junto de "callpilot": o catálogo do Stripe vende "Callface Copilot",

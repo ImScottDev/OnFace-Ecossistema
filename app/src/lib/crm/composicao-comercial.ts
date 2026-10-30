@@ -18,7 +18,7 @@ import { propostas, propostaItens, servicosCatalogo, catalogoPrecos, oportunidad
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
 import { familiaDoItem } from "@/lib/crm/gravar-familia";
 
-export type ServiceFamily = "PABX" | "CALLFACE_AI" | "WHITE_LABEL" | "UNKNOWN";
+export type ServiceFamily = "PABX" | "CALLFACE_AI" | "WHITE_LABEL" | "ASSISTANT" | "UNKNOWN";
 export type RevenueNature = "MRR" | "SETUP" | "PROJECT" | "ONE_TIME" | "USAGE" | "HARDWARE" | "UNKNOWN";
 
 /**
