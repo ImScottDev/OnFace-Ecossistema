@@ -57,7 +57,11 @@ services:
     logging: *log
     container_name: callface-${STACK:-crm2-dev}-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    # AOF (everysec) já garante a fila; o snapshot RDB em cima dele era
+    # escrita redundante — este Redis respondia por 96 GB de escrita em disco,
+    # mais que todo o resto da máquina somado, com um dataset de ~1.600 chaves.
+    # "--save ''" desliga só o snapshot, a durabilidade do AOF continua.
+    command: ["redis-server", "--appendonly", "yes", "--save", ""]
     volumes:
       - redis_data:/data
     networks:
@@ -139,6 +143,12 @@ services:
       - "traefik.http.routers.${ROTA:-crm2dev}-webhooks.tls.certresolver=cloudflare"
       - "traefik.http.routers.${ROTA:-crm2dev}-webhooks.priority=200"
       - "traefik.http.routers.${ROTA:-crm2dev}-webhooks.service=${ROTA:-crm2dev}-app"
+      # Limite de taxa por IP de origem em /api/webhooks: a rota do site (site-lead) é pública
+      # sem segredo e, sem isto, um robô cria leads sem teto. 30/s com rajada de 60 não
+      # atrapalha Stripe, Meta nem Resend (que mandam poucos eventos por segundo).
+      - "traefik.http.middlewares.${ROTA:-crm2dev}-webhooks-ratelimit.ratelimit.average=30"
+      - "traefik.http.middlewares.${ROTA:-crm2dev}-webhooks-ratelimit.ratelimit.burst=60"
+      - "traefik.http.routers.${ROTA:-crm2dev}-webhooks.middlewares=${ROTA:-crm2dev}-webhooks-ratelimit"
       # Frontend: tudo que nao e /api, mais as rotas de API que vivem no Next
       #
       # O prefixo tem que ser tao ESPECIFICO quanto a rota Next que ele existe
