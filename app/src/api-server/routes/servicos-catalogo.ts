@@ -15,7 +15,7 @@ const createSchema = z.object({
   unidade: z.enum(["mensal", "hora", "unidade", "projeto"]).default("mensal"),
   ordem: z.number().int().optional(),
   // Sem família o serviço nasce UNKNOWN e some do seletor da proposta (que filtra por família).
-  serviceFamily: z.enum(["PABX", "CALLFACE_AI", "WHITE_LABEL", "UNKNOWN"]).optional(),
+  serviceFamily: z.enum(["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT", "UNKNOWN"]).optional(),
 });
 
 const updateSchema = z.object({
@@ -29,7 +29,7 @@ const updateSchema = z.object({
   // Semântica do catálogo (Commercial Core v2/v3, 19/08) — antes só
   // gravável via SQL direto (reconciliação), nunca editável por API. Nunca
   // decidir isso por nome/categoria em runtime — é declaração explícita.
-  serviceFamily: z.enum(["PABX", "CALLFACE_AI", "WHITE_LABEL", "UNKNOWN"]).optional(),
+  serviceFamily: z.enum(["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT", "UNKNOWN"]).optional(),
   revenueNature: z.enum(["MRR", "SETUP", "PROJECT", "ONE_TIME", "USAGE", "HARDWARE", "UNKNOWN"]).optional(),
   commercialModelPadrao: z.enum(["PAGAMENTO_DIRETO", "CONTRATO_OBRIGATORIO", "CONTRATO_FIDELIDADE_OPCIONAL"]).optional(),
   categoria: z.string().optional().nullable(),
@@ -198,8 +198,8 @@ app.get("/catalogo-oficial", async (c) => {
 
   // Ordem das famílias no builder: Callface AI primeiro (produto principal),
   // depois White Label, depois PABX. Ordem de negócio, não alfabética.
-  const ORDEM_FAMILIA = ["CALLFACE_AI", "WHITE_LABEL", "PABX"];
-  const LABEL_FAMILIA: Record<string, string> = { CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label", PABX: "PABX" };
+  const ORDEM_FAMILIA = ["CALLFACE_AI", "WHITE_LABEL", "PABX", "ASSISTANT"];
+  const LABEL_FAMILIA: Record<string, string> = { CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label", PABX: "PABX", ASSISTANT: "Callface Assistant" };
   const LABEL_CATEGORIA: Record<string, string> = {
     plano: "Plano", licenca: "Licença", setup: "Setup / Implantação", add_on: "Add-on",
     linha: "Linha", ramal: "Ramal", canais: "Canal", minutos: "Pacote de Minutos",
@@ -270,7 +270,7 @@ app.get("/catalogo-legado", async (c) => {
   const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0"));
 
   const CONF = ["CONFIRMED", "PROBABLE", "AMBIGUOUS", "UNRESOLVED"];
-  const FAM = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "UNKNOWN"];
+  const FAM = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT", "UNKNOWN"];
   const REV = ["pendente", "revisado", "ignorado"];
   const confianca = c.req.query("confianca") ?? "";
   const familia = c.req.query("familia") ?? "";
@@ -341,7 +341,7 @@ app.get("/catalogo-legado", async (c) => {
  * por aqui.
  */
 const revisaoLegadoSchema = z.object({
-  serviceFamily: z.enum(["PABX", "CALLFACE_AI", "WHITE_LABEL", "UNKNOWN"]).optional(),
+  serviceFamily: z.enum(["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT", "UNKNOWN"]).optional(),
   revenueNature: z.enum(["MRR", "SETUP", "PROJECT", "ONE_TIME", "USAGE", "HARDWARE", "ADJUSTMENT", "UNKNOWN"]).optional(),
   categoriaCrm: z.string().trim().min(1).optional().nullable(),
   canonicalProductId: z.string().uuid().optional().nullable(),

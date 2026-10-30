@@ -17,7 +17,7 @@ export const metadata = { title: "Nova proposta" };
 export const dynamic = "force-dynamic";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const FAMILIAS: Familia[] = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
+const FAMILIAS: Familia[] = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"];
 
 /**
  * O compositor de proposta.

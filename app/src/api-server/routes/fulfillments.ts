@@ -92,7 +92,7 @@ app.get("/fulfillments", async (c) => {
   // pras 2 famílias reais de Onboarding (CALLFACE_AI/WHITE_LABEL) — PABX
   // nunca entra aqui, PABX é Implantação.
   const familia = c.req.query("familia") ?? "";
-  const FAMILIAS_VALIDAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "UNKNOWN"];
+  const FAMILIAS_VALIDAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT", "UNKNOWN"];
   const filtroFamilia =
     familia === "ONBOARDING" ? sql`AND f.service_family IN (${sql.join(FAMILIAS_ONBOARDING.map((f) => sql`${f}`), sql`, `)})` :
     FAMILIAS_VALIDAS.includes(familia) ? sql`AND f.service_family = ${familia}` : sql``;
@@ -242,7 +242,7 @@ app.get("/fulfillments", async (c) => {
 app.get("/fulfillments/resumo", async (c) => {
   const ctx = await getCtx(c);
   const familia = c.req.query("familia") ?? "";
-  const FAMILIAS_VALIDAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "UNKNOWN"];
+  const FAMILIAS_VALIDAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT", "UNKNOWN"];
   const filtroFamilia =
     familia === "ONBOARDING" ? sql`AND f.service_family IN (${sql.join(FAMILIAS_ONBOARDING.map((v) => sql`${v}`), sql`, `)})` :
     FAMILIAS_VALIDAS.includes(familia) ? sql`AND f.service_family = ${familia}` : sql``;

@@ -6,7 +6,7 @@
 // Número de cliente, case e depoimento NÃO entram: não há fonte no sistema, e inventar prova
 // social numa proposta comercial é o pior erro possível aqui.
 
-export type FamiliaComercial = "CALLFACE_AI" | "PABX" | "WHITE_LABEL";
+export type FamiliaComercial = "CALLFACE_AI" | "PABX" | "WHITE_LABEL" | "ASSISTANT";
 
 export interface ConteudoFamilia {
   rotulo: string;
@@ -19,7 +19,7 @@ export interface ConteudoFamilia {
   garantias: string[];
 }
 
-export const FAMILIAS_CONHECIDAS: FamiliaComercial[] = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
+export const FAMILIAS_CONHECIDAS: FamiliaComercial[] = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"];
 
 const SUPORTE = "Suporte 24x7 com Service Desk e SLA por criticidade";
 
@@ -81,6 +81,26 @@ export const CONTEUDO_FAMILIA: Record<FamiliaComercial | "GERAL", ConteudoFamili
       "Suporte ao parceiro",
     ],
     garantias: [SUPORTE, "Condições de parceria formalizadas em contrato", "Aceite com registro eletrônico"],
+  },
+  ASSISTANT: {
+    rotulo: "Callface Assistant",
+    promessa: "O primeiro atendimento resolvido na hora, sem fila: o assistente responde o N1 e passa para o seu time só o que precisa de gente.",
+    diferenciais: [
+      { titulo: "O N1 sai da fila do time", texto: "As perguntas que se repetem todo dia são respondidas na hora, e o time fica com o que exige decisão humana." },
+      { titulo: "Treinado com o seu conteúdo", texto: "O assistente aprende com a base de conhecimento e as perguntas frequentes da sua operação, no tom de voz que você definir." },
+      { titulo: "Você decide onde ele para", texto: "Na implantação se define o que o assistente resolve e o que ele escala para uma pessoa, com as regras de transferência acordadas." },
+      { titulo: "Plano por volume", texto: "Franquia mensal de atendimentos e de usuários conforme o plano, com o excedente cobrado por atendimento ao valor da proposta." },
+      { titulo: "Implantação acompanhada", texto: "A ativação é uma etapa própria: base, treinamento, canais e validação com você antes de entrar no ar." },
+    ],
+    entregas: [
+      "Assistente treinado com a base de conhecimento do cliente",
+      "Regras de escalonamento para o time de atendimento",
+      "Franquia mensal de atendimentos e usuários conforme os itens da proposta",
+      "Conexão dos canais de atendimento acordados",
+      "Relatório mensal de atendimentos, incluindo o que embasa o excedente",
+      "Implantação acompanhada e validação antes do go-live",
+    ],
+    garantias: [SUPORTE, "Condições formalizadas em contrato", "Aceite com registro eletrônico"],
   },
   GERAL: {
     rotulo: "Callface",

@@ -238,7 +238,7 @@ app.get("/clientes-crm2", async (c) => {
   // dessa família" — não esconde as OUTRAS famílias que a empresa também
   // tenha (o badge de família continua mostrando o portfólio completo).
   const familia = c.req.query("familia") ?? "";
-  const FAMILIAS_VALIDAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "UNKNOWN"];
+  const FAMILIAS_VALIDAS = ["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT", "UNKNOWN"];
   const filtroFamilia = FAMILIAS_VALIDAS.includes(familia)
     ? sql`AND EXISTS (SELECT 1 FROM servicos_canonicos sc2 WHERE sc2.empresa_id = e.id AND sc2.portfolio_included = true AND sc2.service_family = ${familia})`
     : sql``;

@@ -259,7 +259,7 @@ app.get(`${AO}/contexto`, async (c) => {
 /* ── Roteamento comercial ─────────────────────────────────────────────── */
 
 const regraSchema = z.object({
-  nome: z.string().min(1).max(120), familia: z.enum(["CALLFACE_AI", "WHITE_LABEL", "PABX"]).nullable().optional(), campanha: z.string().max(120).nullable().optional(),
+  nome: z.string().min(1).max(120), familia: z.enum(["CALLFACE_AI", "WHITE_LABEL", "PABX", "ASSISTANT"]).nullable().optional(), campanha: z.string().max(120).nullable().optional(),
   prioridade: z.number().int().min(0).max(100000).default(100), ativa: z.boolean().default(true), vigenteDe: z.string().datetime({ offset: true }).nullable().optional(), vigenteAte: z.string().datetime({ offset: true }).nullable().optional(),
   destinoUsuarioId: uuid.nullable().optional(), fallback: z.enum(["fila_humana", "rodizio"]).default("fila_humana"),
 });
@@ -301,7 +301,7 @@ app.delete(`${AO}/roteamento/:id`, async (c) => {
 app.get(`${AO}/roteamento/simular`, async (c) => {
   const ctx = await getCtx(c);
   const leadId = c.req.query("leadId");
-  let familia = (c.req.query("familia") || null) as "CALLFACE_AI" | "WHITE_LABEL" | "PABX" | null; let campanha = c.req.query("campanha") || null;
+  let familia = (c.req.query("familia") || null) as "CALLFACE_AI" | "WHITE_LABEL" | "PABX" | "ASSISTANT" | null; let campanha = c.req.query("campanha") || null;
   if (leadId) { const s = await sinaisDoLead(ctx.organizacaoId, leadId); familia = s.familia; campanha = s.campanha; }
   return c.json({ familia, campanha, resultado: await resolverCloser({ organizacaoId: ctx.organizacaoId, familia, campanha }) });
 });

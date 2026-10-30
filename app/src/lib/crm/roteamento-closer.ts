@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { closerDisponibilidade, leads, roteamentoComercialRegras, usuarios } from "@/lib/db/schema";
 import { pickNextCloser } from "./agenda-closers";
 
-export type FamiliaComercial = "CALLFACE_AI" | "WHITE_LABEL" | "PABX";
+export type FamiliaComercial = "CALLFACE_AI" | "WHITE_LABEL" | "PABX" | "ASSISTANT";
 export type Regra = typeof roteamentoComercialRegras.$inferSelect;
 
 const sem = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

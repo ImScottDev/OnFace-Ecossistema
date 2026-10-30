@@ -29,7 +29,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   return (
     <Pagina>
       <InsightsOnface abaInicial={aba} periodoInicial={periodo}
-        familiaInicial={["CALLFACE_AI", "PABX", "WHITE_LABEL"].includes(sp.familia ?? "") ? sp.familia! : ""}
+        familiaInicial={["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"].includes(sp.familia ?? "") ? sp.familia! : ""}
         janelaInicial={["12m", "ano_atual", "tudo"].includes(sp.janela ?? "") ? sp.janela! : "12m"}
         safraInicial={sp.safra === "todos" || sp.safra === "legado" ? sp.safra : "nativo"} />
     </Pagina>

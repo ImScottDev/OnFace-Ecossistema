@@ -16,7 +16,7 @@ import "./roteamento.css";
 import { BotaoMotivo } from "@/components/onface/ds/escolha";
 
 const BASE = "/api/automacoes/agentes-op/roteamento";
-const FAMILIA: Record<string, string> = { CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label", PABX: "PABX" };
+const FAMILIA: Record<string, string> = { CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label", PABX: "PABX", ASSISTANT: "Callface Assistant" };
 const FALLBACK: Record<string, string> = { fila_humana: "Fila humana", rodizio: "Rodízio entre as closers" };
 const TZ = "America/Sao_Paulo";
 const dia = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: TZ }) : null);

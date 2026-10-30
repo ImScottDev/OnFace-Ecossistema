@@ -219,7 +219,7 @@ class Logica extends React.Component<any, any> {
     const stC = passo(Math.max(1, ...cntM)), topC = stC * 4;
     const EN = S.evoN || 12, mE = Array.from({ length: EN }, (_, i) => new Date(hoje.getFullYear(), hoje.getMonth() - (EN - 1 - i), 1));
     const oculto = S.evoOff || {};
-    const DKC = { CALLFACE_AI: "#fe4f2b", WHITE_LABEL: "#9a8cf2", PABX: "#5b9be6" };
+    const DKC = { CALLFACE_AI: "#fe4f2b", WHITE_LABEL: "#9a8cf2", PABX: "#5b9be6", ASSISTANT: "#1fae8f" };
     const ORD = ["PABX", "WHITE_LABEL", "CALLFACE_AI", "ASSISTANT"].filter(k => !oculto[k]);
     const serie = (k) => mE.map(m => C.filter(c => c.produto === k && ativoEm(c, m)).reduce((a, c) => a + c.mrr, 0));
     const vals = ORD.map(serie);
@@ -461,7 +461,7 @@ class Logica extends React.Component<any, any> {
           E && E.avisar(nome + " entrou na carteira de clientes", "ok"); this.setState({ nc: null }); } });
     }
 
-    const totHP = Math.max(1, mrrP.reduce((x, y) => x + y, 0)), DKH = { CALLFACE_AI: "#fe4f2b", WHITE_LABEL: "#9a8cf2", PABX: "#5b9be6" };
+    const totHP = Math.max(1, mrrP.reduce((x, y) => x + y, 0)), DKH = { CALLFACE_AI: "#fe4f2b", WHITE_LABEL: "#9a8cf2", PABX: "#5b9be6", ASSISTANT: "#1fae8f" };
     const dMr = pct(mrr, mrrAntes);
     const tile = (l, v, c) => ({ l, v, vStyle: "display:block;margin-top:4px;font-family:'Plus Jakarta Sans',sans-serif;font-size:17px;font-weight:700;letter-spacing:-.02em;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;color:" + (c || "#fff") });
     const hero = { cols: L >= 1080 ? "minmax(0,.85fr) minmax(0,2.1fr) minmax(0,1fr)" : "minmax(0,1fr)", dirCol: L >= 1080 ? "" : ";display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px",

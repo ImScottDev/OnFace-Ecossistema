@@ -15,7 +15,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const createSchema = z.object({
   titulo: z.string().min(1),
   categoria: z.enum(["apresentacao", "tecnico", "comercial", "manual", "outro"]),
-  familia: z.enum(["CALLFACE_AI", "PABX", "WHITE_LABEL"]).nullable().optional(),
+  familia: z.enum(["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"]).nullable().optional(),
   arquivoUrl: z.string().url(),
   descricao: z.string().optional(),
 });

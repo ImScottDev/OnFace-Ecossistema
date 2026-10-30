@@ -10,7 +10,7 @@ import { acaoConcluirItem, acaoConcluirOnboarding, acaoHandoff, acaoLiberarBloqu
 export const metadata = { title: "Pós-vendas" };
 export const dynamic = "force-dynamic";
 
-const FAMILIAS = new Set(["CALLFACE_AI", "PABX", "WHITE_LABEL"]);
+const FAMILIAS = new Set(["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"]);
 
 export default async function PosVendasPage({ searchParams }: {
   searchParams: Promise<{ projeto?: string; aba?: string; familia?: string }>;

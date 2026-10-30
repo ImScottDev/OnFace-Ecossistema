@@ -690,7 +690,7 @@ posFlutuante(r, alto) {
       no: (() => {
         const N = S.nova; if (!N) return { aberto: false, tipos: [], familias: [], equipe: [], contatos: [] };
         const Es = this.E, DD = this.dadosDoProto || {};
-        const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+        const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
         const INT = { "Callface AI": "CALLFACE_AI", "PABX": "PABX", "White Label": "WHITE_LABEL", "Callface Assistant": "ASSISTANT" };
         const famPad = INT[E.interesse] || INT[qualIni[0]] || "CALLFACE_AI";
         const fam = N.familia || famPad;

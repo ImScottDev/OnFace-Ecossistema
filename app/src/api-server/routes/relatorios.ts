@@ -1149,7 +1149,7 @@ app.get("/pos-venda", async (c) => {
       FROM (${mrrOficialLinhas(orgPv)}) m
       GROUP BY 1`),
   ]);
-  const ROT_FAMILIA: Record<string, string> = { PABX: "PABX", CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label" };
+  const ROT_FAMILIA: Record<string, string> = { PABX: "PABX", CALLFACE_AI: "Callface AI", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
   const mrrPorTipo = porFamilia
     .map((r) => ({ tipo: ROT_FAMILIA[r.familia] ?? r.familia, mrr: Number(r.mrr) || 0, count: Number(r.n) }))
     .sort((x, y) => y.mrr - x.mrr);
