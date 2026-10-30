@@ -20,6 +20,7 @@ import { atualizarEntregaDaOrigem, entregasDaOrigem } from "@/lib/email/entrega"
 import { avisarClienteDaPropostaEnviada, type ResultadoEmail, type ResultadoWhatsapp, type ViaEmail } from "@/lib/crm/enviar-proposta";
 import { diasParaPagarDaVenda } from "@/lib/integrations/stripe-checkout";
 import { doCrm } from "@/lib/financeiro/espelho-crm";
+import { pessoaDaEmpresa } from "@/lib/vendas/pessoa-da-empresa";
 
 const ROTA = "/propostas";
 
@@ -175,6 +176,8 @@ export interface DetalheProposta {
   tipoContratual: string | null;
   /** Qual dos modelos de PDF esta proposta usa. `padrao` é o de sempre (coluna NULL). */
   modeloPdf: ModeloPdf;
+  /** Link público desativado pelo time (D6). null = ativo. */
+  linkRevogadoEm: string | null;
   itens: Array<{ id: string; nome: string; tipo: string; natureza: string | null; quantidade: number; valorUnitario: number; desconto: number; subtotal: number }>;
   composicao: propostas.ComposicaoFinanceira;
   tracking: { enviadaEm: string | null; primeiraVisualizacao: string | null; aceitaEm: string | null; recusadaEm: string | null; ajusteEm: string | null; ajusteDescricao: string | null };
@@ -231,7 +234,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       razao_social: string | null; cnpj: string | null; logradouro: string | null;
       endereco_numero: string | null; complemento: string | null; bairro: string | null;
       cidade: string | null; estado: string | null; cep: string | null;
-      modelo_pdf: string | null;
+      modelo_pdf: string | null; link_revogado_em: string | null;
     }>(sql`
       SELECT p.id::text, p.numero AS proposta_numero, p.versao, p.status,
              COALESCE(p.empresa_id, n.empresa_id, l.empresa_id)::text AS empresa_id, e.nome AS empresa, p.negocio_id::text,
@@ -246,7 +249,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
              p.tipo_contratual, p.enviada_em::text, p.primeira_visualizacao_em::text AS primeira_vis,
              p.aceita_em::text, p.recusada_em::text,
              p.ajuste_solicitado_em::text AS ajuste_em, p.ajuste_solicitado_descricao AS ajuste_desc,
-             p.modelo_pdf
+             p.modelo_pdf, p.link_publico_revogado_em::text AS link_revogado_em
         FROM propostas p
         LEFT JOIN negocios n ON n.id = p.negocio_id
         LEFT JOIN leads l ON l.id = p.lead_id
@@ -296,6 +299,7 @@ export async function acaoDetalhe(propostaId: string): Promise<Resultado<Detalhe
       dataValidade: p.data_validade,
       tipoContratual: p.tipo_contratual,
       modeloPdf: modeloPdfValido(p.modelo_pdf) ?? "padrao",
+      linkRevogadoEm: p.link_revogado_em,
       itens: itens.map((i) => ({
         id: i.id, nome: i.nome, tipo: i.tipo, natureza: i.natureza,
         quantidade: Number(i.quantidade), valorUnitario: Number(i.valor_unitario),
@@ -492,6 +496,20 @@ export async function acaoSalvarModeloPdf(propostaId: string, modelo: string): P
   });
 }
 
+/** Desativa ou reativa o link público /p/:id (D6). O cliente passa a ver "link desativado". */
+export async function acaoLinkPublico(propostaId: string, ativo: boolean): Promise<Resultado> {
+  const ctx = await contexto();
+  if (!ctx) return { ok: false, erro: "Sessão expirada." };
+  return executar(ativo ? "reativar o link" : "desativar o link", async () => {
+    const r = await db.execute(sql`
+      UPDATE propostas SET link_publico_revogado_em = ${ativo ? null : sql`now()`}, updated_at = now()
+       WHERE id = ${propostaId} AND organizacao_id = ${ctx.organizacaoId}
+      RETURNING id`);
+    if (r.length === 0) throw new Error("Proposta não encontrada.");
+    revalidatePath(`/propostas/${propostaId}`);
+  });
+}
+
 export async function acaoCatalogo(familia: Familia): Promise<propostas.ItemCatalogo[]> {
   const ctx = await getTenantContext();
   if (!ctx) return [];
@@ -579,7 +597,10 @@ export async function acaoBaseNovaProposta(): Promise<BaseNovaProposta> {
     db.execute<{ empresa_id: string; empresa: string; pessoa_id: string | null; lead_id: string | null; pessoa: string | null; cargo: string | null; email: string | null }>(sql`
       SELECT e.id::text AS empresa_id, e.nome AS empresa, p.id::text AS pessoa_id, p.lead_id_legado::text AS lead_id,
              NULLIF(trim((CASE WHEN COALESCE(trim(p.sobrenome),'')='' THEN trim(p.nome) WHEN lower(trim(p.sobrenome))=lower(trim(p.nome)) OR lower(trim(p.sobrenome)) LIKE lower(trim(p.nome))||' %' THEN trim(p.sobrenome) WHEN lower(trim(p.nome)) LIKE '% '||lower(trim(p.sobrenome)) THEN trim(p.nome) ELSE trim(p.nome)||' '||trim(p.sobrenome) END)), '') AS pessoa, p.cargo, p.email
-        FROM empresas e LEFT JOIN pessoas p ON p.empresa_id = e.id
+        -- Era p.empresa_id = e.id: a pessoa que esta na empresa por vinculo
+        -- secundario nao aparecia na lista de contatos da proposta, embora
+        -- esteja na ficha da empresa. Mesma condicao unica da ficha.
+        FROM empresas e LEFT JOIN pessoas p ON ${pessoaDaEmpresa("p", sql.raw("e.id"))}
        WHERE e.organizacao_id = ${org}::uuid AND e.nome IS NOT NULL AND trim(e.nome) <> ''
        ORDER BY e.nome, p.nome`),
   ]);

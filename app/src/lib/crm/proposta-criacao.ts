@@ -108,14 +108,18 @@ export async function resolverContatoDaProposta(opts: {
   if (!negocio) throw new RegraDeNegocio("oportunidade_nao_encontrada", "Oportunidade não encontrada.");
 
   if (opts.leadId && opts.leadId !== negocio.lead_id) {
-    // Oportunidade sem empresa: só vale o contato da própria oportunidade (sem empresa, "da mesma empresa" casaria com qualquer lead solto).
-    const [ok] = negocio.empresa_id
-      ? await db.execute<{ id: string }>(sql`
-          SELECT id::text FROM leads
-           WHERE id = ${opts.leadId}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid
-             AND empresa_id = ${negocio.empresa_id}::uuid`)
-      : [];
-    if (!ok) throw new RegraDeNegocio("contato_invalido", "O contato escolhido não pertence à empresa desta oportunidade.");
+    /* A trava era "o contato tem que ser da MESMA empresa da oportunidade", por
+       `leads.empresa_id`. Isso barrava dois casos legítimos que o time vive
+       todo dia (30/10/2026, relato da Mayra): quem está na empresa por vínculo
+       secundário — a pessoa pode estar em mais de uma empresa — e o terceiro
+       que precisa receber a proposta (procurador, contador, matriz, sócio de
+       outro CNPJ do grupo). Quem decide para quem a proposta vai é o vendedor.
+       O que continua travado é o que de fato não pode: contato de OUTRA
+       organização, que é a fronteira multi-tenant. */
+    const [ok] = await db.execute<{ id: string }>(sql`
+      SELECT id::text FROM leads
+       WHERE id = ${opts.leadId}::uuid AND organizacao_id = ${opts.organizacaoId}::uuid`);
+    if (!ok) throw new RegraDeNegocio("contato_invalido", "Este contato não existe na sua organização.");
   }
 
   let leadId = opts.leadId ?? negocio.lead_id;
