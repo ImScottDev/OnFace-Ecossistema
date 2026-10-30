@@ -81,6 +81,7 @@ const FAMILY_LABEL: Record<string, string> = {
   CALLFACE_AI: "Callface AI",
   PABX: "PABX",
   WHITE_LABEL: "White Label",
+  ASSISTANT: "Callface Assistant",
   UNKNOWN: "Produto em revisão",
 };
 

@@ -34,6 +34,7 @@ const FAMILIAS = [
   { value: "CALLFACE_AI", label: "Callface AI" },
   { value: "PABX", label: "PABX" },
   { value: "WHITE_LABEL", label: "White Label" },
+  { value: "ASSISTANT", label: "Callface Assistant" },
 ];
 const TIPOS = [
   { value: "CONTRATO", label: "Contrato" },

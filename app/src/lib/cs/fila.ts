@@ -313,7 +313,7 @@ export async function pulsoCarteira(organizacaoId: string, responsavelId?: strin
         WHERE sc.service_family = 'CALLFACE_AI' AND f.status NOT IN ('COMPLETED','CANCELED'))::text AS em_onboarding,
       (SELECT COUNT(DISTINCT sc.empresa_id) FROM servicos_canonicos sc JOIN conta c ON c.empresa_id = sc.empresa_id
         JOIN fulfillments f ON f.servico_canonico_id = sc.id
-        WHERE sc.service_family IN ('PABX','WHITE_LABEL') AND f.status NOT IN ('COMPLETED','CANCELED'))::text AS em_implantacao,
+        WHERE sc.service_family IN ('PABX','WHITE_LABEL','ASSISTANT') AND f.status NOT IN ('COMPLETED','CANCELED'))::text AS em_implantacao,
       (SELECT COUNT(DISTINCT r.empresa_id) FROM cs_riscos r JOIN conta c ON c.empresa_id = r.empresa_id
         WHERE r.status = 'ABERTO' AND r.severidade IN ('CRITICO','EM_RISCO'))::text AS em_risco,
       (SELECT COUNT(DISTINCT r.empresa_id) FROM cs_riscos r JOIN conta c ON c.empresa_id = r.empresa_id

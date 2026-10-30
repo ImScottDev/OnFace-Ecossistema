@@ -15,7 +15,7 @@ import { ROTULO_ETAPA_PIPELINE, type EtapaPipeline } from "@/lib/vendas/dominio"
  * lib/vendas/consultas.ts, que outras frentes editam em paralelo.
  * ───────────────────────────────────────────────────────────────────────── */
 
-export type Produto = "CALLFACE_AI" | "WHITE_LABEL" | "PABX";
+export type Produto = "CALLFACE_AI" | "WHITE_LABEL" | "PABX" | "ASSISTANT";
 
 export interface ClienteDoDesenho {
   id: string;

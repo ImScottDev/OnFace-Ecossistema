@@ -97,7 +97,7 @@ export async function verificarHandoff(
 
   // Sem oferta resolvida, a família decide — é o mesmo critério que o resto do
   // pós-venda usa, e 1.085 oportunidades ainda estão sem oferta vinculada.
-  const exige = l.exige_implantacao ?? ["PABX", "WHITE_LABEL"].includes(String(l.service_family));
+  const exige = l.exige_implantacao ?? ["PABX", "WHITE_LABEL", "ASSISTANT"].includes(String(l.service_family));
   const falta: string[] = [];
   if (!l.tem_kickoff) falta.push("reunião de kickoff realizada");
   if (!l.material_enviado) falta.push("material/formulário enviado");
@@ -122,7 +122,7 @@ export async function entregarParaImplantacao(params: {
     return { ok: true, implantacaoId: l.implantacao_existente, jaExistia: true };
   }
 
-  const exige = l.exige_implantacao ?? ["PABX", "WHITE_LABEL"].includes(String(l.service_family));
+  const exige = l.exige_implantacao ?? ["PABX", "WHITE_LABEL", "ASSISTANT"].includes(String(l.service_family));
   if (!exige) {
     return {
       ok: false, codigo: "oferta_nao_exige_implantacao",

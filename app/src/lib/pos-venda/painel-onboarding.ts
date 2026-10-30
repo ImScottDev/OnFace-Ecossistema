@@ -208,7 +208,7 @@ export async function painelOnboarding(organizacaoId: string): Promise<PainelOnb
        botão: o modal de handoff existe justamente para escolhê-lo, e o command
        aceita `implantadorId`. Kickoff e material, sim — esses só o fato
        resolve. */
-    const exige = l.exige_implantacao ?? ["PABX", "WHITE_LABEL"].includes(familia);
+    const exige = l.exige_implantacao ?? ["PABX", "WHITE_LABEL", "ASSISTANT"].includes(familia);
     const gate = [
       { n: "Reunião de kickoff realizada", ok: Boolean(l.tem_kickoff) },
       { n: "Material/formulário enviado", ok: Boolean(l.material_enviado) },

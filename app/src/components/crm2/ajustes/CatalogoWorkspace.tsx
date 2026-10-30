@@ -20,6 +20,7 @@ const FAMILIAS = [
   { value: "CALLFACE_AI", label: "Callface AI" },
   { value: "PABX", label: "PABX" },
   { value: "WHITE_LABEL", label: "White Label" },
+  { value: "ASSISTANT", label: "Callface Assistant" },
   { value: "UNKNOWN", label: "Não classificado" },
 ];
 const NATUREZAS = ["MRR", "SETUP", "PROJECT", "ONE_TIME", "USAGE", "HARDWARE", "UNKNOWN"];

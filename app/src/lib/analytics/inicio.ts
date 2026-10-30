@@ -40,7 +40,7 @@ function monthBounds(ref: Date) {
  *  módulo de fulfillment (que carrega o motor de checklist) dentro de um
  *  módulo de analytics. */
 export const FAMILIAS_ONBOARDING_HOME = ["CALLFACE_AI"] as const;
-export const FAMILIAS_IMPLANTACAO_HOME = ["PABX", "WHITE_LABEL"] as const;
+export const FAMILIAS_IMPLANTACAO_HOME = ["PABX", "WHITE_LABEL", "ASSISTANT"] as const;
 
 export interface EntregaResumoFamilia {
   ativas: number;
@@ -108,6 +108,7 @@ export interface MetaProdutoLinha { familia: string; label: string; valor: numbe
 const FAMILIA_LABEL: Record<string, string> = {
   CALLFACE_AI: "Callface AI",
   WHITE_LABEL: "White Label",
+  ASSISTANT: "Callface Assistant",
   PABX: "PABX",
   UNKNOWN: "Não classificado",
 };
@@ -341,7 +342,7 @@ export async function getPrecisaAtencao(
       db.execute<{ n: number }>(sql`
         SELECT COUNT(*)::int AS n FROM fulfillments
          WHERE organizacao_id = ${orgId}
-           AND service_family IN ('PABX','WHITE_LABEL')
+           AND service_family IN ('PABX','WHITE_LABEL','ASSISTANT')
            AND status IN ('BLOCKED_INTERNAL','BLOCKED_PROVIDER')
       `),
       db.select({ n: sql<number>`count(*)::int` }).from(leads)

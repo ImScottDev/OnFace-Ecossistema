@@ -199,7 +199,7 @@ class Logica extends React.Component<any, any> {
     const lista = this.state.opps || D.OPORTUNIDADES || [];
     const leads = this.state.leads || D.LEADS || [];
     const tem = {}; lista.forEach(o => { tem[(o.empresa || "").toLowerCase()] = true; if (o.leadId) tem["#" + o.leadId] = true; });
-    const fam = (i) => /pabx/i.test(i || "") ? "PABX" : /white/i.test(i || "") ? "WHITE_LABEL" : "CALLFACE_AI";
+    const fam = (i) => /pabx/i.test(i || "") ? "PABX" : /white/i.test(i || "") ? "WHITE_LABEL" : /assistant|assistente/i.test(i || "") ? "ASSISTANT" : "CALLFACE_AI";
     const derivadas = leads.filter(l => l.etapa === "oportunidade" && l.empresa && !tem[l.empresa.toLowerCase()] && !tem["#" + l.id]).map(l => ({
       id: "d:" + l.id, derivada: true, leadId: l.id, empresa: l.empresa, pessoa: l.pessoa, cargo: l.cargo, familia: fam(l.interesse), etapa: "entrada", resp: l.resp || "Camila Reis", dias: l.dias || 0,
       itens: [], proposta: null, pessoas: [{ nome: l.pessoa, papel: "Contato principal" }], atvs: [], eventos: [{ t: "Oportunidade criada no Pré-vendas", quando: "—", autor: l.resp || "Sistema" }]
