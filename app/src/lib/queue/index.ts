@@ -22,7 +22,9 @@ const connection = {
   enableOfflineQueue: true,
 };
 
-const defaultJobOptions = { removeOnComplete: { count: 200 }, removeOnFail: { count: 500 } };
+// Falha fica 7 dias OU até 500 entradas: o painel mostrava 88 falhas de `campanha-sweep`
+// de 01/10 ainda em 26/10, inflando a leitura de "fila doente" por três semanas.
+const defaultJobOptions = { removeOnComplete: { count: 200 }, removeOnFail: { age: 7 * 24 * 3600, count: 500 } };
 const groqJobOptions = { ...defaultJobOptions, attempts: 5, backoff: { type: "exponential" as const, delay: 60000 } };
 
 const instancias = new Map<string, Queue>();

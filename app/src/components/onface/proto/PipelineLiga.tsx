@@ -254,7 +254,7 @@ class Logica extends React.Component<any, any> {
     const ROT = this.ROT = { entrada: "Entrada", diagnostico: "Diagnóstico", proposta: "Proposta", negociacao: "Negociação", ganho: "Ganho", perdido: "Perdido" };
     const COR = { entrada: "#4a5560", diagnostico: "#2c5f9e", proposta: "#c8a86a", negociacao: "#fe4f2b", ganho: "#1f7256", perdido: "#8b949e" };
     const MOTIVO_ROT = { sem_retorno: "Sem retorno", sem_interesse: "Sem interesse", preco: "Preço", concorrente: "Escolheu concorrente", sem_orcamento: "Sem orçamento", timing: "Timing / outra data", trava_negociacao: "Trava na negociação", trava_contratual: "Trava contratual", projeto_cancelado: "Projeto cancelado", sem_fit: "Sem fit após diagnóstico", no_show: "No-show", outro: "Outro", nao_respondeu: "Não respondeu", fora_perfil: "Fora de perfil", escolheu_concorrente: "Escolheu concorrente", preco_alto: "Preço alto", sem_budget: "Sem orçamento", vai_internalizar: "Vai internalizar", erro_operacional: "Erro operacional" };
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
     const NAT = { MRR: "Recorrente", SETUP: "Setup", PROJECT: "Projeto", ONE_TIME: "Avulso", USAGE: "Uso", HARDWARE: "Hardware" };
     const PROP = { rascunho: "Rascunho", enviada: "Enviada", visualizada: "Visualizada", ajuste_solicitado: "Ajuste solicitado", aceita: "Aceita", recusada: "Recusada", expirada: "Expirada" };
     const PROP_COR = { rascunho: "#8b949e", enviada: "#2c5f9e", visualizada: "#c8a86a", ajuste_solicitado: "#fe4f2b", aceita: "#1f7256", recusada: "#c2330f", expirada: "#8b949e" };

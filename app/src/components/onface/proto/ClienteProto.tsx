@@ -71,7 +71,7 @@ const FAM: Record<string, { l: string; cor: string; d: string; tile: [string, st
   // em vez de ser escondida ou forçada numa das três.
   UNKNOWN: { l: "Não classificado", cor: "var(--of-tinta-4)", d: I.layers, tile: ["var(--of-calha)", "var(--of-tinta-2)"] },
 };
-const PK = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
+const PK = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"];
 /** Cor do selo de status: pagamento vencido é erro, nunca o verde de "Ativo". */
 const tomDoStatus = (st: string) => st === "Ativo" ? "ok" : st === "Em implantação" ? "coral" : st === "Vencida" || st === "Inadimplente" ? "erro" : "neutro";
 const fam = (k: string | null | undefined) => FAM[k ?? "UNKNOWN"] ?? FAM.UNKNOWN;

@@ -60,7 +60,7 @@ export function CheckoutPublico({ id }: { id: string }) {
     queryKey: ["checkout-publico", id],
     queryFn: async () => {
       const r = await fetch(`/api/checkouts/${id}/publica`);
-      if (!r.ok) throw new Error("not-found");
+      if (!r.ok) throw new Error(r.status === 410 ? "desativado" : "not-found");
       return r.json();
     },
     retry: false,
@@ -79,7 +79,7 @@ export function CheckoutPublico({ id }: { id: string }) {
   }
   if (error || !data) {
     return (
-      <Cartao tom="risco" Icone={AlertTriangle} titulo="Link de pagamento não encontrado">
+      <Cartao tom="risco" Icone={AlertTriangle} titulo={error?.message === "desativado" ? "Link desativado" : "Link de pagamento não encontrado"}>
         <p>Confira se o link chegou completo ou fale com quem te enviou a proposta na Callface.</p>
       </Cartao>
     );

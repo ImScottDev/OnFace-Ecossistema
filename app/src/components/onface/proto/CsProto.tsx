@@ -55,7 +55,7 @@ const INICIO_SEM_EVIDENCIA = "0000-01";
 const EU_DO_LIGA = "Scott Ferraz";
 const FAM_K = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"] as const;
 const FAM: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
-const CORF: Record<string, string> = { CALLFACE_AI: "var(--of-coral-marca)", PABX: "var(--of-coral-no-escuro-2)", WHITE_LABEL: "var(--of-coral-no-escuro-3)" };
+const CORF: Record<string, string> = { CALLFACE_AI: "var(--of-coral-marca)", PABX: "var(--of-coral-no-escuro-2)", WHITE_LABEL: "var(--of-coral-no-escuro-3)", ASSISTANT: "var(--of-coral-no-escuro-3)" };
 const MESL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 // As mesmas contas do Liga — precisam bater caractere a caractere para achar o texto inventado.

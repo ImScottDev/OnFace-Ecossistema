@@ -64,7 +64,7 @@ export function Cf2CatalogoWorkspace() {
 
   return (
     <div className="flex flex-col gap-5">
-      {["CALLFACE_AI", "PABX", "WHITE_LABEL"].map((fam) => {
+      {["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"].map((fam) => {
         const doFamilia = classificados.filter((i) => i.serviceFamily === fam);
         if (doFamilia.length === 0) return null;
         return (

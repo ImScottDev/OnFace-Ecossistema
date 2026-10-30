@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import fs from "fs";
 import { db } from "@/lib/db";
 import { anexosLegado } from "@/lib/db/schema";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNull } from "drizzle-orm";
 import { getCtx } from "../compat.js";
 import { resolveLocalPath, sanitizeFilenameForHeader } from "@/lib/storage/legacy-attachment-storage";
 
@@ -125,5 +125,39 @@ function tipoParaExtensao(nomeArquivo: string): { contentType: string; inline: b
   if (ext in INLINE_TYPES) return { contentType: INLINE_TYPES[ext], inline: true };
   return { contentType: "application/octet-stream", inline: false };
 }
+
+// GET /anexos-legado/sem-vinculo?q=texto&limite=200
+// Os anexos do Zoho que nenhuma regra conseguiu ligar a contrato/empresa (ver
+// migration 0135). Sem isto eles não aparecem em tela nenhuma: a pessoa só os
+// encontra aqui, pelo nome, e abre pelo mesmo download autenticado.
+app.get("/anexos-legado/sem-vinculo", async (c) => {
+  const ctx = await getCtx(c);
+  const q = (c.req.query("q") ?? "").trim();
+  const limite = Math.min(Number(c.req.query("limite") ?? 200) || 200, 500);
+  const conds = [eq(anexosLegado.organizacaoId, ctx.organizacaoId), isNull(anexosLegado.entidadeId)];
+  if (q) conds.push(ilike(anexosLegado.nomeArquivo, `%${q.replace(/[%_]/g, "\\$&")}%`));
+  const rows = await db
+    .select({
+      id: anexosLegado.id, entidadeTipo: anexosLegado.entidadeTipo, categoria: anexosLegado.categoria,
+      nomeArquivo: anexosLegado.nomeArquivo, tamanhoBytes: anexosLegado.tamanhoBytes,
+      criadoEmOriginal: anexosLegado.criadoEmOriginal, storagePath: anexosLegado.storagePath,
+    })
+    .from(anexosLegado)
+    .where(and(...conds))
+    .orderBy(desc(anexosLegado.criadoEmOriginal))
+    .limit(limite);
+  const [{ total }] = await db
+    .select({ total: count() })
+    .from(anexosLegado)
+    .where(and(eq(anexosLegado.organizacaoId, ctx.organizacaoId), isNull(anexosLegado.entidadeId)));
+  return c.json({
+    total: Number(total),
+    anexos: rows.map((r) => ({
+      id: r.id, entidadeTipo: r.entidadeTipo, categoria: r.categoria, nomeArquivo: r.nomeArquivo,
+      tamanhoBytes: r.tamanhoBytes, criadoEmOriginal: r.criadoEmOriginal,
+      arquivoDisponivel: resolveLocalPath(r.storagePath) !== null,
+    })),
+  });
+});
 
 export const anexosLegadoRoutes = app;

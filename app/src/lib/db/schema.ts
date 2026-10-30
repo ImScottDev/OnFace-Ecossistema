@@ -1648,6 +1648,8 @@ export const propostas = pgTable(
     moeda: text("moeda").default("BRL").notNull(), // BRL, USD, EUR, CAD
     status: text("status").default("rascunho").notNull(), // rascunho, enviada, aceita, recusada, expirada
     dataEmissao: date("data_emissao"),
+    /** Link público desativado pelo time (D6). NULL = ativo. */
+    linkPublicoRevogadoEm: timestamp("link_publico_revogado_em", { withTimezone: true }),
     dataValidade: date("data_validade"),
     observacoes: text("observacoes"),
     // Modelo do PDF (migration 0127). NULL = "padrao", o PDF de sempre: nenhuma
@@ -3545,6 +3547,12 @@ export const anexosLegado = pgTable("anexos_legado", {
   storagePath: text("storage_path"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   checksumSha256: text("checksum_sha256"),
+  /** Vínculo como veio do Zoho, antes da 0135 ligar os órfãos. */
+  entidadeTipoOriginal: text("entidade_tipo_original"),
+  entidadeIdOriginal: uuid("entidade_id_original"),
+  /** Como o vínculo foi feito: numero_do_contrato_no_nome, nome_da_empresa_no_arquivo (0135) ou manual. NULL = original. */
+  vinculoMetodo: text("vinculo_metodo"),
+  vinculadoEm: timestamp("vinculado_em", { withTimezone: true }),
 }, (table) => [
   index("idx_anexos_legado_entidade").on(table.entidadeTipo, table.entidadeId),
   index("idx_anexos_legado_org").on(table.organizacaoId),

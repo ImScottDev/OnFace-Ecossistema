@@ -758,7 +758,7 @@ class Logica extends React.Component<any, any> {
         grupos: [
           { k: "responsavel", titulo: "Responsável", opcoes: [this.eu, ...((this.dadosDoProto.EQUIPE || []).filter(n => n && n !== this.eu)), "Sem responsável"] },
           { k: "origem", titulo: "Canal de entrada", opcoes: origensReais },
-          { k: "interesse", titulo: "Interesse", opcoes: ["Callface AI", "PABX", "White Label"] },
+          { k: "interesse", titulo: "Interesse", opcoes: ["Callface AI", "PABX", "White Label", "Callface Assistant"] },
           { k: "sla", titulo: "SLA", opcoes: ["Sem 1º contato", "Sem próxima ação", "Parado 7 dias+", "Parado 14 dias+"] },
           { k: "campanha", titulo: "Campanha", opcoes: campanhasUnicas },
           { k: "tag", titulo: "Tags", opcoes: tagsUnicas },

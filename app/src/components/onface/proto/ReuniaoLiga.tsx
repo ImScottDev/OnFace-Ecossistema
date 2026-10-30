@@ -151,7 +151,7 @@ class Logica extends React.Component<any, any> {
 
   ler(ref) {
     if (!ref) return null;
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
     if (ref.src === "o") { const O = this.opps().find(o => o.id === ref.oppId), A = O && (O.atvs || [])[ref.i]; if (!A) return null; const RE = A.reuniao || {};
       return { A, O, RE, titulo: A.titulo || "Reunião", empresa: O.empresa, pessoa: O.pessoa, cargo: O.cargo || "", familia: FAM[O.familia] || "", leadId: O.leadId, closer: RE.closer || A.autor || O.resp || this.eu(), desc: A.desc || "",
         situacao: A.situacao || (A.feita ? "Feita" : "A fazer"), data: RE.data || this.quandoData(A.quando), hora: RE.hora || this.quandoHora(A.quando), dur: RE.duracao || 30, quandoTxt: A.quando || "", seed: O.id + (A.quando || "") }; }
@@ -192,7 +192,7 @@ class Logica extends React.Component<any, any> {
     const ini = (n, ia) => avatarDe(n, (D.iniciais || ((n) => (n || "").split(" ").map(x => [...x][0]).slice(0, 2).join("").toUpperCase()))(n), ia);
     const equipe = (D.EQUIPE || ["Camila Reis", "Diego Nunes", "Ana Vitória"]).concat([EU]).filter((x, i, a) => a.indexOf(x) === i);
     const FMT = { Vídeo: "m22 8-6 4 6 4V8zM2 6h14v12H2z", Ligação: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z", Presencial: "M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" };
-    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+    const FAM = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
     const mailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || "").trim());
 
     const rv = (() => {

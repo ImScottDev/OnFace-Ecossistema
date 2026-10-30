@@ -137,7 +137,7 @@ class Logica extends React.Component<any, any> {
     const pad = (n) => String(n).padStart(2, "0"), dmy = (d) => pad(d.getDate()) + "/" + pad(d.getMonth() + 1) + "/" + d.getFullYear(), dm = (d) => pad(d.getDate()) + "/" + pad(d.getMonth() + 1);
     const isoD = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
     const brl = (n) => "R$ " + Math.round(n).toLocaleString("pt-BR"), brlK = (n) => n >= 10000 ? "R$ " + (n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " mil" : brl(n);
-    const FAM_BASE = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" }, PK = Object.keys(FAM_BASE),
+    const FAM_BASE = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" }, PK = Object.keys(FAM_BASE),
       /* conta sem família (ex.: só faturou) não vira o texto "undefined" nos rótulos */
       FAM = new Proxy(FAM_BASE, { get: (t, k) => (k in t ? t[k] : typeof k === "string" ? "Sem produto" : undefined) });
     const hsh = (s) => { let x = 7; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) >>> 0; return x; };
@@ -312,7 +312,7 @@ class Logica extends React.Component<any, any> {
       { d: I.swap, ico: icoK("#fff6f4", "#c2330f"), l: "Renovações (próx. 90 dias)", v: ren90.length + (ren90.length === 1 ? " cliente" : " clientes"), dt: brlK(ren90.reduce((a, c) => a + c.mrr, 0)), dSt: "display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:9999px;font-size:11px;font-weight:700;white-space:nowrap;background:#eeeff3;color:#1f252c", s: "de MRR a renovar", onClick: () => this.setState({ aba: "renov" }) },
       { d: I.alert, ico: icoK("#fdeeea", "#c2330f"), l: "Clientes em risco", v: String(risco.map(s => s.c).filter((c, i, a) => a.indexOf(c) === i).length), dt: brlK(mrrRisco), dSt: dPill(mrrRisco ? -1 : 0), s: "de MRR em risco", onClick: irCar("atencao") },
       { d: I.trend, ico: icoK("#e6f4ee", "#1f7256"), l: "Expansões em andamento", v: String(exps.length), dt: expMrr ? brlK(expMrr) : "—", dSt: "display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:9999px;font-size:11px;font-weight:700;white-space:nowrap;background:#e6f4ee;color:#1f7256", s: "no Pipeline via CS", onClick: irCar("exp") }];
-    const CORF = { CALLFACE_AI: "#fe4f2b", PABX: "#ff9f85", WHITE_LABEL: "#ffd5c8" }, MES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"], MESL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const CORF = { CALLFACE_AI: "#fe4f2b", PABX: "#ff9f85", WHITE_LABEL: "#ffd5c8", ASSISTANT: "#1fae8f" }, MES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"], MESL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     const W = Array.from({ length: 12 }, (_, i) => new Date(hoje.getFullYear(), hoje.getMonth() - 11 + i, 1));
     const serie = PK.map(k => W.map(m => base.filter(c => c.produto === k && ativoEm(c, m)).reduce((a, c) => a + c.mrr, 0))), tot = W.map((_, i) => serie.reduce((a, s) => a + s[i], 0));
     const passo = (mx) => { const alvo = mx / 4, pot = Math.pow(10, Math.floor(Math.log10(Math.max(1, alvo)))), n2 = alvo / pot; return (n2 <= 1 ? 1 : n2 <= 2 ? 2 : n2 <= 2.5 ? 2.5 : n2 <= 5 ? 5 : 10) * pot; };

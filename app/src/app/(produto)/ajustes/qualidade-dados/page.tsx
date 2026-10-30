@@ -107,6 +107,13 @@ export default async function QualidadeDadosPage() {
       >
         Duplicidade de contratos <ArrowRight className="size-3.5" />
       </Link>
+      <Link
+        href="/ajustes/qualidade-dados/anexos-legado"
+        className="inline-flex items-center gap-1.5 text-[13px] font-medium self-start rounded-[var(--cf2-radius-sm)] hover:underline"
+        style={{ color: "var(--cf2-accent)" }}
+      >
+        Anexos do legado sem vínculo <ArrowRight className="size-3.5" />
+      </Link>
     </div>
   );
 }

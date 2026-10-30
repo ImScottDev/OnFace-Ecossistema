@@ -28,7 +28,7 @@ import { ProjetoLiga } from "./ProjetoLiga";
 import { levarParametros } from "./rota-do-desenho";
 import { usePecas } from "./pecas-host";
 
-const FAM: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+const FAM: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
 const ABAS = ["geral", "atividades", "materiais", "comunicacoes", "arquivos", "timeline"];
 
 const pad = (n: number) => String(n).padStart(2, "0");

@@ -8,7 +8,7 @@
 import { sql } from "drizzle-orm";
 import type { FamiliaServico } from "@/lib/crm/classificar-produto";
 
-const VALIDAS = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
+const VALIDAS = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"];
 const valida = (f: string | null | undefined): f is Exclude<FamiliaServico, "UNKNOWN"> => !!f && VALIDAS.includes(f);
 
 /**

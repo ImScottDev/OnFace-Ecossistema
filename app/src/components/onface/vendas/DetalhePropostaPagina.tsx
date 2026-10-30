@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  acaoCriarRevisao, acaoEnviar, acaoReprocessarAceite, acaoSalvarJuridicos, acaoSalvarModeloPdf, type DetalheProposta,
+  acaoCriarRevisao, acaoEnviar, acaoReprocessarAceite, acaoSalvarJuridicos, acaoSalvarModeloPdf, acaoLinkPublico, type DetalheProposta,
 } from "@/app/(produto)/propostas/actions";
 import { VALIDADES_PROPOSTA } from "@/lib/vendas/dominio";
 import { Button } from "@/components/ui/button";
@@ -65,12 +65,22 @@ export function DetalhePropostaPagina({ proposta, voltar, abrirEnvio = false }: 
     router.refresh();
   };
 
+  const alternarLinkPublico = async (ativo: boolean) => {
+    setPendente(true);
+    const r = await acaoLinkPublico(proposta.id, ativo);
+    setPendente(false);
+    if (!r.ok) { toast.error(r.erro); return; }
+    toast.success(ativo ? "Link reativado." : "Link desativado. O cliente não consegue mais abrir.");
+    router.refresh();
+  };
+
   const acoes = {
     enviar: () => setEnviando(true),
     revisar,
     completarJuridicos: () => setJuridicos(true),
     reprocessar,
     salvarModeloPdf,
+    alternarLinkPublico,
   };
 
   const editarLinhas = proposta.status === "rascunho" && proposta.oportunidade.id

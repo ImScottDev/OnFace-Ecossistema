@@ -68,7 +68,7 @@ export const NOMES_BARRAMENTO: Record<string, string> = {
   ManualValidationRequired: "validacao.manual_exigida",
 };
 
-const FAMILIAS = new Set(["PABX", "CALLFACE_AI", "WHITE_LABEL"]);
+const FAMILIAS = new Set(["PABX", "CALLFACE_AI", "WHITE_LABEL", "ASSISTANT"]);
 
 /** Só as três famílias reais; qualquer outra coisa (UNKNOWN, null) vira DESCONHECIDA. Nunca inventa. */
 export function normalizarFamilia(v: unknown): string {

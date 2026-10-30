@@ -16,11 +16,13 @@
  * Uso:
  *   npm run check:env                 # só a documentação (roda sem .env, serve em CI)
  *   npm run check:env -- --ambiente   # + confere o ambiente carregado
+ *   npm run check:env -- --homolog    # + homologação não toca cliente nem dado real
  */
 import fs from "node:fs";
 import path from "node:path";
 
-const CONFERIR_AMBIENTE = process.argv.includes("--ambiente");
+const HOMOLOG = process.argv.includes("--homolog");
+const CONFERIR_AMBIENTE = HOMOLOG || process.argv.includes("--ambiente");
 
 function acharRaiz(): string {
   let dir = process.cwd();
@@ -149,6 +151,10 @@ const OBRIGATORIAS: Jornada[] = [
   { nome: "Stripe (sincronizar catálogo e billing)", todas: ["STRIPE_API_KEY"] },
   { nome: "Stripe (checkout ou alteração de assinatura)", umaDelas: ["STRIPE_SECRET_KEY", "STRIPE_API_KEY"] },
   { nome: "Stripe (webhook de ciclo de vida)", todas: ["STRIPE_WEBHOOK_SECRET"] },
+  // Sem este segredo a rota /api/webhooks/resend responde 500 e nenhum estado de
+  // entrega de e-mail (entregue, devolvido, reclamado) chega ao CRM. Estava faltando
+  // em produção em 26/10/2026 sem ninguém perceber.
+  { nome: "Resend (webhook de entrega de e-mail)", todas: ["RESEND_WEBHOOK_SECRET"] },
   { nome: "assinatura de contrato", todas: ["DOCUMENSO_API_URL", "DOCUMENSO_API_TOKEN", "DOCUMENSO_WEBHOOK_SECRET"] },
   { nome: "e-mail", todas: ["EMAIL_ENCRYPTION_KEY"] },
   { nome: "Microsoft 365 (OAuth de agenda)", todas: ["MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET"] },
@@ -197,6 +203,26 @@ if (CONFERIR_AMBIENTE) {
     "  do provedor NÃO entra. Configure antes de apontar Stripe, RD, Meta,\n" +
     "  Documenso, Apollo e wuzapi pro ambiente."
   );
+}
+
+// ── 3. homologação isolada (D10) ─────────────────────────────────────────────
+// Medido em 27/10/2026: a homologação usava a MESMA chave live do Stripe, do
+// Resend e da Meta que a produção, sem código de teste da Conversions API.
+// WhatsApp e e-mail já tinham trava; pagamento e evento de anúncio não.
+if (HOMOLOG) {
+  console.log("\nHomologação isolada:");
+  const travas: Array<[string, boolean]> = [
+    ["WHATSAPP_ALLOWLIST preenchida (envio só para números de teste)", !!process.env.WHATSAPP_ALLOWLIST],
+    ["EMAIL_ALLOWED_DOMAINS preenchida (e-mail só para domínios de teste)", !!process.env.EMAIL_ALLOWED_DOMAINS],
+    ["Stripe em modo teste (sk_test_/rk_test_, sem STRIPE_CHECKOUT_MODE=live)",
+      ![process.env.STRIPE_API_KEY, process.env.STRIPE_SECRET_KEY].some((k) => /_live_/.test(k ?? ""))
+      && process.env.STRIPE_CHECKOUT_MODE !== "live"],
+    ["Meta CAPI desligada ou com META_CAPI_TEST_EVENT_CODE", !process.env.META_CAPI_ACCESS_TOKEN || !!process.env.META_CAPI_TEST_EVENT_CODE],
+  ];
+  for (const [nome, ok] of travas) {
+    if (!ok) problemas++;
+    console.log(`  ${ok ? "✔" : "✘"} ${nome}`);
+  }
 }
 
 console.log(problemas === 0 ? "\nTudo certo." : `\n${problemas} problema(s).`);

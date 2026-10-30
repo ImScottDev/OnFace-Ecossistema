@@ -101,7 +101,7 @@ const ROTULO_DOCUMENTO: Record<string, string> = {
   RENOVACAO: "Contrato de renovação",
 };
 
-const ROTULO_FAMILIA_DOC: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label" };
+const ROTULO_FAMILIA_DOC: Record<string, string> = { CALLFACE_AI: "Callface AI", PABX: "PABX", WHITE_LABEL: "White Label", ASSISTANT: "Callface Assistant" };
 
 function dataIsoUtc(data: Date): string {
   return data.toISOString().slice(0, 10);
