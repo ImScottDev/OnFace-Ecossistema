@@ -82,7 +82,10 @@ services:
     # de dentro dela ficou velho. Subir de versão passa a ser decisão, testada
     # em dev antes. Fixado por DIGEST: a tag `v1.0.9` que estava aqui não existe
     # no Docker Hub (13/10/2026), e o que roda é a `latest` de 17/09/2026.
-    image: asternic/wuzapi:latest@sha256:7f2aee54a6585fcc67f78dbbec41cf56e3bdab31577183cf3b97f9a78d84df66
+    # 30/10/2026: as sessões do WhatsApp vieram do wuzapi do CRM legado, que roda
+    # 1.0.8. Esta é a MESMA imagem: subir 1.0.9 por cima rodaria migração de schema
+    # no banco de sessões, e sessão perdida significa reparear no celular.
+    image: asternic/wuzapi@sha256:9849d36d8c4e336af6f3b4ce2011b471f303590922d1b4604f12cbae5487ec01
     logging: *log
     container_name: callface-${STACK:-crm2-dev}-wuzapi
     restart: unless-stopped
@@ -111,7 +114,10 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 192M
+          # 30/10/2026: 192M era MENOS que os 256M em que o wuzapi do legado já
+          # morria de OOM (20/10 e 29/10), derrubando o WhatsApp. Com as sessões
+          # migradas para cá, o pico é o mesmo: ~257MB. 512M dá a folga.
+          memory: 512M
 
   app:
     # Imagem pronta do GHCR, construída pelo GitHub Actions na tag do commit.
@@ -180,8 +186,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 640M
+          # 30/10/2026: a máquina tem 2 vCPU e este serviço ficava preso em 1.
+          # Renderizar página é trabalho de CPU; a segunda ficava ociosa.
+          cpus: '2.0'
+          memory: 1G
     healthcheck:
       test: ["CMD", "wget", "-qO-", "--timeout=10", "http://127.0.0.1:3000/api/auth/session"]
       interval: 15s
@@ -236,8 +244,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 448M
+          cpus: '2.0'
+          memory: 768M
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
       interval: 15s
