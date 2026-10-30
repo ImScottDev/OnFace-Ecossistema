@@ -471,7 +471,8 @@ class Logica extends React.Component<any, any> {
     const famNotas = {
       CALLFACE_AI: ["Callface AI · como cobrar", "Cada produto tem seus preços: mensal, anual ou avulso. Minutos extras podem entrar na assinatura (mensal) ou ser vendidos uma vez só (avulso)."],
       PABX: ["PABX · como cobrar", "Ramal, linhas e BINA têm preço mensal ou anual. Canais usam preço por faixa, que muda sozinho com a quantidade. Hardware pode ser venda avulsa ou locação mensal."],
-      WHITE_LABEL: ["White Label · como cobrar", "A licença usa preço por faixa: o valor unitário cai conforme a quantidade de licenças. O setup é cobrado uma vez."]
+      WHITE_LABEL: ["White Label · como cobrar", "A licença usa preço por faixa: o valor unitário cai conforme a quantidade de licenças. O setup é cobrado uma vez."],
+      ASSISTANT: ["Callface Assistant · como cobrar", "O plano é mensal e já inclui a franquia de atendimentos e o limite de usuários. O que passar da franquia é cobrado por atendimento, no valor do excedente do plano."]
     };
     const catFam = O.familia || "CALLFACE_AI";
     const CAT = this.catalogo();
@@ -480,7 +481,9 @@ class Logica extends React.Component<any, any> {
     const sufP = (P, pr) => (P && P.tipo === "minutos" ? "/min" : "") + (pr.int === "mes" ? "/mês" : pr.int === "ano" ? "/ano" : "");
     const brlP = (P, pr) => (P && P.tipo === "minutos" ? "R$ " + pr.v.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : brl(pr.v)) + sufP(P, pr);
     const f1 = {
-      famD: FICO[d.familia], famTitulo: famNotas[d.familia][0], famNota: famNotas[d.familia][1],
+      /* Família sem nota derrubava a tela inteira com "reading '0'" (o Assistant,
+         em 30/10/2026): sem o fallback, cada produto novo quebra aqui. */
+      famD: FICO[d.familia], famTitulo: (famNotas[d.familia] || [])[0] || "", famNota: (famNotas[d.familia] || [])[1] || "",
       vazio: !d.itens.length, erroItens: !!tentou[1] && !v1,
       temFixosWl: fixosWl.length > 0,
       fixosWlTxt: (fixosWl.length > 1 ? fixosWl.length + " itens têm" : "\"" + (fixosWl[0] || {}).nome + "\" tem") + " mensalidade fixa. No White Label a cobrança recorrente é só por licença ativada, então " + (fixosWl.length > 1 ? "eles aparecem" : "ele aparece") + " para o cliente como uma cobrança à parte.",
