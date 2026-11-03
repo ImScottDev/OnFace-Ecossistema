@@ -67,6 +67,7 @@ const FAM: Record<string, { l: string; cor: string; d: string; tile: [string, st
   CALLFACE_AI: { l: "Callface AI", cor: "var(--of-coral-marca)", d: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z", tile: ["var(--of-coral-fundo)", "var(--of-coral-acao-hover)"] },
   PABX: { l: "PABX", cor: "var(--of-coral-no-escuro-2)", d: I.tel, tile: ["var(--of-tinta-forte)", "var(--of-papel)"] },
   WHITE_LABEL: { l: "White Label", cor: "var(--of-coral-no-escuro-3)", d: I.layers, tile: ["var(--of-calha)", "var(--of-tinta)"] },
+  ASSISTANT: { l: "Callface Assistant", cor: "var(--of-coral-no-escuro-3)", d: I.layers, tile: ["var(--of-calha)", "var(--of-tinta)"] },
   // Família não classificada existe no banco; vai à tela com o nome honesto
   // em vez de ser escondida ou forçada numa das três.
   UNKNOWN: { l: "Não classificado", cor: "var(--of-tinta-4)", d: I.layers, tile: ["var(--of-calha)", "var(--of-tinta-2)"] },
@@ -780,7 +781,7 @@ class ClienteLigada extends ClienteLiga {
           usoTxt: "Ativo", barra: "display:block;height:100%;border-radius:9999px;background:var(--of-tinta-forte);transform-origin:left;transition:transform .9s cubic-bezier(.16,1,.3,1);transform:scaleX(" + (S.pronto ? 1 : 0) + ")",
         })),
       })),
-      crossTxt: naoTem.length ? e.nome + " ainda não tem " + naoTem.map((k) => FAM[k].l).join(" nem ") + ". Abra um cross-sell no Pipeline." : "A conta já tem todas as famílias.",
+      crossTxt: naoTem.length ? e.nome + " ainda não tem " + naoTem.map((k) => fam(k).l).join(" nem ") + ". Abra um cross-sell no Pipeline." : "A conta já tem todas as famílias.",
       saude, stripe, fin,
       pessoasTop: pessoas.slice(0, 4), pessoas,
       pesVerTodas: pessoas.length > 4 ? "Ver todas as " + pessoas.length + " pessoas" : "Ver pessoas da conta",
@@ -823,7 +824,7 @@ class ClienteLigada extends ClienteLiga {
         tipos: (v.nv.tipos ?? []).map((t: any, i: number) => ({ ...t, ctx: [
           fams[0]?.itens[0] ? "Hoje: " + fams[0].itens[0].qtd + " × " + fams[0].itens[0].nome : "",
           (fams[0]?.itens ?? []).map((x) => x.nome).slice(0, 2).join(" + "),
-          naoTem.length ? "Ainda não tem: " + naoTem.map((k) => FAM[k].l).join(", ") : "Já tem todas as famílias",
+          naoTem.length ? "Ainda não tem: " + naoTem.map((k) => fam(k).l).join(", ") : "Já tem todas as famílias",
           proxRen ? "Vence em " + diasAte(proxRen.d!) + " dias · " + dmy(proxRen.d) : "Sem data de vencimento",
         ][i] ?? t.ctx })),
         efeitos: (v.nv.efeitos ?? []).map((x: any, i: number) => i === 1 && !/Novo contrato/.test(x.t) ? { ...x, s: "Ao ganhar, altera a assinatura atual no Stripe" } : x),

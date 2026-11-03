@@ -164,11 +164,14 @@ class Logica extends React.Component<any, any> {
       tel: "M13.8 16.6a1 1 0 0 0 1.2-.3l.4-.5A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.5.4a1 1 0 0 0-.3 1.2 14 14 0 0 0 6.4 6.4z",
       cal: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", video: "m16 10 5-3v10l-5-3zM4 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z", clip: "M21.4 11.1 12.2 20.3a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" };
     const FAM = { CALLFACE_AI: { l: "Callface AI", cor: "#fe4f2b", d: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z", tile: ["#fff6f4", "#c2330f"] },
-      PABX: { l: "PABX", cor: "#ff9f85", d: I.tel, tile: ["#12171d", "#fff"] }, WHITE_LABEL: { l: "White Label", cor: "#ffd5c8", d: I.layers, tile: ["#eeeff3", "#1f252c"] } };
+      PABX: { l: "PABX", cor: "#ff9f85", d: I.tel, tile: ["#12171d", "#fff"] }, WHITE_LABEL: { l: "White Label", cor: "#ffd5c8", d: I.layers, tile: ["#eeeff3", "#1f252c"] },
+      ASSISTANT: { l: "Callface Assistant", cor: "#1fae8f", d: I.layers, tile: ["#e7f6f2", "#13745e"] } };
     const PK = ["CALLFACE_AI", "PABX", "WHITE_LABEL", "ASSISTANT"];
     const SKU = { CALLFACE_AI: [["CF-STARTER", "Callface AI Starter", "Plano", "usuários", 189, false], ["CF-FULL", "Callface AI Full", "Plano", "usuários", 349, false], ["CF-AG-ATD", "Agente de IA · Atendimento", "Agente", "agentes", 490, false], ["CF-AG-SDR", "Agente de IA · SDR", "Agente", "agentes", 690, false]],
       PABX: [["PX-ESS", "PABX Cloud Essencial", "Plano", "ramais", 39, false], ["PX-PRO", "PABX Cloud Pro", "Plano", "ramais", 59, false], ["PX-GRAV", "Gravação de chamadas", "Add-on", "pacote", 290, true], ["PX-URA", "URA inteligente", "Add-on", "pacote", 390, true]],
-      WHITE_LABEL: [["WL-PLAT", "White Label · Plataforma", "Plano", "plataforma", 3900, true], ["WL-REV", "Licença de revenda", "Licença", "clientes finais", 190, false], ["WL-DOM", "Domínio e marca própria", "Add-on", "pacote", 490, true]] };
+      WHITE_LABEL: [["WL-PLAT", "White Label · Plataforma", "Plano", "plataforma", 3900, true], ["WL-REV", "Licença de revenda", "Licença", "clientes finais", 190, false], ["WL-DOM", "Domínio e marca própria", "Add-on", "pacote", 490, true]],
+      // Todo item de PK precisa de catálogo: `escolher` e `FAM` leem a chave sem checar, e uma família sem entrada derruba a tela.
+      ASSISTANT: [["AS-PLAT", "Callface Assistant · Plataforma", "Plano", "plataforma", 890, true], ["AS-USR", "Callface Assistant · Usuário", "Plano", "usuários", 120, false], ["AS-ADD", "Callface Assistant · Add-on", "Add-on", "pacote", 290, true]] };
     const escolher = (k, budget, sd) => { let pk;
       if (k === "CALLFACE_AI") pk = budget > 3000 ? [1, 0, 2] : budget > 1500 ? [0, 2] : [0];
       else if (k === "PABX") pk = budget > 1500 ? [1, 2, 3] : budget > 800 ? [0, 2] : [0];
