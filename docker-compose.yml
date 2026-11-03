@@ -85,7 +85,12 @@ services:
     # 30/10/2026: as sessões do WhatsApp vieram do wuzapi do CRM legado, que roda
     # 1.0.8. Esta é a MESMA imagem: subir 1.0.9 por cima rodaria migração de schema
     # no banco de sessões, e sessão perdida significa reparear no celular.
-    image: asternic/wuzapi@sha256:9849d36d8c4e336af6f3b4ce2011b471f303590922d1b4604f12cbae5487ec01
+    # 03/11/2026: o WhatsApp recusou essa imagem (ClientOutdated, desde 02/11
+    # 19:50) e as 4 sessões ativas caíram, sem reconectar nem à mão. Subido para
+    # 1.1.0 (26/10/2026), com backup do banco callface_wuzapi antes; as migrações
+    # 13 a 15 do wuzapi rodaram e as 4 sessões voltaram sem QR. NÃO voltar ao
+    # digest 9849d36d: o banco já está migrado.
+    image: asternic/wuzapi@sha256:d9139ddcd5b3293e7ba7cd9af210b39adc6eafb16a0e23e84f4fea0f385395be
     logging: *log
     container_name: callface-${STACK:-crm2-dev}-wuzapi
     restart: unless-stopped
