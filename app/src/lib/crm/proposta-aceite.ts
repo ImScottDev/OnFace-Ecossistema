@@ -21,6 +21,7 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { atividades, propostas, propostaGrupoComercial, auditLog, contratos } from "@/lib/db/schema";
 import { publicarEvento } from "@/lib/events/outbox";
 import { syncOportunidadeItensFromProposta } from "@/lib/crm/composicao-comercial";
+import { syncNegocioValoresFromPropostas } from "@/lib/crm/sync-negocio-valores";
 import { formarGruposComerciais, vincularContratoAoGrupo, vincularContratoPreparadoAoGrupo, marcarAguardandoValidacaoManual, type GrupoComercialRow } from "@/lib/crm/grupo-comercial";
 import { gerarContratoDeTemplate, enviarContratoParaAssinatura } from "@/lib/crm/contrato-template";
 import { criarCheckoutParaGrupo } from "@/lib/crm/checkout";
@@ -155,6 +156,15 @@ export async function processarAceiteDaProposta(opts: {
     return formarGruposComerciais(opts.propostaId, tx);
   });
   if (!grupos) return { ok: false, error: "Essa proposta acabou de receber outra resposta." };
+
+  // O valor do negócio vira o do que foi ACEITO no instante do aceite. Sem isto o `valor_total` ficava na
+  // soma de previsão (aceita + alternativas que ninguém aceitou) e o ganho, que o copia para `mrr_fechado`,
+  // entrava no Início e nos relatórios com a proposta expirada junto: GK representações, 03/11/2026,
+  // R$ 789,80 para uma proposta aceita de R$ 89,90. Best-effort: o aceite já está gravado.
+  if (proposta.negocioId) {
+    await syncNegocioValoresFromPropostas(proposta.negocioId).catch((e) =>
+      console.error("[proposta-aceite] valor do negócio não recalculou após o aceite:", e));
+  }
 
   // Módulo Vendas: `aceita_em`, linha do tempo comercial e o ProposalAccepted
   // canônico (ponte-evento-canonico, com ids de pessoa/oportunidade e entrega à
