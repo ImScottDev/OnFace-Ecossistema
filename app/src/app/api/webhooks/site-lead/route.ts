@@ -31,6 +31,7 @@ import { clean, lerFormularioSite, processarFormularioSite } from "@/lib/captaca
 const ORG_SLUG = "scott-studio"; // slug interno da org Callface
 const ALLOWED_ORIGINS = [
   "https://site.callface.io",
+  "https://lp.callface.ai", // LPs de campanha (Black Friday 2026 em diante)
   "https://callface.io",
   "https://www.callface.io",
 ];
