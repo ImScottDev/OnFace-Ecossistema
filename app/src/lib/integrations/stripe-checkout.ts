@@ -318,17 +318,48 @@ export function validarValorDoItem(item: CheckoutItem): void {
  * ao serviço; o Price oficial segue gravado na linha da proposta como
  * referência de tabela.
  */
+/**
+ * Venda sem negociação usa o Price OFICIAL; só o valor negociado cria preço novo.
+ *
+ * `price_data` cria um Price avulso a cada venda, e o id muda toda vez. Quem
+ * libera o produto do outro lado se apoia nesse id: em 03/11/2026 duas vendas
+ * do mesmo plano, ambas a R$ 89,90, saíram com ids diferentes e nenhuma casou
+ * com o Price de tabela (relato do Gui). Cobrança e produto estavam certos — o
+ * que quebrou foi a conferência pelo id.
+ *
+ * Quando o valor combinado é exatamente o do Price oficial, não há motivo para
+ * preço novo: manda-se o próprio Price. Qualquer diferença — para mais ou para
+ * menos — continua em `price_data`, que foi o que destravou vender fora da
+ * tabela em 23/10/2026. Aí o id novo é inevitável: o oficial tem outro valor.
+ */
+export function linhaUsaPrecoOficial(item: CheckoutItem, ehRecorrente: boolean): boolean {
+  if (!item.stripePriceId) return false;
+  // Valor escolhido pelo cliente nunca tem Price fixo que o represente.
+  if (item.valorPersonalizado) return false;
+  // Sem tabela registrada não dá para afirmar que o valor é o oficial.
+  if (!Number.isFinite(item.valorTabela) || item.valorTabela <= 0) return false;
+  if (amountInCents(item.valorUnitario) !== amountInCents(item.valorTabela)) return false;
+  // Recorrente precisa do intervalo do Price oficial; sem ele, não arrisca.
+  if (ehRecorrente && !item.recurringInterval) return false;
+  return true;
+}
+
 export function adicionarLinhasDoCheckout(form: URLSearchParams, recorrentes: CheckoutItem[], avulsos: CheckoutItem[], moeda: string): void {
   if (recorrentes.some((i) => i.valorPersonalizado)) throw new Error("Preço de valor escolhido só pode ser avulso.");
   for (const item of [...recorrentes, ...avulsos]) validarValorDoItem(item);
   [...recorrentes, ...avulsos].forEach((item, index) => {
     if (!item.stripeProductId) throw new Error(`Item '${item.nome}' sem produto oficial no Stripe.`);
     const prefixo = `line_items[${index}]`;
-    form.append(`${prefixo}[price_data][product]`, item.stripeProductId);
-    form.append(`${prefixo}[price_data][currency]`, (item.moeda || moeda).toLowerCase());
-    form.append(`${prefixo}[price_data][unit_amount]`, String(amountInCents(item.valorUnitario)));
-    if (recorrentes.includes(item)) {
-      form.append(`${prefixo}[price_data][recurring][interval]`, item.recurringInterval || "month");
+    const ehRecorrente = recorrentes.includes(item);
+    if (linhaUsaPrecoOficial(item, ehRecorrente)) {
+      form.append(`${prefixo}[price]`, item.stripePriceId);
+    } else {
+      form.append(`${prefixo}[price_data][product]`, item.stripeProductId);
+      form.append(`${prefixo}[price_data][currency]`, (item.moeda || moeda).toLowerCase());
+      form.append(`${prefixo}[price_data][unit_amount]`, String(amountInCents(item.valorUnitario)));
+      if (ehRecorrente) {
+        form.append(`${prefixo}[price_data][recurring][interval]`, item.recurringInterval || "month");
+      }
     }
     form.append(`${prefixo}[quantity]`, String(Math.max(1, Math.round(item.quantidade || 1))));
   });
