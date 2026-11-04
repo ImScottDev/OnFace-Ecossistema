@@ -8,7 +8,7 @@
  * falhou (`reprocessar.ts`) chama as MESMAS funções com o corpo guardado.
  */
 import { db } from "@/lib/db";
-import { leads } from "@/lib/db/schema";
+import { atividades, leads } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { syncPessoaFromLead } from "@/lib/crm/sync-domain-model";
 import { criarLead, garantirAtividadePrimeiroContato } from "@/lib/vendas/pre-vendas";
@@ -28,6 +28,34 @@ export function clean(v: unknown): string | null {
 
 /** Mescla as respostas no `campos_custom` do lead sem apagar o que já está lá
  *  (qualificação, custom de Ajustes): a resposta do formulário manda no conflito. */
+/**
+ * Cada submissão do formulário vira UMA atividade na ficha.
+ *
+ * Sem isto, quem já estava no CRM convertia na LP e nada aparecia: o lead era
+ * reaproveitado, as respostas iam para `campos_custom` e a linha do tempo
+ * continuava igual — o time não tinha como saber que a pessoa pediu contato de
+ * novo. `garantirAtividadePrimeiroContato` não cobre o caso porque ela existe
+ * para garantir o PRIMEIRO contato, e quem já tinha uma não ganhava nada.
+ */
+async function registrarConversao(organizacaoId: string, leadId: string, body: Record<string, unknown>, landingPage: string | null) {
+  const campanha = clean(body.origem_campanha) ?? clean(body.formulario) ?? clean(body.utmCampaign) ?? "site";
+  const detalhe = [
+    clean(body.interesse) && `Interesse: ${clean(body.interesse)}`,
+    clean(body.tamanho_do_time) && `Time comercial: ${clean(body.tamanho_do_time)}`,
+    clean(body.plano_de_interesse) && `Plano: ${clean(body.plano_de_interesse)}`,
+    clean(body.qualificado_por) && `Qualificado por: ${clean(body.qualificado_por)}`,
+    landingPage,
+  ].filter(Boolean).join(" · ");
+  await db.insert(atividades).values({
+    organizacaoId,
+    leadId,
+    tipo: "nota",
+    titulo: `Converteu no formulário: ${campanha}`,
+    descricao: detalhe || null,
+    dados: { origem: "site", campanha, landingPage },
+  }).catch(() => undefined); // registro de linha do tempo não derruba a captura do lead
+}
+
 async function guardarRespostas(leadId: string, respostas: Record<string, string>) {
   if (Object.keys(respostas).length === 0) return;
   await db
@@ -124,6 +152,7 @@ export async function processarFormularioSite(entrada: {
       })
       .where(eq(leads.id, existing.id));
     await guardarRespostas(existing.id, respostas);
+    await registrarConversao(organizacaoId, existing.id, body, landingPage);
     await syncPessoaFromLead(existing.id); // F1/dual-write, best-effort
     await garantirAtividadePrimeiroContato({
       organizacaoId,
@@ -176,6 +205,7 @@ export async function processarFormularioSite(entrada: {
   // As respostas vão para o lead depois de criado: `criarLead` não grava
   // `campos_custom` (e pode devolver um lead já aberto, que também recebe).
   await guardarRespostas(criado.leadId, respostas);
+  await registrarConversao(organizacaoId, criado.leadId, body, landingPage);
 
   // CUTOVER (fase 16): o mesmo fato no modelo canônico. `criarLead` acima já é
   // o motor canônico do CRM atual; esta chamada acrescenta aquisição, touchpoint
