@@ -43,6 +43,7 @@ import { executeAgent } from "@/lib/ai-platform/runtime/execute-agent";
 import { optOutAtivo } from "@/lib/ai-platform/operacao/politica-canal";
 import { sendResendEmail, isResendConfigured } from "@/lib/email/resend";
 import { enviarParaDiscagem } from "@/lib/integrations/callface";
+import { contextoDaEntidade, dispararAgenteDeVoz } from "@/lib/integrations/callface-agente-voz";
 import { publicarEvento } from "@/lib/events/outbox";
 
 // ─── Tipos do grafo de steps (armazenado em cadence_definitions.steps) ─────
@@ -905,7 +906,22 @@ registrarAdapter("crm_add_note", async (ctx) => {
   return { sucesso: true, resultado: { atividadeId: row.id } };
 });
 
+/**
+ * Ligação pela Callface.
+ *
+ * Caminho preferido: o AGENTE DE VOZ, que atende sabendo nome, e-mail já
+ * cadastrado, empresa e origem (campanha de um contato por lead, onde cada
+ * variável do agente é uma coluna). Sem o agente configurado no ambiente, cai
+ * no webhook de entrada de sempre, que só leva nome e telefone.
+ */
 registrarAdapter("crm_callface_call", async (ctx) => {
+  if (process.env.CALLFACE_AGENTE_VOZ_ID) {
+    const contexto = await contextoDaEntidade(ctx.entityType, ctx.entityId, ctx.organizacaoId);
+    if (!contexto) return { sucesso: false, erro: "entidade sem telefone" };
+    const r = await dispararAgenteDeVoz(contexto);
+    if (r.ok) return { sucesso: true, resultado: { detalhe: r.detalhe, campanha: r.campanha ?? null } };
+    return { sucesso: false, erro: r.detalhe };
+  }
   const contato = await resolverContatoDaEntidade(ctx.entityType, ctx.entityId, ctx.organizacaoId);
   if (!contato.telefone) return { sucesso: false, erro: "entidade sem telefone" };
   const result = await enviarParaDiscagem({ nome: contato.nome || "Contato", telefone: contato.telefone });

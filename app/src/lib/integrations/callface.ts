@@ -115,6 +115,10 @@ async function matchLeadByPhone(db: Db, orgId: string, destinationNumber: string
       responsavelId: leads.responsavelId,
       negocioAtivoId: leads.negocioAtivoId,
       agendaCloserId: leads.agendaCloserId,
+      // Etapa atual: o resultado da ligação só move lead que ainda está em
+      // Pré-vendas aberta. Sem isto, qualificar depois de virar oportunidade
+      // seria andar para trás no funil.
+      estagioPreVendas: leads.estagioPreVendas,
     })
     .from(leads)
     .where(
@@ -520,6 +524,35 @@ export async function processCallfaceCallEvent(db: Db, payload: CallfaceCallPayl
     if (lead.negocioAtivoId) {
       await db.update(negocios).set({ updatedAt: new Date() })
         .where(and(eq(negocios.id, lead.negocioAtivoId), eq(negocios.organizacaoId, orgId)));
+    }
+
+    /* O que o agente de voz colheu, que o webhook não manda.
+       Os campos de Data Collection, a qualificação com motivo e evidência e os
+       próximos passos só existem em `GET /calls/{id}`. Buscamos e gravamos a
+       qualificação no lead; se a ligação qualificou e NÃO combinou reunião
+       (esse caso é do auto-agendamento logo abaixo), o lead anda para
+       Qualificado sozinho, com o registro de quem o moveu.
+       Best-effort: falhar aqui não pode derrubar o processamento da ligação. */
+    if (callId && ["novo", "em_contato", "qualificacao"].includes(String(lead.estagioPreVendas ?? ""))) {
+      try {
+        const { buscarInsightsDaLigacao } = await import("./callface-agente-voz");
+        const bruto = await buscarInsightsDaLigacao(callId);
+        const ins = bruto ? (await import("./callface-insights")).lerInsights(bruto) : null;
+        if (ins) {
+          const insights = await import("./callface-insights");
+          const preVendas = await import("@/lib/vendas/pre-vendas");
+          const ator = { tipo: "SYSTEM" as const, usuarioId: null, ref: "callface-agente-voz" };
+          const q = insights.qualificacaoDoLead(ins);
+          if (Object.keys(q).length) {
+            await preVendas.salvarQualificacao({ organizacaoId: orgId, leadId: lead.id, qualificacao: q, ator });
+          }
+          if (insights.ligacaoQualificouOLead(ins) && !insights.temReuniaoCombinada(ins)) {
+            await preVendas.qualificar({ organizacaoId: orgId, leadId: lead.id, ator });
+          }
+        }
+      } catch (e) {
+        console.error("[Callface] insights da ligação não aplicados (best-effort):", e);
+      }
     }
 
     // Reunião combinada detectada pela IA: tenta qualificar + agendar DE VERDADE
