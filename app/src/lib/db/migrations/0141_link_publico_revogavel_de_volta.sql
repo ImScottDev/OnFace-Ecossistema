@@ -1,0 +1,11 @@
+-- Recoloca `propostas.link_publico_revogado_em`, que o código usa e o banco não
+-- tinha: toda abertura de proposta quebrava na consulta e a página, que trata
+-- qualquer falha como "não encontrado", devolvia 404 ao time (04/11/2026).
+--
+-- A coluna veio na 0136 (27/10, link público revogável). Em 30/10 um commit meu
+-- levou junto migrations de outra branch; ao revertê-lo, as migrations saíram da
+-- main e o código que depende desta voltou depois por outro commit. O schema
+-- ficou atrás do código.
+--
+-- Idempotente: em produção a coluna já foi recriada à mão para destravar o time.
+ALTER TABLE propostas ADD COLUMN IF NOT EXISTS link_publico_revogado_em timestamptz;
