@@ -68,6 +68,19 @@ Para achar quem tem bônus pendente, filtre as assinaturas por
 
 ## Operação
 
+No servidor, os dois scripts estão compilados na imagem (`app/dist`), porque
+uma campanha precisa ser ligada, conferida e encerrada no ambiente onde ela
+vende — não só na máquina de quem escreveu:
+
+```bash
+# dentro do diretório do ambiente, ex.: /opt/callface/crm2-dev
+sudo docker compose run --rm api node app/dist/seed-campanha-black-friday-2026.mjs --dry-run
+sudo docker compose run --rm api node app/dist/seed-campanha-black-friday-2026.mjs
+sudo docker compose run --rm api node app/dist/smoke-campanha-promocional.mjs
+```
+
+Na máquina de desenvolvimento:
+
 ```bash
 # conferir sem gravar
 npx tsx --env-file=.env src/scripts/seed-campanha-black-friday-2026.ts --dry-run

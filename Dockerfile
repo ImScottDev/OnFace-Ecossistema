@@ -76,6 +76,8 @@ RUN cd app && pnpm dlx esbuild@0.28.2 \
     smoke-claude-subscription-tools=src/scripts/smoke-claude-subscription-tools.ts \
     smoke-nexo-claude-subscription=src/scripts/smoke-nexo-claude-subscription.ts \
     smoke-documenso-e2e=src/scripts/testar-documenso-local.ts \
+    seed-campanha-black-friday-2026=src/scripts/seed-campanha-black-friday-2026.ts \
+    smoke-campanha-promocional=src/scripts/smoke-campanha-promocional.ts \
     --bundle --platform=node --format=esm --target=node22 --outdir=dist \
     --out-extension:.js=.mjs --packages=external --alias:@=./src \
     --alias:@onface/acquisition=../packages/domain/acquisition/index.ts \
