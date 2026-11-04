@@ -16,6 +16,7 @@ import { FOTO_VAZIA } from "@/lib/vendas/auditoria-comercial";
 import { calcularItens, validarDataValidade, validarMoeda } from "@/lib/crm/proposta-regras";
 import { descricaoDoProduto, variacaoAmigavel } from "@/lib/catalogo/rotulos";
 import { oportunidadeComOferta } from "@/lib/vendas/oferta-da-oportunidade";
+import { aplicarOferta } from "@/lib/catalogo/campanha";
 
 export interface ItemEntrada {
   servicoCatalogoId?: string | null;
@@ -37,6 +38,13 @@ export interface ItemEntrada {
    * catálogo. É isso que faz desconto não virar produto/price novo.
    */
   catalogoPrecoId?: string | null;
+  /**
+   * Oferta de campanha escolhida (migration 0142). Quando vem, o preço do
+   * item é o da campanha — conferido no servidor contra a vigência e contra o
+   * price, nunca aceito como o cliente mandou. `valorTabela` continua sendo o
+   * preço oficial do catálogo, para o desconto da campanha ficar auditável.
+   */
+  campanhaPromocionalPrecoId?: string | null;
 }
 
 /**
@@ -187,6 +195,33 @@ export async function padronizarItensPeloCatalogo<T extends ItemEntrada & { item
   });
 }
 
+/**
+ * Troca o preço das linhas que vieram de uma oferta de campanha.
+ *
+ * Roda ANTES de `calcularItens` porque é o `valorUnitario` que alimenta
+ * subtotal e totais. O desconto manual do vendedor continua valendo por cima,
+ * como em qualquer linha: a campanha define o preço de partida, não um piso.
+ *
+ * Linha sem `campanhaPromocionalPrecoId` não é tocada — é o caso de toda venda fora de
+ * campanha, que continua exatamente como era.
+ */
+async function aplicarCampanhaNosItens<T extends ItemEntrada & { itemExistenteId?: string | null }>(
+  organizacaoId: string,
+  itens: T[],
+): Promise<T[]> {
+  if (!itens.some((i) => i.campanhaPromocionalPrecoId && !i.itemExistenteId)) return itens;
+  const agora = new Date();
+  return Promise.all(itens.map(async (i) => {
+    if (!i.campanhaPromocionalPrecoId || i.itemExistenteId) return i;
+    if (!i.catalogoPrecoId) {
+      throw new RegraDeNegocio("campanha_sem_catalogo", `O item "${i.nome}" tem oferta de campanha mas não tem preço do catálogo.`);
+    }
+    const r = await aplicarOferta({ organizacaoId, ofertaId: i.campanhaPromocionalPrecoId, catalogoPrecoId: i.catalogoPrecoId, agora });
+    if (!r.ok) throw new RegraDeNegocio("campanha_nao_aplicavel", `Não dá para vender "${i.nome}" nesta oferta: ${r.motivo}.`);
+    return { ...i, valorUnitario: r.preco.valorUnitario };
+  }));
+}
+
 /** Porta única antes de gravar linhas: catálogo, moeda, família e conta (subtotal/totais) validados juntos. */
 export async function prepararItensDaProposta<T extends ItemEntrada & { itemExistenteId?: string | null }>(
   opts: { organizacaoId: string; moeda: string; negocioId: string | null },
@@ -195,7 +230,8 @@ export async function prepararItensDaProposta<T extends ItemEntrada & { itemExis
   const moeda = validarMoeda(opts.moeda);
   const familia = opts.negocioId ? (await resolverFamiliaDoNegocio(opts.organizacaoId, opts.negocioId)).familia : null;
   const padronizados = await padronizarItensPeloCatalogo({ organizacaoId: opts.organizacaoId, moeda, familia }, itens);
-  return calcularItens(padronizados);
+  const comCampanha = await aplicarCampanhaNosItens(opts.organizacaoId, padronizados);
+  return calcularItens(comCampanha);
 }
 
 type ItemCalculado = ItemEntrada & { subtotal: number; ordem: number };
@@ -277,6 +313,10 @@ export async function inserirItensDaProposta(tx: Tx, propostaId: string, moeda: 
         // Congelados com o resto: o aceite lê da linha, não do catálogo ao vivo.
         exigeContrato: preco?.exigeContrato,
         periodo: preco?.periodo,
+        // De qual oferta de campanha a linha nasceu. É o que leva o bônus da
+        // Black até a metadata do Stripe no fechamento, e o que permite somar
+        // quanto a campanha vendeu sem adivinhar pelo valor.
+        campanhaPromocionalPrecoId: item.campanhaPromocionalPrecoId ?? null,
       };
     })
   );

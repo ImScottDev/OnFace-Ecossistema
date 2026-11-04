@@ -95,6 +95,11 @@ export function itensParaCriar(itens: any[]): {
     bons.push({
       catalogoPrecoId: legado ? "" : String(it.preco),
       itemExistenteId: legado ? String(it.preco).slice(5) : null,
+      /* A oferta de campanha escolhida (migration 0142). Vai só o id: o preço
+         promocional é recalculado no servidor, contra a vigência e contra o
+         price, porque a tela pode estar aberta desde antes de a campanha
+         acabar. */
+      campanhaPromocionalPrecoId: it.oferta ? String(it.oferta) : null,
       nome: String(it.nome ?? "").trim(),
       descricao: String(it.desc ?? "").trim() || null,
       tipo: tipoDoItem(String(it.natureza ?? "")),

@@ -16,3 +16,15 @@ export {
   type GatilhoPagamento,
   type Decisao,
 } from "./policies/politica-oferta";
+
+export {
+  campanhaVigente,
+  resolverPrecoDaCampanha,
+  metadataDaCampanha,
+  metadataDasCampanhas,
+  type Campanha,
+  type OfertaDeCampanha,
+  type DecisaoCampanha,
+  type PrecoResolvido,
+  type ResultadoPreco,
+} from "./policies/politica-campanha";

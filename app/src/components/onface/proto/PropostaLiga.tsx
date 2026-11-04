@@ -185,7 +185,16 @@ class Logica extends React.Component<any, any> {
   natDe(p, pr) { return pr.int === "mes" ? "MRR" : pr.int === "ano" ? "ARR" : p.tipo === "setup" ? "SETUP" : p.tipo === "hardware" ? "HARDWARE" : "ONE_TIME"; }
   prodDe(id) { const C = this.catalogo(); for (const k in C) { const p = C[k].find(x => x.id === id); if (p) return p; } return null; }
   faixaPara(p, q) { const fx = p.precos.filter(x => x.min != null); if (!fx.length) return null; return fx.find(x => q >= x.min && (x.max == null || q <= x.max)) || fx[0]; }
-  novoItem(p, pr, qtd) { return { prod: p.id, preco: pr.id, nome: nomeDaLinha(p, pr), desc: p.desc, natureza: this.natDe(p, pr), valor: String(pr.v).replace(".", ","), qtd: String(qtd || p.qtd || 1), descTipo: "pct", descVal: "" }; }
+  /* `oferta` = id da oferta de campanha promocional (migration 0142). Quando
+     vem, a linha já nasce pelo preço da campanha e guarda de qual oferta veio;
+     o servidor recalcula o valor na hora de gravar, então o que está aqui é
+     só o que o vendedor vê enquanto monta. */
+  novoItem(p, pr, qtd, oferta) {
+    const of = oferta && (pr.ofertas || []).find(x => x.id === oferta);
+    return { prod: p.id, preco: pr.id, oferta: of ? of.id : null, nome: nomeDaLinha(p, pr), desc: p.desc,
+      natureza: this.natDe(p, pr), valor: String(of ? of.valor : pr.v).replace(".", ","),
+      qtd: String(qtd || p.qtd || 1), descTipo: "pct", descVal: "" };
+  }
   descItem(it, b) { const v = this.num(it.descVal); if (!v) return 0; return it.descTipo === "valor" ? Math.min(b, v) : b * Math.min(100, v) / 100; }
 
   /** Trava de reentrada do salvar/enviar: o segundo clique, ou o clique duplo, não grava de novo. */
@@ -243,7 +252,9 @@ class Logica extends React.Component<any, any> {
     /* gravado || contato: um rascunho que guardou `para`/`wa` vazios não esconde o contato real (vale para propostas e versões que já existem). */
     const deProp = (p) => { const r = Object.assign({}, base, semIdNoEditor(p.editor || {}), {
       titulo: (p.editor && p.editor.titulo) || base.titulo, validade: p.validade || 30, fechamento: p.modo === "PREPAID" ? "checkout" : ((p.editor && p.editor.fechamento) || "contrato"),
-      itens: (p.itens || []).map(it => ({ prod: it.prod, preco: it.preco, nome: it.nome, desc: it.desc || "", natureza: it.natureza || "MRR", valor: String(it.valor).replace(".", ","), qtd: String(it.qtd || 1), descTipo: it.descTipo || "pct", descVal: it.descVal || "" }))
+      /* `oferta` atravessa: um rascunho reaberto tem de continuar sendo da
+         mesma campanha, senão o bônus some da metadata do Stripe no aceite. */
+      itens: (p.itens || []).map(it => ({ prod: it.prod, preco: it.preco, oferta: it.oferta || null, nome: it.nome, desc: it.desc || "", natureza: it.natureza || "MRR", valor: String(it.valor).replace(".", ","), qtd: String(it.qtd || 1), descTipo: it.descTipo || "pct", descVal: it.descVal || "" }))
     }); return comDestinatario(r, this.destinatarioDe(r.contato)); };
     const Es = this.E, pv = Es && Es.parametro ? Es.parametro("ver") : null;
     if (pv != null && pv !== "" && props[+pv]) { const pp = props[+pv]; return this.setState({ d: Object.assign(deProp(pp), { id: idAoAbrir("ver", pp), codigo: pp.codigo, versao: pp.versao || 1 }), idx: +pv, modo: "ver", expandido: true, sujo: false, verVig: pp === vig }); }
@@ -325,7 +336,7 @@ class Logica extends React.Component<any, any> {
     const ct = Object.assign({}, d.ct || {}); DONOS.forEach(k => { delete ct[k]; });
     return Object.assign({ codigo: d.codigo, versao: d.versao, status, modo: d.fechamento === "checkout" ? "PREPAID" : "CONTRACT", validade: d.validade,
       signatarios: d.fechamento === "contrato" ? this.signatariosDe(d) : [],
-      itens: d.itens.filter(it => (it.nome || "").trim()).map(it => ({ prod: it.prod, preco: it.preco, nome: it.nome.trim(), desc: it.desc || "", natureza: it.natureza, valor: n(it.valor), qtd: n(it.qtd) || 1, descTipo: it.descTipo || "pct", descVal: it.descVal || "", liq: n(it.valor) * (n(it.qtd) || 1) - this.descItem(it, n(it.valor) * (n(it.qtd) || 1)) })),
+      itens: d.itens.filter(it => (it.nome || "").trim()).map(it => ({ prod: it.prod, preco: it.preco, oferta: it.oferta || null, nome: it.nome.trim(), desc: it.desc || "", natureza: it.natureza, valor: n(it.valor), qtd: n(it.qtd) || 1, descTipo: it.descTipo || "pct", descVal: it.descVal || "", liq: n(it.valor) * (n(it.qtd) || 1) - this.descItem(it, n(it.valor) * (n(it.qtd) || 1)) })),
       editor: JSON.parse(JSON.stringify(Object.assign({}, semIdNoEditor(d), { itens: undefined, ct }))) }, extra || {});
   }
 
@@ -567,11 +578,13 @@ class Logica extends React.Component<any, any> {
         familia: FAM[catFam],
         produtos: CAT[catFam] || [],
         noProposta: d.itens.reduce((m, x) => { if (x.preco) m[x.preco] = (m[x.preco] || 0) + 1; return m; }, {}),
-        onAdicionar: (prodId, precoId) => {
+        onAdicionar: (prodId, precoId, ofertaId) => {
           const p = (CAT[catFam] || []).find(x => x.id === prodId); const pr = p && p.precos.find(x => x.id === precoId);
           if (!p || !pr) return;
-          this.setState(s => ({ d: Object.assign({}, s.d, { itens: s.d.itens.concat(this.novoItem(p, pr, 1)) }), sujo: true, catAberto: true }));
-          this.diz(p.nome + (p.precos.length > 1 ? " · " + (pr.variacao || pr.d) : "") + " adicionado", "ok");
+          const of = ofertaId && (pr.ofertas || []).find(x => x.id === ofertaId);
+          this.setState(s => ({ d: Object.assign({}, s.d, { itens: s.d.itens.concat(this.novoItem(p, pr, 1, ofertaId)) }), sujo: true, catAberto: true }));
+          this.diz(p.nome + (p.precos.length > 1 ? " · " + (pr.variacao || pr.d) : "")
+            + (of ? " na " + of.campanhaNome + (of.condicao ? " (" + of.condicao + ")" : "") : "") + " adicionado", "ok");
         }
       }),
       addLivre: () => this.setState(s => ({ d: Object.assign({}, s.d, { itens: s.d.itens.concat({ nome: "", desc: "", natureza: "ONE_TIME", valor: "", qtd: "1" }) }), sujo: true }))

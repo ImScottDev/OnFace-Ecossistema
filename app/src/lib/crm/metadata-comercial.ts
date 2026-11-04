@@ -21,6 +21,8 @@ import { and, eq } from "drizzle-orm";
 import {
   propostaGrupoComercial, propostas, negocios, leads, empresas, oportunidades, oportunidadeItens, pessoas,
 } from "@/lib/db/schema";
+import { campanhasDoGrupo } from "@/lib/catalogo/campanha";
+import { metadataDasCampanhas } from "@onface/catalog";
 
 /** Ids internos que identificam o objeto no ONFACE. Tudo opcional, menos a organização. */
 export interface IdsStripe {
@@ -201,8 +203,17 @@ export async function montarMetadataComercial(grupoId: string): Promise<Metadata
     leadId,
   });
 
+  /* Campanha de PREÇO do que está sendo cobrado (Black Friday e afins), com o
+     bônus que alguém vai precisar liberar na mão depois do pagamento. Entra
+     aqui, e não em cada chamador, porque daqui ela alcança os dois caminhos de
+     cobrança — assinatura faturada e Checkout Session — e também o registro
+     local do checkout. Não confundir com `crm_campaign`, logo abaixo, que é o
+     utm_campaign do lead. */
+  const oferta = metadataDasCampanhas(await campanhasDoGrupo(grupoId));
+
   return {
     ...padrao,
+    ...oferta,
     crm_proposal_id: grupo.propostaId,
     crm_opportunity_id: oportunidade?.id ?? "",
     crm_company_id: empresa?.id ?? "",

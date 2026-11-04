@@ -72,6 +72,8 @@ export interface ItemParaCriar {
   quantidade: number;
   valorUnitario: number;
   desconto: number;
+  /** Oferta de campanha promocional escolhida (migration 0142). */
+  campanhaPromocionalPrecoId?: string | null;
 }
 
 export interface AcoesProposta {

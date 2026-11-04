@@ -639,7 +639,7 @@ export async function acaoCriar(entrada: {
   negocioId: string;
   /** Contato que recebe a proposta, quando a oportunidade não tem um definido. */
   leadId?: string | null;
-  itens: Array<{ catalogoPrecoId: string; nome: string; descricao?: string | null; tipo: "recorrente" | "avulso" | "setup"; quantidade: number; valorUnitario: number; desconto: number }>;
+  itens: Array<{ catalogoPrecoId: string; nome: string; descricao?: string | null; tipo: "recorrente" | "avulso" | "setup"; quantidade: number; valorUnitario: number; desconto: number; campanhaPromocionalPrecoId?: string | null }>;
   observacoes?: string | null;
   prazoContratoMeses?: number | null;
   parcelasSetup?: number | null;
@@ -659,6 +659,8 @@ export async function acaoCriar(entrada: {
 
     const itens: ItemEntrada[] = entrada.itens.map((i, ordem) => ({
       catalogoPrecoId: i.catalogoPrecoId,
+      // A oferta da campanha: o núcleo confere a vigência e sobrescreve o valor.
+      campanhaPromocionalPrecoId: i.campanhaPromocionalPrecoId ?? null,
       nome: i.nome,
       // Vazia, o núcleo grava a descrição do catálogo (comercial do ONFACE, senão a do Stripe).
       descricao: i.descricao ?? null,
@@ -713,6 +715,7 @@ export async function acaoAtualizarRascunho(entrada: {
   itens: Array<{
     catalogoPrecoId?: string | null; itemExistenteId?: string | null; nome: string; descricao?: string | null;
     tipo: "recorrente" | "avulso" | "setup"; quantidade: number; valorUnitario: number; desconto: number;
+    campanhaPromocionalPrecoId?: string | null;
   }>;
   observacoes?: string | null;
   prazoContratoMeses?: number | null;
@@ -739,6 +742,7 @@ export async function acaoAtualizarRascunho(entrada: {
       leadId: entrada.leadId,
       itens: entrada.itens.map((i, ordem) => ({
         catalogoPrecoId: i.catalogoPrecoId ?? null, itemExistenteId: i.itemExistenteId ?? null,
+        campanhaPromocionalPrecoId: i.campanhaPromocionalPrecoId ?? null,
         nome: i.nome, descricao: i.descricao ?? null, tipo: i.tipo, quantidade: i.quantidade, valorUnitario: i.valorUnitario,
         // Em REAIS (total do item), como em `acaoCriar`.
         desconto: i.desconto, descontoTipo: "valor", ordem,

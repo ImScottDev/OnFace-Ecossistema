@@ -29,6 +29,8 @@ import {
   type Ator, type Familia, type ModoFechamento, type NaturezaReceita,
   type StatusProposta, type TipoContratual,
 } from "./dominio";
+import { ofertasVigentesParaPrecos } from "@/lib/catalogo/campanha";
+import { resolverPrecoDaCampanha } from "@onface/catalog";
 
 /* ── Catálogo filtrado pela família (Bloco 03 §2) ──────────────────────── */
 
@@ -49,6 +51,12 @@ export interface ItemCatalogo {
   /** lookup_key do Price: só para detectar variação que é o próprio lookup_key; nunca vai para a tela. */
   lookupKey?: string | null;
   valorPersonalizado?: boolean;
+  /**
+   * Ofertas de campanha promocional vigentes para este price (migration 0142).
+   * Vazio = venda normal. A tela mostra; quem recalcula o valor é o servidor,
+   * no momento de gravar — daqui vai só o `id` da oferta.
+   */
+  ofertas?: Array<{ id: string; campanha: string; campanhaNome: string; condicao: string; valor: number; de: number; descontoPercentual: number; bonusDescricao: string | null }>;
 }
 
 /**
@@ -83,6 +91,10 @@ export async function catalogoDaFamilia(organizacaoId: string, familia: Familia)
      ORDER BY sc.categoria NULLS LAST, sc.nome, cp.ordem, cp.valor, cp.variacao
   `);
 
+  /* Ofertas promocionais vigentes dos prices listados: uma consulta para o
+     catálogo inteiro, não uma por item. */
+  const ofertasPorPreco = await ofertasVigentesParaPrecos(organizacaoId, linhas.map((l) => l.catalogo_preco_id));
+
   return linhas.map((l) => ({
     catalogoPrecoId: l.catalogo_preco_id,
     servicoCatalogoId: l.servico_catalogo_id,
@@ -97,6 +109,17 @@ export async function catalogoDaFamilia(organizacaoId: string, familia: Familia)
     periodo: l.periodo,
     lookupKey: l.lookup_key,
     valorPersonalizado: l.valor_personalizado,
+    ofertas: (ofertasPorPreco.get(l.catalogo_preco_id) ?? []).flatMap((o) => {
+      // Oferta que a política recusa não é oferecida: a tela não pode mostrar
+      // o que o servidor vai negar na hora de salvar.
+      const r = resolverPrecoDaCampanha({ oferta: o.oferta, precoTabela: Number(l.valor) });
+      if (!r.ok) return [];
+      return [{
+        id: o.oferta.id, campanha: o.campanha.codigo, campanhaNome: o.campanha.nome,
+        condicao: o.oferta.condicao, valor: r.preco.valorUnitario, de: r.preco.valorExibidoComoDe,
+        descontoPercentual: r.preco.descontoPercentual, bonusDescricao: o.bonusDescricao,
+      }];
+    }),
   }));
 }
 
@@ -325,7 +348,7 @@ export async function lerPropostasDoNegocio(organizacaoId: string, negocioId: st
     id: string; numero: number; versao: number; status: string; modo: string | null; validade_dias: number | null;
     observacoes: string | null; prazo: number | null; parcelas: number | null; editor: Record<string, unknown> | null; signatarios: unknown;
     itens: Array<{ id: string; preco: string | null; prod: string | null; nome: string; descricao: string | null; natureza: string | null; tipo: string;
-      quantidade: string; valor_unitario: string; desconto: string; desconto_tipo: string }> | null;
+      quantidade: string; valor_unitario: string; desconto: string; desconto_tipo: string; oferta: string | null }> | null;
   }>(sql`
     SELECT p.id::text, p.numero, p.versao, p.status, p.modo_fechamento AS modo, p.validade_dias,
            p.observacoes, p.prazo_contrato_meses AS prazo, p.parcelas, p.editor, p.signatarios,
@@ -333,7 +356,11 @@ export async function lerPropostasDoNegocio(organizacaoId: string, negocioId: st
                      'id', i.id, 'preco', i.catalogo_preco_id, 'prod', i.servico_catalogo_id, 'nome', i.nome,
                      'descricao', i.descricao, 'natureza', i.revenue_nature, 'tipo', i.tipo,
                      'quantidade', i.quantidade, 'valor_unitario', i.valor_unitario,
-                     'desconto', i.desconto, 'desconto_tipo', i.desconto_tipo) ORDER BY i.ordem, i.created_at)
+                     'desconto', i.desconto, 'desconto_tipo', i.desconto_tipo,
+                     -- A oferta de campanha da linha: sem ela, reabrir o
+                     -- rascunho perderia o vínculo e o bônus sumiria da
+                     -- metadata do Stripe no fechamento.
+                     'oferta', i.campanha_promocional_preco_id) ORDER BY i.ordem, i.created_at)
               FROM proposta_itens i WHERE i.proposta_id = p.id) AS itens
       FROM propostas p
      WHERE p.negocio_id = ${negocioId}::uuid AND p.organizacao_id = ${organizacaoId}::uuid

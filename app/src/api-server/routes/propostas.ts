@@ -57,6 +57,10 @@ const itemSchema = z.object({
   // família/natureza/SKU/preço de tabela do banco a partir daqui; o cliente
   // não tem como injetar esses valores.
   catalogoPrecoId: z.string().uuid().optional().nullable(),
+  // Oferta de campanha (migration 0142). O servidor confere vigência e se a
+  // oferta é deste price antes de aplicar o preço; o cliente nunca manda o
+  // valor promocional, só o id da oferta.
+  campanhaPromocionalPrecoId: z.string().uuid().optional().nullable(),
 });
 
 const createSchema = z.object({

@@ -1629,6 +1629,68 @@ export const catalogoPrecos = pgTable("catalogo_precos", {
   index("idx_catalogo_precos_lookup").on(table.organizacaoId, table.lookupKey),
 ]);
 
+/**
+ * CAMPANHA PROMOCIONAL DE PREÇO (migration 0142) — Black Friday 2026 e as
+ * próximas. Não é `campanhas`, logo acima, que é campanha de MÍDIA
+ * (plataforma, utm_campaign, investimento). As duas convivem numa venda: o
+ * lead vem de uma campanha de mídia e compra sob uma campanha promocional.
+ *
+ * Preço promocional com prazo. Não é `ofertas_comerciais`, que é política de
+ * ganho (contrato x pagamento, trial, onboarding): promoção e regra de
+ * fechamento são coisas diferentes e ficam em tabelas diferentes de propósito.
+ *
+ * A campanha existe AQUI e não no Stripe porque o time libera o acesso do
+ * cliente pelo Product ID: produto ou price novo por promoção quebraria a
+ * liberação e deixaria "Full Black" no catálogo para sempre. O Stripe segue
+ * recebendo o Price oficial com a diferença em cupom, ou `price_data` sobre o
+ * mesmo Product — exatamente como já fazia.
+ */
+export const campanhasPromocionais = pgTable("campanhas_promocionais", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+  codigo: text("codigo").notNull(),
+  nome: text("nome").notNull(),
+  inicio: timestamp("inicio", { withTimezone: true }).notNull(),
+  fim: timestamp("fim", { withTimezone: true }).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  observacao: text("observacao"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_campanhas_promo_codigo").on(table.organizacaoId, table.codigo),
+  index("idx_campanhas_promo_vigencia").on(table.organizacaoId, table.ativo, table.inicio, table.fim),
+]);
+
+/**
+ * Uma oferta é (campanha, price oficial, condição).
+ *
+ * A CONDIÇÃO entra na chave porque o mesmo price tem dois preços na mesma
+ * campanha: o Full Black é R$ 149,90 sem fidelidade e R$ 119,90 com contrato
+ * de 12 meses.
+ */
+export const campanhasPromocionaisPrecos = pgTable("campanhas_promocionais_precos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  campanhaId: uuid("campanha_id").references(() => campanhasPromocionais.id, { onDelete: "cascade" }).notNull(),
+  catalogoPrecoId: uuid("catalogo_preco_id").references((): AnyPgColumn => catalogoPrecos.id, { onDelete: "cascade" }).notNull(),
+  /** "" = oferta sem condição extra. Texto, não enum: muda a cada campanha. */
+  condicao: text("condicao").default("").notNull(),
+  valorPromocional: decimal("valor_promocional", { precision: 12, scale: 2 }).notNull(),
+  /** O "de" a exibir quando a comunicação usa âncora diferente do preço vigente
+   *  (Full: tabela 179,90 hoje, 199,90 a partir de 01/12). NULL = usa o catálogo. */
+  valorAncora: decimal("valor_ancora", { precision: 12, scale: 2 }),
+  /** Liberação manual que a oferta concede, ex.: 'agente_ia_30d_100min'. Vai
+   *  para a metadata do Stripe, que é onde o time de ativação olha. */
+  bonus: text("bonus"),
+  bonusDescricao: text("bonus_descricao"),
+  ativo: boolean("ativo").default(true).notNull(),
+  ordem: integer("ordem").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_campanhas_promocionais_precos_oferta").on(table.campanhaId, table.catalogoPrecoId, table.condicao),
+  index("idx_campanhas_promocionais_precos_catalogo").on(table.catalogoPrecoId, table.ativo),
+]);
+
 /** Contador de número de proposta por organização (migration 0107). Só `lib/crm/proposta-criacao.ts` escreve aqui. */
 export const propostaSequencias = pgTable("proposta_sequencias", {
   organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).primaryKey(),
@@ -1799,9 +1861,15 @@ export const propostaItens = pgTable(
     // catálogo mudar. NULL = linha antiga; quem lê cai no catálogo.
     exigeContrato: boolean("exige_contrato"),
     periodo: text("periodo"),
+    /* De qual oferta de campanha esta linha nasceu (migration 0142). NULL =
+       venda fora de campanha, que é o caso de toda linha anterior à Black
+       Friday 2026. É por aqui que se audita quanto uma campanha vendeu, sem
+       depender de adivinhar pelo valor. */
+    campanhaPromocionalPrecoId: uuid("campanha_promocional_preco_id"),
   },
   (table) => [
     index("idx_proposta_itens_proposta").on(table.propostaId),
+    index("idx_proposta_itens_campanha_promo").on(table.campanhaPromocionalPrecoId),
   ]
 );
 

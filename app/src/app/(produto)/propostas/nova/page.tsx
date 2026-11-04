@@ -116,6 +116,7 @@ export default async function NovaPropostaPage({ searchParams }: {
           itens: (p.itens ?? []).map((i) => ({
             prod: i.prod ?? undefined,
             preco: i.preco ?? `item:${i.id}`,
+            oferta: i.oferta ?? null,
             nome: i.nome, desc: i.descricao ?? "",
             natureza: i.natureza ?? (i.tipo === "recorrente" ? "MRR" : i.tipo === "setup" ? "SETUP" : "ONE_TIME"),
             valor: Number(i.valor_unitario), qtd: Number(i.quantidade) || 1,

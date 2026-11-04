@@ -20,10 +20,47 @@ import { CheckIcon, ChevronDownIcon, PlusIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils/cn";
-import { catalogoDoSeletor, type PrecoDoDesenho, type ProdutoDoDesenho } from "./catalogo-do-desenho";
+import { catalogoDoSeletor, type OfertaDoPreco, type PrecoDoDesenho, type ProdutoDoDesenho } from "./catalogo-do-desenho";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: v < 1 ? 4 : 2 });
 const sufixo = (pr: PrecoDoDesenho) => (pr.int === "mes" ? "/mês" : pr.int === "ano" ? "/ano" : "");
+
+/**
+ * Uma oferta de campanha como escolha ao lado do preço de tabela.
+ *
+ * Mostra o "de" riscado, o preço da campanha e a condição (ex.: "contrato de
+ * 12 meses"), porque é a condição que distingue duas ofertas do mesmo price.
+ * O bônus aparece aqui porque é parte do que o vendedor está prometendo.
+ */
+function LinhaDeOferta({ pr, oferta, onEscolher }: { pr: PrecoDoDesenho; oferta: OfertaDoPreco; onEscolher: () => void }) {
+  return (
+    <CommandItem
+      value={`o:${oferta.id}`}
+      onSelect={onEscolher}
+      className="group/of ml-3 min-h-11 cursor-pointer flex-wrap gap-x-3 gap-y-1 rounded-md border-l-2 border-border px-2.5 py-2 pl-2.5"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="destructive">{oferta.campanhaNome}</Badge>
+          {oferta.condicao ? <span className="text-xs font-medium text-foreground">{oferta.condicao}</span> : null}
+        </span>
+        {oferta.bonusDescricao ? (
+          <span className="mt-1 block text-xs leading-snug text-muted-foreground">Inclui: {oferta.bonusDescricao}</span>
+        ) : null}
+      </span>
+      <span className="shrink-0 text-right">
+        <span className="block text-xs tabular-nums text-muted-foreground line-through">{brl(oferta.de)}</span>
+        <span className="block text-sm font-semibold tabular-nums text-foreground">
+          {brl(oferta.valor)}{sufixo(pr)}
+        </span>
+      </span>
+      <span className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-xs font-semibold text-foreground group-data-[selected=true]/of:border-foreground">
+        <PlusIcon className="size-3.5" aria-hidden />
+        Adicionar
+      </span>
+    </CommandItem>
+  );
+}
 
 function Recorrencia({ p, pr }: { p: ProdutoDoDesenho; pr: PrecoDoDesenho }) {
   if (pr.int !== "avulso") return <Badge variant="success">{pr.int === "ano" ? "Recorrente · anual" : "Recorrente · mensal"}</Badge>;
@@ -36,7 +73,8 @@ export function SeletorCatalogo({ familia, produtos, noProposta, onAdicionar }: 
   produtos: ProdutoDoDesenho[];
   /** Quantas linhas da proposta já usam cada Price (id do preço → linhas). */
   noProposta: Record<string, number>;
-  onAdicionar: (produtoId: string, precoId: string) => void;
+  /** `ofertaId` presente = a linha nasce sob uma campanha promocional. */
+  onAdicionar: (produtoId: string, precoId: string, ofertaId?: string | null) => void;
 }) {
   const [busca, setBusca] = React.useState("");
   const [abertoId, setAbertoId] = React.useState<string | null>(null);
@@ -44,7 +82,10 @@ export function SeletorCatalogo({ familia, produtos, noProposta, onAdicionar }: 
   const grupos = React.useMemo(() => catalogoDoSeletor(produtos, busca, abertoId), [produtos, busca, abertoId]);
 
   const alternar = (p: ProdutoDoDesenho) => {
-    if (p.precos.length === 1) return onAdicionar(p.id, p.precos[0].id);
+    /* Preço único SEM oferta entra direto, como sempre. Com oferta, abre: há
+       uma escolha real a fazer (tabela ou campanha) e adicionar por tabela em
+       silêncio durante a Black é o erro caro aqui. */
+    if (p.precos.length === 1 && !(p.precos[0].ofertas?.length)) return onAdicionar(p.id, p.precos[0].id);
     if (busca.trim()) return;
     setAbertoId((a) => (a === p.id ? null : p.id));
     setSelecionado(`p:${p.id}`);
@@ -87,7 +128,7 @@ export function SeletorCatalogo({ familia, produtos, noProposta, onAdicionar }: 
         {grupos.map((g) => (
           <CommandGroup key={g.titulo} heading={g.titulo} className="p-1.5">
             {g.produtos.map(({ produto: p, precos, aberto }) => {
-              const unico = p.precos.length === 1;
+              const unico = p.precos.length === 1 && !p.precos.some((x) => x.ofertas?.length);
               const linhas = p.precos.reduce((s, x) => s + (noProposta[x.id] ?? 0), 0);
               const menor = p.precos.reduce((a, x) => (x.v < a.v ? x : a), p.precos[0]);
               return (
@@ -133,26 +174,39 @@ export function SeletorCatalogo({ familia, produtos, noProposta, onAdicionar }: 
                     <div role="presentation" className="mb-1 ml-3 border-l border-border pl-2">
                       {precos.map((pr) => {
                         const n = noProposta[pr.id] ?? 0;
+                        const ofertas = pr.ofertas ?? [];
                         return (
-                          <CommandItem
-                            key={pr.id}
-                            value={`v:${pr.id}`}
-                            onSelect={() => onAdicionar(p.id, pr.id)}
-                            className="group/var min-h-11 cursor-pointer flex-wrap gap-x-3 gap-y-1 rounded-md px-2.5 py-2"
-                          >
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm font-medium text-foreground [overflow-wrap:anywhere]">{pr.variacao || pr.d}</span>
-                              <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <Recorrencia p={p} pr={pr} />
-                                {n > 0 ? <span className="text-xs text-muted-foreground">{n === 1 ? "1 na proposta" : `${n} na proposta`}</span> : null}
+                          <React.Fragment key={pr.id}>
+                            <CommandItem
+                              value={`v:${pr.id}`}
+                              onSelect={() => onAdicionar(p.id, pr.id)}
+                              className="group/var min-h-11 cursor-pointer flex-wrap gap-x-3 gap-y-1 rounded-md px-2.5 py-2"
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-medium text-foreground [overflow-wrap:anywhere]">{pr.variacao || pr.d}</span>
+                                <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                                  <Recorrencia p={p} pr={pr} />
+                                  {n > 0 ? <span className="text-xs text-muted-foreground">{n === 1 ? "1 na proposta" : `${n} na proposta`}</span> : null}
+                                </span>
                               </span>
-                            </span>
-                            <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">{brl(pr.v)}{sufixo(pr)}</span>
-                            <span className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-xs font-semibold text-foreground group-data-[selected=true]/var:border-foreground">
-                              <PlusIcon className="size-3.5" aria-hidden />
-                              Adicionar
-                            </span>
-                          </CommandItem>
+                              <span className="shrink-0 text-right">
+                                {ofertas.length ? (
+                                  <span className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tabela</span>
+                                ) : null}
+                                <span className="block text-sm font-semibold tabular-nums text-foreground">{brl(pr.v)}{sufixo(pr)}</span>
+                              </span>
+                              <span className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-border px-2 text-xs font-semibold text-foreground group-data-[selected=true]/var:border-foreground">
+                                <PlusIcon className="size-3.5" aria-hidden />
+                                Adicionar
+                              </span>
+                            </CommandItem>
+                            {/* As ofertas desta variação vêm logo abaixo dela, recuadas:
+                                o vendedor compara tabela e campanha sem procurar na lista.
+                                Antes elas caíam todas no fim, soltas do preço de origem. */}
+                            {ofertas.map((of) => (
+                              <LinhaDeOferta key={of.id} pr={pr} oferta={of} onEscolher={() => onAdicionar(p.id, pr.id, of.id)} />
+                            ))}
+                          </React.Fragment>
                         );
                       })}
                     </div>

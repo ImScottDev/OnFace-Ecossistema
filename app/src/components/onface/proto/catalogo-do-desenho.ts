@@ -27,6 +27,21 @@ export interface PrecoDoDesenho {
   padrao: 0 | 1;
   min: number | null;
   max: number | null;
+  /** Ofertas de campanha promocional vigentes para este price (migration 0142). */
+  ofertas?: OfertaDoPreco[];
+}
+
+/** Uma oferta promocional como o seletor a mostra. */
+export interface OfertaDoPreco {
+  id: string;
+  campanha: string;
+  campanhaNome: string;
+  condicao: string;
+  valor: number;
+  /** O "de" a exibir: âncora da campanha quando existe, senão o preço de tabela. */
+  de: number;
+  descontoPercentual: number;
+  bonusDescricao: string | null;
 }
 
 /** Um produto na forma do desenho. */
@@ -139,6 +154,7 @@ export function catalogoDoDesenho(
         padrao: 0 as const,
         min: null,
         max: null,
+        ofertas: item.ofertas ?? [],
       };
       // Dois Prices que o vendedor não distingue (mesmo rótulo, valor e recorrência) viram uma escolha só.
       if (p.precos.some((x) => x.d === novo.d && x.v === novo.v && x.int === novo.int)) continue;

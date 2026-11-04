@@ -124,3 +124,19 @@ describe("itensParaCriar: descrição da linha", () => {
     assert.deepEqual(itens.map((i) => i.descricao), ["Texto do vendedor", null]);
   });
 });
+
+describe("itensParaCriar e a campanha promocional", () => {
+  const base = { prod: "p", preco: "preco-1", nome: "Full", desc: "", natureza: "MRR", valor: 149.9, qtd: 1, descTipo: "pct", descVal: "" };
+
+  it("leva a oferta escolhida até o command", () => {
+    const { itens } = itensParaCriar([{ ...base, oferta: "oferta-black" }]);
+    assert.equal(itens[0].campanhaPromocionalPrecoId, "oferta-black");
+  });
+
+  /* Reabrir um rascunho e salvar de novo não pode perder a campanha: é esse
+     vínculo que leva o bônus da Black até a metadata do Stripe no aceite. */
+  it("linha sem oferta não inventa uma", () => {
+    const { itens } = itensParaCriar([base]);
+    assert.equal(itens[0].campanhaPromocionalPrecoId, null);
+  });
+});

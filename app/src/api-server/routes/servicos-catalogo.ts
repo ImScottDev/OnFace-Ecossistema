@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { db } from "@/lib/db";
 import { servicosCatalogo, catalogoPrecos, catalogoMapeamentosLegacy } from "@/lib/db/schema";
+import { ofertasVigentesParaPrecos } from "@/lib/catalogo/campanha";
+import { resolverPrecoDaCampanha } from "@onface/catalog";
 import { eq, and, asc, desc, ne, ilike, sql, getTableColumns } from "drizzle-orm";
 import { z } from "zod";
 import { getCtx } from "../compat.js";
@@ -206,10 +208,18 @@ app.get("/catalogo-oficial", async (c) => {
     uso: "Uso", hardware: "Hardware", integracao: "Integração / Módulo", servico: "Serviço Avulso",
   };
 
-  type Preco = { id: string; stripePriceId: string; sku: string | null; lookupKey: string | null; variacao: string; descricao: string | null; valor: string; moeda: string; tipo: string; recorrente: boolean; periodo: string | null; revenueNature: string; modeloCobranca: string | null; exigeContrato: boolean; observacao: string | null };
+  /** Oferta de campanha promocional vigente para este price (migration 0142). */
+  type OfertaDoPreco = { id: string; campanha: string; campanhaNome: string; condicao: string; valor: number; de: number; descontoPercentual: number; bonusDescricao: string | null };
+  type Preco = { id: string; stripePriceId: string; sku: string | null; lookupKey: string | null; variacao: string; descricao: string | null; valor: string; moeda: string; tipo: string; recorrente: boolean; periodo: string | null; revenueNature: string; modeloCobranca: string | null; exigeContrato: boolean; observacao: string | null; ofertas: OfertaDoPreco[] };
   type Produto = { id: string; nome: string; descricao: string | null; etiquetaUnidade: string | null; observacaoOperacional: string | null; quantityBehavior: string; destinoPosVenda: string | null; stripeProductId: string | null; skuProduto: string | null; precos: Preco[] };
   type Categoria = { key: string; label: string; produtos: Produto[] };
   type Familia = { key: string; label: string; categorias: Categoria[] };
+
+  /* Ofertas promocionais vigentes AGORA para os prices listados. O preço que
+     a tela exibe continua sendo o de tabela; a oferta vai ao lado, e é o
+     servidor que recalcula o valor quando a linha é gravada — a tela nunca
+     manda o valor promocional, só o id da oferta. */
+  const ofertasPorPreco = await ofertasVigentesParaPrecos(ctx.organizacaoId, linhas.map((l) => l.precoId));
 
   const familias = new Map<string, Map<string, Map<string, Produto>>>();
   for (const l of linhas) {
@@ -229,6 +239,18 @@ app.get("/catalogo-oficial", async (c) => {
       descricao: l.descricaoPreco, valor: l.valor, moeda: l.moeda, tipo: l.tipo, recorrente: l.recorrente,
       periodo: l.periodo, revenueNature: l.revenueNature, modeloCobranca: l.modeloCobranca,
       exigeContrato: l.exigeContrato, observacao: l.observacaoPreco,
+      ofertas: (ofertasPorPreco.get(l.precoId) ?? []).flatMap((o) => {
+        const r = resolverPrecoDaCampanha({ oferta: o.oferta, precoTabela: Number(l.valor) });
+        /* Oferta que a política recusa (acima da tabela, desativada) não é
+           mostrada: o vendedor não pode escolher o que o servidor vai negar
+           no momento de salvar. */
+        if (!r.ok) return [];
+        return [{
+          id: o.oferta.id, campanha: o.campanha.codigo, campanhaNome: o.campanha.nome,
+          condicao: o.oferta.condicao, valor: r.preco.valorUnitario, de: r.preco.valorExibidoComoDe,
+          descontoPercentual: r.preco.descontoPercentual, bonusDescricao: o.bonusDescricao,
+        }];
+      }),
     });
   }
 
