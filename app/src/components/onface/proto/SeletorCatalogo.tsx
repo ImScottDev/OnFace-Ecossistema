@@ -23,6 +23,9 @@ import { cn } from "@/lib/utils/cn";
 import { catalogoDoSeletor, type OfertaDoPreco, type PrecoDoDesenho, type ProdutoDoDesenho } from "./catalogo-do-desenho";
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: v < 1 ? 4 : 2 });
+/* "1 variações" é o tipo de desleixo que faz o resto da tela parecer
+   descuidada. Plural só quando é plural. */
+const contagem = (n: number, singular: string, plural: string) => `${n} ${n === 1 ? singular : plural}`;
 const sufixo = (pr: PrecoDoDesenho) => (pr.int === "mes" ? "/mês" : pr.int === "ano" ? "/ano" : "");
 
 /**
@@ -37,13 +40,16 @@ function LinhaDeOferta({ pr, oferta, onEscolher }: { pr: PrecoDoDesenho; oferta:
     <CommandItem
       value={`o:${oferta.id}`}
       onSelect={onEscolher}
-      className="group/of ml-3 min-h-11 cursor-pointer flex-wrap gap-x-3 gap-y-1 rounded-md border-l-2 border-border px-2.5 py-2 pl-2.5"
+      className="group/of ml-3 min-h-11 cursor-pointer flex-wrap gap-x-3 gap-y-1 rounded-md border-l-2 border-[var(--cf2-negativo-fg)] px-2.5 py-2 pl-2.5"
     >
       <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="destructive">{oferta.campanhaNome}</Badge>
-          {oferta.condicao ? <span className="text-xs font-medium text-foreground">{oferta.condicao}</span> : null}
+        <span className="block text-sm font-medium text-foreground">
+          {oferta.condicao || "Preço da campanha"}
         </span>
+        {/* O nome da campanha em tinta leve, uma linha abaixo: o card do produto
+            já carrega a cor e o desconto. Repetir o selo cheio em cada condição
+            cobre a informação que de fato distingue as duas — a condição. */}
+        <span className="mt-0.5 block text-xs text-muted-foreground">{oferta.campanhaNome}</span>
         {oferta.bonusDescricao ? (
           <span className="mt-1 block text-xs leading-snug text-muted-foreground">Inclui: {oferta.bonusDescricao}</span>
         ) : null}
@@ -131,6 +137,13 @@ export function SeletorCatalogo({ familia, produtos, noProposta, onAdicionar }: 
               const unico = p.precos.length === 1 && !p.precos.some((x) => x.ofertas?.length);
               const linhas = p.precos.reduce((s, x) => s + (noProposta[x.id] ?? 0), 0);
               const menor = p.precos.reduce((a, x) => (x.v < a.v ? x : a), p.precos[0]);
+              /* A melhor oferta do produto: a de menor preço entre todas as
+                 variações. É ela que o card fechado anuncia. */
+              const todasOfertas = p.precos.flatMap((x) => x.ofertas ?? []);
+              const melhorOferta = todasOfertas.length
+                ? todasOfertas.reduce((a, o) => (o.valor < a.valor ? o : a), todasOfertas[0])
+                : null;
+              const emCampanha = !!melhorOferta;
               return (
                 <React.Fragment key={p.id}>
                   <CommandItem
@@ -140,7 +153,18 @@ export function SeletorCatalogo({ familia, produtos, noProposta, onAdicionar }: 
                     className="min-h-14 cursor-pointer items-start gap-3 rounded-md px-2.5 py-2.5"
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-foreground">{p.nome}</span>
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-foreground">{p.nome}</span>
+                        {/* O selo diz o DESCONTO, não o nome da campanha: repetir
+                            "Black Friday Callface 2026" em cada linha é a mesma
+                            informação quatro vezes, e some com o nome do produto.
+                            O nome da campanha aparece uma vez, na oferta aberta. */}
+                        {melhorOferta ? (
+                          <Badge variant="danger" title={melhorOferta.campanhaNome}>
+                            −{Math.round(melhorOferta.descontoPercentual)}%
+                          </Badge>
+                        ) : null}
+                      </span>
                       {p.desc ? <span className="mt-0.5 line-clamp-2 text-xs leading-snug text-muted-foreground">{p.desc}</span> : null}
                       {linhas > 0 ? (
                         <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-[var(--cf2-success-text)]">
@@ -155,10 +179,30 @@ export function SeletorCatalogo({ familia, produtos, noProposta, onAdicionar }: 
                           <span className="text-sm font-semibold tabular-nums text-foreground">{brl(menor.v)}{sufixo(menor)}</span>
                           <Recorrencia p={p} pr={menor} />
                         </>
+                      ) : emCampanha ? (
+                        /* Com campanha, o card fechado mostra o preço DA CAMPANHA,
+                           com o de tabela riscado em cima. Antes dizia só "a partir
+                           de R$ 179,90" — o preço cheio — e o vendedor só descobria
+                           a oferta se resolvesse abrir o produto. Numa Black Friday
+                           isso é a oferta inteira escondida atrás de um clique. */
+                        <>
+                          <span className="text-xs tabular-nums text-muted-foreground line-through">{brl(melhorOferta!.de)}</span>
+                          <span className="text-sm font-semibold tabular-nums text-foreground">
+                            {/* "a partir de" quando há mais de uma oferta: o menor
+                                preço do Full (R$ 119,90) EXIGE contrato de 12 meses.
+                                Anunciar só o número, sem a condição, é vender uma
+                                coisa e cobrar outra. A condição aparece inteira na
+                                linha da oferta, ao abrir. */}
+                            {todasOfertas.length > 1 ? <span className="font-normal text-muted-foreground">a partir de </span> : null}
+                            {brl(melhorOferta!.valor)}{sufixo(menor)}
+                          </span>
+                        </>
                       ) : (
                         <>
-                          <span className="text-xs font-medium text-foreground">{p.precos.length} variações</span>
-                          <span className="text-xs tabular-nums text-muted-foreground">a partir de {brl(menor.v)}</span>
+                          <span className="text-xs font-medium text-foreground">{contagem(p.precos.length, "variação", "variações")}</span>
+                          <span className="text-xs tabular-nums text-muted-foreground">
+                            {p.precos.length > 1 ? "a partir de " : ""}{brl(menor.v)}
+                          </span>
                         </>
                       )}
                     </span>
@@ -167,7 +211,7 @@ export function SeletorCatalogo({ familia, produtos, noProposta, onAdicionar }: 
                     ) : (
                       <ChevronDownIcon className={cn("mt-0.5 size-4 transition-transform motion-reduce:transition-none", aberto && "rotate-180")} aria-hidden />
                     )}
-                    <span className="sr-only">{unico ? "Adicionar à proposta" : aberto ? "Fechar variações" : "Ver variações"}</span>
+                    <span className="sr-only">{unico ? "Adicionar à proposta" : aberto ? "Fechar opções" : emCampanha ? "Ver preço de tabela e ofertas da campanha" : "Ver variações"}</span>
                   </CommandItem>
 
                   {aberto && !unico ? (
