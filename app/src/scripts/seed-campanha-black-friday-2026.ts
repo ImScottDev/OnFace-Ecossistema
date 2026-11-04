@@ -56,21 +56,29 @@ const OFERTAS: Oferta[] = [
     valorPromocional: 69.9, ordem: 4 },
   { stripePriceId: "price_1UB62mEd4dqxpSBfh65vEx1F", rotulo: "Callface AI - Agente IA mensal", condicao: "",
     valorPromocional: 400, ordem: 5 },
+  /* Business a R$ 1.099,25 (decisão do Scott, 04/11). É o número que sustenta
+     o "até 39% OFF" já publicado na landing page: 1.099,25 sobre 1.799,00 dá
+     38,9%. O documento-mestre registra conflito de tabela (1.799 x 2.799) e o
+     financeiro ainda não confirmou; se a tabela mudar, esta linha muda junto,
+     e o teto anunciado na LP cai com ela. */
+  { stripePriceId: "price_1TYU74Ed4dqxpSBfPhQuyt4R", rotulo: "Callface AI - Business mensal", condicao: "",
+    valorPromocional: 1099.25, ordem: 6 },
 
   /* White Label a R$ 99,90 por licença em qualquer faixa está no
      documento-mestre, mas o HUB da campanha registra "condições White Label de
      Black não definidas". Entram DESATIVADAS: ligar é um UPDATE de uma linha,
      e uma oferta ativa que o comercial não combinou é desconto vazando. */
   { stripePriceId: "price_1UB650Ed4dqxpSBf1ncqkJxA", rotulo: "White Label Licença faixa 1 (1 a 99)", condicao: "black",
-    valorPromocional: 99.9, ativo: false, motivoDesativada: "condições White Label da Black não confirmadas", ordem: 6 },
-  { stripePriceId: "price_1UB66XEd4dqxpSBfP2vhN7pw", rotulo: "White Label Licença faixa 2 (100 a 199)", condicao: "black",
     valorPromocional: 99.9, ativo: false, motivoDesativada: "condições White Label da Black não confirmadas", ordem: 7 },
-  { stripePriceId: "price_1UB66rEd4dqxpSBfvocBsrTR", rotulo: "White Label Licença faixa 3 (200 a 499)", condicao: "black",
+  { stripePriceId: "price_1UB66XEd4dqxpSBfP2vhN7pw", rotulo: "White Label Licença faixa 2 (100 a 199)", condicao: "black",
     valorPromocional: 99.9, ativo: false, motivoDesativada: "condições White Label da Black não confirmadas", ordem: 8 },
+  { stripePriceId: "price_1UB66rEd4dqxpSBfvocBsrTR", rotulo: "White Label Licença faixa 3 (200 a 499)", condicao: "black",
+    valorPromocional: 99.9, ativo: false, motivoDesativada: "condições White Label da Black não confirmadas", ordem: 9 },
 ];
 
-/* Business fica de fora de propósito: o documento-mestre registra 1.799 x
-   2.799 em conflito e "sem preço público até o financeiro validar". */
+/* Business entrou em 04/11 por decisão do Scott, a R$ 1.099,25 — ver o
+   comentário na linha dele. O documento-mestre ainda registra a tabela em
+   conflito; a decisão foi seguir o número que a LP já publica. */
 
 async function main() {
   const orgs = await db.execute<{ id: string; nome: string }>(sql`
