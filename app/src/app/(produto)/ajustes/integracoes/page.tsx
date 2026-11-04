@@ -67,6 +67,7 @@ const ROTULO_CTA: Record<string, string> = {
   whatsapp: "Gerenciar sessões",
   email: "Gerenciar caixas",
   microsoft_graph: "Conectar Outlook",
+  callface: "Testar o agente de voz",
 };
 
 function estadoVisual(i: LinhaIntegracao): { estado: EstadoAjuste; rotulo: string } {

@@ -67,13 +67,14 @@ const SINAIS: Array<{
   href?: string;
 }> = [
   {
-    chave: "callface", nome: "Callface (discador)",
-    paraQue: "envia o lead para a fila de ligação e devolve o resultado da chamada",
+    chave: "callface", nome: "Callface (discador e agente de voz)",
+    paraQue: "o agente de voz liga para o lead com o contexto dele, e o resultado da chamada volta para a ficha",
     envs: ["CALLFACE_INBOUND_TOKEN"],
     rotuloVolume: "ligações registradas",
     consulta: (org) => sql`SELECT count(*)::int AS n, max(created_at)::date::text AS ultimo
                     FROM atividades WHERE organizacao_id = ${org}::uuid AND tipo ILIKE '%ligac%'`,
     pendenciaSemEnv: "falta o token de entrada da Callface",
+    href: "/ajustes/integracoes/agente-voz",
   },
   {
     chave: "stripe", nome: "Stripe",
