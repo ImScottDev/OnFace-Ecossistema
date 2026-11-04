@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { hojePorExtenso, telefoneParaPlanilha } from "./callface-agente-voz";
+import { hojePorExtenso, telefoneParaPlanilha, tempoDesde } from "./callface-agente-voz";
 
 /* A planilha da campanha espera DDD + número, sem país: a Callface prefixa o 55
    sozinha. Mandar o 55 de novo já fez ligação sair para o número errado. */
@@ -24,4 +24,16 @@ test("a data de hoje vai por extenso, no fuso de São Paulo", () => {
   // 05/11/2026 00:30 UTC ainda é 04/11 em São Paulo.
   assert.equal(hojePorExtenso(new Date("2026-11-05T00:30:00Z")), "quarta-feira, 04/11/2026");
   assert.equal(hojePorExtenso(new Date("2026-11-05T12:00:00Z")), "quinta-feira, 05/11/2026");
+});
+
+/* A abertura da ligação usa esse texto ("você se cadastrou há X"), e é o que
+   prova a velocidade para quem atende. */
+test("tempo desde o cadastro sai falado, não em número cru", () => {
+  const agora = new Date("2026-11-04T18:00:00Z");
+  assert.equal(tempoDesde(new Date("2026-11-04T17:58:00Z"), agora), "2 minutos");
+  assert.equal(tempoDesde(new Date("2026-11-04T17:59:40Z"), agora), "menos de um minuto");
+  assert.equal(tempoDesde(new Date("2026-11-04T17:59:00Z"), agora), "um minuto");
+  assert.equal(tempoDesde(new Date("2026-11-04T15:00:00Z"), agora), "3 horas");
+  assert.equal(tempoDesde(new Date("2026-11-02T18:00:00Z"), agora), "2 dias");
+  assert.equal(tempoDesde(null, agora), "pouco");
 });

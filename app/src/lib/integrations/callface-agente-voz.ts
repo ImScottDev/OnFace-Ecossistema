@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { empresas, leads, negocios } from "@/lib/db/schema";
+import { empresas, leads, negocios, usuarios } from "@/lib/db/schema";
 
 /**
  * Disparo do AGENTE DE VOZ da Callface com o contexto do lead.
@@ -36,6 +36,10 @@ export interface ContextoDaLigacao {
   email?: string | null;
   empresa?: string | null;
   origem?: string | null;
+  /** Quando o lead entrou. Vira "há 2 minutos" na abertura da ligação. */
+  criadoEm?: Date | string | null;
+  /** Quem vai atender depois: o agente cita o nome e já prepara a passagem. */
+  closer?: string | null;
 }
 
 export interface ResultadoDisparo {
@@ -91,6 +95,25 @@ function celula(v: unknown): string {
  * semana seguinte numa ligação real. A data vai como variável e o roteiro
  * calcula tudo a partir dela.
  */
+/**
+ * "há 2 minutos", "há 3 horas", "ontem". É a frase que abre a ligação e prova
+ * a velocidade: a pessoa se cadastrou agora e o telefone já tocou.
+ */
+export function tempoDesde(quando: Date | string | null | undefined, agora = new Date()): string {
+  if (!quando) return "pouco";
+  const d = quando instanceof Date ? quando : new Date(quando);
+  if (Number.isNaN(d.getTime())) return "pouco";
+  const min = Math.floor((agora.getTime() - d.getTime()) / 60000);
+  if (min < 1) return "menos de um minuto";
+  if (min === 1) return "um minuto";
+  if (min < 60) return `${min} minutos`;
+  const h = Math.floor(min / 60);
+  if (h === 1) return "uma hora";
+  if (h < 24) return `${h} horas`;
+  const dias = Math.floor(h / 24);
+  return dias === 1 ? "um dia" : `${dias} dias`;
+}
+
 export function hojePorExtenso(agora = new Date()): string {
   return new Intl.DateTimeFormat("pt-BR", {
     weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo",
@@ -102,8 +125,11 @@ async function planilhaDoLead(ctx: ContextoDaLigacao, telefone: string): Promise
   const ws = wb.addWorksheet("contatos");
   // Os títulos são o contrato: Telefone é obrigatório e cada variável do agente
   // precisa de uma coluna com o nome dela.
-  ws.addRow(["Telefone", "Nome", "E-mail", "Empresa", "origem", "hoje"]);
-  ws.addRow([telefone, celula(ctx.nome), celula(ctx.email), celula(ctx.empresa), celula(ctx.origem), hojePorExtenso()]);
+  ws.addRow(["Telefone", "Nome", "E-mail", "Empresa", "origem", "hoje", "tempo_desde_cadastro", "closer"]);
+  ws.addRow([
+    telefone, celula(ctx.nome), celula(ctx.email), celula(ctx.empresa), celula(ctx.origem),
+    hojePorExtenso(), tempoDesde(ctx.criadoEm), celula(ctx.closer),
+  ]);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
@@ -171,19 +197,27 @@ export async function contextoDaEntidade(
     nome: leads.nome, telefone: leads.telefone, email: leads.email,
     empresa: sql<string | null>`COALESCE(${empresas.nome}, ${leads.empresa})`,
     origem: leads.origem,
+    criadoEm: leads.createdAt,
+    closer: usuarios.nome,
   };
   let row:
-    | { nome: string | null; telefone: string | null; email: string | null; empresa: string | null; origem: string | null }
+    | {
+        nome: string | null; telefone: string | null; email: string | null;
+        empresa: string | null; origem: string | null;
+        criadoEm: Date | null; closer: string | null;
+      }
     | undefined;
 
   if (entityType === "lead") {
     [row] = await db.select(colunas).from(leads)
       .leftJoin(empresas, eq(empresas.id, leads.empresaId))
+      .leftJoin(usuarios, eq(usuarios.id, leads.responsavelId))
       .where(and(eq(leads.id, entityId), eq(leads.organizacaoId, organizacaoId))).limit(1);
   } else if (entityType === "negocio" || entityType === "oportunidade") {
     [row] = await db.select(colunas).from(negocios)
       .innerJoin(leads, eq(leads.id, negocios.leadId))
       .leftJoin(empresas, eq(empresas.id, leads.empresaId))
+      .leftJoin(usuarios, eq(usuarios.id, leads.responsavelId))
       .where(and(eq(negocios.id, entityId), eq(negocios.organizacaoId, organizacaoId))).limit(1);
   }
   if (!row || !row.telefone) return null;
@@ -193,6 +227,8 @@ export async function contextoDaEntidade(
     email: row.email,
     empresa: row.empresa,
     origem: row.origem,
+    criadoEm: row.criadoEm,
+    closer: row.closer,
   };
 }
 
