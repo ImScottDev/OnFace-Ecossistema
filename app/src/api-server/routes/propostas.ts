@@ -10,6 +10,7 @@ import { marcarPropostaAceita } from "@/lib/crm/aceitar-proposta";
 import { enviarPropostaComCheckout } from "@/lib/crm/enviar-proposta";
 import { getCheckoutSessionStatus } from "@/lib/integrations/stripe-sync";
 import { propostaPdfHtml, renderPropostaPdf } from "@/lib/propostas/proposta-pdf";
+import { clienteDaProposta } from "@/lib/propostas/cliente-da-proposta";
 import { familiasDaProposta, modeloPdfDaProposta, gravarModeloPdf } from "@/lib/propostas/familia-proposta";
 import { modeloPdfValido } from "@/lib/propostas/modelos-pdf";
 import { syncOportunidadeFromNegocio } from "@/lib/crm/sync-domain-model";
@@ -494,6 +495,8 @@ app.get("/propostas/:id/pdf", async (c) => {
     const modelo = modeloPdfValido(c.req.query("modelo")) ?? (await modeloPdfDaProposta(id));
     const html = propostaPdfHtml({
       ...p,
+      // A empresa vinculada manda sobre o texto livre do lead (cliente-da-proposta.ts).
+      clienteNome: (await clienteDaProposta(id)).nome,
       modelo,
       familias: await familiasDaProposta(id),
       itens: itens.map((i) => ({
@@ -543,6 +546,8 @@ app.get("/propostas/:id/publica", async (c) => {
   const [negocio] = proposta.negocioId
     ? await db.select({ titulo: negocios.titulo }).from(negocios).where(eq(negocios.id, proposta.negocioId)).limit(1)
     : [];
+
+  const cliente = await clienteDaProposta(id);
 
   // Quem enviou a proposta: o cliente precisa saber com quem falar (mesmo dado que o PDF já mostra na capa).
   const [responsavel] = proposta.criadoPorId
@@ -650,8 +655,10 @@ app.get("/propostas/:id/publica", async (c) => {
     clienteRespondeuEm: proposta.clienteRespondeuEm,
     clienteNome: lead?.nome ?? null,
     clienteCargo: lead?.cargo ?? null,
-    empresa: lead?.empresa ?? null,
-    empresaCnpj: lead?.empresaCnpj ?? null,
+    // Mesma fonte do PDF: a página pública mostrava o texto livre do lead e
+    // divergia da capa do documento que o cliente baixava logo abaixo.
+    empresa: cliente.nome,
+    empresaCnpj: cliente.cnpj,
     // Condição de pagamento estruturada — o texto livre `condicoesPagamento`
     // já ia; o tipo/parcelas não, então o cliente não via "parcelado em 6x".
     condicaoPagamentoTipo: proposta.condicaoPagamentoTipo ?? null,

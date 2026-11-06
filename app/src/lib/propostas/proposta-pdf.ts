@@ -56,6 +56,9 @@ export interface PropostaPdfData {
   criadoPorEmail?: string | null;
   leadNome?: string | null;
   leadEmpresa?: string | null;
+  /** Nome do cliente já resolvido por `clienteDaProposta` (empresa vinculada manda).
+   *  Ausente só em teste/preview: aí vale o texto livre do lead, como antes. */
+  clienteNome?: string | null;
   leadEmail?: string | null;
   leadTelefone?: string | null;
   /** Modelo do PDF. Ausente ou "padrao" = o PDF de sempre, sem nenhuma mudança. */
@@ -143,10 +146,15 @@ export function propostaPdfHtml(p: PropostaPdfData): string {
   return modeloPadrao(p);
 }
 
+/** O nome que o cliente lê na capa e no rodapé. Ver `cliente-da-proposta.ts`. */
+function nomeDoCliente(p: PropostaPdfData): string {
+  return (p.clienteNome || "").trim() || p.leadEmpresa || p.leadNome || "Cliente";
+}
+
 /** O PDF de sempre (moldes Zoho). Intocado: é o que toda proposta existente continua usando. */
 function modeloPadrao(p: PropostaPdfData): string {
   const moeda = p.moeda || "BRL";
-  const cliente = p.leadEmpresa || p.leadNome || "Cliente";
+  const cliente = nomeDoCliente(p);
   const numeroFmt = `PROP ${String(p.numero).padStart(4, "0")}${p.versao > 1 ? ` · v${p.versao}` : ""}`;
   // Cada linha no período de cobrança do Price: a anuidade não entra na tabela (nem no total) "mensal".
   const doPeriodo = (per: PeriodoDeCobranca) => p.itens.filter((i) => periodoDoItem(i).periodo === per);
@@ -515,7 +523,7 @@ function topoPremium(p: PropostaPdfData): string {
 }
 
 function rodapePremium(p: PropostaPdfData, pagina: string): string {
-  return `<div class="rodape"><span>Callface · ${esc(numeroProposta(p))} · ${esc(p.leadEmpresa || p.leadNome || "Cliente")}</span><span>${pagina}</span></div>`;
+  return `<div class="rodape"><span>Callface · ${esc(numeroProposta(p))} · ${esc(nomeDoCliente(p))}</span><span>${pagina}</span></div>`;
 }
 
 function blocoMeta(p: PropostaPdfData): string {
@@ -553,7 +561,7 @@ function blocoSla(): string {
 }
 
 function capaPremium(p: PropostaPdfData, titulo: string, subtitulo: string): string {
-  const cliente = p.leadEmpresa || p.leadNome || "Cliente";
+  const cliente = nomeDoCliente(p);
   return `<section class="pg">
   <div class="capa-topo">
     <img src="${LOGO_WHITE}" alt="callface"/>
@@ -582,7 +590,7 @@ const PASSOS_PADRAO: Array<[string, string]> = [
 
 /** Uma página só: o que é, quanto custa e como fechar. Se a lista de itens for longa, continua na página seguinte em vez de cortar. */
 function modeloEnxuto(p: PropostaPdfData): string {
-  const cliente = p.leadEmpresa || p.leadNome || "Cliente";
+  const cliente = nomeDoCliente(p);
   const c = conteudoDasFamilias(p.familias);
   return docPremium(`<section class="pg">
   ${topoPremium(p)}
@@ -602,7 +610,7 @@ function modeloEnxuto(p: PropostaPdfData): string {
 
 /** Proposta completa: capa, apresentação, escopo e entregas, investimento, suporte e formalização. */
 function modeloCompleto(p: PropostaPdfData): string {
-  const cliente = p.leadEmpresa || p.leadNome || "Cliente";
+  const cliente = nomeDoCliente(p);
   const c = conteudoDasFamilias(p.familias);
   return docPremium(`
 ${capaPremium(p, "Proposta<br/>Comercial", c.rotulo)}
@@ -653,7 +661,7 @@ ${capaPremium(p, "Proposta<br/>Comercial", c.rotulo)}
 
 /** Parceria de White Label: o parceiro compra licença e revende; a estrutura da página é a do completo, o conteúdo é o do parceiro. */
 function modeloWhiteLabel(p: PropostaPdfData): string {
-  const cliente = p.leadEmpresa || p.leadNome || "Parceiro";
+  const cliente = nomeDoCliente(p);
   const c = CONTEUDO_FAMILIA.WHITE_LABEL;
   const passos: Array<[string, string]> = [
     ["Aceite", "Você confirma a proposta de parceria pelo link."],
