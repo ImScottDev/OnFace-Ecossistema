@@ -36,7 +36,7 @@ export async function projetoCompleto(organizacaoId: string, projetoId: string, 
   const playbook = await playbookAtivo(organizacaoId, l.familia, l.tipo);
   const [esperasMapa, tarefasMapa, pessoasMapa, checklist] = await Promise.all([
     esperasDosProjetos(organizacaoId, [l.id]),
-    tarefasDosProjetos(organizacaoId, [{ id: l.id, servicoId: l.servicoId }]),
+    tarefasDosProjetos(organizacaoId, [{ id: l.id, servicoId: l.servicoId, tipo: l.tipo }]),
     pessoasDasEmpresas(organizacaoId, [l.empresa.id]),
     itensDeChecklist(organizacaoId, [l.id]),
   ]);
@@ -124,7 +124,7 @@ async function jornadaHerdada(organizacaoId: string, l: LinhaBase): Promise<{ ta
   if (!l.anteriorId) return { tarefas: [], info: null };
   const [ant] = await linhasBase(organizacaoId, [l.anteriorId]);
   if (!ant) return { tarefas: [], info: null };
-  const brutas = await tarefasDosProjetos(organizacaoId, [{ id: ant.id, servicoId: ant.servicoId }]);
+  const brutas = await tarefasDosProjetos(organizacaoId, [{ id: ant.id, servicoId: ant.servicoId, tipo: ant.tipo }]);
   const etapas = Array.isArray(l.etapasHerdadas) ? (l.etapasHerdadas as Array<{ passo?: string }>) : [];
   const passos = etapas.map((e) => e.passo).filter((p): p is string => !!p);
   // Só entram as tarefas CONCLUÍDAS da jornada anterior cujo passo foi marcado como herdado.

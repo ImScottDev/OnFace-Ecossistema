@@ -1,25 +1,30 @@
 /**
  * Linha do tempo do projeto.
  *
- * Cada evento diz QUEM fez (sistema, time ou cliente) com ícone e cor próprios,
- * e a hora. Agrupada por dia, do mais recente para o mais antigo, como o
- * contrato entrega. Sem JS de cliente: renderiza no servidor.
+ * Cada evento diz QUEM fez (sistema, time ou cliente) e a hora. Agrupada por
+ * dia, do mais recente para o mais antigo, como o contrato entrega. Sem JS de
+ * cliente: renderiza no servidor.
+ *
+ * "Linha do tempo horrível, fora do padrão." O que estava fora do padrão era a
+ * medalha: cada evento abria com um ícone dentro de um círculo colorido de
+ * 32px, e com 86 eventos a coluna virava uma fileira de botões. Virou um ponto
+ * de 7px num trilho de 1px, que é o padrão de feed do produto. Quem fez
+ * continua dito — por escrito, onde sempre esteve.
  */
-import { Cog, UserRound, UsersRound } from "lucide-react";
 import type { AutorDoEvento, EventoDoProjeto } from "@/lib/pos-venda/contrato";
 import { chaveDoDia, hora, rotuloDoDia, type Tom } from "../formatos";
 
-const AUTOR: Record<AutorDoEvento, { rotulo: string; tom: Tom; Icone: typeof Cog }> = {
-  sistema: { rotulo: "Sistema", tom: "neutro", Icone: Cog },
-  time: { rotulo: "Time", tom: "andamento", Icone: UsersRound },
-  cliente: { rotulo: "Cliente", tom: "validacao", Icone: UserRound },
+const AUTOR: Record<AutorDoEvento, { rotulo: string; tom: Tom }> = {
+  sistema: { rotulo: "Sistema", tom: "neutro" },
+  time: { rotulo: "Time", tom: "andamento" },
+  cliente: { rotulo: "Cliente", tom: "validacao" },
 };
 
 export function EventoLinha({ e }: { e: EventoDoProjeto }) {
   const a = AUTOR[e.autor];
   return (
     <li className="pv-evento" data-pv-tom={a.tom}>
-      <span className="pv-evento-ponto" aria-hidden><a.Icone /></span>
+      <span className="pv-evento-ponto" aria-hidden />
       <div className="pv-evento-corpo">
         <span className="pv-evento-titulo">{e.titulo}</span>
         {e.detalhe ? <span className="pv-evento-detalhe">{e.detalhe}</span> : null}

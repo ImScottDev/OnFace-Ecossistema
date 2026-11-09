@@ -1233,32 +1233,40 @@
 .pv-evento {
   position: relative;
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
-  gap: var(--space-12);
+  grid-template-columns: 0.75rem minmax(0, 1fr) auto;
+  gap: var(--space-10);
   padding-bottom: var(--space-16);
 }
+/* O trilho corre de cima a baixo e passa ATRÁS do ponto: é um fio contínuo,
+   não um traço entre medalhas. */
 .pv-evento::before {
   content: "";
   position: absolute;
-  inset-inline-start: 0.9375rem;
-  top: 2rem;
+  inset-inline-start: 0.3125rem;
+  top: 0;
   bottom: 0;
   width: 1px;
   background: var(--pv-borda);
 }
-.pv-evento:last-child::before { display: none; }
+.pv-evento:first-child::before { top: 0.6875rem; }
+.pv-evento:last-child::before { bottom: auto; height: 0.6875rem; }
+/* Ponto de 7px no lugar do ícone em círculo de 32px. */
 .pv-evento-ponto {
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid var(--pv-bd);
-  border-radius: var(--pv-r-pill);
-  background: var(--pv-bg);
-  color: var(--pv-fg);
+  position: relative;
+  z-index: 1;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  margin-top: 0.5rem;
+  margin-inline-start: 0.125rem;
+  border-radius: 50%;
+  background: var(--pv-barra, var(--pv-neutro-barra));
+  box-shadow: 0 0 0 3px var(--pv-superficie);
 }
-.pv-evento-ponto svg { width: 0.9375rem; height: 0.9375rem; }
-.pv-evento-corpo { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding-top: var(--space-4); }
+.pv-evento-corpo { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+
+/* Ícone nu dos próximos passos (não é um evento do trilho). */
+.pv-passo-icone { display: inline-flex; flex-shrink: 0; color: var(--pv-fg); }
+.pv-passo-icone svg { width: 0.9375rem; height: 0.9375rem; }
 .pv-evento-titulo { font-size: var(--text-md); font-weight: var(--weight-semibold); color: var(--pv-tinta); line-height: 1.35; }
 .pv-evento-detalhe { font-size: var(--text-sm); color: var(--pv-tinta-suave); line-height: 1.5; overflow-wrap: anywhere; }
 .pv-evento-quem { font-size: var(--text-sm); color: var(--pv-tinta-suave); }

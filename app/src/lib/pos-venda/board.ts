@@ -36,7 +36,7 @@ export async function boardDoPosVenda(organizacaoId: string, filtros: FiltrosDoB
   const ids = linhas.map((l) => l.id);
   const [esperas, tarefas, pessoas, checklist] = await Promise.all([
     esperasDosProjetos(organizacaoId, ids),
-    tarefasDosProjetos(organizacaoId, linhas.map((l) => ({ id: l.id, servicoId: l.servicoId }))),
+    tarefasDosProjetos(organizacaoId, linhas.map((l) => ({ id: l.id, servicoId: l.servicoId, tipo: l.tipo }))),
     pessoasDasEmpresas(organizacaoId, linhas.map((l) => l.empresa.id)),
     itensDeChecklist(organizacaoId, ids),
   ]);

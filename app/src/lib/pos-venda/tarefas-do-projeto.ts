@@ -9,32 +9,66 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import type { ItemDaTarefa, Pessoa, TarefaDoProjeto } from "./contrato";
+import type { ItemDaTarefa, Pessoa, TarefaDoProjeto, TipoDeProjeto } from "./contrato";
 import { dataDe, estadoDaTarefa, iniciaisDe, prioridadeDe } from "./regras";
 
 type Crua = {
   id: string; titulo: string; descricao: string | null; tipo: string; prioridade: string; status: string; concluida: boolean;
   vence_em: string | null; data_vencimento: string | null; concluida_em: string | null; chave: string | null; criada_em: string;
-  servico_id: string | null; resp_id: string | null; resp_nome: string | null; resp_email: string | null;
+  servico_id: string | null; origem: string | null; resp_id: string | null; resp_nome: string | null; resp_email: string | null;
   comentarios: number; original: string | null;
 };
 
 export interface TarefaComProjeto { projetoId: string; passo: string; criadaEm: Date | null; tarefa: Omit<TarefaDoProjeto, "ordem" | "condicional"> }
 
+/** A `origem` de uma tarefa legada diz a que TIPO de projeto ela pertence. */
+const TIPO_DA_ORIGEM: Record<string, TipoDeProjeto> = {
+  ONBOARDING: "ONBOARDING",
+  IMPLANTACAO: "IMPLEMENTATION",
+};
+
 export async function tarefasDosProjetos(
   organizacaoId: string,
-  projetos: Array<{ id: string; servicoId: string }>,
+  projetos: Array<{ id: string; servicoId: string; tipo: TipoDeProjeto }>,
 ): Promise<Map<string, TarefaComProjeto[]>> {
   const mapa = new Map<string, TarefaComProjeto[]>();
   if (projetos.length === 0) return mapa;
-  const porServico = new Map(projetos.map((p) => [p.servicoId, p.id]));
+
+  /*
+   * Um serviço pode ter DOIS projetos — onboarding e implantação — e isso é
+   * regra do domínio, não exceção ("Um serviço pode ter os dois", contrato).
+   *
+   * Este mapa era `Map<servicoId, projetoId>` montado direto de uma lista:
+   * chave repetida sobrescrevia, e sobrava só o ÚLTIMO projeto do serviço.
+   *
+   * O efeito era uma tarefa legada (sem `chave_idempotencia`, ligada ao
+   * projeto só pelo serviço) trocar de dono conforme a ORDEM da lista. E a
+   * ordem muda quando alguém mexe num projeto. É assim que nasce "tem tarefa
+   * que clico e nem aparece mais": a ação reordena a lista, a colisão passa a
+   * resolver para o outro projeto, e a tarefa some de onde a pessoa estava.
+   * Pior ainda, na TELA DO PROJETO a leitura é de um projeto só, então ali não
+   * havia colisão e a mesma tarefa reaparecia — o que fazia o defeito parecer
+   * intermitente e impossível de reproduzir.
+   *
+   * Agora o serviço guarda TODOS os seus projetos e a tarefa legada escolhe
+   * pelo tipo, que é o que a `origem` dela diz. Sem candidato do tipo certo,
+   * cai no primeiro em ordem de id: continua sendo um palpite, mas é o MESMO
+   * palpite a cada leitura, e tarefa que não pula de lugar é tarefa com que dá
+   * para trabalhar.
+   */
+  const porServico = new Map<string, Array<{ id: string; tipo: TipoDeProjeto }>>();
+  for (const p of [...projetos].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    const lista = porServico.get(p.servicoId) ?? [];
+    lista.push({ id: p.id, tipo: p.tipo });
+    porServico.set(p.servicoId, lista);
+  }
   const porId = new Set(projetos.map((p) => p.id));
   const servicos = sql.join([...porServico.keys()].map((i) => sql`${i}::uuid`), sql`, `);
 
   const linhas = await db.execute<Crua>(sql`
     SELECT t.id::text, t.titulo, t.descricao, t.tipo, t.prioridade, t.status, t.concluida,
            to_json(t.vence_em)#>>'{}' AS vence_em, t.data_vencimento::text, to_json(t.concluida_em)#>>'{}' AS concluida_em,
-           t.chave_idempotencia AS chave, to_json(t.created_at)#>>'{}' AS criada_em, t.servico_canonico_id::text AS servico_id,
+           t.chave_idempotencia AS chave, to_json(t.created_at)#>>'{}' AS criada_em, t.servico_canonico_id::text AS servico_id, t.origem,
            u.id::text AS resp_id, u.nome AS resp_nome, u.email AS resp_email,
            (SELECT count(*)::int FROM tarefa_comentarios c WHERE c.tarefa_id = t.id AND c.organizacao_id = t.organizacao_id) AS comentarios,
            (SELECT e.payload->>'de' FROM domain_events e
@@ -70,7 +104,9 @@ export async function tarefasDosProjetos(
       if (!pid || !porId.has(pid)) continue;
       projetoId = pid; passo = resto.join(":") || l.tipo;
     } else if (l.servico_id) {
-      projetoId = porServico.get(l.servico_id) ?? null;
+      const candidatos = porServico.get(l.servico_id) ?? [];
+      const tipoEsperado = l.origem ? TIPO_DA_ORIGEM[l.origem] : undefined;
+      projetoId = (candidatos.find((c) => c.tipo === tipoEsperado) ?? candidatos[0])?.id ?? null;
     }
     if (!projetoId) continue;
 

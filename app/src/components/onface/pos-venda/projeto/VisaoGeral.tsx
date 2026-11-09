@@ -80,7 +80,10 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
                 const p = prazo(t.venceEm, agora);
                 return (
                   <li key={t.id} className="pv-pessoa">
-                    <span className="pv-evento-ponto" data-pv-tom={t.atrasada ? "risco" : "neutro"} aria-hidden>
+                    {/* Ícone nu, não dentro de um círculo colorido: a lista é
+                        de três itens e o ícone diz "atrasada" ou "a seguir",
+                        não precisa de medalha. */}
+                    <span className="pv-passo-icone" data-pv-tom={t.atrasada ? "risco" : "neutro"} aria-hidden>
                       {t.atrasada ? <AlarmClock /> : <CornerDownRight />}
                     </span>
                     <span className="pv-pessoa-texto">
