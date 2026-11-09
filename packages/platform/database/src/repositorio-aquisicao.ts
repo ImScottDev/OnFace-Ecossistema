@@ -147,16 +147,28 @@ export function criarRepositorioAquisicao(db: Executor, sql: SqlTag): Repositori
     },
     async enriquecerAquisicao(aquisicaoId, e) {
       // Só PREENCHE: COALESCE em tudo. O vínculo com o lead só entra se aquele lead ainda não
-      // tem aquisição (índice único em lead_legado_id).
+      // tem aquisição ABERTA (índice `uq_aquisicoes_lead_legado_aberta`, migration 0143).
+      // O guarda precisa ter o MESMO alcance do índice: enquanto ele olhava qualquer
+      // aquisição, recusava o vínculo legítimo por causa de uma fechada e a aquisição
+      // nova nascia órfã, sem cartão no board.
       await db.execute(sql`
         UPDATE aquisicoes a SET
           origem = COALESCE(NULLIF(a.origem, ''), ${e.origem ?? null}),
           canal = COALESCE(NULLIF(a.canal, ''), ${e.provider ?? e.origem ?? null}),
           source_provider = COALESCE(NULLIF(a.source_provider, ''), ${e.provider ?? null}),
           empresa_id = COALESCE(a.empresa_id, ${e.empresaId}::uuid),
+          -- NAO mexer em last_touch_at aqui, por mais tentador que pareca.
+          -- A reconversao e um toque de ENTRADA (o lead veio ate nos), e "sem 1o
+          -- contato" e derivado de last_touch_at <= first_touch_at (ver o
+          -- comentario em lib/vendas/consultas.ts). Carimbar a volta do lead
+          -- tiraria justamente ele da fila de contato do SDR e da lista de
+          -- nao-contatados do Inicio: o sinal viraria sumico (o lead desaparece da fila). A volta ja fica
+          -- registrada em pontos_contato por registrarTouchpoint.
           lead_legado_id = COALESCE(a.lead_legado_id, (
             SELECT ${e.leadLegadoId ?? null}::uuid WHERE NOT EXISTS (
-              SELECT 1 FROM aquisicoes o WHERE o.lead_legado_id = ${e.leadLegadoId ?? null}::uuid))),
+              SELECT 1 FROM aquisicoes o
+               WHERE o.lead_legado_id = ${e.leadLegadoId ?? null}::uuid
+                 AND o.closed_at IS NULL))),
           pipeline_id = CASE WHEN a.etapa_id IS NULL AND NOT a.qualificado AND a.desqualificado_em IS NULL
                               AND COALESCE(a.nutricao_status, '') = '' THEN COALESCE(a.pipeline_id, np.pid) ELSE a.pipeline_id END,
           -- só dá etapa inicial a quem ainda é "novo": qualificada, desqualificada ou em nutrição

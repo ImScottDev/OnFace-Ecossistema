@@ -533,6 +533,47 @@ export interface ReceitaAtribuida {
   vendasPagas: number;
 }
 
+export interface EntradasRepetidas {
+  /** Pessoa que JÁ estava na base antes do período e converteu de novo. */
+  reconversoes: number;
+  /** Mesma pessoa chegando por duas portas no mesmo período (ex.: webhook Meta + RD). */
+  duplicataNaOrigem: number;
+}
+
+/**
+ * Separa as duas coisas que o card juntava num número só.
+ *
+ * O card mostrava `leadsMeta - leads` com o rótulo "dedupe/reconversão", ou seja um
+ * RESÍDUO de subtração apresentado como se alguém tivesse contado reconversão. Medido
+ * em produção na semana de 01 a 07/11/2026: das 117 entregas marcadas `duplicada`,
+ * 100 eram o mesmo lead que já tinha entrado pela porta `meta` na mesma semana e
+ * chegou de novo pelo RD. Só 13 eram reconversão de verdade.
+ *
+ * Misturar as duas é caro: a duplicata na origem é saudável (o CRM deduplicou certo e
+ * não há nada a fazer), e a reconversão é gente que levantou a mão de novo e precisa
+ * voltar para a fila. Escondidas no mesmo número grande, as 13 sumiam dentro das 100.
+ *
+ * A régua é a data de criação do lead: antes da janela é reconversão, dentro da janela
+ * é a mesma entrada chegando duas vezes.
+ */
+export async function getEntradasRepetidas(orgId: string, since: Date, until: Date): Promise<EntradasRepetidas> {
+  const rows = await db.execute(sql`
+    SELECT
+      count(DISTINCT ce.lead_id) FILTER (WHERE l.created_at < ${since.toISOString()})::int  AS reconversoes,
+      count(DISTINCT ce.lead_id) FILTER (WHERE l.created_at >= ${since.toISOString()})::int AS duplicata_na_origem
+    FROM captacao_entregas ce
+    JOIN leads l ON l.id = ce.lead_id
+    WHERE ce.organizacao_id = ${orgId}
+      AND ce.status = 'duplicada'
+      AND ce.created_at >= ${since.toISOString()} AND ce.created_at < ${until.toISOString()}
+  `);
+  const r = (rows as unknown as Record<string, unknown>[])[0] ?? {};
+  return {
+    reconversoes: num(r.reconversoes),
+    duplicataNaOrigem: num(r.duplicata_na_origem),
+  };
+}
+
 /**
  * ENG-667b — Receita GANHA no período atribuída pela ORIGEM ORIGINAL do lead
  * (first-touch), independente de quando o lead entrou no CRM. É a pergunta do gestor

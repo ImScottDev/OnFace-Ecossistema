@@ -46,6 +46,13 @@ interface Alerta {
   chave?: string;
 }
 
+interface EntradasRepetidas {
+  /** Pessoa que já estava na base antes do período e converteu de novo. */
+  reconversoes: number;
+  /** Mesma pessoa chegando por duas portas no período (ex.: webhook Meta + RD). */
+  duplicataNaOrigem: number;
+}
+
 interface FunilMidiaPaga {
   impressoes: number;
   cliques: number;
@@ -78,6 +85,8 @@ interface MidiaPagaData {
   receitaAtribuida: ReceitaAtribuida;
   roasCiclo: RoasCicloLinha[];
   pipelineAberto: { total: number; negocios: number };
+  /** Opcional: resposta de API publicada antes desta versão não traz o campo. */
+  entradasRepetidas?: EntradasRepetidas;
 }
 
 function formatCurrency(value: number): string {
@@ -276,6 +285,13 @@ export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
   // CPL pelo lead REPORTADO PELA META (mesma régua da tabela por campanha — ENG-666 item 2)
   const cplTotal = funil && funil.leadsMeta > 0 && funil.gastoTotal > 0 ? funil.gastoTotal / funil.leadsMeta : null;
   const residuoLeads = funil ? funil.leadsMeta - funil.leads : 0;
+  // O resíduo acima é SUBTRAÇÃO (Meta menos CRM), não contagem. Durante meses ele foi
+  // rotulado "dedupe/reconversão", o que afirmava um fato que ninguém mediu: na semana
+  // de 01 a 07/11/2026 esse número era 106, e das entregas duplicadas 100 eram o mesmo
+  // lead chegando por duas portas (webhook Meta + RD) contra 13 reconversões de verdade.
+  // As 13 sumiam dentro das 100. `entradasRepetidas` conta as duas separadas no banco.
+  const reconversoes = data?.entradasRepetidas?.reconversoes ?? 0;
+  const duplicataOrigem = data?.entradasRepetidas?.duplicataNaOrigem ?? 0;
 
   // Funil em rampa de cinza — lima só em Vendas (sucesso). Disciplina de cor 21/07.
   const funilData = funil
@@ -315,7 +331,13 @@ export default function TabMidiaPaga({ periodo }: TabMidiaPagaProps) {
         <HeroKpi
           label="Leads da mídia"
           value={funil ? fmtInt(funil.leadsMeta) : "—"}
-          sub={funil ? `${cplTotal != null ? `CPL ${formatCurrency(cplTotal)} · ` : ""}${fmtInt(funil.leads)} no CRM${residuoLeads > 0 ? ` (${residuoLeads} dedupe/reconversão)` : ""}` : "no período"}
+          sub={funil ? [
+            cplTotal != null ? `CPL ${formatCurrency(cplTotal)}` : null,
+            `${fmtInt(funil.leads)} no CRM`,
+            duplicataOrigem > 0 ? `${fmtInt(duplicataOrigem)} chegaram 2x (deduplicados)` : null,
+            reconversoes > 0 ? `${fmtInt(reconversoes)} reconverteram` : null,
+            residuoLeads > 0 && reconversoes === 0 && duplicataOrigem === 0 ? `${fmtInt(residuoLeads)} de diferença` : null,
+          ].filter(Boolean).join(" · ") : "no período"}
           icon={Users}
         />
         <HeroKpi label="Vendas do cohort" value={funil ? fmtInt(funil.vendas) : "—"} sub="leads deste período que já fecharam" accent={funil && funil.vendas > 0 ? "var(--cf2-success-text)" : undefined} icon={Trophy} />

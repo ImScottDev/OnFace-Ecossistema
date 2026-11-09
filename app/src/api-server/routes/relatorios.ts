@@ -27,6 +27,7 @@ import { VALOR_MRR_VENDIDO, VALOR_NAO_RECORRENTE_VENDIDO, VALOR_TOTAL_VENDIDO } 
 import { CLOSER_EXTRA_IDS } from "@/lib/metas-shared";
 import {
   getMetricasPorCampanha, getMetricasPorCriativo, getMetricasPorConjunto, agregarFunil, gerarAlertas, rankingPorRoas,
+  getEntradasRepetidas,
   getStatusAtualLeadsPagos, getReceitaAtribuida, getRoasCiclo, getPipelineAbertoPago,
 } from "@/lib/relatorios/midia-paga";
 import { listarVendasFechadas, listarAgendasRealizadas, listarVendasAtribuidasSdr } from "@/lib/relatorios/fechamento-comercial";
@@ -1415,7 +1416,7 @@ app.get("/midia-paga", async (c) => {
   const periodo = c.req.query("periodo") ?? "30d";
   const { since, until } = periodWindow(periodo);
 
-  const [porCampanha, porConjunto, porCriativo, statusAtual, receitaAtribuida, roasCiclo, pipelineAberto] = await Promise.all([
+  const [porCampanha, porConjunto, porCriativo, statusAtual, receitaAtribuida, roasCiclo, pipelineAberto, entradasRepetidas] = await Promise.all([
     getMetricasPorCampanha(ctx.organizacaoId, since, until),
     getMetricasPorConjunto(ctx.organizacaoId, since, until),
     getMetricasPorCriativo(ctx.organizacaoId, since, until),
@@ -1423,6 +1424,7 @@ app.get("/midia-paga", async (c) => {
     getReceitaAtribuida(ctx.organizacaoId, since, until),        // ENG-667b
     getRoasCiclo(ctx.organizacaoId),                             // ENG-667c
     getPipelineAbertoPago(ctx.organizacaoId),                    // ENG-667d
+    getEntradasRepetidas(ctx.organizacaoId, since, until),       // reconversão x duplicata na origem
   ]);
   const funil = agregarFunil(porCampanha);
   const alertas = gerarAlertas(porCampanha, porCriativo);
@@ -1445,6 +1447,7 @@ app.get("/midia-paga", async (c) => {
     receitaAtribuida,
     roasCiclo,
     pipelineAberto,
+    entradasRepetidas,
   });
 });
 
