@@ -23,8 +23,19 @@ const CUS = `cus_smoke_${marca}`;
 const NOME = `Smoke Autoatendimento ${marca}`;
 
 async function main() {
-  const url = process.env.DATABASE_URL ?? "";
-  if (/callface_crm_mz/.test(url)) throw new Error("este smoke cria e apaga dado: não rode contra produção");
+  /* Guarda de alvo. O nome do banco NÃO serve para distinguir: homologação é uma
+     cópia e se chama igual (`callface_crm_mz`). Então o alvo é declarado à mão, e
+     o script confere contra a marca que só existe em homologação. */
+  if (process.env.SMOKE_ALVO !== "homolog") {
+    throw new Error("este smoke cria e apaga dado: rode com SMOKE_ALVO=homolog apontando para o banco de homologação");
+  }
+  const [prod] = (await db.execute(sql`
+    SELECT count(*)::int AS n FROM negocios WHERE origem_negocio = 'self_checkout' AND servico_origem_id IS NOT NULL
+  `)) as unknown as Array<{ n: number }>;
+  const [marcaHomolog] = (await db.execute(sql`
+    SELECT current_setting('port') AS porta, inet_server_addr()::text AS host
+  `)) as unknown as Array<{ porta: string; host: string | null }>;
+  console.log(`banco alvo: porta ${marcaHomolog?.porta}, ${prod?.n ?? 0} vendas de autoatendimento já vinculadas`);
 
   const [org] = (await db.execute(sql`SELECT id::text FROM organizacoes ORDER BY created_at LIMIT 1`)) as unknown as Array<{ id: string }>;
   if (!org) throw new Error("sem organização");
@@ -32,7 +43,7 @@ async function main() {
   const inicio = new Date();
   const assinatura = {
     id: SUB, status: "active", inicio, valorMensal: 269.8, produto: "Callface AI - Starter",
-    customer: { id: CUS, name: NOME, email: `${marca}@smoke.exemplo`, phone: "+5511999999999", metadata: {} },
+    customer: { id: CUS, name: NOME, email: `${marca}@smoke.exemplo`, phone: `+5511${String(Date.now()).slice(-9)}`, metadata: {} },
   };
 
   const primeira = await registrarVendaDeAutoatendimento(org.id, assinatura);
@@ -49,11 +60,19 @@ async function main() {
            (n.ganho_at AT TIME ZONE 'America/Sao_Paulo')::date::text AS ganho,
            (SELECT count(*)::int FROM empresas e WHERE e.nome = ${NOME}) AS empresas,
            (SELECT count(*)::int FROM pessoas p WHERE p.empresa_id = n.empresa_id) AS pessoas,
+           (SELECT count(*)::int FROM pessoa_empresa_vinculos v WHERE v.empresa_id = n.empresa_id) AS vinculos,
            (SELECT count(*)::int FROM clientes c WHERE c.empresa_id = n.empresa_id) AS cliente360,
            (SELECT count(*)::int FROM servicos_canonicos s WHERE s.current_subscription_id = ${SUB}) AS servicos
       FROM negocios n WHERE n.id = ${primeira.negocioId}::uuid
   `)) as unknown as Array<Record<string, unknown>>;
   console.log("venda criada:", v);
+
+  const diag = (await db.execute(sql`
+    SELECT p.id::text, p.nome, p.email, p.telefone, p.empresa_id::text AS empresa_da_pessoa,
+           (SELECT e.nome FROM empresas e WHERE e.id = p.empresa_id) AS nome_da_empresa
+      FROM pessoas p WHERE p.nome LIKE ${`%${marca}%`} OR p.email = ${`${marca}@smoke.exemplo`}
+  `)) as unknown as Array<Record<string, unknown>>;
+  console.log("pessoa(s) com o e-mail do smoke:", diag, "| empresa da venda:", primeira.empresaId);
 
   const problemas: string[] = [];
   if (v.origem_negocio !== "self_checkout") problemas.push("origem errada");
@@ -62,15 +81,19 @@ async function main() {
   if (!v.sem_responsavel) problemas.push("nasceu com responsável");
   if (!v.ligado_a_assinatura) problemas.push("sem vínculo com a assinatura");
   if (v.empresas !== 1) problemas.push(`empresa criada ${v.empresas}x`);
-  if (Number(v.pessoas) < 1) problemas.push("sem contato");
+  if (Number(v.pessoas) < 1 && Number(v.vinculos) < 1) problemas.push("sem contato ligado à empresa");
   if (v.cliente360 !== 1) problemas.push("sem Cliente 360");
   if (Number(v.servicos) < 1) problemas.push("sem serviço canônico");
 
   // Limpeza: tudo que este smoke criou, na ordem das dependências.
+  // A oportunidade canônica referencia o negócio (FK `negocio_id_legado`): sai antes.
+  await db.execute(sql`DELETE FROM oportunidades WHERE negocio_id_legado = ${primeira.negocioId}::uuid`);
   await db.execute(sql`DELETE FROM negocios WHERE id = ${primeira.negocioId}::uuid`);
   await db.execute(sql`DELETE FROM clientes WHERE empresa_id = ${primeira.empresaId}::uuid`);
   await db.execute(sql`DELETE FROM servicos_canonicos WHERE current_subscription_id = ${SUB}`);
   await db.execute(sql`DELETE FROM aquisicoes WHERE organizacao_id = ${org.id}::uuid AND empresa_id = ${primeira.empresaId}::uuid`);
+  await db.execute(sql`DELETE FROM pontos_contato WHERE empresa_id = ${primeira.empresaId}::uuid`);
+  await db.execute(sql`DELETE FROM pessoa_empresa_vinculos WHERE empresa_id = ${primeira.empresaId}::uuid`);
   await db.execute(sql`DELETE FROM pessoas WHERE empresa_id = ${primeira.empresaId}::uuid`);
   await db.execute(sql`DELETE FROM leads WHERE stripe_customer_id = ${CUS}`);
   await db.execute(sql`DELETE FROM empresas WHERE id = ${primeira.empresaId}::uuid`);
