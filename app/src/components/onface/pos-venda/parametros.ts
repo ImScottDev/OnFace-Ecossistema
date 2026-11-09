@@ -8,7 +8,7 @@
  * Este arquivo é a única fonte de "como a URL vira filtro e o filtro vira
  * URL". Servidor e cliente importam daqui, então os dois nunca discordam.
  */
-import type { EstadoDoProjeto, Familia, FiltrosDoBoard } from "@/lib/pos-venda/contrato";
+import type { EstadoDoProjeto, Familia, FiltrosDoBoard, TipoDeProjeto } from "@/lib/pos-venda/contrato";
 
 export const ROTA_DO_BOARD = "/pos-vendas";
 
@@ -16,6 +16,21 @@ export type ParamsBrutos = Record<string, string | string[] | undefined>;
 
 const FAMILIAS: readonly Familia[] = ["CALLFACE_AI", "PABX", "WHITE_LABEL"];
 const ESTADOS: readonly EstadoDoProjeto[] = ["NAO_INICIADO", "EM_ANDAMENTO", "AGUARDANDO", "EM_VALIDACAO", "CONCLUIDO", "CANCELADO"];
+
+/**
+ * `?aba=` escolhe a jornada, e os nomes curtos vêm de antes: `/clientes/implantacao`
+ * redireciona para `/pos-vendas?aba=imp` desde 01/10, e esse endereço continua
+ * circulando. Mudar a chave aqui quebraria o redirect calado.
+ *
+ * Sem `?aba=` o board abre com as duas jornadas e as três famílias — é a visão
+ * que cobre tudo, e é isso que a trava `entrega-fase-cobre-checklist` protege.
+ */
+const ABAS: Record<string, TipoDeProjeto> = {
+  onb: "ONBOARDING",
+  imp: "IMPLEMENTATION",
+};
+
+const abaDoTipo = (t: TipoDeProjeto): string => (t === "IMPLEMENTATION" ? "imp" : "onb");
 
 export const RECORTES = [
   { valor: "atrasados", rotulo: "Atrasados" },
@@ -35,7 +50,7 @@ export function lerFiltros(p: ParamsBrutos): FiltrosDoBoard {
   const estado = um(p.estado);
   const recorte = um(p.recorte);
   return {
-    tipo: null,
+    tipo: ABAS[um(p.aba) ?? ""] ?? null,
     familia: FAMILIAS.includes(familia as Familia) ? (familia as Familia) : null,
     responsavelId: um(p.responsavel),
     estado: ESTADOS.includes(estado as EstadoDoProjeto) ? (estado as EstadoDoProjeto) : null,
@@ -48,6 +63,7 @@ export function lerFiltros(p: ParamsBrutos): FiltrosDoBoard {
 export function hrefDoBoard(atual: FiltrosDoBoard, mudar: Partial<FiltrosDoBoard> = {}): string {
   const f = { ...atual, ...mudar };
   const q = new URLSearchParams();
+  if (f.tipo) q.set("aba", abaDoTipo(f.tipo));
   if (f.familia) q.set("familia", f.familia);
   if (f.estado) q.set("estado", f.estado);
   if (f.recorte) q.set("recorte", f.recorte);

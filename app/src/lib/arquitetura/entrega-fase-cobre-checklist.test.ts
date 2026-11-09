@@ -61,12 +61,25 @@ test("o board que cobre as três famílias tem alguém que o abra", () => {
   assert.match(redirect, /\/pos-vendas\?aba=imp/,
     "o endereço antigo de Implantação precisa levar ao painel que hoje a hospeda");
 
+  // 09/11: o painel foi reescrito à mão (fora do handoff gerado) e o recorte
+  // deixou de ser prop inicial — passou a sair inteiro da URL, em
+  // `components/onface/pos-venda/parametros.ts`. A REGRA não mudou: abrir sem
+  // família fixa e honrar `?aba=`. Só mudou onde ela se verifica.
   const painel = fs.readFileSync(
     path.join(process.cwd(), "src", "app", "(produto)", "pos-vendas", "page.tsx"), "utf8");
-  assert.match(painel, /familiaInicial=\{[^}]*:\s*null\}/,
+  assert.match(painel, /lerFiltros\(/,
+    "o painel de Pós-vendas tira o recorte da URL — sem isso, volta a haver filtro fixo em código");
+  assert.doesNotMatch(painel, /familia\s*[:=]\s*["'](CALLFACE_AI|PABX|WHITE_LABEL)["']/,
     "o painel de Pós-vendas precisa abrir sem família fixa — é a visão que cobre as três");
-  assert.match(painel, /abaInicial=/,
-    "sem `?aba=`, o redirect de Implantação cairia na aba errada");
+
+  const params = fs.readFileSync(
+    path.join(process.cwd(), "src", "components", "onface", "pos-venda", "parametros.ts"), "utf8");
+  assert.match(params, /\bimp\b\s*:\s*["']IMPLEMENTATION["']/,
+    "sem o mapa de `?aba=imp`, o redirect de Implantação cairia na visão errada");
+  assert.match(params, /\bonb\b\s*:\s*["']ONBOARDING["']/,
+    "`?aba=onb` precisa continuar existindo: é o par do `imp` e aparece em link salvo");
+  assert.match(params, /um\(p\.aba\)/,
+    "o `?aba=` tem que ser lido de verdade, não só declarado");
 });
 
 test("o vocabulário de fase não volta para o arquivo que importa db", () => {
