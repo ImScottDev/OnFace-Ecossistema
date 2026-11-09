@@ -91,6 +91,32 @@ export function Mesa({
   const trazerDeVolta = (c: CartaoDoProjeto) =>
     executar({ t: "volta", id: c.id }, () => acoes.trazerDeVolta(c.id), `${c.empresa.nome} voltou para a casa.`);
 
+  /*
+   * Nada em aberto: a mesa inteira dá lugar ao vazio, e nenhuma faixa
+   * aparece.
+   *
+   * Isto apareceu renderizando a tela com zero entregas, que é um estado que
+   * homologação nunca produz. Sem esta saída, desenhavam-se DOIS vazios
+   * empilhados e contraditórios: a faixa dizia "nada esperando você, todas as
+   * entregas em aberto estão andando" logo acima de "nenhuma entrega em
+   * aberto". Faixa de trabalho sem trabalho nenhum não é um fim de dia, é uma
+   * moldura vazia.
+   */
+  if (mesa.abertos === 0) {
+    return (
+      <div className="mz">
+        <div className="mz-vazio" role="status">
+          <Inbox aria-hidden />
+          <h2>Nenhuma entrega em aberto</h2>
+          <p>Os projetos nascem quando uma venda é ganha. Assim que a próxima fechar, ela aparece aqui com as tarefas e o prazo prontos.</p>
+          <Link className="mz-arquivo" href="/pos-vendas/todos">
+            Ver os {mesa.encerrados > 0 ? `${mesa.encerrados} ` : ""}encerrados <ArrowRight aria-hidden />
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mz">
       {/* Recorte herdado de um endereço antigo. A mesa não esconde que está
@@ -222,15 +248,6 @@ export function Mesa({
           </ul>
         </section>
       ))}
-
-      {mesa.abertos === 0 ? (
-        <div className="mz-vazio" role="status">
-          <Inbox aria-hidden />
-          <h2>Nenhuma entrega em aberto</h2>
-          <p>Os projetos nascem quando uma venda é ganha. Assim que a próxima fechar, ela aparece aqui com as tarefas e o prazo prontos.</p>
-          <Link className="mz-arquivo" href="/pos-vendas/todos">Ver os encerrados <ArrowRight aria-hidden /></Link>
-        </div>
-      ) : null}
 
       {foco ? (
         <ModoFoco

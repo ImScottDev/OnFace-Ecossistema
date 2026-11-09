@@ -42,3 +42,5 @@ next-env.d.ts
 
 # Backups pontuais deixados no disco de produção (não representam código em uso)
 *.bak-*
+.env.render
+render-pos-venda.mts
