@@ -208,6 +208,13 @@ export async function registrarVendaDeAutoatendimento(
 
   if (!negocio) return { criou: false, motivo: `assinatura ${a.id} já tem venda registrada` };
 
+  /* A venda precisa existir também no modelo canônico: pipeline, relatórios e a
+     política de Ganho leem `oportunidades`. Negócio que nasce só no legado some
+     dessas leituras — é a regra de arquitetura `escritores-migrados`. */
+  const { syncOportunidadeFromNegocio } = await import("@/lib/crm/sync-domain-model");
+  await syncOportunidadeFromNegocio(negocio.id)
+    .catch((e) => console.error(`[autoatendimento] ${a.id}: oportunidade canônica não sincronizou:`, e instanceof Error ? e.message : e));
+
   // ── 5. Cliente 360, com a data em que a relação começou ───────────────────
   await garantirContaCsPorEmpresa({ organizacaoId, empresaId, leadId, entrouEm: a.inicio })
     .catch((e) => console.error(`[autoatendimento] ${a.id}: conta de CS não criada:`, e instanceof Error ? e.message : e));
