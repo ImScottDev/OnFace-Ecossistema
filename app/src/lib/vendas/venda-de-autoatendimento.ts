@@ -148,7 +148,18 @@ export async function registrarVendaDeAutoatendimento(
 
   // ── 2. Contato: lead + par canônico (pessoa e aquisição) ──────────────────
   let leadId = leadExistente?.id ?? null;
-  if (!leadId) {
+  if (leadId) {
+    /* O contato já existia (comprou pelo site depois de falar com alguém, ou
+       voltou). Completa o que falta sem sobrescrever nada: a empresa quando o
+       lead estava solto, e o Customer do Stripe — é por ele que os outros
+       handlers financeiros acham o dono de um pagamento. */
+    await db.execute(sql`
+      UPDATE leads
+         SET empresa_id = COALESCE(empresa_id, ${empresaId}::uuid),
+             stripe_customer_id = COALESCE(stripe_customer_id, ${c.id})
+       WHERE id = ${leadId}::uuid
+         AND (empresa_id IS NULL OR stripe_customer_id IS NULL)`);
+  } else {
     const [novoLead] = (await db.execute(sql`
       INSERT INTO leads (organizacao_id, nome, email, telefone, empresa_id, tipo, status, origem, stripe_customer_id)
       VALUES (${organizacaoId}::uuid, ${nomePessoa || nomeEmpresa}, ${email || null}, ${c.phone ?? null},
