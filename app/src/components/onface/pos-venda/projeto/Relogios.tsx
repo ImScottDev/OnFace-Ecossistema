@@ -76,7 +76,13 @@ export function Relogios({ projeto, agora, acoes }: { projeto: Projeto; agora: D
           </header>
           <div className="pv-relogio-valor">
             {duracao(r.horasDoTime)}
-            <small>{r.esperando ? "congelado" : "trabalhado pelo time"}</small>
+            {/* Sem espera registrada os dois relógios marcam exatamente o mesmo,
+                e dois números grandes e idênticos lado a lado parecem defeito de
+                tela. Então este diz POR QUE é igual, em vez de repetir o outro
+                em silêncio. */}
+            <small>
+              {r.esperando ? "congelado" : descontado === 0 ? "igual ao do cliente: nenhuma espera registrada" : "trabalhado pelo time"}
+            </small>
           </div>
           {consumoDoTime !== null && r.venceEm !== null ? (
             <Barra fracao={consumoDoTime} tom={r.esperando ? "espera" : "andamento"} rotulo="Prazo consumido pelo relógio do time" />

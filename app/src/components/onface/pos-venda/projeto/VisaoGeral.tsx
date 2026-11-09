@@ -1,11 +1,27 @@
 "use client";
 
+/**
+ * Visão geral do projeto.
+ *
+ * "A visão geral está totalmente desorganizada" — e estava, por duas razões.
+ *
+ * A primeira é a ORDEM. Ela abria pelo progresso, que é leitura, e deixava os
+ * próximos passos em segundo. Quem abre um projeto de entrega quer saber o que
+ * fazer agora; o quanto já andou vem depois. A ordem passa a ser a da decisão:
+ * o que fazer, onde estamos, o que aconteceu, o que ficou escrito.
+ *
+ * A segunda é a FORMA. Eram quatro cartões numa grade, dentro de uma aba,
+ * dentro da página: caixa dentro de caixa dentro de caixa. Agora são seções
+ * separadas por fio e espaço. E o anel de progresso virou barra — anel é um
+ * dos recursos que o piso de qualidade recusa por nome, porque gasta a área de
+ * um gráfico para dizer um número que cabe em duas palavras.
+ */
 import { useState } from "react";
 import { AlarmClock, ArrowRight, CornerDownRight, History } from "lucide-react";
 import type { Projeto, TarefaDoProjeto } from "@/lib/pos-venda/contrato";
 import { Button } from "@/components/ui/button";
 import { dia, haQuanto, percentual, prazo, type Tom } from "../formatos";
-import { Avatar } from "../pecas";
+import { Avatar, Barra } from "../pecas";
 import { useAcao, type AcoesDaTela } from "./acoes";
 import { EventoLinha } from "./LinhaDoTempo";
 
@@ -15,8 +31,6 @@ const FATIAS: Array<{ estado: TarefaDoProjeto["estado"]; rotulo: string; tom: To
   { estado: "AGUARDANDO", rotulo: "Aguardando", tom: "espera" },
   { estado: "A_FAZER", rotulo: "A fazer", tom: "neutro" },
 ];
-const R = 40;
-const CIRC = 2 * Math.PI * R;
 
 export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Projeto; agora: Date; acoes: AcoesDaTela; aoVerTudo: () => void }) {
   const aplicaveis = projeto.tarefas.filter((t) => t.estado !== "NAO_SE_APLICA");
@@ -42,10 +56,7 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
         : [];
   const base = contagem.reduce((a, c) => a + c.n, 0);
   const fracao = fonte === "tarefas" ? projeto.progresso : checklist ? checklist.feitos / checklist.total : 0;
-
-  // Início de cada fatia da rosca: soma do comprimento das anteriores.
-  const comprimentos = contagem.map((c) => (base > 0 ? (c.n / base) * CIRC : 0));
-  const inicios = comprimentos.map((_, i) => comprimentos.slice(0, i).reduce((a, b) => a + b, 0));
+  const feitos = fonte === "tarefas" ? aplicaveis.filter((t) => t.estado === "CONCLUIDA").length : (checklist?.feitos ?? 0);
 
   return (
     <div className="pv-painel">
@@ -60,51 +71,7 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
       ) : null}
 
       <div className="pv-visao">
-        <section className="pv-bloco" aria-label="Distribuição das tarefas">
-          <h2 className="pv-secao-titulo">Progresso</h2>
-          {fonte === "vazia" ? (
-            <p className="pv-secao-nota">
-              Este projeto ainda não tem tarefas no fluxo novo e não tem checklist anterior, então não há progresso a medir.
-              As tarefas aparecem aqui quando o playbook da família for aplicado.
-            </p>
-          ) : (
-            <>
-              <div className="pv-rosca-linha">
-                <div className="pv-rosca" role="img" aria-label={`${percentual(fracao)}% concluído, ${contagem.map((c) => `${c.n} ${c.rotulo.toLowerCase()}`).join(", ")}`}>
-                  <svg viewBox="0 0 100 100" aria-hidden>
-                    <circle className="pv-rosca-trilho" cx="50" cy="50" r={R} />
-                    {contagem.map((c, i) =>
-                      c.n > 0 ? (
-                        <circle key={c.estado} className="pv-rosca-fatia" data-pv-tom={c.tom} cx="50" cy="50" r={R}
-                          strokeDasharray={`${comprimentos[i]} ${CIRC - comprimentos[i]}`} strokeDashoffset={-inicios[i]} />
-                      ) : null,
-                    )}
-                  </svg>
-                  <div className="pv-rosca-centro">
-                    <strong>{percentual(fracao)}%</strong>
-                    <span>concluído</span>
-                  </div>
-                </div>
-                <ul className="pv-legenda">
-                  {contagem.map((c) => (
-                    <li key={c.estado} data-pv-tom={c.tom}><i aria-hidden />{c.rotulo}<b>{c.n}</b></li>
-                  ))}
-                </ul>
-              </div>
-              {/* Rosca, legenda e percentual saem da MESMA fonte. Quando não há
-                  tarefa do playbook o progresso vem do checklist anterior, e a
-                  tela diz isso — antes mostrava "0 de 0 tarefas" ao lado de uma
-                  barra em 100%, que é o tipo de contradição que faz o time
-                  parar de confiar no número. */}
-              {fonte === "checklist" && checklist ? (
-                <p className="pv-secao-nota">
-                  Este projeto não tem tarefas do playbook. O progresso mede o checklist anterior: {checklist.feitos} de {checklist.total} {checklist.total === 1 ? "item" : "itens"}.
-                </p>
-              ) : null}
-            </>
-          )}
-        </section>
-
+        {/* O que fazer agora vem PRIMEIRO. */}
         <section className="pv-bloco" aria-label="Próximos passos">
           <h2 className="pv-secao-titulo">Próximos passos</h2>
           {proximas.length > 0 ? (
@@ -133,6 +100,44 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
             </p>
           ) : (
             <p className="pv-secao-nota">{total === 0 ? "Nenhuma tarefa para fazer ainda." : "Todas as tarefas aplicáveis foram concluídas."}</p>
+          )}
+        </section>
+
+        {/* Onde estamos. Barra e contagem saem da MESMA fonte: quando não há
+            tarefa do playbook, o progresso vem do checklist anterior e a tela
+            diz isso. Antes aparecia "0 de 0 tarefas" ao lado de uma barra em
+            100% — o tipo de contradição que faz o time parar de confiar no
+            número. */}
+        <section className="pv-bloco" aria-label="Progresso do projeto">
+          <h2 className="pv-secao-titulo">Progresso</h2>
+          {fonte === "vazia" ? (
+            <p className="pv-secao-nota">
+              Este projeto ainda não tem tarefas no fluxo novo e não tem checklist anterior, então não há progresso a medir.
+              As tarefas aparecem aqui quando o playbook da família for aplicado.
+            </p>
+          ) : (
+            <>
+              <p className="pv-progresso-leitura">
+                <strong className="pv-num">{feitos}/{base}</strong>
+                <span>{fonte === "checklist" ? "itens do checklist anterior" : "tarefas concluídas"}</span>
+                <span className="pv-num pv-progresso-pct">{percentual(fracao)}%</span>
+              </p>
+              <Barra
+                fracao={fracao}
+                tom={fracao >= 1 ? "ok" : "andamento"}
+                rotulo={`${percentual(fracao)}% concluído`}
+              />
+              <ul className="pv-legenda">
+                {contagem.map((c) => (
+                  <li key={c.estado} data-pv-tom={c.tom}><i aria-hidden />{c.rotulo}<b className="pv-num">{c.n}</b></li>
+                ))}
+              </ul>
+              {fonte === "checklist" && checklist ? (
+                <p className="pv-secao-nota">
+                  Este projeto não tem tarefas do playbook, então o progresso mede o checklist anterior.
+                </p>
+              ) : null}
+            </>
           )}
         </section>
 

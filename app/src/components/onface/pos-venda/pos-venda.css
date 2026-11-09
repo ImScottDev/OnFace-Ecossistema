@@ -35,15 +35,19 @@
   --pv-tinta-corpo: oklch(0.34 0.03 255);
   --pv-tinta-suave: oklch(0.47 0.028 255);
 
-  /* Raios: generosos, como as referências. Folha 1rem, controle 0.625rem. */
-  --pv-r-xs: 0.375rem;
-  --pv-r-sm: 0.625rem;
-  --pv-r-md: 0.875rem;
-  --pv-r-lg: 1rem;
+  /* Raios curtos. Raio grande é o que faz uma tela operacional densa parecer
+     uma landing page: a 1rem de raio, dezesseis linhas empilhadas viram
+     dezesseis pílulas. A escala passa a ser 4 / 6 / 8 / 10 px. */
+  --pv-r-xs: 0.25rem;
+  --pv-r-sm: 0.375rem;
+  --pv-r-md: 0.5rem;
+  --pv-r-lg: 0.625rem;
   --pv-r-pill: 9999px;
 
-  /* Sombra mínima: a borda carrega a forma, a sombra só diz que a folha está sobre o papel. */
-  --pv-sombra-folha: 0 1px 2px oklch(0.24 0.035 255 / 0.05);
+  /* SOMBRA ZERO EM REPOUSO. A borda de 1px carrega a forma; sombra é só de
+     quem flutua de verdade (menu, popover, diálogo). Sombra em tudo que está
+     parado é metade do que dá a "grade de painéis" que o dono reprovou. */
+  --pv-sombra-folha: none;
   --pv-sombra-menu: 0 12px 28px -10px oklch(0.24 0.035 255 / 0.28), 0 2px 6px oklch(0.24 0.035 255 / 0.08);
 
   /* Foco: anel de tinta com respiro; coral fica para o que pede ação. */
@@ -259,62 +263,10 @@
  * BOARD
  * ═════════════════════════════════════════════════════════════════════════ */
 
-/* Faixa de indicadores: UMA folha dividida em seis. Cada fatia tinge pela
-   situação que descreve, e só quando há o que olhar (zero fica neutro). */
-.pv-faixa {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  border: 1px solid var(--pv-borda);
-  border-radius: var(--pv-r-lg);
-  background: var(--pv-superficie);
-  box-shadow: var(--pv-sombra-folha);
-  overflow: hidden;
-}
-.pv-kpi {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-  padding: 0.875rem 1rem 0.9375rem;
-  border-inline-start: 1px solid var(--pv-borda);
-  background: var(--pv-bg);
-  color: var(--pv-tinta);
-  text-decoration: none;
-  transition: background-color 150ms ease-out;
-}
-.pv-kpi:first-child { border-inline-start: 0; }
-.pv-kpi[data-pv-tom="neutro"] { background: transparent; }
-.pv-kpi:hover { background: color-mix(in oklab, var(--pv-bg) 70%, var(--pv-fundo-hover)); }
-.pv-kpi[data-pv-tom="neutro"]:hover { background: var(--pv-fundo-sutil); }
-.pv-kpi[data-ativo="true"] { box-shadow: inset 0 -3px 0 var(--pv-fg); }
-.pv-kpi-topo {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  min-width: 0;
-  color: var(--pv-fg);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  white-space: nowrap;
-}
-.pv-kpi-topo svg { width: 0.9375rem; height: 0.9375rem; flex-shrink: 0; }
-.pv-kpi-valor {
-  display: flex;
-  align-items: baseline;
-  gap: 0.375rem;
-  margin-top: 0.125rem;
-  font-size: 1.875rem;
-  font-weight: var(--weight-semibold);
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-  color: var(--pv-tinta);
-}
-.pv-kpi[data-pv-tom="neutro"] .pv-kpi-valor { color: var(--pv-tinta-suave); }
-.pv-kpi-unidade { font-size: var(--text-base); font-weight: var(--weight-medium); letter-spacing: 0; color: var(--pv-tinta-suave); }
-.pv-kpi-vazio { color: var(--pv-tinta-suave); }
-.pv-kpi-detalhe { font-size: var(--text-sm); line-height: 1.35; color: var(--pv-tinta-suave); }
-.pv-kpi[data-pv-tom]:not([data-pv-tom="neutro"]) .pv-kpi-detalhe { color: var(--pv-fg); }
+/* A faixa de seis cartões de KPI saiu daqui.
+   Os quatro recortes que de fato filtram viraram chips (ver "Recortes" no
+   fim do arquivo); tempo mediano e NPS viraram uma frase. O que sobrava era
+   número grande sem decisão atrás — o sinal mais claro de tela gerada. */
 
 /* Abas por família: texto + contagem, a ativa em tinta cheia. */
 .pv-familias {
@@ -540,68 +492,71 @@
 .pv-resultado b { color: var(--pv-tinta); font-weight: var(--weight-semibold); }
 .pv-resultado svg { width: 0.875rem; height: 0.875rem; }
 
-/* Quadro: a fila de trabalho + o painel de gráficos ao lado. */
-.pv-quadro { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; align-items: start; }
-.pv-fila { display: flex; flex-direction: column; gap: 0.875rem; min-width: 0; }
-@media (min-width: 1320px) {
-  .pv-quadro { grid-template-columns: minmax(0, 1fr) 19.5rem; }
-  .pv-panorama { position: sticky; top: 0.75rem; }
-}
+/* A fila de trabalho. Sem coluna de gráfico ao lado: o panorama desceu para
+   baixo da lista, recolhido, porque gráfico ao lado da fila disputa o olho
+   com o que precisa de ação. */
+.pv-fila { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; }
 
-/* Grupo: uma folha com faixa de título tingida pela situação. */
+/* Grupo: um bloco de lista, não uma folha.
+   A faixa de título deixou de ser tingida de ponta a ponta — a cor voltou a
+   ser um ponto, e a hierarquia voltou a ser tipografia e espaço. Cinco faixas
+   coloridas empilhadas eram cinco molduras competindo com as linhas. */
 .pv-grupo {
-  border: 1px solid var(--pv-borda);
-  border-radius: var(--pv-r-lg);
-  background: var(--pv-superficie);
-  box-shadow: var(--pv-sombra-folha);
-  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .pv-grupo-cab {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  min-height: 2.75rem;
-  padding: 0.5rem 1rem;
-  background: var(--pv-bg);
-  color: var(--pv-fg);
+  gap: 0.5rem;
+  min-height: 2rem;
+  padding: 0 0.25rem 0.375rem;
+  border-bottom: 1px solid var(--pv-borda);
+  background: transparent;
+  color: var(--pv-tinta);
   list-style: none;
   cursor: pointer;
   user-select: none;
 }
-.pv-grupo-cab::-webkit-details-marker { display: none; }
-.pv-grupo-cab:hover { background: color-mix(in oklab, var(--pv-bg) 75%, var(--pv-fundo-hover)); }
-.pv-grupo-seta { width: 1rem; height: 1rem; flex-shrink: 0; transition: transform 160ms ease-out; }
-.pv-grupo[open] > .pv-grupo-cab .pv-grupo-seta { transform: rotate(90deg); }
-.pv-grupo-titulo { margin: 0; font-size: var(--text-base); font-weight: var(--weight-bold); letter-spacing: -0.01em; color: var(--pv-fg); }
-.pv-grupo-n {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.5rem;
-  height: 1.375rem;
-  padding: 0 0.4375rem;
-  border-radius: var(--pv-r-pill);
-  background: var(--pv-fg);
-  color: var(--surface-card);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
+/* A situação do grupo é um ponto, do tamanho do ponto da pílula de estado. */
+.pv-grupo-cab::before {
+  content: "";
+  width: 0.4375rem;
+  height: 0.4375rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--pv-barra, var(--pv-neutro-barra));
 }
-.pv-grupo-criterio { margin-inline-start: auto; font-size: var(--text-sm); color: var(--pv-fg); opacity: 0.85; text-align: end; }
+.pv-grupo-cab::-webkit-details-marker { display: none; }
+.pv-grupo-cab:hover .pv-grupo-titulo { color: var(--pv-fg); }
+.pv-grupo-seta { width: 0.875rem; height: 0.875rem; flex-shrink: 0; color: var(--pv-tinta-suave); transition: transform 140ms ease-out; }
+.pv-grupo[open] > .pv-grupo-cab .pv-grupo-seta { transform: rotate(90deg); }
+.pv-grupo-titulo { margin: 0; font-size: var(--text-base); font-weight: var(--weight-semibold); letter-spacing: -0.01em; color: var(--pv-tinta); }
+.pv-grupo-n { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--pv-tinta-suave); font-variant-numeric: tabular-nums; }
+.pv-grupo-criterio { margin-inline-start: auto; font-size: var(--text-sm); color: var(--pv-tinta-suave); text-align: end; }
 @media (prefers-reduced-motion: reduce) { .pv-grupo-seta { transition: none; } }
 
 /* Lista: a linha é a unidade. Seis colunas, na ordem em que o trabalho se lê. */
 .pv-lista { margin: 0; padding: 0; list-style: none; }
+/* A linha encolheu de 64px para 48px.
+   A 64px cabiam oito projetos numa tela de 1080p e a lista tem 56: o time
+   rolava quatro vezes para ver a própria fila. A segunda linha continua
+   (é a próxima ação, que é dado, não subtítulo decorativo), mas o respiro
+   vertical saiu de dentro dela. */
 .pv-lp {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 8.75rem 6.25rem 7.25rem 3.25rem;
   align-items: center;
   gap: 0 0.875rem;
-  min-height: 4rem;
-  padding: 0.625rem 1rem;
+  min-height: 3rem;
+  padding: 0.375rem 0.5rem;
   border-top: 1px solid var(--pv-borda);
-  transition: background-color 120ms ease-out;
+  transition: background-color 80ms ease-out;
 }
+.pv-lista > .pv-lp:first-child { border-top: 0; }
 .pv-lp:hover, .pv-lp:focus-within { background: var(--pv-fundo-sutil); }
 .pv-lp-empresa { display: flex; flex-direction: column; gap: 0.1875rem; min-width: 0; }
 .pv-lp-nome-linha { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
@@ -920,7 +875,10 @@
 .pv-relogio-nome { display: flex; flex-direction: column; gap: 0.125rem; }
 .pv-relogio-nome strong { font-size: var(--text-md); font-weight: var(--weight-bold); color: var(--pv-tinta); }
 .pv-relogio-nome span { font-size: var(--text-sm); color: var(--pv-tinta-suave); }
-.pv-relogio-valor { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.625rem; font-size: 2rem; font-weight: var(--weight-semibold); letter-spacing: -0.03em; line-height: 1.1; color: var(--pv-tinta); }
+/* 2rem para um par de números que, sem espera registrada, é o MESMO número
+   duas vezes. Em 1.5rem os dois relógios continuam legíveis e param de
+   dominar a tela como se fossem a manchete do projeto. */
+.pv-relogio-valor { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; font-size: 1.5rem; font-weight: var(--weight-semibold); letter-spacing: -0.02em; line-height: 1.15; color: var(--pv-tinta); }
 .pv-relogio-valor small { font-size: var(--text-sm); font-weight: var(--weight-medium); letter-spacing: 0; color: var(--pv-tinta-suave); }
 .pv-relogio-rodape { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
 .pv-relogio-rodape strong { color: var(--pv-tinta); font-weight: var(--weight-semibold); }
@@ -974,19 +932,37 @@
 .pv-secao-nota { margin: 0; font-size: var(--text-sm); line-height: 1.5; color: var(--pv-tinta-suave); }
 
 /* Visão geral */
-.pv-visao { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.875rem; align-items: stretch; }
+/* A visão geral deixou de ser uma grade de cartões.
+   Cartão dentro de aba dentro de página é caixa dentro de caixa: a borda passa
+   a fazer o trabalho que é da tipografia e do espaço. Agora cada bloco é uma
+   seção separada por fio, com mais respiro ACIMA do título do que abaixo —
+   que é o que agrupa um título ao seu conteúdo. */
+.pv-visao { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 2rem; align-items: start; }
 .pv-bloco {
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: 0.75rem;
   min-width: 0;
-  padding: 1rem 1.125rem 1.125rem;
-  border: 1px solid var(--pv-borda);
-  border-radius: var(--pv-r-lg);
-  background: var(--pv-superficie);
-  box-shadow: var(--pv-sombra-folha);
+  padding: 1.5rem 0 1.25rem;
+  border: 0;
+  border-top: 1px solid var(--pv-borda);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
+/* Os dois primeiros ficam lado a lado sem fio em cima: o conteúdo começa aqui. */
+.pv-visao > .pv-bloco:first-child,
+.pv-visao > .pv-bloco:nth-child(2) { border-top: 0; padding-top: 0; }
 .pv-bloco[data-largo="true"] { grid-column: 1 / -1; }
+@media (max-width: 60rem) {
+  .pv-visao { grid-template-columns: minmax(0, 1fr); }
+  .pv-visao > .pv-bloco:nth-child(2) { border-top: 1px solid var(--pv-borda); padding-top: 1.5rem; }
+}
+
+/* Progresso em barra, não em anel. */
+.pv-progresso-leitura { display: flex; align-items: baseline; gap: 0.5rem; margin: 0; font-size: var(--text-base); color: var(--pv-tinta-suave); }
+.pv-progresso-leitura strong { font-size: var(--text-lg); font-weight: var(--weight-semibold); color: var(--pv-tinta); }
+.pv-progresso-pct { margin-inline-start: auto; font-weight: var(--weight-medium); color: var(--pv-tinta-corpo); }
 
 .pv-rosca-linha { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
 .pv-rosca { position: relative; width: 7.5rem; height: 7.5rem; flex-shrink: 0; }
@@ -1400,3 +1376,189 @@
   .pv-relogio { padding: var(--space-16); }
   .pv-relogio-valor { font-size: 1.75rem; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * v2 — as peças que a reprovação do dono pediu.
+ *
+ * Mundo: "papel de trabalho". Fio de 1px, sombra zero em repouso, nada de
+ * cartão. Hierarquia por tipografia, tom e espaço.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/* Recortes: chips no lugar da fileira de cartões de KPI. ------------------ */
+.pv-recortes { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem; }
+.pv-chips { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.pv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--pv-borda);
+  border-radius: var(--pv-r-sm);
+  background: var(--pv-superficie);
+  color: var(--pv-tinta-corpo);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 80ms ease-out, border-color 80ms ease-out, color 80ms ease-out;
+}
+.pv-chip:hover { background: var(--pv-fundo-sutil); border-color: var(--pv-borda-forte); }
+/* Selecionado é tinta cheia, como a aba de família e o segmento de status da
+   gaveta de atividade. Um só jeito de dizer "está ligado" no produto. */
+.pv-chip[data-ativo="true"] { background: var(--pv-tinta); border-color: var(--pv-tinta); color: var(--surface-card); }
+.pv-chip[data-ativo="true"] .pv-chip-n { color: var(--surface-card); opacity: 0.75; }
+.pv-chip-n { color: var(--pv-tinta-suave); font-variant-numeric: tabular-nums; }
+.pv-chip[data-pv-tom="risco"] .pv-chip-n { color: var(--pv-risco-fg); font-weight: var(--weight-semibold); }
+.pv-chip[data-pv-tom="espera"] .pv-chip-n { color: var(--pv-espera-fg); font-weight: var(--weight-semibold); }
+.pv-leitura { margin: 0; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+
+/* Propriedade editável em linha: em repouso é texto, no hover é controle. -- */
+.pv-editavel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  min-height: 1.75rem;
+  margin-inline-start: -0.375rem;
+  padding: 0 0.375rem;
+  border: 0;
+  border-radius: var(--pv-r-sm);
+  background: transparent;
+  color: var(--pv-tinta);
+  font: inherit;
+  font-size: var(--text-base);
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 80ms ease-out;
+}
+.pv-editavel:hover, .pv-editavel[data-state="open"] { background: var(--pv-fundo-hover); }
+.pv-editavel:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+.pv-editavel[data-vazio] { color: var(--pv-tinta-suave); }
+.pv-editavel svg { width: 0.875rem; height: 0.875rem; flex-shrink: 0; color: var(--pv-tinta-suave); }
+/* A seta só aparece quando o alvo é tocado: em repouso a propriedade é leitura. */
+.pv-editavel-seta { opacity: 0; transition: opacity 80ms ease-out; }
+.pv-editavel:hover .pv-editavel-seta,
+.pv-editavel:focus-visible .pv-editavel-seta,
+.pv-editavel[data-state="open"] .pv-editavel-seta { opacity: 1; }
+.pv-prop-apoio { margin-inline-start: 0.5rem; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.pv-prop-apoio[data-pv-tom="risco"] { color: var(--pv-risco-fg); font-weight: var(--weight-medium); }
+.pv-cmd-check { margin-inline-start: auto; width: 0.875rem; height: 0.875rem; color: var(--pv-tinta-suave); }
+
+/* Contatos do cabeçalho: cada um abre a ficha da pessoa. ------------------ */
+.pv-contatos { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+.pv-contato {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 12rem;
+  height: 1.75rem;
+  padding: 0 0.5rem 0 0.25rem;
+  border-radius: var(--pv-r-sm);
+  color: var(--pv-tinta-corpo);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  transition: background-color 80ms ease-out, color 80ms ease-out;
+}
+.pv-contato:hover { background: var(--pv-fundo-hover); color: var(--pv-tinta); }
+.pv-contato:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+.pv-contatos-mais { align-self: center; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+
+/* O que foi vendido, item a item. ----------------------------------------- */
+.pv-itens { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.pv-itens th, .pv-itens td { padding: 0.375rem 0; text-align: start; vertical-align: baseline; font-weight: var(--weight-regular); }
+.pv-itens thead th {
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--pv-borda);
+  color: var(--pv-tinta-suave);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+.pv-itens tbody tr + tr th, .pv-itens tbody tr + tr td { border-top: 1px solid var(--pv-borda); }
+.pv-itens tbody th { color: var(--pv-tinta); }
+.pv-col-num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pv-item-nome { display: block; }
+.pv-item-natureza { display: block; color: var(--pv-tinta-suave); font-size: var(--text-xs); }
+.pv-itens [data-ausente] { color: var(--pv-tinta-suave); }
+.pv-link-discreto { margin-top: 0.5rem; font-size: var(--text-sm); }
+
+/* Pessoa como link, com o alvo inteiro clicável. -------------------------- */
+a.pv-pessoa { text-decoration: none; border-radius: var(--pv-r-sm); transition: background-color 80ms ease-out; }
+a.pv-pessoa:hover { background: var(--pv-fundo-hover); }
+a.pv-pessoa:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+.pv-pessoa-seta { width: 0.875rem; height: 0.875rem; margin-inline-start: auto; flex-shrink: 0; color: var(--pv-tinta-suave); opacity: 0; transition: opacity 80ms ease-out; }
+a.pv-pessoa:hover .pv-pessoa-seta, a.pv-pessoa:focus-visible .pv-pessoa-seta { opacity: 1; }
+
+/* Abrir a tarefa na gaveta de atividade. ---------------------------------- */
+.pv-tarefa-abrir {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 1.625rem;
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--pv-r-sm);
+  background: transparent;
+  color: var(--pv-tinta-suave);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background-color 80ms ease-out, color 80ms ease-out, border-color 80ms ease-out;
+}
+.pv-tarefa-abrir svg { width: 0.875rem; height: 0.875rem; }
+.pv-tarefa:hover .pv-tarefa-abrir { border-color: var(--pv-borda); color: var(--pv-tinta-corpo); }
+.pv-tarefa-abrir:hover { background: var(--pv-fundo-hover); border-color: var(--pv-borda-forte); color: var(--pv-tinta); }
+.pv-tarefa-abrir:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+.pv-secao-ajuda { margin: 0 0 0.75rem; }
+
+/* Panorama recolhido, abaixo da fila. ------------------------------------- */
+.pv-panorama-caixa { border-top: 1px solid var(--pv-borda); }
+.pv-panorama-cab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 0.25rem;
+  color: var(--pv-tinta);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.pv-panorama-cab::-webkit-details-marker { display: none; }
+.pv-panorama-caixa[open] > .pv-panorama-cab .pv-grupo-seta { transform: rotate(90deg); }
+.pv-panorama-nota { font-size: var(--text-sm); font-weight: var(--weight-regular); color: var(--pv-tinta-suave); }
+.pv-panorama-caixa .pv-panorama { display: grid; gap: 1rem; padding: 0.5rem 0 1rem; }
+@media (min-width: 60rem) {
+  .pv-panorama-caixa .pv-panorama { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+}
+
+/* Campo novo no levantamento. --------------------------------------------- */
+.pv-campo-linha { display: flex; gap: 0.5rem; align-items: center; }
+.pv-campo-linha input { flex: 1 1 auto; min-width: 0; }
+.pv-campo-novo { border-top: 1px solid var(--pv-borda); padding-top: 0.875rem; }
+.pv-campo-novo .pv-secao-nota { margin-top: 0.375rem; }
+.pv-campo label { display: flex; align-items: center; gap: 0.375rem; }
+.pv-campo-remover {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 0;
+  border-radius: var(--pv-r-xs);
+  background: transparent;
+  color: var(--pv-tinta-suave);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 80ms ease-out, background-color 80ms ease-out;
+}
+.pv-campo-remover svg { width: 0.75rem; height: 0.75rem; }
+.pv-campo:hover .pv-campo-remover, .pv-campo-remover:focus-visible { opacity: 1; }
+.pv-campo-remover:hover { background: var(--pv-risco-bg); color: var(--pv-risco-fg); }
+
+/* Data de entrada na linha, para separar projetos repetidos da mesma empresa. */
+.pv-lp-entrada { flex-shrink: 0; font-size: var(--text-xs); color: var(--pv-tinta-suave); }
+a.pv-repetido { text-decoration: none; }
+a.pv-repetido:hover { background: var(--pv-fundo-hover); color: var(--pv-tinta); }

@@ -13,7 +13,8 @@
 import Link from "next/link";
 import { AlarmClock, CheckCircle2, CircleDashed, CornerDownRight, Hourglass, ShieldCheck } from "lucide-react";
 import type { CartaoDoProjeto } from "@/lib/pos-venda/contrato";
-import { FAMILIAS, percentual, primeiroNome, TIPO } from "../formatos";
+import { dia, FAMILIAS, percentual, primeiroNome, TIPO } from "../formatos";
+import { hrefDoBoard } from "../parametros";
 import { Avatar, AvatarVazio, Barra, PilulaDeEstado } from "../pecas";
 import { estaAberto, idadeCurta, nomeParaExibir, sinalDo } from "./analise";
 
@@ -34,10 +35,24 @@ export function LinhaDoProjeto({ c, agora, repetidos }: { c: CartaoDoProjeto; ag
           <Link className="pv-lp-nome" href={`/pos-vendas/${c.id}`} title={c.empresa.nome} data-suspeito={nome.suspeito || undefined}>
             {nome.texto}
           </Link>
+          {/* Empresa com vários projetos na lista: o selo deixa de ser enfeite
+              e vira a saída. Antes duas linhas da mesma empresa ficavam
+              idênticas ao byte — não dava para saber qual já tinha sido
+              tratada. Agora o selo filtra por esta empresa, e a data de
+              entrada ao lado separa uma linha da outra. */}
           {repetidos > 1 ? (
-            <span className="pv-repetido" title={`Há ${repetidos} projetos desta empresa na lista`}>
+            <Link
+              className="pv-repetido"
+              href={hrefDoBoard({ tipo: null, familia: null, responsavelId: null, estado: null, recorte: null, busca: c.empresa.nome })}
+              title={`Ver os ${repetidos} projetos de ${c.empresa.nome}`}
+            >
               {repetidos} projetos
-            </span>
+            </Link>
+          ) : null}
+          {repetidos > 1 ? (
+            <time className="pv-lp-entrada pv-num" dateTime={c.entrouEm.toISOString()} title="Entrada deste projeto">
+              {dia(c.entrouEm, agora)}
+            </time>
           ) : null}
         </span>
         <span className="pv-lp-sinal" data-pv-tom={sinal.tom}>

@@ -48,7 +48,7 @@ export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { pro
 
   return (
     <div className="pv">
-      <Cabecalho projeto={projeto} agora={agora} acoes={acoes} />
+      <Cabecalho projeto={projeto} equipe={equipe} agora={agora} acoes={acoes} />
       <Relogios projeto={projeto} agora={agora} acoes={acoes} />
 
       <div className="pv-corpo">

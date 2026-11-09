@@ -10,6 +10,7 @@
  * aceite, esperando alguém, em andamento, ainda não começaram) e os
  * encerrados ficam recolhidos no fim.
  */
+import { ChevronRight } from "lucide-react";
 import type { Board, Usuario } from "@/lib/pos-venda/contrato";
 import { hrefDoBoard, temFiltro, VISTA_PADRAO, type Vista } from "../parametros";
 import { AbasDeFamilia } from "./AbasDeFamilia";
@@ -37,12 +38,12 @@ export function BoardView({ board, agora, equipe, vista = VISTA_PADRAO }: { boar
 
   return (
     <div className="pv">
-      <Indicadores indicadores={board.indicadores} filtros={filtros} vista={vista} />
       <AbasDeFamilia porFamilia={board.porFamilia} filtros={filtros} vista={vista} />
       <BarraDeFiltros filtros={filtros} vista={vista} responsaveis={equipe} total={board.total} universo={universo} />
+      <Indicadores indicadores={board.indicadores} filtros={filtros} vista={vista} total={universo} />
 
       {board.cartoes.length > 0 ? (
-        <div className="pv-quadro">
+        <>
           <div className="pv-fila">
             {GRUPOS.map((g) => {
               const lista = ordenar(porGrupo.get(g.id) ?? [], vista.ordem);
@@ -50,8 +51,21 @@ export function BoardView({ board, agora, equipe, vista = VISTA_PADRAO }: { boar
               return <GrupoDeProjetos key={g.id} grupo={g} cartoes={lista} visao={vista.visao} agora={agora} repetidos={repetidos} aberto={g.id !== "encerrados" || pediuEncerrados} />;
             })}
           </div>
-          <Panorama cartoes={board.cartoes} filtros={filtros} vista={vista} agora={agora} />
-        </div>
+
+          {/* O panorama sai de perto da fila.
+              Gráfico ao lado da lista de trabalho disputa o olho com o que
+              precisa de ação — e a pergunta desta tela é "o que eu faço
+              agora?", não "como estamos distribuídos?". Continua aqui, abaixo
+              e recolhido, porque a leitura é útil; só não é a primeira. */}
+          <details className="pv-panorama-caixa">
+            <summary className="pv-panorama-cab">
+              <ChevronRight className="pv-grupo-seta" aria-hidden />
+              <span>Panorama</span>
+              <span className="pv-panorama-nota">Distribuição, carga do time e entradas — seguem os filtros ligados</span>
+            </summary>
+            <Panorama cartoes={board.cartoes} filtros={filtros} vista={vista} agora={agora} />
+          </details>
+        </>
       ) : nadaExiste ? (
         <BoardSemProjetos />
       ) : (

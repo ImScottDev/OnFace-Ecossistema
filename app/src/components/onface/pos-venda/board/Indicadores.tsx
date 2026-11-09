@@ -1,74 +1,102 @@
 /**
- * Faixa de indicadores do board.
+ * Os recortes da fila, como chips de filtro.
  *
- * Uma faixa só, dividida em seis, e não seis cartões: o fundo tinge pelo
- * estado que o número descreve, mas só quando há o que olhar. Zero apaga o
- * tom: um "0 atrasados" em vermelho ensina o time a ignorar o vermelho.
+ * Antes isto era uma fileira de seis cartões de KPI com número grande. O dono
+ * reprovou ("parece dashboard gerado por IA"), e ele tem razão por um motivo
+ * concreto: quatro dos seis números eram zero e cada um ocupava um sexto da
+ * largura da tela para dizer que não havia nada. A contagem já É o indicador —
+ * ela não precisa de cartão, de ícone em círculo nem de linha de apoio.
  *
- * Cada número é um recorte: clicar liga o filtro, clicar de novo desliga. São
- * links porque o recorte vive na URL.
+ * A regra que separa os dois grupos: **indicador que não filtra é decoração**.
+ * Em andamento, Atrasados, Aguardando cliente, Sem responsável e Concluídos no
+ * mês recortam a lista, então viram chip clicável. Tempo mediano e NPS médio
+ * não recortam nada — são leitura sobre os últimos 90 dias — então viram uma
+ * frase, que é o que eles sempre foram.
  *
- * Ausência diz o motivo. "Tempo mediano" sem amostra mostra "—" e a razão,
- * nunca um 0 dias que pareceria fato.
+ * Clicar liga o recorte; clicar de novo limpa. Tudo pela URL, como o resto.
  */
 import Link from "next/link";
-import { Activity, AlarmClock, CheckCheck, Gauge, Hourglass, Smile } from "lucide-react";
 import type { FiltrosDoBoard, IndicadoresDoBoard } from "@/lib/pos-venda/contrato";
-import type { Tom } from "../formatos";
 import { hrefDoBoard, type Vista } from "../parametros";
 
-type Alvo = Pick<FiltrosDoBoard, "estado" | "recorte" | "familia">;
+type Alvo = Pick<FiltrosDoBoard, "estado" | "recorte">;
 
-export function Indicadores({ indicadores, filtros, vista }: { indicadores: IndicadoresDoBoard; filtros: FiltrosDoBoard; vista: Vista }) {
+export function Indicadores({
+  indicadores, filtros, vista, total,
+}: {
+  indicadores: IndicadoresDoBoard;
+  filtros: FiltrosDoBoard;
+  vista: Vista;
+  /** Quantos projetos existem no universo atual (família e jornada já aplicadas). */
+  total: number;
+}) {
   const i = indicadores;
-  const sem = (n: number, tom: Tom): Tom => (n > 0 ? tom : "neutro");
 
-  const itens: Array<{
-    chave: string;
-    rotulo: string;
-    icone: typeof Activity;
-    tom: Tom;
-    valor: string | null;
-    unidade?: string;
-    detalhe: string;
-    alvo: Alvo;
-    limpa: Partial<FiltrosDoBoard>;
-  }> = [
-    { chave: "andamento", rotulo: "Em andamento", icone: Activity, tom: sem(i.emAndamento, "andamento"), valor: String(i.emAndamento), detalhe: i.emAndamento > 0 ? "com o time trabalhando" : "ninguém executando agora", alvo: { estado: "EM_ANDAMENTO", recorte: null, familia: filtros.familia }, limpa: { estado: null, recorte: null } },
-    { chave: "aguardando", rotulo: "Aguardando cliente", icone: Hourglass, tom: sem(i.aguardandoCliente, "espera"), valor: String(i.aguardandoCliente), detalhe: i.aguardandoCliente > 0 ? "relógio do time pausado" : "nenhum projeto parado no cliente", alvo: { estado: null, recorte: "aguardando_cliente", familia: filtros.familia }, limpa: { estado: null, recorte: null } },
-    { chave: "atrasados", rotulo: "Atrasados", icone: AlarmClock, tom: sem(i.atrasados, "risco"), valor: String(i.atrasados), detalhe: i.atrasados > 0 ? "passaram do prazo contratado" : "nenhum projeto fora do prazo", alvo: { estado: null, recorte: "atrasados", familia: filtros.familia }, limpa: { estado: null, recorte: null } },
-    { chave: "concluidos", rotulo: "Concluídos no mês", icone: CheckCheck, tom: sem(i.concluidosNoMes, "ok"), valor: String(i.concluidosNoMes), detalhe: i.concluidosNoMes > 0 ? "entregues neste mês" : "nenhuma entrega neste mês", alvo: { estado: null, recorte: "concluidos_mes", familia: filtros.familia }, limpa: { estado: null, recorte: null } },
-    { chave: "mediano", rotulo: "Tempo mediano", icone: Gauge, tom: "neutro", valor: i.tempoMedianoDias === null ? null : String(Math.round(i.tempoMedianoDias)), unidade: "dias", detalhe: i.tempoMedianoDias === null ? "poucas entregas nos últimos 90 dias" : "até concluir, últimos 90 dias", alvo: { estado: "CONCLUIDO", recorte: null, familia: filtros.familia }, limpa: { estado: null, recorte: null } },
-    { chave: "nps", rotulo: "NPS médio", icone: Smile, tom: i.npsMedio === null ? "neutro" : "validacao", valor: i.npsMedio === null ? null : i.npsMedio.toFixed(1).replace(".", ","), detalhe: i.npsMedio === null ? "sem resposta nos últimos 90 dias" : "Callface AI, últimos 90 dias", alvo: { estado: "CONCLUIDO", recorte: null, familia: "CALLFACE_AI" }, limpa: { estado: null, recorte: null, familia: null } },
+  /** `n: null` = recorte sem contagem no contrato. O chip existe, o número não. */
+  const recortes: Array<{ chave: string; rotulo: string; n: number | null; alvo: Alvo; tom?: "risco" | "espera" }> = [
+    { chave: "andamento", rotulo: "Em andamento", n: i.emAndamento, alvo: { estado: "EM_ANDAMENTO", recorte: null } },
+    { chave: "atrasados", rotulo: "Atrasados", n: i.atrasados, alvo: { estado: null, recorte: "atrasados" }, tom: "risco" },
+    { chave: "aguardando", rotulo: "Aguardando cliente", n: i.aguardandoCliente, alvo: { estado: null, recorte: "aguardando_cliente" }, tom: "espera" },
+    { chave: "sem_dono", rotulo: "Sem responsável", n: null, alvo: { estado: null, recorte: "sem_responsavel" } },
+    { chave: "concluidos", rotulo: "Concluídos no mês", n: i.concluidosNoMes, alvo: { estado: null, recorte: "concluidos_mes" } },
   ];
 
+  const semRecorte = !filtros.estado && !filtros.recorte;
+
   return (
-    <section className="pv-faixa" aria-label="Indicadores do pós-venda">
-      {itens.map((it) => {
-        const ativo = filtros.estado === it.alvo.estado && filtros.recorte === it.alvo.recorte && filtros.familia === it.alvo.familia;
-        const Icone = it.icone;
-        return (
-          <Link
-            key={it.chave}
-            href={ativo ? hrefDoBoard(filtros, it.limpa, vista) : hrefDoBoard(filtros, it.alvo, vista)}
-            className="pv-kpi"
-            data-pv-tom={it.tom}
-            data-ativo={ativo || undefined}
-            aria-current={ativo ? "true" : undefined}
-            aria-label={`${it.rotulo}: ${it.valor ?? "sem dado"}. ${ativo ? "Filtro ligado, clique para limpar" : "Clique para filtrar"}`}
-          >
-            <span className="pv-kpi-topo">
-              <Icone aria-hidden />
-              {it.rotulo}
-            </span>
-            <span className="pv-kpi-valor" data-vazio={it.valor === null || undefined}>
-              {it.valor ?? <span className="pv-kpi-vazio">—</span>}
-              {it.valor !== null && it.unidade ? <span className="pv-kpi-unidade">{it.unidade}</span> : null}
-            </span>
-            <span className="pv-kpi-detalhe">{it.detalhe}</span>
-          </Link>
-        );
-      })}
+    <section className="pv-recortes" aria-label="Recortes da lista">
+      <div className="pv-chips" role="group" aria-label="Filtrar por situação">
+        <Link
+          href={hrefDoBoard(filtros, { estado: null, recorte: null }, vista)}
+          className="pv-chip"
+          data-ativo={semRecorte || undefined}
+          aria-current={semRecorte ? "true" : undefined}
+          aria-label={`Todos os projetos: ${total}.${semRecorte ? "" : " Clique para limpar o recorte"}`}
+        >
+          Todos
+          <span className="pv-chip-n pv-num">{total}</span>
+        </Link>
+
+        {recortes.map((r) => {
+          const ativo = filtros.estado === r.alvo.estado && filtros.recorte === r.alvo.recorte;
+          return (
+            <Link
+              key={r.chave}
+              href={hrefDoBoard(filtros, ativo ? { estado: null, recorte: null } : r.alvo, vista)}
+              className="pv-chip"
+              data-ativo={ativo || undefined}
+              /* O número só ganha tinta de alerta quando há o que alertar:
+                 "Atrasados 0" em vermelho ensina o time a ignorar vermelho. */
+              data-pv-tom={r.n !== null && r.n > 0 ? r.tom : undefined}
+              aria-current={ativo ? "true" : undefined}
+              aria-label={`${r.rotulo}${r.n !== null ? `: ${r.n}` : ""}. ${ativo ? "Filtro ligado, clique para limpar" : "Clique para filtrar"}`}
+            >
+              {r.rotulo}
+              {r.n !== null ? <span className="pv-chip-n pv-num">{r.n}</span> : null}
+            </Link>
+          );
+        })}
+      </div>
+
+      <Leitura mediano={i.tempoMedianoDias} nps={i.npsMedio} />
     </section>
   );
+}
+
+/**
+ * Tempo mediano e NPS em uma frase.
+ *
+ * Os dois falam dos últimos 90 dias e nenhum recorta a lista. Sem amostra, a
+ * frase diz que não há amostra — não mostra zero, que seria mentira: "0 dias
+ * até concluir" e "NPS 0" são afirmações fortes e falsas.
+ */
+function Leitura({ mediano, nps }: { mediano: number | null; nps: number | null }) {
+  const dias = mediano === null ? null : Math.round(mediano);
+  const tempo =
+    dias === null
+      ? "Ainda não há entregas suficientes nos últimos 90 dias para calcular o tempo até concluir"
+      : `Mediana de ${dias} ${dias === 1 ? "dia" : "dias"} até concluir, nos últimos 90 dias`;
+  const pesquisa = nps === null ? "nenhuma resposta de NPS na janela" : `NPS médio ${nps.toFixed(1).replace(".", ",")} no Callface AI`;
+
+  return <p className="pv-leitura">{tempo} · {pesquisa}.</p>;
 }

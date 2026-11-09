@@ -11,20 +11,27 @@
  * As ações são otimistas: a linha muda na hora, o servidor confirma, e se
  * recusar a linha volta e o motivo aparece em toast. Nada de spinner no lugar
  * do que a pessoa acabou de fazer.
+ *
+ * A TAREFA É UMA LINHA DE `tarefas`, e não uma lista paralela. Por isso abrir
+ * uma tarefa daqui abre a MESMA gaveta de Atividades — com editor rico, menção
+ * por arroba, subtarefa com responsável e prazo, anexo e histórico. Nada disso
+ * é reescrito aqui: o produto já tem a peça, e a regra do repositório é não
+ * substituir peça existente por versão simplificada.
  */
 import { useId, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ptBR } from "react-day-picker/locale";
-import { AlarmClock, CalendarDays, Check, ChevronDown, ListChecks, MessageSquare, RotateCcw } from "lucide-react";
+import { AlarmClock, CalendarDays, Check, ChevronDown, ListChecks, MessageSquare, PanelRightOpen, RotateCcw } from "lucide-react";
 import type { TarefaDoProjeto, Usuario } from "@/lib/pos-venda/contrato";
+import { usePecas } from "@/components/onface/proto/pecas-host";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { chaveDoDia, dia, prazo, primeiroNome } from "../formatos";
 import { Markdown } from "../Markdown";
 import { Avatar, PilulaDeTarefa } from "../pecas";
+import { SeletorDePessoa } from "../SeletorDePessoa";
 import type { AcoesDaTela, ResultadoDaAcao } from "./acoes";
 
 type Mudanca =
@@ -53,7 +60,15 @@ function aplicar(tarefas: TarefaDoProjeto[], m: Mudanca): TarefaDoProjeto[] {
   });
 }
 
-const SEM_RESPONSAVEL = "__ninguem__";
+/**
+ * O id com que a gaveta de atividade aceita uma tarefa.
+ *
+ * O prefixo `p:` é o vocabulário do hospedeiro de peças (`pecas-host.tsx`):
+ * `"p:<uuid>"` é "a tarefa com este id", contra `"l:<leadId>"`, que é "a
+ * próxima tarefa aberta deste lead". Como as tarefas do pós-venda são linhas
+ * reais de `tarefas`, o mesmo id serve aqui sem nada novo no servidor.
+ */
+const idParaGaveta = (tarefaId: string) => `p:${tarefaId}`;
 
 /** Dia do calendário que o seletor mostra (local), a partir do dia de São Paulo. */
 const paraSeletor = (d: Date | null): Date | undefined => {
@@ -83,6 +98,7 @@ export function Tarefas({
 }) {
   const [otimistas, mudar] = useOptimistic(tarefas, aplicar);
   const [, comecar] = useTransition();
+  const { abrir } = usePecas();
   const [abertas, setAbertas] = useState<Set<string>>(() => {
     const primeira = tarefas.find((t) => t.estado !== "CONCLUIDA" && t.estado !== "NAO_SE_APLICA");
     return new Set(primeira ? [primeira.id] : []);
@@ -126,6 +142,9 @@ export function Tarefas({
         <h2 className="pv-secao-titulo">Tarefas</h2>
         <span className="pv-secao-nota pv-num">{feitas} de {aplicaveis} concluídas</span>
       </div>
+      <p className="pv-secao-nota pv-secao-ajuda">
+        Abrir uma tarefa traz a gaveta de Atividades, com comentário, menção, subtarefa e anexo.
+      </p>
       <ol className="pv-tarefas">
         {otimistas.map((t) => (
           <LinhaDeTarefa
@@ -133,6 +152,7 @@ export function Tarefas({
             t={t}
             aberta={abertas.has(t.id)}
             aoAlternar={() => alternar(t.id)}
+            aoAbrirGaveta={() => abrir("verAtividade", idParaGaveta(t.id))}
             equipe={equipe}
             agora={agora}
             podeConcluir={podeConcluir && !encerrado}
@@ -149,11 +169,13 @@ export function Tarefas({
 }
 
 function LinhaDeTarefa({
-  t, aberta, aoAlternar, equipe, agora, podeConcluir, aoConcluir, aoReabrir, aoMarcarItem, aoAtribuir, aoRemarcar,
+  t, aberta, aoAlternar, aoAbrirGaveta, equipe, agora, podeConcluir, aoConcluir, aoReabrir, aoMarcarItem, aoAtribuir, aoRemarcar,
 }: {
   t: TarefaDoProjeto;
   aberta: boolean;
   aoAlternar: () => void;
+  /** Abre a gaveta de Atividades para esta tarefa. */
+  aoAbrirGaveta: () => void;
   equipe: Usuario[];
   agora: Date;
   podeConcluir: boolean;
@@ -187,7 +209,7 @@ function LinhaDeTarefa({
           <Check aria-hidden />
         </button>
 
-        <button type="button" className="pv-tarefa-corpo-cab" onClick={aoAlternar} aria-expanded={aberta} aria-controls={`${id}-detalhe`}>
+        <button type="button" className="pv-tarefa-corpo-cab" onClick={aoAbrirGaveta} title="Abrir a tarefa com comentários, subtarefas e anexos">
           <span className="pv-tarefa-titulo">{t.titulo}</span>
           <span className="pv-tarefa-meta">
             {feita && t.concluidaEm ? (
@@ -208,7 +230,11 @@ function LinhaDeTarefa({
         <div className="pv-tarefa-lado">
           {t.responsavel ? <Avatar quem={t.responsavel} tamanho="sm" /> : null}
           <PilulaDeTarefa estado={t.estado} />
-          <button type="button" className="pv-expandir" onClick={aoAlternar} aria-label={aberta ? "Recolher tarefa" : "Expandir tarefa"} aria-expanded={aberta} aria-controls={`${id}-detalhe`}>
+          <button type="button" className="pv-tarefa-abrir" onClick={aoAbrirGaveta} aria-label={`Abrir a tarefa ${t.titulo}`} title="Abrir na gaveta de atividade">
+            <PanelRightOpen aria-hidden />
+            <span>Abrir</span>
+          </button>
+          <button type="button" className="pv-expandir" onClick={aoAlternar} aria-label={aberta ? `Recolher o playbook de ${t.titulo}` : `Ver o playbook de ${t.titulo}`} aria-expanded={aberta} aria-controls={`${id}-detalhe`}>
             <ChevronDown aria-hidden />
           </button>
         </div>
@@ -273,20 +299,12 @@ function LinhaDeTarefa({
 
               {equipe.length > 0 ? (
                 <div className="pv-tarefa-acoes-fim">
-                  <Select
-                    value={t.responsavel?.id ?? SEM_RESPONSAVEL}
-                    onValueChange={(v) => aoAtribuir(v === SEM_RESPONSAVEL ? null : (equipe.find((u) => u.id === v) ?? null))}
-                  >
-                    <SelectTrigger size="sm" aria-label={`Responsável por ${t.titulo}`}>
-                      <SelectValue placeholder="Atribuir a">{t.responsavel ? t.responsavel.nome : "Sem responsável"}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      <SelectItem value={SEM_RESPONSAVEL}>Sem responsável</SelectItem>
-                      {equipe.map((u) => (
-                        <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SeletorDePessoa
+                    valor={t.responsavel}
+                    equipe={equipe}
+                    rotulo={`Responsável por ${t.titulo}`}
+                    aoEscolher={aoAtribuir}
+                  />
                 </div>
               ) : null}
             </div>

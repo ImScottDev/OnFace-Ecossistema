@@ -23,6 +23,18 @@ export type AcoesDaTela = {
   enviarFormulario(): Promise<ResultadoDaAcao>;
   escalarParaImplantacao(): Promise<ResultadoDaAcao>;
   fazerHandoff(): Promise<ResultadoDaAcao>;
+
+  /**
+   * Responsável e prazo DO PROJETO — não da tarefa.
+   *
+   * Opcionais de propósito. O controle existe na tela desde já; enquanto a ação
+   * não chega do servidor ele aparece em leitura, com o motivo escrito, em vez
+   * de um botão morto que engole o clique. Ligar depois é passar a ação na
+   * página: nem este tipo nem os componentes mudam.
+   */
+  atribuirProjeto?(usuarioId: string | null): Promise<ResultadoDaAcao>;
+  /** `dia` é AAAA-MM-DD no calendário de São Paulo; `null` apaga o prazo. */
+  editarPrazoProjeto?(dia: string | null): Promise<ResultadoDaAcao>;
 };
 
 /**

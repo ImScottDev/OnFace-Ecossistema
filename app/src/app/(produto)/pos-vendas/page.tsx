@@ -25,10 +25,11 @@ export default async function PosVendasPage({ searchParams }: { searchParams: Pr
 
   return (
     <Pagina>
-      <PaginaCabecalho
-        titulo="Pós-vendas"
-        descricao="Os projetos nascem sozinhos quando uma venda é ganha. Aqui o time acompanha prazo, tarefas e quem está segurando a bola."
-      />
+      {/* Uma linha, não um parágrafo. Toda tela do produto descreve a si mesma
+          em meia linha junto do título ("Pipeline · Oportunidades comerciais,
+          uma família por oportunidade"); só esta abria com dois períodos de
+          texto explicativo antes do primeiro dado. */}
+      <PaginaCabecalho titulo="Pós-vendas" descricao="Projetos de entrega: prazo, tarefas e quem está com a bola" />
       {leitura.ok ? (
         <BoardView board={leitura.dados} agora={new Date()} equipe={equipe.ok ? equipe.dados : []} vista={vista} />
       ) : (
