@@ -32,16 +32,22 @@ export type AcoesDaTela = {
    * de um botão morto que engole o clique. Ligar depois é passar a ação na
    * página: nem este tipo nem os componentes mudam.
    *
-   * Nomes combinados com o Núcleo (`trocarResponsavel`, `definirPrazo`). A
-   * forma aqui é a da TELA, não a do domínio: o dia vai como `AAAA-MM-DD` no
+   * Os nomes são os que o Núcleo implementou em `lib/pos-venda/acoes.ts`
+   * (`atribuirProjeto`, `editarPrazoProjeto`) — ele chegou a propor outros por
+   * mensagem, mas quem manda é o código que existe.
+   *
+   * A forma aqui é a da TELA, não a do domínio: o dia vai como `AAAA-MM-DD` no
    * calendário de São Paulo, igual a `remarcarTarefa`, porque é o único jeito
    * de "vence dia 20" não virar dia 19 entre o navegador e um servidor em UTC.
-   * Se a ação de domínio preferir `Date`, a conversão é da página, num lugar
-   * só.
+   * A server action já recebe `dia: string | null`; converter para `Date` é
+   * trabalho dela, num lugar só.
+   *
+   * Continuam OPCIONAIS: a tela precisa abrir num ambiente onde a ação ainda
+   * não exista, mostrando leitura em vez de um botão morto.
    */
-  trocarResponsavel?(usuarioId: string | null): Promise<ResultadoDaAcao>;
+  atribuirProjeto?(usuarioId: string | null): Promise<ResultadoDaAcao>;
   /** `dia` é AAAA-MM-DD no calendário de São Paulo; `null` apaga o prazo. */
-  definirPrazo?(dia: string | null): Promise<ResultadoDaAcao>;
+  editarPrazoProjeto?(dia: string | null): Promise<ResultadoDaAcao>;
 };
 
 /**

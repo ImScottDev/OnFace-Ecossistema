@@ -9,6 +9,7 @@ import "@/components/onface/pos-venda/pos-venda.css";
 import {
   pvAdicionarNota, pvAtribuirTarefa, pvConcluirTarefa, pvEncerrarEspera, pvEnviarFormulario, pvEscalarParaImplantacao,
   pvFazerHandoff, pvMarcarEspera, pvMarcarItem, pvReabrirTarefa, pvRemarcarTarefa, pvSalvarLevantamento,
+  pvAtribuirProjeto, pvEditarPrazoProjeto,
 } from "../actions";
 import { lerEquipe, lerProjeto } from "../fonte";
 
@@ -50,6 +51,10 @@ export default async function ProjetoPage({ params, searchParams }: { params: Pr
     enviarFormulario: pvEnviarFormulario.bind(null, id),
     escalarParaImplantacao: pvEscalarParaImplantacao.bind(null, id),
     fazerHandoff: pvFazerHandoff.bind(null, id),
+    /* Responsável e prazo DO PROJETO. A página é a costura entre o domínio e
+       a tela: sem estas duas linhas os controles existem e ficam em leitura. */
+    atribuirProjeto: pvAtribuirProjeto.bind(null, id),
+    editarPrazoProjeto: pvEditarPrazoProjeto.bind(null, id),
   };
 
   return (

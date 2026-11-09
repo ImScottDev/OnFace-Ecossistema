@@ -96,9 +96,9 @@ export function Cabecalho({ projeto, equipe, agora, acoes }: { projeto: Projeto;
               valor={p.responsavel}
               equipe={equipe}
               rotulo="Responsável pelo projeto"
-              desabilitado={!acoes.trocarResponsavel}
+              desabilitado={!acoes.atribuirProjeto || !p.permissoes.podeTrocarResponsavel}
               aoEscolher={(quem) => {
-                const trocar = acoes.trocarResponsavel;
+                const trocar = acoes.atribuirProjeto;
                 if (!trocar) return;
                 rodar(() => trocar(quem?.id ?? null), quem ? `Projeto atribuído a ${quem.nome}.` : "Responsável removido.");
               }}
@@ -130,11 +130,12 @@ export function Cabecalho({ projeto, equipe, agora, acoes }: { projeto: Projeto;
           <dd>
             <PrazoDoProjeto
               venceEm={p.relogios.venceEm}
+              venceEmOriginal={p.relogios.venceEmOriginal}
               agora={agora}
               comecaNoT0={p.t0Em === null && p.familia === "PABX"}
-              podeEditar={Boolean(p.permissoes.podeEditarPrazo && acoes.definirPrazo)}
+              podeEditar={Boolean(p.permissoes.podeEditarPrazo && acoes.editarPrazoProjeto)}
               aoEscolher={(diaISO) => {
-                const editar = acoes.definirPrazo;
+                const editar = acoes.editarPrazoProjeto;
                 if (!editar) return;
                 rodar(() => editar(diaISO), diaISO ? "Prazo definido." : "Prazo removido.");
               }}
@@ -231,9 +232,11 @@ export function Cabecalho({ projeto, equipe, agora, acoes }: { projeto: Projeto;
  * convida a definir.
  */
 function PrazoDoProjeto({
-  venceEm, agora, comecaNoT0, podeEditar, aoEscolher,
+  venceEm, venceEmOriginal, agora, comecaNoT0, podeEditar, aoEscolher,
 }: {
   venceEm: Date | null;
+  /** O prazo que valia antes de alguém remarcar. Null quando nunca mudou. */
+  venceEmOriginal: Date | null;
   agora: Date;
   comecaNoT0: boolean;
   podeEditar: boolean;
@@ -244,12 +247,17 @@ function PrazoDoProjeto({
   const p = venceEm ? lerPrazo(venceEm, agora) : null;
 
   const texto = venceEm ? dia(venceEm, agora) : comecaNoT0 ? "Começa no T0" : "Definir prazo";
+  /* Remarcar é visível: o prazo de hoje vale, e o de antes fica dito ao lado.
+     `venceEmOriginal` só vem quando de fato mudou, então não há "era" igual
+     ao "vence". */
+  const era = venceEmOriginal ? `era ${dia(venceEmOriginal, agora)}` : null;
 
   if (!podeEditar) {
     return (
       <span className="pv-num" data-ausente={!venceEm || undefined}>
         {venceEm ? texto : comecaNoT0 ? "Começa no T0" : "Não definido"}
         {p ? <span className="pv-prop-apoio" data-pv-tom={p.tom}>{p.texto}</span> : null}
+        {era ? <span className="pv-prop-apoio">{era}</span> : null}
       </span>
     );
   }
@@ -261,6 +269,7 @@ function PrazoDoProjeto({
           <CalendarDays aria-hidden />
           <span className="pv-num">{texto}</span>
           {p ? <span className="pv-prop-apoio" data-pv-tom={p.tom}>{p.texto}</span> : null}
+          {era ? <span className="pv-prop-apoio">{era}</span> : null}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-0">
