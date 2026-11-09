@@ -400,6 +400,30 @@ app.get("/equipe", async (c) => {
     (m) => m.leadsAtribuidos > 0 || m.atividadesTotal > 0 || m.ganhos > 0 || m.perdidos > 0 || m.qualificados > 0
   );
 
+  /* O autoatendimento entra como uma linha própria no Desempenho por Vendedor.
+     Sem ela, a soma da receita da tabela fica menor que a do período e ninguém
+     consegue ver quanto o self-checkout trouxe — era "um número perdido", nas
+     palavras do Scott (09/11/2026). Não é uma pessoa: leads recebidos,
+     qualificados, perdidos, ciclo e atividades ficam vazios de propósito, porque
+     não houve ninguém trabalhando o lead. `usuarioId` é a chave sintética, que a
+     tela usa só como `key` da linha. */
+  const vendaDireta = soEu ? { ganhos: 0, receita: 0 } : await getFechadoDeAutoatendimento(orgId, since, until);
+  if (vendaDireta.ganhos > 0) {
+    ativos.push({
+      usuarioId: ORIGEM_AUTOATENDIMENTO,
+      nome: ROTULO_AUTOATENDIMENTO,
+      role: "autoatendimento",
+      qualificados: 0,
+      ganhos: vendaDireta.ganhos,
+      perdidos: 0,
+      winRate: 0,
+      receitaTotal: vendaDireta.receita,
+      cicloMedio: null,
+      leadsAtribuidos: 0,
+      atividadesTotal: 0,
+    });
+  }
+
   return c.json({ membros: ativos });
 });
 
@@ -1796,10 +1820,13 @@ app.get("/fechamento-comercial", async (c) => {
       porSdr: [...porSdr.entries()].map(([id, v]) => ({ sdrId: id, ...v })),
       vendasComSdrIdentificavel: vendas.filter((v) => v.sdrId).length,
       vendasComStripe: vendas.filter((v) => v.stripeSubscriptionId || v.stripeCustomerId || v.faturaHostedUrl || v.contratoZohoId).length,
-      vendasComComprovante: vendas.filter((v) => v.faturaHostedUrl).length,
+      vendasComComprovante: vendas.filter((v) => v.comprovanteUrl).length,
+      /* Venda ganha sem recibo e sem contrato assinado: o ganho só deveria
+         existir com um dos dois, então cada linha aqui é defeito a investigar. */
+      vendasSemComprovante: vendas.filter((v) => !v.comprovanteUrl && !v.contratoZohoId).length,
       vendasComContrato: vendas.filter((v) => v.contratoId).length,
       vendasComEmpresa: vendas.filter((v) => v.empresaId || v.empresaNome).length,
-      vendasComInformacaoIncompleta: vendas.filter((v) => !v.sdrId || (!v.stripeSubscriptionId && !v.stripeCustomerId && !v.faturaHostedUrl && !v.contratoZohoId)).length,
+      vendasComInformacaoIncompleta: vendas.filter((v) => !v.sdrId || (!v.comprovanteUrl && !v.contratoZohoId)).length,
     },
     vendas,
     agendas,
@@ -1840,10 +1867,11 @@ function aplicarFiltrosFechamento<T extends { closerId?: string | null; sdrId: s
 // passa a contar como evidência real de pagamento, não só Stripe.
 const ZOHO_ORG_URL = "https://one.zoho.com/zohoone/callface40/home/cxapp/crm/org830405635/tab/SalesOrders";
 
-function linkComprovante(v: { faturaHostedUrl: string | null; stripeSubscriptionId: string | null; stripeCustomerId: string | null; contratoZohoId: string | null }): string {
-  if (v.faturaHostedUrl) return v.faturaHostedUrl;
-  if (v.stripeSubscriptionId) return `https://dashboard.stripe.com/subscriptions/${v.stripeSubscriptionId}`;
-  if (v.stripeCustomerId) return `https://dashboard.stripe.com/customers/${v.stripeCustomerId}`;
+/* A regra de qual comprovante vale mora em `escolherComprovante`
+   (lib/relatorios/fechamento-comercial.ts) e já vem resolvida em cada venda.
+   Aqui só sobra o Zoho, que é do histórico legado e não existe lá. */
+function linkComprovante(v: { comprovanteUrl: string | null; contratoZohoId: string | null }): string {
+  if (v.comprovanteUrl) return v.comprovanteUrl;
   if (v.contratoZohoId) return `${ZOHO_ORG_URL}/${v.contratoZohoId}`;
   return "Não disponível";
 }
@@ -1912,13 +1940,14 @@ app.get("/fechamento-comercial/export", async (c) => {
       "negocio_id", "ganho_em", "empresa", "contato", "contato_email", "closer", "sdr", "sdr_evidencia",
       "origem", "familia", "produtos", "tipo_receita", "mrr_fechado", "valor_total", "valor_setup", "status",
       "proposta_numero", "proposta_status", "contrato_id", "contrato_status", "contrato_zoho_id",
-      "stripe_subscription_id", "stripe_customer_id", "link_comprovante_pagamento",
+      "stripe_subscription_id", "stripe_customer_id", "tipo_comprovante", "link_comprovante_pagamento",
     ],
     vendas.map((v) => [
       v.negocioId, v.ganhoAt, v.empresaNome ?? "Não disponível", v.contatoNome, v.contatoEmail, v.closerNome, v.sdrNome ?? "Não disponível", v.sdrEvidencia,
       v.origem, v.serviceFamily, v.produtos.join(", "), v.tipoReceita, v.mrrFechado, v.valorTotal, v.valorSetup, v.status,
       v.propostaNumero, v.propostaStatus, v.contratoId ?? "Não disponível", v.contratoStatus, v.contratoZohoId ?? "Não disponível",
-      v.stripeSubscriptionId ?? "Não disponível", v.stripeCustomerId ?? "Não disponível", linkComprovante(v),
+      v.stripeSubscriptionId ?? "Não disponível", v.stripeCustomerId ?? "Não disponível",
+      v.comprovanteRotulo ?? (v.contratoZohoId ? "Sales Order Zoho" : "Não disponível"), linkComprovante(v),
     ]),
   );
 

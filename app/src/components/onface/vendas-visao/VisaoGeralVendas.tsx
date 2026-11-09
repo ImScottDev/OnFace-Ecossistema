@@ -168,20 +168,24 @@ export function VisaoGeralVendas({ mes, meta, escopo, preVendas, pipeline, mesAn
             <ol className="vgv-ranking">
               {mes.ranking.map((r) => {
                 const p = r.meta > 0 ? Math.round((r.faturamento / r.meta) * 100) : null;
+                /* A linha do autoatendimento não é uma pessoa: o cliente assinou
+                   sozinho. Sem meta, sem pipeline aberto e sem iniciais, para
+                   não ler como uma closer que não bateu nada. */
+                const semPessoa = r.id === "self_checkout";
                 return (
                   <li key={r.id}>
                     <span className="vgv-pos">{r.posicao}</span>
-                    <span className="vgv-av" aria-hidden>{iniciais(r.nome)}</span>
+                    <span className="vgv-av" aria-hidden>{semPessoa ? "⚡" : iniciais(r.nome)}</span>
                     <span className="vgv-rk-nome">
                       <strong>{r.nome}</strong>
-                      <small>{r.ganhos} ganho{r.ganhos === 1 ? "" : "s"} · {r.abertas} abertas ({moeda(r.valorAberto)})</small>
+                      <small>{r.ganhos} ganho{r.ganhos === 1 ? "" : "s"}{semPessoa ? " · sem passar pelo comercial" : ` · ${r.abertas} abertas (${moeda(r.valorAberto)})`}</small>
                       {r.meta > 0 ? (
                         <span className="vgv-barra vgv-barra-clara"><span style={{ width: `${Math.min(100, p ?? 0)}%` }} /></span>
                       ) : null}
                     </span>
                     <span className="vgv-rk-valor">
                       <strong>{moeda(r.faturamento)}</strong>
-                      <small>{r.meta > 0 ? `${p}% de ${moeda(r.meta)}` : "sem meta definida"}</small>
+                      <small>{r.meta > 0 ? `${p}% de ${moeda(r.meta)}` : semPessoa ? "venda direta" : "sem meta definida"}</small>
                     </span>
                   </li>
                 );

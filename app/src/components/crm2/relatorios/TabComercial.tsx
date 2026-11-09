@@ -110,6 +110,8 @@ interface ComercialData {
 interface EquipeMembro {
   usuarioId: string;
   nome: string;
+  /** "autoatendimento" = a venda que ninguém trabalhou (self-checkout). */
+  role?: string;
   ganhos: number;
   perdidos: number;
   winRate: number;
@@ -520,22 +522,29 @@ export default function TabComercial({ periodo, ocultarHero = false, safraSeleci
                   // Mesma coorte de criação: qualificados são subconjunto dos leads recebidos.
                   // Ganhos são por DATA DA DECISÃO, logo não são o numerador dessa taxa.
                   const taxaQualificacao = taxaQualificacaoDaSafra(m.qualificados, m.leadsAtribuidos);
+                  /* Venda de autoatendimento não teve lead trabalhado, disputa
+                     nem ciclo: mostrar 0% de win rate ao lado das pessoas leria
+                     como desempenho ruim de alguém. O que existe é a receita. */
+                  const semPessoa = m.role === "autoatendimento";
+                  const vazio = <span className="text-[var(--cf2-text-tertiary)]">—</span>;
                   return (
                     <tr key={m.usuarioId} className="hover:bg-[var(--cf2-bg-surface)] transition-colors">
-                      <td className="px-4 py-2.5 text-[var(--cf2-text-primary)] font-medium truncate max-w-[160px]">{m.nome}</td>
-                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)]">{m.leadsAtribuidos}</td>
-                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-primary)] font-semibold">{m.qualificados}</td>
-                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)]">{taxaQualificacao != null ? `${taxaQualificacao}%` : "—"}</td>
+                      <td className="px-4 py-2.5 text-[var(--cf2-text-primary)] font-medium truncate max-w-[160px]" title={semPessoa ? "Cliente assinou sozinho pela plataforma, sem passar pelo comercial" : undefined}>{m.nome}</td>
+                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)]">{semPessoa ? vazio : m.leadsAtribuidos}</td>
+                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-primary)] font-semibold">{semPessoa ? vazio : m.qualificados}</td>
+                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)]">{semPessoa ? vazio : taxaQualificacao != null ? `${taxaQualificacao}%` : "—"}</td>
                       <td className="px-3 py-2.5 text-right text-[var(--cf2-success-text)] font-semibold">{m.ganhos}</td>
-                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-tertiary)]">{m.perdidos}</td>
+                      <td className="px-3 py-2.5 text-right text-[var(--cf2-text-tertiary)]">{semPessoa ? vazio : m.perdidos}</td>
                       <td className="px-3 py-2.5 text-right">
-                        <span style={{ color: m.winRate >= 30 ? "var(--cf2-success-text)" : m.winRate > 0 ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)" }} className="font-semibold">
-                          {m.winRate}%
-                        </span>
+                        {semPessoa ? vazio : (
+                          <span style={{ color: m.winRate >= 30 ? "var(--cf2-success-text)" : m.winRate > 0 ? "var(--cf2-warning-text)" : "var(--cf2-text-tertiary)" }} className="font-semibold">
+                            {m.winRate}%
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-right text-[var(--cf2-text-primary)] font-semibold tabular-nums">{formatCurrency(m.receitaTotal)}</td>
                       <td className="px-3 py-2.5 text-right text-[var(--cf2-text-secondary)] hidden md:table-cell">{m.cicloMedio != null ? `${m.cicloMedio}d` : "—"}</td>
-                      <td className="px-4 py-2.5 text-right text-[var(--cf2-text-secondary)] hidden lg:table-cell">{m.atividadesTotal}</td>
+                      <td className="px-4 py-2.5 text-right text-[var(--cf2-text-secondary)] hidden lg:table-cell">{semPessoa ? vazio : m.atividadesTotal}</td>
                     </tr>
                   );
                 })}

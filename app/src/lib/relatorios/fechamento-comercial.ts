@@ -35,6 +35,47 @@ import { eq, and, gte, lt, inArray, sql, asc, desc } from "drizzle-orm";
 const num = (v: unknown): number => Number(v ?? 0) || 0;
 
 /**
+ * O que serve de comprovante de uma venda, em ordem de força.
+ *
+ * Regra do Scott (09/11/2026): "dá ganho só com contrato assinado ou pagamento
+ * confirmado, então tudo precisa ter comprovante — contrato ou recibo. Se está
+ * sem, provavelmente tem alguma cagada." Logo, venda sem nenhum destes é um
+ * defeito a investigar, não uma linha normal do relatório.
+ *
+ * `recibo` é o link hospedado da fatura paga; `contrato` é o PDF assinado (ou o
+ * link público da assinatura). `recibo_da_empresa` é o mesmo recibo, mas achado
+ * pelo vínculo com a empresa em vez do contrato ou do lead da venda — vale como
+ * prova e é rotulado assim para ninguém confundir. `stripe` é o painel: evidência
+ * de que existe cobrança, sem ser o documento.
+ */
+export type ComprovanteTipo = "recibo" | "contrato" | "recibo_da_empresa" | "stripe";
+
+const ROTULO_COMPROVANTE: Record<ComprovanteTipo, string> = {
+  recibo: "Recibo",
+  contrato: "Contrato assinado",
+  recibo_da_empresa: "Recibo (da empresa)",
+  stripe: "Assinatura no Stripe",
+};
+
+export function escolherComprovante(fontes: {
+  reciboDoContrato?: string | null;
+  reciboDoLead?: string | null;
+  contratoAssinado?: string | null;
+  reciboDaEmpresa?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeCustomerId?: string | null;
+}): { url: string; tipo: ComprovanteTipo; rotulo: string } | null {
+  const escolha = (url: string | null | undefined, tipo: ComprovanteTipo) =>
+    url ? { url, tipo, rotulo: ROTULO_COMPROVANTE[tipo] } : null;
+  return escolha(fontes.reciboDoContrato, "recibo")
+    ?? escolha(fontes.reciboDoLead, "recibo")
+    ?? escolha(fontes.contratoAssinado, "contrato")
+    ?? escolha(fontes.reciboDaEmpresa, "recibo_da_empresa")
+    ?? escolha(fontes.stripeSubscriptionId ? `https://dashboard.stripe.com/subscriptions/${fontes.stripeSubscriptionId}` : null, "stripe")
+    ?? escolha(fontes.stripeCustomerId ? `https://dashboard.stripe.com/customers/${fontes.stripeCustomerId}` : null, "stripe");
+}
+
+/**
  * AUTOATENDIMENTO (self-checkout): o cliente assinou sozinho na plataforma e
  * pagou no Stripe, sem passar pelo comercial. É receita como qualquer outra
  * (decisão do Scott, 09/11/2026) e precisa aparecer no fechamento e na meta do
@@ -79,6 +120,11 @@ export interface VendaFechada {
   stripeSubscriptionId: string | null;
   stripeCustomerId: string | null;
   faturaHostedUrl: string | null;
+  /** O comprovante desta venda: recibo do pagamento ou contrato assinado. */
+  comprovanteUrl: string | null;
+  comprovanteTipo: ComprovanteTipo | null;
+  /** Como mostrar na tela e na planilha: "Recibo", "Contrato assinado"... */
+  comprovanteRotulo: string | null;
 }
 
 export interface AgendaRealizada {
@@ -185,8 +231,14 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
     : [];
 
   // Contrato/proposta mais recente por negócio (evita fan-out quando há mais de 1).
-  const contratosRows = await db.select({ id: contratos.id, negocioId: contratos.negocioId, status: contratos.status, zohoId: contratos.zohoId, stripeSubscriptionId: contratos.stripeSubscriptionId, createdAt: contratos.createdAt })
-    .from(contratos).where(inArray(contratos.negocioId, negocioIds));
+  const contratosRows = await db.select({
+    id: contratos.id, negocioId: contratos.negocioId, status: contratos.status, zohoId: contratos.zohoId,
+    stripeSubscriptionId: contratos.stripeSubscriptionId, createdAt: contratos.createdAt,
+    // O contrato assinado é comprovante tanto quanto o recibo (Scott, 09/11/2026):
+    // "dá ganho só com contrato assinado ou pagamento confirmado".
+    documentoFinalUrl: contratos.documentoFinalUrl, signaturePublicUrl: contratos.signaturePublicUrl,
+    signatureStatus: contratos.signatureStatus, assinadoEm: contratos.assinadoEm,
+  }).from(contratos).where(inArray(contratos.negocioId, negocioIds));
   const propostasRows = await db.select({ id: propostas.id, negocioId: propostas.negocioId, numero: propostas.numero, status: propostas.status, createdAt: propostas.createdAt })
     .from(propostas).where(inArray(propostas.negocioId, negocioIds));
 
@@ -218,21 +270,31 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
   // pelo Stripe da fatura em si. Vínculo por contratoId (preferencial) com
   // fallback por leadId; pega a fatura mais recente com URL preenchida.
   const contratoIds = [...contratoPorNegocio.values()].map((c) => c.id);
-  const faturasRows = (contratoIds.length > 0 || leadIds.length > 0)
-    ? await db.select({ contratoId: faturas.contratoId, leadId: faturas.leadId, hostedInvoiceUrl: faturas.hostedInvoiceUrl, createdAt: faturas.createdAt })
+  /* Casar SÓ por contrato e lead deixava venda paga sem comprovante na tela.
+     Medido em 09/11/2026 nas vendas de novembro: Chatpro e MENOLIFT têm fatura
+     paga, com link do Stripe, presa a OUTRO lead da mesma empresa (a empresa tem
+     vários), e apareciam como "sem evidência" para o Financeiro. A empresa é a
+     identidade do cliente, então ela entra como terceiro caminho — rotulada como
+     recibo DA EMPRESA, porque é vínculo mais frouxo que o do contrato. */
+  const faturasRows = (contratoIds.length > 0 || leadIds.length > 0 || empresaIds.length > 0)
+    ? await db.select({ contratoId: faturas.contratoId, leadId: faturas.leadId, empresaId: faturas.empresaId, hostedInvoiceUrl: faturas.hostedInvoiceUrl, createdAt: faturas.createdAt })
         .from(faturas)
         .where(and(
           faturaDoCrm,
           sql`${faturas.hostedInvoiceUrl} IS NOT NULL`,
-          sql`(${contratoIds.length > 0 ? inArray(faturas.contratoId, contratoIds) : sql`false`} OR ${leadIds.length > 0 ? inArray(faturas.leadId, leadIds) : sql`false`})`,
+          sql`(${contratoIds.length > 0 ? inArray(faturas.contratoId, contratoIds) : sql`false`}
+               OR ${leadIds.length > 0 ? inArray(faturas.leadId, leadIds) : sql`false`}
+               OR ${empresaIds.length > 0 ? inArray(faturas.empresaId, empresaIds) : sql`false`})`,
         ))
         .orderBy(desc(faturas.createdAt))
     : [];
   const faturaPorContrato = new Map<string, string>();
   const faturaPorLead = new Map<string, string>();
+  const faturaPorEmpresa = new Map<string, string>();
   for (const f of faturasRows) {
     if (f.contratoId && f.hostedInvoiceUrl && !faturaPorContrato.has(f.contratoId)) faturaPorContrato.set(f.contratoId, f.hostedInvoiceUrl);
     if (f.leadId && f.hostedInvoiceUrl && !faturaPorLead.has(f.leadId)) faturaPorLead.set(f.leadId, f.hostedInvoiceUrl);
+    if (f.empresaId && f.hostedInvoiceUrl && !faturaPorEmpresa.has(f.empresaId)) faturaPorEmpresa.set(f.empresaId, f.hostedInvoiceUrl);
   }
 
   // "Quem qualificou" — primeiro evento real `→ reuniao_agendada` na vida do
@@ -316,6 +378,21 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
       stripeSubscriptionId: contrato?.stripeSubscriptionId ?? null,
       stripeCustomerId: assinatura?.stripeCustomerId ?? lead?.stripeCustomerId ?? null,
       faturaHostedUrl: (contrato?.id ? faturaPorContrato.get(contrato.id) : undefined) ?? (n.leadId ? faturaPorLead.get(n.leadId) : undefined) ?? null,
+      ...(() => {
+        const c = escolherComprovante({
+          reciboDoContrato: contrato?.id ? faturaPorContrato.get(contrato.id) : null,
+          reciboDoLead: n.leadId ? faturaPorLead.get(n.leadId) : null,
+          // Só conta como contrato o que foi REALMENTE assinado: contrato em
+          // rascunho ou aguardando assinatura não prova venda nenhuma.
+          contratoAssinado: contrato && (contrato.assinadoEm || contrato.signatureStatus === "signed")
+            ? contrato.documentoFinalUrl ?? contrato.signaturePublicUrl ?? null
+            : null,
+          reciboDaEmpresa: empresaIdResolvido ? faturaPorEmpresa.get(empresaIdResolvido) : null,
+          stripeSubscriptionId: contrato?.stripeSubscriptionId ?? null,
+          stripeCustomerId: assinatura?.stripeCustomerId ?? lead?.stripeCustomerId ?? null,
+        });
+        return { comprovanteUrl: c?.url ?? null, comprovanteTipo: c?.tipo ?? null, comprovanteRotulo: c?.rotulo ?? null };
+      })(),
     };
   }).sort((a, b) => (b.ganhoAt ?? "").localeCompare(a.ganhoAt ?? ""));
 }

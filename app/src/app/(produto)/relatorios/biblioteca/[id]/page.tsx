@@ -140,7 +140,10 @@ async function Fechamento({ organizacaoId, busca, voltar }: { e: EntradaBibliote
 
   const mensalidade = vendas.reduce((s, v) => s + v.mrrFechado, 0);
   const setup = vendas.reduce((s, v) => s + v.valorSetup, 0);
-  const comComprovante = vendas.filter((v) => v.faturaHostedUrl || v.stripeSubscriptionId || v.stripeCustomerId || v.contratoZohoId).length;
+  // Comprovante = recibo do pagamento OU contrato assinado (a regra mora em
+  // `escolherComprovante`, no fechamento-comercial). Venda sem nenhum dos dois é
+  // defeito a investigar: o ganho só deveria existir com um deles.
+  const comComprovante = vendas.filter((v) => v.comprovanteUrl || v.contratoZohoId).length;
 
   return (
     <Pagina>
@@ -161,8 +164,8 @@ async function Fechamento({ organizacaoId, busca, voltar }: { e: EntradaBibliote
       <PaginaResumo
         itens={[
           { rotulo: "Faturamento fechado", valor: moeda(mensalidade + setup), destaque: true, detalhe: `${moeda(mensalidade)} mensalidade + ${moeda(setup)} setup` },
-          { rotulo: "Vendas", valor: vendas.length, detalhe: `${comComprovante} com evidência de pagamento` },
-          { rotulo: "Sem evidência", valor: vendas.length - comComprovante, sinal: true, detalhe: "sem Stripe, fatura nem Zoho" },
+          { rotulo: "Vendas", valor: vendas.length, detalhe: `${comComprovante} com recibo ou contrato` },
+          { rotulo: "Sem evidência", valor: vendas.length - comComprovante, sinal: true, detalhe: "sem recibo nem contrato assinado" },
           { rotulo: "Agendas realizadas", valor: agendas.length },
           { rotulo: "Atribuídas a SDR", valor: atribuidas.length },
         ]}
@@ -191,9 +194,7 @@ async function Fechamento({ organizacaoId, busca, voltar }: { e: EntradaBibliote
               </thead>
               <tbody>
                 {vendas.map((v) => {
-                  const comprovante = v.faturaHostedUrl
-                    ?? (v.stripeSubscriptionId ? `https://dashboard.stripe.com/subscriptions/${v.stripeSubscriptionId}` : null)
-                    ?? (v.stripeCustomerId ? `https://dashboard.stripe.com/customers/${v.stripeCustomerId}` : null);
+                  const comprovante = v.comprovanteUrl;
                   return (
                     <tr key={v.negocioId}>
                       <td>
@@ -207,7 +208,7 @@ async function Fechamento({ organizacaoId, busca, voltar }: { e: EntradaBibliote
                       <td>{moedaExata(v.mrrFechado)}</td>
                       <td>{v.valorSetup ? moedaExata(v.valorSetup) : <span className="rel-zero">—</span>}</td>
                       <td>
-                        {comprovante ? <a href={comprovante} target="_blank" rel="noreferrer">Abrir</a>
+                        {comprovante ? <a href={comprovante} target="_blank" rel="noreferrer" title={v.comprovanteRotulo ?? undefined}>{v.comprovanteRotulo ?? "Abrir"}</a>
                           : v.contratoZohoId ? <span title={`Sales Order Zoho ${v.contratoZohoId}`}>Zoho</span>
                           : <span className="rel-zero">—</span>}
                       </td>

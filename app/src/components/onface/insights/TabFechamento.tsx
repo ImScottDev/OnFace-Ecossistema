@@ -32,6 +32,7 @@ interface VendaFechada {
   propostaId: string | null; propostaNumero: number | null;
   contratoId: string | null; contratoStatus: string | null; contratoZohoId: string | null;
   stripeSubscriptionId: string | null; stripeCustomerId: string | null; faturaHostedUrl: string | null;
+  comprovanteUrl: string | null; comprovanteRotulo: string | null;
 }
 interface AgendaRealizada {
   leadId: string; leadNome: string | null; empresaNome: string | null; sdrNome: string | null;
@@ -168,8 +169,8 @@ export function TabFechamento({ periodo }: { periodo: string }) {
                     <td>{v.propostaId && v.propostaNumero ? <Link href={`/propostas/${v.propostaId}`}>#{v.propostaNumero}</Link> : ND}</td>
                     <td>{v.contratoId ? (v.contratoZohoId ? "histórico (Zoho)" : v.contratoStatus ?? "—") : ND}</td>
                     <td>
-                      {v.faturaHostedUrl ? (
-                        <a href={v.faturaHostedUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1">Comprovante <ExternalLink size={12} aria-hidden /></a>
+                      {v.comprovanteUrl ? (
+                        <a href={v.comprovanteUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1">{v.comprovanteRotulo ?? "Comprovante"} <ExternalLink size={12} aria-hidden /></a>
                       ) : v.stripeSubscriptionId || v.stripeCustomerId ? (
                         <a
                           href={v.stripeSubscriptionId ? `https://dashboard.stripe.com/subscriptions/${v.stripeSubscriptionId}` : `https://dashboard.stripe.com/customers/${v.stripeCustomerId}`}

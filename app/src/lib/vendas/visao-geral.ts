@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { monthRange, PAPEIS_QUE_SOMAM_NA_META } from "@/lib/metas-shared";
 import { isAdminView, isReader } from "@/lib/auth/roles";
+import { ORIGEM_AUTOATENDIMENTO, ROTULO_AUTOATENDIMENTO } from "@/lib/relatorios/autoatendimento";
 
 /**
  * Leituras próprias da visão geral de Vendas (/vendas).
@@ -128,22 +129,40 @@ export async function visaoGeralVendasMes(
        WHERE organizacao_id = ${organizacaoId}::uuid
          AND etapa IN ('entrada','diagnostico','proposta','negociacao')
        GROUP BY 1
-    ), linhas AS (
+    ), autoatendimento AS (
+      -- A venda que ninguém fez (self-checkout) entra no ranking como linha
+      -- própria. Sem ela, a soma das linhas fica menor que o faturamento da
+      -- organização e o dinheiro do autoatendimento vira "número perdido"
+      -- (Scott, 09/11/2026). Sem meta e sem pipeline aberto: não há pessoa.
+      SELECT count(*)::int AS ganhos, SUM(${FATURAMENTO}) AS faturamento
+        FROM negocios n
+       WHERE n.organizacao_id = ${organizacaoId}::uuid AND n.status = 'ganho'
+         AND n.origem_negocio = 'self_checkout'
+         AND n.ganho_at >= ${ini}::timestamptz AND n.ganho_at < ${fi}::timestamptz
+    ), uniao AS (
       SELECT c.id, c.nome,
              COALESCE(g.ganhos,0) AS ganhos, COALESCE(g.faturamento,0) AS faturamento,
-             m.meta, COALESCE(a.abertas,0) AS abertas, COALESCE(a.valor,0) AS valor_aberto,
-             row_number() OVER (ORDER BY COALESCE(g.faturamento,0) DESC, c.nome)::int AS posicao
+             m.meta, COALESCE(a.abertas,0) AS abertas, COALESCE(a.valor,0) AS valor_aberto
         FROM closers c
         LEFT JOIN ganhos g ON g.id = c.id
         LEFT JOIN metas_mes m ON m.id = c.id
         LEFT JOIN abertas a ON a.id = c.id
+      UNION ALL
+      SELECT NULL::uuid AS id, ${ROTULO_AUTOATENDIMENTO} AS nome,
+             s.ganhos, s.faturamento, NULL::numeric AS meta, 0 AS abertas, 0::numeric AS valor_aberto
+        FROM autoatendimento s WHERE s.ganhos > 0
+    ), linhas AS (
+      SELECT u.*, row_number() OVER (ORDER BY COALESCE(u.faturamento,0) DESC, u.nome)::int AS posicao
+        FROM uniao u
     )
     -- Escopo pessoal: posição e regra de meta são calculadas sobre o time
     -- inteiro (senão a linha divergiria da que o gestor vê); só a saída é
     -- filtrada. Leitor não recebe linha nenhuma.
-    SELECT id::text, nome, ganhos, faturamento::text, meta::text, abertas,
+    SELECT COALESCE(id::text, ${ORIGEM_AUTOATENDIMENTO}) AS id, nome, ganhos, faturamento::text, meta::text, abertas,
            valor_aberto::text, posicao
       FROM linhas
+     -- Escopo pessoal compara por id de usuário: a linha do autoatendimento tem
+     -- id nulo e fica de fora sozinha, que é o certo (não é de ninguém).
      WHERE ${pessoal ? sql`id = ${pessoal}::uuid` : escopo === "leitor" ? sql`false` : sql`true`}
      ORDER BY posicao
   `);
