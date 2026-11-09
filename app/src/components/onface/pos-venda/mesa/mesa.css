@@ -560,8 +560,8 @@
       mas usar a variável sem alternativa deixa o botão primário com tinta
       sobre tinta em qualquer contexto que não seja aquele — foi o que a
       medição mostrou (razão de contraste 1). Alternativa explícita. */
-.mz-foco-abrir, .mz-foco-primaria { color: var(--surface-card, var(--onface-white, #fff)); }
-.mz-chip[data-ativo="true"] { color: var(--surface-card, var(--onface-white, #fff)); }
+.mz-foco-abrir, .mz-foco-primaria { color: var(--surface-card, var(--onface-white)); }
+.mz-chip[data-ativo="true"] { color: var(--surface-card, var(--onface-white)); }
 
 /* 2. A ficha de espera tinha alvo de 24px dentro de um corpo de 32px: a borda
       do chip parecia clicável e não era. O alvo passa a ocupar a altura
