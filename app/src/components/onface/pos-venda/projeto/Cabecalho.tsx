@@ -125,7 +125,7 @@ export function Cabecalho({ projeto, equipe, agora, acoes }: { projeto: Projeto;
           </dd>
         </div>
 
-        <div className="pv-prop">
+        <div className="pv-prop" data-largo="true">
           <dt>Prazo</dt>
           <dd>
             <PrazoDoProjeto
@@ -244,7 +244,12 @@ function PrazoDoProjeto({
 }) {
   const [aberto, setAberto] = useState(false);
   const [rascunho, setRascunho] = useState<Date | undefined>(undefined);
-  const p = venceEm ? lerPrazo(venceEm, agora) : null;
+  const bruto = venceEm ? lerPrazo(venceEm, agora) : null;
+  /* `prazo()` devolve "Vence em 25 nov" quando faltam mais de 14 dias — e aí
+     o apoio repete, palavra por palavra, a data que o valor já mostra ao
+     lado. Numa coluna estreita isso vira "25 nov · Vence em 25 nov · era 20
+     nov" em três linhas. O apoio só aparece quando acrescenta. */
+  const p = bruto && venceEm && bruto.texto.includes(dia(venceEm, agora)) ? null : bruto;
 
   const texto = venceEm ? dia(venceEm, agora) : comecaNoT0 ? "Começa no T0" : "Definir prazo";
   /* Remarcar é visível: o prazo de hoje vale, e o de antes fica dito ao lado.

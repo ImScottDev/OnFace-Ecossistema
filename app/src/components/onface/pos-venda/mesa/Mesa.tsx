@@ -123,7 +123,7 @@ export function Mesa({
           vendo menos do que existe, e a saída fica do lado. */}
       {recorte ? (
         <p className="mz-recorte" role="status">
-          Vendo só <strong>{TIPO[recorte]}</strong>, porque o endereço pedia.
+          Vendo só <strong>{TIPO[recorte]}</strong>{", porque o endereço pedia."}
           <Link href="/pos-vendas">Ver todas as entregas</Link>
         </p>
       ) : null}
