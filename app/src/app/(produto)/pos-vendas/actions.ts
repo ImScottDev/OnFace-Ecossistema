@@ -211,6 +211,28 @@ export async function pvRemarcarTarefa(projetoId: string, tarefaId: string, dia:
   if (Number.isNaN(venceEm.getTime())) return { ok: false, erro: "Data inválida." } satisfies ResultadoOnb;
   return comProjeto(projetoId, (a) => acoes.remarcarTarefa(a, projetoId, tarefaId, venceEm));
 }
+
+// ── Responsável e prazo DO PROJETO ───────────────────────────────────────
+// A tela fecha o `projetoId` e passa só o resto, como nas ações de tarefa.
+
+export async function pvAtribuirProjeto(projetoId: string, usuarioId: string | null) {
+  if (usuarioId != null && !ID.test(usuarioId)) return { ok: false, erro: "Responsável inválido." } satisfies ResultadoOnb;
+  return comProjeto(projetoId, (a) => acoes.atribuirProjeto(a, projetoId, usuarioId));
+}
+
+/**
+ * `dia` chega como AAAA-MM-DD do calendário de São Paulo, igual à remarcação de
+ * tarefa; `null` apaga o prazo. Meio-dia UTC-3 cai no mesmo dia em qualquer
+ * fuso, então o prazo que a pessoa escolheu é o que ela vê de volta.
+ */
+export async function pvEditarPrazoProjeto(projetoId: string, dia: string | null) {
+  if (dia == null) return comProjeto(projetoId, (a) => acoes.editarPrazoProjeto(a, projetoId, null));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return { ok: false, erro: "Data inválida." } satisfies ResultadoOnb;
+  const venceEm = new Date(`${dia}T12:00:00-03:00`);
+  if (Number.isNaN(venceEm.getTime())) return { ok: false, erro: "Data inválida." } satisfies ResultadoOnb;
+  return comProjeto(projetoId, (a) => acoes.editarPrazoProjeto(a, projetoId, venceEm));
+}
+
 export async function pvMarcarEspera(projetoId: string, motivo: MotivoDaEspera, detalhe: string) {
   if (!MOTIVOS.includes(motivo)) return { ok: false, erro: "Diga quem está com a bola." } satisfies ResultadoOnb;
   return comProjeto(projetoId, (a) => acoes.marcarEspera(a, projetoId, motivo, detalhe.trim().slice(0, 300) || null));

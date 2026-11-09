@@ -114,6 +114,9 @@ export function calcularRelogios(e: {
     horasDoTime: arred(Math.max(0, corridas - descontavel)),
     prazoDias: e.prazoDias,
     venceEm,
+    // Esta função só faz conta de duração; de onde vem o prazo e se ele já foi
+    // remarcado é leitura de projeto, e quem preenche é `relogiosDe` (montagem).
+    venceEmOriginal: null,
     diasDeAtraso: arred(diasDeAtraso),
     consumoDoPrazo: e.prazoDias > 0 ? arred(corridas / (e.prazoDias * 24)) : null,
     esperando: aberta ? { motivo: aberta.motivo, desde: aberta.inicio, detalhe: aberta.detalhe } : null,

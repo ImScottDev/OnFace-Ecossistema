@@ -246,6 +246,8 @@ function calcularRelogios(spec: Spec, entrou: Date, t0: Date | null): Relogios {
     horasDoTime: Math.max(0, corridas - descontado),
     prazoDias,
     venceEm: vence,
+    // A fixture não remarca prazo, então não há "era": null é a verdade aqui.
+    venceEmOriginal: null,
     diasDeAtraso,
     consumoDoPrazo: comecou ? Math.max(0, (fim.getTime() - inicioDoPrazo.getTime()) / (prazoDias * D)) : null,
     esperando: emCurso ? { motivo: emCurso.motivo, desde: atras(emCurso.desdeDias), detalhe: emCurso.detalhe } : null,
@@ -297,6 +299,9 @@ function montar(spec: Spec): Projeto {
       setup: spec.setup,
       recorrencia: spec.mensalidade === null ? null : familiaVenda,
       complementos: spec.complementos ?? [],
+      // A fixture descreve a venda pelos totais, não item a item: lista vazia é
+      // exatamente o que um snapshot antigo devolve, e a tela trata os dois igual.
+      itens: [],
     },
     links: {
       cliente360: `/clientes/${empresaId}`,
@@ -356,6 +361,7 @@ function montar(spec: Spec): Projeto {
       podeFazerHandoff: spec.familia !== "CALLFACE_AI" && spec.estado === "EM_VALIDACAO",
       podeDarBaixaSemNps: false,
       podeEditarPrazo: true,
+      podeTrocarResponsavel: spec.estado !== "CONCLUIDO" && spec.estado !== "CANCELADO",
     },
   };
 }

@@ -42,7 +42,22 @@ export function relogiosDe(l: LinhaBase, playbook: PlaybookDoMotor | null, esper
   const r = calcularRelogios({ entrouEm: entrou, concluidoEm: dataDe(l.concluidoEm), agora, prazoDias: prazoDoProjeto(l, playbook), esperas });
   // Tempo decorrido é fato e continua. O que some é o julgamento sobre um
   // prazo que ninguém combinou: vencimento, atraso e consumo do prazo.
-  return temPrazoReal(l) ? r : { ...r, venceEm: null, diasDeAtraso: null, consumoDoPrazo: null };
+  const comPrazo = temPrazoReal(l) ? r : { ...r, venceEm: null, diasDeAtraso: null, consumoDoPrazo: null };
+  return { ...comPrazo, venceEmOriginal: prazoOriginal(l) };
+}
+
+/**
+ * O prazo que valia antes de alguém remarcar: `target_at`, o alvo que o motor
+ * gravou. `due_at` é o prazo vigente, que a ação de editar prazo move.
+ *
+ * Null quando os dois são iguais (prazo nunca mudou) ou quando não há alvo:
+ * mostrar "era 25/11" ao lado de "vence 25/11" é ruído, não histórico.
+ */
+function prazoOriginal(l: LinhaBase): Date | null {
+  const alvo = dataDe(l.targetAt);
+  const vigente = dataDe(l.dueAt);
+  if (!alvo || !vigente) return null;
+  return alvo.getTime() === vigente.getTime() ? null : alvo;
 }
 
 /** Tarefas na ordem do playbook (passo desconhecido vai depois, por data de criação). */

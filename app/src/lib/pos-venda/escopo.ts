@@ -9,17 +9,21 @@
  */
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import type { EscopoVendido, Familia } from "./contrato";
+import type { EscopoVendido, Familia, ItemVendido } from "./contrato";
 import { complementosDosProdutos } from "./regras";
 
 const UNIDADE: Record<Familia, string> = { CALLFACE_AI: "usuários", WHITE_LABEL: "licenças", PABX: "ramais" };
 const RECORRENCIAS = new Set(["mensal", "trimestral", "semestral", "anual", "unica"]);
 
+/**
+ * `itens` saiu daqui e subiu para `EscopoVendido` (contrato): ele já era
+ * congelado no snapshot e era descartado na leitura, então a tela nunca via a
+ * venda item a item — só a concatenação dos nomes em `produto`.
+ */
 export interface EscopoCongelado extends EscopoVendido {
   versao: 1;
   oportunidadeId: string | null;
   capturadoEm: string;
-  itens: Array<{ produto: string | null; quantidade: number | null; valorTotal: number | null; natureza: string | null }>;
 }
 
 const num = (v: string | null | undefined): number | null => (v == null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
@@ -87,6 +91,31 @@ export function escopoDoSnapshot(snap: unknown): EscopoVendido | null {
     unidade: (o.unidade as string) ?? null, mensalidade: (o.mensalidade as number) ?? null, setup: (o.setup as number) ?? null,
     recorrencia: (o.recorrencia as EscopoVendido["recorrencia"]) ?? null,
     complementos: Array.isArray(o.complementos) ? (o.complementos as string[]) : [],
+    itens: itensDoSnapshot(o.itens),
   };
 }
+
+/**
+ * Os itens do snapshot, saneados um por um.
+ *
+ * Snapshot gravado antes desta versão não tem `itens`, e aí vem `[]` — a tela
+ * mostra os totais sem a tabela, em vez de linha inventada. Item sem nenhum
+ * campo aproveitável é descartado: linha vazia na tela é pior que linha
+ * ausente, porque parece dado e não é.
+ */
+function itensDoSnapshot(v: unknown): ItemVendido[] {
+  if (!Array.isArray(v)) return [];
+  const texto = (x: unknown): string | null => (typeof x === "string" && x.trim() ? x.trim() : null);
+  const numero = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : num(typeof x === "string" ? x : null));
+  return v.flatMap((cru) => {
+    if (!cru || typeof cru !== "object") return [];
+    const i = cru as Record<string, unknown>;
+    const item: ItemVendido = {
+      produto: texto(i.produto), quantidade: numero(i.quantidade),
+      valorTotal: numero(i.valorTotal), natureza: texto(i.natureza),
+    };
+    return item.produto || item.quantidade != null || item.valorTotal != null ? [item] : [];
+  });
+}
+
 function safeParse(s: string): unknown { try { return JSON.parse(s); } catch { return null; } }

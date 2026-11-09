@@ -75,6 +75,12 @@ export interface Relogios {
   prazoDias: number;
   /** Quando deveria terminar. Null enquanto o relógio não começou (ex.: antes do T0). */
   venceEm: Date | null;
+  /**
+   * O prazo que valia antes de alguém remarcar, igual ao `venceEmOriginal` da
+   * tarefa. Null quando o prazo nunca mudou — remarcar é visível, não apaga
+   * histórico, mas prazo intocado não precisa de "era".
+   */
+  venceEmOriginal: Date | null;
   /** Negativo quando ainda há folga; positivo quando estourou. */
   diasDeAtraso: number | null;
   /** Fração de 0 a 1 do prazo já consumido, para a barra. Pode passar de 1. */
@@ -155,6 +161,22 @@ export interface Usuario {
   iniciais: string;
 }
 
+/**
+ * Uma linha do que foi vendido, com o número que a proposta tem.
+ *
+ * Existe porque `produto` sozinho é a concatenação dos nomes de todos os itens
+ * (`"Callface AI - Full + Callface AI - Pacote 500 Minutos"`), e nela a
+ * quantidade e o valor de cada item se perdem — é a reclamação de que o escopo
+ * "não tem as informações completas que tem na proposta".
+ */
+export interface ItemVendido {
+  produto: string | null;
+  quantidade: number | null;
+  valorTotal: number | null;
+  /** `MRR`, `SETUP` ou o que o item gravou. Texto livre: a origem é a proposta, não um enum nosso. */
+  natureza: string | null;
+}
+
 /** O que foi vendido. Congelado no Ganho em `escopo_vendido_snapshot`. */
 export interface EscopoVendido {
   familia: Familia;
@@ -167,6 +189,12 @@ export interface EscopoVendido {
   recorrencia: "mensal" | "trimestral" | "semestral" | "anual" | "unica" | null;
   /** Soluções dentro do produto que mudam o playbook. Ex.: agente de IA contratado. */
   complementos: string[];
+  /**
+   * A venda item a item. **Pode vir vazio**: snapshot congelado antes desta
+   * versão não tem o campo, e aí a tela mostra os totais sem a tabela em vez de
+   * inventar linha. `mensalidade` e `setup` seguem valendo nos dois casos.
+   */
+  itens: ItemVendido[];
 }
 
 /** Links para fora. A tela mostra como botão; null significa "não existe", nunca "#". */
@@ -315,6 +343,8 @@ export interface Projeto {
     podeFazerHandoff: boolean;
     podeDarBaixaSemNps: boolean;
     podeEditarPrazo: boolean;
+    /** Projeto encerrado não troca de dono: o histórico fica como ficou. */
+    podeTrocarResponsavel: boolean;
   };
 }
 
@@ -434,6 +464,17 @@ export interface AcoesDoProjeto {
   /** Remarcar preserva a data original e registra a troca na timeline. */
   remarcarTarefa(tarefaId: string, venceEm: Date): Promise<Resultado>;
   criarTarefa(entrada: { titulo: string; playbook?: string; venceEm?: Date; responsavelId?: string }): Promise<Resultado<{ id: string }>>;
+
+  /**
+   * Responsável e prazo DO PROJETO — não da tarefa.
+   *
+   * O responsável nasce da configuração por família no playbook, e sem estas
+   * duas o time não tinha como corrigir nem um nem outro depois: o dono ficava
+   * uma pílula de leitura e o prazo ficava "não definido" para sempre.
+   */
+  atribuirProjeto(usuarioId: string | null): Promise<Resultado>;
+  /** `null` apaga o prazo e o projeto volta a não contar atraso. */
+  editarPrazoProjeto(venceEm: Date | null): Promise<Resultado>;
 
   /** Pausa o relógio do time. Sem motivo, não pausa. */
   marcarEspera(motivo: MotivoDaEspera, detalhe: string | null): Promise<Resultado>;
