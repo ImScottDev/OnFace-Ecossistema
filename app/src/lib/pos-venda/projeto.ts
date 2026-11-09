@@ -113,6 +113,7 @@ export async function projetoCompleto(organizacaoId: string, projetoId: string, 
       podeFazerHandoff: aberto && (l.familia === "CALLFACE_AI" ? nps?.respondidoEm != null : feitas),
       podeDarBaixaSemNps: aberto && l.familia === "CALLFACE_AI" && nps?.respondidoEm == null && nps?.esperaAte != null && nps.esperaAte.getTime() <= agora.getTime(),
       podeEditarPrazo: aberto,
+      podeTrocarResponsavel: aberto,
     },
   };
 }
@@ -266,6 +267,11 @@ async function timelineDoProjeto(
       if (em) eventos.push({ id: `remarca:${r.id}`, em, tipo: "prazo_remarcado", titulo: `Prazo remarcado: ${nomeDe.get(r.aggregate_id) ?? "tarefa"}`, detalhe: `de ${dia(r.de)} para ${dia(r.para)}`, autor: "time", porQuem: r.nome });
     }
   }
+  // Fatos do PROJETO (não da tarefa): troca de responsável e prazo definido,
+  // mudado ou apagado. Mesma disciplina da remarcação de tarefa — o "de" e o
+  // "para" vêm do payload, então o ajuste é visível e não apaga o que havia.
+  for (const f of await fatosDoProjeto(organizacaoId, l.id)) eventos.push(f);
+
   if (l.empresa.id) {
     const linhas = await lerLinhaDoTempo({ organizacaoId, empresaId: l.empresa.id, limite: 200 });
     for (const x of linhas) {
@@ -280,4 +286,48 @@ async function timelineDoProjeto(
     }
   }
   return eventos.sort((a, b) => b.em.getTime() - a.em.getTime());
+}
+
+/**
+ * Troca de responsável e mexida no prazo DO PROJETO, de `domain_events`.
+ *
+ * O nome de quem entrou e saiu é resolvido por join: o payload guarda id, e a
+ * tela precisa de nome. Quem foi removido aparece como "removido", não como um
+ * uuid solto.
+ */
+async function fatosDoProjeto(organizacaoId: string, projetoId: string): Promise<EventoDoProjeto[]> {
+  const linhas = await db.execute<{
+    id: string; tipo: string; em: string; de: string | null; para: string | null;
+    autor: string | null; nome_de: string | null; nome_para: string | null;
+  }>(sql`
+    SELECT e.id::text, e.event_type AS tipo, to_json(e.occurred_at)#>>'{}' AS em,
+           e.payload->>'de' AS de, e.payload->>'para' AS para,
+           u.nome AS autor, ude.nome AS nome_de, upara.nome AS nome_para
+      FROM domain_events e
+      LEFT JOIN usuarios u ON u.id = e.actor_id
+      -- só casam quando o payload é uuid de usuário (ProjectReassigned); no prazo é data e o join não acha nada
+      LEFT JOIN usuarios ude ON ude.id::text = e.payload->>'de' AND ude.organizacao_id = e.organizacao_id
+      LEFT JOIN usuarios upara ON upara.id::text = e.payload->>'para' AND upara.organizacao_id = e.organizacao_id
+     WHERE e.organizacao_id = ${organizacaoId}::uuid AND e.aggregate_type = 'fulfillment'
+       AND e.aggregate_id = ${projetoId}::uuid
+       AND e.event_type IN ('ProjectReassigned','ProjectDeadlineSet','ProjectDeadlineChanged','ProjectDeadlineCleared')
+     ORDER BY e.occurred_at`);
+
+  const dia = (v: string | null) => { const d = dataDe(v); return d ? d.toISOString().slice(0, 10) : "sem prazo"; };
+  return linhas.flatMap((r): EventoDoProjeto[] => {
+    const em = dataDe(r.em);
+    if (!em) return [];
+    const base = { id: `projeto-fato:${r.id}`, em, autor: "time" as const, porQuem: r.autor };
+    if (r.tipo === "ProjectReassigned") {
+      const para = r.nome_para ?? (r.para ? "outra pessoa" : null);
+      return [{
+        ...base, tipo: "responsavel_trocado",
+        titulo: para ? `Responsável: ${para}` : "Responsável removido",
+        detalhe: r.nome_de ? `antes era ${r.nome_de}` : r.de ? "antes era outra pessoa" : "antes não havia responsável",
+      }];
+    }
+    if (r.tipo === "ProjectDeadlineSet") return [{ ...base, tipo: "prazo_definido", titulo: `Prazo definido: ${dia(r.para)}`, detalhe: null }];
+    if (r.tipo === "ProjectDeadlineCleared") return [{ ...base, tipo: "prazo_apagado", titulo: "Prazo apagado", detalhe: `era ${dia(r.de)}` }];
+    return [{ ...base, tipo: "prazo_remarcado", titulo: `Prazo do projeto: ${dia(r.para)}`, detalhe: `era ${dia(r.de)}` }];
+  });
 }

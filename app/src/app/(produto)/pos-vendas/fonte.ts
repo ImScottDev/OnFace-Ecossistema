@@ -68,6 +68,11 @@ export const acoes = {
   adicionarNota: (a: Ator, projetoId: string, texto: string) => pv.adicionarNota(a, projetoId, texto),
   salvarLevantamento: (a: Ator, projetoId: string, campos: Partial<Projeto["levantamento"]>) => pv.salvarLevantamento(a, projetoId, campos),
 
+  // Responsável e prazo DO PROJETO. Ligadas de verdade: são as reclamações 1 e 5
+  // do Kauã ("não consigo mudar o responsável", "prazo: não definido" sem como definir).
+  atribuirProjeto: (a: Ator, projetoId: string, usuarioId: string | null) => pv.atribuirProjeto(a, projetoId, usuarioId),
+  editarPrazoProjeto: (a: Ator, projetoId: string, venceEm: Date | null) => pv.editarPrazoProjeto(a, projetoId, venceEm),
+
   // Ainda não ligadas, e a tela diz isso em vez de fingir que funcionou:
   // o envio do formulário e o handoff dependem de peças que não existem
   // (página pública do NPS, endpoint de agendamento do onboarding).
