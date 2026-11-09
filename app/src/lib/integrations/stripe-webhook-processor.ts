@@ -40,6 +40,8 @@ export interface DepsProcessamento {
   dispute(dispute: Obj, encerrada: boolean): Promise<string>;
   subscriptionCanceled(sub: Obj): Promise<string>;
   subscriptionLink(sub: Obj): Promise<string>;
+  /** Assinatura nascida na plataforma: vira venda de autoatendimento na hora. */
+  assinaturaDaPlataforma(sub: Obj, organizacaoId: string): Promise<string>;
   mockMode(): boolean;
   sync(organizacaoId: string): Promise<unknown>;
   automacao(args: Obj): Promise<unknown>;
@@ -76,6 +78,7 @@ export async function depsReais(): Promise<DepsProcessamento> {
     dispute: h.handleDispute,
     subscriptionCanceled: h.handleSubscriptionCanceled,
     subscriptionLink: h.handleSubscriptionLink,
+    assinaturaDaPlataforma: (o, org) => h.handleAssinaturaDaPlataforma(o, org),
     mockMode: isStripeMockMode,
     sync: (org) => syncStripe(org),
     automacao: (a) => dispararAutomacoesFinanceiras(a as never),
@@ -116,6 +119,11 @@ export async function processarEventoStripe(
   }
   if (type === "customer.subscription.deleted") await passo("cancelamento", () => deps.subscriptionCanceled(object));
   if (type.startsWith("customer.subscription.")) await passo("vínculo da assinatura", () => deps.subscriptionLink(object));
+  // Compra feita sozinho na plataforma: a venda nasce aqui, no instante do evento.
+  // O sync de 30 em 30 min repassa o que o webhook perder; os dois são idempotentes.
+  if (type === "customer.subscription.created") {
+    await passo("venda de autoatendimento", () => deps.assinaturaDaPlataforma(object, org));
+  }
 
   const customerId = customerIdDe(event);
   const fato = descreverEventoFinanceiro(event);

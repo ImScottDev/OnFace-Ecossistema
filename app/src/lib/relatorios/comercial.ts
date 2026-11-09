@@ -23,6 +23,7 @@ import { and, eq, inArray, gte, lt, count, sum, sql, isNotNull, isNull, asc, typ
 import { DEFAULT_STAGES } from "@/lib/crm/pipeline";
 import { MOTIVOS_PERDA } from "@/lib/vendas/dominio";
 import { VALOR_MRR_VENDIDO, VALOR_NAO_RECORRENTE_VENDIDO } from "./receita-fechada";
+import { ORIGEM_AUTOATENDIMENTO } from "@/lib/relatorios/autoatendimento";
 
 /**
  * Status de negócio ABERTO, por EXCLUSÃO dos fechados.
@@ -316,6 +317,32 @@ export async function getFechadoPeriodo(
   const avulso = rows.reduce((s, r) => s + num(r.setup), 0);
   const ganhos = rows.reduce((s, r) => s + num(r.total), 0);
   return { ganhos, receita: recorrente + avulso, recorrente, avulso };
+}
+
+/**
+ * O que o autoatendimento fechou no período: venda de self-checkout não tem
+ * responsável, então nunca aparece em `getFechadoPorResponsavel` — e a soma da
+ * tabela por vendedor deixava de bater com o total do período exatamente por
+ * esse valor. Mesma janela e mesma régua de receita das outras duas.
+ */
+export async function getFechadoDeAutoatendimento(
+  orgId: string,
+  since: Date,
+  until: Date,
+): Promise<{ ganhos: number; receita: number }> {
+  const rows = await db
+    .select({ total: count(), mrr: sum(VALOR_MRR_VENDIDO), setup: sum(VALOR_NAO_RECORRENTE_VENDIDO) })
+    .from(negocios)
+    .where(and(
+      eq(negocios.organizacaoId, orgId),
+      eq(negocios.status, "ganho"),
+      eq(negocios.origemNegocio, ORIGEM_AUTOATENDIMENTO),
+      gte(negocios.ganhoAt, since),
+      lt(negocios.ganhoAt, until),
+    ));
+  const ganhos = rows.reduce((s, r) => s + num(r.total), 0);
+  const receita = rows.reduce((s, r) => s + num(r.mrr) + num(r.setup), 0);
+  return { ganhos, receita };
 }
 
 export interface FechadoResponsavel {

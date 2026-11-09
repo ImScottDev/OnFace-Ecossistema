@@ -11,7 +11,7 @@ import { isPersonalView, isAdminView } from "@/lib/auth/roles";
 import {
   getPipelineAtual, getCoberturaValorPorEtapa, getWinRate, getMotivosPerda, getCicloMedio,
   getFechadoPeriodo, getTicketMedio, getFunilConversao, getPipelineEsfriando,
-  getLeadsQualificados, getFechadoPorResponsavel, crescimento, type Safra,
+  getLeadsQualificados, getFechadoPorResponsavel, getFechadoDeAutoatendimento, crescimento, type Safra,
 } from "@/lib/relatorios/comercial";
 import { getTempoPorEtapa, getConversaoPorOrigem, getTarefasVencidasPorPessoa } from "@/lib/relatorios/gestao-operacional";
 import { contarReunioes, getPerdidosPorResponsavel, getFunilVendasEventos } from "@/lib/relatorios/funil-eventos";
@@ -796,9 +796,10 @@ app.get("/growth", async (c) => {
   // números da tabela "Desempenho por Vendedor" da aba Comercial. Antes cada aba
   // calculava diferente (created_at aqui, valor_total lá) e a mesma closer aparecia
   // com 3 receitas distintas (auditoria itens 6/7).
-  const [fechadoResp, perdidosResp] = await Promise.all([
+  const [fechadoResp, perdidosResp, autoatendimento] = await Promise.all([
     getFechadoPorResponsavel(orgId, since, until),
     getPerdidosPorResponsavel(orgId, since, until),
+    getFechadoDeAutoatendimento(orgId, since, until),
   ]);
   const time = closers.map((u) => {
     const f = fechadoResp.get(u.id);
@@ -807,6 +808,17 @@ app.get("/growth", async (c) => {
     const receita = f?.receita ?? 0;
     return { nome: u.nome, ganhos, perdidos, receita, winRate: ganhos + perdidos > 0 ? Math.round((ganhos / (ganhos + perdidos)) * 1000) / 10 : null };
   }).filter((m) => m.ganhos > 0 || m.perdidos > 0).sort((a, b) => b.receita - a.receita);
+
+  /* Quem comprou sozinho não tem vendedor, e sem esta linha a soma da tabela
+     ficava menor que a receita do período, sem explicação na tela. Win rate fica
+     nulo de propósito: não houve disputa para ganhar nem perder. */
+  if (autoatendimento.ganhos > 0) {
+    time.push({
+      nome: ROTULO_AUTOATENDIMENTO, ganhos: autoatendimento.ganhos, perdidos: 0,
+      receita: autoatendimento.receita, winRate: null,
+    });
+    time.sort((a, b) => b.receita - a.receita);
+  }
 
   // Mídia paga (Meta) no período
   let midia = { gasto: 0, leadsPagos: 0, cpl: null as number | null, configurado: metaConfigured() };

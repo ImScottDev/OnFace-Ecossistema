@@ -154,7 +154,7 @@ function depsFalsas(chamadas: string[], falhaEm?: string): DepsProcessamento {
     paymentConfirmed: f("paymentConfirmed"), invoicePaid: f("invoicePaid"), asyncPaymentFailed: f("asyncPaymentFailed"),
     invoiceFinalized: f("invoiceFinalized"),
     checkoutExpired: f("checkoutExpired"), invoicePaymentFailed: f("invoicePaymentFailed"), chargeRefunded: f("chargeRefunded"),
-    dispute: f("dispute"), subscriptionCanceled: f("subscriptionCanceled"), subscriptionLink: f("subscriptionLink"),
+    dispute: f("dispute"), subscriptionCanceled: f("subscriptionCanceled"), subscriptionLink: f("subscriptionLink"), assinaturaDaPlataforma: f("assinaturaDaPlataforma"),
     mockMode: () => false,
     sync: async () => { chamadas.push("sync"); if (falhaEm === "sync") throw new Error("boom em sync"); return { subs: 1 }; },
     automacao: async (a) => { chamadas.push(`automacao:${String(a.gatilho)}`); },

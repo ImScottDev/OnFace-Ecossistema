@@ -30,6 +30,8 @@ import { resumoDeCancelamento } from "./stripe-portal-retorno";
 import { periodoCorrente } from "./stripe-financeiro";
 import { ehDoSaas, ignorarNoSync, origemDaAssinatura, origemDaFatura } from "./stripe-origem";
 import { empresaCarimbadaNoCustomer, reconhecerClienteDoSaas } from "./cliente-do-saas";
+import { mensalidadeDaAssinatura } from "./stripe-mensalidade";
+import { carregarEmpresasPorNome, registrarVendaDeAutoatendimento } from "@/lib/vendas/venda-de-autoatendimento";
 import { MARCA_AUTOMATICA, produtoDaSubscriptionDoSync } from "./stripe-produto-do-servico";
 import { fetchComPrazo } from "@/lib/rede/fetch-com-prazo";
 
@@ -89,22 +91,14 @@ async function paginate<T extends { id: string }>(path: string, params: Record<s
   throw new Error(`Stripe ${path}: mais de ${PAGINAS_MAXIMAS} páginas — a paginação foi interrompida e o espelho ficaria incompleto`);
 }
 
+/** A régua mora em `stripe-mensalidade.ts`: o registro da venda de autoatendimento usa a mesma. */
 function mrrOf(sub: StripeSubscription): number {
-  let mrr = 0;
-  for (const it of sub.items?.data || []) {
-    const p = it.price;
-    if (!p?.recurring || !p.unit_amount) continue;
-    const months =
-      ({ month: 1, year: 12, week: 0.25, day: 1 / 30 } as Record<string, number>)[p.recurring.interval] *
-      (p.recurring.interval_count || 1);
-    mrr += (p.unit_amount / 100) * (it.quantity || 1) / months;
-  }
-  return Math.round(mrr * 100) / 100;
+  return mensalidadeDaAssinatura(sub.items?.data);
 }
 
 interface StripeSubscription {
   id: string;
-  customer: string | { id: string; email?: string | null; name?: string | null; metadata?: Record<string, string> | null };
+  customer: string | { id: string; email?: string | null; name?: string | null; phone?: string | null; metadata?: Record<string, string> | null };
   status: string;
   start_date?: number;
   canceled_at?: number | null;
@@ -255,6 +249,42 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
       id: s.id, status: s.status, empresaId,
       produto: produtoId ? productName.get(produtoId) ?? null : null,
     }).catch((e) => console.error(`[StripeSync] cliente do SaaS ${s.id}:`, e instanceof Error ? e.message : e));
+  }
+
+  /* Rede de segurança do autoatendimento: quem assina sozinho na plataforma não
+     tem carimbo do CRM no Customer, então o laço acima nunca o alcança — ele cai
+     no `continue` e some. É o buraco que deixou SMOV Digital e Scale X meses
+     pagando sem existir como venda.
+
+     Aqui a venda é registrada com empresa, contato, serviço e Cliente 360. O
+     webhook `customer.subscription.created` já faz isso no instante da compra;
+     isto é o repasse de 30 em 30 minutos, para quando o webhook falhar ou o
+     evento chegar antes do Customer existir. Idempotente nos dois caminhos.
+
+     Só assinatura nova (ver `DESDE` no módulo): varrer o passado criaria venda
+     para quem o comercial já vendeu, contando o mesmo dinheiro duas vezes. */
+  const daPlataforma = subsDoStripe.filter((s) => ignorarNoSync(origemDaAssinatura(s)));
+  if (daPlataforma.length > 0) {
+    const empresasPorNome = await carregarEmpresasPorNome(org.id);
+    let novas = 0;
+    for (const s of daPlataforma) {
+      const c = typeof s.customer === "string" ? null : s.customer;
+      const primeiro = s.items?.data?.[0]?.price?.product;
+      const produtoId = typeof primeiro === "string" ? primeiro : primeiro?.id ?? null;
+      const r = await registrarVendaDeAutoatendimento(org.id, {
+        id: s.id,
+        status: s.status,
+        inicio: s.start_date ? new Date(s.start_date * 1000) : new Date(),
+        valorMensal: mrrOf(s),
+        produto: produtoId ? productName.get(produtoId) ?? null : null,
+        customer: c ? { id: c.id, name: c.name, email: c.email, phone: c.phone, metadata: c.metadata } : null,
+      }, { empresasPorNome }).catch((e) => {
+        console.error(`[StripeSync] venda de autoatendimento ${s.id}:`, e instanceof Error ? e.message : e);
+        return { criou: false as const, motivo: "erro" };
+      });
+      if (r.criou) novas++;
+    }
+    if (novas > 0) console.log(`[StripeSync] ${novas} venda(s) de autoatendimento registrada(s)`);
   }
 
   // Faturas: janela de 60d (novas + retries) + TODAS open/uncollectible (sem janela)

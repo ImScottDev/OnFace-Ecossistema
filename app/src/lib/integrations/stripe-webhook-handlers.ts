@@ -767,3 +767,54 @@ export async function handleSubscriptionCanceled(subscription: Record<string, un
 
   return `cancelamento de ${quem} registrado${temMotivo ? "" : " (motivo pendente)"}`;
 }
+
+/**
+ * `customer.subscription.created` de assinatura nascida na PLATAFORMA.
+ *
+ * O cliente assinou sozinho e pagou: vira venda no ONFACE na hora, com empresa,
+ * contato, Cliente 360 e a marca `self_checkout`. Antes disso só existia carga
+ * manual, e quem comprava sozinho ficava invisível para o comercial.
+ *
+ * O payload do webhook traz o Customer como id, não expandido, e o produto só
+ * como id do price — os dois fetches abaixo são o que falta para a venda nascer
+ * com nome de empresa e nome de produto certos. Falha de fetch não derruba o
+ * evento: sem customer a venda não é criada, e o sync de 30 min tenta de novo.
+ */
+export async function handleAssinaturaDaPlataforma(
+  subscription: Record<string, unknown>,
+  organizacaoId: string,
+): Promise<string> {
+  const { origemDaAssinatura, ignorarNoSync } = await import("./stripe-origem");
+  if (!ignorarNoSync(origemDaAssinatura(subscription as never))) return "assinatura não é da plataforma";
+
+  const id = typeof subscription.id === "string" ? subscription.id : null;
+  const status = typeof subscription.status === "string" ? subscription.status : "";
+  if (!id) return "assinatura sem id";
+
+  const { stripe } = await import("./stripe-assinatura");
+  const { mensalidadeDaAssinatura } = await import("./stripe-mensalidade");
+  const { registrarVendaDeAutoatendimento } = await import("@/lib/vendas/venda-de-autoatendimento");
+
+  const customerId = typeof subscription.customer === "string"
+    ? subscription.customer
+    : (subscription.customer as { id?: string } | null)?.id ?? null;
+  const customer = customerId
+    ? await stripe<{ id: string; name?: string | null; email?: string | null; phone?: string | null; metadata?: Record<string, string> }>(`customers/${customerId}`).catch(() => null)
+    : null;
+  if (!customer) return "customer não encontrado (fica pro sync)";
+
+  const itens = (subscription.items as { data?: Array<{ price?: { product?: string | { id: string }; unit_amount?: number | null; recurring?: { interval?: string; interval_count?: number } | null }; quantity?: number | null }> } | undefined)?.data ?? [];
+  const produtoRef = itens[0]?.price?.product;
+  const produtoId = typeof produtoRef === "string" ? produtoRef : produtoRef?.id ?? null;
+  const produto = produtoId
+    ? (await stripe<{ name?: string }>(`products/${produtoId}`).catch(() => null))?.name ?? null
+    : null;
+
+  const inicio = typeof subscription.start_date === "number" ? new Date(subscription.start_date * 1000) : new Date();
+  const r = await registrarVendaDeAutoatendimento(organizacaoId, {
+    id, status, inicio, valorMensal: mensalidadeDaAssinatura(itens), produto, customer,
+  });
+  return r.criou
+    ? `venda de autoatendimento ${r.negocioId} criada (R$ ${r.valor.toFixed(2)})`
+    : `sem venda: ${r.motivo}`;
+}
