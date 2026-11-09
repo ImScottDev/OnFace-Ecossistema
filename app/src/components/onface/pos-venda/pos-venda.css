@@ -1575,3 +1575,72 @@ a.pv-repetido:hover { background: var(--pv-fundo-hover); color: var(--pv-tinta);
 
 /* Ordem + forma de ver, agora na linha única de filtros. */
 .pv-leitura-vista { display: flex; align-items: center; gap: 0.5rem; margin-inline-start: auto; }
+
+/* ─── Último resíduo do mundo antigo: a moldura. ──────────────────────────
+ * Três lugares continuavam desenhando caixa onde a hierarquia já era dada
+ * por tipografia e espaço. Como são regras que vêm antes neste arquivo, a
+ * correção fica aqui, junta e explicada, em vez de espalhada.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* 1. A tarefa era um cartão com borda e raio. São poucas e grandes por regra
+      do dono, mas ainda assim empilhavam molduras dentro da aba. Vira linha
+      separada por fio, com o hover carregando o alvo. */
+.pv-tarefa {
+  border: 0;
+  border-top: 1px solid var(--pv-borda);
+  border-radius: 0;
+  background: transparent;
+  transition: background-color 80ms ease-out;
+}
+.pv-tarefas > .pv-tarefa:first-child { border-top: 0; }
+.pv-tarefa:hover { border-color: var(--pv-borda); background: var(--pv-fundo-sutil); }
+.pv-tarefa[data-aberta="true"] { border-color: var(--pv-borda); background: transparent; }
+
+/* 2. Rótulo de seção em CAIXA-ALTA com entreletra é o "kicker": o piso de
+      qualidade o proíbe por nome, e não há exceção que o ganhe de volta. O
+      título carrega o próprio peso. */
+.pv-rotulo {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--pv-tinta);
+}
+
+/* 3. Os dois relógios eram uma folha com borda, raio e sombra, e dentro dela
+      dois blocos divididos por um fio. Sem moldura, com o fio entre eles
+      fazendo o trabalho. */
+.pv-relogios {
+  border: 0;
+  border-top: 1px solid var(--pv-borda);
+  border-bottom: 1px solid var(--pv-borda);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.pv-relogio { padding: 1rem 1.25rem 1rem 0; }
+.pv-relogio + .pv-relogio { padding-inline-start: 1.25rem; }
+
+/* A coluna de contexto também perde o recuo de cartão. */
+.pv-ctx-secao { padding: 1.25rem 0; }
+
+/* A coluna de contexto deixa de ser um cartão e vira uma coluna separada por
+   um fio vertical. Era a última moldura grande da tela do projeto. */
+.pv-contexto {
+  border: 0;
+  border-inline-start: 1px solid var(--pv-borda);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-inline-start: 1.5rem;
+}
+@media (max-width: 64rem) {
+  .pv-contexto { border-inline-start: 0; border-top: 1px solid var(--pv-borda); padding-inline-start: 0; padding-top: 0.5rem; }
+}
+
+/* A coluna de estado da lista truncava "Callface AI · Onboardi…" em quase
+   toda linha. Texto cortado no meio da palavra é o oposto de densidade: ocupa
+   o espaço e não entrega o dado. Mais 2rem resolvem as três famílias. */
+@media (min-width: 75rem) {
+  .pv-lp { grid-template-columns: minmax(0, 1fr) 10.75rem 6.25rem 7.25rem 3.25rem; }
+}
