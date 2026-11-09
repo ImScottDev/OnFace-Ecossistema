@@ -131,11 +131,15 @@ test("board da fixture: abertos por padrão, e cada recorte pega o que diz", () 
 
 // ─── Renderização ──────────────────────────────────────────────────────────
 
-test("board renderiza sem NaN, undefined nem link morto, e com os seis indicadores", () => {
+test("a lista completa renderiza sem NaN, undefined nem link morto, e com os recortes clicáveis", () => {
+  // Os seis cartões de KPI viraram chips que FILTRAM: indicador que não
+  // filtra é decoração, e quatro dos seis eram zero ocupando um sexto da
+  // largura cada. A asserção segue o comportamento — recorte que vira URL —
+  // e não a quantidade de caixas desenhadas.
   const board = boardDev(SEM_FILTRO);
   const html = noRoteador(h(BoardView, { board, agora: new Date(), equipe: [] }));
   semDefeito(html, "board");
-  assert.equal((html.match(/class="pv-kpi"/g) ?? []).length, 6);
+  assert.ok((html.match(/class="pv-chip"/g) ?? []).length >= 4, "os recortes aparecem como chips");
   for (const c of board.cartoes) assert.ok(html.includes(c.empresa.nome), `faltou ${c.empresa.nome}`);
   assert.ok(html.includes('href="/pos-vendas?recorte=atrasados"'), "o indicador de atrasados deve ser um recorte na URL");
   assert.ok(html.includes('aria-current="page"'), "a aba da família ativa se anuncia");
@@ -154,7 +158,7 @@ test("todo projeto da fixture renderiza inteiro, em toda aba", () => {
   for (const id of ids) {
     const projeto = projetoDev(id);
     assert.ok(projeto, id);
-    for (const aba of ["visao", "tarefas", "levantamento", "materiais", "tempo"] as const) {
+    for (const aba of ["tarefas", "levantamento", "materiais", "tempo"] as const) {
       const html = noRoteador(h(ProjetoTela, { projeto, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: aba }));
       semDefeito(html, `${id}/${aba}`);
       assert.ok(html.includes(projeto.empresa.nome));
@@ -165,7 +169,7 @@ test("todo projeto da fixture renderiza inteiro, em toda aba", () => {
 test("link que não existe não vira botão", () => {
   const projeto = projetoDev("p-no");
   assert.ok(projeto && projeto.links.stripe === null && projeto.links.proposta === null);
-  const html = noRoteador(h(ProjetoTela, { projeto, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
+  const html = noRoteador(h(ProjetoTela, { projeto, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "tarefas" }));
   assert.doesNotMatch(html, /Stripe/);
   assert.doesNotMatch(html, />Proposta</);
   assert.match(html, /Cliente 360/);
@@ -174,7 +178,7 @@ test("link que não existe não vira botão", () => {
 test("espera em curso diz quem segura a bola e desde quando", () => {
   const projeto = projetoDev("p-praca");
   assert.ok(projeto?.relogios.esperando);
-  const html = noRoteador(h(ProjetoTela, { projeto, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
+  const html = noRoteador(h(ProjetoTela, { projeto, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "tarefas" }));
   assert.match(html, /A bola está com a operadora/);
   assert.match(html, /portabilidade da Vivo/);
   assert.match(html, /Encerrar espera/);
@@ -184,7 +188,7 @@ test("espera em curso diz quem segura a bola e desde quando", () => {
 test("PABX antes do T0 diz que o prazo ainda não começou, em vez de inventar data", () => {
   const projeto = projetoDev("p-orbita");
   assert.ok(projeto);
-  const html = noRoteador(h(ProjetoTela, { projeto, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
+  const html = noRoteador(h(ProjetoTela, { projeto, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "tarefas" }));
   semDefeito(html, "orbita");
 });
 
@@ -215,11 +219,12 @@ test("projeto sem tarefa mede o checklist e não diz que as tarefas foram conclu
   const base = projetoDev("p-praca");
   assert.ok(base);
   const semTarefa = { ...base, tarefas: [], progresso: 0.19, checklist: { feitos: 4, total: 21 } };
-  const html = noRoteador(h(ProjetoTela, { projeto: semTarefa, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
+  const html = noRoteador(h(ProjetoTela, { projeto: semTarefa, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "tarefas" }));
   assert.match(html, /19%/);
   assert.match(html, /Itens feitos<b>4<\/b>/);
   assert.match(html, /Itens pendentes<b>17<\/b>/);
   assert.match(html, /4 de 21 itens/);
+  assert.match(html, /checklist/, "a medida tem de dizer de onde vem");
   assert.doesNotMatch(html, /Todas as tarefas aplicáveis foram concluídas/);
   assert.doesNotMatch(html, /Concluídas<b>0<\/b>/);
 });
@@ -228,7 +233,7 @@ test("projeto sem tarefa e sem checklist diz que não há o que medir, sem perce
   const base = projetoDev("p-praca");
   assert.ok(base);
   const vazio = { ...base, tarefas: [], progresso: 0, checklist: null };
-  const html = noRoteador(h(ProjetoTela, { projeto: vazio, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
+  const html = noRoteador(h(ProjetoTela, { projeto: vazio, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "tarefas" }));
   // A asserção é sobre o COMPORTAMENTO, não sobre a prosa: sem tarefa e sem
   // checklist não há o que medir, e a tela não pode inventar percentual nem
   // desenhar rosca. Checar a frase literal quebrava o teste a cada ajuste de

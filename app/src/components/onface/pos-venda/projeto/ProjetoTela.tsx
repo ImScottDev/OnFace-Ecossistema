@@ -3,14 +3,27 @@
 /**
  * Tela do projeto de pós-venda.
  *
- * Cabeçalho, os dois relógios e, abaixo, o conteúdo em abas ao lado da coluna
- * de contexto. A aba ativa vive na URL (`?aba=`): o link compartilhado abre na
- * mesma aba e F5 não perde onde a pessoa estava. A troca usa
- * `history.replaceState`, que o Next integra ao roteador, então é instantânea e
- * não refaz a leitura no servidor.
+ * Reorganizada a partir da jornada, não do conteúdo. Quem chega aqui veio da
+ * mesa, clicando numa AÇÃO ("Agendar reunião de onboarding"). Abrir numa
+ * visão geral é um desvio: a pessoa já sabe o que veio fazer.
+ *
+ * Por isso duas mudanças de estrutura:
+ *
+ * 1. A ABA "VISÃO GERAL" DEIXOU DE EXISTIR. Ela era onde as sobras moravam, e
+ *    o dono reprovou exatamente isso ("totalmente desorganizada"). O conteúdo
+ *    tem casas melhores: próximos passos É a lista de tarefas, progresso é
+ *    uma linha no cabeçalho, atividade recente é a linha do tempo, e as notas
+ *    foram para a coluna de contexto, que é onde se olha "o que o próximo
+ *    precisa saber".
+ *
+ * 2. A TELA ABRE NAS TAREFAS. É o trabalho. O resto é consulta.
+ *
+ * A aba ativa continua na URL (`?aba=`), e `history.replaceState` troca sem
+ * refazer a leitura no servidor.
  */
 import { useState } from "react";
 import { Tabs as T } from "radix-ui";
+import { History } from "lucide-react";
 import type { Projeto, Usuario } from "@/lib/pos-venda/contrato";
 import type { AcoesDaTela } from "./acoes";
 import { Cabecalho } from "./Cabecalho";
@@ -20,7 +33,7 @@ import { LinhaDoTempo } from "./LinhaDoTempo";
 import { Materiais } from "./Materiais";
 import { Relogios } from "./Relogios";
 import { Tarefas } from "./Tarefas";
-import { VisaoGeral } from "./VisaoGeral";
+import { dia } from "../formatos";
 import { abaDoProjeto, type AbaDoProjeto } from "../parametros";
 
 export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { projeto: Projeto; equipe: Usuario[]; agora: Date; acoes: AcoesDaTela; abaInicial: AbaDoProjeto }) {
@@ -30,7 +43,8 @@ export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { pro
     const nova = abaDoProjeto(v);
     setAba(nova);
     const url = new URL(window.location.href);
-    if (nova === "visao") url.searchParams.delete("aba");
+    /* "tarefas" é o padrão agora, então ele sai da URL em vez de "visao". */
+    if (nova === "tarefas") url.searchParams.delete("aba");
     else url.searchParams.set("aba", nova);
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   };
@@ -39,7 +53,6 @@ export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { pro
   const abertas = projeto.tarefas.filter((t) => t.estado !== "CONCLUIDA" && t.estado !== "NAO_SE_APLICA").length;
 
   const abas: Array<{ chave: AbaDoProjeto; rotulo: string; contagem?: number }> = [
-    { chave: "visao", rotulo: "Visão geral" },
     { chave: "tarefas", rotulo: "Tarefas", contagem: abertas },
     { chave: "levantamento", rotulo: "Levantamento" },
     { chave: "materiais", rotulo: "Materiais" },
@@ -50,6 +63,16 @@ export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { pro
     <div className="pv">
       <Cabecalho projeto={projeto} equipe={equipe} agora={agora} acoes={acoes} />
       <Relogios projeto={projeto} agora={agora} acoes={acoes} />
+
+      {projeto.herdadoDe && projeto.herdadoDe.passosHerdados.length > 0 ? (
+        <div className="pv-aviso" data-pv-tom="validacao">
+          <History aria-hidden />
+          <span>
+            Este projeto herdou {projeto.herdadoDe.passosHerdados.length} {projeto.herdadoDe.passosHerdados.length === 1 ? "passo" : "passos"} de uma jornada anterior
+            {projeto.herdadoDe.concluidoEm ? `, concluída em ${dia(projeto.herdadoDe.concluidoEm, agora)}` : ""}. Eles não precisam ser refeitos.
+          </span>
+        </div>
+      ) : null}
 
       <div className="pv-corpo">
         <div className="pv-principal">
@@ -63,9 +86,6 @@ export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { pro
               ))}
             </T.List>
 
-            <T.Content value="visao" className="pv-painel pv-painel-aba" tabIndex={-1}>
-              <VisaoGeral projeto={projeto} agora={agora} acoes={acoes} aoVerTudo={() => trocar("tempo")} />
-            </T.Content>
             <T.Content value="tarefas" className="pv-painel pv-painel-aba" tabIndex={-1}>
               <Tarefas projetoId={projeto.id} tarefas={projeto.tarefas} equipe={equipe} agora={agora} acoes={acoes} podeConcluir={projeto.permissoes.podeConcluirTarefa} encerrado={encerrado} />
             </T.Content>
@@ -81,7 +101,7 @@ export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { pro
           </T.Root>
         </div>
 
-        <Contexto projeto={projeto} />
+        <Contexto projeto={projeto} agora={agora} acoes={acoes} />
       </div>
     </div>
   );

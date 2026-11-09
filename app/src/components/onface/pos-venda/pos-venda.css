@@ -1691,3 +1691,54 @@ span.pv-pessoa { cursor: default; }
 /* "Qtd.Valor": as duas colunas numéricas encostavam uma na outra no cabeçalho
    da tabela de itens, porque nenhuma tem padding lateral. */
 .pv-itens th.pv-col-num, .pv-itens td.pv-col-num { padding-inline-start: 0.625rem; }
+
+/* ─── Faixa de medida do projeto: tempo e progresso em linhas, não cartões ──
+ *
+ * Substitui os dois cartões de relógio com números de 2rem. Sem espera
+ * registrada os dois marcavam o mesmo valor, e dois números grandes idênticos
+ * lado a lado não são duas informações: são uma informação e um pedido para o
+ * leitor subtrair. Aqui a diferença entre eles é dita por extenso.
+ * ──────────────────────────────────────────────────────────────────────── */
+.pv-tempo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.875rem 0 1rem;
+  border-bottom: 1px solid var(--pv-borda);
+}
+.pv-tempo-progresso { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; margin: 0; font-size: var(--text-base); color: var(--pv-tinta-suave); }
+.pv-tempo-progresso > strong { font-size: var(--text-xl, 1.25rem); font-weight: var(--weight-semibold); letter-spacing: -0.02em; color: var(--pv-tinta); }
+.pv-tempo-fonte { flex-basis: 100%; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.pv-tempo-linha { display: flex; align-items: baseline; gap: 0.5rem; margin: 0; font-size: var(--text-base); color: var(--pv-tinta-suave); }
+.pv-tempo-linha > svg { align-self: center; width: 0.875rem; height: 0.875rem; flex-shrink: 0; }
+.pv-tempo-linha strong { color: var(--pv-tinta); font-weight: var(--weight-semibold); }
+.pv-tempo-prazo { display: flex; align-items: center; gap: 0.375rem; margin: 0; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.pv-tempo-prazo > svg { width: 0.8125rem; height: 0.8125rem; flex-shrink: 0; }
+.pv-tempo-prazo[data-pv-tom="risco"] { color: var(--pv-risco-fg); font-weight: var(--weight-medium); }
+.pv-tempo .pv-bola { margin-top: 0.375rem; }
+
+/* O vazio de uma aba deixa de ser caixa tracejada.
+   Moldura pontilhada é a forma de "placeholder", e o que está ali é uma
+   informação definitiva: este projeto não tem tarefas. Fio e espaço bastam,
+   como no resto da tela. */
+.pv-estado {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: start;
+  align-items: flex-start;
+  padding: 1.5rem 0 2rem;
+}
+.pv-estado h2 { font-size: var(--text-lg); font-weight: var(--weight-semibold); color: var(--pv-tinta); margin: 0 0 0.25rem; }
+.pv-estado p { margin: 0; max-width: 46ch; line-height: 1.55; color: var(--pv-tinta-suave); }
+
+/* Propriedade de leitura e propriedade editável têm de parecer irmãs.
+   "Responsável" virou controle (fundo transparente, revela no hover) e
+   "Vendedor" seguiu pílula com moldura: lado a lado, a diferença lia como
+   defeito, não como affordance. A moldura sai; o que distingue as duas é o
+   hover, que só a editável tem. */
+.pv-prop-pilula {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 0;
+}

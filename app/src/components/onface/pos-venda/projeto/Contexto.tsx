@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Coluna de contexto: o que foi vendido, quem é quem, e para onde ir.
  *
@@ -7,11 +9,13 @@
  *
  * Valor ausente diz que está ausente ("Não informado"), nunca vira R$ 0,00.
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight, ExternalLink, FileSignature, FileText, Handshake, Link2, ClipboardList, CreditCard, UserRound } from "lucide-react";
 import type { EscopoVendido, Projeto } from "@/lib/pos-venda/contrato";
-import { fichaDaPessoa, moeda } from "../formatos";
+import { Button } from "@/components/ui/button";
+import { fichaDaPessoa, haQuanto, moeda } from "../formatos";
+import { useAcao, type AcoesDaTela } from "./acoes";
 import { Avatar } from "../pecas";
 
 const RECORRENCIA: Record<NonNullable<NonNullable<Projeto["escopo"]>["recorrencia"]>, string> = {
@@ -209,7 +213,56 @@ function EscopoVendidoBloco({ escopo, propostaHref }: { escopo: EscopoVendido; p
   );
 }
 
-export function Contexto({ projeto }: { projeto: Projeto }) {
+/**
+ * Notas do projeto.
+ *
+ * Vieram da aba "Visão geral", que deixou de existir. A casa certa é esta: a
+ * nota responde "o que o próximo a abrir isto precisa saber", que é a mesma
+ * pergunta de toda a coluna de contexto — quem é o cliente, o que foi
+ * vendido, para onde ir.
+ */
+function Notas({ projeto, agora, acoes }: { projeto: Projeto; agora: Date; acoes: AcoesDaTela }) {
+  const [texto, setTexto] = useState("");
+  const { pendente, rodar } = useAcao();
+  return (
+    <section className="pv-ctx-secao">
+      <h2 className="pv-rotulo">Notas</h2>
+      <div className="pv-nota-nova">
+        <label className="pv-sr-only" htmlFor="pv-nota">Nova nota</label>
+        <textarea
+          id="pv-nota"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          placeholder="O que o próximo a abrir este projeto precisa saber"
+          maxLength={4000}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!texto.trim()}
+          loading={pendente}
+          onClick={() => rodar(() => acoes.adicionarNota(texto), "Nota salva.", (ok) => ok && setTexto(""))}
+        >
+          Salvar nota
+        </Button>
+      </div>
+      {projeto.notas.length > 0 ? (
+        <ul className="pv-notas">
+          {projeto.notas.map((n) => (
+            <li key={n.id} className="pv-nota">
+              <span className="pv-nota-cab"><b>{n.por ?? "Alguém do time"}</b> · {haQuanto(n.em, agora)}</span>
+              <p>{n.texto}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="pv-secao-nota">Nenhuma nota ainda. As notas também aparecem no Cliente 360.</p>
+      )}
+    </section>
+  );
+}
+
+export function Contexto({ projeto, agora, acoes }: { projeto: Projeto; agora: Date; acoes: AcoesDaTela }) {
   const { escopo, pessoas, responsavel, vendedor, links } = projeto;
 
   const atalhos = [
@@ -266,6 +319,8 @@ export function Contexto({ projeto }: { projeto: Projeto }) {
           <p className="pv-secao-nota">Nenhuma pessoa cadastrada ainda. O contato vem do formulário de levantamento.</p>
         )}
       </section>
+
+      <Notas projeto={projeto} agora={agora} acoes={acoes} />
 
       {atalhos.length > 0 ? (
         <section className="pv-ctx-secao">

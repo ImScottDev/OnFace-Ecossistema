@@ -41,12 +41,20 @@ const abaDoTipo = (t: TipoDeProjeto): string => (t === "IMPLEMENTATION" ? "imp" 
  * "Attempted to call abaValida() from the server", e TODO projeto abria em
  * erro. Typecheck não pega esta classe de defeito; só o navegador pega.
  */
-export const ABAS_DO_PROJETO = ["visao", "tarefas", "levantamento", "materiais", "tempo"] as const;
+export const ABAS_DO_PROJETO = ["tarefas", "levantamento", "materiais", "tempo"] as const;
 export type AbaDoProjeto = (typeof ABAS_DO_PROJETO)[number];
 
-/** Valor desconhecido cai na visão geral, nunca em erro: link velho não pode quebrar a tela. */
+/**
+ * Valor desconhecido cai nas TAREFAS, nunca em erro: link velho não pode
+ * quebrar a tela.
+ *
+ * O padrão deixou de ser "visao" porque a aba de visão geral deixou de
+ * existir — ela era onde as sobras moravam, e quem chega nesta tela veio da
+ * mesa clicando numa ação, não procurando um panorama. `?aba=visao` de link
+ * salvo cai aqui e abre nas tarefas, que é o que a pessoa queria.
+ */
 export function abaDoProjeto(v: string | null | undefined): AbaDoProjeto {
-  return ABAS_DO_PROJETO.includes(v as AbaDoProjeto) ? (v as AbaDoProjeto) : "visao";
+  return ABAS_DO_PROJETO.includes(v as AbaDoProjeto) ? (v as AbaDoProjeto) : "tarefas";
 }
 
 export const RECORTES = [

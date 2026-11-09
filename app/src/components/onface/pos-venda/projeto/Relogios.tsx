@@ -1,120 +1,130 @@
 "use client";
 
 /**
- * Os dois relógios do projeto, lado a lado.
+ * O tempo do projeto, em uma linha — e a bola, quando ela está com alguém.
  *
- * Um mede a EXPERIÊNCIA do cliente (corre direto), o outro mede a OPERAÇÃO
- * (pausa quando a bola está com o cliente ou a operadora). Nunca se mostra só
- * um: o par é a informação — a diferença entre eles é exatamente o tempo que
- * foi gasto esperando alguém.
+ * Antes isto eram dois cartões com números de 2rem lado a lado: "26 d 23 h"
+ * de experiência do cliente e "26 d 23 h" de desempenho do time. Sem espera
+ * registrada os dois marcam exatamente o mesmo, e dois números grandes e
+ * idênticos lado a lado não são duas informações — são uma informação e um
+ * pedido para o leitor fazer a subtração.
  *
- * Quando há espera em curso, a faixa abaixo diz QUEM segura a bola e desde
- * quando, e oferece o encerramento. O relógio do time aparece congelado.
+ * A diferença entre os dois relógios É o dado: o tempo que a entrega passou
+ * esperando alguém. Então a linha diz isso, por extenso, e só abre os dois
+ * números quando eles divergem.
+ *
+ * O par continua existindo no contrato e continua sendo medido pelo servidor;
+ * o que mudou é que a tela deixou de exigir que a pessoa calcule.
  */
-import { Hourglass, Play, Timer, UserRoundCheck } from "lucide-react";
-import type { MotivoDaEspera, Projeto } from "@/lib/pos-venda/contrato";
+import { AlarmClock, Hourglass, Timer, UserRoundCheck } from "lucide-react";
+import type { Projeto } from "@/lib/pos-venda/contrato";
 import { Button } from "@/components/ui/button";
 import { dia, diaEHora, duracao, haQuanto, MOTIVOS, prazo } from "../formatos";
-import { Barra } from "../pecas";
 import { useAcao, type AcoesDaTela } from "./acoes";
-
-const ORDEM: MotivoDaEspera[] = ["cliente", "operadora", "interno"];
 
 export function Relogios({ projeto, agora, acoes }: { projeto: Projeto; agora: Date; acoes: AcoesDaTela }) {
   const r = projeto.relogios;
   const { pendente, rodar } = useAcao();
   const encerrado = projeto.estado === "CONCLUIDO" || projeto.estado === "CANCELADO";
   const semT0 = projeto.t0Em === null && projeto.familia === "PABX";
-  const prazoTexto = prazo(r.venceEm, agora, semT0 ? "O prazo começa no T0" : "Prazo ainda não definido");
+  const p = prazo(r.venceEm, agora, semT0 ? "O prazo começa no T0" : "Prazo ainda não definido");
   const estourou = (r.diasDeAtraso ?? 0) > 0 && !encerrado;
-  const horasDoPrazo = r.prazoDias * 24;
-  // Divisão simples para a barra: não é conta de data, é formatação do que o backend já mediu.
-  const consumoDoTime = horasDoPrazo > 0 ? r.horasDoTime / horasDoPrazo : null;
+
   const emCurso = r.esperando ? Math.max(0, (agora.getTime() - r.esperando.desde.getTime()) / 3_600_000) : 0;
   const descontado = r.esperaAcumulada.cliente + r.esperaAcumulada.operadora + r.esperaAcumulada.interno + emCurso;
+  /* Uma hora de diferença é arredondamento, não espera. */
+  const divergem = descontado >= 1;
+
+  /*
+   * O PROGRESSO mora aqui agora.
+   *
+   * Ele vinha da aba "Visão geral", que deixou de existir, e quase foi embora
+   * junto — o que teria sido uma regressão silenciosa: para projeto antigo,
+   * sem tarefa do motor, esta é a ÚNICA linha que diz que o número vem do
+   * checklist anterior. Sem ela, 19% apareceria sem fonte, ou não apareceria.
+   *
+   * Uma fonte só para o número e para a contagem, sempre. Foi a contradição
+   * entre as duas ("19% concluído" ao lado de "Concluídas 0") que o dono viu
+   * e reprovou.
+   */
+  const comTarefas = projeto.tarefas.filter((t) => t.estado !== "NAO_SE_APLICA");
+  const checklist = projeto.checklist && projeto.checklist.total > 0 ? projeto.checklist : null;
+  const medida: { feitos: number; total: number; unidade: string; doChecklist: boolean } | null =
+    comTarefas.length > 0
+      ? { feitos: comTarefas.filter((t) => t.estado === "CONCLUIDA").length, total: comTarefas.length, unidade: "tarefas", doChecklist: false }
+      : checklist
+        ? { feitos: checklist.feitos, total: checklist.total, unidade: "itens", doChecklist: true }
+        : null;
+  const pct = medida ? Math.round((medida.feitos / medida.total) * 100) : null;
 
   return (
-    <section aria-label="Relógios do projeto" className="pv-secao">
-      <div className="pv-relogios">
-        <article className="pv-relogio">
-          <header className="pv-relogio-topo">
-            <div className="pv-relogio-nome">
-              <strong>Experiência do cliente</strong>
-              <span>Corre direto, sem descontar espera</span>
-            </div>
-            <Timer aria-hidden className="size-4 pv-suave" />
-          </header>
-          <div className="pv-relogio-valor">
-            {duracao(r.horasCorridas)}
-            <small>desde a entrada, {dia(projeto.entrouEm, agora)}</small>
-          </div>
-          {r.consumoDoPrazo !== null ? (
-            <Barra fracao={r.consumoDoPrazo} tom="andamento" estouro={estourou} rotulo="Prazo consumido pelo relógio do cliente" />
-          ) : (
-            <div className="pv-sem-prazo" role="img" aria-label="Prazo ainda não definido, não há consumo a medir" />
-          )}
-          <div className="pv-relogio-rodape">
-            <span data-pv-tom={estourou ? "risco" : undefined}>
-              {encerrado ? "Encerrado" : prazoTexto.texto}
-              {r.venceEm && !encerrado ? <> · {dia(r.venceEm, agora)}</> : null}
-            </span>
+    <section className="pv-tempo" aria-label="Tempo e progresso do projeto">
+      <p className="pv-tempo-progresso">
+        {medida && pct !== null ? (
+          <>
+            <strong className="pv-num">{pct}%</strong>
             <span>
-              {/* Sem teto: quem estourou o prazo vê 127%, não um 100% que esconde o atraso. */}
-              {r.consumoDoPrazo !== null ? <strong className="pv-num">{Math.round(r.consumoDoPrazo * 100)}% </strong> : null}
-              de {r.prazoDias} dias corridos
+              <span className="pv-num">{medida.feitos} de {medida.total}</span> {medida.unidade}
+              {medida.doChecklist ? " do checklist anterior" : " concluídas"}
             </span>
-          </div>
-        </article>
+            {medida.doChecklist ? (
+              /* Diz só a FONTE. Os números já estão na linha acima, e repetir
+                 "0 de 70" duas vezes em duas linhas seguidas não reforça: faz
+                 a pessoa reler para conferir se são a mesma coisa. */
+              <span className="pv-tempo-fonte">
+                Este projeto não tem tarefas do playbook, então a medida vem do checklist anterior.
+                <span className="pv-sr-only"> {medida.feitos} de {medida.total} itens. Itens feitos<b>{medida.feitos}</b>, Itens pendentes<b>{medida.total - medida.feitos}</b>.</span>
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <span className="pv-tempo-fonte">
+            Sem tarefa do playbook e sem checklist anterior: não há progresso a medir.
+          </span>
+        )}
+      </p>
 
-        <article className="pv-relogio" data-pausado={r.esperando ? "true" : undefined}>
-          <header className="pv-relogio-topo">
-            <div className="pv-relogio-nome">
-              <strong>Desempenho do time</strong>
-              <span>{r.esperando ? "Pausado enquanto espera" : "Pausa quando a bola não está com a gente"}</span>
-            </div>
-            {r.esperando ? <Hourglass aria-hidden className="size-4" /> : <Play aria-hidden className="size-4 pv-suave" />}
-          </header>
-          <div className="pv-relogio-valor">
-            {duracao(r.horasDoTime)}
-            {/* Sem espera registrada os dois relógios marcam exatamente o mesmo,
-                e dois números grandes e idênticos lado a lado parecem defeito de
-                tela. Então este diz POR QUE é igual, em vez de repetir o outro
-                em silêncio. */}
-            <small>
-              {r.esperando ? "congelado" : descontado === 0 ? "igual ao do cliente: nenhuma espera registrada" : "trabalhado pelo time"}
-            </small>
-          </div>
-          {consumoDoTime !== null && r.venceEm !== null ? (
-            <Barra fracao={consumoDoTime} tom={r.esperando ? "espera" : "andamento"} rotulo="Prazo consumido pelo relógio do time" />
+      <p className="pv-tempo-linha">
+        <Timer aria-hidden />
+        <span>
+          <strong className="pv-num">{duracao(r.horasCorridas)}</strong> desde a entrada, {dia(projeto.entrouEm, agora)}
+          {divergem ? (
+            <>
+              {" · "}
+              <strong className="pv-num">{duracao(descontado)}</strong> esperando alguém
+              {r.esperando ? " (ainda contando)" : ""}
+              {" · o relógio do time marca "}
+              <strong className="pv-num">{duracao(r.horasDoTime)}</strong>
+              {r.esperando ? ", congelado" : ""}
+            </>
           ) : (
-            <div className="pv-sem-prazo" role="img" aria-label="Prazo ainda não definido, não há consumo a medir" />
+            <> · nenhuma espera registrada, então o relógio do time marca o mesmo</>
           )}
-          <div className="pv-relogio-rodape">
-            <span>
-              Descontado: <strong className="pv-num">{duracao(descontado)}</strong>
-            </span>
-            <span className="pv-num">
-              cliente {duracao(r.esperaAcumulada.cliente)} · operadora {duracao(r.esperaAcumulada.operadora)} · interno {duracao(r.esperaAcumulada.interno)}
-            </span>
-          </div>
-        </article>
-      </div>
+        </span>
+      </p>
+
+      <p className="pv-tempo-prazo" data-pv-tom={estourou ? "risco" : undefined}>
+        {estourou ? <AlarmClock aria-hidden /> : null}
+        {encerrado ? "Encerrado" : p.texto}
+        {r.venceEm && !encerrado ? <> · {dia(r.venceEm, agora)}</> : null}
+        {/* Sem `<span>` separando o número do texto: o elemento criava espaço
+            duplo em volta dele ("prazo de  15  dias"). */}
+        {" · prazo de "}{r.prazoDias}{" dias corridos"}
+        {r.consumoDoPrazo !== null && !encerrado ? (
+          /* Sem teto: quem estourou vê 127%, não um 100% que esconde o atraso. */
+          <> · <span className="pv-num">{Math.round(r.consumoDoPrazo * 100)}%</span> consumido</>
+        ) : null}
+      </p>
 
       {r.esperando ? (
         <div className="pv-bola" data-pv-tom="espera" role="status">
+          <Hourglass aria-hidden />
           <div className="pv-bola-texto">
             <strong>{MOTIVOS[r.esperando.motivo].frase}</strong>
             <span>
               Desde {diaEHora(r.esperando.desde, agora)}, {haQuanto(r.esperando.desde, agora)}.
               {r.esperando.detalhe ? ` ${r.esperando.detalhe}.` : ""}
             </span>
-          </div>
-          <div className="pv-bola-quem" aria-hidden>
-            {ORDEM.map((m) => (
-              <span key={m} data-ativo={r.esperando?.motivo === m || undefined}>
-                {MOTIVOS[m].rotulo}
-              </span>
-            ))}
           </div>
           {projeto.permissoes.podeMarcarEspera ? (
             <Button
