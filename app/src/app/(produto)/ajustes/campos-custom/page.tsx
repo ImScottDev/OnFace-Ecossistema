@@ -4,6 +4,13 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, GripVertical, Save } from "lucide-react";
 import { toast } from "sonner";
+/* A chave do campo tem um gerador só no produto: `chaveDoCampo`.
+   Esta tela tinha um `slugify` próprio com a MESMA regra — e o Núcleo copiou
+   essa regra letra por letra ao escrever o compartilhado, justamente para as
+   duas superfícies não divergirem. Duas cópias que precisam concordar para
+   sempre é a divergência esperando acontecer; e a compartilhada ainda corta
+   no limite que a API aceita e resolve colisão, que esta não fazia. */
+import { chaveDoCampo } from "@/lib/pos-venda/regras";
 
 interface CustomField {
   id: string;
@@ -48,13 +55,11 @@ export default function CamposCustomPage() {
     },
   });
 
-  const slugify = (text: string) =>
-    text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 
   const handleAdd = async () => {
     if (!newField.label.trim()) { toast.error("Preencha o nome do campo"); return; }
 
-    const nome = newField.nome || slugify(newField.label);
+    const nome = newField.nome || chaveDoCampo(newField.label, fields.map((c) => c.nome));
     const opcoes = newField.tipo === "enum" ? newField.opcoes.split(",").map((s) => s.trim()).filter(Boolean) : null;
 
     const res = await fetch("/api/custom-fields", {
@@ -172,7 +177,7 @@ export default function CamposCustomPage() {
                 <input
                   type="text"
                   value={newField.label}
-                  onChange={(e) => setNewField({ ...newField, label: e.target.value, nome: slugify(e.target.value) })}
+                  onChange={(e) => setNewField({ ...newField, label: e.target.value, nome: chaveDoCampo(e.target.value, fields.map((c) => c.nome)) })}
                   className="cf2-input w-full text-sm"
                   placeholder="Ex: Período de Contrato" aria-label="Ex: Período de Contrato"
                   autoFocus
