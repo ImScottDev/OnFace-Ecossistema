@@ -1742,3 +1742,12 @@ span.pv-pessoa { cursor: default; }
   background: transparent;
   padding-inline: 0;
 }
+
+/* O gatilho do select do formulário alinhava o valor ao centro enquanto os
+   campos de texto ao lado alinhavam à esquerda. Lado a lado, a diferença lê
+   como defeito, não como escolha. */
+.pv-campo [data-slot="select-trigger"] { justify-content: space-between; text-align: start; }
+.pv-campo [data-slot="select-trigger"] > span:first-child { text-align: start; flex: 1; min-width: 0; }
+/* A seta do select precisa ir para a borda: parada no meio do campo, logo
+   depois do texto, o controle parece inacabado. */
+.pv-campo [data-slot="select-trigger"] > svg:last-child { margin-inline-start: auto; }
