@@ -229,8 +229,14 @@ test("projeto sem tarefa e sem checklist diz que não há o que medir, sem perce
   assert.ok(base);
   const vazio = { ...base, tarefas: [], progresso: 0, checklist: null };
   const html = noRoteador(h(ProjetoTela, { projeto: vazio, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
-  assert.match(html, /não tem tarefas nem checklist/);
+  // A asserção é sobre o COMPORTAMENTO, não sobre a prosa: sem tarefa e sem
+  // checklist não há o que medir, e a tela não pode inventar percentual nem
+  // desenhar rosca. Checar a frase literal quebrava o teste a cada ajuste de
+  // texto sem que nada de verdade tivesse mudado — foi o que aconteceu ao
+  // fundir a frente de lógica com a de desenho.
+  assert.match(html, /não há progresso a medir/);
   assert.match(html, /ainda não tem tarefas/);
   assert.doesNotMatch(html, /Todas as tarefas aplicáveis foram concluídas/);
   assert.doesNotMatch(html, /<strong>0%<\/strong>/);
+  assert.doesNotMatch(html, /pv-rosca/, "sem fonte de progresso não se desenha rosca");
 });

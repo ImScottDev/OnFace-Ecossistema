@@ -1,10 +1,10 @@
 import Link from "next/link";
 import type { Familia, FiltrosDoBoard } from "@/lib/pos-venda/contrato";
 import { FAMILIAS, ORDEM_DAS_FAMILIAS } from "../formatos";
-import { hrefDoBoard } from "../parametros";
+import { hrefDoBoard, type Vista } from "../parametros";
 
 /** Abas por família, com contagem. É navegação (links): a família vive na URL. */
-export function AbasDeFamilia({ porFamilia, filtros }: { porFamilia: Record<Familia, number>; filtros: FiltrosDoBoard }) {
+export function AbasDeFamilia({ porFamilia, filtros, vista }: { porFamilia: Record<Familia, number>; filtros: FiltrosDoBoard; vista: Vista }) {
   const total = ORDEM_DAS_FAMILIAS.reduce((s, f) => s + porFamilia[f], 0);
   const abas: Array<{ chave: string; rotulo: string; n: number; familia: Familia | null }> = [
     { chave: "todas", rotulo: "Todas", n: total, familia: null },
@@ -15,7 +15,7 @@ export function AbasDeFamilia({ porFamilia, filtros }: { porFamilia: Record<Fami
       {abas.map((a) => {
         const atual = filtros.familia === a.familia;
         return (
-          <Link key={a.chave} href={hrefDoBoard(filtros, { familia: a.familia })} className="pv-familia-aba" aria-current={atual ? "page" : undefined}>
+          <Link key={a.chave} href={hrefDoBoard(filtros, { familia: a.familia }, vista)} className="pv-familia-aba" aria-current={atual ? "page" : undefined}>
             {a.rotulo}
             <span className="pv-contagem">{a.n}</span>
           </Link>

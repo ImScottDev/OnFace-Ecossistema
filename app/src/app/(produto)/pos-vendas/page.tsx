@@ -3,7 +3,7 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { Pagina, PaginaCabecalho } from "@/components/onface/shell/Pagina";
 import { BoardView } from "@/components/onface/pos-venda/board/BoardView";
 import { ErroDeLeitura } from "@/components/onface/pos-venda/board/EstadosDoBoard";
-import { lerFiltros, type ParamsBrutos } from "@/components/onface/pos-venda/parametros";
+import { lerFiltros, lerVista, type ParamsBrutos } from "@/components/onface/pos-venda/parametros";
 import "@/components/onface/pos-venda/pos-venda.css";
 import { lerBoard, lerEquipe } from "./fonte";
 
@@ -18,7 +18,9 @@ export default async function PosVendasPage({ searchParams }: { searchParams: Pr
   const ctx = await getTenantContext();
   if (!ctx) redirect("/login");
 
-  const filtros = lerFiltros(await searchParams);
+  const params = await searchParams;
+  const filtros = lerFiltros(params);
+  const vista = lerVista(params);
   const [leitura, equipe] = await Promise.all([lerBoard(ctx.organizacaoId, filtros), lerEquipe(ctx.organizacaoId)]);
 
   return (
@@ -28,7 +30,7 @@ export default async function PosVendasPage({ searchParams }: { searchParams: Pr
         descricao="Os projetos nascem sozinhos quando uma venda é ganha. Aqui o time acompanha prazo, tarefas e quem está segurando a bola."
       />
       {leitura.ok ? (
-        <BoardView board={leitura.dados} agora={new Date()} equipe={equipe.ok ? equipe.dados : []} />
+        <BoardView board={leitura.dados} agora={new Date()} equipe={equipe.ok ? equipe.dados : []} vista={vista} />
       ) : (
         <div className="pv">
           <ErroDeLeitura detalhe={leitura.erro} />

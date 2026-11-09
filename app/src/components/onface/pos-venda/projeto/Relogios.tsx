@@ -50,7 +50,9 @@ export function Relogios({ projeto, agora, acoes }: { projeto: Projeto; agora: D
           </div>
           {r.consumoDoPrazo !== null ? (
             <Barra fracao={r.consumoDoPrazo} tom="andamento" estouro={estourou} rotulo="Prazo consumido pelo relógio do cliente" />
-          ) : null}
+          ) : (
+            <div className="pv-sem-prazo" role="img" aria-label="Prazo ainda não definido, não há consumo a medir" />
+          )}
           <div className="pv-relogio-rodape">
             <span data-pv-tom={estourou ? "risco" : undefined}>
               {encerrado ? "Encerrado" : prazoTexto.texto}
@@ -76,9 +78,11 @@ export function Relogios({ projeto, agora, acoes }: { projeto: Projeto; agora: D
             {duracao(r.horasDoTime)}
             <small>{r.esperando ? "congelado" : "trabalhado pelo time"}</small>
           </div>
-          {consumoDoTime !== null ? (
+          {consumoDoTime !== null && r.venceEm !== null ? (
             <Barra fracao={consumoDoTime} tom={r.esperando ? "espera" : "andamento"} rotulo="Prazo consumido pelo relógio do time" />
-          ) : null}
+          ) : (
+            <div className="pv-sem-prazo" role="img" aria-label="Prazo ainda não definido, não há consumo a medir" />
+          )}
           <div className="pv-relogio-rodape">
             <span>
               Descontado: <strong className="pv-num">{duracao(descontado)}</strong>
