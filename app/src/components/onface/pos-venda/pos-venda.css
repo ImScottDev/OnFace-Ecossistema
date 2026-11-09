@@ -1678,3 +1678,7 @@ a.pv-repetido:hover { background: var(--pv-fundo-hover); color: var(--pv-tinta);
 .pv-prop[data-largo="true"] { grid-column: span 2; }
 .pv-contatos { gap: 0.125rem 0.375rem; }
 .pv-contato { max-width: 9.5rem; height: 1.625rem; }
+
+/* Pessoa sem ficha: o nome fica, o alvo de clique não. */
+.pv-contato[data-sem-ficha] { color: var(--pv-tinta-suave); cursor: default; }
+span.pv-pessoa { cursor: default; }

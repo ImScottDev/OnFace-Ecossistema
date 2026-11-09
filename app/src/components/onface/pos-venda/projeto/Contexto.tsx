@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight, ExternalLink, FileSignature, FileText, Handshake, Link2, ClipboardList, CreditCard, UserRound } from "lucide-react";
 import type { EscopoVendido, Projeto } from "@/lib/pos-venda/contrato";
-import { moeda } from "../formatos";
+import { fichaDaPessoa, moeda } from "../formatos";
 import { Avatar } from "../pecas";
 
 const RECORRENCIA: Record<NonNullable<NonNullable<Projeto["escopo"]>["recorrencia"]>, string> = {
@@ -21,25 +21,68 @@ const RECORRENCIA: Record<NonNullable<NonNullable<Projeto["escopo"]>["recorrenci
 /**
  * Um item da venda, como ele sai da proposta aceita.
  *
- * `escopoDaOportunidade()` já lê isto do banco e devolve em `EscopoCongelado.itens`,
- * mas `escopoDoSnapshot()` descarta o campo e `produto` chega aqui como
- * `"A + B + C"` — é exatamente o "concatena nomes e perde o item" que o dono
- * reprovou. Enquanto o contrato não carrega `itens`, a tela lê o campo de
- * forma defensiva: quando ele chegar, a lista aparece sozinha; enquanto não
- * chega, o resumo continua valendo e a tela diz o que falta.
+ * Forma combinada com o Núcleo: `nome`, `quantidade`, `valorUnitario`,
+ * `desconto`, `descontoTipo`, `subtotal`, `recorrencia`, `natureza`.
+ *
+ * A leitura abaixo aceita DUAS formas de propósito. Hoje, para projeto sem
+ * snapshot congelado, `escopoDaOportunidade()` já devolve itens no formato
+ * antigo (`produto`/`valorTotal`); depois do deploy do Núcleo virá o formato
+ * novo. Como os dois lados publicam em momentos diferentes, ler as duas
+ * formas é o que impede a tela de ficar vazia na janela entre um deploy e o
+ * outro — e custa uma linha por campo.
+ *
+ * `natureza` é `string`, não união fechada: a coluna `revenue_nature` é `text`
+ * livre (schema.ts:1604 documenta `MRR | SETUP | ONE_TIME | USAGE | HARDWARE`,
+ * e schema.ts:1524 tem `default "UNKNOWN"`). Valor fora do mapa aparece como
+ * veio, em vez de sumir.
  */
 export interface ItemVendido {
-  produto: string | null;
+  nome: string | null;
   quantidade: number | null;
-  valorTotal: number | null;
+  valorUnitario: number | null;
+  desconto: number | null;
+  descontoTipo: "percentual" | "valor" | null;
+  subtotal: number | null;
+  recorrencia: EscopoVendido["recorrencia"];
   natureza: string | null;
 }
 
-const NATUREZA: Record<string, string> = { MRR: "Recorrente", SETUP: "Setup", USAGE: "Uso", HARDWARE: "Equipamento" };
+const NATUREZA: Record<string, string> = {
+  MRR: "Recorrente",
+  SETUP: "Setup",
+  ONE_TIME: "Cobrança única",
+  USAGE: "Uso",
+  HARDWARE: "Equipamento",
+  UNKNOWN: "Sem classificação",
+};
+
+/** Formato antigo, ainda em circulação enquanto o contrato não carrega `itens`. */
+interface ItemAntigo { produto?: string | null; valorTotal?: number | null }
 
 function itensDoEscopo(escopo: EscopoVendido): ItemVendido[] {
-  const comItens = escopo as EscopoVendido & { itens?: unknown };
-  return Array.isArray(comItens.itens) ? (comItens.itens as ItemVendido[]) : [];
+  const lista = (escopo as EscopoVendido & { itens?: unknown }).itens;
+  if (!Array.isArray(lista)) return [];
+  return lista.map((cru) => {
+    const i = cru as Partial<ItemVendido> & ItemAntigo;
+    return {
+      nome: i.nome ?? i.produto ?? null,
+      quantidade: i.quantidade ?? null,
+      valorUnitario: i.valorUnitario ?? null,
+      desconto: i.desconto ?? null,
+      descontoTipo: i.descontoTipo ?? null,
+      subtotal: i.subtotal ?? i.valorTotal ?? null,
+      recorrencia: i.recorrencia ?? null,
+      natureza: i.natureza ?? null,
+    };
+  });
+}
+
+/** "10% de desconto" / "R$ 50,00 de desconto". Zero não vira texto. */
+function textoDoDesconto(i: ItemVendido): string | null {
+  if (!i.desconto || i.desconto <= 0) return null;
+  if (i.descontoTipo === "percentual") return `${String(i.desconto).replace(".", ",")}% de desconto`;
+  const v = moeda(i.desconto);
+  return v ? `${v} de desconto` : null;
 }
 
 /** Rótulo legível dos complementos conhecidos. Desconhecido aparece como veio, sem sublinhado. */
@@ -106,20 +149,30 @@ function EscopoVendidoBloco({ escopo, propostaHref }: { escopo: EscopoVendido; p
             </tr>
           </thead>
           <tbody>
-            {itens.map((i, n) => (
-              <tr key={`${i.produto ?? "item"}-${n}`}>
-                <th scope="row">
-                  <span className="pv-item-nome">{i.produto ?? "Item sem nome"}</span>
-                  {i.natureza ? <span className="pv-item-natureza">{NATUREZA[i.natureza] ?? i.natureza}</span> : null}
-                </th>
-                <td className="pv-col-num pv-num" data-ausente={i.quantidade === null || undefined}>
-                  {i.quantidade !== null ? i.quantidade : "—"}
-                </td>
-                <td className="pv-col-num pv-num" data-ausente={i.valorTotal === null || undefined}>
-                  {moeda(i.valorTotal) ?? "Não informado"}
-                </td>
-              </tr>
-            ))}
+            {itens.map((i, n) => {
+              const desconto = textoDoDesconto(i);
+              /* Preço unitário só aparece quando acrescenta: com quantidade 1
+                 ele repete o subtotal, e repetir número é ruído num painel
+                 estreito. */
+              const unitario = i.quantidade !== null && i.quantidade > 1 ? moeda(i.valorUnitario) : null;
+              const apoio = [i.natureza ? (NATUREZA[i.natureza] ?? i.natureza) : null, unitario ? `${unitario} cada` : null, desconto]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <tr key={`${i.nome ?? "item"}-${n}`}>
+                  <th scope="row">
+                    <span className="pv-item-nome">{i.nome ?? "Item sem nome"}</span>
+                    {apoio ? <span className="pv-item-natureza">{apoio}</span> : null}
+                  </th>
+                  <td className="pv-col-num pv-num" data-ausente={i.quantidade === null || undefined}>
+                    {i.quantidade !== null ? i.quantidade : "—"}
+                  </td>
+                  <td className="pv-col-num pv-num" data-ausente={i.subtotal === null || undefined}>
+                    {moeda(i.subtotal) ?? "Não informado"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : (
@@ -184,18 +237,30 @@ export function Contexto({ projeto }: { projeto: Projeto }) {
         <h2 className="pv-rotulo">Pessoas da empresa</h2>
         {pessoas.length > 0 ? (
           <ul className="pv-pessoas">
-            {pessoas.map((p) => (
-              <li key={p.id}>
-                <Link className="pv-pessoa" href={`/contatos/pessoas/${p.id}`} title={`Abrir a ficha de ${p.nome}`}>
+            {pessoas.map((p) => {
+              const ficha = fichaDaPessoa(p);
+              const miolo = (
+                <>
                   <Avatar quem={p} tamanho="md" titulo={false} decorativo />
                   <span className="pv-pessoa-texto">
                     <span className="pv-pessoa-nome pv-truncar">{p.nome}</span>
                     <span className="pv-pessoa-sub pv-truncar">{[p.cargo, p.telefone ?? p.email].filter(Boolean).join(" · ") || "Sem cargo informado"}</span>
                   </span>
-                  <ChevronRight className="pv-pessoa-seta" aria-hidden />
-                </Link>
-              </li>
-            ))}
+                  {ficha ? <ChevronRight className="pv-pessoa-seta" aria-hidden /> : null}
+                </>
+              );
+              /* Sem ficha, o nome continua aparecendo — só não finge ser um
+                 link que levaria a lugar nenhum. */
+              return (
+                <li key={p.id}>
+                  {ficha ? (
+                    <Link className="pv-pessoa" href={ficha} title={`Abrir a ficha de ${p.nome}`}>{miolo}</Link>
+                  ) : (
+                    <span className="pv-pessoa" title={`${p.nome} ainda não tem ficha aberta`}>{miolo}</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="pv-secao-nota">Nenhuma pessoa cadastrada ainda. O contato vem do formulário de levantamento.</p>

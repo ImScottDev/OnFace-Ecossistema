@@ -19,7 +19,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { chaveDoDia, dia, diaEHora, FAMILIAS, haQuanto, MOTIVOS, prazo as lerPrazo, TIPO } from "../formatos";
+import { chaveDoDia, dia, diaEHora, FAMILIAS, fichaDaPessoa, haQuanto, MOTIVOS, prazo as lerPrazo, TIPO } from "../formatos";
 import { Avatar, MarcaDaFamilia, PilulaDeEstado } from "../pecas";
 import { SeletorDePessoa } from "../SeletorDePessoa";
 import { useAcao, type AcoesDaTela } from "./acoes";
@@ -96,9 +96,9 @@ export function Cabecalho({ projeto, equipe, agora, acoes }: { projeto: Projeto;
               valor={p.responsavel}
               equipe={equipe}
               rotulo="Responsável pelo projeto"
-              desabilitado={!acoes.atribuirProjeto}
+              desabilitado={!acoes.trocarResponsavel}
               aoEscolher={(quem) => {
-                const trocar = acoes.atribuirProjeto;
+                const trocar = acoes.trocarResponsavel;
                 if (!trocar) return;
                 rodar(() => trocar(quem?.id ?? null), quem ? `Projeto atribuído a ${quem.nome}.` : "Responsável removido.");
               }}
@@ -132,9 +132,9 @@ export function Cabecalho({ projeto, equipe, agora, acoes }: { projeto: Projeto;
               venceEm={p.relogios.venceEm}
               agora={agora}
               comecaNoT0={p.t0Em === null && p.familia === "PABX"}
-              podeEditar={Boolean(p.permissoes.podeEditarPrazo && acoes.editarPrazoProjeto)}
+              podeEditar={Boolean(p.permissoes.podeEditarPrazo && acoes.definirPrazo)}
               aoEscolher={(diaISO) => {
-                const editar = acoes.editarPrazoProjeto;
+                const editar = acoes.definirPrazo;
                 if (!editar) return;
                 rodar(() => editar(diaISO), diaISO ? "Prazo definido." : "Prazo removido.");
               }}
@@ -148,14 +148,24 @@ export function Cabecalho({ projeto, equipe, agora, acoes }: { projeto: Projeto;
           <dd data-ausente={p.pessoas.length === 0 || undefined}>
             {p.pessoas.length > 0 ? (
               <ul className="pv-contatos">
-                {p.pessoas.slice(0, 5).map((q) => (
-                  <li key={q.id}>
-                    <Link className="pv-contato" href={`/contatos/pessoas/${q.id}`} title={`Abrir a ficha de ${q.nome}`}>
-                      <Avatar quem={q} tamanho="sm" titulo={false} decorativo />
-                      <span className="pv-truncar">{q.nome}</span>
-                    </Link>
-                  </li>
-                ))}
+                {p.pessoas.slice(0, 5).map((q) => {
+                  const ficha = fichaDaPessoa(q);
+                  return (
+                    <li key={q.id}>
+                      {ficha ? (
+                        <Link className="pv-contato" href={ficha} title={`Abrir a ficha de ${q.nome}`}>
+                          <Avatar quem={q} tamanho="sm" titulo={false} decorativo />
+                          <span className="pv-truncar">{q.nome}</span>
+                        </Link>
+                      ) : (
+                        <span className="pv-contato" data-sem-ficha="true" title={`${q.nome} ainda não tem ficha aberta`}>
+                          <Avatar quem={q} tamanho="sm" titulo={false} decorativo />
+                          <span className="pv-truncar">{q.nome}</span>
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
                 {p.pessoas.length > 5 ? <li className="pv-contatos-mais">+{p.pessoas.length - 5}</li> : null}
               </ul>
             ) : (
