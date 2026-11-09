@@ -208,3 +208,29 @@ test("a tarefa aberta mostra o playbook do passo, e a atrasada é sinalizada", (
   assert.match(html, /Checklist/);
   assert.match(html, /Venceu há \d+ dias?/);
 });
+
+// Projeto sem tarefa do motor: a rosca, a legenda e o texto não podem se contradizer (o dono viu "19% concluído"
+// ao lado de Concluídas 0 / Em andamento 0 / Aguardando 0 / A fazer 0, e "todas as tarefas concluídas" numa lista vazia).
+test("projeto sem tarefa mede o checklist e não diz que as tarefas foram concluídas", () => {
+  const base = projetoDev("p-praca");
+  assert.ok(base);
+  const semTarefa = { ...base, tarefas: [], progresso: 0.19, checklist: { feitos: 4, total: 21 } };
+  const html = noRoteador(h(ProjetoTela, { projeto: semTarefa, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
+  assert.match(html, /19%/);
+  assert.match(html, /Itens feitos<b>4<\/b>/);
+  assert.match(html, /Itens pendentes<b>17<\/b>/);
+  assert.match(html, /4 de 21 itens/);
+  assert.doesNotMatch(html, /Todas as tarefas aplicáveis foram concluídas/);
+  assert.doesNotMatch(html, /Concluídas<b>0<\/b>/);
+});
+
+test("projeto sem tarefa e sem checklist diz que não há o que medir, sem percentual", () => {
+  const base = projetoDev("p-praca");
+  assert.ok(base);
+  const vazio = { ...base, tarefas: [], progresso: 0, checklist: null };
+  const html = noRoteador(h(ProjetoTela, { projeto: vazio, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
+  assert.match(html, /não tem tarefas nem checklist/);
+  assert.match(html, /ainda não tem tarefas/);
+  assert.doesNotMatch(html, /Todas as tarefas aplicáveis foram concluídas/);
+  assert.doesNotMatch(html, /<strong>0%<\/strong>/);
+});

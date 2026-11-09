@@ -27,11 +27,25 @@ const num = (v: string | null | undefined): number | null => (v == null || v ===
 export async function escopoDaOportunidade(organizacaoId: string, oportunidadeId: string | null, familia: Familia): Promise<EscopoCongelado | null> {
   if (!oportunidadeId) return null;
   type ItemCru = { produto: string | null; quantidade: string | null; valor_total: string | null; revenue_nature: string | null };
-  const itens: ItemCru[] = await db.execute<ItemCru>(sql`
+  let itens: ItemCru[] = await db.execute<ItemCru>(sql`
     SELECT produto, quantidade::text, valor_total::text, revenue_nature
       FROM oportunidade_itens
      WHERE organizacao_id = ${organizacaoId}::uuid AND oportunidade_id = ${oportunidadeId}::uuid AND service_family = ${familia}
      ORDER BY created_at, id`);
+  if (itens.length === 0) {
+    // Oportunidade sem itens próprios (a carga legada trouxe a venda só na proposta): o que foi vendido está nos
+    // itens da proposta ACEITA. Proposta expirada/recusada não é venda, então não entra. Medido em homologação:
+    // 46 dos 56 projetos só têm escopo por aqui. `subtotal` é o valor do item já com o desconto aplicado.
+    itens = await db.execute<ItemCru>(sql`
+      SELECT pi.nome AS produto, pi.quantidade::text, pi.subtotal::text AS valor_total, pi.revenue_nature
+        FROM proposta_itens pi
+       WHERE pi.service_family = ${familia}
+         AND pi.proposta_id = (SELECT p2.id FROM propostas p2
+                                WHERE p2.organizacao_id = ${organizacaoId}::uuid AND p2.oportunidade_id = ${oportunidadeId}::uuid AND p2.status = 'aceita'
+                                  AND EXISTS (SELECT 1 FROM proposta_itens x WHERE x.proposta_id = p2.id AND x.service_family = ${familia})
+                                ORDER BY p2.aceita_em DESC NULLS LAST, p2.created_at DESC LIMIT 1)
+       ORDER BY pi.ordem, pi.id`);
+  }
   if (itens.length === 0) return null;
 
   const [rec] = await db.execute<{ periodo: string | null }>(sql`

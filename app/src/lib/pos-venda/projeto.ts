@@ -71,7 +71,12 @@ export async function projetoCompleto(organizacaoId: string, projetoId: string, 
 
   const aberto = estado !== "CONCLUIDO" && estado !== "CANCELADO";
   const aplicam = tarefas.filter(seAplica);
-  const feitas = aplicam.every((t) => t.estado === "CONCLUIDA");
+  const itensLegados = checklist.get(l.id) ?? null;
+  // Lista vazia não é lista concluída: `[].every()` é true e liberaria o handoff de um projeto sem nada feito.
+  // Sem tarefa do motor vale o checklist legado, e só se existir e estiver completo.
+  const feitas = aplicam.length > 0
+    ? aplicam.every((t) => t.estado === "CONCLUIDA")
+    : itensLegados != null && itensLegados.total > 0 && itensLegados.feitos === itensLegados.total;
   const base = appUrl();
 
   return {
@@ -96,6 +101,7 @@ export async function projetoCompleto(organizacaoId: string, projetoId: string, 
     relogios: relogiosDe(l, playbook, esperas, agora),
     tarefas,
     progresso: progressoDe(tarefas, checklist.get(l.id), estado === "CONCLUIDO"),
+    checklist: itensLegados,
     timeline, levantamento, notas, formulario, nps, retratoDeUso: retrato,
     herdadoDe: herdado.info,
     // Permissão por papel do usuário não cabe aqui: a assinatura (organizacao, projeto) não recebe o usuário.

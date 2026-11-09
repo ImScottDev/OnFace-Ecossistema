@@ -21,13 +21,30 @@ const CIRC = 2 * Math.PI * R;
 export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Projeto; agora: Date; acoes: AcoesDaTela; aoVerTudo: () => void }) {
   const aplicaveis = projeto.tarefas.filter((t) => t.estado !== "NAO_SE_APLICA");
   const total = aplicaveis.length;
-  const contagem = FATIAS.map((f) => ({ ...f, n: aplicaveis.filter((t) => t.estado === f.estado).length }));
   const pendentes = aplicaveis.filter((t) => t.estado !== "CONCLUIDA");
   const proximas = pendentes.slice(0, 3);
   const recentes = projeto.timeline.slice(0, 4);
 
+  // Uma só fonte para a rosca, a legenda e o percentual: nunca um número de cada lugar.
+  //  - com tarefa do motor: as tarefas;
+  //  - sem tarefa, mas com checklist legado (`fulfillment_itens`): o checklist, que é de onde o progresso já vinha;
+  //  - sem nenhum dos dois: não há o que medir, e a tela diz isso em vez de mostrar 0% ou 19% soltos.
+  const checklist = projeto.checklist && projeto.checklist.total > 0 ? projeto.checklist : null;
+  const fonte: "tarefas" | "checklist" | "vazia" = total > 0 ? "tarefas" : checklist ? "checklist" : "vazia";
+  const contagem: Array<{ estado: string; rotulo: string; tom: Tom; n: number }> =
+    fonte === "tarefas"
+      ? FATIAS.map((f) => ({ ...f, n: aplicaveis.filter((t) => t.estado === f.estado).length }))
+      : fonte === "checklist" && checklist
+        ? [
+            { estado: "ITEM_FEITO", rotulo: "Itens feitos", tom: "ok", n: checklist.feitos },
+            { estado: "ITEM_PENDENTE", rotulo: "Itens pendentes", tom: "neutro", n: checklist.total - checklist.feitos },
+          ]
+        : [];
+  const base = contagem.reduce((a, c) => a + c.n, 0);
+  const fracao = fonte === "tarefas" ? projeto.progresso : checklist ? checklist.feitos / checklist.total : 0;
+
   // Início de cada fatia da rosca: soma do comprimento das anteriores.
-  const comprimentos = contagem.map((c) => (total > 0 ? (c.n / total) * CIRC : 0));
+  const comprimentos = contagem.map((c) => (base > 0 ? (c.n / base) * CIRC : 0));
   const inicios = comprimentos.map((_, i) => comprimentos.slice(0, i).reduce((a, b) => a + b, 0));
 
   return (
@@ -46,7 +63,7 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
         <section className="pv-bloco" aria-label="Distribuição das tarefas">
           <h2 className="pv-secao-titulo">Progresso</h2>
           <div className="pv-rosca-linha">
-            <div className="pv-rosca" role="img" aria-label={`${percentual(projeto.progresso)}% concluído, ${contagem.map((c) => `${c.n} ${c.rotulo.toLowerCase()}`).join(", ")}`}>
+            <div className="pv-rosca" role="img" aria-label={fonte === "vazia" ? "Sem tarefas neste projeto" : `${percentual(fracao)}% concluído, ${contagem.map((c) => `${c.n} ${c.rotulo.toLowerCase()}`).join(", ")}`}>
               <svg viewBox="0 0 100 100" aria-hidden>
                 <circle className="pv-rosca-trilho" cx="50" cy="50" r={R} />
                 {contagem.map((c, i) =>
@@ -57,16 +74,26 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
                 )}
               </svg>
               <div className="pv-rosca-centro">
-                <strong>{percentual(projeto.progresso)}%</strong>
-                <span>concluído</span>
+                <strong>{fonte === "vazia" ? "—" : `${percentual(fracao)}%`}</strong>
+                <span>{fonte === "vazia" ? "sem tarefas" : "concluído"}</span>
               </div>
             </div>
-            <ul className="pv-legenda">
-              {contagem.map((c) => (
-                <li key={c.estado} data-pv-tom={c.tom}><i aria-hidden />{c.rotulo}<b>{c.n}</b></li>
-              ))}
-            </ul>
+            {contagem.length > 0 ? (
+              <ul className="pv-legenda">
+                {contagem.map((c) => (
+                  <li key={c.estado} data-pv-tom={c.tom}><i aria-hidden />{c.rotulo}<b>{c.n}</b></li>
+                ))}
+              </ul>
+            ) : null}
           </div>
+          {fonte === "checklist" && checklist ? (
+            <p className="pv-secao-nota">
+              Este projeto não tem tarefas do playbook. O progresso mede o checklist anterior: {checklist.feitos} de {checklist.total} {checklist.total === 1 ? "item" : "itens"}.
+            </p>
+          ) : null}
+          {fonte === "vazia" ? (
+            <p className="pv-secao-nota">Este projeto não tem tarefas nem checklist, então não há progresso a medir.</p>
+          ) : null}
         </section>
 
         <section className="pv-bloco" aria-label="Próximos passos">
@@ -91,6 +118,10 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
                 );
               })}
             </ul>
+          ) : total === 0 ? (
+            <p className="pv-secao-nota">
+              {fonte === "checklist" ? "Este projeto não tem tarefas, só o checklist anterior. Não há próximo passo para mostrar." : "Este projeto ainda não tem tarefas."}
+            </p>
           ) : (
             <p className="pv-secao-nota">Todas as tarefas aplicáveis foram concluídas.</p>
           )}

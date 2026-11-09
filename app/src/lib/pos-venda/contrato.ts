@@ -276,6 +276,12 @@ export interface Projeto {
   tarefas: TarefaDoProjeto[];
   /** 0 a 1, calculado sobre tarefas que se aplicam. */
   progresso: number;
+  /**
+   * Checklist legado (`fulfillment_itens`). É de onde `progresso` vem quando o projeto não tem tarefa do motor
+   * (projeto anterior ao motor, ou sem playbook). Null = não há checklist. A tela usa para não mostrar um
+   * percentual sem os números que o explicam.
+   */
+  checklist: { feitos: number; total: number } | null;
 
   timeline: EventoDoProjeto[];
   levantamento: Levantamento;

@@ -313,6 +313,7 @@ function montar(spec: Spec): Projeto {
     relogios: calcularRelogios(spec, entrou, t0),
     tarefas,
     progresso: calcularProgresso(tarefas),
+    checklist: null,
     timeline: eventos(spec, entrou, tarefas),
     levantamento: {
       perfilDeUso: spec.pessoas.length > 2 ? "gestor_com_equipe" : "individual",
