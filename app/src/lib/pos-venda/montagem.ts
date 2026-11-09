@@ -20,9 +20,29 @@ export function prazoDoProjeto(l: LinhaBase, playbook: PlaybookDoMotor | null): 
   return playbook?.prazoTotalDias ?? PRAZO_PADRAO[l.familia];
 }
 
+/**
+ * O projeto tem prazo DE VERDADE, ou o número é inferido?
+ *
+ * Só o motor grava `due_at`. Os 74 projetos que existiam antes dele nasceram
+ * sem prazo nenhum — e aplicar o padrão da família neles produz atraso
+ * fabricado: medido em homologação, o board abria com 17 "atrasados" que eram
+ * só registros velhos, com até 31 dias de atraso que nunca existiu como regra.
+ *
+ * Alarme falso é pior que alarme nenhum: ensina o time a ignorar o vermelho.
+ * Sem `due_at`, o prazo vira desconhecido e o projeto não conta como atrasado.
+ */
+export const temPrazoReal = (l: LinhaBase): boolean => {
+  const entrou = dataDe(l.entrouEm);
+  const due = dataDe(l.dueAt);
+  return Boolean(entrou && due && due > entrou);
+};
+
 export function relogiosDe(l: LinhaBase, playbook: PlaybookDoMotor | null, esperas: PeriodoDeEspera[], agora: Date): Relogios {
   const entrou = dataDe(l.entrouEm) ?? agora;
-  return calcularRelogios({ entrouEm: entrou, concluidoEm: dataDe(l.concluidoEm), agora, prazoDias: prazoDoProjeto(l, playbook), esperas });
+  const r = calcularRelogios({ entrouEm: entrou, concluidoEm: dataDe(l.concluidoEm), agora, prazoDias: prazoDoProjeto(l, playbook), esperas });
+  // Tempo decorrido é fato e continua. O que some é o julgamento sobre um
+  // prazo que ninguém combinou: vencimento, atraso e consumo do prazo.
+  return temPrazoReal(l) ? r : { ...r, venceEm: null, diasDeAtraso: null, consumoDoPrazo: null };
 }
 
 /** Tarefas na ordem do playbook (passo desconhecido vai depois, por data de criação). */

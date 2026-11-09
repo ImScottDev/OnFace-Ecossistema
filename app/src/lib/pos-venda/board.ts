@@ -63,7 +63,14 @@ export async function boardDoPosVenda(organizacaoId: string, filtros: FiltrosDoB
       entrouEm: dataDe(l.entrouEm) ?? agora,
       relogios: { horasCorridas: relogios.horasCorridas, horasDoTime: relogios.horasDoTime, venceEm: relogios.venceEm, diasDeAtraso: relogios.diasDeAtraso, consumoDoPrazo: relogios.consumoDoPrazo, esperando: relogios.esperando },
       progresso: progressoDe(trs, checklist.get(l.id), estado === "CONCLUIDO"),
-      tarefasConcluidas: aplicam.filter((t) => t.estado === "CONCLUIDA").length, tarefasTotal: aplicam.length,
+      // A contagem tem de descrever a MESMA coisa que a barra mede. Projeto
+      // anterior ao motor não tem tarefa, e o progresso cai no checklist de
+      // `fulfillment_itens` — contar tarefas ali mostrava "0 de 0" ao lado de
+      // uma barra em 100%, que é o tipo de contradição que faz o time parar
+      // de confiar na tela.
+      ...(aplicam.length > 0
+        ? { tarefasConcluidas: aplicam.filter((t) => t.estado === "CONCLUIDA").length, tarefasTotal: aplicam.length }
+        : { tarefasConcluidas: checklist.get(l.id)?.feitos ?? 0, tarefasTotal: checklist.get(l.id)?.total ?? 0 }),
       proximaTarefa: proxima ? { titulo: proxima.titulo, venceEm: proxima.venceEm, atrasada: proxima.atrasada } : null,
     };
     const aberto = estado !== "CONCLUIDO" && estado !== "CANCELADO";

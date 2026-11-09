@@ -581,7 +581,17 @@
   color: var(--pv-tinta-corpo);
   font-weight: var(--weight-semibold);
 }
-.pv-responsavel[data-vazio="true"] { color: var(--pv-tinta-suave); font-weight: var(--weight-medium); }
+/* "Sem responsável" é duas palavras longas num cartão estreito: sem isto ela
+   quebra em duas linhas e encavala a pilha de avatares ao lado. Medido com
+   dado real de homologação, onde 9 dos 56 projetos estão sem dono — não é
+   caso raro, é o estado normal enquanto a carteira não for distribuída. */
+.pv-responsavel[data-vazio="true"] {
+  color: var(--pv-tinta-suave);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .pv-prazo {
   display: inline-flex;
   align-items: center;
