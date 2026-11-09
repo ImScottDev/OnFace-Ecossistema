@@ -12,7 +12,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight, ExternalLink, FileSignature, FileText, Handshake, Link2, ClipboardList, CreditCard, UserRound } from "lucide-react";
-import type { EscopoVendido, Projeto } from "@/lib/pos-venda/contrato";
+import type { EscopoVendido, ItemVendido, Projeto } from "@/lib/pos-venda/contrato";
 import { Button } from "@/components/ui/button";
 import { fichaDaPessoa, haQuanto, moeda } from "../formatos";
 import { useAcao, type AcoesDaTela } from "./acoes";
@@ -40,16 +40,6 @@ const RECORRENCIA: Record<NonNullable<NonNullable<Projeto["escopo"]>["recorrenci
  * e schema.ts:1524 tem `default "UNKNOWN"`). Valor fora do mapa aparece como
  * veio, em vez de sumir.
  */
-export interface ItemVendido {
-  nome: string | null;
-  quantidade: number | null;
-  valorUnitario: number | null;
-  desconto: number | null;
-  descontoTipo: "percentual" | "valor" | null;
-  subtotal: number | null;
-  recorrencia: EscopoVendido["recorrencia"];
-  natureza: string | null;
-}
 
 const NATUREZA: Record<string, string> = {
   MRR: "Recorrente",
@@ -60,26 +50,10 @@ const NATUREZA: Record<string, string> = {
   UNKNOWN: "Sem classificação",
 };
 
-/** Formato antigo, ainda em circulação enquanto o contrato não carrega `itens`. */
-interface ItemAntigo { produto?: string | null; valorTotal?: number | null }
-
-function itensDoEscopo(escopo: EscopoVendido): ItemVendido[] {
-  const lista = (escopo as EscopoVendido & { itens?: unknown }).itens;
-  if (!Array.isArray(lista)) return [];
-  return lista.map((cru) => {
-    const i = cru as Partial<ItemVendido> & ItemAntigo;
-    return {
-      nome: i.nome ?? i.produto ?? null,
-      quantidade: i.quantidade ?? null,
-      valorUnitario: i.valorUnitario ?? null,
-      desconto: i.desconto ?? null,
-      descontoTipo: i.descontoTipo ?? null,
-      subtotal: i.subtotal ?? i.valorTotal ?? null,
-      recorrencia: i.recorrencia ?? null,
-      natureza: i.natureza ?? null,
-    };
-  });
-}
+/* `EscopoVendido.itens` agora vem do contrato com a forma final, então a
+   leitura defensiva das duas formas saiu. Lista vazia continua sendo um caso
+   real: snapshot congelado antes desta versão não tem o campo. */
+const itensDoEscopo = (escopo: EscopoVendido): ItemVendido[] => escopo.itens ?? [];
 
 /** "10% de desconto" / "R$ 50,00 de desconto". Zero não vira texto. */
 function textoDoDesconto(i: ItemVendido): string | null {
@@ -163,16 +137,16 @@ function EscopoVendidoBloco({ escopo, propostaHref }: { escopo: EscopoVendido; p
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <tr key={`${i.nome ?? "item"}-${n}`}>
+                <tr key={`${i.produto ?? "item"}-${n}`}>
                   <th scope="row">
-                    <span className="pv-item-nome">{i.nome ?? "Item sem nome"}</span>
+                    <span className="pv-item-nome">{i.produto ?? "Item sem nome"}</span>
                     {apoio ? <span className="pv-item-natureza">{apoio}</span> : null}
                   </th>
                   <td className="pv-col-num pv-num" data-ausente={i.quantidade === null || undefined}>
                     {i.quantidade !== null ? i.quantidade : "—"}
                   </td>
-                  <td className="pv-col-num pv-num" data-ausente={i.subtotal === null || undefined}>
-                    {moeda(i.subtotal) ?? "Não informado"}
+                  <td className="pv-col-num pv-num" data-ausente={i.valorTotal === null || undefined}>
+                    {moeda(i.valorTotal) ?? "Não informado"}
                   </td>
                 </tr>
               );

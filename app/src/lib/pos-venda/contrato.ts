@@ -152,6 +152,16 @@ export interface Pessoa {
   cargo: string | null;
   /** Iniciais já calculadas, para o avatar não precisar de lógica na tela. */
   iniciais: string;
+  /**
+   * Para onde o nome clica, ou `null` quando não há ficha para abrir.
+   *
+   * É a PORTA `/contatos/pessoas/:id`, que recebe o id da pessoa canônica e
+   * redireciona para a ficha (`/pessoas/:leadId`) — a regra de rota mora lá, e
+   * não repetida aqui. `null` porque a porta faz `notFound()` quando a pessoa
+   * não tem lead (14 de 4.709 em produção), e link que leva a 404 é pior que
+   * nome sem link.
+   */
+  fichaHref: string | null;
 }
 
 export interface Usuario {
@@ -173,8 +183,18 @@ export interface ItemVendido {
   produto: string | null;
   quantidade: number | null;
   valorTotal: number | null;
-  /** `MRR`, `SETUP` ou o que o item gravou. Texto livre: a origem é a proposta, não um enum nosso. */
+  /**
+   * `MRR`, `SETUP`, `ONE_TIME`, `USAGE`, `HARDWARE`, `UNKNOWN` — ou o que o item
+   * gravou. Texto livre de propósito: `revenue_nature` é `text` no banco, e um
+   * enum aqui seria um tipo que mente. O rótulo é da tela.
+   */
   natureza: string | null;
+  /** Preço de tabela da linha. A tela mostra só quando a quantidade é maior que 1. */
+  valorUnitario: number | null;
+  /** Desconto concedido na linha. `null` quando a fonte não registra. */
+  desconto: number | null;
+  /** `null` também quando a fonte é `oportunidade_itens`, que não tem a coluna. */
+  descontoTipo: "percentual" | "valor" | null;
 }
 
 /** O que foi vendido. Congelado no Ganho em `escopo_vendido_snapshot`. */

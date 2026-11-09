@@ -59,6 +59,7 @@ const pessoa = (id: string, nome: string, cargo: string | null, tel: string | nu
   telefone: tel,
   cargo,
   iniciais: nome.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase(),
+  fichaHref: `/contatos/pessoas/${id}`,
 });
 
 export const EQUIPE_DEV: Usuario[] = [
@@ -211,7 +212,8 @@ function montarTarefas(spec: Spec, entrou: Date): TarefaDoProjeto[] {
       playbook: m.playbook,
       estado,
       prioridade: m.prioridade,
-      responsavel: spec.responsavel ? { ...spec.responsavel, telefone: null, cargo: null } : null,
+      // Responsável é usuário do ONFACE, não contato do cliente: sem ficha a abrir.
+      responsavel: spec.responsavel ? { ...spec.responsavel, telefone: null, cargo: null, fichaHref: null } : null,
       venceEm: vence,
       venceEmOriginal: i === 1 && spec.espera ? new Date(vence.getTime() - 2 * D) : null,
       atrasada: !feita && vence.getTime() < AGORA.getTime(),
@@ -512,7 +514,7 @@ export const motorDev = {
     const p = store.get(projetoId); const t = p?.tarefas.find((x) => x.id === tarefaId);
     if (!p || !t) return nao("Tarefa não encontrada.");
     const u = EQUIPE_DEV.find((x) => x.id === usuarioId) ?? null;
-    t.responsavel = u ? { id: u.id, nome: u.nome, email: u.email, telefone: null, cargo: null, iniciais: u.iniciais } : null;
+    t.responsavel = u ? { id: u.id, nome: u.nome, email: u.email, telefone: null, cargo: null, iniciais: u.iniciais, fichaHref: null } : null;
     registrar(p, u ? `Tarefa atribuída a ${u.nome}` : "Tarefa ficou sem responsável", t.titulo, "tarefa_atribuida");
     return ok();
   },

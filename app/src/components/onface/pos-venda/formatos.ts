@@ -172,18 +172,14 @@ export function corDoAvatar(chave: string): 1 | 2 | 3 | 4 | 5 | 6 {
 /**
  * Para onde o nome de uma pessoa leva.
  *
- * `/contatos/pessoas/:id` é a PORTA, não a ficha: ela recebe o id da pessoa
- * canônica, resolve o lead e redireciona para `/pessoas/:leadId`, que é onde a
- * ficha mora (ver o comentário no topo de `app/(produto)/contatos/pessoas/[id]/page.tsx`).
- * Por isso o link certo daqui é a porta com `pessoas.id` — e não o lead, que
- * duplicaria a regra de rota num segundo lugar.
+ * `Pessoa.fichaHref` vem pronto do contrato, e `null` quando a pessoa não tem
+ * lead — a porta `/contatos/pessoas/:id` faz `notFound()` nesse caso, e link
+ * que leva a 404 é pior do que nome sem link.
  *
- * A porta dá `notFound()` quando a pessoa não tem `lead_id_legado`. São poucas
- * (14 de 4.709 medidas pelo Núcleo), mas um link que leva a 404 é pior do que
- * nome sem link. Quando o contrato trouxer `fichaHref`, ele manda — inclusive
- * o `null`, que é a informação que falta aqui.
+ * Esta função existia com um palpite (montar a rota aqui) enquanto o campo
+ * não chegava. O palpite foi apagado: a regra de rota mora num lugar só, do
+ * lado do servidor, que é quem sabe se há lead.
  */
-export function fichaDaPessoa(p: { id: string; fichaHref?: string | null }): string | null {
-  if (p.fichaHref !== undefined) return p.fichaHref;
-  return `/contatos/pessoas/${p.id}`;
+export function fichaDaPessoa(p: { fichaHref: string | null }): string | null {
+  return p.fichaHref;
 }

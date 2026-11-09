@@ -12,27 +12,19 @@ import { Info, Plus, X } from "lucide-react";
 import type { Levantamento as TLevantamento } from "@/lib/pos-venda/contrato";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { chaveDoCampo } from "@/lib/pos-venda/regras";
 import { useAcao, type AcoesDaTela } from "./acoes";
 
 const NENHUM = "__nenhum__";
 
-/**
- * O rótulo que o gestor digita vira uma chave estável.
+/*
+ * A chave do campo vem de `chaveDoCampo`, em `lib/pos-venda/regras.ts`.
  *
- * Estável porque é por ela que o valor se reencontra depois: se a chave
- * mudasse junto com o rótulo, renomear o campo apagaria o que já foi
- * respondido. Acentos saem, espaço vira sublinhado, e o sufixo numérico
- * resolve dois campos com o mesmo nome.
+ * Este arquivo tinha o seu próprio gerador de slug, escrito antes de o Núcleo
+ * exportar um. Dois geradores para a mesma coisa é a duplicata que o AGENTS.md
+ * proíbe, e o dia em que divergissem num acento o mesmo rótulo viraria duas
+ * chaves e o valor preenchido sumiria. O meu foi apagado.
  */
-function chaveDoRotulo(rotulo: string, jaUsadas: Set<string>): string {
-  const base = rotulo
-    .normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
-    .slice(0, 40) || "campo";
-  if (!jaUsadas.has(base)) return base;
-  for (let n = 2; n < 99; n++) if (!jaUsadas.has(`${base}_${n}`)) return `${base}_${n}`;
-  return `${base}_${Date.now()}`;
-}
 const PERFIS: Array<{ valor: string; rotulo: string }> = [
   { valor: "individual", rotulo: "Individual" },
   { valor: "gestor", rotulo: "Gestor" },
@@ -62,7 +54,7 @@ function Formulario({ inicial, acoes, podeEditar }: { inicial: TLevantamento; ac
   const adicionarCampo = () => {
     const rotulo = novoCampo.trim();
     if (!rotulo) return;
-    const chave = chaveDoRotulo(rotulo, new Set(extras.map((e) => e.chave)));
+    const chave = chaveDoCampo(rotulo, extras.map((e) => e.chave));
     setExtras((l) => [...l, { chave, rotulo, valor: null }]);
     setNovoCampo("");
   };

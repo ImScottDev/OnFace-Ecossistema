@@ -104,8 +104,11 @@ export async function pessoasDasEmpresas(organizacaoId: string, empresaIds: stri
   const ids = [...new Set(empresaIds.filter(Boolean))];
   if (ids.length === 0) return mapa;
   const lista = sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `);
-  const linhas = await db.execute<{ empresa_id: string; id: string; nome: string; sobrenome: string | null; email: string | null; telefone: string | null; cargo: string | null }>(sql`
-    SELECT DISTINCT x.id::text AS empresa_id, p.id::text, p.nome, p.sobrenome, p.email, p.telefone, p.cargo
+  const linhas = await db.execute<{ empresa_id: string; id: string; nome: string; sobrenome: string | null; email: string | null; telefone: string | null; cargo: string | null; tem_ficha: boolean }>(sql`
+    SELECT DISTINCT x.id::text AS empresa_id, p.id::text, p.nome, p.sobrenome, p.email, p.telefone, p.cargo,
+           -- A porta da ficha resolve a pessoa pelo lead e faz notFound() sem ele.
+           -- Sem lead o nome não vira link, em vez de virar um link para 404.
+           (p.lead_id_legado IS NOT NULL) AS tem_ficha
       FROM empresas x
       JOIN empresas d ON d.id = x.id OR d.canonical_empresa_id = x.id
       JOIN pessoas p ON ${pessoaDaEmpresa("p", sql`d.id`)}
@@ -115,7 +118,12 @@ export async function pessoasDasEmpresas(organizacaoId: string, empresaIds: stri
   for (const l of linhas) {
     const nome = nomeCompleto(l.nome, l.sobrenome) || "Sem nome";
     const arr = mapa.get(l.empresa_id) ?? [];
-    arr.push({ id: l.id, nome, email: l.email, telefone: l.telefone, cargo: l.cargo, iniciais: iniciaisDe(nome) });
+    arr.push({
+      id: l.id, nome, email: l.email, telefone: l.telefone, cargo: l.cargo, iniciais: iniciaisDe(nome),
+      // A PORTA `/contatos/pessoas/:id`, com o id da pessoa canônica: é ela que
+      // sabe chegar na ficha. Montar `/pessoas/:leadId` aqui duplicaria a regra.
+      fichaHref: l.tem_ficha ? `/contatos/pessoas/${l.id}` : null,
+    });
     mapa.set(l.empresa_id, arr);
   }
   return mapa;

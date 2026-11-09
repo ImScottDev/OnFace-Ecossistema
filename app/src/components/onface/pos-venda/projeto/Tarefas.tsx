@@ -53,7 +53,9 @@ function aplicar(tarefas: TarefaDoProjeto[], m: Mudanca): TarefaDoProjeto[] {
       case "reabrir":
         return { ...t, estado: "EM_ANDAMENTO", concluidaEm: null, atrasada: Boolean(t.venceEm && t.venceEm.getTime() < Date.now()) };
       case "atribuir":
-        return { ...t, responsavel: m.para ? { id: m.para.id, nome: m.para.nome, email: m.para.email, telefone: null, cargo: null, iniciais: m.para.iniciais } : null };
+        // `fichaHref: null`: quem responde pela tarefa é USUÁRIO do ONFACE, não
+        // contato do cliente, então não existe ficha de pessoa para abrir.
+        return { ...t, responsavel: m.para ? { id: m.para.id, nome: m.para.nome, email: m.para.email, telefone: null, cargo: null, iniciais: m.para.iniciais, fichaHref: null } : null };
       case "remarcar":
         return { ...t, venceEmOriginal: t.venceEmOriginal ?? t.venceEm, venceEm: m.para, atrasada: t.estado !== "CONCLUIDA" && m.para.getTime() < Date.now() };
     }
