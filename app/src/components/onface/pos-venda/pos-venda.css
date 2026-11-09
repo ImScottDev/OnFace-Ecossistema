@@ -1682,3 +1682,12 @@ a.pv-repetido:hover { background: var(--pv-fundo-hover); color: var(--pv-tinta);
 /* Pessoa sem ficha: o nome fica, o alvo de clique não. */
 .pv-contato[data-sem-ficha] { color: var(--pv-tinta-suave); cursor: default; }
 span.pv-pessoa { cursor: default; }
+
+/* "Lucas Vasc…": a coluna de propriedade era estreita demais para um nome
+   inteiro com avatar. 11rem cabe "Lucas Vasconcelos", que é o nome mais longo
+   da equipe hoje, sem alargar a faixa (ela é auto-fit). */
+.pv-props { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+
+/* "Qtd.Valor": as duas colunas numéricas encostavam uma na outra no cabeçalho
+   da tabela de itens, porque nenhuma tem padding lateral. */
+.pv-itens th.pv-col-num, .pv-itens td.pv-col-num { padding-inline-start: 0.625rem; }
