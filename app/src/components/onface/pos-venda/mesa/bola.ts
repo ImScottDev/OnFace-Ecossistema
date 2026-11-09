@@ -22,12 +22,27 @@ import type { CartaoDoProjeto, MotivoDaEspera } from "@/lib/pos-venda/contrato";
 import { diasDeCalendario } from "../formatos";
 import { estaAberto, projetoAtrasado } from "../board/analise";
 
-export type Posse = "voce" | "andando" | "cliente" | "operadora" | "interno" | "encerrado";
+export type Posse = "voce" | "nunca" | "andando" | "cliente" | "operadora" | "interno" | "encerrado";
 
 export const QUEM: Record<Exclude<Posse, "encerrado">, { titulo: string; criterio: string }> = {
   voce: {
     titulo: "Precisa de você",
-    criterio: "Nada avança aqui sem alguém da casa",
+    criterio: "Começou e travou",
+  },
+  /*
+   * "Nunca começou" saiu de "precisa de você" depois de ver a tela rodando.
+   * Os dois são trabalho seu, mas misturá-los fazia treze linhas idênticas
+   * dizendo "Abrir a primeira tarefa" — e verbo que se repete treze vezes
+   * para de ser instrução e vira ruído. Aqui a ação é a mesma para todos, e o
+   * que distingue é a empresa e a idade: isso cabe numa ficha, não numa linha.
+   *
+   * E é um problema de natureza diferente: entrega que travou é do dia;
+   * entrega que nunca abriu é fila represada — em produção os 5 playbooks
+   * estão sem responsável padrão, então todo projeto novo nasce órfão.
+   */
+  nunca: {
+    titulo: "Nunca começaram",
+    criterio: "Entraram e ninguém abriu a primeira tarefa",
   },
   andando: {
     titulo: "Andando",
@@ -65,8 +80,11 @@ export function posseDe(c: CartaoDoProjeto): Posse {
   // Feito, falta o cliente validar: a bola é dele, ainda que ninguém tenha marcado espera.
   if (c.estado === "EM_VALIDACAO") return "cliente";
 
-  // Prazo estourado, tarefa vencida, ou ninguém abriu a primeira tarefa.
-  if (projetoAtrasado(c) || c.proximaTarefa?.atrasada || c.estado === "NAO_INICIADO") return "voce";
+  // Prazo estourado ou tarefa vencida: começou e travou.
+  if (projetoAtrasado(c) || c.proximaTarefa?.atrasada) return "voce";
+
+  // Entrou e ninguém abriu a primeira tarefa. Fila represada, não trabalho do dia.
+  if (c.estado === "NAO_INICIADO") return "nunca";
 
   // Em andamento sem próxima tarefa definida também é seu: ninguém sabe o que vem.
   if (!c.proximaTarefa) return "voce";
@@ -115,6 +133,7 @@ export function porQue(c: CartaoDoProjeto, agora: Date): string | null {
 
 export interface Mesa {
   voce: CartaoDoProjeto[];
+  nunca: CartaoDoProjeto[];
   andando: CartaoDoProjeto[];
   esperando: Array<{ motivo: MotivoDaEspera; cartoes: CartaoDoProjeto[] }>;
   encerrados: number;
@@ -133,6 +152,7 @@ const ORDEM_DA_ESPERA: MotivoDaEspera[] = ["cliente", "operadora", "interno"];
  */
 export function montarMesa(cartoes: CartaoDoProjeto[], agora: Date): Mesa {
   const voce: CartaoDoProjeto[] = [];
+  const nunca: CartaoDoProjeto[] = [];
   const andando: CartaoDoProjeto[] = [];
   const porMotivo = new Map<MotivoDaEspera, CartaoDoProjeto[]>();
   let encerrados = 0;
@@ -141,6 +161,7 @@ export function montarMesa(cartoes: CartaoDoProjeto[], agora: Date): Mesa {
     const p = posseDe(c);
     if (p === "encerrado") { encerrados++; continue; }
     if (p === "voce") { voce.push(c); continue; }
+    if (p === "nunca") { nunca.push(c); continue; }
     if (p === "andando") { andando.push(c); continue; }
     porMotivo.set(p, [...(porMotivo.get(p) ?? []), c]);
   }
@@ -152,14 +173,21 @@ export function montarMesa(cartoes: CartaoDoProjeto[], agora: Date): Mesa {
     }
     return diasDeCalendario(c.entrouEm, agora);
   };
+  const maisVelhoPrimeiro = (a: CartaoDoProjeto, b: CartaoDoProjeto) =>
+    diasDeCalendario(b.entrouEm, agora) - diasDeCalendario(a.entrouEm, agora);
+
   voce.sort((a, b) => dano(b) - dano(a));
-  andando.sort((a, b) => diasDeCalendario(b.entrouEm, agora) - diasDeCalendario(a.entrouEm, agora));
+  /* O que nunca começou se ordena pela idade, e só: a pergunta ali é "há
+     quanto tempo esta empresa está esperando alguém começar". */
+  nunca.sort(maisVelhoPrimeiro);
+  andando.sort(maisVelhoPrimeiro);
 
   return {
     voce,
+    nunca,
     andando,
     esperando: ORDEM_DA_ESPERA.filter((m) => porMotivo.has(m)).map((m) => ({ motivo: m, cartoes: porMotivo.get(m)! })),
     encerrados,
-    abertos: voce.length + andando.length + [...porMotivo.values()].reduce((n, l) => n + l.length, 0),
+    abertos: voce.length + nunca.length + andando.length + [...porMotivo.values()].reduce((n, l) => n + l.length, 0),
   };
 }

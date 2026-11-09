@@ -33,7 +33,7 @@ import { ArrowRight, Check, CornerUpLeft, Hourglass, Inbox, Play } from "lucide-
 import type { CartaoDoProjeto, MotivoDaEspera, TipoDeProjeto } from "@/lib/pos-venda/contrato";
 import { MOTIVOS, TIPO } from "../formatos";
 import { montarMesa, oQueFazer, porQue, QUEM } from "./bola";
-import { FichaDeEspera, LinhaCalma, LinhaDeAcao } from "./pecas-da-mesa";
+import { FichaDeEspera, FichaParada, LinhaCalma, LinhaDeAcao } from "./pecas-da-mesa";
 import { ModoFoco } from "./ModoFoco";
 
 export interface AcoesDaMesa {
@@ -106,7 +106,8 @@ export function Mesa({
         <p className="mz-conta">
           <strong className="mz-num">{mesa.abertos}</strong>
           {mesa.abertos === 1 ? " entrega em aberto" : " entregas em aberto"}
-          {mesa.voce.length > 0 ? <> · <strong className="mz-num">{mesa.voce.length}</strong> {mesa.voce.length === 1 ? "espera você" : "esperam você"}</> : null}
+          {mesa.voce.length > 0 ? <> · <strong className="mz-num">{mesa.voce.length}</strong> {mesa.voce.length === 1 ? "travada" : "travadas"}</> : null}
+          {mesa.nunca.length > 0 ? <> · <strong className="mz-num">{mesa.nunca.length}</strong> {mesa.nunca.length === 1 ? "nunca começou" : "nunca começaram"}</> : null}
         </p>
         <div className="mz-topo-acoes">
           {mesa.voce.length > 0 ? (
@@ -160,6 +161,33 @@ export function Mesa({
           </div>
         )}
       </section>
+
+      {/* NUNCA COMEÇARAM — ficha, não linha. A ação é a mesma para todas; o
+          que distingue é a empresa e a idade. Treze linhas repetindo o mesmo
+          verbo fazem o verbo parar de informar. */}
+      {mesa.nunca.length > 0 ? (
+        <section className="mz-faixa" data-posse="nunca" aria-labelledby="mz-nunca">
+          <header className="mz-faixa-cab">
+            <span className="mz-ponto" aria-hidden />
+            <h2 id="mz-nunca" className="mz-faixa-titulo">{QUEM.nunca.titulo}</h2>
+            <span className="mz-faixa-n mz-num">{mesa.nunca.length}</span>
+            <span className="mz-faixa-criterio">{QUEM.nunca.criterio}</span>
+          </header>
+          <ul className="mz-fichas">
+            {mesa.nunca.map((c) => (
+              <FichaParada key={c.id} c={c} agora={agora} />
+            ))}
+          </ul>
+          {/* O número que explica a fila, dito uma vez, em vez de repetido em
+              cada linha. Em produção os 5 playbooks estão sem responsável
+              padrão: por isso projeto novo nasce órfão e fica. */}
+          {mesa.nunca.some((c) => !c.responsavel) ? (
+            <p className="mz-nota">
+              {mesa.nunca.filter((c) => !c.responsavel).length} destas não têm responsável. Enquanto o playbook da família não tiver dono padrão, toda entrega nova entra assim.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       {/* ANDANDO — linha discreta: você só precisa saber que não parou. */}
       {mesa.andando.length > 0 ? (

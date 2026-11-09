@@ -506,3 +506,9 @@
 }
 .mz-recorte strong { color: var(--pv-tinta); font-weight: var(--weight-semibold); }
 .mz-recorte a { color: var(--pv-tinta); text-underline-offset: 0.2em; }
+
+/* Faixa dos que nunca começaram: fila represada, não trabalho do dia. */
+.mz-faixa[data-posse="nunca"] { --mz-cor: var(--pv-espera-barra); }
+.mz-nota { margin: 0.625rem 0 0; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+/* A ficha parada tem avatar antes do nome: quem é o dono é o que destrava. */
+.mz-ficha-alvo .pv-avatar { align-self: center; }

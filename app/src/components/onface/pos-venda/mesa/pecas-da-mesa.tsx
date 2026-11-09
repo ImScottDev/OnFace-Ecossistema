@@ -23,7 +23,7 @@ import Link from "next/link";
 import { AlarmClock, Check, CornerDownRight, Hourglass, MoreHorizontal, UserRoundCheck } from "lucide-react";
 import type { CartaoDoProjeto, MotivoDaEspera } from "@/lib/pos-venda/contrato";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { FAMILIAS, MOTIVOS, primeiroNome, TIPO } from "../formatos";
+import { diasDeCalendario, FAMILIAS, MOTIVOS, primeiroNome, TIPO } from "../formatos";
 import { Avatar, AvatarVazio } from "../pecas";
 import { nomeParaExibir } from "../board/analise";
 import { esperandoHa } from "./bola";
@@ -144,6 +144,35 @@ export function FichaDeEspera({ c, agora, aoVoltar }: { c: CartaoDoProjeto; agor
       <button type="button" className="mz-ficha-voltar" onClick={aoVoltar} aria-label={`Trazer ${c.empresa.nome} de volta para a casa`} title="A bola voltou para a casa">
         <UserRoundCheck aria-hidden />
       </button>
+    </li>
+  );
+}
+
+/**
+ * Entrega que entrou e nunca abriu a primeira tarefa.
+ *
+ * Mesma forma de ficha da espera, por um motivo: nos dois casos a pergunta é
+ * "há quanto tempo" e a resposta cabe em duas palavras. A diferença é que
+ * aqui a bola é da casa — por isso a ficha carrega quem é o responsável, ou
+ * diz que não há, que é a informação que de fato destrava.
+ */
+export function FichaParada({ c, agora }: { c: CartaoDoProjeto; agora: Date }) {
+  const nome = nomeParaExibir(c.empresa.nome);
+  const dias = diasDeCalendario(c.entrouEm, agora);
+  /* Um mês parado deixa de ser fila e vira esquecimento. */
+  const demais = dias >= 30;
+
+  return (
+    <li className="mz-ficha" data-demais={demais || undefined}>
+      <Link className="mz-ficha-alvo" href={`/pos-vendas/${c.id}`} title={`${c.empresa.nome} — entrou há ${dias} dias`}>
+        {c.responsavel ? (
+          <Avatar quem={c.responsavel} tamanho="sm" titulo={false} decorativo />
+        ) : (
+          <AvatarVazio tamanho="sm" rotulo="Sem responsável" />
+        )}
+        <span className="mz-ficha-empresa" data-suspeito={nome.suspeito || undefined}>{nome.texto}</span>
+        <span className="mz-ficha-tempo mz-num">{dias === 0 ? "hoje" : `${dias} d`}</span>
+      </Link>
     </li>
   );
 }
