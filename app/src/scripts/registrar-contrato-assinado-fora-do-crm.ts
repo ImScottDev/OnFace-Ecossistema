@@ -170,16 +170,24 @@ async function main() {
 
   /* `tentarGanhar` dispara o pós-venda (serviço canônico, entrega, jornada) SEM aguardar:
      numa requisição HTTP o processo continua vivo, num script `process.exit` o mata no meio.
-     Espera o serviço aparecer, em vez de dormir um tempo fixo e torcer. */
+     Espera TODOS os itens virarem serviço, não o primeiro: a materialização é em série, e
+     sair no primeiro mata o laço no meio — foi o que aconteceu na primeira execução em
+     produção, onde o item de setup ficou sem serviço. */
+  const [itens] = (await db.execute(sql`
+    SELECT count(*)::int AS n FROM oportunidade_itens WHERE oportunidade_id = ${negocio.oportunidade_id}::uuid
+  `)) as unknown as Array<{ n: number }>;
+  const esperados = itens?.n ?? 0;
   let servicos = 0;
-  for (let tentativa = 0; tentativa < 20 && servicos === 0; tentativa++) {
+  for (let tentativa = 0; tentativa < 30 && servicos < esperados; tentativa++) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const [s] = (await db.execute(sql`
-      SELECT count(*)::int AS n FROM servicos_canonicos WHERE empresa_id = ${negocio.empresa_id}::uuid
+      SELECT count(*)::int AS n FROM servicos_canonicos s
+       WHERE s.empresa_id = ${negocio.empresa_id}::uuid
+         AND s.evidence->>'negocioId' = ${negocio.id}
     `)) as unknown as Array<{ n: number }>;
     servicos = s?.n ?? 0;
   }
-  console.log(`pós-venda ${servicos > 0 ? `${servicos} serviço(s) canônico(s) na empresa` : "serviço canônico NÃO materializado — conferir à mão"}`);
+  console.log(`pós-venda ${servicos}/${esperados} item(ns) da venda viraram serviço canônico${servicos < esperados ? " — FALTOU, conferir à mão" : ""}`);
   process.exit(r.ganhou ? 0 : 1);
 }
 main().catch((e) => { console.error(`\nERRO: ${e instanceof Error ? e.message : e}`); process.exit(1); });
