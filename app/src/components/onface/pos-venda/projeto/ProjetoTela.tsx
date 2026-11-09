@@ -21,19 +21,13 @@ import { Materiais } from "./Materiais";
 import { Relogios } from "./Relogios";
 import { Tarefas } from "./Tarefas";
 import { VisaoGeral } from "./VisaoGeral";
+import { abaDoProjeto, type AbaDoProjeto } from "../parametros";
 
-export const ABAS = ["visao", "tarefas", "levantamento", "materiais", "tempo"] as const;
-export type Aba = (typeof ABAS)[number];
-
-export function abaValida(v: string | null | undefined): Aba {
-  return ABAS.includes(v as Aba) ? (v as Aba) : "visao";
-}
-
-export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { projeto: Projeto; equipe: Usuario[]; agora: Date; acoes: AcoesDaTela; abaInicial: Aba }) {
-  const [aba, setAba] = useState<Aba>(abaInicial);
+export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { projeto: Projeto; equipe: Usuario[]; agora: Date; acoes: AcoesDaTela; abaInicial: AbaDoProjeto }) {
+  const [aba, setAba] = useState<AbaDoProjeto>(abaInicial);
 
   const trocar = (v: string) => {
-    const nova = abaValida(v);
+    const nova = abaDoProjeto(v);
     setAba(nova);
     const url = new URL(window.location.href);
     if (nova === "visao") url.searchParams.delete("aba");
@@ -44,7 +38,7 @@ export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { pro
   const encerrado = projeto.estado === "CONCLUIDO" || projeto.estado === "CANCELADO";
   const abertas = projeto.tarefas.filter((t) => t.estado !== "CONCLUIDA" && t.estado !== "NAO_SE_APLICA").length;
 
-  const abas: Array<{ chave: Aba; rotulo: string; contagem?: number }> = [
+  const abas: Array<{ chave: AbaDoProjeto; rotulo: string; contagem?: number }> = [
     { chave: "visao", rotulo: "Visão geral" },
     { chave: "tarefas", rotulo: "Tarefas", contagem: abertas },
     { chave: "levantamento", rotulo: "Levantamento" },

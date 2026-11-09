@@ -2,7 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { Pagina } from "@/components/onface/shell/Pagina";
 import { ErroDeLeitura } from "@/components/onface/pos-venda/board/EstadosDoBoard";
-import { abaValida, ProjetoTela } from "@/components/onface/pos-venda/projeto/ProjetoTela";
+import { ProjetoTela } from "@/components/onface/pos-venda/projeto/ProjetoTela";
+import { abaDoProjeto } from "@/components/onface/pos-venda/parametros";
 import type { AcoesDaTela } from "@/components/onface/pos-venda/projeto/acoes";
 import "@/components/onface/pos-venda/pos-venda.css";
 import {
@@ -53,7 +54,7 @@ export default async function ProjetoPage({ params, searchParams }: { params: Pr
 
   return (
     <Pagina>
-      <ProjetoTela projeto={leitura.dados} equipe={equipe.ok ? equipe.dados : []} agora={new Date()} acoes={acoes} abaInicial={abaValida(aba)} />
+      <ProjetoTela projeto={leitura.dados} equipe={equipe.ok ? equipe.dados : []} agora={new Date()} acoes={acoes} abaInicial={abaDoProjeto(aba)} />
     </Pagina>
   );
 }

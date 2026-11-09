@@ -32,6 +32,23 @@ const ABAS: Record<string, TipoDeProjeto> = {
 
 const abaDoTipo = (t: TipoDeProjeto): string => (t === "IMPLEMENTATION" ? "imp" : "onb");
 
+/**
+ * As abas da tela do projeto.
+ *
+ * Moram AQUI, e não junto do componente, porque a página é Server Component e
+ * valida o `?aba=` antes de renderizar. Enquanto isto vivia em
+ * `ProjetoTela.tsx` — que é `"use client"` — o Next recusava a chamada com
+ * "Attempted to call abaValida() from the server", e TODO projeto abria em
+ * erro. Typecheck não pega esta classe de defeito; só o navegador pega.
+ */
+export const ABAS_DO_PROJETO = ["visao", "tarefas", "levantamento", "materiais", "tempo"] as const;
+export type AbaDoProjeto = (typeof ABAS_DO_PROJETO)[number];
+
+/** Valor desconhecido cai na visão geral, nunca em erro: link velho não pode quebrar a tela. */
+export function abaDoProjeto(v: string | null | undefined): AbaDoProjeto {
+  return ABAS_DO_PROJETO.includes(v as AbaDoProjeto) ? (v as AbaDoProjeto) : "visao";
+}
+
 export const RECORTES = [
   { valor: "atrasados", rotulo: "Atrasados" },
   { valor: "aguardando_cliente", rotulo: "Aguardando cliente" },
