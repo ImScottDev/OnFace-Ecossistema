@@ -16,7 +16,7 @@ import { getTenantContext } from "@/lib/auth/tenant";
 import { entregarParaImplantacao } from "@/lib/pos-venda/handoff-implantacao";
 import { ehImplantacao } from "@/lib/crm/politica-familia";
 import type { MotivoDaEspera } from "@/lib/pos-venda/contrato";
-import { acoes } from "./fonte";
+import { acoes, type Ator } from "./fonte";
 
 export type ResultadoOnb = { ok: true; msg?: string } | { ok: false; erro: string };
 
@@ -168,15 +168,20 @@ export async function acaoLiberarBloqueio(fulfillmentId: string): Promise<Result
 const ID = /^[\w-]{1,64}$/;
 const MOTIVOS: readonly MotivoDaEspera[] = ["cliente", "operadora", "interno"];
 
+/**
+ * O ator vai inteiro para a ação, não só a organização: as portas canônicas
+ * precisam de QUEM agiu para publicar o evento de domínio, avisar o
+ * responsável novo e conferir permissão. Passar só a organização perdia os três.
+ */
 async function comProjeto(
   projetoId: string,
-  executar: (organizacaoId: string) => Promise<{ ok: true } | { ok: false; erro: string }>,
+  executar: (ator: Ator) => Promise<{ ok: true } | { ok: false; erro: string }>,
 ): Promise<ResultadoOnb> {
   const ctx = await getTenantContext();
   if (!ctx) return { ok: false, erro: "Sessão expirada. Entre de novo." };
   if (!ID.test(projetoId)) return { ok: false, erro: "Projeto inválido." };
   try {
-    const r = await executar(ctx.organizacaoId);
+    const r = await executar({ organizacaoId: ctx.organizacaoId, userId: ctx.userId, userRole: ctx.userRole });
     if (!r.ok) return { ok: false, erro: r.erro };
     revalidatePath(`${ROTA}/${projetoId}`);
     revalidatePath(ROTA);
@@ -188,35 +193,35 @@ async function comProjeto(
 }
 
 export async function pvConcluirTarefa(projetoId: string, tarefaId: string) {
-  return comProjeto(projetoId, (org) => acoes.concluirTarefa(org, projetoId, tarefaId));
+  return comProjeto(projetoId, (a) => acoes.concluirTarefa(a, projetoId, tarefaId));
 }
 export async function pvReabrirTarefa(projetoId: string, tarefaId: string) {
-  return comProjeto(projetoId, (org) => acoes.reabrirTarefa(org, projetoId, tarefaId));
+  return comProjeto(projetoId, (a) => acoes.reabrirTarefa(a, projetoId, tarefaId));
 }
 export async function pvMarcarItem(projetoId: string, itemId: string, feito: boolean) {
-  return comProjeto(projetoId, (org) => acoes.marcarItem(org, projetoId, itemId, feito));
+  return comProjeto(projetoId, (a) => acoes.marcarItem(a, projetoId, itemId, feito));
 }
 export async function pvAtribuirTarefa(projetoId: string, tarefaId: string, usuarioId: string | null) {
-  return comProjeto(projetoId, (org) => acoes.atribuirTarefa(org, projetoId, tarefaId, usuarioId));
+  return comProjeto(projetoId, (a) => acoes.atribuirTarefa(a, projetoId, tarefaId, usuarioId));
 }
 /** `dia` chega como AAAA-MM-DD do calendário de São Paulo. Meio-dia UTC-3 cai no mesmo dia em qualquer fuso. */
 export async function pvRemarcarTarefa(projetoId: string, tarefaId: string, dia: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return { ok: false, erro: "Data inválida." } satisfies ResultadoOnb;
   const venceEm = new Date(`${dia}T12:00:00-03:00`);
   if (Number.isNaN(venceEm.getTime())) return { ok: false, erro: "Data inválida." } satisfies ResultadoOnb;
-  return comProjeto(projetoId, (org) => acoes.remarcarTarefa(org, projetoId, tarefaId, venceEm));
+  return comProjeto(projetoId, (a) => acoes.remarcarTarefa(a, projetoId, tarefaId, venceEm));
 }
 export async function pvMarcarEspera(projetoId: string, motivo: MotivoDaEspera, detalhe: string) {
   if (!MOTIVOS.includes(motivo)) return { ok: false, erro: "Diga quem está com a bola." } satisfies ResultadoOnb;
-  return comProjeto(projetoId, (org) => acoes.marcarEspera(org, projetoId, motivo, detalhe.trim().slice(0, 300) || null));
+  return comProjeto(projetoId, (a) => acoes.marcarEspera(a, projetoId, motivo, detalhe.trim().slice(0, 300) || null));
 }
 export async function pvEncerrarEspera(projetoId: string) {
-  return comProjeto(projetoId, (org) => acoes.encerrarEspera(org, projetoId));
+  return comProjeto(projetoId, (a) => acoes.encerrarEspera(a, projetoId));
 }
 export async function pvAdicionarNota(projetoId: string, texto: string) {
   const t = texto.trim();
   if (!t) return { ok: false, erro: "Escreva a nota antes de salvar." } satisfies ResultadoOnb;
-  return comProjeto(projetoId, (org) => acoes.adicionarNota(org, projetoId, t.slice(0, 4000)));
+  return comProjeto(projetoId, (a) => acoes.adicionarNota(a, projetoId, t.slice(0, 4000)));
 }
 export async function pvSalvarLevantamento(
   projetoId: string,
@@ -228,8 +233,8 @@ export async function pvSalvarLevantamento(
   },
 ) {
   const limpo = (v: string | null) => (v && v.trim() ? v.trim().slice(0, 500) : null);
-  return comProjeto(projetoId, (org) =>
-    acoes.salvarLevantamento(org, projetoId, {
+  return comProjeto(projetoId, (a) =>
+    acoes.salvarLevantamento(a, projetoId, {
       perfilDeUso: limpo(campos.perfilDeUso),
       crmQueUsa: limpo(campos.crmQueUsa),
       objetivoComACallface: limpo(campos.objetivoComACallface),
@@ -238,11 +243,11 @@ export async function pvSalvarLevantamento(
   );
 }
 export async function pvEnviarFormulario(projetoId: string) {
-  return comProjeto(projetoId, (org) => acoes.enviarFormulario(org, projetoId));
+  return comProjeto(projetoId, (a) => acoes.enviarFormulario(a, projetoId));
 }
 export async function pvEscalarParaImplantacao(projetoId: string) {
-  return comProjeto(projetoId, (org) => acoes.escalarParaImplantacao(org, projetoId));
+  return comProjeto(projetoId, (a) => acoes.escalarParaImplantacao(a, projetoId));
 }
 export async function pvFazerHandoff(projetoId: string) {
-  return comProjeto(projetoId, (org) => acoes.fazerHandoff(org, projetoId));
+  return comProjeto(projetoId, (a) => acoes.fazerHandoff(a, projetoId));
 }

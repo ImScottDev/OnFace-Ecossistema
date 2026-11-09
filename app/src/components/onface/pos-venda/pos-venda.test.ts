@@ -12,7 +12,7 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import type { FiltrosDoBoard } from "@/lib/pos-venda/contrato";
-import { boardDev, projetoDev } from "@/lib/pos-venda/fixture-dev";
+import { boardDev, projetoDev } from "@/lib/pos-venda/__fixtures__/projetos-de-exemplo";
 import { chaveDoDia, diasDeCalendario, duracao, haQuanto, moeda, prazo, percentual } from "./formatos";
 import { hrefDoBoard, lerFiltros, temFiltro } from "./parametros";
 import { BoardView } from "./board/BoardView";

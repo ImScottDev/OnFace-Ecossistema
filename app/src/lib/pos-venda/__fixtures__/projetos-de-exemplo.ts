@@ -1,4 +1,4 @@
-// TODO: REMOVER AO LIGAR
+// Dados de exemplo SÓ PARA TESTE. Nenhum código de produto importa daqui.
 //
 // DADO DE DESENVOLVIMENTO. Existe para as telas de /pos-vendas poderem ser
 // desenhadas e exercitadas antes de `boardDoPosVenda()` e `projetoCompleto()`
@@ -36,7 +36,7 @@ import type {
   TarefaDoProjeto,
   TipoDeProjeto,
   Usuario,
-} from "./contrato";
+} from "../contrato";
 
 const AGORA = new Date();
 const H = 3_600_000;
