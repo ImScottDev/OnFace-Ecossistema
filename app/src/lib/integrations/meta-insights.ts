@@ -16,26 +16,48 @@
  */
 
 import { metaApiVersion, credenciaisAds } from "@onface/integrations-meta";
-const LEAD_ACTIONS = new Set([
-  "lead",
-  "onsite_conversion.lead_grouped",
-  "offsite_conversion.fb_pixel_lead",
+/**
+ * As FONTES de evento de lead da conta. Cada uma conta a pessoa UMA vez; o que não
+ * se pode fazer é tratá-las como eventos independentes e somar, porque quem preenche
+ * o formulário instantâneo e também converte na landing page aparece nas duas.
+ */
+const LEAD_ALIASES = [
+  "onsite_conversion.lead_grouped",  // formulário instantâneo
+  "offsite_conversion.fb_pixel_lead", // pixel na landing page
   "onsite_web_lead",
-]);
+] as const;
 
 /**
- * Conta leads de um insight da Meta SEM duplicar. A Meta reporta o MESMO lead sob
- * vários action_types (lead, onsite_conversion.lead_grouped, offsite_conversion.fb_pixel_lead,
- * onsite_web_lead) — SOMAR triplica o número. Usa o "lead" canônico (é o resultado
- * oficial da Meta); se ausente, cai no MAIOR dos aliases.
+ * Conta leads de um insight da Meta SEM duplicar.
+ *
+ * O `lead` da Meta NÃO é o total deduplicado: ele é a SOMA das fontes de evento de
+ * lead configuradas na conta. Medido na conta act_1979606826185515, semana de 01 a
+ * 07/11/2026, campanha "TRT - CALL FACE [2026]":
+ *
+ *     onsite_conversion.lead_grouped   =  82   (formulário instantâneo)
+ *     offsite_conversion.fb_pixel_lead =  76   (pixel na LP)
+ *     lead                             = 158   = 82 + 76
+ *
+ * Quem preenche o formulário e também cai na LP entra nas duas e o `lead` conta duas
+ * vezes. O código antes preferia esse `lead` achando que era o oficial deduplicado, e
+ * o relatório mostrava 196 leads na semana enquanto o CRM recebeu 90 pessoas.
+ *
+ * Isso não era só um número feio: o CPL do card é `gasto / leadsMeta`, então o custo
+ * por lead aparecia pela METADE — R$ 12,02 em vez de R$ 26,17 — e decisão de verba
+ * saía em cima disso.
+ *
+ * Tomando o MAIOR alias em vez da soma, as três campanhas da semana dão 82 + 2 + 7 =
+ * 91, contra 90 pessoas distintas que o CRM registrou no mesmo período. O `lead`
+ * canônico fica só como piso para a conta que não reporta nenhum alias.
  */
-function countLeads(actions: Array<{ action_type: string; value: string }>): number {
-  const canonical = actions.find((a) => a.action_type === "lead");
-  if (canonical) return parseFloat(canonical.value) || 0;
-  const vals = actions
-    .filter((a) => LEAD_ACTIONS.has(a.action_type))
-    .map((a) => parseFloat(a.value) || 0);
-  return vals.length ? Math.max(...vals) : 0;
+export function countLeads(actions: Array<{ action_type: string; value: string }>): number {
+  const valor = (tipo: string) => {
+    const a = actions.find((x) => x.action_type === tipo);
+    return a ? parseFloat(a.value) || 0 : null;
+  };
+  const porFonte = LEAD_ALIASES.map(valor).filter((v): v is number => v != null);
+  if (porFonte.length) return Math.max(...porFonte);
+  return valor("lead") ?? 0;
 }
 
 export interface MetaCampanha {
