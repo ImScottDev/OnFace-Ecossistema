@@ -95,23 +95,6 @@ export function Contexto({ projeto }: { projeto: Projeto }) {
       </section>
 
       <section className="pv-ctx-secao">
-        <h2 className="pv-rotulo">Equipe</h2>
-        <dl className="pv-fatos">
-          <div className="pv-fato">
-            <dt>Responsável</dt>
-            <dd data-ausente={!responsavel || undefined}>
-              {responsavel ? (
-                <span className="pv-responsavel"><Avatar quem={responsavel} tamanho="sm" titulo={false} decorativo />{responsavel.nome}</span>
-              ) : (
-                <span className="pv-responsavel" data-vazio="true"><AvatarVazio tamanho="sm" rotulo="Sem responsável" />Sem responsável</span>
-              )}
-            </dd>
-          </div>
-          <Fato rotulo="Vendedor" valor={vendedor?.nome ?? null} ausente="Não registrado" />
-        </dl>
-      </section>
-
-      <section className="pv-ctx-secao">
         <h2 className="pv-rotulo">Pessoas da empresa</h2>
         {pessoas.length > 0 ? (
           <ul className="pv-pessoas">

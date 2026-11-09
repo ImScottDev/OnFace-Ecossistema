@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { dia, FAMILIAS, MOTIVOS, TIPO } from "../formatos";
-import { MarcaDaFamilia, PilulaDeEstado } from "../pecas";
+import { Avatar, MarcaDaFamilia, PilhaDeAvatares, PilulaDeEstado } from "../pecas";
 import { useAcao, type AcoesDaTela } from "./acoes";
 
 const MOTIVOS_ORDEM: MotivoDaEspera[] = ["cliente", "operadora", "interno"];
@@ -47,10 +47,6 @@ export function Cabecalho({ projeto, agora, acoes }: { projeto: Projeto; agora: 
             <PilulaDeEstado estado={p.estado} />
             <MarcaDaFamilia familia={p.familia} />
             <span className="pv-meta-item">{TIPO[p.tipo]}{p.ciclo > 1 ? ` · ciclo ${p.ciclo}` : ""}</span>
-            <span className="pv-meta-item">
-              {p.concluidoEm ? `Concluído em ${dia(p.concluidoEm, agora)}` : `Entrou em ${dia(p.entrouEm, agora)}`}
-            </span>
-            {p.empresa.documento ? <span className="pv-meta-item pv-num">{p.empresa.documento}</span> : null}
           </div>
         </div>
 
@@ -72,6 +68,50 @@ export function Cabecalho({ projeto, agora, acoes }: { projeto: Projeto; agora: 
           ) : null}
         </div>
       </div>
+
+      {/* Propriedades: o que o time precisa saber antes de abrir qualquer aba.
+          Cada uma tem lugar mesmo quando o dado não existe — projeto sem dono
+          e sem contato é o caso comum, e o cabeçalho não pode mudar de forma. */}
+      <dl className="pv-props">
+        <div className="pv-prop">
+          <dt>Responsável</dt>
+          <dd>
+            {p.responsavel ? (
+              <span className="pv-prop-pilula"><Avatar quem={p.responsavel} tamanho="sm" titulo={false} decorativo />{p.responsavel.nome}</span>
+            ) : (
+              <span className="pv-prop-pilula" data-vazio="true">Sem responsável</span>
+            )}
+          </dd>
+        </div>
+        <div className="pv-prop">
+          <dt>Vendedor</dt>
+          <dd data-ausente={!p.vendedor || undefined}>
+            {p.vendedor ? <span className="pv-prop-pilula"><Avatar quem={p.vendedor} tamanho="sm" titulo={false} decorativo />{p.vendedor.nome}</span> : "Não registrado"}
+          </dd>
+        </div>
+        <div className="pv-prop">
+          <dt>{p.concluidoEm ? "Concluído em" : "Entrou em"}</dt>
+          <dd className="pv-num">{dia(p.concluidoEm ?? p.entrouEm, agora)}</dd>
+        </div>
+        <div className="pv-prop">
+          <dt>Prazo</dt>
+          <dd className="pv-num" data-ausente={!p.relogios.venceEm || undefined}>
+            {p.relogios.venceEm ? dia(p.relogios.venceEm, agora) : p.t0Em === null && p.familia === "PABX" ? "Começa no T0" : "Não definido"}
+          </dd>
+        </div>
+        <div className="pv-prop">
+          <dt>Contatos</dt>
+          <dd data-ausente={p.pessoas.length === 0 || undefined}>
+            {p.pessoas.length > 0 ? <PilhaDeAvatares pessoas={p.pessoas} max={4} /> : "Nenhum cadastrado"}
+          </dd>
+        </div>
+        {p.empresa.documento ? (
+          <div className="pv-prop">
+            <dt>Documento</dt>
+            <dd className="pv-num">{p.empresa.documento}</dd>
+          </div>
+        ) : null}
+      </dl>
 
       <DialogoDeEspera
         aberto={espera}

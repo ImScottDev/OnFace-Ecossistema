@@ -76,8 +76,36 @@ export function lerFiltros(p: ParamsBrutos): FiltrosDoBoard {
   };
 }
 
+/**
+ * Como a lista é APRESENTADA (não o que ela contém). Fica fora de
+ * `FiltrosDoBoard` de propósito: o contrato descreve o recorte do dado, e
+ * visão/ordem são escolha de leitura de quem está olhando. Vão na URL pelo
+ * mesmo motivo dos filtros: link compartilhável e F5 que não perde nada.
+ */
+export type Visao = "lista" | "cartoes";
+export type Ordem = "urgencia" | "antigos" | "nome" | "progresso";
+export interface Vista { visao: Visao; ordem: Ordem }
+export const VISTA_PADRAO: Vista = { visao: "lista", ordem: "urgencia" };
+
+export const ORDENS: ReadonlyArray<{ valor: Ordem; rotulo: string }> = [
+  { valor: "urgencia", rotulo: "Mais urgentes" },
+  { valor: "antigos", rotulo: "Mais antigos" },
+  { valor: "progresso", rotulo: "Maior progresso" },
+  { valor: "nome", rotulo: "Empresa (A–Z)" },
+];
+
+/** Valor desconhecido cai no padrão, como nos filtros. */
+export function lerVista(p: ParamsBrutos): Vista {
+  const v = um(p.visao);
+  const o = um(p.ordem);
+  return {
+    visao: v === "cartoes" ? "cartoes" : "lista",
+    ordem: ORDENS.some((x) => x.valor === o) ? (o as Ordem) : "urgencia",
+  };
+}
+
 /** O filtro vira URL. `mudar` sobrescreve; `null` remove o parâmetro. */
-export function hrefDoBoard(atual: FiltrosDoBoard, mudar: Partial<FiltrosDoBoard> = {}): string {
+export function hrefDoBoard(atual: FiltrosDoBoard, mudar: Partial<FiltrosDoBoard> = {}, vista: Vista = VISTA_PADRAO): string {
   const f = { ...atual, ...mudar };
   const q = new URLSearchParams();
   if (f.tipo) q.set("aba", abaDoTipo(f.tipo));
@@ -86,6 +114,8 @@ export function hrefDoBoard(atual: FiltrosDoBoard, mudar: Partial<FiltrosDoBoard
   if (f.recorte) q.set("recorte", f.recorte);
   if (f.responsavelId) q.set("responsavel", f.responsavelId);
   if (f.busca) q.set("q", f.busca);
+  if (vista.visao !== VISTA_PADRAO.visao) q.set("visao", vista.visao);
+  if (vista.ordem !== VISTA_PADRAO.ordem) q.set("ordem", vista.ordem);
   const s = q.toString();
   return s ? `${ROTA_DO_BOARD}?${s}` : ROTA_DO_BOARD;
 }

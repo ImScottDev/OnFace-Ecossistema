@@ -32,7 +32,7 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
 
   return (
     <div className="pv-painel">
-      {projeto.herdadoDe ? (
+      {projeto.herdadoDe && projeto.herdadoDe.passosHerdados.length > 0 ? (
         <div className="pv-aviso" data-pv-tom="validacao">
           <History aria-hidden />
           <span>
@@ -45,28 +45,34 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
       <div className="pv-visao">
         <section className="pv-bloco" aria-label="Distribuição das tarefas">
           <h2 className="pv-secao-titulo">Progresso</h2>
+          {total === 0 ? (
+            <p className="pv-secao-nota">
+              Este projeto ainda não tem tarefas no fluxo novo{projeto.progresso > 0 ? `, mas o avanço registrado é de ${percentual(projeto.progresso)}%` : ""}. As tarefas aparecem aqui quando o playbook for aplicado.
+            </p>
+          ) : (
           <div className="pv-rosca-linha">
-            <div className="pv-rosca" role="img" aria-label={`${percentual(projeto.progresso)}% concluído, ${contagem.map((c) => `${c.n} ${c.rotulo.toLowerCase()}`).join(", ")}`}>
-              <svg viewBox="0 0 100 100" aria-hidden>
-                <circle className="pv-rosca-trilho" cx="50" cy="50" r={R} />
-                {contagem.map((c, i) =>
-                  c.n > 0 ? (
-                    <circle key={c.estado} className="pv-rosca-fatia" data-pv-tom={c.tom} cx="50" cy="50" r={R}
-                      strokeDasharray={`${comprimentos[i]} ${CIRC - comprimentos[i]}`} strokeDashoffset={-inicios[i]} />
-                  ) : null,
-                )}
-              </svg>
-              <div className="pv-rosca-centro">
-                <strong>{percentual(projeto.progresso)}%</strong>
-                <span>concluído</span>
+              <div className="pv-rosca" role="img" aria-label={`${percentual(projeto.progresso)}% concluído, ${contagem.map((c) => `${c.n} ${c.rotulo.toLowerCase()}`).join(", ")}`}>
+                <svg viewBox="0 0 100 100" aria-hidden>
+                  <circle className="pv-rosca-trilho" cx="50" cy="50" r={R} />
+                  {contagem.map((c, i) =>
+                    c.n > 0 ? (
+                      <circle key={c.estado} className="pv-rosca-fatia" data-pv-tom={c.tom} cx="50" cy="50" r={R}
+                        strokeDasharray={`${comprimentos[i]} ${CIRC - comprimentos[i]}`} strokeDashoffset={-inicios[i]} />
+                    ) : null,
+                  )}
+                </svg>
+                <div className="pv-rosca-centro">
+                  <strong>{percentual(projeto.progresso)}%</strong>
+                  <span>concluído</span>
+                </div>
               </div>
+              <ul className="pv-legenda">
+                {contagem.map((c) => (
+                  <li key={c.estado} data-pv-tom={c.tom}><i aria-hidden />{c.rotulo}<b>{c.n}</b></li>
+                ))}
+              </ul>
             </div>
-            <ul className="pv-legenda">
-              {contagem.map((c) => (
-                <li key={c.estado} data-pv-tom={c.tom}><i aria-hidden />{c.rotulo}<b>{c.n}</b></li>
-              ))}
-            </ul>
-          </div>
+          )}
         </section>
 
         <section className="pv-bloco" aria-label="Próximos passos">
@@ -92,7 +98,7 @@ export function VisaoGeral({ projeto, agora, acoes, aoVerTudo }: { projeto: Proj
               })}
             </ul>
           ) : (
-            <p className="pv-secao-nota">Todas as tarefas aplicáveis foram concluídas.</p>
+            <p className="pv-secao-nota">{total === 0 ? "Nenhuma tarefa para fazer ainda." : "Todas as tarefas aplicáveis foram concluídas."}</p>
           )}
         </section>
 
