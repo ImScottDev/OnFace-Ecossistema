@@ -546,3 +546,24 @@
 
 .mz-ficha-voltar { color: color-mix(in oklab, var(--pv-tinta-suave) 65%, transparent); }
 .mz-ficha:hover .mz-ficha-voltar { color: var(--pv-tinta-suave); }
+
+/* ─── Correções de uma auditoria medida, não de impressão ────────────────
+ *
+ * Os números vieram de aferição no navegador sobre o HTML renderizado com
+ * dado real: contraste resolvido por canvas (ler `getComputedStyle().color`
+ * com regex tratava `oklch()` como RGB e acusava falha onde não havia),
+ * tamanho de fonte e área de clique medidos por `getBoundingClientRect`.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* 1. `--surface-card` não resolve fora do tema do ONFACE: ele é declarado no
+      escopo do `OnfaceThemeRoot`, não no `:root`. Dentro do produto funciona,
+      mas usar a variável sem alternativa deixa o botão primário com tinta
+      sobre tinta em qualquer contexto que não seja aquele — foi o que a
+      medição mostrou (razão de contraste 1). Alternativa explícita. */
+.mz-foco-abrir, .mz-foco-primaria { color: var(--surface-card, var(--onface-white, #fff)); }
+.mz-chip[data-ativo="true"] { color: var(--surface-card, var(--onface-white, #fff)); }
+
+/* 2. A ficha de espera tinha alvo de 24px dentro de um corpo de 32px: a borda
+      do chip parecia clicável e não era. O alvo passa a ocupar a altura
+      inteira. */
+.mz-ficha-alvo { align-self: stretch; display: inline-flex; align-items: center; }
