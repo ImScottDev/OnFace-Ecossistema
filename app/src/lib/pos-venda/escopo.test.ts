@@ -10,6 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { escopoDoSnapshot } from "./escopo";
 import { relogiosDe } from "./montagem";
+import { chaveDoCampo } from "./regras";
 import type { LinhaBase } from "./leitura-base";
 
 const snapshot = (extra: Record<string, unknown>) => ({
@@ -110,4 +111,34 @@ test("projeto sem prazo nenhum: nem vencimento nem original, e não conta atraso
   assert.equal(r.diasDeAtraso, null);
   // Tempo decorrido é fato e continua: 8 dias desde 01/11.
   assert.equal(r.horasCorridas, 192);
+});
+
+// ---------------------------------------------------------------------------
+// Chave do campo de levantamento
+// ---------------------------------------------------------------------------
+
+test("a chave sai do rótulo com a MESMA regra de /ajustes/campos-custom", () => {
+  // Minúsculas, sem acento, não-alfanumérico vira `_`, sem `_` nas pontas.
+  assert.equal(chaveDoCampo("Período de Contrato"), "periodo_de_contrato");
+  assert.equal(chaveDoCampo("  Horário de pico!  "), "horario_de_pico");
+  assert.equal(chaveDoCampo("Ação / Nº de ramais"), "acao_n_de_ramais");
+});
+
+test("rótulo repetido ganha sufixo numérico, começando no 2", () => {
+  assert.equal(chaveDoCampo("Período de contrato", ["periodo_de_contrato"]), "periodo_de_contrato_2");
+  assert.equal(chaveDoCampo("Período de contrato", ["periodo_de_contrato", "periodo_de_contrato_2"]), "periodo_de_contrato_3");
+});
+
+test("rótulo sem nenhum caractere aproveitável ainda gera chave estável", () => {
+  // Sem isso o valor não teria onde morar na próxima leitura.
+  assert.equal(chaveDoCampo("🙂 —"), "campo");
+  assert.equal(chaveDoCampo("🙂 —", ["campo"]), "campo_2");
+});
+
+test("chave longa é cortada com folga para o sufixo caber", () => {
+  const chave = chaveDoCampo("a".repeat(120));
+  assert.equal(chave.length, 56);
+  assert.ok(!chave.endsWith("_"));
+  // E o desempate continua dentro do limite que a server action aceita.
+  assert.ok(chaveDoCampo("a".repeat(120), [chave]).length <= 64);
 });

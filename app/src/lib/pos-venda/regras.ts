@@ -153,3 +153,55 @@ export function complementosDosProdutos(produtos: Array<string | null | undefine
   }
   return [...out];
 }
+
+// ---------------------------------------------------------------------------
+// Chave do campo de levantamento
+// ---------------------------------------------------------------------------
+
+/**
+ * O limite da `chave` que a server action aceita (`actions.ts`, `slice(0, 64)`).
+ * A base fica menor para o sufixo de desempate caber sem ser cortado.
+ */
+const MAX_CHAVE = 64;
+const MAX_BASE = 56;
+
+/**
+ * A chave de um campo de levantamento, a partir do rótulo que a pessoa digitou.
+ *
+ * **A regra é DE PROPÓSITO a mesma de `/ajustes/campos-custom`** (`slugify`,
+ * `page.tsx:51`): minúsculas, sem acento, não-alfanumérico vira `_`. É lá que
+ * nasce a definição em `custom_fields`, e quando o template de organização
+ * chegar as duas superfícies têm de produzir a MESMA chave para o mesmo rótulo
+ * — senão o campo criado no projeto e o criado em Ajustes viram dois campos.
+ *
+ * Existe aqui, exportada, porque o gerador estava sendo escrito uma terceira
+ * vez dentro da tela: dois geradores divergindo em acento, hífen ou tamanho
+ * fazem o mesmo rótulo virar duas chaves, e aí o valor preenchido desaparece.
+ *
+ * `existentes` resolve colisão com sufixo numérico, porque nada impede a pessoa
+ * de criar dois campos com o mesmo nome.
+ */
+export function chaveDoCampo(rotulo: string, existentes: readonly string[] = []): string {
+  const base = rotulo
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, MAX_BASE)
+    .replace(/_+$/, "")
+    // Rótulo só de emoji, pontuação ou espaço não gera chave nenhuma: sem um
+    // nome estável o valor não tem onde morar na próxima leitura.
+    || "campo";
+
+  const tomadas = new Set(existentes);
+  if (!tomadas.has(base)) return base;
+  // Começa em 2: o primeiro campo é o sem sufixo, como a pessoa espera ler.
+  for (let n = 2; n <= 99; n += 1) {
+    const tentativa = `${base}_${n}`.slice(0, MAX_CHAVE);
+    if (!tomadas.has(tentativa)) return tentativa;
+  }
+  // Cem campos com o mesmo rótulo é erro de uso, não caso de produto. Ainda
+  // assim não devolve chave repetida, que apagaria o valor do campo anterior.
+  return `${base}_${Date.now().toString(36)}`.slice(0, MAX_CHAVE);
+}
