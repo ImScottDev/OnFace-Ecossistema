@@ -512,3 +512,37 @@
 .mz-nota { margin: 0.625rem 0 0; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
 /* A ficha parada tem avatar antes do nome: quem é o dono é o que destrava. */
 .mz-ficha-alvo .pv-avatar { align-self: center; }
+
+/* ─── Correção: ação escondida no hover é ação que não existe ────────────
+ *
+ * As ações da linha nasceram com `opacity: 0` até o hover, pela ideia de
+ * "repouso é leitura". Validando no navegador, duas coisas apareceram:
+ *
+ * 1. O botão sumia da ÁRVORE DE ACESSIBILIDADE. Opacidade zero num ancestral
+ *    conta como invisível: leitor de tela não anuncia, e a captura semântica
+ *    da página nem listava o controle.
+ * 2. "Passar a bola" é A ação que distingue esta tela de uma lista de
+ *    leitura. Escondê-la até o hover faz a mesa parecer só leitura para quem
+ *    chega — e em toque não há hover nenhum.
+ *
+ * Fica visível e quieta: contorno transparente, tinta suave. O hover não a
+ * revela, só a reforça. Discreto não é invisível.
+ * ──────────────────────────────────────────────────────────────────────── */
+.mz-acao-botoes { opacity: 1; }
+.mz-calma-fim .mz-acao, .mz-ficha-voltar { opacity: 1; }
+
+.mz-acao {
+  border-color: transparent;
+  background: transparent;
+  color: var(--pv-tinta-suave);
+}
+.mz-acao-linha:hover .mz-acao,
+.mz-calma:hover .mz-acao {
+  border-color: var(--pv-borda);
+  background: var(--pv-superficie);
+  color: var(--pv-tinta-corpo);
+}
+.mz-acao:hover { border-color: var(--pv-borda-forte); background: var(--pv-fundo-hover); color: var(--pv-tinta); }
+
+.mz-ficha-voltar { color: color-mix(in oklab, var(--pv-tinta-suave) 65%, transparent); }
+.mz-ficha:hover .mz-ficha-voltar { color: var(--pv-tinta-suave); }
