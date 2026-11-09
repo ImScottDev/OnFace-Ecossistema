@@ -15,6 +15,8 @@ import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { entregarParaImplantacao } from "@/lib/pos-venda/handoff-implantacao";
 import { ehImplantacao } from "@/lib/crm/politica-familia";
+import type { MotivoDaEspera } from "@/lib/pos-venda/contrato";
+import { acoes } from "./fonte";
 
 export type ResultadoOnb = { ok: true; msg?: string } | { ok: false; erro: string };
 
@@ -151,4 +153,96 @@ export async function acaoLiberarBloqueio(fulfillmentId: string): Promise<Result
     console.error("[pos-vendas] liberar bloqueio falhou:", e);
     return { ok: false, erro: "Não consegui liberar o bloqueio." };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// TELAS NOVAS DO PÓS-VENDA (`/pos-vendas` e `/pos-vendas/[id]`)
+//
+// Tudo abaixo conversa com `./fonte`, a costura única com o motor. As ações
+// acima (`acaoConcluirItem` e companhia) são do painel antigo e saem junto com
+// `OnboardingProto`/`ProjetoProto` quando as telas novas forem ligadas.
+//
+// Toda ação devolve `ResultadoOnb`, nunca lança: a tela mostra o motivo.
+// ─────────────────────────────────────────────────────────────────────────
+
+const ID = /^[\w-]{1,64}$/;
+const MOTIVOS: readonly MotivoDaEspera[] = ["cliente", "operadora", "interno"];
+
+async function comProjeto(
+  projetoId: string,
+  executar: (organizacaoId: string) => Promise<{ ok: true } | { ok: false; erro: string }>,
+): Promise<ResultadoOnb> {
+  const ctx = await getTenantContext();
+  if (!ctx) return { ok: false, erro: "Sessão expirada. Entre de novo." };
+  if (!ID.test(projetoId)) return { ok: false, erro: "Projeto inválido." };
+  try {
+    const r = await executar(ctx.organizacaoId);
+    if (!r.ok) return { ok: false, erro: r.erro };
+    revalidatePath(`${ROTA}/${projetoId}`);
+    revalidatePath(ROTA);
+    return { ok: true };
+  } catch (e) {
+    console.error("[pos-vendas] ação do projeto falhou:", e);
+    return { ok: false, erro: "Não consegui concluir a ação. Tente de novo." };
+  }
+}
+
+export async function pvConcluirTarefa(projetoId: string, tarefaId: string) {
+  return comProjeto(projetoId, (org) => acoes.concluirTarefa(org, projetoId, tarefaId));
+}
+export async function pvReabrirTarefa(projetoId: string, tarefaId: string) {
+  return comProjeto(projetoId, (org) => acoes.reabrirTarefa(org, projetoId, tarefaId));
+}
+export async function pvMarcarItem(projetoId: string, itemId: string, feito: boolean) {
+  return comProjeto(projetoId, (org) => acoes.marcarItem(org, projetoId, itemId, feito));
+}
+export async function pvAtribuirTarefa(projetoId: string, tarefaId: string, usuarioId: string | null) {
+  return comProjeto(projetoId, (org) => acoes.atribuirTarefa(org, projetoId, tarefaId, usuarioId));
+}
+/** `dia` chega como AAAA-MM-DD do calendário de São Paulo. Meio-dia UTC-3 cai no mesmo dia em qualquer fuso. */
+export async function pvRemarcarTarefa(projetoId: string, tarefaId: string, dia: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return { ok: false, erro: "Data inválida." } satisfies ResultadoOnb;
+  const venceEm = new Date(`${dia}T12:00:00-03:00`);
+  if (Number.isNaN(venceEm.getTime())) return { ok: false, erro: "Data inválida." } satisfies ResultadoOnb;
+  return comProjeto(projetoId, (org) => acoes.remarcarTarefa(org, projetoId, tarefaId, venceEm));
+}
+export async function pvMarcarEspera(projetoId: string, motivo: MotivoDaEspera, detalhe: string) {
+  if (!MOTIVOS.includes(motivo)) return { ok: false, erro: "Diga quem está com a bola." } satisfies ResultadoOnb;
+  return comProjeto(projetoId, (org) => acoes.marcarEspera(org, projetoId, motivo, detalhe.trim().slice(0, 300) || null));
+}
+export async function pvEncerrarEspera(projetoId: string) {
+  return comProjeto(projetoId, (org) => acoes.encerrarEspera(org, projetoId));
+}
+export async function pvAdicionarNota(projetoId: string, texto: string) {
+  const t = texto.trim();
+  if (!t) return { ok: false, erro: "Escreva a nota antes de salvar." } satisfies ResultadoOnb;
+  return comProjeto(projetoId, (org) => acoes.adicionarNota(org, projetoId, t.slice(0, 4000)));
+}
+export async function pvSalvarLevantamento(
+  projetoId: string,
+  campos: {
+    perfilDeUso: string | null;
+    crmQueUsa: string | null;
+    objetivoComACallface: string | null;
+    extras: Array<{ chave: string; rotulo: string; valor: string | null }>;
+  },
+) {
+  const limpo = (v: string | null) => (v && v.trim() ? v.trim().slice(0, 500) : null);
+  return comProjeto(projetoId, (org) =>
+    acoes.salvarLevantamento(org, projetoId, {
+      perfilDeUso: limpo(campos.perfilDeUso),
+      crmQueUsa: limpo(campos.crmQueUsa),
+      objetivoComACallface: limpo(campos.objetivoComACallface),
+      extras: campos.extras.slice(0, 30).map((e) => ({ chave: e.chave.slice(0, 64), rotulo: e.rotulo.slice(0, 120), valor: limpo(e.valor) })),
+    }),
+  );
+}
+export async function pvEnviarFormulario(projetoId: string) {
+  return comProjeto(projetoId, (org) => acoes.enviarFormulario(org, projetoId));
+}
+export async function pvEscalarParaImplantacao(projetoId: string) {
+  return comProjeto(projetoId, (org) => acoes.escalarParaImplantacao(org, projetoId));
+}
+export async function pvFazerHandoff(projetoId: string) {
+  return comProjeto(projetoId, (org) => acoes.fazerHandoff(org, projetoId));
 }
