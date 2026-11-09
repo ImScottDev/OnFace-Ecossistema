@@ -1,0 +1,508 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * MESA DE TRABALHO — o mundo visual da tela de entregas.
+ *
+ * Uma regra governa tudo aqui: PESO PROPORCIONAL AO QUE SE PODE FAZER.
+ *
+ * A tela anterior tratava quatorze projetos como quatorze linhas iguais, e
+ * por isso precisava de filtro, ordenação e recorte para a pessoa achar o que
+ * importava. Aqui a hierarquia faz esse trabalho: o que pede ação é grande e
+ * tem verbo, o que anda é discreto, o que espera é uma ficha. Quem abre a
+ * tela não procura — vê.
+ *
+ * Herda os tokens de `pos-venda.css` (`--pv-*`), que já são oklch e já saem
+ * do shell do ONFACE. Zero hex: a trava `cor-tem-nome` conta hex em
+ * `components/onface`, e arquivo novo nasce com zero.
+ *
+ * Movimento: um só momento autoral — a linha que muda de faixa quando alguém
+ * passa a bola. O resto é cor e opacidade em 80 ms. Nada anima na chegada do
+ * dado: a pessoa filtra e decide dezenas de vezes por dia.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+.mz {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  min-width: 0;
+  font-size: var(--text-base);
+  color: var(--pv-tinta);
+}
+.mz-num { font-variant-numeric: tabular-nums; }
+.mz-sep { margin-inline: 0.375rem; color: var(--pv-tinta-suave); }
+
+/* ─── Topo: a conta do dia e as duas saídas ──────────────────────────────── */
+
+.mz-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding-bottom: 0.25rem;
+}
+.mz-conta { margin: 0; font-size: var(--text-md); color: var(--pv-tinta-suave); }
+.mz-conta strong { color: var(--pv-tinta); font-weight: var(--weight-semibold); }
+.mz-topo-acoes { display: flex; align-items: center; gap: 0.5rem; }
+
+.mz-foco-abrir {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--pv-tinta);
+  border-radius: var(--pv-r-sm);
+  background: var(--pv-tinta);
+  color: var(--surface-card);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background-color 80ms ease-out, transform 80ms ease-out;
+}
+.mz-foco-abrir svg { width: 0.8125rem; height: 0.8125rem; }
+.mz-foco-abrir:hover { background: var(--pv-tinta-corpo); border-color: var(--pv-tinta-corpo); }
+.mz-foco-abrir:active { transform: translateY(1px); }
+.mz-foco-abrir:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+
+.mz-arquivo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.625rem;
+  border-radius: var(--pv-r-sm);
+  color: var(--pv-tinta-suave);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  transition: background-color 80ms ease-out, color 80ms ease-out;
+}
+.mz-arquivo svg { width: 0.8125rem; height: 0.8125rem; }
+.mz-arquivo:hover { background: var(--pv-fundo-hover); color: var(--pv-tinta); }
+.mz-arquivo:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+
+/* ─── Faixa: o cabeçalho é um rótulo, não uma barra tingida ──────────────── */
+
+.mz-faixa { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.mz-faixa-cab {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--pv-borda);
+}
+.mz-ponto {
+  align-self: center;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--mz-cor, var(--pv-neutro-barra));
+}
+.mz-faixa-titulo {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--pv-tinta);
+}
+.mz-faixa-n { font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.mz-faixa-criterio {
+  margin-inline-start: auto;
+  font-size: var(--text-sm);
+  color: var(--pv-tinta-suave);
+  text-align: end;
+}
+
+/* Cada faixa tem a sua cor, e ela aparece em UM ponto de 7px. Cor aqui é
+   identidade da faixa, não alarme: vermelho em cinco linhas de uma vez
+   ensina o time a ignorar vermelho. */
+.mz-faixa[data-posse="voce"]      { --mz-cor: var(--pv-risco-barra); }
+.mz-faixa[data-posse="andando"]   { --mz-cor: var(--pv-andamento-barra); }
+.mz-faixa[data-posse="cliente"]   { --mz-cor: var(--pv-validacao-barra); }
+.mz-faixa[data-posse="operadora"] { --mz-cor: var(--pv-espera-barra); }
+.mz-faixa[data-posse="interno"]   { --mz-cor: var(--pv-neutro-barra); }
+
+/* ─── Precisa de você: a linha inteira, com o verbo na frente ────────────── */
+
+.mz-acoes { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+
+.mz-acao-linha {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--pv-r-sm);
+  transition: background-color 80ms ease-out;
+}
+.mz-acao-linha + .mz-acao-linha { box-shadow: inset 0 1px 0 var(--pv-borda); }
+.mz-acao-linha:hover, .mz-acao-linha:focus-within { background: var(--pv-fundo-sutil); }
+
+/* O alvo cobre a linha, então o leitor de tela ouve um destino só e os
+   botões do fim não ficam aninhados dentro do link. */
+.mz-acao-alvo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  min-width: 0;
+  flex: 1;
+  text-decoration: none;
+  color: inherit;
+}
+.mz-acao-alvo::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.mz-acao-alvo:focus-visible { outline: none; }
+.mz-acao-linha:has(.mz-acao-alvo:focus-visible) { box-shadow: var(--pv-foco); }
+
+.mz-acao-verbo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--pv-tinta);
+  overflow-wrap: anywhere;
+}
+.mz-acao-sino { width: 0.9375rem; height: 0.9375rem; flex-shrink: 0; color: var(--pv-tinta-suave); }
+.mz-acao-linha[data-urgente] .mz-acao-sino { color: var(--pv-risco-fg); }
+
+.mz-acao-ctx {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
+  padding-inline-start: 1.4375rem;
+  font-size: var(--text-sm);
+  color: var(--pv-tinta-suave);
+}
+.mz-acao-empresa { color: var(--pv-tinta-corpo); font-weight: var(--weight-medium); }
+.mz-acao-empresa[data-suspeito] { font-style: italic; color: var(--pv-tinta-suave); }
+.mz-acao-motivo { color: var(--pv-risco-fg); font-weight: var(--weight-medium); }
+
+.mz-acao-fim { position: relative; z-index: 1; display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
+/* As ações só aparecem quando a linha é tocada: em repouso a faixa é leitura. */
+.mz-acao-botoes { opacity: 0; transition: opacity 80ms ease-out; }
+.mz-acao-linha:hover .mz-acao-botoes,
+.mz-acao-linha:focus-within .mz-acao-botoes { opacity: 1; }
+
+.mz-acao {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--pv-borda);
+  border-radius: var(--pv-r-sm);
+  background: var(--pv-superficie);
+  color: var(--pv-tinta-corpo);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 80ms ease-out, border-color 80ms ease-out;
+}
+.mz-acao svg { width: 0.8125rem; height: 0.8125rem; }
+.mz-acao:hover { background: var(--pv-fundo-hover); border-color: var(--pv-borda-forte); color: var(--pv-tinta); }
+.mz-acao:focus-visible { outline: none; box-shadow: var(--pv-foco); opacity: 1; }
+
+.mz-menu-item { display: flex; flex-direction: column; align-items: flex-start; gap: 0.0625rem; }
+.mz-menu-rotulo { font-weight: var(--weight-medium); color: var(--pv-tinta); }
+.mz-menu-apoio { font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+
+/* ─── Zerou: o único momento de celebração, e só quando é verdade ───────── */
+
+.mz-zerou {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1.125rem 0.625rem 1.25rem;
+  color: var(--pv-tinta-corpo);
+}
+.mz-zerou > svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+  padding: 0.1875rem;
+  border-radius: 50%;
+  background: var(--pv-ok-bg);
+  color: var(--pv-ok-fg);
+}
+.mz-zerou div { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.mz-zerou strong { font-weight: var(--weight-semibold); color: var(--pv-tinta); }
+.mz-zerou span { font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+
+/* ─── Andando: discreta, porque só confirma que não parou ────────────────── */
+
+.mz-calmas { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.mz-calma {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.25rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: var(--pv-r-sm);
+  transition: background-color 80ms ease-out;
+}
+.mz-calma:hover, .mz-calma:focus-within { background: var(--pv-fundo-sutil); }
+.mz-calma-alvo {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  min-width: 0;
+  flex: 1;
+  text-decoration: none;
+  color: inherit;
+  font-size: var(--text-base);
+}
+.mz-calma-alvo::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.mz-calma-empresa { flex-shrink: 0; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pv-tinta); font-weight: var(--weight-medium); }
+.mz-calma-empresa[data-suspeito] { font-style: italic; color: var(--pv-tinta-suave); }
+.mz-calma-tarefa { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.mz-calma-progresso { margin-inline-start: auto; flex-shrink: 0; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.mz-calma-fim { position: relative; z-index: 1; display: flex; align-items: center; gap: 0.625rem; flex-shrink: 0; }
+.mz-calma-fim .mz-acao { opacity: 0; transition: opacity 80ms ease-out; }
+.mz-calma:hover .mz-acao, .mz-calma:focus-within .mz-acao { opacity: 1; }
+
+/* ─── Esperando: ficha e relógio. Não dá para agir, não ocupa linha ──────── */
+
+.mz-fichas { display: flex; flex-wrap: wrap; gap: 0.375rem; margin: 0; padding: 0.375rem 0 0; list-style: none; }
+.mz-ficha {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 1.875rem;
+  padding-inline-end: 0.125rem;
+  border: 1px solid var(--pv-borda);
+  border-radius: var(--pv-r-sm);
+  background: var(--pv-superficie);
+  transition: border-color 80ms ease-out, background-color 80ms ease-out;
+}
+.mz-ficha:hover { border-color: var(--pv-borda-forte); background: var(--pv-fundo-sutil); }
+.mz-ficha-alvo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4375rem;
+  max-width: 20rem;
+  padding: 0 0.5rem 0 0.625rem;
+  text-decoration: none;
+  color: inherit;
+  font-size: var(--text-sm);
+}
+.mz-ficha-empresa { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pv-tinta); }
+.mz-ficha-empresa[data-suspeito] { font-style: italic; color: var(--pv-tinta-suave); }
+.mz-ficha-tempo { flex-shrink: 0; color: var(--pv-tinta-suave); }
+/* Duas semanas parada deixa de ser espera e vira problema: o tempo ganha tinta. */
+.mz-ficha[data-demais] .mz-ficha-tempo { color: var(--pv-risco-fg); font-weight: var(--weight-medium); }
+.mz-ficha[data-demais] { border-color: var(--pv-risco-borda); }
+
+.mz-ficha-voltar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--pv-r-xs);
+  background: transparent;
+  color: var(--pv-tinta-suave);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 80ms ease-out, background-color 80ms ease-out, color 80ms ease-out;
+}
+.mz-ficha-voltar svg { width: 0.875rem; height: 0.875rem; }
+.mz-ficha:hover .mz-ficha-voltar, .mz-ficha-voltar:focus-visible { opacity: 1; }
+.mz-ficha-voltar:hover { background: var(--pv-ok-bg); color: var(--pv-ok-fg); }
+.mz-ficha-voltar:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+
+/* ─── Vazio de primeiro uso ──────────────────────────────────────────────── */
+
+.mz-vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 2.5rem 0;
+  max-width: 34rem;
+}
+.mz-vazio > svg { width: 1.25rem; height: 1.25rem; color: var(--pv-tinta-suave); }
+.mz-vazio h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); color: var(--pv-tinta); }
+.mz-vazio p { margin: 0; font-size: var(--text-base); line-height: 1.55; color: var(--pv-tinta-suave); }
+
+/* ─── Modo foco ─────────────────────────────────────────────────────────── */
+
+.mz-foco { position: fixed; inset: 0; z-index: var(--z-modal, 2000); display: grid; place-items: center; padding: 1.5rem; }
+.mz-foco-fundo {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: color-mix(in oklab, var(--pv-tinta) 28%, transparent);
+  cursor: default;
+  animation: mz-aparecer 140ms ease-out;
+}
+.mz-foco-caixa {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: min(34rem, 100%);
+  padding: 1.25rem 1.5rem 1.125rem;
+  border-radius: var(--pv-r-lg);
+  background: var(--pv-superficie);
+  box-shadow: var(--pv-sombra-menu);
+  animation: mz-subir 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mz-foco-caixa:focus { outline: none; }
+.mz-foco-cab { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.mz-foco-passo { font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.mz-foco-sair {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.75rem; height: 1.75rem;
+  border: 0; border-radius: var(--pv-r-xs);
+  background: transparent; color: var(--pv-tinta-suave); cursor: pointer;
+  transition: background-color 80ms ease-out, color 80ms ease-out;
+}
+.mz-foco-sair svg { width: 0.9375rem; height: 0.9375rem; }
+.mz-foco-sair:hover { background: var(--pv-fundo-hover); color: var(--pv-tinta); }
+.mz-foco-sair:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+
+.mz-foco-corpo { display: flex; flex-direction: column; gap: 0.3125rem; }
+.mz-foco-empresa { font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.mz-foco-empresa[data-suspeito] { font-style: italic; }
+.mz-foco-verbo {
+  margin: 0;
+  font-family: var(--font-onface-titulo, inherit);
+  font-size: 1.375rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--pv-tinta);
+}
+.mz-foco-ctx { margin: 0; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.mz-foco-progresso { display: flex; align-items: center; gap: 0.375rem; margin: 0.25rem 0 0; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.mz-foco-progresso svg { width: 0.8125rem; height: 0.8125rem; color: var(--pv-ok-fg); }
+
+.mz-foco-acoes { display: flex; flex-direction: column; gap: 0.625rem; }
+.mz-foco-primaria {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  height: 2.25rem; padding: 0 0.875rem;
+  border: 1px solid var(--pv-tinta); border-radius: var(--pv-r-sm);
+  background: var(--pv-tinta); color: var(--surface-card);
+  font: inherit; font-size: var(--text-base); font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: background-color 80ms ease-out;
+}
+.mz-foco-primaria svg { width: 0.875rem; height: 0.875rem; }
+.mz-foco-primaria:hover { background: var(--pv-tinta-corpo); border-color: var(--pv-tinta-corpo); }
+.mz-foco-primaria:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+
+.mz-foco-passar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+.mz-foco-passar-rotulo { margin-inline-end: 0.125rem; font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+.mz-foco-secundaria {
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  height: 1.875rem; padding: 0 0.625rem;
+  border: 1px solid var(--pv-borda); border-radius: var(--pv-r-sm);
+  background: var(--pv-superficie); color: var(--pv-tinta-corpo);
+  font: inherit; font-size: var(--text-sm); cursor: pointer;
+  transition: background-color 80ms ease-out, border-color 80ms ease-out;
+}
+.mz-foco-secundaria:hover { background: var(--pv-fundo-hover); border-color: var(--pv-borda-forte); color: var(--pv-tinta); }
+.mz-foco-secundaria:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+
+.mz-foco-pe { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--pv-borda); }
+.mz-foco-andar {
+  display: inline-flex; align-items: center; gap: 0.4375rem;
+  height: 1.75rem; padding: 0 0.5rem;
+  border: 0; border-radius: var(--pv-r-xs);
+  background: transparent; color: var(--pv-tinta-corpo);
+  font: inherit; font-size: var(--text-sm); cursor: pointer;
+  transition: background-color 80ms ease-out;
+}
+.mz-foco-andar:hover:not(:disabled) { background: var(--pv-fundo-hover); }
+.mz-foco-andar:disabled { color: var(--pv-tinta-suave); cursor: default; }
+.mz-foco-andar:focus-visible { outline: none; box-shadow: var(--pv-foco); }
+.mz-foco-dica { font-size: var(--text-sm); color: var(--pv-tinta-suave); }
+
+/* A tecla é desenhada, não escrita entre colchetes. */
+.mz-foco kbd {
+  display: inline-grid; place-items: center;
+  min-width: 1.125rem; height: 1.125rem; padding: 0 0.25rem;
+  border: 1px solid var(--pv-borda-forte); border-radius: var(--pv-r-xs);
+  background: var(--pv-fundo-sutil);
+  font-family: var(--font-onface-mono, ui-monospace, monospace);
+  font-size: 0.625rem; line-height: 1; color: var(--pv-tinta-suave);
+}
+.mz-foco-primaria kbd { border-color: color-mix(in oklab, var(--surface-card) 40%, transparent); background: transparent; color: inherit; opacity: 0.7; }
+
+.mz-foco-fim { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; padding: 0.75rem 0 0.25rem; }
+.mz-foco-fim > svg {
+  width: 1.25rem; height: 1.25rem; padding: 0.25rem;
+  border-radius: 50%; background: var(--pv-ok-bg); color: var(--pv-ok-fg);
+}
+.mz-foco-fim strong { font-size: var(--text-lg); font-weight: var(--weight-semibold); color: var(--pv-tinta); }
+.mz-foco-fim span { font-size: var(--text-base); color: var(--pv-tinta-suave); }
+.mz-foco-fim .mz-foco-primaria { margin-top: 0.5rem; }
+
+@keyframes mz-aparecer { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mz-subir { from { opacity: 0; transform: translateY(0.5rem) scale(0.985); } to { opacity: 1; transform: none; } }
+
+/* ─── Reduced motion e telas estreitas ──────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .mz-foco-caixa, .mz-foco-fundo { animation: none; }
+  .mz *, .mz-foco * { transition-duration: 0.01ms !important; }
+}
+
+@media (max-width: 48rem) {
+  .mz { gap: 1.5rem; }
+  .mz-faixa-criterio { display: none; }
+  .mz-acao-linha { flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; }
+  .mz-acao-fim { width: 100%; justify-content: space-between; padding-inline-start: 1.4375rem; }
+  /* Sem hover no toque: a ação fica sempre visível, senão não existe. */
+  .mz-acao-botoes, .mz-calma-fim .mz-acao, .mz-ficha-voltar { opacity: 1; }
+  .mz-calma { flex-wrap: wrap; min-height: 2.75rem; }
+  .mz-calma-alvo { flex-wrap: wrap; gap: 0.25rem 0.5rem; }
+  .mz-calma-progresso { margin-inline-start: 0; }
+  .mz-foco-caixa { width: 100%; }
+}
+
+/* Ponteiro grosso (toque) não tem hover: mostrar a ação só no hover a esconde. */
+@media (hover: none) {
+  .mz-acao-botoes, .mz-calma-fim .mz-acao, .mz-ficha-voltar { opacity: 1; }
+}
+
+/* Voltar da lista cheia para a mesa. */
+.pv-voltar-mesa {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: 0.25rem;
+  font-size: var(--text-sm);
+  color: var(--pv-tinta-suave);
+  text-decoration: none;
+}
+.pv-voltar-mesa svg { width: 0.8125rem; height: 0.8125rem; }
+.pv-voltar-mesa:hover { color: var(--pv-tinta); }
+
+/* Aviso de recorte herdado de endereço antigo (?aba=imp|onb). */
+.mz-recorte {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--pv-borda);
+  border-radius: var(--pv-r-sm);
+  background: var(--pv-fundo-sutil);
+  font-size: var(--text-sm);
+  color: var(--pv-tinta-corpo);
+}
+.mz-recorte strong { color: var(--pv-tinta); font-weight: var(--weight-semibold); }
+.mz-recorte a { color: var(--pv-tinta); text-underline-offset: 0.2em; }
