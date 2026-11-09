@@ -78,8 +78,10 @@ export async function tarefasDosProjetos(
     // `vence_em` é o instante; `data_vencimento` só tem o dia (tarefas antigas).
     const venceEm = dataDe(l.vence_em) ?? dataDe(l.data_vencimento ? `${l.data_vencimento}T23:59:59Z` : null);
     const original = dataDe(l.original);
+    // `fichaHref: null` porque quem responde pela tarefa é USUÁRIO do ONFACE, não
+    // contato do cliente: não há ficha de pessoa para abrir.
     const resp: Pessoa | null = l.resp_id
-      ? { id: l.resp_id, nome: l.resp_nome ?? "Sem nome", email: l.resp_email, telefone: null, cargo: null, iniciais: iniciaisDe(l.resp_nome) }
+      ? { id: l.resp_id, nome: l.resp_nome ?? "Sem nome", email: l.resp_email, telefone: null, cargo: null, iniciais: iniciaisDe(l.resp_nome), fichaHref: null }
       : null;
     const aberta = estado !== "CONCLUIDA" && estado !== "NAO_SE_APLICA";
     const arr = mapa.get(projetoId) ?? [];

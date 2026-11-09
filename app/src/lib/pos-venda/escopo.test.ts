@@ -21,15 +21,31 @@ const snapshot = (extra: Record<string, unknown>) => ({
 test("o snapshot devolve a venda item a item, com quantidade e valor de cada um", () => {
   const e = escopoDoSnapshot(snapshot({
     itens: [
-      { produto: "Callface AI - Full", quantidade: 4, valorTotal: 1200, natureza: "MRR" },
-      { produto: "Pacote 500 Minutos", quantidade: 1, valorTotal: 500, natureza: "SETUP" },
+      { produto: "Callface AI - Full", quantidade: 4, valorTotal: 1200, natureza: "MRR", valorUnitario: 300, desconto: 10, descontoTipo: "percentual" },
+      { produto: "Pacote 500 Minutos", quantidade: 1, valorTotal: 500, natureza: "USAGE" },
     ],
   }));
   assert.equal(e?.itens.length, 2);
-  assert.deepEqual(e?.itens[0], { produto: "Callface AI - Full", quantidade: 4, valorTotal: 1200, natureza: "MRR" });
+  assert.deepEqual(e?.itens[0], {
+    produto: "Callface AI - Full", quantidade: 4, valorTotal: 1200, natureza: "MRR",
+    valorUnitario: 300, desconto: 10, descontoTipo: "percentual",
+  });
+  // Natureza é texto livre: `USAGE` existe em produção e passa inteira, sem enum que a recuse.
+  assert.equal(e?.itens[1].natureza, "USAGE");
+  // Item sem os três campos novos: null, não zero — zero seria um desconto que existe e vale nada.
+  assert.equal(e?.itens[1].valorUnitario, null);
+  assert.equal(e?.itens[1].desconto, null);
+  assert.equal(e?.itens[1].descontoTipo, null);
   // Os totais continuam valendo: o item não substitui o resumo, soma a ele.
   assert.equal(e?.mensalidade, 1200);
   assert.equal(e?.setup, 500);
+});
+
+test("tipo de desconto desconhecido vira null: sem rótulo é melhor que rótulo errado", () => {
+  const e = escopoDoSnapshot(snapshot({
+    itens: [{ produto: "X", quantidade: 1, valorTotal: 10, natureza: "MRR", descontoTipo: "cupom_maluco" }],
+  }));
+  assert.equal(e?.itens[0].descontoTipo, null);
 });
 
 test("snapshot antigo, sem o campo, devolve lista vazia em vez de quebrar", () => {

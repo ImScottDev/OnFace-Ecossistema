@@ -28,11 +28,21 @@ export interface EscopoCongelado extends EscopoVendido {
 
 const num = (v: string | null | undefined): number | null => (v == null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
 
+/** Só os dois valores que a tela sabe formatar. Qualquer outro vira null: melhor sem rótulo que com rótulo errado. */
+const tipoDeDesconto = (v: unknown): ItemVendido["descontoTipo"] =>
+  v === "percentual" || v === "valor" ? v : null;
+
 export async function escopoDaOportunidade(organizacaoId: string, oportunidadeId: string | null, familia: Familia): Promise<EscopoCongelado | null> {
   if (!oportunidadeId) return null;
-  type ItemCru = { produto: string | null; quantidade: string | null; valor_total: string | null; revenue_nature: string | null };
+  type ItemCru = {
+    produto: string | null; quantidade: string | null; valor_total: string | null; revenue_nature: string | null;
+    valor_unitario: string | null; desconto: string | null; desconto_tipo: string | null;
+  };
+  // `oportunidade_itens` chama o unitário de `preco_unitario` e não tem `desconto_tipo`:
+  // o tipo do desconto fica nulo por aqui, e isso é ausência de coluna, não de dado.
   let itens: ItemCru[] = await db.execute<ItemCru>(sql`
-    SELECT produto, quantidade::text, valor_total::text, revenue_nature
+    SELECT produto, quantidade::text, valor_total::text, revenue_nature,
+           preco_unitario::text AS valor_unitario, desconto::text, NULL::text AS desconto_tipo
       FROM oportunidade_itens
      WHERE organizacao_id = ${organizacaoId}::uuid AND oportunidade_id = ${oportunidadeId}::uuid AND service_family = ${familia}
      ORDER BY created_at, id`);
@@ -41,7 +51,8 @@ export async function escopoDaOportunidade(organizacaoId: string, oportunidadeId
     // itens da proposta ACEITA. Proposta expirada/recusada não é venda, então não entra. Medido em homologação:
     // 46 dos 56 projetos só têm escopo por aqui. `subtotal` é o valor do item já com o desconto aplicado.
     itens = await db.execute<ItemCru>(sql`
-      SELECT pi.nome AS produto, pi.quantidade::text, pi.subtotal::text AS valor_total, pi.revenue_nature
+      SELECT pi.nome AS produto, pi.quantidade::text, pi.subtotal::text AS valor_total, pi.revenue_nature,
+             pi.valor_unitario::text, pi.desconto::text, pi.desconto_tipo
         FROM proposta_itens pi
        WHERE pi.service_family = ${familia}
          AND pi.proposta_id = (SELECT p2.id FROM propostas p2
@@ -76,7 +87,10 @@ export async function escopoDaOportunidade(organizacaoId: string, oportunidadeId
     setup: soma(setup),
     recorrencia: rec?.periodo && RECORRENCIAS.has(rec.periodo) ? (rec.periodo as EscopoVendido["recorrencia"]) : null,
     complementos: complementosDosProdutos(itens.map((i) => i.produto)),
-    itens: itens.map((i) => ({ produto: i.produto, quantidade: num(i.quantidade), valorTotal: num(i.valor_total), natureza: i.revenue_nature })),
+    itens: itens.map((i) => ({
+      produto: i.produto, quantidade: num(i.quantidade), valorTotal: num(i.valor_total), natureza: i.revenue_nature,
+      valorUnitario: num(i.valor_unitario), desconto: num(i.desconto), descontoTipo: tipoDeDesconto(i.desconto_tipo),
+    })),
   };
 }
 
@@ -113,6 +127,10 @@ function itensDoSnapshot(v: unknown): ItemVendido[] {
     const item: ItemVendido = {
       produto: texto(i.produto), quantidade: numero(i.quantidade),
       valorTotal: numero(i.valorTotal), natureza: texto(i.natureza),
+      // Snapshot congelado antes destes três campos devolve null, não zero:
+      // zero é um desconto que existe e vale nada, null é "não sei".
+      valorUnitario: numero(i.valorUnitario), desconto: numero(i.desconto),
+      descontoTipo: tipoDeDesconto(i.descontoTipo),
     };
     return item.produto || item.quantidade != null || item.valorTotal != null ? [item] : [];
   });
