@@ -35,6 +35,8 @@ import { agruparServicosPorVenda, complementoDoUpgrade, uniaoChecklists, type Et
 import { notificarFulfillmentOnboardingCriado } from "@/lib/crm/notificar";
 import { regraDaFamilia, FAMILIAS_POR_TRILHA } from "@/lib/crm/politica-familia";
 import { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST, type ChecklistSeed } from "@/lib/crm/pos-venda-checklists";
+import { prepararProjeto } from "@/lib/pos-venda/motor";
+import { playbookAtivo } from "@/lib/pos-venda/playbook";
 
 export { PABX_CHECKLIST, AI_CHECKLIST_BASE, WHITE_LABEL_CHECKLIST };
 export type { ChecklistSeed, ChecklistItemMetadata, EstagioPedagogico } from "@/lib/crm/pos-venda-checklists";
@@ -256,7 +258,10 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
       }
       const { pendentes: checklist, herdadas } = complementoDoUpgrade(checklistCompleto, concluidas);
       // Upgrade que não traz nada novo (tudo já cumprido): a entrega nasce concluída, só para registrar a venda.
-      const nadaAFazer = checklistCompleto.length > 0 && checklist.length === 0;
+      // Com playbook, o upgrade NÃO nasce concluído: a spec manda reaparecer em onboarding com UMA tarefa de contato
+      // (o motor cria só ela). Sem playbook (PABX, White Label) vale a regra de sempre.
+      const temPlaybook = !!(await playbookAtivo(organizacaoId, grupo.serviceFamily, tipo));
+      const nadaAFazer = !temPlaybook && checklistCompleto.length > 0 && checklist.length === 0;
 
       // `tipo` e `cycleNumber` são obrigatórios desde a migration 0066: a
       // unicidade é (servico, tipo, ciclo). Com `tipo` NULO o índice não
@@ -306,8 +311,11 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
         );
       }
 
+      // O motor preenche o projeto (escopo, prazos, responsável) e cria as tarefas do playbook. Sem playbook ele não faz
+      // nada (`aplicado: false`) e cai no comportamento antigo: uma tarefa só, de agendar a reunião.
+      const motor = nadaAFazer ? null : await prepararProjeto({ organizacaoId, fulfillmentId: fulfillment.id });
       if (ehOnboarding && !nadaAFazer) {
-        if (principal.leadId) {
+        if (!motor?.aplicado && principal.leadId) {
           await db.insert(tarefas).values({
             organizacaoId,
             leadId: principal.leadId,

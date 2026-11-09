@@ -3428,6 +3428,77 @@ export const fulfillmentItens = pgTable(
   ]
 );
 
+// ─── PÓS-VENDA: PLAYBOOK CONFIGURÁVEL E ESPERAS (migration 0144) ──────────
+// O processo do pós-venda como dado editável (antes: constante em TypeScript) e o
+// histórico de espera por projeto (antes: só o status atual do fulfillment).
+export const posVendaPlaybooks = pgTable(
+  "pos_venda_playbooks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    familia: text("familia").notNull(),
+    tipo: text("tipo").notNull(),
+    nome: text("nome").notNull(),
+    prazoTotalDias: integer("prazo_total_dias").notNull(),
+    blocoAberturaDias: integer("bloco_abertura_dias").default(0).notNull(),
+    blocoExecucaoDias: integer("bloco_execucao_dias").default(0).notNull(),
+    blocoEncerramentoDias: integer("bloco_encerramento_dias").default(0).notNull(),
+    responsavelPadraoId: uuid("responsavel_padrao_id").references(() => usuarios.id),
+    ativo: boolean("ativo").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("uq_pos_venda_playbook").on(table.organizacaoId, table.familia, table.tipo)],
+);
+
+export const posVendaPlaybookPassos = pgTable(
+  "pos_venda_playbook_passos",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    playbookId: uuid("playbook_id").references(() => posVendaPlaybooks.id, { onDelete: "cascade" }).notNull(),
+    passo: text("passo").notNull(),
+    ordem: integer("ordem").notNull(),
+    titulo: text("titulo").notNull(),
+    playbook: text("playbook").default("").notNull(),
+    itens: jsonb("itens").default([]).notNull(),
+    prazoDias: integer("prazo_dias").default(0).notNull(),
+    slaHoras: integer("sla_horas"),
+    prioridade: text("prioridade").default("media").notNull(),
+    condicao: jsonb("condicao"),
+    bloco: text("bloco").notNull(),
+    itensCondicionais: jsonb("itens_condicionais").default([]).notNull(),
+    varianteUpgrade: jsonb("variante_upgrade"),
+    ativo: boolean("ativo").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_pos_venda_playbook_passo").on(table.playbookId, table.passo),
+    index("idx_pos_venda_passos_playbook").on(table.playbookId, table.ordem),
+  ],
+);
+
+export const posVendaEsperas = pgTable(
+  "pos_venda_esperas",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizacaoId: uuid("organizacao_id").references(() => organizacoes.id).notNull(),
+    fulfillmentId: uuid("fulfillment_id").references(() => fulfillments.id, { onDelete: "cascade" }).notNull(),
+    motivo: text("motivo").notNull(), // cliente | operadora | interno
+    inicio: timestamp("inicio", { withTimezone: true }).defaultNow().notNull(),
+    fim: timestamp("fim", { withTimezone: true }),
+    detalhe: text("detalhe"),
+    iniciadaPor: uuid("iniciada_por").references(() => usuarios.id),
+    encerradaPor: uuid("encerrada_por").references(() => usuarios.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_pos_venda_espera_aberta").on(table.fulfillmentId).where(sql`fim IS NULL`),
+    index("idx_pos_venda_esperas_fulfillment").on(table.organizacaoId, table.fulfillmentId, table.inicio),
+  ],
+);
+
 // Materialização relacional do formulário público de implantação PABX
 // (20/08, pedido Kauã: "não deixar só no jsonb invisível"). O jsonb bruto em
 // `fulfillment_formularios.respostas` continua sendo gravado e É a fonte de

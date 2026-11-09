@@ -1,0 +1,67 @@
+/**
+ * Montagem comum ao projeto e ao board: relógios, ordem das tarefas, progresso.
+ * Aqui mora a decisão de COMO preencher quando o dado não existe (projeto anterior ao motor).
+ */
+import { sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import type { Familia, Relogios, TarefaDoProjeto } from "./contrato";
+import type { LinhaBase } from "./leitura-base";
+import type { PlaybookDoMotor } from "./playbook";
+import type { TarefaComProjeto } from "./tarefas-do-projeto";
+import { calcularRelogios, dataDe, estadoDoProjeto, type PeriodoDeEspera } from "./regras";
+
+/** Prazo padrão por família (contrato.ts: 15 Callface AI, 30 White Label, 25 PABX). Só entra sem playbook nem `due_at`. */
+export const PRAZO_PADRAO: Record<Familia, number> = { CALLFACE_AI: 15, WHITE_LABEL: 30, PABX: 25 };
+
+export function prazoDoProjeto(l: LinhaBase, playbook: PlaybookDoMotor | null): number {
+  const entrou = dataDe(l.entrouEm);
+  const due = dataDe(l.dueAt);
+  if (entrou && due && due > entrou) return Math.max(1, Math.round((due.getTime() - entrou.getTime()) / 86_400_000));
+  return playbook?.prazoTotalDias ?? PRAZO_PADRAO[l.familia];
+}
+
+export function relogiosDe(l: LinhaBase, playbook: PlaybookDoMotor | null, esperas: PeriodoDeEspera[], agora: Date): Relogios {
+  const entrou = dataDe(l.entrouEm) ?? agora;
+  return calcularRelogios({ entrouEm: entrou, concluidoEm: dataDe(l.concluidoEm), agora, prazoDias: prazoDoProjeto(l, playbook), esperas });
+}
+
+/** Tarefas na ordem do playbook (passo desconhecido vai depois, por data de criação). */
+export function ordenarTarefas(brutas: TarefaComProjeto[], playbook: PlaybookDoMotor | null, condicional: (passo: string) => boolean = () => false): TarefaDoProjeto[] {
+  const ordemDe = new Map((playbook?.passos ?? []).map((p) => [p.passo, p.ordem]));
+  const sorted = [...brutas].sort((a, b) => {
+    const oa = ordemDe.get(a.passo) ?? Number.MAX_SAFE_INTEGER, ob = ordemDe.get(b.passo) ?? Number.MAX_SAFE_INTEGER;
+    return oa - ob || (a.criadaEm?.getTime() ?? 0) - (b.criadaEm?.getTime() ?? 0);
+  });
+  return sorted.map((t, i) => ({ ...t.tarefa, ordem: ordemDe.get(t.passo) ?? 1000 + i, condicional: condicional(t.passo) }));
+}
+
+export const seAplica = (t: Pick<TarefaDoProjeto, "estado">) => t.estado !== "NAO_SE_APLICA";
+
+/**
+ * Progresso 0..1 sobre as tarefas que se aplicam. Sem nenhuma tarefa (projeto anterior ao motor) cai no
+ * checklist de `fulfillment_itens`; sem nem isso, concluído = 1 e o resto = 0 (a tela sabe que há 0 tarefas).
+ */
+export function progressoDe(tarefas: Array<Pick<TarefaDoProjeto, "estado">>, itens: { feitos: number; total: number } | undefined, concluido: boolean): number {
+  const aplicam = tarefas.filter(seAplica);
+  if (aplicam.length > 0) return Math.round((aplicam.filter((t) => t.estado === "CONCLUIDA").length / aplicam.length) * 100) / 100;
+  if (itens && itens.total > 0) return Math.round((itens.feitos / itens.total) * 100) / 100;
+  return concluido ? 1 : 0;
+}
+
+export async function itensDeChecklist(organizacaoId: string, ids: string[]): Promise<Map<string, { feitos: number; total: number }>> {
+  const m = new Map<string, { feitos: number; total: number }>();
+  if (ids.length === 0) return m;
+  const r = await db.execute<{ id: string; feitos: number; total: number }>(sql`
+    SELECT fulfillment_id::text AS id, count(*) FILTER (WHERE status = 'DONE')::int AS feitos, count(*)::int AS total
+      FROM fulfillment_itens
+     WHERE organizacao_id = ${organizacaoId}::uuid AND fulfillment_id IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})
+     GROUP BY 1`);
+  for (const x of r) m.set(x.id, { feitos: x.feitos, total: x.total });
+  return m;
+}
+
+export const estadoDe = (l: LinhaBase, esperas: PeriodoDeEspera[]) => estadoDoProjeto(l.status, esperas.some((e) => e.fim == null));
+
+/** O cliente é quem segura a bola agora? Espera registrada OU status legado de cliente (antes do registro existir). */
+export const aguardandoCliente = (l: LinhaBase, esperas: PeriodoDeEspera[]) =>
+  esperas.some((e) => e.fim == null && e.motivo === "cliente") || l.status === "WAITING_CUSTOMER" || l.status === "BLOCKED_CUSTOMER";

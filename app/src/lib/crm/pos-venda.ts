@@ -48,6 +48,7 @@ import {
   ASSISTANT_CHECKLIST,
   type ChecklistSeed,
 } from "@/lib/crm/pos-venda-checklists";
+import { prepararProjeto } from "@/lib/pos-venda/motor";
 
 export type TrilhaPosGanho =
   | "onboarding"
@@ -344,6 +345,15 @@ export async function criarPosVendaDoNegocio(
     // legado continua criando SÓ a jornada de onboarding — quem cria as duas
     // é `avaliarCondicaoDeGanho`, pela política da oferta. Este adaptador
     // morre na fase 17, quando `negocios.ts` passar pelo canônico.
+    const [opp] = await db.execute<{ id: string; ja_tem: boolean }>(sql`
+      SELECT o.id::text,
+             EXISTS (SELECT 1 FROM fulfillments f WHERE f.oportunidade_id = o.id AND f.service_family = ${familia}
+                       AND f.tipo = 'ONBOARDING' AND f.cycle_number = 1) AS ja_tem
+        FROM oportunidades o
+       WHERE o.negocio_id_legado = ${negocioId}::uuid AND o.organizacao_id = ${negocio.organizacaoId}::uuid
+       ORDER BY o.created_at LIMIT 1`);
+    const oportunidadeLivre = opp && !opp.ja_tem ? opp.id : null;
+
     const [fulfillment] = await db
       .insert(fulfillments)
       .values({
@@ -355,6 +365,9 @@ export async function criarPosVendaDoNegocio(
         status: "NOT_STARTED",
         startedAt: new Date(),
         responsavelId: regra.automacaoInicial ? negocio.responsavelId : null,
+        // A venda que originou a jornada: sem ela o motor não acha o escopo vendido. Só quando a venda ainda não tem
+        // jornada desta família (índice `uq_fulfillment_venda`); senão fica nulo, como sempre foi neste caminho.
+        oportunidadeId: oportunidadeLivre,
       })
       .onConflictDoNothing({
         target: [fulfillments.servicoCanonicoId, fulfillments.tipo, fulfillments.cycleNumber],
@@ -400,7 +413,10 @@ export async function criarPosVendaDoNegocio(
     // Primeira tarefa real. Só nas famílias com automação inicial: PABX é
     // false de propósito (o fluxo dele começa pelo formulário de
     // implantação, não por uma reunião genérica).
-    if (regra.automacaoInicial && regra.tarefaInicial && negocio.leadId) {
+    // O motor (lib/pos-venda/motor.ts) preenche o projeto e cria as tarefas do playbook. Sem playbook ele devolve
+    // `aplicado: false` e vale o comportamento de sempre: a primeira tarefa abaixo.
+    const motor = await prepararProjeto({ organizacaoId: negocio.organizacaoId, fulfillmentId: fulfillment.id });
+    if (!motor.aplicado && regra.automacaoInicial && regra.tarefaInicial && negocio.leadId) {
       await db.insert(tarefas).values({
         organizacaoId: negocio.organizacaoId,
         leadId: negocio.leadId,
