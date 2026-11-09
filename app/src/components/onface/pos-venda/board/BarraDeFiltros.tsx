@@ -141,26 +141,14 @@ export function BarraDeFiltros({
           </PopoverContent>
         </Popover>
 
-        <span className="pv-resultado" role="status">
-          {pendente ? <Loader2 className="animate-spin" aria-label="Atualizando" /> : null}
-          {total === universo ? <><b>{total}</b> {total === 1 ? "projeto" : "projetos"}</> : <><b>{total}</b> de {universo}</>}
-        </span>
-      </div>
-
-      <div className="pv-filtros pv-filtros-2">
-        <div className="pv-recortes" role="group" aria-label="Recortes rápidos">
-          {RECORTES.map((r) => {
-            const ligado = filtros.recorte === r.valor;
-            return (
-              <button key={r.valor} type="button" className="pv-chip" aria-pressed={ligado} onClick={() => ir({ recorte: ligado ? null : r.valor, estado: null })}>
-                {ligado ? <Check aria-hidden /> : null}
-                {r.rotulo}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="pv-leitura">
+        {/* Ordem e forma de ver sobem para esta linha, e a segunda linha deixa
+            de existir. Os recortes de um toque que moravam nela saíram daqui
+            de vez: eles agora são os chips logo abaixo, que carregam a
+            CONTAGEM de cada um. Dois controles para o mesmo filtro, um com
+            número e outro sem, é pior do que um só — e era o que fazia esta
+            tela gastar quatro faixas de controle antes da primeira linha de
+            dado, contra uma do Pipeline. */}
+        <div className="pv-leitura-vista">
           <Select value={vista.ordem} onValueChange={(v) => ir({}, { ...vista, ordem: v as Ordem })}>
             <SelectTrigger className="pv-gatilho pv-gatilho-ordem" aria-label="Ordenar projetos">
               <SelectValue>{ORDENS.find((o) => o.valor === vista.ordem)?.rotulo}</SelectValue>
@@ -174,6 +162,11 @@ export function BarraDeFiltros({
             <button type="button" className="pv-segmento" aria-pressed={vista.visao === "cartoes"} aria-label="Ver em cartões" title="Cartões" onClick={() => ir({}, { ...vista, visao: "cartoes" })}><LayoutGrid aria-hidden /></button>
           </div>
         </div>
+
+        <span className="pv-resultado" role="status">
+          {pendente ? <Loader2 className="animate-spin" aria-label="Atualizando" /> : null}
+          {total === universo ? <><b>{total}</b> {total === 1 ? "projeto" : "projetos"}</> : <><b>{total}</b> de {universo}</>}
+        </span>
       </div>
 
       {ativosLigados.length > 0 ? (
