@@ -27,14 +27,26 @@
  */
 import { assinaturaDoCrm, faturaDoCrm } from "@/lib/financeiro/espelho-crm";
 import { decomporVenda } from "@/lib/relatorios/receita-fechada-shared";
+import { ehAutoatendimento, nomeDoVendedor } from "@/lib/relatorios/autoatendimento";
 import { db } from "@/lib/db";
 import { negocios, leads, empresas, usuarios, contratos, propostas, assinaturas, statusChanges, faturas } from "@/lib/db/schema";
 import { eq, and, gte, lt, inArray, sql, asc, desc } from "drizzle-orm";
 
 const num = (v: unknown): number => Number(v ?? 0) || 0;
 
+/**
+ * AUTOATENDIMENTO (self-checkout): o cliente assinou sozinho na plataforma e
+ * pagou no Stripe, sem passar pelo comercial. É receita como qualquer outra
+ * (decisão do Scott, 09/11/2026) e precisa aparecer no fechamento e na meta do
+ * mês — só não tem vendedor, porque não houve vendedor.
+ *
+ * Fonte única do rótulo e da chave: `lib/relatorios/autoatendimento.ts`.
+ */
+
 export interface VendaFechada {
   negocioId: string;
+  /** Venda nascida no self-checkout: sem closer, sem SDR, sem proposta. */
+  autoatendimento?: boolean;
   ganhoAt: string | null;
   empresaId: string | null;
   empresaNome: string | null;
@@ -128,12 +140,19 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
   // achado de auditoria, não corrigido aqui (fora de escopo tocar o schema
   // compartilhado por uma feature read-only). Busca via SQL cru, isolado.
   const familiaPorNegocio = new Map<string, string | null>();
+  // `origem_negocio` entra na MESMA busca: venda de autoatendimento (self-checkout)
+  // não tem closer, e sem isso a coluna sairia "—" como se faltasse dado. Ver
+  // AUTOATENDIMENTO abaixo.
+  const origemPorNegocio = new Map<string, string | null>();
   if (negociosGanhos.length > 0) {
     const negocioIdsIniciais = negociosGanhos.map((n) => n.id);
-    const familiaRows = await db.execute<{ id: string; service_family: string | null }>(sql`
-      SELECT id, service_family FROM negocios WHERE id IN (${sql.join(negocioIdsIniciais.map((id) => sql`${id}`), sql`,`)})
+    const familiaRows = await db.execute<{ id: string; service_family: string | null; origem_negocio: string | null }>(sql`
+      SELECT id, service_family, origem_negocio FROM negocios WHERE id IN (${sql.join(negocioIdsIniciais.map((id) => sql`${id}`), sql`,`)})
     `);
-    for (const r of familiaRows) familiaPorNegocio.set(r.id, r.service_family);
+    for (const r of familiaRows) {
+      familiaPorNegocio.set(r.id, r.service_family);
+      origemPorNegocio.set(r.id, r.origem_negocio);
+    }
   }
 
   if (negociosGanhos.length === 0) return [];
@@ -267,7 +286,14 @@ export async function listarVendasFechadas(orgId: string, since: Date, until: Da
       contatoNome: lead ? `${lead.nome}${lead.sobrenome ? ` ${lead.sobrenome}` : ""}` : null,
       contatoEmail: lead?.email ?? null,
       closerId: n.responsavelId,
-      closerNome: n.responsavelId ? usuarioPorId.get(n.responsavelId) ?? null : null,
+      // Venda de autoatendimento não tem closer porque ninguém vendeu: o cliente
+      // assinou sozinho e pagou. "—" aqui lia como dado faltando; o rótulo diz o
+      // que de fato aconteceu, sem inventar uma pessoa. `closerId` segue null.
+      closerNome: nomeDoVendedor(
+        n.responsavelId ? usuarioPorId.get(n.responsavelId) : null,
+        origemPorNegocio.get(n.id),
+      ),
+      autoatendimento: ehAutoatendimento(origemPorNegocio.get(n.id)),
       sdrId: evento?.usuario_id ?? null,
       sdrNome,
       sdrEvidencia: evento ? `evento reunião agendada em ${new Date(evento.created_at).toLocaleDateString("pt-BR")}` : "sem evento de agendamento encontrado — atribuição indisponível",

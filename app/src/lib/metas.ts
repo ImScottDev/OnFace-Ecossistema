@@ -3,6 +3,7 @@ import { metas, negocios, leads, contratos, usuarios, statusChanges } from "@/li
 import { and, eq, gte, lt, count, sql, isNotNull, inArray } from "drizzle-orm";
 import { monthRange, metaTipoPorPapel, type MetaTipo, PAPEIS_QUE_SOMAM_NA_META } from "@/lib/metas-shared";
 import { VALOR_TOTAL_VENDIDO } from "@/lib/relatorios/receita-fechada";
+import { ORIGEM_AUTOATENDIMENTO } from "@/lib/relatorios/autoatendimento";
 
 // Reexporta a parte pura pra quem importa de "@/lib/metas" no servidor.
 export { META_TIPOS, metaTipoPorPapel, monthRange } from "@/lib/metas-shared";
@@ -102,12 +103,19 @@ export async function getMetaComercialAgregada(organizacaoId: string, periodo: s
   const usadas = doTipoNovo.length > 0 ? doTipoNovo : metaRows;
   const valorAlvo = usadas.reduce((s, r) => s + (parseFloat(String(r.v)) || 0), 0);
 
+  // AUTOATENDIMENTO entra no realizado do time (Scott, 09/11/2026): a venda de
+  // self-checkout não tem responsável porque ninguém vendeu, mas é faturamento do
+  // mês igual às outras — ficar de fora fazia o placar do time mostrar menos
+  // dinheiro do que entrou. Só o REALIZADO muda; o alvo continua sendo a soma das
+  // metas das pessoas, que é o que elas assumiram. O detalhe por vendedor
+  // (`getRealizadoMeta`) segue sem isto, de propósito: ninguém leva no placar
+  // pessoal uma venda que não fez.
   const [r] = await db
     .select({ total: VALOR_FECHADO })
     .from(negocios)
     .where(and(
       eq(negocios.organizacaoId, organizacaoId),
-      inArray(negocios.responsavelId, ids),
+      sql`(${negocios.responsavelId} IN (${sql.join(ids.map((id) => sql`${id}`), sql`,`)}) OR ${negocios.origemNegocio} = ${ORIGEM_AUTOATENDIMENTO})`,
       eq(negocios.status, "ganho"),
       gte(negocios.ganhoAt, inicio),
       lt(negocios.ganhoAt, fim),

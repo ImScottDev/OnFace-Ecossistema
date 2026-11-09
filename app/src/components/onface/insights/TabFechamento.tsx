@@ -24,7 +24,7 @@ import { Radiogroup } from "@/components/onface/ds/escolha";
 interface VendaFechada {
   negocioId: string; ganhoAt: string | null; empresaId: string | null; empresaNome: string | null;
   contatoId: string | null; contatoNome: string | null;
-  closerNome: string | null; sdrNome: string | null; sdrEvidencia: string;
+  closerNome: string | null; sdrNome: string | null; sdrEvidencia: string; autoatendimento?: boolean;
   serviceFamily: string | null; tipoReceita: string | null;
   mrrFechado: number; valorTotal: number;
   /** Booking da venda (recorrente + setup), decidido no servidor. */

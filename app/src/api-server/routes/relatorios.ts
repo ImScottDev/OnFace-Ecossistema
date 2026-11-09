@@ -31,6 +31,7 @@ import {
   getStatusAtualLeadsPagos, getReceitaAtribuida, getRoasCiclo, getPipelineAbertoPago,
 } from "@/lib/relatorios/midia-paga";
 import { listarVendasFechadas, listarAgendasRealizadas, listarVendasAtribuidasSdr } from "@/lib/relatorios/fechamento-comercial";
+import { ORIGEM_AUTOATENDIMENTO, ROTULO_AUTOATENDIMENTO } from "@/lib/relatorios/autoatendimento";
 import ExcelJS from "exceljs";
 
 const app = new Hono();
@@ -1731,6 +1732,9 @@ app.get("/fechamento-comercial", async (c) => {
   // Opções reais pros dropdowns — derivadas do próprio período (nunca lista
   // fixa; se alguém não vendeu no mês, não aparece no filtro daquele mês).
   const closersDisponiveis = [...new Map(vendasTodas.filter((v) => v.closerId).map((v) => [v.closerId!, v.closerNome ?? "—"])).entries()];
+  // Autoatendimento não é um usuário, mas é um "quem vendeu" legítimo no filtro:
+  // sem ele, a única forma de isolar a receita de self-checkout seria no Excel.
+  if (vendasTodas.some((v) => v.autoatendimento)) closersDisponiveis.push([ORIGEM_AUTOATENDIMENTO, ROTULO_AUTOATENDIMENTO]);
   const sdrsDisponiveis = [...new Map(agendasTodas.map((a) => [a.sdrId ?? "ia", a.sdrNome ?? "—"])).entries()];
   const familiasDisponiveis = [...new Set(vendasTodas.map((v) => v.serviceFamily).filter((f): f is string => !!f))];
   const empresasDisponiveis = [...new Map(vendasTodas.filter((v) => v.empresaId).map((v) => [v.empresaId!, v.empresaNome ?? "—"])).entries()];
@@ -1745,11 +1749,14 @@ app.get("/fechamento-comercial", async (c) => {
   const totalAvulso = vendas.reduce((s, v) => s + v.valorAvulso, 0);
   const porCloser = new Map<string, { nome: string; total: number; qtd: number }>();
   for (const v of vendas) {
-    if (!v.closerId) continue;
-    const cur = porCloser.get(v.closerId) ?? { nome: v.closerNome ?? "—", total: 0, qtd: 0 };
+    // Venda de autoatendimento entra no resumo com chave própria: sem isso, a
+    // soma dos chips não fecha com o total vendido da tela.
+    const chave = v.closerId ?? (v.autoatendimento ? ORIGEM_AUTOATENDIMENTO : null);
+    if (!chave) continue;
+    const cur = porCloser.get(chave) ?? { nome: v.closerNome ?? "—", total: 0, qtd: 0 };
     cur.total += v.valorVendido;
     cur.qtd += 1;
-    porCloser.set(v.closerId, cur);
+    porCloser.set(chave, cur);
   }
   const porSdr = new Map<string, { nome: string; agendadas: number; realizadas: number }>();
   for (const a of agendas) {
@@ -1791,13 +1798,15 @@ app.get("/fechamento-comercial", async (c) => {
 // Filtro compartilhado entre a tela e a exportação — ÚNICO lugar que decide
 // "essa linha entra ou não" pros 3 blocos, pra nunca divergir (pedido
 // explícito: exportação não pode vir de query diferente da tela).
-function aplicarFiltrosFechamento<T extends { closerId?: string | null; sdrId: string | null; serviceFamily?: string | null; empresaId?: string | null }>(
+function aplicarFiltrosFechamento<T extends { closerId?: string | null; sdrId: string | null; serviceFamily?: string | null; empresaId?: string | null; autoatendimento?: boolean }>(
   itens: T[],
   filtros: { closerId: string | null; sdrId: string | null; familia: string | null; empresaId: string | null },
   opts?: { sdrComoAgendaKey?: boolean },
 ): T[] {
   return itens.filter((v) => {
-    if (filtros.closerId && v.closerId !== filtros.closerId) return false;
+    // Chave sintética do autoatendimento: não existe usuário com esse id.
+    if (filtros.closerId === ORIGEM_AUTOATENDIMENTO) { if (!v.autoatendimento) return false; }
+    else if (filtros.closerId && v.closerId !== filtros.closerId) return false;
     if (filtros.familia && v.serviceFamily !== filtros.familia) return false;
     if (filtros.empresaId && v.empresaId !== filtros.empresaId) return false;
     if (filtros.sdrId) {

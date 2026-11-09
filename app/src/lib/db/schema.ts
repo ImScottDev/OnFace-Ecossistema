@@ -529,7 +529,9 @@ export const negocios = pgTable(
     pipedriveId: text("pipedrive_id"),
     motivoPerda: text("motivo_perda"),
     motivoPerdaDetalhe: text("motivo_perda_detalhe"),
-    origemNegocio: text("origem_negocio").default("novo").notNull(), // 'novo' | 'carteira'
+    // 'novo' | 'carteira' | 'self_checkout' (venda nascida no autoatendimento da
+    // plataforma: sem closer, sem proposta — ver lib/relatorios/autoatendimento.ts)
+    origemNegocio: text("origem_negocio").default("novo").notNull(),
     // Commercial motion (item 4 do gap de carteira, 20/08): NEW_BUSINESS |
     // EXPANSION | RENEWAL | REACTIVATION. Backfill real na migração: só
     // origemNegocio='carteira' virou REACTIVATION (sinal real de que o
