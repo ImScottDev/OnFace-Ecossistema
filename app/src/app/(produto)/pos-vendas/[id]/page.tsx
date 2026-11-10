@@ -8,7 +8,7 @@ import type { AcoesDaTela } from "@/components/onface/pos-venda/projeto/acoes";
 import "@/components/onface/pos-venda/pos-venda.css";
 import {
   pvAdicionarNota, pvAtribuirTarefa, pvConcluirTarefa, pvEncerrarEspera, pvEnviarFormulario, pvEscalarParaImplantacao,
-  pvFazerHandoff, pvMarcarEspera, pvMarcarItem, pvReabrirTarefa, pvRemarcarTarefa, pvSalvarLevantamento,
+  pvFazerHandoff, pvMarcarEspera, pvTrocarResponsavel, pvMarcarItem, pvReabrirTarefa, pvRemarcarTarefa, pvSalvarLevantamento,
 } from "../actions";
 import { lerEquipe, lerProjeto } from "../fonte";
 
@@ -42,6 +42,7 @@ export default async function ProjetoPage({ params, searchParams }: { params: Pr
     reabrirTarefa: pvReabrirTarefa.bind(null, id),
     marcarItem: pvMarcarItem.bind(null, id),
     atribuirTarefa: pvAtribuirTarefa.bind(null, id),
+    trocarResponsavel: pvTrocarResponsavel.bind(null, id),
     remarcarTarefa: pvRemarcarTarefa.bind(null, id),
     marcarEspera: pvMarcarEspera.bind(null, id),
     encerrarEspera: pvEncerrarEspera.bind(null, id),

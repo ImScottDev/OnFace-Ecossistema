@@ -251,3 +251,7 @@ export async function pvEscalarParaImplantacao(projetoId: string) {
 export async function pvFazerHandoff(projetoId: string) {
   return comProjeto(projetoId, (a) => acoes.fazerHandoff(a, projetoId));
 }
+export async function pvTrocarResponsavel(projetoId: string, usuarioId: string | null) {
+  if (usuarioId !== null && !ID.test(usuarioId)) return { ok: false, erro: "Pessoa inválida." } satisfies ResultadoOnb;
+  return comProjeto(projetoId, (a) => acoes.trocarResponsavel(a, projetoId, usuarioId));
+}

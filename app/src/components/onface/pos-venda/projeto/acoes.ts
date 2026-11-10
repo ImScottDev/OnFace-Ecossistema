@@ -14,6 +14,7 @@ export type AcoesDaTela = {
   reabrirTarefa(tarefaId: string): Promise<ResultadoDaAcao>;
   marcarItem(itemId: string, feito: boolean): Promise<ResultadoDaAcao>;
   atribuirTarefa(tarefaId: string, usuarioId: string | null): Promise<ResultadoDaAcao>;
+  trocarResponsavel(usuarioId: string | null): Promise<ResultadoDaAcao>;
   /** `dia` é AAAA-MM-DD no calendário de São Paulo. */
   remarcarTarefa(tarefaId: string, dia: string): Promise<ResultadoDaAcao>;
   marcarEspera(motivo: MotivoDaEspera, detalhe: string): Promise<ResultadoDaAcao>;

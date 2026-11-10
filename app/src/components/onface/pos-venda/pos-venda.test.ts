@@ -27,7 +27,7 @@ const noRoteador = (el: Parameters<typeof h>[1] extends never ? never : ReturnTy
 const SEM_FILTRO: FiltrosDoBoard = { tipo: null, familia: null, responsavelId: null, estado: null, recorte: null, busca: null };
 const ok = async () => ({ ok: true as const });
 const ACOES: AcoesDaTela = {
-  concluirTarefa: ok, reabrirTarefa: ok, marcarItem: ok, atribuirTarefa: ok, remarcarTarefa: ok, marcarEspera: ok,
+  concluirTarefa: ok, reabrirTarefa: ok, marcarItem: ok, atribuirTarefa: ok, trocarResponsavel: ok, remarcarTarefa: ok, marcarEspera: ok,
   encerrarEspera: ok, adicionarNota: ok, salvarLevantamento: ok, enviarFormulario: ok, escalarParaImplantacao: ok, fazerHandoff: ok,
 };
 

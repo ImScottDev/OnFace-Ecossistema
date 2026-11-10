@@ -79,6 +79,29 @@ export const acoes = {
     const r = await entregarParaImplantacao({ organizacaoId: a.organizacaoId, fulfillmentId: projetoId, atorId: a.userId });
     return r.ok ? { ok: true, dados: undefined } : { ok: false, erro: r.erro ?? "A escalada foi recusada.", codigo: r.codigo };
   },
+  /**
+   * Troca o dono do projeto (spec §6.4, aceite 4). As tarefas ABERTAS do playbook vão junto — concluída fica com
+   * quem fez. O fato vai para a linha do tempo com o valor anterior.
+   */
+  trocarResponsavel: async (a: Ator, projetoId: string, usuarioId: string | null): Promise<Resultado> => {
+    const [antes] = await db.execute<{ nome: string | null }>(sql`
+      SELECT u.nome FROM fulfillments f LEFT JOIN usuarios u ON u.id = f.responsavel_id
+       WHERE f.id = ${projetoId}::uuid AND f.organizacao_id = ${a.organizacaoId}::uuid`);
+    if (!antes) return { ok: false, erro: "Projeto não encontrado." };
+    const [novo] = usuarioId
+      ? await db.execute<{ nome: string }>(sql`SELECT nome FROM usuarios WHERE id = ${usuarioId}::uuid AND organizacao_id = ${a.organizacaoId}::uuid`)
+      : [{ nome: "ninguém" }];
+    if (!novo) return { ok: false, erro: "Essa pessoa não é da sua organização." };
+    await db.execute(sql`
+      UPDATE fulfillments SET responsavel_id = ${usuarioId}::uuid, updated_at = now()
+       WHERE id = ${projetoId}::uuid AND organizacao_id = ${a.organizacaoId}::uuid`);
+    await db.execute(sql`
+      UPDATE tarefas SET usuario_id = ${usuarioId}::uuid
+       WHERE organizacao_id = ${a.organizacaoId}::uuid AND status NOT IN ('concluida', 'cancelada')
+         AND chave_idempotencia LIKE ${`%:${projetoId}:%`}`);
+    await pv.adicionarNota(a, projetoId, `Responsável trocado para ${novo.nome}. Antes era ${antes.nome ?? "ninguém"}.`);
+    return { ok: true, dados: undefined };
+  },
   /** Encerra o projeto e registra no CS (spec §3.6: por enquanto o handoff é só o registro). A regra de quando pode é `permissoes.podeFazerHandoff`. */
   fazerHandoff: async (a: Ator, projetoId: string): Promise<Resultado> => {
     const p = await projetoCompleto(a.organizacaoId, projetoId);

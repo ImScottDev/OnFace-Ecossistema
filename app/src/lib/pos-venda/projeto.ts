@@ -102,7 +102,10 @@ export async function projetoCompleto(organizacaoId: string, projetoId: string, 
     tarefas,
     progresso: progressoDe(tarefas, checklist.get(l.id), estado === "CONCLUIDO"),
     checklist: itensLegados,
-    timeline, levantamento, notas, formulario, nps, retratoDeUso: retrato,
+    // Nota do time é evento do projeto (troca de responsável, handoff, combinado com o cliente): entra na linha do tempo.
+    timeline: [...timeline, ...notas.map((n) => ({ id: `nota:${n.id}`, em: n.em, tipo: "nota", titulo: n.texto, detalhe: null, autor: "time" as const, porQuem: n.por }))]
+      .sort((a, b) => b.em.getTime() - a.em.getTime()),
+    levantamento, notas, formulario, nps, retratoDeUso: retrato,
     herdadoDe: herdado.info,
     // Permissão por papel do usuário não cabe aqui: a assinatura (organizacao, projeto) não recebe o usuário.
     // Estes flags dizem se a AÇÃO faz sentido no estado atual; a ação confere o papel.

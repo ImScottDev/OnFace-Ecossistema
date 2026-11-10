@@ -1580,3 +1580,4 @@ a.pvp-atalho:focus-visible { outline: none; box-shadow: var(--pv-foco); }
   .pvm-linha { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); }
   .pvm-progresso, .pvm-prazo, .pvm-lado { grid-column: 2; grid-row: auto; }
 }
+.pv-resp-select { height: auto; padding: 0.125rem 0.5rem 0.125rem 0.125rem; border-radius: var(--pv-r-pill); }

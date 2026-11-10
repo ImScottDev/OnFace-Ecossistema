@@ -10,19 +10,20 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Hourglass, Rocket, Send } from "lucide-react";
 import { RadioGroup as RG } from "radix-ui";
-import type { MotivoDaEspera, Projeto } from "@/lib/pos-venda/contrato";
+import type { MotivoDaEspera, Projeto, Usuario } from "@/lib/pos-venda/contrato";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { dia, FAMILIAS, MOTIVOS, TIPO } from "../formatos";
-import { Avatar, MarcaDaFamilia, PilhaDeAvatares, PilulaDeEstado } from "../pecas";
+import { Avatar, MarcaDaFamilia, PilulaDeEstado } from "../pecas";
 import { useAcao, type AcoesDaTela } from "./acoes";
 
 const MOTIVOS_ORDEM: MotivoDaEspera[] = ["cliente", "operadora", "interno"];
 
-export function Cabecalho({ projeto, agora, acoes }: { projeto: Projeto; agora: Date; acoes: AcoesDaTela }) {
+export function Cabecalho({ projeto, agora, acoes, equipe = [] }: { projeto: Projeto; agora: Date; acoes: AcoesDaTela; equipe?: Usuario[] }) {
   const p = projeto;
   const [espera, setEspera] = useState(false);
   const [confirma, setConfirma] = useState<null | "escalar" | "handoff">(null);
@@ -76,7 +77,21 @@ export function Cabecalho({ projeto, agora, acoes }: { projeto: Projeto; agora: 
         <div className="pv-prop">
           <dt>Responsável</dt>
           <dd>
-            {p.responsavel ? (
+            {equipe.length > 0 && p.permissoes.podeConcluirTarefa ? (
+              <Select
+                value={p.responsavel?.id ?? "__ninguem"}
+                disabled={pendente}
+                onValueChange={(v) => rodar(() => acoes.trocarResponsavel(v === "__ninguem" ? null : v), "Responsável trocado. As tarefas abertas foram junto.")}
+              >
+                <SelectTrigger size="sm" aria-label="Responsável pelo projeto" className="pv-resp-select">
+                  <SelectValue>{p.responsavel ? <span className="pv-prop-pilula"><Avatar quem={p.responsavel} tamanho="sm" titulo={false} decorativo />{p.responsavel.nome}</span> : "Definir responsável"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectItem value="__ninguem">Sem responsável</SelectItem>
+                  {equipe.map((u) => <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : p.responsavel ? (
               <span className="pv-prop-pilula"><Avatar quem={p.responsavel} tamanho="sm" titulo={false} decorativo />{p.responsavel.nome}</span>
             ) : (
               <span className="pv-prop-pilula" data-vazio="true">Sem responsável</span>
@@ -99,18 +114,6 @@ export function Cabecalho({ projeto, agora, acoes }: { projeto: Projeto; agora: 
             {p.relogios.venceEm ? dia(p.relogios.venceEm, agora) : p.t0Em === null && p.familia === "PABX" ? "Começa no T0" : "Não definido"}
           </dd>
         </div>
-        <div className="pv-prop">
-          <dt>Contatos</dt>
-          <dd data-ausente={p.pessoas.length === 0 || undefined}>
-            {p.pessoas.length > 0 ? <PilhaDeAvatares pessoas={p.pessoas} max={4} /> : "Nenhum cadastrado"}
-          </dd>
-        </div>
-        {p.empresa.documento ? (
-          <div className="pv-prop">
-            <dt>Documento</dt>
-            <dd className="pv-num">{p.empresa.documento}</dd>
-          </div>
-        ) : null}
       </dl>
 
       <DialogoDeEspera

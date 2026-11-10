@@ -53,7 +53,7 @@ export function ProjetoTela({ projeto, equipe, agora, acoes, abaInicial }: { pro
       </aside>
 
       <div className="pvp-trabalho">
-        <Cabecalho projeto={projeto} agora={agora} acoes={acoes} />
+        <Cabecalho projeto={projeto} agora={agora} acoes={acoes} equipe={equipe} />
         <Indicadores projeto={projeto} agora={agora} acoes={acoes} />
 
         <T.Root value={aba} onValueChange={trocar} activationMode="automatic">

@@ -17,13 +17,14 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tarefas, tarefaSubtarefas, usuarios, notas, fulfillments, servicosCanonicos, empresas } from "@/lib/db/schema";
+import { tarefas, tarefaSubtarefas, usuarios, notas, empresas } from "@/lib/db/schema";
 import { alterarTarefa } from "@/lib/tarefas/portas";
 import { alterarSubtarefa } from "@/lib/tarefas/detalhe";
 import type { Levantamento, Resultado, Usuario } from "./contrato";
 import { iniciaisDe } from "./regras";
 import type { MotivoDaEspera } from "./contrato";
 import { iniciarEspera, encerrarEspera } from "./espera";
+import { linhasBase } from "./leitura-base";
 
 export interface AtorPV {
   organizacaoId: string;
@@ -144,13 +145,11 @@ export async function equipeDaOrganizacao(organizacaoId: string): Promise<Usuari
 }
 
 /** A empresa do projeto. A nota pendura nela, e é por isso que aparece no Cliente 360. */
+/** A mesma resolução da leitura (`linhasBase`): serviço, depois lead, depois oportunidade, sempre a canônica.
+ *  Ler só `servicos_canonicos.empresa_id` deixava nota e levantamento sem onde gravar quando o serviço não tinha empresa. */
 async function empresaDoProjeto(organizacaoId: string, projetoId: string): Promise<string | null> {
-  const [r] = await db.select({ empresaId: servicosCanonicos.empresaId })
-    .from(fulfillments)
-    .innerJoin(servicosCanonicos, eq(servicosCanonicos.id, fulfillments.servicoCanonicoId))
-    .where(and(eq(fulfillments.id, projetoId), eq(fulfillments.organizacaoId, organizacaoId)))
-    .limit(1);
-  return r?.empresaId ?? null;
+  const [l] = await linhasBase(organizacaoId, [projetoId]);
+  return l?.empresa.resolvida ? l.empresa.id : null;
 }
 
 export async function adicionarNota(a: AtorPV, projetoId: string, texto: string): Promise<Resultado<{ id: string }>> {
