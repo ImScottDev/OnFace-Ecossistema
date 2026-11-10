@@ -1581,3 +1581,6 @@ a.pvp-atalho:focus-visible { outline: none; box-shadow: var(--pv-foco); }
   .pvm-progresso, .pvm-prazo, .pvm-lado { grid-column: 2; grid-row: auto; }
 }
 .pv-resp-select { height: auto; padding: 0.125rem 0.5rem 0.125rem 0.125rem; border-radius: var(--pv-r-pill); }
+/* A caixa do checklist herdava `border-input` do tema, quase branca sobre a folha: ninguém via onde marcar. */
+.pv-check-item [data-slot="checkbox"] { border: 1.5px solid var(--pv-borda-forte); background: var(--pv-superficie); }
+.pv-check-item [data-slot="checkbox"]:hover:not(:disabled) { border-color: var(--pv-tinta-suave); }

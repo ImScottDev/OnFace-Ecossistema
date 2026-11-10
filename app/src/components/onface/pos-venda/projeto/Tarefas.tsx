@@ -20,6 +20,7 @@ import type { TarefaDoProjeto, Usuario } from "@/lib/pos-venda/contrato";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { usePecas } from "@/components/onface/proto/pecas-host";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { chaveDoDia, dia, prazo, primeiroNome } from "../formatos";
@@ -169,6 +170,7 @@ function LinhaDeTarefa({
   const p = prazo(t.venceEm, agora);
   const feitos = t.itens.filter((i) => i.feito).length;
   const remarcada = t.venceEmOriginal && t.venceEm && chaveDoDia(t.venceEmOriginal) !== chaveDoDia(t.venceEm);
+  const pecas = usePecas();
   const [calAberto, setCalAberto] = useState(false);
   const [rascunho, setRascunho] = useState<Date | undefined>(undefined);
 
@@ -246,6 +248,10 @@ function LinhaDeTarefa({
               ) : (
                 <Button size="sm" onClick={aoConcluir}><Check aria-hidden /> Concluir tarefa</Button>
               )}
+              {/* A gaveta de Atividades do produto: comentário com @, anexo, subtarefa e histórico (spec §2.4). */}
+              <Button variant="outline" size="sm" onClick={() => pecas.abrir("verAtividade", "p:" + t.id)}>
+                <MessageSquare aria-hidden /> Comentar e anexar{t.comentarios > 0 ? ` · ${t.comentarios}` : ""}
+              </Button>
 
               {!feita ? (
                 <Popover open={calAberto} onOpenChange={(a) => { setCalAberto(a); if (a) setRascunho(paraSeletor(t.venceEm)); }}>
