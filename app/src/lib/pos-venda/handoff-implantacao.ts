@@ -18,6 +18,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { publicarEvento } from "@onface/platform-events";
+import { prepararProjeto } from "@/lib/pos-venda/motor";
 
 export type MotivoBloqueio =
   | "onboarding_nao_encontrado"
@@ -68,12 +69,19 @@ async function carregar(organizacaoId: string, fulfillmentId: string): Promise<L
             OR EXISTS (SELECT 1 FROM fulfillment_itens i
                         WHERE i.fulfillment_id = f.id AND i.completed_at IS NOT NULL
                           AND (lower(i.titulo) LIKE '%kickoff%' OR lower(i.workstream) LIKE '%kickoff%'))
+            -- Onboarding com playbook (PABX/WL desde 0145): o passo de kickoff concluído é o fato.
+            OR EXISTS (SELECT 1 FROM tarefas t
+                        WHERE t.organizacao_id = f.organizacao_id AND t.status = 'concluida'
+                          AND t.chave_idempotencia = 'ONBOARDING:' || f.id::text || ':kickoff')
            ) AS tem_kickoff,
            (EXISTS (SELECT 1 FROM file_links fl
                      WHERE fl.entity_type = 'fulfillment' AND fl.entity_id = f.id)
             OR EXISTS (SELECT 1 FROM fulfillment_itens i
                         WHERE i.fulfillment_id = f.id AND i.completed_at IS NOT NULL
                           AND (lower(i.titulo) LIKE '%material%' OR lower(i.titulo) LIKE '%formul%'))
+            OR EXISTS (SELECT 1 FROM tarefas t
+                        WHERE t.organizacao_id = f.organizacao_id AND t.status = 'concluida'
+                          AND t.chave_idempotencia = 'ONBOARDING:' || f.id::text || ':validacao_materiais')
            ) AS material_enviado,
            f.responsavel_id::text AS implantador_id,
            (SELECT f2.id::text FROM fulfillments f2
@@ -154,11 +162,11 @@ export async function entregarParaImplantacao(params: {
       RETURNING id::text`);
     if (!f) return null;
 
-    // O onboarding de transição cumpriu o papel dele: entregar. Ele fecha aqui,
-    // e o histórico fica — a implantação aponta para o mesmo serviço.
+    // Spec 09/11 §4.2: o onboarding NÃO fecha na escalada. Ele segue com o CS, "em implantação", e
+    // retoma em treinamento e handoff quando a implantação terminar. Só marca que começou.
     await tx.execute(sql`
-      UPDATE fulfillments SET status = 'COMPLETED', completed_at = now(), updated_at = now()
-       WHERE id = ${l.id}::uuid AND status <> 'COMPLETED'`);
+      UPDATE fulfillments SET status = 'IN_PROGRESS', updated_at = now()
+       WHERE id = ${l.id}::uuid AND status = 'NOT_STARTED'`);
 
     await publicarEvento(tx as never, sql as never, {
       organizacaoId: l.organizacao_id,
@@ -182,5 +190,8 @@ export async function entregarParaImplantacao(params: {
     const rel = await carregar(params.organizacaoId, params.fulfillmentId);
     return { ok: true, implantacaoId: rel?.implantacao_existente ?? undefined, jaExistia: true };
   }
+  // A implantação nasce com as tarefas do playbook dela (provisionar, domínio, portabilidade...).
+  await prepararProjeto({ organizacaoId: params.organizacaoId, fulfillmentId: criada })
+    .catch((e) => console.error(`[handoff] playbook da implantação ${criada} falhou (best-effort):`, e));
   return { ok: true, implantacaoId: criada };
 }

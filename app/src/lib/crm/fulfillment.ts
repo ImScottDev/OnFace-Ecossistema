@@ -124,6 +124,8 @@ export const FAMILIAS_IMPLANTACAO_WHITE_LABEL: string[] = FAMILIAS_POR_TRILHA.im
  * `notificarFormularioImplantacaoRecebido`). PABX não recebe nada disso
  * aqui — Implantação continua com o fluxo que já tinha.
  */
+const FAMILIAS_COM_ONBOARDING = new Set(["CALLFACE_AI", "PABX", "WHITE_LABEL"]);
+
 export async function criarFulfillmentsParaServicos(servicoIds: string[], organizacaoId: string): Promise<void> {
   if (servicoIds.length === 0) return;
   let servicos: (ServicoDaVenda & { leadId: string | null; empresaId: string | null })[];
@@ -169,7 +171,10 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
       const principal = porServico.get(principalId)!;
 
       const regra = regraDaFamilia(grupo.serviceFamily);
-      const ehOnboarding = regra.automacaoInicial;
+      // Spec do pós-venda (09/11): as três famílias NASCEM em onboarding. PABX e White Label só ganham a
+      // implantação quando o CS escala (handoff-implantacao.ts). Antes o tipo vinha de `automacaoInicial`,
+      // que é false para PABX/WL, e o Ganho delas criava implantação direto, pulando o onboarding inteiro.
+      const ehOnboarding = regra.automacaoInicial || FAMILIAS_COM_ONBOARDING.has(grupo.serviceFamily);
       const tipo = ehOnboarding ? "ONBOARDING" : "IMPLEMENTATION";
 
       // Venda que já tem entrega desta família (serviço chegou depois): anexa, não abre outro board.
@@ -227,7 +232,10 @@ export async function criarFulfillmentsParaServicos(servicoIds: string[], organi
       }
 
       // União dos checklists do que foi vendido (um por família do grupo, sem repetir etapa).
-      const checklistCompleto = uniaoChecklists([checklistParaFamilia(grupo.serviceFamily)]);
+      // O checklist antigo de PABX/WL é o da IMPLANTAÇÃO técnica: no onboarding delas quem mede é o playbook.
+      const checklistCompleto = tipo === "ONBOARDING" && grupo.serviceFamily !== "CALLFACE_AI" && FAMILIAS_COM_ONBOARDING.has(grupo.serviceFamily)
+        ? []
+        : uniaoChecklists([checklistParaFamilia(grupo.serviceFamily)]);
 
       // Upgrade: o que este cliente já cumpriu desta família numa entrega de OUTRA venda não volta.
       let anteriorId: string | null = null;

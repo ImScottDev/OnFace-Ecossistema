@@ -16,6 +16,7 @@ import type { Board, FiltrosDoBoard, MotivoDaEspera, Projeto, Resultado, Usuario
 import { boardDoPosVenda } from "@/lib/pos-venda/board";
 import { projetoCompleto } from "@/lib/pos-venda/projeto";
 import * as pv from "@/lib/pos-venda/acoes";
+import { entregarParaImplantacao } from "@/lib/pos-venda/handoff-implantacao";
 
 export type Leitura<T> = { ok: true; dados: T } | { ok: false; erro: string };
 
@@ -69,9 +70,12 @@ export const acoes = {
   salvarLevantamento: (a: Ator, projetoId: string, campos: Partial<Projeto["levantamento"]>) => pv.salvarLevantamento(a, projetoId, campos),
 
   // Ainda não ligadas, e a tela diz isso em vez de fingir que funcionou:
-  // o envio do formulário e o handoff dependem de peças que não existem
+  // o envio do formulário e o handoff final dependem de peças que não existem
   // (página pública do NPS, endpoint de agendamento do onboarding).
   enviarFormulario: async (_a: Ator, _projetoId: string) => porFazer("O envio do formulário"),
-  escalarParaImplantacao: async (_a: Ator, _projetoId: string) => porFazer("A escalada para implantação"),
+  escalarParaImplantacao: async (a: Ator, projetoId: string): Promise<Resultado> => {
+    const r = await entregarParaImplantacao({ organizacaoId: a.organizacaoId, fulfillmentId: projetoId, atorId: a.userId });
+    return r.ok ? { ok: true, dados: undefined } : { ok: false, erro: r.erro ?? "A escalada foi recusada.", codigo: r.codigo };
+  },
   fazerHandoff: async (_a: Ator, _projetoId: string) => porFazer("O handoff"),
 };

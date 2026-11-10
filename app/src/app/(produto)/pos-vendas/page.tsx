@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { getTenantContext } from "@/lib/auth/tenant";
 import { Pagina, PaginaCabecalho } from "@/components/onface/shell/Pagina";
 import { BoardView } from "@/components/onface/pos-venda/board/BoardView";
+import { Mesa } from "@/components/onface/pos-venda/mesa/Mesa";
 import { ErroDeLeitura } from "@/components/onface/pos-venda/board/EstadosDoBoard";
-import { lerFiltros, lerVista, type ParamsBrutos } from "@/components/onface/pos-venda/parametros";
+import { lerFiltros, lerVista, temFiltro, type ParamsBrutos } from "@/components/onface/pos-venda/parametros";
 import "@/components/onface/pos-venda/pos-venda.css";
 import { lerBoard, lerEquipe } from "./fonte";
 
@@ -21,20 +22,27 @@ export default async function PosVendasPage({ searchParams }: { searchParams: Pr
   const params = await searchParams;
   const filtros = lerFiltros(params);
   const vista = lerVista(params);
-  const [leitura, equipe] = await Promise.all([lerBoard(ctx.organizacaoId, filtros), lerEquipe(ctx.organizacaoId)]);
+  // A mesa é a entrada; o arquivo (tabela com filtro e busca) só quando alguém pede um recorte.
+  const ehArquivo = params.arquivo === "1" || temFiltro(filtros) || Boolean(filtros.familia);
+  const leituraFiltros = ehArquivo ? filtros : { ...filtros, tipo: null };
+  const [leitura, equipe] = await Promise.all([lerBoard(ctx.organizacaoId, leituraFiltros), lerEquipe(ctx.organizacaoId)]);
 
   return (
     <Pagina>
       <PaginaCabecalho
-        titulo="Pós-vendas"
-        descricao="Os projetos nascem sozinhos quando uma venda é ganha. Aqui o time acompanha prazo, tarefas e quem está segurando a bola."
+        titulo={ehArquivo ? "Todos os projetos" : "Pós-vendas"}
+        descricao={ehArquivo
+          ? "O arquivo completo: abertos e encerrados, com filtro e busca."
+          : "O que precisa do time nas entregas de hoje. Os projetos nascem sozinhos quando uma venda é ganha."}
       />
-      {leitura.ok ? (
-        <BoardView board={leitura.dados} agora={new Date()} equipe={equipe.ok ? equipe.dados : []} vista={vista} />
-      ) : (
+      {!leitura.ok ? (
         <div className="pv">
           <ErroDeLeitura detalhe={leitura.erro} />
         </div>
+      ) : ehArquivo ? (
+        <BoardView board={leitura.dados} agora={new Date()} equipe={equipe.ok ? equipe.dados : []} vista={vista} />
+      ) : (
+        <Mesa cartoes={leitura.dados.cartoes} agora={new Date()} tipo={filtros.tipo} meu={params.quem === "eu"} usuarioId={ctx.userId} />
       )}
     </Pagina>
   );
