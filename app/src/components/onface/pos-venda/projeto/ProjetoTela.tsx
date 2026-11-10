@@ -101,6 +101,7 @@ function Indicadores({ projeto: p, agora, acoes }: { projeto: Projeto; agora: Da
   const r = p.relogios;
   const feitas = p.tarefas.filter((t) => t.estado === "CONCLUIDA" || t.estado === "NAO_SE_APLICA").length;
   const pct = percentual(p.progresso);
+  const semMedida = p.tarefas.length === 0 && !p.checklist;
   const divergem = Math.abs(r.horasCorridas - r.horasDoTime) >= 1;
   const atraso = r.diasDeAtraso;
 
@@ -108,10 +109,11 @@ function Indicadores({ projeto: p, agora, acoes }: { projeto: Projeto; agora: Da
     <div className="pvp-kpis">
       <div className="pvp-kpi">
         <span className="pvp-kpi-rotulo">Progresso</span>
-        <span className="pvp-kpi-valor">{pct}%</span>
-        <span className="pvp-barra" aria-hidden><span style={{ width: `${pct}%` }} /></span>
+        {/* Sem tarefa e sem checklist não há o que medir: nada de percentual inventado. */}
+        <span className="pvp-kpi-valor">{semMedida ? "—" : `${pct}%`}</span>
+        {!semMedida && <span className="pvp-barra" aria-hidden><span style={{ width: `${pct}%` }} /></span>}
         <span className="pvp-kpi-nota">
-          {p.tarefas.length > 0 ? `${feitas} de ${p.tarefas.length} tarefas concluídas` : p.checklist ? `${p.checklist.feitos} de ${p.checklist.total} itens do checklist anterior` : "Sem tarefas para medir"}
+          {p.tarefas.length > 0 ? `${feitas} de ${p.tarefas.length} tarefas concluídas` : p.checklist ? `${p.checklist.feitos} de ${p.checklist.total} itens do checklist anterior` : "Ainda não há progresso a medir"}
         </span>
       </div>
 

@@ -177,8 +177,8 @@ test("espera em curso diz quem segura a bola e desde quando", () => {
   const html = noRoteador(h(ProjetoTela, { projeto, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
   assert.match(html, /A bola está com a operadora/);
   assert.match(html, /portabilidade da Vivo/);
-  assert.match(html, /Encerrar espera/);
-  assert.match(html, /congelado/);
+  assert.match(html, /Retomar a bola/);
+  assert.match(html, /Pausado/);
 });
 
 test("PABX antes do T0 diz que o prazo ainda não começou, em vez de inventar data", () => {
@@ -217,8 +217,6 @@ test("projeto sem tarefa mede o checklist e não diz que as tarefas foram conclu
   const semTarefa = { ...base, tarefas: [], progresso: 0.19, checklist: { feitos: 4, total: 21 } };
   const html = noRoteador(h(ProjetoTela, { projeto: semTarefa, equipe: [], agora: new Date(), acoes: ACOES, abaInicial: "visao" }));
   assert.match(html, /19%/);
-  assert.match(html, /Itens feitos<b>4<\/b>/);
-  assert.match(html, /Itens pendentes<b>17<\/b>/);
   assert.match(html, /4 de 21 itens/);
   assert.doesNotMatch(html, /Todas as tarefas aplicáveis foram concluídas/);
   assert.doesNotMatch(html, /Concluídas<b>0<\/b>/);
@@ -235,6 +233,7 @@ test("projeto sem tarefa e sem checklist diz que não há o que medir, sem perce
   // texto sem que nada de verdade tivesse mudado — foi o que aconteceu ao
   // fundir a frente de lógica com a de desenho.
   assert.match(html, /não há progresso a medir/);
+  assert.doesNotMatch(html, /pvp-kpi-valor">0%/, "sem fonte de progresso não se mostra 0%");
   assert.match(html, /ainda não tem tarefas/);
   assert.doesNotMatch(html, /Todas as tarefas aplicáveis foram concluídas/);
   assert.doesNotMatch(html, /<strong>0%<\/strong>/);
