@@ -47,29 +47,32 @@ function prazoDoCartao(c: CartaoDoProjeto, agora: Date) {
   return prazo(vence, agora, "Prazo ainda não definido");
 }
 
+const iniciais = (nome: string) => nome.split(/\s+/).filter((p) => /^[A-Za-zÀ-ÿ]/.test(p)).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("") || "?";
+
 function Linha({ c, agora }: { c: CartaoDoProjeto; agora: Date }) {
   const p = prazoDoCartao(c, agora);
   const acao = c.proximaTarefa?.titulo
     ?? (c.tarefasTotal > 0 && c.tarefasConcluidas >= c.tarefasTotal
       ? (c.tipo === "IMPLEMENTATION" ? "Registrar a implantação finalizada" : "Encerrar o projeto e fazer o handoff")
       : "Definir a próxima tarefa do projeto");
+  const pct = c.tarefasTotal > 0 ? Math.round((c.tarefasConcluidas / c.tarefasTotal) * 100) : 0;
   return (
     <li className="pvm-linha">
+      <span className="pvm-logo" aria-hidden>{iniciais(c.empresa.nome)}</span>
       <Link href={`/pos-vendas/${c.id}`} className="pvm-linha-corpo">
         <span className="pvm-acao">{acao}</span>
         <span className="pvm-meta">
           <strong>{c.empresa.nome}</strong>
-          <span aria-hidden>·</span> {FAMILIAS[c.familia].rotulo}
-          <span aria-hidden>·</span> {TIPO[c.tipo]}
-          <span aria-hidden>·</span> {c.tarefasConcluidas} de {c.tarefasTotal} tarefas
-          <span aria-hidden>·</span> <span data-tom={p.tom}>{p.texto}</span>
-          {c.relogios.esperando && (
-            <>
-              <span aria-hidden>·</span> esperando desde {haQuanto(c.relogios.esperando.desde, agora)}
-            </>
-          )}
+          <span className="pvm-tag">{FAMILIAS[c.familia].rotulo}</span>
+          <span className="pvm-tag" data-tipo={c.tipo}>{TIPO[c.tipo]}</span>
+          {c.relogios.esperando && <span>esperando desde {haQuanto(c.relogios.esperando.desde, agora)}</span>}
         </span>
       </Link>
+      <span className="pvm-progresso" title={`${c.tarefasConcluidas} de ${c.tarefasTotal} tarefas`}>
+        <span className="pvm-progresso-barra" aria-hidden><span style={{ width: `${pct}%` }} /></span>
+        <span className="pvm-progresso-num">{c.tarefasConcluidas}/{c.tarefasTotal}</span>
+      </span>
+      <span className="pvm-prazo" data-tom={p.tom}>{p.texto}</span>
       <div className="pvm-lado">
         <PassarABola projetoId={c.id} esperando={c.relogios.esperando?.motivo ?? null} pabx={c.familia === "PABX"} />
         {c.responsavel ? <Avatar quem={c.responsavel} /> : <AvatarVazio rotulo="Sem responsável" />}
@@ -91,6 +94,13 @@ function Chip({ c }: { c: CartaoDoProjeto }) {
   );
 }
 
+/** A primeira ação que mais se repete no grupo: vira o subtítulo em vez de repetir o verbo em cada chip. */
+function primeiraComum(lista: CartaoDoProjeto[]): string | null {
+  const conta = new Map<string, number>();
+  for (const c of lista) if (c.proximaTarefa) conta.set(c.proximaTarefa.titulo, (conta.get(c.proximaTarefa.titulo) ?? 0) + 1);
+  return [...conta.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
 export function Mesa({
   cartoes, agora, tipo, meu, usuarioId,
 }: { cartoes: CartaoDoProjeto[]; agora: Date; tipo: TipoDeProjeto | null; meu: boolean; usuarioId: string }) {
@@ -110,6 +120,7 @@ export function Mesa({
   const nunca = porGrupo.get("nunca")!.length;
   const semDono = abertos.filter((c) => !c.responsavel).length;
   const precisam = porGrupo.get("voce")!.length + nunca;
+  const atrasadas = visiveis.filter((c) => prazoDoCartao(c, agora).tom === "risco").length;
 
   const abas: Array<{ rotulo: string; tipo: TipoDeProjeto | null }> = [
     { rotulo: "Tudo", tipo: null },
@@ -120,10 +131,12 @@ export function Mesa({
   return (
     <div className="pv pvm">
       <div className="pvm-topo">
-        <p className="pvm-resumo">
-          <strong>{abertos.length} {abertos.length === 1 ? "entrega em aberto" : "entregas em aberto"}</strong>
-          {" · "}{comAlguem} com cliente ou operadora{" · "}{nunca} nunca {nunca === 1 ? "começou" : "começaram"}
-        </p>
+        <dl className="pvm-numeros">
+          <div><dt>Em aberto</dt><dd>{abertos.length}</dd></div>
+          <div><dt>Precisam do time</dt><dd>{precisam}</dd></div>
+          <div><dt>Com cliente ou operadora</dt><dd>{comAlguem}</dd></div>
+          <div data-tom={atrasadas > 0 ? "risco" : undefined}><dt>Atrasadas</dt><dd>{atrasadas}</dd></div>
+        </dl>
         <nav className="pvm-abas" aria-label="Recorte da mesa">
           {abas.map((a) => (
             <Link key={a.rotulo} href={hrefMesa({ tipo: a.tipo, meu })} aria-current={a.tipo === tipo ? "page" : undefined}>{a.rotulo}</Link>
@@ -154,7 +167,7 @@ export function Mesa({
           <section key={g.id} className="pvm-grupo" aria-labelledby={`pvm-${g.id}`}>
             <header>
               <h2 id={`pvm-${g.id}`}>{g.titulo} <span className="pvm-conta">{lista.length}</span></h2>
-              <p>{g.nota}</p>
+              <p>{g.id === "nunca" && primeiraComum(lista) ? `Todas começam por: ${primeiraComum(lista)}` : g.nota}</p>
             </header>
             {g.id === "nunca" ? (
               <ul className="pvm-chips">{lista.map((c) => <Chip key={c.id} c={c} />)}</ul>

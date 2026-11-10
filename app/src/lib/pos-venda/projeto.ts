@@ -110,7 +110,9 @@ export async function projetoCompleto(organizacaoId: string, projetoId: string, 
       podeConcluirTarefa: aberto,
       podeMarcarEspera: aberto,
       podeEscalarParaImplantacao: aberto && l.tipo === "ONBOARDING" && l.familia !== "CALLFACE_AI" && !irmao,
-      podeFazerHandoff: aberto && (l.familia === "CALLFACE_AI" ? nps?.respondidoEm != null : feitas),
+      // NPS ainda não tem página pública (0 respostas em produção): enquanto isso, concluir o passo de NPS
+      // (o último do playbook) conta como encerramento. Quando o NPS existir, volta a exigir a resposta.
+      podeFazerHandoff: aberto && (l.familia === "CALLFACE_AI" ? (nps?.respondidoEm != null || feitas) : feitas),
       podeDarBaixaSemNps: aberto && l.familia === "CALLFACE_AI" && nps?.respondidoEm == null && nps?.esperaAte != null && nps.esperaAte.getTime() <= agora.getTime(),
       podeEditarPrazo: aberto,
     },

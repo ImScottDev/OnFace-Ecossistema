@@ -78,7 +78,11 @@ export function passosDaJornada(
 /** Prioridade que `criarTarefaCs` aceita (alta|media|baixa); urgente vira alta. */
 const prioridadeDaTarefa = (p: string): "alta" | "media" | "baixa" => (p === "baixa" ? "baixa" : p === "media" ? "media" : "alta");
 
-export async function prepararProjeto(p: { organizacaoId: string; fulfillmentId: string; agora?: Date }): Promise<ResultadoDoMotor> {
+/**
+ * `contarDe`: base dos prazos. Omitido = a entrada do projeto (Ganho). O reprocessamento de projeto antigo passa
+ * "hoje", senão o playbook aplicado tarde nasce com todas as tarefas vencidas (spec §2.3: nunca fabricar atraso).
+ */
+export async function prepararProjeto(p: { organizacaoId: string; fulfillmentId: string; agora?: Date; contarDe?: Date }): Promise<ResultadoDoMotor> {
   try {
     return await preparar(p);
   } catch (e) {
@@ -87,7 +91,7 @@ export async function prepararProjeto(p: { organizacaoId: string; fulfillmentId:
   }
 }
 
-async function preparar(p: { organizacaoId: string; fulfillmentId: string }): Promise<ResultadoDoMotor> {
+async function preparar(p: { organizacaoId: string; fulfillmentId: string; contarDe?: Date }): Promise<ResultadoDoMotor> {
   const { organizacaoId, fulfillmentId } = p;
   const [l] = await linhasBase(organizacaoId, [fulfillmentId]);
   if (!l) return nada("projeto não encontrado (ou família fora das três do contrato)");
@@ -96,7 +100,7 @@ async function preparar(p: { organizacaoId: string; fulfillmentId: string }): Pr
   if (l.status === "COMPLETED" || l.status === "CANCELED") return nada(`projeto ${l.status}: não recebe tarefas novas`);
   if (!l.empresa.resolvida) return nada("projeto sem empresa identificável: tarefas precisam de empresa");
 
-  const entrouEm = dataDe(l.entrouEm) ?? new Date();
+  const entrouEm = p.contarDe ?? dataDe(l.entrouEm) ?? new Date();
   const escopo = await escopoDaOportunidade(organizacaoId, l.oportunidadeId, l.familia);
   const anterior = await jornadaAnterior(organizacaoId, l);
   const upgrade = anterior != null;

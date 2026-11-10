@@ -129,7 +129,7 @@ export function Cabecalho({ projeto, agora, acoes }: { projeto: Projeto; agora: 
             <AlertDialogDescription>
               {confirma === "escalar"
                 ? "Os materiais ficam como validados, o T0 é gravado e o projeto de implantação é aberto. O prazo da implantação começa a contar."
-                : "A entrega passa para a implantação e este projeto sai do seu board. O tempo total fica registrado."}
+                : "O projeto é encerrado e o cliente passa para o CS como \"onboarding concluído\". O tempo total fica registrado na linha do tempo."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

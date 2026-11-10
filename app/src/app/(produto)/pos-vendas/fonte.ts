@@ -17,6 +17,8 @@ import { boardDoPosVenda } from "@/lib/pos-venda/board";
 import { projetoCompleto } from "@/lib/pos-venda/projeto";
 import * as pv from "@/lib/pos-venda/acoes";
 import { entregarParaImplantacao } from "@/lib/pos-venda/handoff-implantacao";
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
 
 export type Leitura<T> = { ok: true; dados: T } | { ok: false; erro: string };
 
@@ -77,5 +79,17 @@ export const acoes = {
     const r = await entregarParaImplantacao({ organizacaoId: a.organizacaoId, fulfillmentId: projetoId, atorId: a.userId });
     return r.ok ? { ok: true, dados: undefined } : { ok: false, erro: r.erro ?? "A escalada foi recusada.", codigo: r.codigo };
   },
-  fazerHandoff: async (_a: Ator, _projetoId: string) => porFazer("O handoff"),
+  /** Encerra o projeto e registra no CS (spec §3.6: por enquanto o handoff é só o registro). A regra de quando pode é `permissoes.podeFazerHandoff`. */
+  fazerHandoff: async (a: Ator, projetoId: string): Promise<Resultado> => {
+    const p = await projetoCompleto(a.organizacaoId, projetoId);
+    if (!p) return { ok: false, erro: "Projeto não encontrado." };
+    if (!p.permissoes.podeFazerHandoff) {
+      return { ok: false, erro: p.familia === "CALLFACE_AI" ? "Conclua as tarefas do onboarding antes do handoff." : "O handoff só libera com todas as tarefas concluídas, inclusive o treinamento realizado." };
+    }
+    await db.execute(sql`
+      UPDATE fulfillments SET status = 'COMPLETED', completed_at = now(), updated_at = now()
+       WHERE id = ${projetoId}::uuid AND organizacao_id = ${a.organizacaoId}::uuid AND status <> 'COMPLETED'`);
+    await pv.adicionarNota(a, projetoId, `Handoff para o CS feito. Tempo total desde a entrada: ${Math.round(p.relogios.horasCorridas / 24)} dias.`);
+    return { ok: true, dados: undefined };
+  },
 };
