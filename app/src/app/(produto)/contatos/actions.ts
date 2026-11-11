@@ -42,6 +42,7 @@ export async function acaoCriarEmpresa(entrada: {
     const r = await resolverEmpresa(ctx.organizacaoId, {
       nome: entrada.nome.trim(), cnpj: entrada.cnpj ?? null, website: entrada.website ?? null,
       setor: entrada.setor ?? null, cidade: entrada.cidade ?? null, estado: entrada.estado ?? null,
+      casarPorNome: true,
     }, ctx.ator);
     revalidatePath(ROTA);
     return { empresaId: r.empresaId, jaExistia: !r.criada, resolvidaPor: r.resolvidaPor };
@@ -174,6 +175,7 @@ export async function acaoCadastrarContato(entrada: EntradaCadastro): Promise<Re
           cnpj: entrada.tipo === "empresa" ? entrada.cnpj?.trim() || null : null,
           website: entrada.tipo === "empresa" ? entrada.site?.trim() || null : null,
           setor: entrada.tipo === "empresa" ? entrada.segmento?.trim() || null : null,
+          casarPorNome: true,
         }, ctx.ator)
       : null;
     const empresaId = emp?.empresaId ?? null;
@@ -467,6 +469,7 @@ export async function acaoVincularEmpresaExtra(leadId: string, d: {
     if (!lead.pessoa_id) throw new RegraDeNegocio("sem_pessoa", "Este contato ainda não tem cadastro de pessoa para vincular.");
     const e = await resolverEmpresa(ctx.organizacaoId, {
       nome: d.nome.trim(), cnpj: d.cnpj?.trim() || null, website: d.site?.trim() || null, setor: d.segmento?.trim() || null,
+      casarPorNome: true,
     }, ctx.ator);
     if (e.empresaId === lead.empresa_id) throw new RegraDeNegocio("empresa_principal", "Esta já é a empresa principal do contato.");
     const texto = d.papel?.trim() ?? "";

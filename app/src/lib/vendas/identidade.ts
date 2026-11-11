@@ -103,6 +103,27 @@ export interface DadosEmpresa {
   estado?: string | null;
   telefone?: string | null;
   razaoSocial?: string | null;
+  /**
+   * Deixar o NOME sozinho reconhecer uma empresa já existente.
+   *
+   * Desligado por padrão desde 11/11/2026, e o motivo tem nome e sobrenome: o
+   * nome da empresa que chega de formulário de anúncio e de self-checkout é
+   * texto livre que o próprio lead digitou. Em produção isso tinha colado numa
+   * única conta 37 pessoas sob "Autônomo", 13 sob "Imobiliária", 12 sob
+   * "Nenhuma", 12 sob "Minha", 9 sob "." e 7 sob "Marketing" — todas de
+   * empresas diferentes, cada uma com e-mail e telefone próprios. A venda de
+   * self-checkout de Meu Patrimonio Investimentos (11/11) caiu dentro da
+   * "Marketing" por esse caminho.
+   *
+   * Regra do Scott (11/11): duas padarias chamadas "Padaria" não são a mesma
+   * padaria. Nome igual só vira mesma empresa quando quem chama garante que o
+   * nome veio de fonte curada — prospecção, importação, ou um humano digitando
+   * e olhando a tela —, nunca de campo livre preenchido pelo lead.
+   *
+   * Isto NÃO revoga a regra de 06/10 (prospecção duplicando "Acme Ltda"): ela
+   * continua valendo onde nasceu, agora dita explicitamente por quem chama.
+   */
+  casarPorNome?: boolean;
 }
 
 export interface ResultadoResolucao {
@@ -170,10 +191,13 @@ export async function resolverEmpresa(
      ignorando só caixa, acento, espaço e pontuação. Antes o lado JS tirava
      "ltda/me/comercio..." e o lado SQL não, então "Acme Ltda" nunca casava
      com "Acme Ltda" já gravada e a prospecção criava empresa duplicada.
-     Os dois lados agora usam a mesma normalização, sem cortar sufixo. */
+     Os dois lados agora usam a mesma normalização, sem cortar sufixo.
+
+     Desde 11/11/2026 isto só roda com `casarPorNome` ligado: ver o comentário
+     do campo em `DadosEmpresa`. Sem ele, nome igual NÃO é mais mesma empresa. */
   const nomeNormalizado = nome.toLowerCase().normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
-  if (nomeNormalizado.length >= 3) {
+  if (dados.casarPorNome && nomeNormalizado.length >= 3) {
     const [porNome] = await tx.execute<{ id: string }>(sql`
       SELECT id::text FROM empresas
        WHERE organizacao_id = ${organizacaoId}::uuid

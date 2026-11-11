@@ -502,7 +502,8 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {}, cadenciasPa
   cadenciasPausadas?: Record<string, boolean>;
   acoes: AcoesPreVendas;
   /** O recorte com que o servidor abriu a tela, para o chip mostrá-lo marcado. */
-  recorteResponsavel?: "minhas" | "sem_dono" | null;
+  /** "minhas" | "sem_dono" | `resp:<id da pessoa>` — marca a opção ativa no filtro. */
+  recorteResponsavel?: string | null;
 }) {
   const router = useRouter();
   const [cadenciasPublicadas, setCadenciasPublicadas] = React.useState<Array<{ id: string; nome: string }>>([]);
@@ -603,6 +604,10 @@ export function PreVendasProto({ dados, acoes, cadenciaPorLead = {}, cadenciasPa
     const closers = dados.filtros.responsaveis.filter((r) => r.papel === "closer").map((r) => r.nome);
     return {
       EQUIPE: dados.filtros.responsaveis.map((r) => r.nome),
+      /* O filtro de Responsável recorta NO SERVIDOR, por `?responsavel=<id>`
+         (ver `verResponsavel` na liga), então ele precisa do id — `EQUIPE`,
+         que é só nome, não serve. */
+      RESPONSAVEIS: dados.filtros.responsaveis.map((r) => ({ id: r.id, nome: r.nome })),
       CLOSERS: closers.length ? closers : dados.filtros.responsaveis.map((r) => r.nome),
       ETAPAS: Object.fromEntries(dados.colunas.map((c) => [c.chave, { label: c.rotulo }])),
     };

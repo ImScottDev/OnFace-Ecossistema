@@ -98,7 +98,7 @@ function mrrOf(sub: StripeSubscription): number {
 
 interface StripeSubscription {
   id: string;
-  customer: string | { id: string; email?: string | null; name?: string | null; phone?: string | null; metadata?: Record<string, string> | null };
+  customer: string | { id: string; email?: string | null; name?: string | null; business_name?: string | null; phone?: string | null; metadata?: Record<string, string> | null };
   status: string;
   start_date?: number;
   canceled_at?: number | null;
@@ -277,7 +277,7 @@ export async function syncStripe(organizacaoId?: string): Promise<{ subs: number
         inicio: s.start_date ? new Date(s.start_date * 1000) : new Date(),
         valorMensal: mrrOf(s),
         produto: produtoId ? productName.get(produtoId) ?? null : null,
-        customer: c ? { id: c.id, name: c.name, email: c.email, phone: c.phone, metadata: c.metadata } : null,
+        customer: c ? { id: c.id, name: c.name, business_name: c.business_name, email: c.email, phone: c.phone, metadata: c.metadata } : null,
       }, { empresasPorNome }).catch((e) => {
         console.error(`[StripeSync] venda de autoatendimento ${s.id}:`, e instanceof Error ? e.message : e);
         return { criou: false as const, motivo: "erro" };

@@ -48,6 +48,7 @@ import { reconhecerClienteDoSaas, empresaCarimbadaNoCustomer, VIVA } from "@/lib
 import { garantirEntradaCanonica } from "@/lib/vendas/ponte-canonica";
 import { garantirContaCsPorEmpresa } from "@/lib/cs/handoff";
 import { ORIGEM_AUTOATENDIMENTO } from "@/lib/relatorios/autoatendimento";
+import { dominioDoEmail } from "@/lib/vendas/identidade";
 
 /**
  * De quando o automático passa a valer. Assinatura anterior a isto é passado, e
@@ -75,7 +76,10 @@ export async function carregarEmpresasPorNome(organizacaoId: string): Promise<Ma
 
 export interface CustomerDaPlataforma {
   id: string;
+  /** `customer.name`: no self-checkout é o nome de QUEM assinou, não da empresa. */
   name?: string | null;
+  /** `customer.business_name` do Stripe: o nome da EMPRESA, quando a pessoa preencheu. */
+  business_name?: string | null;
   email?: string | null;
   phone?: string | null;
   metadata?: Record<string, string> | null;
@@ -116,7 +120,15 @@ export async function registrarVendaDeAutoatendimento(
 
   const email = (c.email ?? "").trim().toLowerCase();
   const nomePessoa = (c.name ?? c.metadata?.user_name ?? "").trim();
-  const nomeEmpresa = (c.metadata?.company ?? "").trim() || nomePessoa || email;
+  /* O nome da EMPRESA só pode sair de um campo de empresa. `business_name` é
+     onde o Stripe guarda o que a pessoa digitou como empresa no checkout, e
+     até 11/11/2026 este módulo nem olhava para ele: procurava um
+     `metadata.company` que o checkout não grava e caía no nome de quem
+     assinou. Foi assim que a venda de Meu Patrimonio Investimentos
+     (business_name preenchido, name "Marketing") entrou como "Marketing" e
+     colou na empresa "Marketing" que já juntava 6 pessoas sem relação. */
+  const nomeDeEmpresa = ((c.business_name ?? c.metadata?.company) ?? "").trim();
+  const nomeEmpresa = nomeDeEmpresa || nomePessoa || email;
   if (!nomeEmpresa) return { criou: false, motivo: "customer sem nome e sem e-mail" };
 
   // ── 1. Empresa: reusar é mais importante que criar ────────────────────────
@@ -127,23 +139,39 @@ export async function registrarVendaDeAutoatendimento(
          WHERE organizacao_id = ${organizacaoId}::uuid AND lower(btrim(email)) = ${email} LIMIT 1
       `)) as unknown as Array<{ id: string; empresa_id: string | null }>)
     : [];
+  /* Domínio do e-mail corporativo: identificador forte, e o self-checkout nunca
+     o usava. `meupatrimonio.com` reconhece a empresa certa sem depender de como
+     a pessoa escreveu o nome. Provedor pessoal (gmail e cia) devolve null e não
+     casa ninguém — ver `dominioDoEmail`. */
+  const dominio = dominioDoEmail(email);
+  const [porDominio] = dominio
+    ? ((await db.execute(sql`
+        SELECT id::text FROM empresas
+         WHERE organizacao_id = ${organizacaoId}::uuid AND dominio = ${dominio} LIMIT 1
+      `)) as unknown as Array<{ id: string }>)
+    : [];
+
   /* O casamento por nome roda em memória com `chaveDoNome`, a MESMA régua da
      carga de 21/10 e do relatório de duplicadas — em SQL ela não existe (o banco
      não tem `unaccent`), e uma régua parecida é como se cria empresa duplicada.
-     Quem chama em lote (o sync) passa o mapa pronto e evita reler a tabela. */
-  const porNome = opts?.empresasPorNome ?? (await carregarEmpresasPorNome(organizacaoId));
-  const empresaPorNome = porNome.get(chaveDoNome(nomeEmpresa)) ?? null;
+     Quem chama em lote (o sync) passa o mapa pronto e evita reler a tabela.
 
-  let empresaId = carimbada ?? leadExistente?.empresa_id ?? empresaPorNome ?? null;
+     Só vale quando `nomeDeEmpresa` veio preenchido: casar pelo nome de QUEM
+     assinou junta clientes sem relação nenhuma (mesma razão de `casarPorNome`
+     em `identidade.ts`). */
+  const porNome = opts?.empresasPorNome ?? (await carregarEmpresasPorNome(organizacaoId));
+  const empresaPorNome = nomeDeEmpresa ? (porNome.get(chaveDoNome(nomeEmpresa)) ?? null) : null;
+
+  let empresaId = carimbada ?? leadExistente?.empresa_id ?? porDominio?.id ?? empresaPorNome ?? null;
   if (!empresaId) {
     const [nova] = (await db.execute(sql`
-      INSERT INTO empresas (organizacao_id, nome, stripe_customer_id)
-      VALUES (${organizacaoId}::uuid, ${nomeEmpresa}, ${c.id})
+      INSERT INTO empresas (organizacao_id, nome, dominio, telefone, stripe_customer_id)
+      VALUES (${organizacaoId}::uuid, ${nomeEmpresa}, ${dominio}, ${c.phone ?? null}, ${c.id})
       RETURNING id::text`)) as unknown as Array<{ id: string }>;
     empresaId = nova!.id;
     // Entra no mapa na hora: duas assinaturas do mesmo cliente na mesma rodada
     // criariam duas empresas, que é o defeito que o dedup existe para evitar.
-    porNome.set(chaveDoNome(nomeEmpresa), empresaId);
+    if (nomeDeEmpresa) porNome.set(chaveDoNome(nomeEmpresa), empresaId);
   }
 
   // ── 2. Contato: lead + par canônico (pessoa e aquisição) ──────────────────

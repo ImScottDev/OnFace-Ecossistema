@@ -423,7 +423,7 @@ export const NEXO_TOOLS: AgentToolRegistration[] = [
     async (ctx, u, i) => falta(ctx, "companies.write") ?? agir(ctx, "criar_empresa_contato", i, async () => {
       if (!i.empresa && !i.nome) return { ok: false, error: "informe a empresa e/ou o nome da pessoa" };
       const a = ator(ctx, u);
-      const emp = i.empresa ? await resolverEmpresa(ctx.organizacaoId, { nome: String(i.empresa), cnpj: when(i.cnpj), website: when(i.site) }, a) : null;
+      const emp = i.empresa ? await resolverEmpresa(ctx.organizacaoId, { nome: String(i.empresa), cnpj: when(i.cnpj), website: when(i.site), casarPorNome: true }, a) : null;
       const pes = i.nome ? await resolverPessoa(ctx.organizacaoId, { nome: String(i.nome), email: when(i.email), telefone: when(i.telefone), cargo: when(i.cargo), empresaId: emp?.empresaId ?? null } as never, a) : null;
       if (pes) await garantirRegistroDeContato(ctx.organizacaoId, pes.pessoaId);
       return resumo([emp ? `Empresa ${emp.criada ? "criada" : "já existia"}: ${i.empresa}` : null, pes ? `Contato ${i.nome} registrado` : null].filter(Boolean).join(". ") + ".", emp ? `/empresas/${emp.empresaId}` : "/contatos", { empresaId: emp?.empresaId ?? null });

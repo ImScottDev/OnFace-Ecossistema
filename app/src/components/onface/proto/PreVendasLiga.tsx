@@ -77,12 +77,26 @@ class Logica extends React.Component<any, any> {
     return this.props.usuario?.nome ?? (this.context as any)?.nome ?? "Você";
   }
 
+  /** Recorta o board por UMA pessoa. Mesmo caminho do `verView`: a URL manda,
+   *  o servidor recorta. `view` sai junto porque "meus"/"sem-dono" venceriam
+   *  o `responsavel=` (ver `filtroDaView` em lib/vendas/consultas.ts). */
+  verResponsavel(id: string | null) {
+    this.setState({ filtroAberto: null });
+    const ir = (this.props as any).ir;
+    if (!ir) return;
+    const p = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
+    p.delete("view");
+    if (id) p.set("responsavel", id); else p.delete("responsavel");
+    ir("/pre-vendas?" + p.toString());
+  }
+
   /** Troca o recorte de dono na URL: é o servidor que recorta esta tela. */
   verView(view: string) {
     this.setState({ filtroAberto: null });
     const ir = (this.props as any).ir;
     if (!ir) return;
     const p = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
+    p.delete("responsavel");
     p.set("view", view);
     ir("/pre-vendas?" + p.toString());
   }
@@ -361,9 +375,14 @@ class Logica extends React.Component<any, any> {
         icone: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0", opcoes: [
         { v: "minhas", label: "Minhas", campo: "" },
         { v: "sem_dono", label: "Sem responsável", campo: "" },
-        /* "Equipe SDR" e "Equipe Closer" recortavam os dois a mesma coisa
-           (qualquer lead com responsável): o papel do responsável não chega
-           até aqui. Voltam quando o board trouxer o papel. */
+        /* Uma opção por pessoa da equipe. Até 11/11/2026 só existiam as duas
+           linhas acima: nem o super admin conseguia abrir o board de outra
+           pessoa pela tela, embora `?responsavel=<id>` já funcionasse no
+           servidor desde sempre. ("Equipe SDR"/"Equipe Closer" tinham sido
+           retiradas porque recortavam a mesma coisa; a lista nominal, que é o
+           que se usa no dia a dia, foi junto sem querer.) */
+        ...((this.dadosDoProto.RESPONSAVEIS || []) as Array<{ id: string; nome: string }>)
+          .map(r => ({ v: "resp:" + r.id, label: r.nome, campo: "" })),
       ] },
       { k: "origem", label: "Origem", titulo: "CANAL DE ENTRADA",
         icone: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9", opcoes: [
@@ -426,7 +445,9 @@ class Logica extends React.Component<any, any> {
                servidor recorta — e, para o filtro não mentir nem limitar, cada
                opção dele reconsulta em vez de peneirar o que já veio. */
             onClick: () => f.k === "responsavel"
-              ? this.verView(on ? "todos" : o.v === "sem_dono" ? "sem-dono" : "meus")
+              ? (String(o.v).startsWith("resp:")
+                  ? this.verResponsavel(on ? null : String(o.v).slice(5))
+                  : this.verView(on ? "todos" : o.v === "sem_dono" ? "sem-dono" : "meus"))
               : this.setState(s => {
                   const atual = s.sel[f.k] || [];
                   return { sel: Object.assign({}, s.sel, { [f.k]: on ? atual.filter(x => x !== o.v) : atual.concat(o.v) }) };

@@ -99,7 +99,9 @@ export async function PreVendasPage({ searchParams }: {
          chip mostra o time todo; escolher outra opção funciona, porque há o
          que escolher. Quem chegou por link com recorte na URL já escolheu:
          aí o chip não impõe nada por cima. */
-      recorteResponsavel={view === "meus" ? "minhas" : view === "sem-dono" ? "sem_dono" : null}
+      /* `resp:<id>` marca a pessoa escolhida no filtro — o recorte dela mora
+         em `?responsavel=`, não numa view. */
+      recorteResponsavel={view === "meus" ? "minhas" : view === "sem-dono" ? "sem_dono" : responsavelId ? `resp:${responsavelId}` : null}
       cadenciaPorLead={cadenciaPorLead}
       cadenciasPausadas={cadenciasPausadas}
       acoes={{

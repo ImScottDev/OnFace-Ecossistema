@@ -68,7 +68,8 @@ export async function adicionarProspect(entrada: EntradaDeProspect, ator: Ator):
   // inativo estourava na chave estrangeira e voltava como erro genérico.
   await exigirResponsavelDaOrg(organizacaoId, entrada.responsavelId);
 
-  const empresa = await resolverEmpresa(organizacaoId, entrada.empresa, ator);
+  // Prospecção é lista curada: é a fonte para a qual a regra de 06/10 nasceu.
+  const empresa = await resolverEmpresa(organizacaoId, { ...entrada.empresa, casarPorNome: true }, ator);
 
   let pessoaId: string | null = null;
   if (entrada.pessoa?.nome) {

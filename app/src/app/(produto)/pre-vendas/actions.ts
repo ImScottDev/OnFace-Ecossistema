@@ -236,7 +236,7 @@ export async function acaoAssociarEmpresa(leadId: string, nome: string, cnpj: st
   const ctx = await contexto();
   if (!ctx) return { ok: false, erro: "Sessão expirada." };
   return executar("associar empresa", async () => {
-    const empresa = await resolverEmpresa(ctx.organizacaoId, { nome, cnpj }, ctx.ator);
+    const empresa = await resolverEmpresa(ctx.organizacaoId, { nome, cnpj, casarPorNome: true }, ctx.ator);
     await db.execute(sql`
       UPDATE leads SET empresa_id = ${empresa.empresaId}::uuid, empresa = ${nome}, updated_at = now()
        WHERE id = ${leadId}::uuid AND organizacao_id = ${ctx.organizacaoId}::uuid
