@@ -291,7 +291,7 @@ function HeroComercial({ periodo, gestao, safra }: { periodo: string; gestao: bo
             <strong>{isError ? "—" : v(moeda(f?.receita ?? 0))}</strong>
             {f ? (
               <span>
-                {f.ganhos} ganho{f.ganhos === 1 ? "" : "s"} · recorrente {moeda(f.recorrente)} · avulso {moeda(f.avulso)}
+                {f.ganhos} ganho{f.ganhos === 1 ? "" : "s"} · recorrente {moeda(f.recorrente)} · setup/avulso {moeda(f.avulso)}
               </span>
             ) : null}
           </div>

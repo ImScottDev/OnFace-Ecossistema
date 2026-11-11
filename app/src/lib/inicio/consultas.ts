@@ -20,6 +20,7 @@ import { condicaoMinhasConversas } from "@/lib/whatsapp/acesso";
 import { somenteDePreVendas } from "@onface/acquisition";
 import { getMetaComercialAgregada, getMetasDoUsuario, getRealizadoMeta } from "@/lib/metas";
 import { PAPEIS_QUE_SOMAM_NA_META } from "@/lib/metas-shared";
+import { VALOR_TOTAL_VENDIDO } from "@/lib/relatorios/receita-fechada";
 import { getMrrAtivo, getImplantacaoResumo, getCsResumo, getFinanceiroResumo, getAtendimentoResumo } from "@/lib/analytics/command-center";
 import { getAgendaHoje, getClientesAtivos } from "@/lib/analytics/inicio";
 import { inventarioDeIntegracoes } from "@/lib/integrations/inventario";
@@ -88,23 +89,29 @@ function kpiDeSerie(opts: {
   };
 }
 
-/* Definição de faturamento do Início: a MESMA de Relatórios > Comercial
- * (`getFechadoPeriodo`, lib/relatorios/comercial.ts): negócio ganho, no mês de
- * `ganho_at`; recorrente e híbrido contam a mensalidade (`mrr_fechado`), avulso e
- * projeto contam o valor cheio (`valor_total`). O setup de negócio híbrido NÃO
- * entra. Duas telas com o mesmo nome e contas diferentes foi o defeito de
- * setembro (R$ 88,4 mil aqui contra R$ 61,3 mil lá, por causa do setup).
- * A META segue a definição das Metas (mensalidade + setup, `lib/metas.ts`). */
-const FATURAMENTO = sql`CASE WHEN n.tipo_receita IN ('avulso','projeto') THEN COALESCE(n.valor_total,0)::numeric ELSE COALESCE(n.mrr_fechado,0)::numeric END`;
+/* Faturamento do Início = `VALOR_TOTAL_VENDIDO`, a MESMA régua de
+ * Relatórios > Comercial (`getFechadoPeriodo`) e das Metas (`VALOR_FECHADO`,
+ * lib/metas.ts): negócio ganho no mês de `ganho_at`, somando mensalidade +
+ * implantação + avulso.
+ *
+ * Até 11/11/2026 este arquivo tinha uma SEGUNDA conta própria, que somava só
+ * `mrr_fechado` na venda recorrente e jogava a implantação fora. Em novembro
+ * isso fazia o card principal mostrar R$ 5.768 enquanto a barra de meta do
+ * MESMO card, os Relatórios e o realizado das closers mostravam R$ 8.308 — a
+ * diferença era inteira a implantação de R$ 2.540 de uma venda de PABX. É o
+ * defeito que o cabeçalho deste arquivo manda não cometer: uma segunda conta
+ * para um nome que já tem dono. Mexer aqui é mexer na política de receita
+ * (`lib/relatorios/receita-fechada.ts`), não neste arquivo. */
+const FATURAMENTO = VALOR_TOTAL_VENDIDO;
 const APOIO_JANELA = "últimos 30 dias · vs 30 anteriores";
 
 const faturamentoPorDia = (orgId: string, agora: Date, responsavelId: string | null) =>
   serie60(async (desde) => db.execute<{ dia: string; v: string }>(sql`
-    SELECT to_char((n.ganho_at AT TIME ZONE ${FUSO})::date, 'YYYY-MM-DD') AS dia, SUM(${FATURAMENTO})::text AS v
-      FROM negocios n
-     WHERE n.organizacao_id = ${orgId}::uuid AND n.status = 'ganho'
-       AND n.ganho_at >= ${desde}::timestamptz
-       AND (${responsavelId}::uuid IS NULL OR n.responsavel_id = ${responsavelId}::uuid)
+    SELECT to_char((negocios.ganho_at AT TIME ZONE ${FUSO})::date, 'YYYY-MM-DD') AS dia, SUM(${FATURAMENTO})::text AS v
+      FROM negocios
+     WHERE negocios.organizacao_id = ${orgId}::uuid AND negocios.status = 'ganho'
+       AND negocios.ganho_at >= ${desde}::timestamptz
+       AND (${responsavelId}::uuid IS NULL OR negocios.responsavel_id = ${responsavelId}::uuid)
      GROUP BY 1`), agora);
 
 const leadsPorDia = (orgId: string, agora: Date, responsavelId: string | null) =>
@@ -173,11 +180,11 @@ export async function heroFaturamento(ctx: Ctx): Promise<HeroFaturamento> {
     // agrupada por mês de São Paulo. `ate_hoje` é o mês só até
     // o dia de hoje: comparar o mês parcial com o anterior inteiro mente no dia 3.
     db.execute<{ mes: string; v: string; n: number; ate_hoje: string }>(sql`
-      SELECT to_char(n.ganho_at AT TIME ZONE ${FUSO}, 'YYYY-MM') AS mes, SUM(${FATURAMENTO})::text AS v, count(*)::int AS n,
-             COALESCE(SUM(${FATURAMENTO}) FILTER (WHERE EXTRACT(day FROM n.ganho_at AT TIME ZONE ${FUSO}) <= ${diaHoje}), 0)::text AS ate_hoje
-        FROM negocios n
-       WHERE n.organizacao_id = ${orgId}::uuid AND n.status = 'ganho'
-         AND n.ganho_at >= ${inicioDoDia(`${grade[0].chave}-01`)}::timestamptz
+      SELECT to_char(negocios.ganho_at AT TIME ZONE ${FUSO}, 'YYYY-MM') AS mes, SUM(${FATURAMENTO})::text AS v, count(*)::int AS n,
+             COALESCE(SUM(${FATURAMENTO}) FILTER (WHERE EXTRACT(day FROM negocios.ganho_at AT TIME ZONE ${FUSO}) <= ${diaHoje}), 0)::text AS ate_hoje
+        FROM negocios
+       WHERE negocios.organizacao_id = ${orgId}::uuid AND negocios.status = 'ganho'
+         AND negocios.ganho_at >= ${inicioDoDia(`${grade[0].chave}-01`)}::timestamptz
        GROUP BY 1`),
     db.execute<{ tipo: string; delta: string }>(sql`
       SELECT tipo, COALESCE(SUM(delta), 0)::text AS delta

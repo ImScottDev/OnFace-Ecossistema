@@ -181,7 +181,7 @@ export default function TabComercial({ periodo, ocultarHero = false, safraSeleci
 
   const mixDonut = [
     { name: "Recorrente", value: fechado?.recorrente ?? 0, color: COR_RECORRENTE },
-    { name: "Avulso", value: fechado?.avulso ?? 0, color: COR_AVULSO },
+    { name: "Setup/avulso", value: fechado?.avulso ?? 0, color: COR_AVULSO },
   ].filter((d) => d.value > 0);
 
   const winTaxa = comercial?.winRateInfo?.taxa ?? null;
@@ -268,7 +268,7 @@ export default function TabComercial({ periodo, ocultarHero = false, safraSeleci
       <HeroBand
         label="Receita fechada no período"
         value={loadingComercial ? "…" : formatCurrency(fechado?.receita ?? 0)}
-        sub={loadingComercial ? "" : `${fechado?.ganhos ?? 0} negócio${(fechado?.ganhos ?? 0) === 1 ? "" : "s"} ganho${(fechado?.ganhos ?? 0) === 1 ? "" : "s"} · recorrente ${formatCurrency(fechado?.recorrente ?? 0)} · avulso ${formatCurrency(fechado?.avulso ?? 0)}`}
+        sub={loadingComercial ? "" : `${fechado?.ganhos ?? 0} negócio${(fechado?.ganhos ?? 0) === 1 ? "" : "s"} ganho${(fechado?.ganhos ?? 0) === 1 ? "" : "s"} · recorrente ${formatCurrency(fechado?.recorrente ?? 0)} · setup/avulso ${formatCurrency(fechado?.avulso ?? 0)}`}
         cor="ganho"
         icon={Wallet}
       >

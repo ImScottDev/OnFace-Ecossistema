@@ -279,8 +279,14 @@ export async function getCicloMedio(
 
 export interface FechadoPeriodo {
   ganhos: number;
-  receita: number; // SUM(valorTotal) dos ganhos no período
+  /** recorrente + avulso: a mesma régua de `VALOR_TOTAL_VENDIDO`. */
+  receita: number;
+  /** Mensalidade vendida (`VALOR_MRR_VENDIDO`). */
   recorrente: number;
+  /** NÃO é só avulso: é setup + avulso (`VALOR_NAO_RECORRENTE_VENDIDO`). A
+   *  implantação de uma venda recorrente cai aqui. Quem exibir, rotule
+   *  "setup/avulso" — chamar de "avulso" fez o card de novembro/26 parecer ter
+   *  R$ 2.540 de venda avulsa que era implantação de um PABX recorrente. */
   avulso: number;
 }
 

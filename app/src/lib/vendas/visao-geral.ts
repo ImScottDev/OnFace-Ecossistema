@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { monthRange, PAPEIS_QUE_SOMAM_NA_META } from "@/lib/metas-shared";
 import { isAdminView, isReader } from "@/lib/auth/roles";
 import { ORIGEM_AUTOATENDIMENTO, ROTULO_AUTOATENDIMENTO } from "@/lib/relatorios/autoatendimento";
+import { VALOR_TOTAL_VENDIDO } from "@/lib/relatorios/receita-fechada";
 
 /**
  * Leituras próprias da visão geral de Vendas (/vendas).
@@ -20,7 +21,11 @@ import { ORIGEM_AUTOATENDIMENTO, ROTULO_AUTOATENDIMENTO } from "@/lib/relatorios
  * exatamente o realizado da meta da Home, sem segunda verdade.
  */
 
-const FATURAMENTO = sql`COALESCE(n.mrr_fechado,0)::numeric + COALESCE(n.valor_setup,0)::numeric`;
+/* Fonte única: a mesma política de receita vendida de Relatórios, Metas e do
+ * Início (`VALOR_TOTAL_VENDIDO`). A conta local de antes, `mrr_fechado +
+ * valor_setup`, perdia o valor do negócio 100% avulso (que mora em
+ * `valor_total`) e somava mensalidade em White Label, que não tem recorrência. */
+const FATURAMENTO = VALOR_TOTAL_VENDIDO;
 
 export interface LinhaRanking {
   id: string;
@@ -85,9 +90,9 @@ export async function visaoGeralVendasMes(
 
   const [org] = await db.execute<{ ganhos: number; faturamento: string }>(sql`
     SELECT count(*)::int AS ganhos, COALESCE(SUM(${FATURAMENTO}),0)::text AS faturamento
-      FROM negocios n
-     WHERE n.organizacao_id = ${organizacaoId}::uuid AND n.status = 'ganho'
-       AND n.ganho_at >= ${ini}::timestamptz AND n.ganho_at < ${fi}::timestamptz
+      FROM negocios
+     WHERE negocios.organizacao_id = ${organizacaoId}::uuid AND negocios.status = 'ganho'
+       AND negocios.ganho_at >= ${ini}::timestamptz AND negocios.ganho_at < ${fi}::timestamptz
   `);
 
   // Ranking: mesmo universo de getMetaComercialAgregada (closer/vendedor
@@ -102,10 +107,10 @@ export async function visaoGeralVendasMes(
        WHERE organizacao_id = ${organizacaoId}::uuid AND ativo = true
          AND role IN (${papeis})
     ), ganhos AS (
-      SELECT n.responsavel_id AS id, count(*)::int AS ganhos, SUM(${FATURAMENTO}) AS faturamento
-        FROM negocios n
-       WHERE n.organizacao_id = ${organizacaoId}::uuid AND n.status = 'ganho'
-         AND n.ganho_at >= ${ini}::timestamptz AND n.ganho_at < ${fi}::timestamptz
+      SELECT negocios.responsavel_id AS id, count(*)::int AS ganhos, SUM(${FATURAMENTO}) AS faturamento
+        FROM negocios
+       WHERE negocios.organizacao_id = ${organizacaoId}::uuid AND negocios.status = 'ganho'
+         AND negocios.ganho_at >= ${ini}::timestamptz AND negocios.ganho_at < ${fi}::timestamptz
        GROUP BY 1
     ), metas_mes AS (
       -- Mesma regra tudo-ou-nada de getMetaComercialAgregada (lib/metas.ts):
@@ -135,10 +140,10 @@ export async function visaoGeralVendasMes(
       -- organização e o dinheiro do autoatendimento vira "número perdido"
       -- (Scott, 09/11/2026). Sem meta e sem pipeline aberto: não há pessoa.
       SELECT count(*)::int AS ganhos, SUM(${FATURAMENTO}) AS faturamento
-        FROM negocios n
-       WHERE n.organizacao_id = ${organizacaoId}::uuid AND n.status = 'ganho'
-         AND n.origem_negocio = 'self_checkout'
-         AND n.ganho_at >= ${ini}::timestamptz AND n.ganho_at < ${fi}::timestamptz
+        FROM negocios
+       WHERE negocios.organizacao_id = ${organizacaoId}::uuid AND negocios.status = 'ganho'
+         AND negocios.origem_negocio = 'self_checkout'
+         AND negocios.ganho_at >= ${ini}::timestamptz AND negocios.ganho_at < ${fi}::timestamptz
     ), uniao AS (
       SELECT c.id, c.nome,
              COALESCE(g.ganhos,0) AS ganhos, COALESCE(g.faturamento,0) AS faturamento,
@@ -170,13 +175,13 @@ export async function visaoGeralVendasMes(
   // Pessoal: os ganhos do próprio usuário, qualquer papel — a mesma leitura
   // de getRealizadoMeta("faturamento_fechado"), que alimenta a meta dele.
   const porDia = await db.execute<{ dia: number; ganhos: number; faturamento: string }>(sql`
-    SELECT extract(day FROM n.ganho_at AT TIME ZONE 'America/Sao_Paulo')::int AS dia,
+    SELECT extract(day FROM negocios.ganho_at AT TIME ZONE 'America/Sao_Paulo')::int AS dia,
            count(*)::int AS ganhos, SUM(${FATURAMENTO})::text AS faturamento
-      FROM negocios n
-      JOIN usuarios u ON u.id = n.responsavel_id
-     WHERE n.organizacao_id = ${organizacaoId}::uuid AND n.status = 'ganho'
-       AND ${pessoal ? sql`n.responsavel_id = ${pessoal}::uuid` : sql`u.ativo = true AND u.role IN (${papeis})`}
-       AND n.ganho_at >= ${ini}::timestamptz AND n.ganho_at < ${fi}::timestamptz
+      FROM negocios
+      JOIN usuarios u ON u.id = negocios.responsavel_id
+     WHERE negocios.organizacao_id = ${organizacaoId}::uuid AND negocios.status = 'ganho'
+       AND ${pessoal ? sql`negocios.responsavel_id = ${pessoal}::uuid` : sql`u.ativo = true AND u.role IN (${papeis})`}
+       AND negocios.ganho_at >= ${ini}::timestamptz AND negocios.ganho_at < ${fi}::timestamptz
      GROUP BY 1
   `);
   const acumuladoPorDia: number[] = [];
