@@ -325,7 +325,14 @@ export async function boardDeAquisicoes(
            a.retomar_em::text, a.motivo_desqualificacao,
            px.id AS proxima_acao_id, px.titulo AS proxima_acao_titulo,
            px.vence_em::text AS proxima_acao_vence_em,
-           a.updated_at AS ordenacao
+           -- Ordem do quadro: a ultima MOVIMENTACAO real, nao updated_at, que
+           -- sobe em qualquer escrita administrativa. Uma troca de responsavel
+           -- em lote (11/11/2026, 163 leads) reordenou o board inteiro e jogou
+           -- cartoes de 176 dias parados para o topo, por terem acabado de ser
+           -- "atualizados". Regra do Scott: do mais recente para o mais antigo,
+           -- e o mais recente e quem teve toque ou entrou agora.
+           -- (Sem crase aqui dentro: ela fecha o template literal.)
+           COALESCE(a.last_touch_at, a.created_at) AS ordenacao
       FROM aquisicoes a
       LEFT JOIN empresas e ON e.id = a.empresa_id
       LEFT JOIN leads    lg ON lg.id = a.lead_legado_id

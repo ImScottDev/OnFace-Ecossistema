@@ -452,7 +452,14 @@ export async function boardPreVendas(organizacaoId: string, filtros: FiltrosPreV
   const colunas = (aba === "ativos" ? [...ETAPAS_PRE_VENDAS] : etapasDaAba).map((chave) => {
     // A ordem é a do fluxo, e as duas saídas ficam no fim: novo, em contato,
     // qualificação, qualificado, oportunidade, nutrição, desqualificado.
-    const daColuna = cards.filter((c) => c.etapa === chave);
+    /* Do mais recente para o mais antigo (regra do Scott, 11/11/2026), pelo
+       MESMO numero que o cartao mostra: `horasNaEtapa`. O SQL ja corta a
+       pagina por ultima movimentacao, mas quem manda na ordem final e o que
+       esta escrito no cartao: ordenar por outra coisa faz o quadro parecer
+       embaralhado para quem le "176d" no topo e "33d" embaixo.
+       Sem tempo conhecido vai para o fim, nao para o topo. */
+    const daColuna = cards.filter((c) => c.etapa === chave)
+      .sort((a, b) => (a.horasNaEtapa ?? Infinity) - (b.horasNaEtapa ?? Infinity));
     return {
       chave, rotulo: ROTULO_ETAPA_PRE_VENDAS[chave],
       // O total vem de count() sobre a tabela inteira, nunca do array: com
@@ -847,7 +854,14 @@ export async function boardPipeline(organizacaoId: string, filtros: FiltrosPipel
   const totalDaEtapa = new Map(Object.entries(board.totaisPorEtapa));
 
   const colunas = etapas.map((chave) => {
-    const daColuna = cards.filter((c) => c.etapa === chave);
+    /* Do mais recente para o mais antigo (regra do Scott, 11/11/2026), pelo
+       MESMO numero que o cartao mostra: `horasNaEtapa`. O SQL ja corta a
+       pagina por ultima movimentacao, mas quem manda na ordem final e o que
+       esta escrito no cartao: ordenar por outra coisa faz o quadro parecer
+       embaralhado para quem le "176d" no topo e "33d" embaixo.
+       Sem tempo conhecido vai para o fim, nao para o topo. */
+    const daColuna = cards.filter((c) => c.etapa === chave)
+      .sort((a, b) => (a.horasNaEtapa ?? Infinity) - (b.horasNaEtapa ?? Infinity));
     const agregado = totalDaEtapa.get(chave);
     const fechada = (ETAPAS_FECHADAS as readonly string[]).includes(chave);
     return {
