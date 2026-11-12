@@ -3,7 +3,9 @@
  *
  * Regra do Scott (06/10): MRR = o faturado com natureza MRR na última competência
  * fechada de `cliente_receita_mensal` + a assinatura ativa de cliente que ainda não
- * tem linha MRR nessa competência. Setup, avulso, uso e débito recuperado ficam fora
+ * tem linha MRR nessa competência. Assinatura ativa = `active` ou `past_due` (12/11/2026, convenção
+ * do Stripe: a cobrança falhou e ele ainda está tentando, o cliente segue ativo; `unpaid` e
+ * `trialing` ficam fora). Antes só `active`: 8 clientes com MRR zero e R$ 3.065 escondidos. Setup, avulso, uso e débito recuperado ficam fora
  * porque a natureza deles não é MRR (ver `receita_setup`, `receita_avulsa`, `receita_uso`).
  *
  * Existiam seis cópias deste SQL (catálogo, Financeiro, Carteira, tela de CS, carteira
@@ -51,7 +53,7 @@ export function mrrOficialLinhas(org: string, o: RecorteMrrOficial = {}): SQL {
         FROM assinaturas a
         JOIN empresas e ON e.id = a.empresa_id
         LEFT JOIN servicos_canonicos sc ON sc.id = a.servico_id
-       WHERE a.organizacao_id = ${org}::uuid AND ${doCrm("a")} AND a.status = 'active' AND a.empresa_id IS NOT NULL
+       WHERE a.organizacao_id = ${org}::uuid AND ${doCrm("a")} AND a.status IN ('active', 'past_due') AND a.empresa_id IS NOT NULL
          AND ${daEmpresa("a.empresa_id")} AND ${dasEmpresas("a.empresa_id")}
          AND a.empresa_id IN (SELECT empresa_id FROM clientes WHERE organizacao_id = ${org}::uuid)
          AND NOT EXISTS (SELECT 1 FROM cliente_receita_mensal r2, uc

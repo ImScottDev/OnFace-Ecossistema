@@ -1708,7 +1708,9 @@ export async function empresa360(organizacaoId: string, empresaId: string): Prom
            l.cargo, NULL AS papel, l.email, l.telefone
       FROM leads l
      WHERE l.empresa_id = ${empresaId}::uuid
-       AND NOT EXISTS (SELECT 1 FROM pessoas p WHERE p.lead_id_legado = l.id)
+       -- Só esconde o lead quando a pessoa dele JÁ aparece nesta empresa. A pessoa criada do lead e
+       -- nunca ligada à empresa sumia dos dois lados (28 clientes em 12/11/2026, ex.: Bernard Malta).
+       AND NOT EXISTS (SELECT 1 FROM pessoas p2 WHERE p2.lead_id_legado = l.id AND ${pessoaDaEmpresa("p2", sql`${empresaId}::uuid`)})
        AND l.canonical_lead_id IS NULL
      ORDER BY nome
   `);

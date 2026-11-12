@@ -376,7 +376,8 @@ export async function clienteParaODesenho(organizacaoId: string, empresaId: stri
    * nem o portfólio nem a receita faturada já cobrem. */
   for (const b of [...billing.porServico, ...(billing.naoAtribuido ? [billing.naoAtribuido] : [])]) {
     const a = b.assinatura;
-    if (!a || a.status !== "active" || a.mrr === null) continue;
+    // Mesmo critério da métrica oficial (mrr-oficial.ts): `past_due` ainda é cliente ativo em cobrança.
+    if (!a || (a.status !== "active" && a.status !== "past_due") || a.mrr === null) continue;
     const familia = b.serviceFamily ?? "UNKNOWN";
     // Assinatura sem serviço atribuído: o único serviço ainda zerado é o dono
     // dela. Com mais de um candidato não se escolhe no chute — vira linha própria.

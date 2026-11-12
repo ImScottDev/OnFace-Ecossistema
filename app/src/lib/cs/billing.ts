@@ -123,7 +123,10 @@ export async function billingDaConta(organizacaoId: string, empresaId: string): 
            sc.current_recurring_value::text AS mrr, sc.revenue_nature
       FROM servicos_canonicos sc
      WHERE sc.organizacao_id = ${organizacaoId} AND sc.empresa_id = ${empresaId}
-       AND sc.portfolio_included = true
+       -- Fora do portfólio, mas com assinatura viva no Stripe, é produto que o cliente paga: sem isto o
+       -- 360 mostrava "0 produtos" e MRR R$ 0 (Bernard Malta, 12/11/2026: R$ 1.000/mês past_due).
+       AND (sc.portfolio_included = true
+            OR EXISTS (SELECT 1 FROM assinaturas av WHERE av.servico_id = sc.id AND av.status IN ('active', 'past_due') AND ${doCrm("av")}))
      ORDER BY sc.current_recurring_value DESC NULLS LAST`);
 
   const assinaturasRows = await db.execute<Record<string, string | number | boolean | null>>(sql`
@@ -134,7 +137,10 @@ export async function billingDaConta(organizacaoId: string, empresaId: string): 
            COALESCE((a.raw->>'cancela_no_fim')::boolean, (a.raw->>'cancel_at_period_end')::boolean) AS cancela_no_fim
       FROM assinaturas a
      WHERE a.organizacao_id = ${organizacaoId} AND a.empresa_id = ${empresaId} AND ${doCrm("a")}
-     ORDER BY a.status = 'active' DESC, a.updated_at DESC`);
+     -- A assinatura VIVA primeiro. Só "active primeiro" deixava a cancelada ganhar da past_due pelo
+     -- updated_at, e a tela dizia "assinatura cancelada" para quem segue cobrado todo mês.
+     ORDER BY CASE a.status WHEN 'active' THEN 0 WHEN 'past_due' THEN 1 WHEN 'trialing' THEN 2 WHEN 'unpaid' THEN 3 ELSE 9 END,
+              a.updated_at DESC`);
 
   const itensRows = await db.execute<Record<string, string | number | null>>(sql`
     SELECT i.assinatura_id, i.produto, i.stripe_price_id, i.quantidade, i.preco_unitario::float8 AS preco,
